@@ -17,9 +17,12 @@ def change(records, **values):
 
 
 def refused(records, **values):
-    """The closed reason code a change is refused with."""
+    """The closed reason code a change is refused with, and nothing more."""
     with pytest.raises(RuleRefused) as caught:
         change(records, **values)
+    # The refusal carries its code alone: never the submitted target.
+    assert str(caught.value) == caught.value.code
+    assert values["identity"] not in str(caught.value)
     return caught.value.code
 
 
@@ -189,7 +192,3 @@ def test_refusals_are_closed_reason_codes():
         )
         == "invalid"
     )
-    for code in ("consumer", "target"):
-        assert "gmail" not in str(RuleRefused(code)) and "example" not in str(
-            RuleRefused(code)
-        )

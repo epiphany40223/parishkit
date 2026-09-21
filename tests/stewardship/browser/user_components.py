@@ -79,7 +79,6 @@ def components(context, admin):
                 removed=False,
                 before=["Staff"],
                 after=["Administrator", "Staff"],
-                deny=False,
                 expansion="administrator",
                 recorded=2,
                 self_affected=False,
@@ -99,7 +98,7 @@ def components(context, admin):
         "/portal-users-preview": ("text/html", preview()),
         "/portal-users-preview-deny": (
             "text/html",
-            preview(after=[], deny=True, expansion=None),
+            preview(after=[], expansion=None),
         ),
         "/portal-users-preview-remove": (
             "text/html",

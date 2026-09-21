@@ -166,11 +166,11 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
         # Removing the only Administrator's role leaves an invalid policy.
         (
             dict(kind="address", identity="admin@example.org", roles=["staff"]),
-            "at least one",
+            "exact-address Administrator",
         ),
         (
             dict(kind="address", identity="admin@example.org", operation="remove"),
-            "at least one",
+            "exact-address Administrator",
         ),
     )
     with web():
@@ -178,15 +178,39 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
             response = post(browser, proposal(store, **values))
             assert response.status_code == 400, values
             body = response.content.decode()
-            assert expected in body and "Return to Portal users" in body
-            assert values["identity"] not in body and "gmail" not in body.lower()
+            # The refusal keeps the Admin chrome, whose own text names the
+            # parish's testing address; the refusal itself names no target.
+            refusal = re.search(
+                r'<section class="flow panel">.*?</section>', body, flags=re.S
+            ).group(0)
+            assert expected in refusal and "Return to Portal users" in refusal
+            assert values["identity"] not in refusal and "gmail" not in refusal.lower()
             assert response["Cache-Control"] == "no-store"
         # A preview drawn from an older policy is stale, never applied to a newer one.
         stale = proposal(
             store, kind="domain", identity="other.example", roles=["staff"]
         )
         stale["base_digest"] = "0" * 64
-        assert post(browser, stale).status_code == 409
+        old = post(browser, stale)
+        assert old.status_code == 409 and b"changed since" in old.content
+        assert b"Return to Portal users" in old.content
+        # A review signed against the applied policy is refused at confirmation
+        # once another change has activated: the shared admission checks the
+        # digest again under the work transaction, and nothing is requested.
+        signed = token(
+            post(
+                browser,
+                proposal(
+                    store, kind="domain", identity="late.example", roles=["staff"]
+                ),
+            )
+        )
+    add_rules(store, domain("meanwhile.example", roles=("staff",)))
+    requests += 1
+    with web():
+        late = post(browser, {"action": "confirm", "preview": signed})
+        assert late.status_code == 409 and b"changed since" in late.content
+        assert "late.example" not in rules(store)
         # Unknown fields, a query string and the wrong method are refused outright.
         extra = proposal(store, kind="domain", identity="a.example", roles=["staff"])
         assert post(browser, extra | {"extra": "x"}).status_code == 400

@@ -28,7 +28,7 @@ from .user_rows import (
 from .user_rules import ROLE_ORDER
 
 
-def _identities(records):
+def policy_identities(records):
     """Only the Google identities this policy names, with successful sign-ins.
 
     Every verified Google attempt records an identity and refreshes its
@@ -97,7 +97,7 @@ def users(request):
             records = configuration.active_configuration.canonical_document[
                 "sections"
             ].get("login_rules", [])
-            identities = _identities(records)
+            identities = policy_identities(records)
             # The same definition of a confirmed Chairperson that sign-in uses.
             active = confirmed_seeded(configuration.active_configuration)
             # The chrome presents this verified observation, never a newer one.

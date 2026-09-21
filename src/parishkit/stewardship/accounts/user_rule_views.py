@@ -14,13 +14,12 @@ from uuid import uuid4
 from django import forms
 from django.core import signing
 from django.db import DatabaseError
-from django.http import HttpResponse
 from django.shortcuts import render
-from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import (
     confirm,
@@ -36,8 +35,9 @@ from .limiting import LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
-from .user_rows import ROLE_LABELS
+from .user_rows import AppliedPolicy, _labels
 from .user_rules import ROLE_ORDER, RuleRefused, rule_patch
+from .user_views import policy_identities
 
 SALT = "stewardship-user-rules-preview-v1"
 PREVIEW_FIELDS = {"kind", "identity", "operation", "roles", "base_digest"}
@@ -55,14 +55,17 @@ class RuleForm(forms.Form):
     base_digest = forms.RegexField(regex=r"^[0-9a-f]{64}$")
 
 
-def _error(code, *, status=400):
-    """A closed explanation by reason code, never the submitted target."""
-    response = HttpResponse(
-        render_to_string("stewardship/user-rule-error.html", {"code": code}),
-        status=status,
-        headers={"Cache-Control": "no-store"},
+def _error(request, code, *, status=400):
+    """A closed explanation by reason code, with the Admin chrome, never the target.
+
+    These refusals are ordinary editing mistakes, not outages, so the page keeps
+    its navigation and session deadlines like any other Admin page.
+    """
+    response = render(
+        request, "stewardship/user-rule-error.html", {"code": code}, status=status
     )
     response.stewardship_safe_error = True
+    response["Cache-Control"] = "no-store"
     return response
 
 
@@ -71,16 +74,25 @@ def _scope(service):
     return editable_configuration(service), None
 
 
-def _labels(roles):
-    """Role labels in one fixed order, for the preview's before and after."""
-    return [ROLE_LABELS[role] for role in ROLE_ORDER if role in (roles or ())]
+def _reach(policy, change):
+    """How many recorded Google accounts the rule reaches, as the page counts.
+
+    A domain rule reaches the accounts the evaluator really authorizes through
+    it, the number the page's column shows; an address reaches its usable
+    recorded identities. Neither counts a disabled identity.
+    """
+    if change.kind == "domain":
+        return len(policy.authorized.get(change.identity, []))
+    return sum(
+        not item["disabled"] for item in policy.identities.get(change.identity, [])
+    )
 
 
 def _preview(request, service, actor):
     """Show exactly what would change, signed for one confirmation."""
     form = RuleForm(request.POST)
     if not form.is_valid():
-        return _error("invalid")
+        return _error(request, "invalid")
     configuration = editable_configuration(service)
     data = form.cleaned_data
     if data["base_digest"] != configuration.active_configuration.digest:
@@ -101,7 +113,7 @@ def _preview(request, service, actor):
             operation_id=str(policy_operation_id(actor.identity, key)),
         )
     except RuleRefused as refused:
-        return _error(refused.code)
+        return _error(request, refused.code)
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
@@ -111,9 +123,8 @@ def _preview(request, service, actor):
         # before anything is signed, not discovered by the installer.
         build_candidate(base, change.patch, candidate_id=uuid4())
     except ConfigError:
-        return _error("policy")
-    field = "email" if change.kind == "address" else "hosted_domain"
-    recorded = PortalUser.objects.filter(**{field: change.identity}).count()
+        return _error(request, "policy")
+    policy = AppliedPolicy(records, policy_identities(records))
     own = (
         PortalUser.objects.filter(pk=actor.identity)
         .values_list("email", flat=True)
@@ -127,12 +138,12 @@ def _preview(request, service, actor):
             "identity": change.identity,
             "created": change.before is None,
             "removed": change.after is None,
-            "before": _labels(change.before),
-            "after": _labels(change.after),
-            "deny": change.after == [],
+            "before": _labels(change.before or ()),
+            "after": _labels(change.after or ()),
             "expansion": change.expansion,
-            "recorded": recorded,
-            # Losing one's own Administrator role is allowed when another
+            "recorded": _reach(policy, change),
+            # Losing one's own Administrator role, by a role change or by
+            # removing one's own exact rule, is allowed when another
             # Administrator remains; it takes effect on the next request.
             "self_affected": change.kind == "address"
             and own == change.identity
@@ -155,15 +166,27 @@ def user_rules(request):
     try:
         service = runtime()
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
-        if request.GET:
-            raise ValueError("Rule changes travel only in the form body.")
+        filters(request.GET, allowed=set())
         action = form_action(
             request.POST, preview_fields=PREVIEW_FIELDS, multiple_fields={"roles"}
         )
-        if action == "preview":
-            response = _preview(request, service, actor)
-        else:
-            response = confirm(request, service, actor, salt=SALT, current_scope=_scope)
+        try:
+            if action == "preview":
+                response = _preview(request, service, actor)
+            else:
+                response = confirm(
+                    request,
+                    service,
+                    actor,
+                    salt=SALT,
+                    current_scope=_scope,
+                    capability=Capability.MANAGE_USERS,
+                )
+        except StaleRecordError:
+            # A form drawn from, or a review signed against, an older policy:
+            # an ordinary case for a page left open, so it gets the page's
+            # own explanation rather than the editors' JSON conflict.
+            return _error(request, "stale", status=409)
         principal(request, service, read_only=True, capability=Capability.MANAGE_USERS)
         response["Cache-Control"] = "no-store"
         return response
@@ -173,7 +196,6 @@ def user_rules(request):
         LimiterUnavailable,
         PermissionError,
         ValueError,
-        StaleRecordError,
         signing.BadSignature,
     ) as error:
         return error_response(error)

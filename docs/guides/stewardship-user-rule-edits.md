@@ -73,9 +73,14 @@ and error pages are never cached.
 Before and after roles in one fixed order; an explicit deny named as such; the
 high-impact expansions the specification lists, named so the Administrator
 knows the change will be alerted once that follow-on lands; the count of
-recorded Google accounts at the address or domain; and, when the Administrator
-is removing their own Administrator role while another remains, that it takes
-effect on their next request. Removed roles take effect on each person's next
+recorded Google accounts the rule reaches, counted as the page counts them:
+for a domain, the accounts the evaluator really authorizes through the rule;
+for an address, its usable recorded identities; and, when the Administrator is
+removing their own Administrator role or their own exact rule while another
+Administrator remains, that it takes effect on their next request. A stale
+form or review, one drawn from a policy that has since changed, is explained
+on the same refusal page with a 409, whether it is caught at review or, by the
+shared admission under the work transaction, at confirmation. Removed roles take effect on each person's next
 request after activation; an open session is not ended.
 
 ## Focused validation
@@ -95,8 +100,8 @@ request after activation; an open session is not ended.
   Administrator allowed to give up their own role with the review saying so,
   an Administrator grant named as the expansion it is, and a Ministry leader
   denied, with no request recorded by any of it.
-- The page's own nine PostgreSQL cases and the parish and Ministry editors'
-  suites pass with the shared signer change.
+- The page's own eight PostgreSQL cases and the parish and Ministry editors'
+  suites pass with the shared signer and confirmation changes.
 - Nine browser cases across Chromium, Firefox and WebKit: every row's controls
   in every page state, Administrator never offered for a domain, the applied
   roles ticked, the review and refusal pages accessible, and without scripts a
@@ -105,7 +110,10 @@ request after activation; an open session is not ended.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. Review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and one single-source
+[review/fix round](stewardship-user-rule-edit-reviews.md) under the second
+September 20, 2026 Codex exemption are complete, with every accepted finding
+fixed. Two more rounds, full exact-head CI, DCO and protected delivery remain
+open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

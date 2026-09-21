@@ -15,9 +15,10 @@ from uuid import uuid4
 from parishkit.config import ConfigError
 
 from .policy_schema import ROLES, normalized_domain, normalized_email
+from .user_rows import ROLE_LABELS
 
-# Presentation order, and the order roles are offered on the page.
-ROLE_ORDER = ("administrator", "staff", "ministry_leader")
+# The one presentation order, fixed by the labels, is also the form's order.
+ROLE_ORDER = tuple(ROLE_LABELS)
 # A consumer mail domain is never a hosted domain; the specification names the
 # one that is tried most, and the sign-in itself would refuse the claim anyway.
 CONSUMER_DOMAINS = frozenset({"gmail.com", "googlemail.com"})

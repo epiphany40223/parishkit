@@ -90,14 +90,16 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     assert page.get_by_text(
         "Configured roles after this change: Administrator, Staff"
     ).count()
-    assert page.get_by_text("2 recorded Google accounts", exact=False).count()
+    assert page.get_by_text("2 usable recorded Google identities", exact=False).count()
     assert page.get_by_role("button", name="Apply login rule change").count() == 1
     assert page.get_by_role("link", name="Cancel").count() == 1
     page.goto(component_origin + "/portal-users-preview-deny")
     assert page.get_by_text("none: an explicit deny", exact=False).count()
     page.goto(component_origin + "/portal-users-preview-remove")
     assert page.get_by_text("This rule will be removed.", exact=False).is_visible()
-    assert page.get_by_text("0 recorded Google accounts", exact=False).count()
+    assert page.get_by_text(
+        "0 recorded Google accounts are authorized through this rule", exact=False
+    ).count()
     page.goto(component_origin + "/portal-users-refused")
     assert (
         page.get_by_role("alert")
