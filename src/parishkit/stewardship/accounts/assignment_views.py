@@ -83,8 +83,14 @@ def _preview(request, service, actor):
     ministry = next(
         (row for row in catalog if row["duid"] == data["ministry_duid"]), None
     )
-    if ministry is None or not ministry["active"]:
+    # Only an active catalog Ministry may be assigned. A removal is judged by
+    # the applied policy alone: an assignment to a Ministry since deactivated
+    # or dropped from the catalog is exactly the one an Administrator cleans
+    # up, so the catalog serves a removal only for the Ministry's name.
+    if data["operation"] == "add" and (ministry is None or not ministry["active"]):
         return _error(request, "inactive")
+    if ministry is None:
+        ministry = {"duid": data["ministry_duid"], "name": ""}
     records = configuration.active_configuration.canonical_document["sections"].get(
         "login_rules", []
     )
@@ -109,21 +115,29 @@ def _preview(request, service, actor):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     try:
-        build_candidate(base, change.patch, candidate_id=uuid4())
+        candidate = build_candidate(base, change.patch, candidate_id=uuid4())
     except ConfigError:
         return _error(request, "policy")
     # How the assignment would take effect: through the address's exact rule,
     # through its domain rule and that rule's hosted-domain claim, or not at
-    # all until a rule grants Ministry leader. Stated, never inferred.
-    policy = AppliedPolicy(records, [])
+    # all until a rule grants Ministry leader. The roles come from the one
+    # evaluator over the resulting policy, so an Administrator, whom it makes
+    # a leader of everything, and a seeded leader role the new assignment
+    # itself brings back into force are stated as the sign-in would decide.
+    policy = AppliedPolicy(
+        candidate.candidate.document()["sections"].get("login_rules", []), []
+    )
     exact = policy.addresses.get(change.email)
     domain = policy.domains.get(change.email.rsplit("@", 1)[1])
     if exact is not None:
-        rule, leader = "address", "ministry_leader" in exact["values"]["roles"]
+        rule, (granted, _) = "address", policy.resolve(change.email, None)
     elif domain is not None:
-        rule, leader = "domain", "ministry_leader" in domain["values"]["roles"]
+        rule, (granted, _) = (
+            "domain",
+            policy.resolve(change.email, domain["values"]["domain"]),
+        )
     else:
-        rule, leader = None, False
+        rule, granted = None, frozenset()
     request._stewardship_display_configuration = configuration
     return render(
         request,
@@ -133,7 +147,8 @@ def _preview(request, service, actor):
             "identity": change.email,
             "ministry": ministry,
             "rule": rule,
-            "leader": leader,
+            "leader": "ministry_leader" in granted,
+            "administrator": "administrator" in granted,
             "domain": domain["values"]["domain"] if domain else None,
             "preview": sign_preview(
                 actor=actor,

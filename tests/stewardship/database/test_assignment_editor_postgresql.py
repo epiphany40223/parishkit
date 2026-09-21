@@ -31,6 +31,7 @@ from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/users/assignments"
+ACTIVITY = "/admin/configuration/ministries"
 
 
 def web():
@@ -38,10 +39,10 @@ def web():
     return task_login(ServiceRole.WEB, exact=True, reconnect=True)
 
 
-def post(browser, values):
+def post(browser, values, url=URL):
     """Use the genuine CSRF cookie."""
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        url, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
     )
 
 
@@ -64,11 +65,11 @@ def proposal(store, **values):
     } | values
 
 
-def applied(store, browser, values):
+def applied(store, browser, values, url=URL):
     """Preview and confirm as the web role; install under the restricted installer."""
     with web():
-        signed = token(post(browser, values))
-        response = post(browser, {"action": "confirm", "preview": signed})
+        signed = token(post(browser, values, url))
+        response = post(browser, {"action": "confirm", "preview": signed}, url)
     assert response.status_code == 302, response.content
     request = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rsplit("/", 1)[-1]
@@ -102,6 +103,18 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         body = browser.get(PAGE).content.decode()
     offered = address_row(body, "leader@example.org")
     assert '<option value="4">Choir (4)</option>' in offered
+    # The effect is stated as the evaluator decides it: an exact leader rule
+    # takes effect at once, an Administrator needs no scope, and an address
+    # no rule names gets none until one does.
+    with web():
+        text = post(browser, proposal(store)).content.decode()
+        assert "exact-address rule granting Ministry leader" in text
+        admin = post(browser, proposal(store, identity="admin@example.org"))
+        assert (
+            "grants Administrator, who leads every Ministry" in admin.content.decode()
+        )
+        unruled = post(browser, proposal(store, identity="nobody@elsewhere.example"))
+        assert "No login rule names this address" in unruled.content.decode()
     request = applied(store, browser, proposal(store))
     assignment = MinistryAssignment.objects.get(
         configuration_id=store.active().version_id, email="leader@example.org"
@@ -123,6 +136,9 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         assert "not an active Ministry" in inactive.content.decode()
         bad = post(browser, proposal(store, identity="not an address"))
         assert bad.status_code == 400
+        removal = post(browser, proposal(store, operation="remove")).content.decode()
+        assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
+        assert "Any scope this assignment gave ends" in removal
     applied(store, browser, proposal(store, operation="remove"))
     assert not MinistryAssignment.objects.filter(
         configuration_id=store.active().version_id, email="leader@example.org"
@@ -167,6 +183,39 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
     assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
     assert "No login rule gives this person the Ministry leader role." in listed
     assert 'name="operation" value="remove"' in listed
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, google):
+    """The catalog gates additions only; cleaning up is what a removal is for."""
+    store = auth_service.store
+    add_rules(store, address("leader@example.org", ("ministry_leader",)))
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    applied(store, browser, proposal(store))
+    applied(
+        store,
+        browser,
+        {"action": "preview", "ministry_duid": "4", "active": "no"},
+        ACTIVITY,
+    )
+    with web():
+        body = browser.get(PAGE).content.decode()
+    listed = address_row(body, "leader@example.org")
+    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert 'name="operation" value="remove"' in listed
+    assert '<option value="4">' not in listed
+    with web():
+        inactive = post(browser, proposal(store, identity="other@example.org"))
+        assert inactive.status_code == 400
+        assert "not an active Ministry" in inactive.content.decode()
+        removal = post(browser, proposal(store, operation="remove")).content.decode()
+        assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
+    applied(store, browser, proposal(store, operation="remove"))
+    assert not MinistryAssignment.objects.filter(
+        configuration_id=store.active().version_id, email="leader@example.org"
+    ).exists()
 
 
 def test_without_a_promoted_catalog_the_editor_is_unavailable(auth_service, google):

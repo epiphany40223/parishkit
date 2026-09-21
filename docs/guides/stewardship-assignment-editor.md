@@ -44,13 +44,20 @@ parish source never rewrites a manual one.
 
 The editor offers only the promoted catalog's Ministries the applied activity
 keeps active, read as the Ministry activity editor reads them, and refuses any
-other Ministry by closed reason; without a promoted catalog the page offers no
-form and the route is unavailable. An assignment takes effect only through a
-rule granting Ministry leader, so the preview states through which rule it
-would: the address's exact rule, its hosted-domain rule and that rule's
-Google claim, or none until such a rule exists. The address needs no rule
-yet, and the page then lists the assignment among those relying on a domain
-rule with its warning.
+other Ministry for an addition by closed reason; without a promoted catalog
+the page offers no form and the route is unavailable. A removal is judged by
+the applied policy alone, since an assignment to a Ministry since deactivated
+or dropped from the catalog is exactly what an Administrator cleans up; the
+catalog then serves only the Ministry's name, and the preview says when the
+catalog no longer has one. An assignment takes effect only through a rule
+granting Ministry leader, so the preview states through which rule it would:
+the address's exact rule, its hosted-domain rule and that rule's Google
+claim, or none until such a rule exists. The roles come from the one policy
+evaluator over the resulting policy, not from a rule's configured list, so
+an Administrator is told the assignment adds no scope, and a seeded leader
+role the assignment itself brings back into force is stated as a sign-in
+would decide it. The address needs no rule yet, and the page then lists the
+assignment among those relying on a domain rule with its warning.
 
 ### Privacy, authority and cost
 
@@ -74,15 +81,19 @@ already reads.
   refused; and a removal dropping only the manual assignment, refusing a
   seed alone and a missing one, every result satisfying the ordinary policy
   rules.
-- Three PostgreSQL cases under the real web and restricted installer roles
+- Four PostgreSQL cases under the real web and restricted installer roles
   with a promoted catalog: the page offering the catalog's active
-  Ministries, an assignment added for a Ministry leader, named beside its
-  DUID, bound to the request and in force at sign-in, a duplicate, an
-  inactive Ministry and an invalid address refused, and the assignment
-  removed with a second removal refused; an address with no rule assigned
-  with the preview stating the domain rule it depends on and the page
-  listing it by domain; and without a promoted catalog the page offering no
-  form and the route unavailable.
+  Ministries, the preview stating an exact leader rule's effect, an
+  Administrator's needlessness and an unnamed address's lack of effect, an
+  assignment added for a Ministry leader, named beside its DUID, bound to
+  the request and in force at sign-in, a duplicate, an unknown Ministry and
+  an invalid address refused, and the assignment removed, previewed as such,
+  with a second removal refused; an address with no rule assigned with the
+  preview stating the domain rule it depends on and the page listing it by
+  domain; an assignment to a Ministry the activity editor then deactivates
+  still listed, no longer offered, refused for a new addition and removed;
+  and without a promoted catalog the page offering no form and the route
+  unavailable.
 - The Portal users page, suggestion and seed review suites pass with the
   named assignments; the grant registry and build contract database-free
   suites pass.
@@ -90,7 +101,8 @@ already reads.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation and focused validation are complete and
+[round 1](stewardship-assignment-editor-reviews.md) is answered; the remaining
+review/fix rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
