@@ -164,11 +164,21 @@ CREATE VIEW stewardship_daily_digest_completion_ready AS
                 WHERE recipient.ready_id=ready.id AND recipient.address=desired.address
                   AND (m.state='delivered'
                       OR (m.state='cancelled' AND m.reason='recipient_revoked')
-                      -- An Admin's evidence that a revoked recipient's report was
-                      -- never sent settles it like the cancellation above. No
-                      -- worker owns that settlement, so the metadata finalizer
-                      -- completes the occurrence with a fresh claim.
-                      OR (m.state='permanent_failure' AND m.reason='admin_unsent_recipient_revoked')
+                      -- A failed report to a recipient who is not currently an
+                      -- Administrator (the dispatchers' recipient_revoked test)
+                      -- can never be retried, so it settles like that
+                      -- cancellation, whatever ended it: a provider refusal or
+                      -- an Admin's confirm_unsent. The roster is read live, so
+                      -- a pending occurrence could reopen if the address became
+                      -- an Administrator again before completion; a completed
+                      -- occurrence never changes. No worker owns this
+                      -- settlement: the metadata finalizer completes it.
+                      OR (m.state='permanent_failure' AND NOT EXISTS(
+                          SELECT 1 FROM stewardship_system_configuration runtime
+                          JOIN stewardship_address_rule admin
+                              ON admin.configuration_id=runtime.active_configuration_id
+                          WHERE admin.roles @> '["administrator"]'::jsonb
+                            AND admin.email=recipient.address))
                       OR (recipient.outbox_id IS NULL
                       AND jsonb_array_length(recipient.covered_messages)>0
                       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(recipient.covered_messages) AS referenced(message_id)

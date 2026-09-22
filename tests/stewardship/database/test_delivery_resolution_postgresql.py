@@ -476,13 +476,11 @@ def test_refreshed_ineligible_family_cannot_retry(family_mail):  # noqa: F811
         assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
 
 
-def confirmed_unsent(message, command, *, revoked=False):
+def confirmed_unsent(message, command):
     """Assert the terminal failure an unsent confirmation shares with the provider.
 
     The message ends as a definitive non-acceptance with the Admin's evidence,
-    never as a success, a fulfillment or a recipient refusal. An Admin report
-    whose recipient is no longer an Administrator carries the frozen revoked
-    reason that digest completion counts as settled.
+    never as a success, a fulfillment or a recipient refusal.
     """
     from parishkit.stewardship.audit.models import AuditEvent
     from parishkit.stewardship.jobs.recipient_models import RecipientRefusal
@@ -491,7 +489,7 @@ def confirmed_unsent(message, command, *, revoked=False):
     assert message.state == "permanent_failure" and message.finished_at
     assert (message.action, message.reason) == (
         "fail_unaccepted",
-        "admin_unsent_recipient_revoked" if revoked else "admin_confirmed_unsent",
+        "admin_confirmed_unsent",
     )
     assert message.actor_id == command.actor_id and message.command_id == command.pk
     assert message.evidence_note == command.evidence_note

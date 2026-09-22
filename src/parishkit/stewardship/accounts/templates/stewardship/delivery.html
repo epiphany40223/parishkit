@@ -36,7 +36,7 @@
 <h2>{% translate "Attempt history" %}</h2>
 {% for event in events %}
 <section class="panel">
-  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {% if event.reason == 'admin_confirmed_unsent' or event.reason == 'admin_unsent_recipient_revoked' %}{{ event.reason|delivery_label }}{% else %}{{ event.action|delivery_label }}{% endif %} · {{ event.state|delivery_label }}</p>
+  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event|delivery_event_label }} · {{ event.state|delivery_label }}</p>
   <p><time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time></p>
 </section>
 {% empty %}<p>{% translate "No attempt history on this page." %}</p>{% endfor %}

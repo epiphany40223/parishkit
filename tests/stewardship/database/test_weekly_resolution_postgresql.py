@@ -241,73 +241,115 @@ def test_paused_weekly_resend_is_held_until_resume(
             assert begin(message, execution) is not None
 
 
-@pytest.mark.parametrize("revoked", [True, False])
-def test_paused_unknown_report_confirmed_unsent_settles_its_cohort(
-    live_response_service, revoked
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "removed_first",
+        "admitted",
+        "removed_after_confirm",
+        "provider_failure_then_removed",
+        "other_first",
+        "only_recipient",
+    ],
+)
+def test_report_confirmed_unsent_settles_only_for_a_removed_recipient(
+    live_response_service, scenario
 ):
-    """Provider evidence of no send settles uncertainty without a resend.
+    """A failed weekly report settles its cohort once its recipient is not an Admin.
 
-    For a recipient who is no longer an Administrator the report can never be
-    retried, so, like a recipient_revoked cancellation, it no longer holds the
-    cohort open: the other Admin's delivery completes the occurrence and
-    advances the watermark. A still-current recipient's report stays an
-    ordinary failure: the cohort stays open and retry_failed is admitted.
+    The weekly proof carries its own copy of the rule, so it gets the daily
+    scenarios (see that suite): whatever ended the failure and in whichever
+    order, a removed recipient's report settles like a recipient_revoked
+    cancellation and the watermark advances; a current recipient's report
+    keeps the cohort open for an admitted retry.
     """
     from parishkit.stewardship.campaigns.schedule_models import ScheduleFulfillment
 
+    from .test_daily_digest_resolution_postgresql import add_admin, deliver, finalize
     from .test_delivery_resolution_postgresql import confirmed_unsent
     from .test_outbox_boundaries_postgresql import control
     from .test_weekly_completion_postgresql import history
 
     harness = live_response_service
     principal = user("second@example.org")
+    only = scenario == "only_recipient"
+    provider_failure = scenario == "provider_failure_then_removed"
     with campaign_clock(INSTANT):
         snapshot, message = failed(
-            harness, Status.UNKNOWN, additional_admins=("second@example.org",)
+            harness,
+            Status.PERMANENT if provider_failure else Status.UNKNOWN,
+            additional_admins=() if only else ("second@example.org",),
         )
-        other = WeeklyDigestRecipient.objects.get(
-            snapshot=snapshot, address="second@example.org"
-        ).outbox
+        recipient = WeeklyDigestRecipient.objects.get(outbox=message)
+        other = (
+            None
+            if only
+            else WeeklyDigestRecipient.objects.get(
+                snapshot=snapshot, address="second@example.org"
+            ).outbox
+        )
         occurrence = ScheduleOccurrence.objects.get(
             pk=snapshot.preparation.occurrence_id
         )
-        control(harness.campaign, "pause")
-        if revoked:
-            revoke_admin(harness, WeeklyDigestRecipient.objects.get(outbox=message))
-            message.refresh_from_db()
-            assert retry_admitted(message) is False
-            with pytest.raises(
-                PermissionError, match="retry is not currently admitted"
-            ):
-                resolve(
-                    harness, principal, message, "resend", general=None, public=None
-                )
-        assert unknown_inventory(harness.campaign) == 1
-        command = resolve(
-            harness, principal, message, "confirm_unsent", general=None, public=None
-        )
-        confirmed_unsent(message, command, revoked=revoked)
-        assert unknown_inventory(harness.campaign) == 0
-        occurrence.refresh_from_db()
-        assert occurrence.state == "pending"
-        # Lift only the pause flag so the remaining Admin's report can go.
-        control(harness.campaign, "resume")
-        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
-            execution = claim(other)
-            assert begin(other, execution) is not None
-            finish_submission(
-                other.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+
+        def confirm():
+            """Record the Admin's evidence that the provider did not send it."""
+            command = resolve(
+                harness, principal, message, "confirm_unsent", general=None, public=None
             )
+            confirmed_unsent(message, command)
+
+        if only:
+            add_admin(harness, "second@example.org")
+            revoke_admin(harness, recipient)
+            confirm()
+        elif scenario in {"removed_first", "admitted"}:
+            control(harness.campaign, "pause")
+            if scenario == "removed_first":
+                revoke_admin(harness, recipient)
+                assert retry_admitted(message) is False
+                with pytest.raises(PermissionError, match="retry is not currently"):
+                    resolve(
+                        harness, principal, message, "resend", general=None, public=None
+                    )
+            assert unknown_inventory(harness.campaign) == 1
+            confirm()
+            assert unknown_inventory(harness.campaign) == 0
+            # Lift only the pause flag so the remaining Admin's report can go.
+            control(harness.campaign, "resume")
+            deliver(other)
+        elif scenario == "other_first":
+            deliver(other)
+            revoke_admin(harness, recipient)
+            occurrence.refresh_from_db()
+            assert occurrence.state == "pending"
+            confirm()
+        else:
+            if not provider_failure:
+                confirm()
+            deliver(other)
+            occurrence.refresh_from_db()
+            # Still an Administrator: an ordinary failure holds the report open.
+            assert occurrence.state == "pending"
+            revoke_admin(harness, recipient)
+        if scenario not in {"removed_first", "admitted"}:
+            # The last settlement had no live worker (an Admin command or a
+            # roster change), so only the metadata finalizer completes it.
+            occurrence.refresh_from_db()
+            assert occurrence.state == "pending" and history(snapshot).watermark == 0
+            finalize(weekly=True)
         occurrence.refresh_from_db()
         # Overdue slots coalesced into this occurrence have their own rows.
         fulfilled = ScheduleFulfillment.objects.filter(
             occurrence=occurrence, slot=occurrence.slot
         )
-        if revoked:
-            assert occurrence.state == "succeeded"
-            assert [row.disposition for row in fulfilled] == ["delivered"]
-            assert history(snapshot).watermark == 1
-        else:
+        if scenario == "admitted":
             assert occurrence.state == "pending" and not fulfilled.exists()
             assert history(snapshot).watermark == 0
             assert retry_admitted(message) is True
+        else:
+            assert occurrence.state == "succeeded"
+            assert [row.disposition for row in fulfilled] == [
+                "empty" if only else "delivered"
+            ]
+            assert history(snapshot).watermark == 1

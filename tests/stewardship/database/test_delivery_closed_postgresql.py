@@ -1067,7 +1067,7 @@ def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
             general=None,
             public=None,
         )
-        confirmed_unsent(message, command, revoked=True)
+        confirmed_unsent(message, command)
         assert unknown_inventory(item.campaign) == 0
         close_campaign(item.campaign, uuid4())
     with (

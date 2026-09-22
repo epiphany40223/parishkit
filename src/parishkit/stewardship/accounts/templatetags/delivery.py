@@ -39,16 +39,15 @@ LABELS = {
     "submit": _("Provider submission started"),
     "retry_unaccepted": _("Not accepted; retry scheduled"),
     "fail_unaccepted": _("Not accepted; delivery failed"),
-    # Admin evidence reuses fail_unaccepted, so history shows these reasons
-    # instead, never presenting the Admin's record as a provider refusal.
-    "admin_confirmed_unsent": _("Not sent, per provider records; no resend"),
-    "admin_unsent_recipient_revoked": _(
-        "Not sent, per provider records; recipient no longer an Administrator"
-    ),
     "cancel_unsent": _("Unaccepted delivery cancelled"),
     "retry_idempotent": _("Idempotent retry scheduled"),
     "verified_admin": _("Verified by an Administrator"),
     "source_changed": _("Corrected by source refresh"),
+}
+# Admin evidence reuses a provider outcome action (confirm_unsent records
+# fail_unaccepted), so history names such events by their Admin reason.
+EVENT_REASONS = {
+    "admin_confirmed_unsent": _("Not sent, per provider records; no resend"),
 }
 
 
@@ -56,3 +55,9 @@ LABELS = {
 def delivery_label(value):
     """Unknown internal values never become untranslated implementation jargon."""
     return LABELS.get(value, _("Unknown status"))
+
+
+@register.filter
+def delivery_event_label(event):
+    """Label one attempt event, never presenting an Admin record as the provider's."""
+    return EVENT_REASONS.get(event.get("reason")) or delivery_label(event.get("action"))
