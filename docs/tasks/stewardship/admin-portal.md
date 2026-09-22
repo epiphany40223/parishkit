@@ -265,6 +265,12 @@ campaign and date filters over a stable cursor. .04 stays unchecked until its
 text and JSONL export, full-text search, and entity and Ministry filtering land
 with RPT-09.
 
+The [manual refresh increment](../../guides/stewardship-manual-refresh.md)
+implements .01 under the v1 launch scope: a confirmed, keyed, coalesced
+manual full refresh that leads to the run's progress page, with the home
+page linking to it. Its review/fix rounds, full exact-head CI/DCO and
+protected delivery remain pending, so .01 stays unchecked until then.
+
 ## ADM-09: Census review and ParishSoft publication UI
 
 Scope and dependencies: [ADM-09 work package](../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui).
