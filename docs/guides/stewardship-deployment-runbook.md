@@ -169,17 +169,24 @@ sequence with the commands that exist.
    refuses with the generic offline-refusal error and exit status 2, and the
    process log carries a `startup_rejected` line whose `failure_kind` is
    `upgrade_backup_required`. Run steps 1 to 4 in one sitting: once step 3
-   has run, the backup profile runs the new image, which refuses the
-   not-yet-migrated schema, so the step 1 backup cannot simply be taken
-   again. If the migration refuses for a missing backup, keep the online
-   services stopped, run `retarget-image` back to the previous digest (in
-   that previous image), take the backup and confirm its off-host copy,
-   then retarget to the new digest again and repeat this step. If the
-   previous image's `retarget-image` refuses because the release added a
-   deployment field, follow the database-restore [rollback](#rollback) from
-   the step 1 backup instead (nothing has changed since, because the
-   services have been stopped since step 2) and start the upgrade again at
-   step 1. A release that changes neither the schema nor a grant still
+   has run, the backup profile runs the new image, which refuses a schema
+   with migrations still to apply, so a step 1 backup that has aged cannot
+   simply be taken again. When either command refuses for a missing
+   backup, keep the online services stopped. If the release changes no
+   schema, or `migration` already succeeded, the schema matches the new
+   image: take the backup (`run --rm backup-worker`), confirm its off-host
+   copy and repeat this step. Otherwise run `retarget-image` back to the
+   previous digest in that previous image, take the backup and confirm its
+   off-host copy, then run `retarget-image` with the new digest again in
+   the new image, as step 3 does, and repeat this step. If the previous
+   image's `retarget-image` refuses (its error names no cause; a release
+   that added a deployment field is one), follow the database-restore
+   [rollback](#rollback) from the step 1 backup and start the upgrade again
+   at step 1; that restore loses whatever the online services wrote between
+   the step 1 backup and step 2 and needs the full restore procedure,
+   including its comparison with the mail provider's logs. The
+   [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) records
+   how this recovery was checked. A release that changes neither the schema nor a grant still
    pulls, but skips the migration and grant commands. `database-grants` never revokes:
    for a release that *narrows* a runtime grant on a table that still
    exists, it refuses the whole run, because a login already holds a

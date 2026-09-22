@@ -89,10 +89,10 @@ already requires, or to add a forward migration.
   send gate and sent after resume; a retry of a failed one is still refused
   with no resolution or task recorded. These tests resume by recording the
   control directly, which skips the resume's recovery plan: through the
-  real resume, a resent daily or weekly report is cancelled and folded into
-  the next combined report of its kind, as the
-  [launch runbooks](stewardship-launch-runbooks.md#messages-in-delivery_unknown) say
-  (found by the pre-launch gate's fifth round).
+  real resume, some resent reports are folded into the next combined report
+  instead, as the
+  [launch runbooks](stewardship-launch-runbooks.md#messages-in-delivery_unknown)
+  describe (found by the pre-launch gate's fifth round).
 - PostgreSQL, closed while paused: an unknown receipt resent there is
   admitted by SQL, held at the current pause and refused by the send gate,
   then sent once the closed resolution releases receipts while a held weekly
