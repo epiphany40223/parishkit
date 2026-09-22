@@ -111,7 +111,7 @@ the affected scope before the gate exits.
 | PR #77 portal users | [Three rounds: round 1 single-source, rounds 2-3 dual-source](stewardship-portal-users-reviews.md), [protected delivery](stewardship-portal-users.md) | PL-I1, PL-I3 |
 | PR #78 system logs | [Three single-source rounds](stewardship-admin-logs-reviews.md), [protected delivery](stewardship-admin-logs.md) | PL-I3 |
 | PR #79 financial exports | [Three rounds: round 1 dual-source, rounds 2-3 single-source](stewardship-financial-export-reviews.md), [protected delivery](stewardship-financial-exports.md) | PL-I3 |
-| PR #80 login rule edits | [Eleven rounds (three plus eight correction checks): four dual-source, seven single-source](stewardship-user-rule-edit-reviews.md), [protected delivery](stewardship-user-rule-edits.md) | PL-I1, PL-I3 |
+| PR #80 login rule edits | [Twelve rounds (three plus nine correction checks): four dual-source, eight single-source](stewardship-user-rule-edit-reviews.md), [protected delivery](stewardship-user-rule-edits.md) | PL-I1, PL-I3 |
 | PR #81 security event acknowledgement | [Five single-source rounds (three plus two correction checks)](stewardship-policy-security-event-reviews.md), [protected delivery](stewardship-policy-security-events.md) | PL-I1, PL-I2 |
 | PR #83 security event mail | [Four single-source rounds (three plus a correction check)](stewardship-security-event-mail-reviews.md), [protected delivery](stewardship-security-event-mail.md) | PL-I2 |
 | PR #84 Chairperson suggestions | [Four single-source rounds (three plus a correction check)](stewardship-chair-suggestions-reviews.md), [protected delivery](stewardship-chair-suggestions.md) | PL-I3 |
@@ -215,9 +215,12 @@ recorded, and PR #106 and #107 changed no schema.
 | Triggers | 546 | `6d4e884f` |
 | Policies | 28 | `1c9c3b2d` |
 
-This baseline is the frozen production schema; a change after the gate
-needs the human's decision between a reinstall of the validation deployment
-and a forward migration.
+This baseline becomes the frozen production schema when the gate exits. A
+schema change before then needs the human's decision between a reinstall
+of the validation deployment and a forward migration; after the gate,
+every schema change is a reviewed forward migration, as the
+[v1 launch scope](../plans/stewardship/v1-launch.md#production-readiness-activation-and-schema-freeze)
+requires.
 
 ## Known limitations for the human's approval
 
@@ -258,9 +261,11 @@ and a forward migration.
   action can resolve that message, so the pause on the closed campaign is
   never cleared. Clearing it matters only for reopening or archiving a
   closed campaign, neither of which v1 ships; held receipts and digests on
-  the closed campaign still resolve through the closed resolution. Avoid it by resolving failed preparations before pausing
-  near the close, or by resuming before the close. The human decides
-  whether to accept this for v1 or require a correction before exit.
+  the closed campaign still resolve through the closed resolution. Avoid
+  it by resolving failed preparations before pausing near the close, or by
+  resuming before the close. The exit rule admits no unresolved validated
+  Medium, so this one blocks exit unless it is corrected first or the human
+  explicitly grants a recorded exception to that rule for v1.
 - The Family code path does not add the progressive delay in elevated mode
   that the architecture specification describes; the Administrator path
   does. During a distributed guessing burst the per-IP limit is halved and
@@ -275,7 +280,7 @@ and a forward migration.
 Five independent Claude reviewers, one per scope, read a clean checkout of
 `4b36435d` on September 22, 2026 (Codex was unavailable under the exemption;
 the round is single-source). Every finding's quote matched the reviewed file.
-Thirteen findings were raised: two High, eight Medium and three Low. All ten
+Eleven findings were raised: two High, six Medium and three Low. All eight
 at Medium or above were verified against the code and accepted; the Lows
 were taken with them. PL-I3 found nothing: its reviewer traced every report,
 export and download entry point, the Python and SQL policy agreement on
@@ -306,8 +311,8 @@ release's objects behind, and, when its exact commands were run, that piping
 Five independent Claude reviewers read a clean checkout of `95ddef08` (the
 merge of PR #100) on September 22, 2026, each told what round 1 found in its
 scope and which pull request corrected it (single-source under the
-exemption). Every quote matched. Twelve findings were raised: two High,
-five Medium and five Low. PL-I3 again found nothing (56 files, nine negative
+exemption). Every quote matched. Eleven findings were raised: two High,
+five Medium and four Low. PL-I3 again found nothing (56 files, nine negative
 cases). The regression on this baseline passed: 4093 PostgreSQL tests in 1
 hour 33 minutes.
 
@@ -344,8 +349,8 @@ again found nothing.
 ### Round 4
 
 A correction check of PL-I2 and PL-I5 on `2c16c49e` (the merge of PR #105)
-by two independent Claude reviewers, told what round 3 found and how PR
-#105 corrected it (single-source). Every quote matched. Three findings were
+by two independent Claude reviewers, told what round 3 found and how
+PR #105 corrected it (single-source). Every quote matched. Three findings were
 raised, all against round 3's own corrections:
 
 | Scope | Finding | Correction |
@@ -381,14 +386,17 @@ check. The PL-I2 Claude reviewer raised two Lows, both taken in this pull
 request: the launch runbooks and the Admin portal specification said a
 message resent on a paused active campaign is sent on resume, but the
 resume's recovery plan decides it like any held message, so a later
-reminder can replace it and a submission can cancel it. No Critical, High
-or Medium finding remains unresolved.
+reminder can replace a resent reminder and a submission, lost eligibility
+or no deliverable address cancels it. No Critical, High or Medium finding
+from rounds 4 to 6 remains unresolved; round 3's uncorrected Medium awaits
+the human's decision, as the exit section says.
 
 ## Exit
 
 Open, awaiting the human. Every Critical, High and Medium finding that the
 six rounds validated is corrected, except round 3's PL-I2 Medium listed
-under known limitations for the human's decision. The gate exits only when
+under known limitations, which blocks exit until it is corrected or the
+human explicitly grants a recorded exception for it. The gate exits only when
 the human gives explicit product, security and operations approval of the
 launch and of the known limitations above; nothing here infers it. Before
 that approval, the human also:
@@ -402,7 +410,8 @@ that approval, the human also:
   [backup runbook](stewardship-backup-runbook.md#restore-drill) describes;
 - times a full ParishSoft refresh on the validation deployment for the
   [activation procedure](stewardship-launch-runbooks.md#production-activation);
-- decides whether round 3's closed-while-paused Medium is accepted for v1.
+- decides whether round 3's closed-while-paused Medium is corrected
+  before exit or accepted for v1 as a recorded exception to the exit rule.
 
 ## Reviews of this record
 
@@ -410,3 +419,25 @@ This evidence map and its accompanying correction follow the
 [v1 launch scope](../plans/stewardship/v1-launch.md#v1-process-changes):
 two rounds, with a correction check after any round that validates a
 finding, each recorded by which sources answered.
+
+### Record review round 1
+
+Claude and Codex both answered. Seventeen raw findings, five validated at
+Medium (four from Claude, one from Codex), all corrected:
+
+- A wrapped line starting with `#105` failed the Markdown lint.
+- The resent-message correction said a later reminder replaces a resent
+  invitation, but the recovery plan selects an invitation first; a later
+  reminder replaces only a resent reminder, and ineligibility, a lost
+  deliverable address and the campaign's end also cancel. The runbook and
+  the specification now say so.
+- Round 6 said no Medium remained unresolved, and the known limitations
+  offered to accept round 3's uncorrected Medium, although the exit rule
+  admits no unresolved Medium; both now say it blocks exit until it is
+  corrected or the human grants a recorded exception.
+- The freeze paragraph (from both sources) offered a reinstall after the
+  gate; after the gate every schema change is a forward migration.
+
+The Lows were taken: the round 1 and round 2 finding counts now match the
+recorded findings (eleven each), PR #80's row counts twelve rounds, and a
+long line was rewrapped. A correction check follows.

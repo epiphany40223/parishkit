@@ -426,10 +426,11 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    decides it like any held message. A resent scheduled daily or weekly
    report is cancelled and folded into the next combined report of its
    kind, as for a failed report in step 5 (no content is lost; a resent
-   manually requested weekly report is sent); a resent invitation or
-   reminder is sent unless a later reminder due during the pause replaces
-   it, or the Family has since submitted or become ineligible, when it is
-   cancelled (the
+   manually requested weekly report is sent); a resent reminder is
+   replaced by a later reminder due during the pause, and a resent
+   invitation or reminder is cancelled if the Family has since submitted,
+   become ineligible or lost every deliverable address, or the campaign
+   has ended; otherwise it is sent (the
    [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) and the
    [pre-launch gate](stewardship-prelaunch-gate.md) record the checks);
    on a campaign closed while paused, a resent receipt or report

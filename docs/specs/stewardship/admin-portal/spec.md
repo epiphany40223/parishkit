@@ -538,9 +538,10 @@ Messages already `submitting` may have reached the provider and
 authorized resend; the pause UI states this limitation and tracks both. A
 resent message returns to pending under the current pause hold: on an active
 campaign it is sent only after resume, subject to the resume's recovery plan
-like any held message (a later due reminder or a Family's submission can
-replace or cancel it, and a scheduled report is folded into the next combined
-report), and on a campaign closed while paused
+like any held message (a later due reminder replaces a resent reminder; a
+Family's submission, lost eligibility or lost deliverable address cancels a
+resent invitation or reminder; and a scheduled report is folded into the next
+combined report), and on a campaign closed while paused
 it follows the held-message resolution below, where a message that resolution
 already released carries no new hold and is sent without waiting. Retries of
 failed or unsent messages wait for resume. When the provider's own record
