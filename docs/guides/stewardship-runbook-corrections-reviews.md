@@ -96,3 +96,23 @@ the runtime guide gives a restore the same either/or as a rollback, "This
 information changed" names everything the preview relied on, a replacement
 host no longer pre-creates `cache/static`, and the grant-narrowing
 limitation states the after-freeze path.
+
+## Protected delivery
+
+PR #102 delivered candidate `c3f78146`, one documentation commit plus the
+receipt of PR #100, whose content is the retained commit-by-commit review
+history on `pr/stewardship-runbook-corrections-reviewed` (`5d5c7d7e`) with
+identical content hunks, plus exactly that receipt; the candidate tree
+`bc60c4e4` is the landed tree. The four rounds above were single-source
+under the exemption; rounds 2 and 3 validated three findings, all corrected,
+and rounds 1 and 4 validated nothing. The pull request was marked ready
+before the candidate was pushed. Exact-head ready-candidate CI `35775170362`
+and DCO passed all 25 checks, from 19:39:18 to 19:58:35 UTC on September 22,
+2026 (19 minutes 17 seconds). Earlier runs on superseded heads were
+cancelled by the candidate push; none is counted as acceptance.
+`origin/main` had no intervening commits since the candidate's base
+`95ddef08`. Protected auto-merge landed as `79713a6d` at 19:58:55 UTC and
+was verified on freshly fetched `origin/main`, whose second parent's tree is
+the candidate's, before the next increment was committed. This used the
+standing delivery authority, without deployment or release; no real
+provider was contacted.
