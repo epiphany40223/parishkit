@@ -294,13 +294,19 @@ afterward. Follow the
 notifications retain their later delivery-worker owner; offline recovery does not
 send provider email itself.
 
-Configured-deployment migration, SQL changes and production upgrades remain held
-until OPS-05 supplies verified recent backup evidence. The first-deployment command
-is not a backup bypass. Future upgrades require a pinned image, compatible schema,
-expand/migrate/contract discipline, verified backup/restore evidence, and readiness
-checks before rollout. An incompatible schema requires the approved restore path,
-not an older image pointed at a newer database. Keep credential escrow separate
-from ordinary backup output and retain the matching key material.
+An upgrade changes the image of a provisioned deployment and nothing else:
+`pk-stewardship retarget-image --config CONFIG --image IMAGE` rewrites the
+three rendered topologies and the provisioning record to a newer approved
+digest under the offline startup exclusion, refusing any other difference
+from the recorded inputs, as the
+[release image guide](stewardship-release-image.md) explains. It starts
+nothing; the operator takes a verified backup first, stops the online
+services, retargets, runs the migration profile and `database-grants`, and
+starts the services again. The first-deployment command is not a backup
+bypass. An incompatible schema requires the approved restore path, not an
+older image pointed at a newer database. Keep credential escrow separate from
+ordinary backup output and retain the matching key material. Automated
+upgrade readiness checks remain deferred by the pre-production policy.
 
 Phase 2 changes the worker/mail-dispatch role limits to twice the configured
 rollout overlap, and the scheduler limit to the rollout overlap. Earlier
@@ -308,9 +314,9 @@ development databases may still have the operator reserve as those role limits.
 Such databases intentionally fail both exact-role provisioning checks and runtime
 startup; rerunning first-deployment provisioning cannot upgrade them. Do not
 relax the checks or adopt an unrelated role to work around this mismatch.
-Until OPS-05 provides the guarded upgrade workflow, preserve an existing database
-and use a separately provisioned, disposable development deployment for this
-version. A future authorized offline upgrade must verify the deployment/database
+Retargeting the image does not change role limits either: preserve an existing
+database and use a separately provisioned, disposable development deployment
+for this version. A future authorized role-limit upgrade must verify the deployment/database
 and role ownership markers, compare every role against `role_limit()` for the
 new runtime budget, explicitly change only the owned mismatching connection
 limits, reapply runtime grants after migrations, and pass startup/readiness
