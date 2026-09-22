@@ -49,3 +49,9 @@ validated, all corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex produced no output). Nine raw findings, none validated.
+This closes the review rounds: three full rounds, every accepted finding
+fixed.

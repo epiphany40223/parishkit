@@ -94,7 +94,8 @@ public origin. The command prints the URI the deployment expects,
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
+Implementation, focused validation and the
+[review rounds](stewardship-smoke-tools-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; a real message is sent only when the human runs the command with
