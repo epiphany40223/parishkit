@@ -429,8 +429,8 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    manually requested weekly report is sent); a resent reminder is
    replaced by a later reminder due during the pause, and a resent
    invitation or reminder is cancelled if the Family has since submitted,
-   become ineligible or lost every deliverable address, or the campaign
-   has ended; otherwise it is sent (the
+   become ineligible or lost every deliverable address; otherwise it is
+   sent (the
    [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) and the
    [pre-launch gate](stewardship-prelaunch-gate.md) record the checks);
    on a campaign closed while paused, a resent receipt or report

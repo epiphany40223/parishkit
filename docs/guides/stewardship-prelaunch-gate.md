@@ -428,9 +428,9 @@ Medium (four from Claude, one from Codex), all corrected:
 - A wrapped line starting with `#105` failed the Markdown lint.
 - The resent-message correction said a later reminder replaces a resent
   invitation, but the recovery plan selects an invitation first; a later
-  reminder replaces only a resent reminder, and ineligibility, a lost
-  deliverable address and the campaign's end also cancel. The runbook and
-  the specification now say so.
+  reminder replaces only a resent reminder, and ineligibility and a lost
+  deliverable address also cancel. The runbook and the specification now
+  say so.
 - Round 6 said no Medium remained unresolved, and the known limitations
   offered to accept round 3's uncorrected Medium, although the exit rule
   admits no unresolved Medium; both now say it blocks exit until it is
@@ -441,3 +441,12 @@ Medium (four from Claude, one from Codex), all corrected:
 The Lows were taken: the round 1 and round 2 finding counts now match the
 recorded findings (eleven each), PR #80's row counts twelve rounds, and a
 long line was rewrapped. A correction check follows.
+
+### Record review round 2
+
+Claude only (Codex was out of credits again). Two raw findings, none
+validated, so the review rounds are closed. Both Lows were taken: the
+runbook no longer lists the campaign's end as a cancellation on resume,
+which the resume cannot reach because it is offered only before the end;
+and the Family-mail resolution guide, which round 6 also named, now says
+the resume's recovery plan may replace or cancel a resent message.
