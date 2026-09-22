@@ -68,3 +68,17 @@ corrections: twelve raw findings, one validated and corrected:
 
 The eleven findings the validation step did not confirm were not carried
 forward.
+
+## Round 5
+
+Claude only (Codex out of quota). A correction check of the four rounds'
+corrections: ten raw findings, one validated and corrected:
+
+- Medium: the authorize-denial case revoked the session on its first
+  attempt, so the second attempt, the new key, was refused at admission
+  before the domain's check ran, although the case claimed both paths. Each
+  attempt now starts from a fresh live session and the case asserts the
+  domain's check was reached for the replay and the new key.
+
+The nine findings the validation step did not confirm were not carried
+forward.

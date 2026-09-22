@@ -98,19 +98,28 @@ def test_a_session_ended_under_the_lock_records_no_command(
         root = run_of(post(browser, key))
     assert SourceRefreshCommand.objects.count() == 1
     real = refresh_views.request_refresh
+    reached = []
 
     def revoked_meanwhile(**values):
-        """Revoke the session after admission, before the domain's own check."""
-        row = PortalSession.objects.get(revoked_at__isnull=True)
-        PortalSession.objects.filter(pk=row.pk, version=row.version).update(
-            revoked_at=timezone.now(), version=F("version") + 1
-        )
+        """Revoke every live session after admission, before the domain's check."""
+        reached.append(values["command_id"])
+        for row in PortalSession.objects.filter(revoked_at__isnull=True):
+            PortalSession.objects.filter(pk=row.pk, version=row.version).update(
+                revoked_at=timezone.now(), version=F("version") + 1
+            )
         return real(**values)
 
     monkeypatch.setattr(refresh_views, "request_refresh", revoked_meanwhile)
-    with web():
-        for replay in (key, uuid4()):
-            assert post(browser, replay).status_code == 403
+    fresh = uuid4()
+    for attempt in (key, fresh):
+        # Each attempt starts from a live session the page admits, so the
+        # denial under the lock is the domain's own, for a replay and a new
+        # key alike.
+        session, login = signed_in()
+        assert login.status_code == 302
+        with web():
+            assert post(session, attempt).status_code == 403
+    assert reached == [key, fresh]
     assert SourceRefreshCommand.objects.count() == 1
     assert SourceRefreshRequest.objects.count() == 1
     assert str(SourceRefreshRequest.objects.get().task_root_id) == root

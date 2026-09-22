@@ -79,7 +79,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 to 4](stewardship-manual-refresh-reviews.md) are answered; the
+[rounds 1 to 5](stewardship-manual-refresh-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. No deployment,
 release, live-provider write or database deletion is authorized by this
