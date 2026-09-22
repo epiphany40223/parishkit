@@ -297,8 +297,9 @@ only for the current Production campaign.
       resolved. The resume controls are hidden entirely while an activation
       catch-up is still running. A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
-      report task on the Background work page (`/admin/background`) or the
-      home page's failed-task list, fix its cause (usually ParishSoft
+      report task on the Background work page (`/admin/background`; the
+      home page lists only the latest five failures of the past day), fix
+      its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and
       wait for it to complete.
    2. Two five-minute clocks govern the rest, so do steps 2 to 4 in one go.
@@ -306,10 +307,11 @@ only for the current Production campaign.
       **Sign in again with Google** returns you to the portal home page, not
       here: copy this page's address first, sign in, and go straight back.
       Then choose **Preview and send a test to the configured Testing
-      recipient** and wait until the page says **The current provider and
-      sender accepted a test after this pause.** That proof is also valid
-      for five minutes, and the preview and the confirmation both check it
-      again.
+      recipient**, which opens the campaign mail page, send the test there,
+      go straight back to the copied delivery control address, and reload
+      until it says **The current provider and sender accepted a test after
+      this pause.** That proof is also valid for five minutes, and the
+      preview and the confirmation both check it again.
    3. Give the reason and choose **Preview resume**. Review the exact
       preview: overdue invitations and reminders are coalesced (redundant
       slots coalesced, inapplicable ones skipped), overdue daily or weekly
@@ -331,8 +333,10 @@ while any of its messages is still submitting or unknown, and no resolution
 at all (release, cancel or clearing an empty pause) is accepted while a
 daily or weekly report is still being prepared: wait for it to finish, and
 if its preparation has failed, retry it from the Background work page as in
-step 4.1 above. A release needs the same fresh sign-in and five-minute
-sender test as a resume, in one go. This does not reopen Family access. A
+step 4.1 above. Every resolution (release, cancel or clear) needs a Google
+sign-in from the last five minutes, and a release also needs the
+five-minute sender test, in one go as for a resume; a missing confirm
+button means the sign-in has expired. This does not reopen Family access. A
 resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,

@@ -38,3 +38,16 @@ round that validates a finding. The Codex reviewer has been out of quota
 since September 20, 2026; under the human's exemption, extended through
 October 30, 2026, a completed Claude-only pass counts as a round, and each
 round records which sources answered.
+
+## Round 1
+
+Claude only (Codex produced no structured output). Six raw findings, none
+validated. All six low-severity notes were taken because an operator would
+meet them: every closed-campaign resolution, not only a release, needs the
+fresh sign-in; the home page lists only the latest five failures of the
+past day, so the Background work page is where to look; the sender test is
+sent from the campaign mail page and the operator returns to the delivery
+control page; a release without schema or grant changes still pulls;
+`database-grants` refuses a narrowing release outright; and the kept static
+tree is named after the release being replaced, which a rollback may put
+back. A further round follows.

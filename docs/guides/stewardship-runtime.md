@@ -112,8 +112,9 @@ clears a directory. Inspect a partial failed output, preserve it under a separat
 operator-selected name and recreate an empty destination at the configured path
 before retrying; do not mix user uploads or authenticated exports into public static
 storage. Caddy mounts the completed static tree read-only. Because the
-collector never overwrites a tree, every upgrade, rollback and restore
-refreshes it into a new empty `cache/static` with the image being started,
+collector never overwrites a tree, every upgrade and restore refreshes it
+into a new empty `cache/static` with the image being started, and a rollback
+either puts back the tree the upgrade kept or refreshes it the same way,
 as the [deployment runbook](stewardship-deployment-runbook.md#upgrade)
 describes.
 

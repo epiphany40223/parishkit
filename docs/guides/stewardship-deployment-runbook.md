@@ -166,18 +166,20 @@ sequence with the commands that exist.
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
    process log carries one fixed sentence naming the missing backup. A
-   release that changes neither the schema nor a grant skips this step
-   entirely. `database-grants` only adds grants: a release that *narrows* a
-   runtime grant on a table that still exists cannot be taken this way,
-   because the existing, now excessive privilege is refused and nothing
-   revokes it. Before the schema freeze such a release is taken by
+   release that changes neither the schema nor a grant still pulls, but
+   skips the migration and grant commands. `database-grants` never revokes:
+   for a release that *narrows* a runtime grant on a table that still
+   exists, it refuses the whole run, because a login already holds a
+   privilege the new release no longer lists, and the new release's
+   services would refuse that excess privilege anyway. Before the schema freeze such a release is taken by
    reinstalling; after it, the release must bring its own revocation step.
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
    otherwise ship its templates with the previous release's scripts. With
-   `caddy` still stopped, move `cache/static` aside (for example to
-   `cache/static.DIGEST`, never deleting it), create an empty `cache/static`
+   `caddy` still stopped, move `cache/static` aside under the name of the
+   release being replaced (for example `cache/static.PREVIOUS_DIGEST`, never
+   deleting it), create an empty `cache/static`
    owned by `10001:10001` with mode `0700`, and run `collect-static` into it
    in the *new* image, exactly as first installation does. Keep the old tree
    until the release is accepted; a rollback puts it back.
@@ -233,7 +235,8 @@ explain.
   upgrade-path tests are deferred; the operator follows this runbook by hand
   and the backup is the safety net.
 - An upgrade cannot narrow a runtime grant on a table that still exists: the
-  grant command only adds, and the services refuse an excessive privilege.
+  grant command refuses a login that already holds a privilege the release
+  no longer lists, and nothing revokes it.
   Before the schema freeze such a release is taken by reinstalling.
 - The image is single-architecture (`linux/amd64`); the host must be x86-64.
 - Restore is a manual procedure and may require re-sending some Family links
