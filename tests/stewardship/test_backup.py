@@ -247,6 +247,56 @@ def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
     assert capsys.readouterr().out == ""
 
 
+BACKUP_LOGIN = "pk_stewardship_backup_worker"
+BACKUP_ROW = (
+    BACKUP_LOGIN,
+    BACKUP_LOGIN,
+    False,  # superuser
+    True,  # bypasses row-level security, for pg_dump
+    False,  # create database
+    False,  # create role
+    False,  # replication
+    False,  # inherit
+    "pg_read_all_data:true:false",
+)
+
+
+@pytest.mark.parametrize(
+    "change, temporary, accepted",
+    [
+        ({}, False, True),
+        ({0: "pk_stewardship_web", 1: "pk_stewardship_web"}, False, False),
+        ({1: "pk_stewardship_operator"}, False, False),
+        ({2: True}, False, False),
+        ({3: False}, False, False),
+        ({7: True}, False, False),
+        ({8: "pg_read_all_data:true:false,pg_write_all_data:true:false"}, False, False),
+        ({8: None}, False, False),
+        ({}, True, False),
+    ],
+)
+def test_the_backup_command_admits_only_its_own_login(
+    monkeypatch, change, temporary, accepted
+):
+    """Exactly the backup login's attributes and membership, and no temp authority."""
+    from unittest.mock import MagicMock
+
+    import django.db
+
+    from parishkit.stewardship import backup_commands
+
+    row = tuple(change.get(index, value) for index, value in enumerate(BACKUP_ROW))
+    database = MagicMock()
+    cursor = database.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [row, (temporary,)]
+    monkeypatch.setattr(django.db, "connection", database)
+    if accepted:
+        backup_commands._admit_backup_identity()
+    else:
+        with pytest.raises(ConfigError):
+            backup_commands._admit_backup_identity()
+
+
 def test_keygen_and_open_commands_roundtrip_and_refuse_generically(tmp_path, capsys):
     """The console makes a key, opens a set with it and never echoes inputs."""
     key = tmp_path / "operator.key"

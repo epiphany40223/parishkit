@@ -186,8 +186,22 @@ def test_generated_documents_are_re_rendered_by_the_running_code(deployment):
     assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
 
 
-def test_a_record_from_a_release_without_a_defaulted_path_still_matches(deployment):
-    """A new default in the deployment document is not an operator change."""
+def test_a_record_from_a_release_without_a_defaulted_path_still_matches(
+    deployment, monkeypatch
+):
+    """A new default in the deployment document is not an operator change.
+
+    Retarget runs with a read-only root and no writable /tmp, so the
+    re-derivation must not need a temporary file.
+    """
+    import tempfile
+
+    def no_temporary_directory(*args, **kwargs):
+        raise FileNotFoundError("No usable temporary directory found")
+
+    # Writes into the private runtime root stay possible; only the default
+    # temporary directory is gone, as in the documented container.
+    monkeypatch.setattr(tempfile, "gettempdir", no_temporary_directory)
     marker = deployment.paths.root / ".stewardship-provisioned.json"
     recorded = record(deployment)
     # The provisioning release knew no backups path; drop it from the record.
@@ -227,6 +241,21 @@ def test_any_other_change_is_refused_and_nothing_is_written(deployment):
         retarget.retarget_image(deployment, image=NEW)
     assert read_private(layout.service_directory / "compose.json") == before
     assert record(deployment)["image"] == OLD
+
+
+def test_a_parsed_document_loads_like_a_file_and_never_with_one(tmp_path):
+    """The in-memory form validates the same way and refuses a second source."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path / "rt")})
+    document = deployment_document(configuration)
+    loaded = load_deployment(document=document, environ={})
+    assert deployment_document(loaded) == document
+    assert loaded.configuration_file is None
+    with pytest.raises(ConfigError, match="not both"):
+        load_deployment(tmp_path / "x.yaml", document=document, environ={})
+    with pytest.raises(ConfigError):
+        load_deployment(document={"deployment": {"unknown": 1}}, environ={})
 
 
 def test_an_unfinished_provisioning_is_not_upgraded(tmp_path, monkeypatch):

@@ -97,3 +97,33 @@ eleven validated, all corrected:
 
 The twenty findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex produced no output), two shards; the first attempt of
+both shards ended on a usage limit before reporting and is not counted, and
+the relaunched shards reviewed the same snapshot. Thirteen raw findings,
+five validated (two the same defect), all corrected:
+
+- High (twice): the round 2 re-derivation wrote the recorded deployment
+  document to a temporary file, but retarget runs with a read-only root and
+  no writable temporary directory, so every documented retarget would have
+  failed. The deployment loader now accepts an already parsed document and
+  validates it exactly as a file, in memory; a case runs retarget with no
+  usable temporary directory, and another covers the parsed form and its
+  refusal of a second source.
+- Medium: the backup identity admission was untested. Fake-cursor cases
+  cover the clean row and each deviation: another login, a mismatched
+  session user, superuser, no row-level bypass, inheritance, an extra or
+  missing membership and temporary authority.
+- Medium (twice): a deployment provisioned before this release has no
+  backup login, password, directory or record table, which retarget and
+  migration cannot create, while the runbook said every fix reaches the host
+  through the upgrade. The deployment runbook, backup guide, backup runbook
+  and release image guide now say such a release is taken by reinstalling
+  before the schema freeze, name this release as one, and record the
+  post-freeze gap as a known limitation.
+
+The eight findings the validation step did not confirm were not carried
+forward. Since the third round validated findings, a fourth, correction-only
+check follows.

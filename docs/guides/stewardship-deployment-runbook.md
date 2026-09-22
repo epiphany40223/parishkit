@@ -96,7 +96,12 @@ gate, the human runs the smoke tools of the launch scope's item 5 against this
 deployment, staff validate the Family form, content, templates, schedules and
 reports, and the load check of the launch scope's reduced item 7 runs here.
 Bugs found now are fixed by ordinary pull requests and reach the host through
-the [upgrade](#upgrade) below.
+the [upgrade](#upgrade) below, except a release that adds a SQL login, a
+runtime path or a table to the fresh-install baseline: retarget and migration
+cannot create those in an existing deployment, so before the schema freeze the
+validation deployment is reinstalled from scratch to pick such a release up.
+The v1 backup release is one of them: a deployment provisioned before it has
+no backup login, password, directory or record table, and must be reinstalled.
 
 ## Production activation
 
@@ -145,7 +150,9 @@ sequence with the commands that exist.
    provisioning record; it runs in the new image so that the new release
    renders the documents it will run under. It refuses a changed deployment
    YAML and a still-running online service with nothing written; passwords
-   are never regenerated. If the command was interrupted, run it again with
+   are never regenerated, and a password, login or directory the new release
+   needs but the deployment never had is a refusal (see the Testing-mode
+   section above). If the command was interrupted, run it again with
    the same digest. Details:
    [release image guide](stewardship-release-image.md#retargeting-re-renders-the-generated-documents).
 4. **Migrate.** Pull the new image (`pull` on the rewritten Compose file).
@@ -188,6 +195,12 @@ the mail provider's own logs, so no Family message is sent twice.
 
 ## Known v1 limitations
 
+- An upgrade cannot add a SQL login, a once-generated password, a runtime
+  path or a baseline table to an existing deployment. Before the schema
+  freeze such a release is taken by reinstalling; after the freeze, new
+  tables arrive as forward migrations, and a release needing a new login or
+  path needs a provisioning-extension step that does not exist yet and must
+  be built with that release.
 - The upgrade admission is the reduced form of OPS-04.03: a recorded backup
   within 24 hours stands in for verified restore evidence, which the backup
   runbook's restore drill supplies by hand. Automated readiness checks and

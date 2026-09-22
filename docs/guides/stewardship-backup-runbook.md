@@ -7,6 +7,10 @@ the design; the [deployment runbook](stewardship-deployment-runbook.md) says
 when a backup is required (before Production activation and before every
 upgrade). Where this runbook and the guide disagree, the guide is right.
 
+A deployment provisioned before the release that introduced the backup has
+no backup login, password, directory or record table; reinstall it from
+scratch first, as the deployment runbook's Testing-mode section says.
+
 ## The key
 
 Once, on a machine that is not the host, run

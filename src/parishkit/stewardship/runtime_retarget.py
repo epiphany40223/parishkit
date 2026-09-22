@@ -1,13 +1,15 @@
 """Point a provisioned deployment at a newer approved application image.
 
 Provisioning is create-only: a completed runtime root refuses another run. An
-upgrade changes exactly one input, the immutable application image, and the
-only artifacts that name it are the three rendered Compose topologies and the
-completion marker. This command re-renders those from the recorded inputs with
-the new image and refuses anything else: a changed deployment input, a changed
-generated document or password, an unfinished provisioning, or an image the
-profile does not admit. It runs offline, holding the startup interlock
-exclusively, so no online service can observe a half-written topology; it
+upgrade changes exactly one input, the immutable application image. This
+command re-renders every generated document from the recorded inputs with the
+new image, rewrites those that differ and updates the completion marker; it
+refuses a changed deployment input, a missing once-generated password, an
+unfinished provisioning, or an image the profile does not admit. It does not
+create new passwords, SQL logins or storage a later release introduces: a
+deployment provisioned before such a release is reinstalled under the
+pre-production policy. It runs offline, holding the startup interlock
+exclusively, so no online service can observe a half-written document; it
 starts nothing and connects to nothing. Schema migrations, grants and service
 restarts remain the operator's separate, documented upgrade steps.
 """
@@ -15,8 +17,6 @@ restarts remain the operator's separate, documented upgrade steps.
 import json
 import os
 import stat
-import tempfile
-from pathlib import Path
 
 from parishkit.config import ConfigError
 
@@ -62,10 +62,8 @@ def _rederived(document):
     from .deployment import load_deployment
     from .deployment_documents import deployment_document
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as handle:
-        json.dump(document, handle)
-        handle.flush()
-        return deployment_document(load_deployment(Path(handle.name), environ={}))
+    # In memory: retarget runs with a read-only root and no writable /tmp.
+    return deployment_document(load_deployment(document=document, environ={}))
 
 
 def _plan(configuration, recorded, *, image):

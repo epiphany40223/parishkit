@@ -103,7 +103,12 @@ recorded inputs by the code that is running and rewrites those that differ,
 so a release that changes a per-service document or the ingress document is
 applied the same way as one that changes only the image; passwords and the
 broker ACL are generated once and kept, and only the deployment inputs may
-not differ. The runbook's earlier limitation is closed.
+not differ, compared after the recorded document is re-read in memory by the
+running loader so that a newly defaulted field is not an operator change.
+Retargeting does not create what a release newly needs: this release adds a
+SQL login and its password, the backups directory and a baseline table, so a
+deployment provisioned before it is reinstalled under the pre-production
+policy, as the deployment runbook says.
 
 ## Schema
 

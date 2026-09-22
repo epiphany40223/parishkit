@@ -60,7 +60,12 @@ then the marker, and changes the marker only when the image changes. So
 running the same command again finishes an interrupted retarget, running it
 with the recorded image undoes one, and a repeat is no change. It starts
 nothing and connects to nothing: migrations, grants and service restarts
-stay the operator's separate upgrade steps. (The first delivery of this
+stay the operator's separate upgrade steps. It compares the recorded
+deployment document after re-reading it through the running loader, in
+memory, so a release that only adds a defaulted field is not mistaken for an
+operator change; it does not create a password, SQL login or directory a
+later release introduces, so a deployment provisioned before such a release
+is reinstalled under the pre-production policy. (The first delivery of this
 command changed only the topologies and refused any other differing
 document; the [v1 backup increment](stewardship-backup.md) widened it as the
 deployment runbook required.)
