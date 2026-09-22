@@ -171,8 +171,13 @@ sequence with the commands that exist.
    for a release that *narrows* a runtime grant on a table that still
    exists, it refuses the whole run, because a login already holds a
    privilege the new release no longer lists, and the new release's
-   services would refuse that excess privilege anyway. Before the schema freeze such a release is taken by
-   reinstalling; after it, the release must bring its own revocation step.
+   services would refuse that excess privilege anyway. Check the release
+   notes for a narrowed grant before step 2: before the schema freeze such a
+   release is taken by reinstalling, and after it the release must bring its
+   own revocation step. `migration` runs first and commits, so if
+   `database-grants` refuses after a successful migration, start neither
+   image: recover with the database-restore [rollback](#rollback) (or,
+   before the freeze, by reinstalling).
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
@@ -242,3 +247,7 @@ explain.
 - Restore is a manual procedure and may require re-sending some Family links
   by hand, as the launch scope records for the pre-launch gate to approve.
 - Keys generated at install are not rotated during v1.
+
+The [runbook corrections ledger](stewardship-runbook-corrections-reviews.md)
+records how the upgrade, rollback and restore procedures were last checked
+against the code.

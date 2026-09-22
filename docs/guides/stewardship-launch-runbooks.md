@@ -302,7 +302,8 @@ only for the current Production campaign.
       its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and
       wait for it to complete.
-   2. Two five-minute clocks govern the rest, so do steps 2 to 4 in one go.
+   2. Three five-minute clocks govern the rest (the sign-in, the sender test
+      and the preview), so do steps 2 to 4 in one go.
       Confirming needs a Google sign-in from the last five minutes, and
       **Sign in again with Google** returns you to the portal home page, not
       here: copy this page's address first, sign in, and go straight back.
@@ -318,11 +319,11 @@ only for the current Production campaign.
       reports each become one report obligation, every held receipt is
       released, and future work keeps its original due time.
    4. Choose **Confirm resume of live delivery**, within five minutes of
-      both the sign-in and the test. Every input is checked again; anything
-      that changed cancels the confirmation without releasing mail, and you
-      preview again. If the confirm button is missing, the sign-in has
-      expired: sign in again as in step 2, send a new test, and preview
-      again.
+      the sign-in, the test and the preview. Every input is checked again;
+      anything that changed cancels the confirmation without releasing mail,
+      and you preview again. If the confirm button is missing, or confirming
+      reports an authentication error or changed inputs, a clock has run
+      out: sign in again as in step 2, send a new test, and preview again.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
@@ -336,7 +337,8 @@ if its preparation has failed, retry it from the Background work page as in
 step 4.1 above. Every resolution (release, cancel or clear) needs a Google
 sign-in from the last five minutes, and a release also needs the
 five-minute sender test, in one go as for a resume; a missing confirm
-button means the sign-in has expired. This does not reopen Family access. A
+button, or an authentication error on confirming, means the sign-in has
+expired. This does not reopen Family access. A
 resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,

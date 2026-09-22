@@ -51,3 +51,22 @@ control page; a release without schema or grant changes still pulls;
 `database-grants` refuses a narrowing release outright; and the kept static
 tree is named after the release being replaced, which a rollback may put
 back. A further round follows.
+
+## Round 2
+
+Claude only (Codex produced no structured output). Six raw findings, one
+validated and corrected:
+
+- Medium: `migration` runs and commits before `database-grants` refuses a
+  grant-narrowing release, and the runbook did not say how to recover. It
+  now says to check the release notes for a narrowed grant before stopping
+  the services, and to recover from a refusal after a successful migration
+  with the database-restore rollback (or, before the freeze, by
+  reinstalling), never by starting either image.
+
+All five findings below the validation cutoff were taken: the resume
+preview is a third five-minute clock; an authentication error on confirming
+has the same recovery as a missing button; the deployment runbook links this
+ledger; the restore's static step warns against moving onto an existing name
+or offers the kept tree; and two long lines are rewrapped. A correction
+check follows.

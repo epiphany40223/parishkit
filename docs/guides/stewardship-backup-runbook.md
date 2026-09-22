@@ -147,8 +147,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `credentials`, `media` to `run/persistent/media`, and the record to the
    runtime root itself. Give everything back to `10001:10001`; the archive
    records owner-only modes (`0700` directories, `0600` files).
-5. **Replacement host only: roles.** Start `postgres` and `valkey` with `up --detach --wait postgres valkey`,
-   then run
+5. **Replacement host only: roles.** Start `postgres` and `valkey` with
+   `up --detach --wait postgres valkey`, then run
    `run --rm database-provision database-roles --config PROVISION_CONFIG --confirm-deployment UUID`
    with the deployment's UUID. It creates the roles with the restored
    password files on the new, empty database.
@@ -190,7 +190,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
    image digest. Then give that image its own static files, on every host:
-   move any current `cache/static` aside, create an empty one owned by
+   move any current `cache/static` aside under a name that does not exist
+   yet (moving onto an existing directory nests the tree), or put back the
+   tree an upgrade kept for the set's release; otherwise create an empty one
+   owned by
    `10001:10001` with mode `0700`, and run `collect-static` into it in the
    set's image, as the deployment runbook's
    [upgrade](stewardship-deployment-runbook.md#upgrade) does. The static
