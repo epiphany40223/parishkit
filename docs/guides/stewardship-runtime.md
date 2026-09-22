@@ -302,7 +302,8 @@ from the recorded inputs, as the
 [release image guide](stewardship-release-image.md) explains. It starts
 nothing; the operator takes a verified backup first, stops the online
 services, retargets, runs the migration profile and `database-grants`, and
-starts the services again. The first-deployment command is not a backup
+starts the services again, in the order the
+[deployment runbook](stewardship-deployment-runbook.md#upgrade) gives. The first-deployment command is not a backup
 bypass. An incompatible schema requires the approved restore path, not an
 older image pointed at a newer database. Keep credential escrow separate from
 ordinary backup output and retain the matching key material. Automated
