@@ -27,3 +27,23 @@ custom CSRF cookie name or path; the namespace path rule lives once in
 `web/namespaces.py`, shared by sessions, CSRF, the failure view and the
 access gate; and tests assert each namespace's `Set-Cookie` attributes. A
 correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no output), the correction check of round 1.
+Seven raw findings, one validated. The medium-severity finding: with
+separate cookies, the Family CSRF secret rotates only on a Family sign-in,
+which revokes every earlier Family session in the browser and replaces
+`pk_family`. A stale Family token with a live session therefore means the
+tab's session was replaced, possibly by a different Family, and the
+`csrf_failed` recovery silently rebound the old tab to the newer session:
+its keepalive renewed the new session and its submit then failed, after a
+misleading "try again". The correction removes the recovery: the CSRF
+failure view is again a plain 403 for every route, `ui-v1.js` and
+`family-v1.js` are unchanged from before this correction, and a Family 403
+still ends the tab's session. The namespace separation alone fixes the
+gate finding. A PostgreSQL test now shows that after a second Family
+sign-in in the same client the first tab's old token is refused and cannot
+renew the new session. One low-severity note was taken: the Family logout
+in the session-end test asserts its 302. The other low-severity notes
+concerned the removed recovery and are moot. A further round follows.
