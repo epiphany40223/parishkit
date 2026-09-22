@@ -124,14 +124,22 @@ deployment:
     source_stale_seconds: 1800
 ```
 
-Each window is bounded to 60–86,400 seconds. Environment/explicit deployment
+Each window is bounded to 60–86,400 seconds. Services read the policy from
+their rendered configuration, which provisioning writes from the deployment
+YAML, so set it before provisioning: `retarget-image` treats a later change
+as a changed deployment input and refuses it, and before the schema freeze
+such a change is taken by reinstalling. Environment/explicit deployment
 overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS`,
 `PARISHKIT_STEWARDSHIP_OPERATIONAL_ESCALATION_SECONDS` and
 `PARISHKIT_STEWARDSHIP_OPERATIONAL_SOURCE_STALE_SECONDS`, with the existing
-explicit-over-environment-over-YAML precedence. Values are read at process
-startup. The producer pins that policy when opening an episode; changing
-deployment configuration affects new episodes, not recorded decisions or an
-already-active episode. Web/operator startup now wires the validated policy for
+explicit-over-environment-over-YAML precedence. They act only where the
+deployment YAML is loaded: an override in the operator's shell during
+provisioning is written into every rendered configuration, and the same
+override must be present when `retarget-image` runs, or the recorded and
+current inputs differ and it refuses. Running services never see these
+variables. Services read the policy at startup. The producer pins that
+policy when opening an episode, so a new policy affects new episodes, not
+recorded decisions or an already-active episode. Web/operator startup now wires the validated policy for
 the incident producers. The source freshness threshold instead applies at each
 sample; changing it cannot resolve an existing incident without a new successful
 source observation. See [source health](stewardship-source-health.md) for initial
