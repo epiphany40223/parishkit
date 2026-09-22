@@ -7,8 +7,9 @@ found:
 - PL-I5 (Medium, Medium): the backup and upgrade runbooks promised process
   log diagnostics (`pg_dump`'s message for a failed dump, and a sentence
   naming a missing backup for a refused upgrade) that the production log
-  formatter drops, since it keeps only reviewed events. Two reviewed events,
-  `backup_dump_failed` and `upgrade_backup_required`, now carry them;
+  formatter drops, since it keeps only reviewed events. Two reviewed failure
+  categories, `backup_dump_failed` and `upgrade_backup_required`, now carry
+  them on the existing `startup_rejected` event;
   `pg_dump`'s own text is no longer read or logged, since it can name hosts,
   roles and paths; tests check the formatted output; and the
   [backup runbook](stewardship-backup-runbook.md), the
@@ -26,3 +27,25 @@ finding. The Codex reviewer has been out of quota since September 20, 2026;
 under the human's exemption, extended through October 30, 2026, a completed
 Claude-only pass counts as a round, and each round records which sources
 answered.
+
+## Round 1
+
+Claude only (Codex produced no structured output). Nine raw findings, one
+validated and corrected:
+
+- High: `Event` is a closed contract mirrored by the SQL constraint on the
+  persisted operational events, and a database test inserts every value, so
+  the two new events would have failed it and needed a schema change. They
+  are now `FailureKind` categories on the existing `startup_rejected`
+  event, which the formatter already keeps and SQL does not mirror; the
+  contract test passes and the documents name the categories.
+
+All eight findings below the validation cutoff were taken: the
+`dump_database` docstring no longer says `pg_dump`'s message is logged,
+stderr is drained in bounded chunks, the dump test asserts that the canary
+text reaches neither the raw records nor the formatted output, the backup
+runbook notes that a dump running past an hour is logged as an unexpected
+failure, the outage step points to the other resume conditions, and the
+runbooks link this ledger. The operator test still covers the shared
+refusal branch rather than each command's own raise site. A correction
+check follows.

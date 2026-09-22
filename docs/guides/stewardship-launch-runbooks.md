@@ -207,8 +207,9 @@ failed task; one the provider may have accepted without confirming becomes
    else does.
 6. If you paused in step 4, first settle every **Delivery unknown** message
    (described below; confirming, recording it not sent and the held resend
-   all work while paused), since resume refuses while any remains, then
-   resume. On the deliveries page (`/admin/deliveries`), choose the **Failed
+   all work while paused), then resume once the page's other resume
+   conditions hold (see
+   [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On the deliveries page (`/admin/deliveries`), choose the **Failed
    delivery** state and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused). Then
@@ -216,6 +217,8 @@ failed task; one the provider may have accepted without confirming becomes
    changed during the outage whose page offers **Retry delivery not accepted
    by the provider**, and choose it for each that should still go. If you did
    not pause, settle any **Delivery unknown** message as described below.
+   The [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
+   records the last check of this step.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been
 restarted, and the **Pending** and **Waiting to retry** lists on the
