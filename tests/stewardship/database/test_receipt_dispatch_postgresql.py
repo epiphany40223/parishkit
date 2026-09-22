@@ -208,7 +208,11 @@ def test_paused_receipt_resend_is_held_until_resume(
     from parishkit.stewardship.jobs.models import TaskRun
     from parishkit.stewardship.jobs.storage import _status
 
-    from .test_delivery_resolution_postgresql import resolve, unknown_inventory
+    from .test_delivery_resolution_postgresql import (
+        resolve,
+        retry_admitted,
+        unknown_inventory,
+    )
     from .test_policy_postgresql import user
     from .test_taskrun_postgresql import act
 
@@ -221,6 +225,9 @@ def test_paused_receipt_resend_is_held_until_resume(
     act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
     control(harness.campaign, "pause")
     message.refresh_from_db()
+    # The SQL admission, not only the Web preparation that refuses first,
+    # grants the pause exception to the unknown state alone.
+    assert retry_admitted(message) is (action == "resend")
     if action == "retry_failed":
         with pytest.raises((PermissionError, DatabaseError)):
             resolve(

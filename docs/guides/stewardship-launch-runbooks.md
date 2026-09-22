@@ -238,13 +238,16 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    is held with the rest of the paused mail and goes only when delivery
    resumes; on a campaign closed while paused, a resent receipt or report
    joins the held messages you release or cancel by type (above), and one
-   already released goes without waiting. When the button is absent, a resend is not permitted now;
-   record that in the note and leave the message unresolved. The rules are
-   recorded in the [Family-mail resolution guide](stewardship-family-mail-resolution.md)
-   for invitations and reminders, the
+   already released goes without waiting. When the button is absent, a
+   resend is not permitted now; record that in the note and leave the message
+   unresolved. The rules are recorded in the
+   [Family-mail resolution guide](stewardship-family-mail-resolution.md) for
+   invitations and reminders, the
    [submission receipts guide](stewardship-submission-receipts.md) for
    receipts, and the [daily](stewardship-daily-digests.md) and
-   [weekly](stewardship-weekly-digests.md) digest guides for Admin reports.
+   [weekly](stewardship-weekly-digests.md) digest guides for Admin reports;
+   the [paused resend guide](stewardship-paused-resend.md) covers every kind
+   during a pause.
 5. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
    resolved.

@@ -31,3 +31,31 @@ drive-by corrections in the same fix: the Family branch of the admission now
 uses the same `resolving.unknown` value as the receipt and digest gates, the
 guide no longer says that only the admission passes `paused_ok`, and the
 weekly digest has its own test. A further correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no output; a first attempt ended on a provider
+rate limit and was relaunched). Eight raw findings, three validated, all
+corrected:
+
+- Medium: the Admin portal specification still said a resent message is
+  always sent only after resume, the claim round 1 corrected in the runbook
+  and guide. It now names the closed-while-paused resolution and the
+  already-released case.
+- Medium: the receipt and digest refusal cases were refused by Web
+  preparation first, so the authoritative SQL admission was never exercised
+  for those kinds. Each paused receipt, daily and weekly case now also
+  asserts `stewardship_delivery_retry_admitted_v1` directly.
+- Medium: the closed-while-paused and already-released resend paths were
+  documented but untested. A new case resends an unknown receipt on a
+  campaign closed while paused (held, refused, then sent once receipts are
+  released) and, after that attempt ends unknown, resends the released
+  receipt, which carries no new hold and is sent at once.
+
+Of the five findings below the validation cutoff, four were taken: a
+comment at the guard's render call records that admission must run while the
+message is still unknown, the runbook links the paused resend guide for
+every kind, edited paragraphs are rewrapped, and the weekly test's import
+moved to module level. The delivery-page parametrization over receipts and
+digests was not taken, because the new SQL assertions cover the admission
+it reads. A further round follows.

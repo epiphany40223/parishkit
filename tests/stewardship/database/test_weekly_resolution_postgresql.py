@@ -18,7 +18,11 @@ from parishkit.stewardship.reports.weekly_models import WeeklyDigestRecipient
 from .campaign_builders import campaign_clock
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import revoke_admin
-from .test_delivery_resolution_postgresql import resolve
+from .test_delivery_resolution_postgresql import (
+    resolve,
+    retry_admitted,
+    unknown_inventory,
+)
 from .test_family_mail_dispatch_postgresql import claim
 from .test_policy_postgresql import user
 from .test_taskrun_postgresql import act
@@ -204,7 +208,6 @@ def test_paused_weekly_resend_is_held_until_resume(
         DeliveryResolution,
     )
 
-    from .test_delivery_resolution_postgresql import unknown_inventory
     from .test_outbox_boundaries_postgresql import control
 
     harness = live_response_service
@@ -212,6 +215,9 @@ def test_paused_weekly_resend_is_held_until_resume(
     with campaign_clock(INSTANT):
         _, message = failed(harness, status)
         control(harness.campaign, "pause")
+        # The SQL admission, not only the Web preparation that refuses first,
+        # grants the pause exception to the unknown state alone.
+        assert retry_admitted(message) is (action == "resend")
         if action == "retry_failed":
             with pytest.raises((PermissionError, DatabaseError)):
                 resolve(harness, principal, message, action, general=None, public=None)

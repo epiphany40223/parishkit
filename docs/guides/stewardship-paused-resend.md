@@ -88,6 +88,13 @@ already requires, or to add a forward migration.
   before and after; resent while paused, the message is held, refused by the
   send gate and sent after resume; a retry of a failed one is still refused
   with no resolution or task recorded.
+- PostgreSQL, closed while paused: an unknown receipt resent there is
+  admitted by SQL, held at the current pause and refused by the send gate,
+  then sent once the closed resolution releases receipts while a held weekly
+  report keeps the pause; after that attempt ends unknown again, the resend
+  of the released receipt carries no new hold and is sent at once.
+- Every paused receipt, daily and weekly case also asserts the SQL admission
+  directly, since Web preparation refuses first and would hide it.
 - PostgreSQL, delivery page: a paused campaign offers the resend and the
   acceptance for an unknown delivery and hides the retry of a failed one.
 - The existing resolution, weekly, delivery view, delivery control, closed

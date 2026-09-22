@@ -68,6 +68,15 @@ def unknown_inventory(campaign):
         return int(cursor.fetchone()[0])
 
 
+def retry_admitted(message):
+    """Read the authoritative SQL resolution admission, beneath Web preparation."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_delivery_retry_admitted_v1(%s)", [message.pk]
+        )
+        return cursor.fetchone()[0]
+
+
 def resolve(harness, principal, message, action, **options):
     """Only public/general keys and restricted Web SQL reach the command service."""
     values = dict(

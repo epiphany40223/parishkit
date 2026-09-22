@@ -205,6 +205,8 @@ BEGIN
                OR EXISTS(SELECT 1 FROM public.stewardship_task_run t
                    WHERE t.root_id=m.task_id AND t.retry_sequence>latest.retry_sequence AND t.id<>NEW.retry_task_id)
             THEN RAISE EXCEPTION 'Retry requires the exact new linked execution' USING ERRCODE='23514'; END IF;
+            -- Render, and so admit, before the resend below leaves delivery_unknown:
+            -- the admission's pause exception reads the message's current state.
             rendering:=public.stewardship_delivery_retry_render_v1(m.id,NEW.preparation,NEW.actor_id,NEW.id);
             sealed:=NEW.preparation->'sealed';
             -- Resend records two separate facts: explicit duplicate-risk intent,

@@ -20,7 +20,11 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated, begin
 from .test_daily_digest_planning_postgresql import INSTANT
-from .test_delivery_resolution_postgresql import resolve, unknown_inventory
+from .test_delivery_resolution_postgresql import (
+    resolve,
+    retry_admitted,
+    unknown_inventory,
+)
 from .test_family_mail_dispatch_postgresql import claim
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_policy_postgresql import user
@@ -196,6 +200,9 @@ def test_paused_report_resend_is_held_until_resume(family_mail, action, status):
         _, message = failed(harness, status)
         control(harness.campaign, "pause")
         principal = user("admin@example.org")
+        # The SQL admission, not only the Web preparation that refuses first,
+        # grants the pause exception to the unknown state alone.
+        assert retry_admitted(message) is (action == "resend")
         if action == "retry_failed":
             with pytest.raises((PermissionError, DatabaseError)):
                 resolve(harness, principal, message, action, general=None, public=None)
