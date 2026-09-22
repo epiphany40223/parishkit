@@ -81,14 +81,16 @@ holds the startup lock; the database schema matches the running image (an
 image changed without its migration refuses); the configuration,
 credentials and media trees hold only regular files and directories (no
 symlink) and stay under 256 MiB together; and, when a
-`failure_kind` is `backup_dump_failed`, that the database is running and
-reachable and the backup login's password file still matches (the health
-command in the web container checks the database; the
+`failure_kind` is `database_unavailable` (the command's own connection,
+before the dump) or `backup_dump_failed` (the dump itself), that the
+database is running and reachable and the backup login's password file
+still matches (the health command in the web container checks the database; the
 [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
 records how these log values were checked). The backup also refuses when
 it does not run under its own profile and database login (a changed Compose
 file, a root user, a writable root filesystem or an extra or writable
-mount), so rerender with `retarget-image` if the Compose file was edited by hand.
+mount), so rerender with `retarget-image` if the Compose file was edited
+by hand.
 Fix the cause, run it again, and
 confirm the off-host copy holds the newest set's three files. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how

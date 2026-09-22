@@ -67,3 +67,21 @@ lines and checks the event, the category and the absent canary there; the
 ledger names failure categories; and two long or stray source lines were
 rewrapped. The operator test still covers the shared refusal branch rather
 than each command's own raise site. A correction check follows.
+
+## Round 3
+
+Claude only (Codex produced no structured output). Four raw findings, one
+validated and corrected:
+
+- Medium: the backup checklist tied the database and the password file
+  only to `backup_dump_failed`, but the command connects to the database
+  and checks its login and schema before the dump starts, so a stopped
+  database or a mismatched password file is logged as
+  `database_unavailable`. The checklist now names both categories.
+
+The three findings below the validation cutoff were taken: the dump no
+longer passes a one-hour timeout it could never enforce, with a comment
+naming the overdue alert as the bound; the backup commands' docstring says
+the process log records only a reviewed category; and the operator test
+parses the formatted line and checks the event and the category. A
+correction check follows.
