@@ -368,3 +368,28 @@ def test_renderer_refuses_unsupported_multi_container_runtime(tmp_path):
     )
     with pytest.raises(ConfigError, match="one web container"):
         render_runtime(configuration, image="parishkit-stewardship:development")
+
+
+def test_every_rendered_service_document_carries_the_alert_policy(tmp_path):
+    """Services load their rendered document, so each must keep the policy."""
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.deployment_documents import deployment_document
+    from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+    from parishkit.stewardship.runtime_topology import _service_config
+
+    policy = IncidentPolicy(
+        suppression_seconds=120, escalation_seconds=180, source_stale_seconds=2400
+    )
+    configuration = replace(configuration_at(tmp_path), operational_alerts=policy)
+    for role in (
+        ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    ):
+        document = deployment_document(_service_config(configuration, role))
+        assert document["deployment"]["operational_alerts"] == {
+            "suppression_seconds": 120,
+            "escalation_seconds": 180,
+            "source_stale_seconds": 2400,
+        }
