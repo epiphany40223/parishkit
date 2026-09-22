@@ -108,3 +108,28 @@ exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; the first image publication happens only when the human pushes a
 release tag.
+
+## Protected delivery
+
+PR #92 delivered candidate `d95a3d29`, three logical commits plus the PR #91
+receipt, whose tree `063ca959` is identical to the retained commit-by-commit
+review history on `pr/stewardship-release-image-reviewed` (`c73fefe7`) and to
+the landed tree. The five
+[review/fix rounds](stewardship-release-image-reviews.md), three full rounds
+and two correction checks, were single-source under the exemption, with
+every accepted finding fixed and the last check validating nothing. The pull
+request was marked ready before the candidate was pushed, and the candidate
+was pushed once the ready-for-review run for the previous head was in
+progress, so that run was cancelled by the candidate's own. Exact-head
+ready-candidate CI `35686468593` and DCO passed all 25 checks, from 04:19:48
+to 04:38:39 UTC on September 22, 2026 (18 minutes 51 seconds). `origin/main`
+had no intervening commits since the candidate's base `09c5b4ac`. Protected
+auto-merge landed as `f29f9ef1` at 04:38:57 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment started. This used the standing delivery authority,
+without deployment or release: no release tag was pushed and no image was
+published. The cancelled runs are not counted as acceptance.
+
+The release image and image retargeting increment is delivered. The
+production deployment item continues with the
+[deployment runbook](stewardship-deployment-runbook.md).
