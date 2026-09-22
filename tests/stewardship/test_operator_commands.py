@@ -1,5 +1,6 @@
 """Offline CLI requires explicit intent and never reflects sensitive failures."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,28 @@ def test_operator_failures_do_not_print_exception_values(
     assert main(["migrate", "--config", str(tmp_path / "private-path")]) == 2
     output = capsys.readouterr()
     assert "private" not in output.out + output.err
+
+
+def test_a_missing_backup_refusal_is_named_in_the_formatted_log(
+    monkeypatch, tmp_path, capsys, caplog
+):
+    """The upgrade admission's refusal survives the production log formatter."""
+    from parishkit.stewardship.backup import RecentBackupRequired
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    def fail(path):
+        raise RecentBackupRequired("No backup is recorded.")
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    with caplog.at_level("ERROR", logger="parishkit.stewardship"):
+        assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    events = [json.loads(SafeJsonFormatter().format(r)) for r in caplog.records]
+    assert any(
+        event["message"] == "startup_rejected"
+        and event["extra"].get("failure_kind") == "upgrade_backup_required"
+        for event in events
+    )
+    assert "refused" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("value", [None, "private-token", True, "0" * 32])

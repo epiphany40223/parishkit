@@ -276,11 +276,14 @@ def execute_operator(args):
         from .backup import RecentBackupRequired
 
         if type(error) is RecentBackupRequired:
-            # The one refusal whose remedy is always the same and whose text
-            # names nothing private: say so in the process log.
-            logging.getLogger("parishkit.stewardship").error(
-                "Configured upgrade refused: no backup is recorded within the "
-                "last 24 hours; run the backup first."
+            # The one refusal whose remedy is always the same: name it in the
+            # process log with a reviewed event the log formatter keeps.
+            from .observability import Event, FailureKind, emit
+
+            emit(
+                Event.STARTUP_REJECTED,
+                level=logging.ERROR,
+                failure_kind=FailureKind.BACKUP_REQUIRED,
             )
         print(
             "ERROR: offline operation refused or failed; verify profile, inputs, "

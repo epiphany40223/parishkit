@@ -53,6 +53,11 @@ class FailureKind(StrEnum):
     CONFIGURATION = "configuration_unavailable"
     FILESYSTEM = "filesystem_unavailable"
     UNEXPECTED = "unexpected_failure"
+    # Operator refusals the runbooks name. The formatter drops free text, and
+    # Event names are mirrored by a SQL constraint, so these ride on the
+    # reviewed startup_rejected event as categories instead.
+    BACKUP_DUMP = "backup_dump_failed"
+    BACKUP_REQUIRED = "upgrade_backup_required"
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(

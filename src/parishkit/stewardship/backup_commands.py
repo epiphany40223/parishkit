@@ -1,9 +1,10 @@
 """Console entry points for the v1 backup: run it, make its key, open a set.
 
-Every refusal is one fixed sentence; paths, keys and database errors stay in
-the process log. `backup` runs in the rendered backup profile beside the
-online services; `backup-keygen` and `backup-open` run wherever the operator
-keeps the private key, which is never the host.
+Every refusal is one fixed sentence, and the process log records only a
+reviewed failure category, never paths, keys or database error text.
+`backup` runs in the rendered backup profile beside the online services;
+`backup-keygen` and `backup-open` run wherever the operator keeps the private
+key, which is never the host.
 """
 
 import json
