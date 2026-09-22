@@ -227,6 +227,18 @@ def test_any_other_change_is_refused_and_nothing_is_written(deployment):
         retarget.retarget_image(
             replace(deployment, public_origin="http://localhost:9999"), image=NEW
         )
+    # The alert policy reaches services only through the rendered documents,
+    # so a later change to it is a changed input too.
+    from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+
+    with pytest.raises(ConfigError, match="only the image may change"):
+        retarget.retarget_image(
+            replace(
+                deployment,
+                operational_alerts=IncidentPolicy(suppression_seconds=120),
+            ),
+            image=NEW,
+        )
     password = layout.database_password("web")
     kept = read_private(password)
     password.unlink()
