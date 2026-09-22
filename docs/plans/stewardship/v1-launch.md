@@ -109,14 +109,18 @@ These apply to all work before the launch.
   Critical finding in the final round and no unresolved accepted Medium or
   higher finding. PRs touching Family authentication or credentials, mail
   dispatch, backup, or the database schema still get three rounds.
+- **Claude-only reviews**: the Codex-outage exemption in the
+  [delivery cycle](overall.md#automated-phase-delivery-cycle) is extended
+  through October 30, 2026. A completed Claude-only review counts as a
+  completed round, recorded as single-source with the observed Codex failure.
 - **Delivery records**: record each PR's reviewed SHA, rounds with raw
   severities and dispositions, and CI result in its own guide only. Do not
   add a new narrative paragraph to the
   [top-level task plan](../../tasks/stewardship/overall.md) for each PR; keep
   one short current-status line there instead.
 - **One pre-launch gate** replaces Gate 3 and the v1-relevant parts of Gates 4
-  and 5 for the launch. It is an integrated dual-model review of the paths v1
-  ships, reusing prior PR reviews under the Gate 2 evidence-reuse procedure,
+  and 5 for the launch. It is an integrated independent review of the paths
+  v1 ships (Claude-only rounds count under the exemption below), reusing prior PR reviews under the Gate 2 evidence-reuse procedure,
   with explicit attention to:
   - Family code and link authentication, sessions and campaign boundaries;
   - mail recipient privacy, Testing routing, sealed credentials and

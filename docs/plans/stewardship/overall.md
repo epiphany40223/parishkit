@@ -191,6 +191,10 @@ Claude-only passes already completed during the outage count as rounds; their
 findings were fixed with post-fix validation. Resume dual-source rounds when the
 exemption lapses or Codex returns, whichever is first.
 
+Human decision, September 21, 2026: the second exemption is extended on the
+same terms through October 30, 2026, covering the
+[v1 launch](v1-launch.md) and the post-launch ParishSoft write-back work.
+
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the
 cycle only when proceeding genuinely needs new authority or a product/security
