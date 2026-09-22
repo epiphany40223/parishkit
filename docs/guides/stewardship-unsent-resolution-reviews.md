@@ -122,3 +122,17 @@ shared helper: a plain SQL function called from a view reads with the
 caller's privileges, and a role reading these views may lack the address-rule
 grant, while a view reads its tables with its owner's rights. A correction
 check follows.
+
+## Round 4
+
+Claude only (Codex produced no output). Correction check: nine raw findings,
+one validated and corrected:
+
+- Medium: the documented recovery on a campaign closed while paused only
+  works before the closed held-message resolution runs. That resolution
+  records an occurrence's skip only for the messages its own command
+  cancels, so a removal afterwards can no longer produce one and the report
+  stays pending. The guide and the runbook now give the ordering.
+
+The eight findings the validation step did not confirm were not carried
+forward. A further correction check follows.

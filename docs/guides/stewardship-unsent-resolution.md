@@ -116,6 +116,13 @@ should no longer be an Administrator, removing it through the ordinary
 configuration change settles the report, and the closed resolution can then
 record the skip.
 
+Do that before running the closed held-message resolution for reports. The
+resolution records an occurrence's skip only for the messages that same
+command cancels, so once it has cancelled the report's other copies, a later
+removal can no longer produce a skip: the occurrence then stays pending, and
+no finalizer can complete it, because a cancellation for the closed
+resolution is not a revoked-recipient cancellation.
+
 ## Schema
 
 - The `delivery_resolution_action` check on

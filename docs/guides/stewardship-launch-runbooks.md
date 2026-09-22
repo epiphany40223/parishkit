@@ -263,7 +263,10 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    the report open until you choose **Retry failed delivery**. On a campaign
    closed while paused that retry is not available: if the recipient should no
    longer be an Administrator, remove them through the ordinary configuration
-   change and the report settles, so the closed resolution can record its skip.
+   change and the report settles, so the closed resolution can record its
+   skip. Do this before you resolve the held reports by type: once that
+   resolution has cancelled the report's other copies, a later removal can no
+   longer record the skip and the report stays open.
    The message no longer counts as unknown, so a paused campaign can resume,
    and a receipt waiting behind it is no longer blocked. This action is
    available during a pause and on a campaign closed while paused. A later
