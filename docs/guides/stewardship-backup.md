@@ -22,7 +22,8 @@ A new one-shot Compose profile, `backup-worker`, runs
 `pk-stewardship backup --config BACKUP_CONFIG` beside the online services. It
 dumps the database with `pg_dump` under its own SQL identity, owners and
 privileges included, archives the configuration, credentials and media trees
-(the media tree and kept privileges come from the
+and the provisioning record (the media tree, the record and kept privileges
+come from the
 [restore correction](stewardship-restore-correction.md)), seals both to the operator's public key,
 writes a plaintext manifest of sizes and digests, records one row in
 `stewardship_backup_run`, and keeps the newest thirty complete sets on the

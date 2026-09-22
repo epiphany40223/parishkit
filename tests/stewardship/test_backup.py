@@ -127,11 +127,11 @@ def test_a_media_file_removed_during_the_backup_is_left_out(deployment, monkeypa
     removed.write_bytes(b"removed")
     real = backup._file
 
-    def vanishing(archive, name, path):
+    def vanishing(archive, name, path, **options):
         """Delete the second file just before it is opened, like a cleanup."""
         if path == removed:
             removed.unlink()
-        return real(archive, name, path)
+        return real(archive, name, path, **options)
 
     monkeypatch.setattr(backup, "_file", vanishing)
     sink = io.BytesIO()
@@ -143,14 +143,24 @@ def test_a_media_file_removed_during_the_backup_is_left_out(deployment, monkeypa
     # Outside media a vanishing file is a real fault, not a race to tolerate.
     web = RuntimeLayout(deployment).service_directory / "web.yaml"
 
-    def missing(archive, name, path):
+    def missing(archive, name, path, **options):
         """Make one configuration file disappear."""
         if path == web:
             raise FileNotFoundError(path)
-        return real(archive, name, path)
+        return real(archive, name, path, **options)
 
     monkeypatch.setattr(backup, "_file", missing)
     with pytest.raises(FileNotFoundError):
+        backup.archive_files(deployment, io.BytesIO())
+
+
+def test_the_size_bound_refuses_before_reading_a_file(deployment, monkeypatch):
+    """A file larger than what remains of the bound is refused unread."""
+    branding = deployment.paths["media"] / "branding"
+    branding.mkdir(parents=True, exist_ok=True)
+    (branding / "large.png").write_bytes(b"x" * 4096)
+    monkeypatch.setattr(backup, "MAX_FILES_BYTES", 2048)
+    with pytest.raises(ConfigError, match="exceed the backup bound"):
         backup.archive_files(deployment, io.BytesIO())
 
 

@@ -92,18 +92,21 @@ def _directory(archive, name, metadata):
     archive.addfile(entry)
 
 
-def _file(archive, name, path):
+def _file(archive, name, path, *, budget=MAX_FILES_BYTES):
     """Record one regular file from a single open descriptor; return its size.
 
     Opening first and then reading exactly the descriptor's size keeps a
     file replaced by rename (how branding is written) consistent, and refuses
-    a symlink or special file rather than following it.
+    a symlink or special file rather than following it. The size bound is
+    checked before any content is read.
     """
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(descriptor, "rb") as stream:
         metadata = os.fstat(stream.fileno())
         if not stat.S_ISREG(metadata.st_mode):
             raise ConfigError("The runtime trees contain a non-regular file.")
+        if metadata.st_size > budget:
+            raise ConfigError("The runtime trees exceed the backup bound.")
         entry = tarfile.TarInfo(str(name))
         entry.size, entry.mode, entry.mtime = (
             metadata.st_size,
@@ -128,6 +131,7 @@ def archive_files(configuration, sink):
     with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
         record = RuntimeLayout(configuration).provisioning_record
         total += _file(archive, PROVISIONING_RECORD, record)
+        # Each file is bounded by what remains, before its content is read.
         for name in ARCHIVED_TREES:
             root = configuration.paths[name]
             _directory(archive, name, root.lstat())
@@ -142,13 +146,13 @@ def archive_files(configuration, sink):
                         raise ConfigError(
                             "The runtime trees contain a non-regular file."
                         )
-                    total += _file(archive, relative, path)
+                    total += _file(
+                        archive, relative, path, budget=MAX_FILES_BYTES - total
+                    )
                 except FileNotFoundError:
                     if name != "media":
                         raise
                     continue
-                if total > MAX_FILES_BYTES:
-                    raise ConfigError("The runtime trees exceed the backup bound.")
     return total
 
 

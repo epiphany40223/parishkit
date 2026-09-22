@@ -126,12 +126,14 @@ layout; where the deployment YAML overrides a path, use that path instead.
    [Storage and identities](stewardship-runtime.md#storage-and-identities)
    says, then create, owned by `10001:10001` with mode `0700`, the
    directories that are not in the set: `backups`, `cache`, `cache/static`,
-   `logs`, `reports`, `run`, and under `run/persistent` the directories
+   `logs`, `reports`, `run`, `run/persistent`, and under it `caddy`,
    `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
    `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
-   exactly the line `parishkit-stewardship-startup-v1`. Pull the release
-   image, and point the public origin's DNS at this host (`caddy` obtains a
-   new certificate; its store is not backed up).
+   exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
+   backup was taken under (its digest is in the operators' notes; the
+   restored Compose files name it). For a real replacement, point the public
+   origin's DNS at this host (`caddy` obtains a new certificate; its store is
+   not backed up); a drill host stays off the public DNS.
 4. **Restore the files, whole.** The archive holds the `config`,
    `credentials` and `media` trees, named by tree rather than by host path,
    and the provisioning record `.stewardship-provisioned.json`. Restore all of
@@ -139,8 +141,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    configuration or credential changed after the backup no longer matches the
    restored database, and the services refuse to start against it. Extract
    `files.tar` into an empty private staging directory. Move each current
-   tree aside (for example `config` to `config.pre-restore`), never delete
-   it, then move `config` to the runtime root's `config`, `credentials` to its
+   tree aside under a name that does not exist yet (for example `config` to
+   `config.pre-restore-DATE`; moving onto an existing directory would nest
+   the tree inside it), never delete it, then move `config` to the runtime root's `config`, `credentials` to its
    `credentials`, `media` to `run/persistent/media`, and the record to the
    runtime root itself. Give everything back to `10001:10001`; the archive
    records owner-only modes (`0700` directories, `0600` files).
@@ -208,7 +211,7 @@ restore-review workflow, so the operator and the Administrator must plan for
 the following, and the pre-launch gate approves them as known limitations:
 
 - **Family access stays open during the review.** v1 has no control that
-  closes the Family portal. From step 6, Families can sign in to the restored
+  closes the Family portal. From step 8, Families can sign in to the restored
   state and submit.
 - **Work after the backup is lost.** Submissions, Admin edits and deliveries
   recorded after the backup are not in the restored database. A Family whose

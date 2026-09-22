@@ -75,3 +75,17 @@ findings, four validated (all Medium), all corrected:
 
 The seven findings the validation step did not confirm were not carried
 forward. A further round follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Nine raw findings, none validated.
+Several of the low-severity notes were plain inaccuracies an operator would
+meet in a real restore, so they were corrected anyway: the limitation cited
+step 6 where web now starts at step 8; the replacement-host step moved DNS
+without exempting a drill host; the directory list missed `run/persistent`
+and `run/persistent/caddy` themselves and did not name the image to pull;
+moving a tree aside onto an existing name would nest it; the design guide
+and the boundary module's docstring did not mention the record and media;
+and the size bound was checked only after a file had been read, which now
+happens before. Because these changes follow the third round, a correction
+check follows.

@@ -1,9 +1,9 @@
 """The exact mounts the backup profile runs with, and nothing else.
 
-The backup reads the whole configuration and credentials trees, which no
-online role may do, and the media tree, and writes only its own output
-directory. It is therefore
-neither an online role nor an offline maintenance profile: it runs beside the
+The backup reads the whole configuration, credentials and media trees (no
+online role may read the first two whole) and writes only its own output
+directory. It is therefore neither an online role nor an offline
+maintenance profile: it runs beside the
 online services, holding the startup interlock shared like them so it cannot
 overlap offline work, but with its own closed mount inventory. The v1 launch
 scope accepts this reduced escrow, a read-only view sealed to a human-held
