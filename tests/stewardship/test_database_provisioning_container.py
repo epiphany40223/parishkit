@@ -147,7 +147,10 @@ def test_initial_database_roles_retry_and_refuse_takeover(empty_operator_databas
                 login,
                 login,
                 False,
-                False,
+                # Only the backup login bypasses row-level security: pg_dump
+                # runs with row security off, which a policy-bound login
+                # cannot do.
+                role is ServiceRole.BACKUP_WORKER,
                 False,
                 False,
                 False,
@@ -223,6 +226,24 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
                 assert cursor.fetchall() == []
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     cursor.execute("SELECT * FROM stewardship_configuration_version")
+            if role is ServiceRole.BACKUP_WORKER:
+                # The dump reads every table through its inherited membership
+                # and may write only its own record.
+                cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
+                assert cursor.fetchone() == (0,)
+                # pg_dump's precondition: with row security off, a table under
+                # a forced policy is readable only by a bypassing login.
+                cursor.execute("SET row_security = off")
+                cursor.execute("SELECT COUNT(*) FROM stewardship_secret_request")
+                assert cursor.fetchone() == (0,)
+                cursor.execute("RESET row_security")
+                cursor.execute(
+                    "SELECT pg_has_role(current_user,'pg_read_all_data','USAGE'),"
+                    "has_table_privilege(current_user,"
+                    "'stewardship_backup_run','INSERT'),"
+                    "has_table_privilege(current_user,'stewardship_campaign','INSERT')"
+                )
+                assert cursor.fetchone() == (True, True, False)
     from parishkit.stewardship.bootstrap import provision_initial_files
 
     bootstrap = replace(
