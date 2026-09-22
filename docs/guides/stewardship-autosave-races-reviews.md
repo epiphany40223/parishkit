@@ -80,3 +80,9 @@ corrections: eleven raw findings, one validated and corrected:
 
 The ten findings the validation step did not confirm were not carried
 forward.
+
+## Round 6
+
+Claude only (Codex out of quota). A correction check of the five rounds'
+corrections: fifteen raw findings, none validated. Nothing was carried
+forward, and this closes the review rounds for the increment.
