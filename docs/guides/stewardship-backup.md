@@ -156,3 +156,31 @@ Implementation, focused validation and the
 CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.
+
+## Protected delivery
+
+PR #94 delivered candidate `730ef871`, three logical commits plus the PR #93
+receipt, the CI smoke-set rotation and one standalone CI correction, whose
+tree `1a678ef9` is identical to the retained commit-by-commit review history
+on `pr/stewardship-backup-reviewed` and to the landed tree. The first
+exact-head candidate, `6e9019c0`, failed its run `35716462944`: the backup
+console test left a logging handler bound to a finished capture stream, so
+later CLI tests in the same process saw a logging error carrying their
+private input, and the outbox boundary suite still expected the backup
+identity to hold no grants. The correction stubs the logging setup in that
+test and asserts the backup identity's one-table bundle; the fifth,
+correction-only review check covered it and validated nothing. The five
+[review/fix rounds](stewardship-backup-reviews.md), three full rounds and two
+correction checks, were single-source under the exemption, with every
+accepted finding fixed. Exact-head ready-candidate CI `35720223782` and DCO
+passed all 25 checks, from 11:13:12 to 11:31:55 UTC on September 22, 2026
+(18 minutes 43 seconds). `origin/main` had no intervening commits since the
+candidate's base `e2c97abd`. Protected auto-merge landed as `ad43c0d9` at
+11:32:12 UTC and was verified on freshly fetched `origin/main`, whose second
+parent's tree is the candidate's, before the next increment started. This
+used the standing delivery authority, without deployment or release; no
+backup ran against a live deployment. The failed and cancelled runs are not
+counted as acceptance.
+
+The v1 backup increment is delivered. The launch scope continues with the
+[human-run smoke tools](stewardship-smoke-tools.md).
