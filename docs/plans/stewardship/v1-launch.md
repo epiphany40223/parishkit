@@ -78,18 +78,24 @@ workflow. The runbook must say to:
 1. Stop the scheduler, general worker and mail-dispatch services **before**
    restoring, and keep them stopped, so no scheduled or retried Family mail
    is sent from restored state.
-2. Restore the database, configuration and credentials from the latest
-   verified backup.
-3. Start only the web service with Family access closed, and have an
-   Administrator review the delivery and outbox state against the mail
-   provider's own logs. Any message that may already have been sent must not
-   be resent automatically.
+2. Restore the database, configuration, credentials and media from the
+   latest verified backup.
+3. Start only the web service (behind `caddy`), pause the campaign's
+   delivery, and have an Administrator review the delivery and outbox state
+   against the mail provider's own logs. This review is best effort: v1
+   cannot mark a message sent after the backup as delivered, so such a
+   message can be sent again when delivery resumes (see below).
 4. Only then restart background services, with the campaign's delivery paused
    if there is any doubt, and resume delivery deliberately.
 
 This is a known v1 limitation to approve at the pre-launch gate: a restore
 during the live campaign needs careful manual work and may require re-sending
-some Family links by hand.
+some Family links by hand. v1 has no control that closes Family access or
+marks restored mail as sent, so the review in step 3 happens with the Family
+portal open, and mail the provider accepted after the backup can be sent
+again; the backup runbook's
+[restore limitations](../../guides/stewardship-backup-runbook.md#restore-limitations-in-v1)
+record the exact consequences.
 
 ## Reduced for v1
 

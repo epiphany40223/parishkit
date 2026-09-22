@@ -1,8 +1,9 @@
 """The exact mounts the backup profile runs with, and nothing else.
 
-The backup reads the whole configuration and credentials trees, which no
-online role may do, and writes only its own output directory. It is therefore
-neither an online role nor an offline maintenance profile: it runs beside the
+The backup reads the whole configuration, credentials and media trees (no
+online role may read the first two whole) and writes only its own output
+directory. It is therefore neither an online role nor an offline
+maintenance profile: it runs beside the
 online services, holding the startup interlock shared like them so it cannot
 overlap offline work, but with its own closed mount inventory. The v1 launch
 scope accepts this reduced escrow, a read-only view sealed to a human-held
@@ -14,6 +15,7 @@ from pathlib import Path
 
 from parishkit.config import ConfigError
 
+from .backup import ARCHIVED_TREES
 from .deployment import ServiceRole
 from .runtime_paths import RuntimeLayout
 from .service_boundaries import _kernel_pseudo_mount, kernel_mounts
@@ -36,18 +38,12 @@ def backup_targets(configuration):
         raise ConfigError("The backup profile cannot reference online broker secrets.")
     if set(configuration.secrets) != {"backup_data"}:
         raise ConfigError("The backup profile receives only its recipient key.")
-    trees = {
-        configuration.paths["config"]: True,
-        configuration.paths["credentials"]: True,
-        configuration.paths["backups"]: False,
-    }
-    if configuration.paths["backups"] in (
-        configuration.paths["config"],
-        configuration.paths["credentials"],
-    ) or any(
+    archived = [configuration.paths[name] for name in ARCHIVED_TREES]
+    trees = {tree: True for tree in archived} | {configuration.paths["backups"]: False}
+    if configuration.paths["backups"] in archived or any(
         tree in configuration.paths["backups"].parents
         or configuration.paths["backups"] in tree.parents
-        for tree in (configuration.paths["config"], configuration.paths["credentials"])
+        for tree in archived
     ):
         raise ConfigError("Backup output cannot live inside what it backs up.")
     targets = dict(trees)
@@ -56,6 +52,8 @@ def backup_targets(configuration):
         configuration.postgres.password_file,
         configuration.secrets["backup_data"],
         layout.interlock,
+        # A replacement host cannot retarget without the completed record.
+        layout.provisioning_record,
     ):
         # A file already under a read-only tree needs no mount of its own; one
         # outside every tree is mounted read-only by itself.

@@ -107,3 +107,27 @@ Implementation, focused validation and the three
 [review rounds](stewardship-paused-resend-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider
 write or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #97 delivered candidate `9de8c9e2`, two logical commits plus the PR #96
+receipt, whose tree `a0d24844` is identical to the retained commit-by-commit
+review history on `pr/stewardship-paused-resend-reviewed` (`1f22354b`) and to
+the landed tree. The three [review rounds](stewardship-paused-resend-reviews.md)
+were single-source under the exemption; rounds 1 and 2 validated five
+findings, all corrected, and round 3 validated nothing. The pull request was
+marked ready before the candidate was pushed. Exact-head ready-candidate CI
+`35742384020` and DCO passed all 25 checks, from 14:44:10 to 15:04:46 UTC on
+September 22, 2026 (20 minutes 36 seconds). Earlier runs on superseded draft
+heads stopped at the draft-mode gates, and one was cancelled by the candidate
+push; none is counted as acceptance. `origin/main` had no intervening commits
+since the candidate's base `aa29a162`. Protected auto-merge landed as
+`4b36435d` at 15:05:26 UTC and was verified on freshly fetched `origin/main`,
+whose second parent's tree is the candidate's, before the next increment was
+committed. This used the standing delivery authority, without deployment or
+release; no real provider was contacted. The schema change's
+reinstall-or-migrate decision for the validation deployment remains the
+human's.
+
+The paused resend correction is delivered. The launch scope continues with
+the pre-launch gate.

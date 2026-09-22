@@ -21,7 +21,12 @@ from .accounts.key_files import read_private, write_private
 from .bootstrap import HANDOFF_TARGETS
 from .deployment_documents import deployment_document
 from .runtime_identities import database_identities
-from .runtime_paths import RuntimeLayout, explicit_path, private_directory
+from .runtime_paths import (
+    PROVISIONING_RECORD,
+    RuntimeLayout,
+    explicit_path,
+    private_directory,
+)
 from .runtime_topology import (
     render_runtime,
     resolve_database_files,
@@ -207,7 +212,7 @@ def provision_runtime(configuration, *, image, checkout=None, bind_source_root=N
     )
     root = explicit_path(configuration.paths.root)
     pending = root / ".stewardship-provisioning.json"
-    completed = root / ".stewardship-provisioned.json"
+    completed = root / PROVISIONING_RECORD
     if completed.exists():
         raise ConfigError(
             "Runtime storage is already provisioned; use the upgrade workflow."
