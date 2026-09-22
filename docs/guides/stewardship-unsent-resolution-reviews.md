@@ -136,3 +136,23 @@ one validated and corrected:
 
 The eight findings the validation step did not confirm were not carried
 forward. A further correction check follows.
+
+## Round 5
+
+Claude only (Codex produced no output). Correction check: eleven raw
+findings, three validated (all Medium), all corrected:
+
+- Medium: the guide's checkpoint named an outdated round count. It now
+  defers to this ledger instead of restating the count.
+- Medium: round 4's ordering claim was untested. The closed-while-paused
+  test's still-Administrator case now removes the recipient after the closed
+  resolution and asserts that the proof settles but no skip is recorded and
+  the occurrence stays pending.
+- Medium: the delivery label map had no weekly report entry, so weekly
+  Administrator reports showed "Unknown status" on the delivery pages. The
+  gap predates this correction, but this correction sends Administrators to
+  those pages; a standalone commit adds the label and a test that every
+  delivery purpose has one.
+
+The eight findings the validation step did not confirm were not carried
+forward. A further correction check follows.

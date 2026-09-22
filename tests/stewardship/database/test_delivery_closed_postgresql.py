@@ -1102,11 +1102,16 @@ def test_closed_skip_counts_only_a_removed_recipients_failed_report(
         )
         commands.confirm(*item.arguments, token=token)
     assert OutboxMessage.objects.get(pk=held.outbox_id).state == "cancelled"
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT stewardship_delivery_closed_digest_v1(%s)", [occurrence_id]
-        )
-        assert cursor.fetchone()[0] is removed
+
+    def settled():
+        """Read the closed digest proof for this occurrence."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_delivery_closed_digest_v1(%s)", [occurrence_id]
+            )
+            return cursor.fetchone()[0]
+
+    assert settled() is removed
     assert (
         PostCloseMailResolution.objects.filter(occurrence_id=occurrence_id).exists()
         is removed
@@ -1114,3 +1119,16 @@ def test_closed_skip_counts_only_a_removed_recipients_failed_report(
     assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == (
         "skipped" if removed else "pending"
     )
+    if not removed:
+        # The documented ordering: once the closed resolution has cancelled
+        # the other copies, a later removal settles the proof but can no
+        # longer record the skip, so the report stays pending.
+        with campaign_clock(
+            item.campaign.active_configuration.ends_at + timedelta(hours=2)
+        ):
+            revoke_admin(harness, unsent)
+        assert settled() is True
+        assert not PostCloseMailResolution.objects.filter(
+            occurrence_id=occurrence_id
+        ).exists()
+        assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == "pending"

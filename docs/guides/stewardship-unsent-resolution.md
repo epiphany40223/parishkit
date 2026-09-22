@@ -214,9 +214,8 @@ deployment or add a forward migration.
 
 ## Checkpoint
 
-Implementation, focused validation and the three
-[review rounds](stewardship-unsent-resolution-reviews.md) are complete, with
-round 3's correction check to follow; exact-head CI, DCO and protected
-delivery remain open. No
-deployment, release, live-provider write or database deletion is authorized
-by this increment.
+Implementation and focused validation are complete, and the
+[review ledger](stewardship-unsent-resolution-reviews.md) records every round
+so far; the last correction check, full exact-head CI, DCO and protected
+delivery remain open. No deployment, release, live-provider write or
+database deletion is authorized by this increment.
