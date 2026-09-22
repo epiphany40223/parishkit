@@ -64,11 +64,17 @@ still the design record for preparation and disposal),
   preparation makes it stale. Start step 5 just after a quarter-hour delta
   has finished, and go straight on to step 6.
 - Plan for both: cleanup, the wait for a delta and preparation often use up
-  most of the 30 minutes. If cleanup finishes late in the window, run a
-  second full refresh once cleanup has completed, timed to finish just after
-  a quarter-hour delta, and then prepare and confirm at once. Refresh is
-  allowed during cleanup's hold, and this avoids a wasted prepare-and-discard
-  cycle. The home page's last-refreshed time shows when a refresh finished.
+  most of the 30 minutes. If cleanup finishes late in the window, start a
+  second full refresh once cleanup has completed and just after a
+  quarter-hour delta has finished, so that the full refresh, the Family
+  eligibility catch-up, preparation and confirmation all finish before the
+  next quarter hour. Refreshes never run side by side: a delta that comes
+  due while the full refresh runs starts right after it and makes the
+  preparation stale. Time a full refresh on the validation deployment
+  beforehand; if it takes most of fifteen minutes, this path does not fit and
+  the first full refresh must carry the whole procedure. Refresh is allowed
+  during cleanup's hold. The home page's last-refreshed time shows when a
+  refresh finished.
 
 1. **Operator: back up.** Run the backup by hand and confirm its off-host
    copy, as the [backup runbook](stewardship-backup-runbook.md) says.
@@ -100,9 +106,10 @@ still the design record for preparation and disposal),
    and wait for **Inactive links are prepared. The campaign remains in
    Testing.** Open or reload the links page only after the delta has
    finished: until the Family eligibility catches up with the new data it
-   says the preparation inputs are unavailable, so wait a moment and reload,
-   and a page left open for more than five minutes asks to be refreshed
-   before it accepts **Prepare inactive Family links**. Preparation sends no email and changes no Family code. If a
+   says the preparation inputs are unavailable, so wait a moment and reload.
+   A page left open for more than five minutes refuses **Prepare inactive
+   Family links** with a generic "Check this value." error; reload it and try
+   again. Preparation sends no email and changes no Family code. If a
    refresh lands first, the page says the preparation is cancelled or no
    longer current. To prepare again, choose **Cancel and discard these
    inactive links**, wait until its disposal worker finishes (**Retry failed
@@ -138,9 +145,11 @@ page and copy its address, sign in again with Google (which returns to the
 home page), go back to the copied address, give a reason, acknowledge that
 deleted Testing data cannot be restored, choose **Preview withdrawal** and
 then **Confirm withdrawal from Production**. If the preview reports work in
-flight or uncertain, the confirm button is withheld: resolve that work, then
-preview again, and confirm within five minutes and before the start. Withdrawal is refused while delivery is paused: the progress page
-then hides the withdrawal link, and the withdrawal page says the campaign is
+flight or uncertain, the confirm button is withheld: resolve that work, sign
+in again if more than five minutes have passed since the last sign-in, then
+preview again and confirm within five minutes and before the start.
+Withdrawal is refused while delivery is paused: the progress page then hides
+the withdrawal link, and the withdrawal page says the campaign is
 not eligible, as it does for an active campaign. Resume first, which needs
 the sender test described below, so do not pause a scheduled campaign you may
 want to withdraw while the provider is down. After a withdrawal, going live

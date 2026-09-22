@@ -49,10 +49,28 @@ findings, one validated and corrected:
 - Medium: as sequenced, cleanup, the wait for a quarter-hour delta and
   preparation make lapsing the 30-minute full-refresh window the likely path,
   and the procedure gave only after-the-fact recovery. The timing notes now
-  plan a second full refresh after cleanup, timed to finish just after a
-  delta, before preparing and confirming.
+  plan a second full refresh after cleanup, before preparing and confirming
+  (round 3 corrected its timing).
 
 The three findings below the validation cutoff were taken as well: reload
 the links page after the delta and within five minutes, link the link
 preparation design record, and preview a blocked withdrawal again after
 resolving its work. A further correction check follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Correction check: four raw
+findings, one validated and corrected:
+
+- Medium: a full refresh timed to "finish just after" a delta cannot work,
+  because refreshes never run side by side and a delta that comes due during
+  the full refresh runs right after it, making the preparation stale. The
+  second full refresh now starts just after a delta, so that it, the
+  eligibility catch-up, preparation and confirmation all finish before the
+  next quarter hour, and the full refresh is timed on the validation
+  deployment beforehand.
+
+The three findings below the validation cutoff were taken as well: an
+expired links page refuses with a generic "Check this value." error, a
+blocked withdrawal usually needs a new sign-in before its new preview, and
+the edited paragraphs are rewrapped. A further correction check follows.

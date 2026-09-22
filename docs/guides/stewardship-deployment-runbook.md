@@ -112,8 +112,10 @@ no backup login, password, directory or record table, and must be reinstalled.
 
 Activation is an Administrator's workflow in the portal, bracketed by the
 operator's backups; the step-by-step procedure, including withdrawal, is the
-launch runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation). Activation is scheduled for October 1, 2026 in the launch
-scope's [schedule](../plans/stewardship/v1-launch.md#schedule).
+launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation).
+Activation is scheduled for October 1, 2026 in the launch scope's
+[schedule](../plans/stewardship/v1-launch.md#schedule).
 
 ## Upgrade
 
