@@ -26,6 +26,7 @@ LABELS = {
     "abandoned": _("Lease expired"),
     "note": _("Evidence note"),
     "accept": _("Delivery confirmed"),
+    "confirm_unsent": _("Provider confirmed not sent"),
     "resend": _("Resend authorized"),
     "retry_failed": _("Failed delivery retry"),
     "retry_unsent": _("Unaccepted delivery retry"),

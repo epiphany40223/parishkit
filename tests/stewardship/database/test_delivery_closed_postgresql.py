@@ -933,3 +933,72 @@ def test_closed_paused_receipt_resend_follows_the_held_resolution(
         receipt.refresh_from_db()
         _, _, attempt = resend(receipt)
         assert attempt is not None and receipt.pause_hold_id is None
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_confirmed_unsent_receipt_clears_the_resume_guard(
+    scheduled, settings, monkeypatch, tmp_path, closed
+):
+    """The real Admin resume refuses an unknown receipt until it is settled.
+
+    Recording the provider's evidence that the receipt was not sent settles it
+    without a resend, including on a campaign closed while paused.
+    """
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import (
+        confirmed_unsent,
+        resolve,
+        unknown_inventory,
+    )
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    # Receipt resolution is keyless, so the resolver's key rings stay empty.
+    harness = SimpleNamespace(
+        campaign=item.campaign,
+        service=item.arguments[1],
+        rings=SimpleNamespace(general=None, public=None),
+    )
+    starts = item.campaign.active_configuration.starts_at
+    with campaign_clock(starts + timedelta(hours=1)):
+        receipt = submit_while_paused(item, settings).outbox
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(SimpleNamespace(task_id=receipt.task_id))
+            assert begin(receipt, execution) is not None
+            finish_submission(
+                receipt.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=receipt.task_id)), "permanent_failure")
+        receipt.refresh_from_db()
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Hold mail")
+            commands.confirm(*item.arguments, token=token)
+        assert unknown_inventory(item.campaign) == 1
+        if not closed:
+            accepted_sender_check(item, monkeypatch, tmp_path)
+            with web_login(), pytest.raises(StaleRecordError):
+                commands.preview_resume(*item.arguments, reason="Too early")
+    clock = starts + timedelta(hours=2)
+    if closed:
+        close_campaign(item.campaign, uuid4())
+        clock = item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    with campaign_clock(clock):
+        command = resolve(
+            harness,
+            user("admin@example.org"),
+            receipt,
+            "confirm_unsent",
+            general=None,
+            public=None,
+        )
+        confirmed_unsent(receipt, command)
+        assert unknown_inventory(item.campaign) == 0
+        if not closed:
+            with web_login():
+                _, token = commands.preview_resume(*item.arguments, reason="Settled")
+                commands.confirm(*item.arguments, token=token)
+            item.campaign.refresh_from_db()
+            assert not item.campaign.delivery_paused

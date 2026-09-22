@@ -224,3 +224,30 @@ def test_paused_report_resend_is_held_until_resume(family_mail, action, status):
         control(harness.campaign, "resume")
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             assert begin(message, execution) is not None
+
+
+def test_paused_unknown_report_is_confirmed_unsent_without_resend(family_mail):  # noqa: F811
+    """Provider evidence of no send settles an Admin report while paused.
+
+    Unlike a resend it queues no Task and leaves nothing held for resume.
+    """
+    from .test_delivery_resolution_postgresql import confirmed_unsent
+    from .test_outbox_boundaries_postgresql import control
+
+    harness = activate_response_service(family_mail)
+    complete_empty_catchup(harness.campaign, uuid4())
+    with campaign_clock(INSTANT):
+        _, message = failed(harness, Status.UNKNOWN)
+        control(harness.campaign, "pause")
+        assert unknown_inventory(harness.campaign) == 1
+        command = resolve(
+            harness,
+            user("admin@example.org"),
+            message,
+            "confirm_unsent",
+            general=None,
+            public=None,
+        )
+        confirmed_unsent(message, command)
+        assert unknown_inventory(harness.campaign) == 0
+        control(harness.campaign, "resume")

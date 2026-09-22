@@ -239,3 +239,33 @@ def test_paused_weekly_resend_is_held_until_resume(
         control(harness.campaign, "resume")
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             assert begin(message, execution) is not None
+
+
+def test_paused_unknown_for_a_removed_admin_is_confirmed_unsent(live_response_service):
+    """A former Admin's unsent report needs no resend, only a truthful settlement.
+
+    Its resend is no longer admitted, so without this outcome the unknown count
+    could never reach zero and the pause could never resume.
+    """
+    from .test_delivery_resolution_postgresql import confirmed_unsent
+    from .test_outbox_boundaries_postgresql import control
+
+    harness = live_response_service
+    principal = user("second@example.org")
+    with campaign_clock(INSTANT):
+        _, message = failed(
+            harness, Status.UNKNOWN, additional_admins=("second@example.org",)
+        )
+        control(harness.campaign, "pause")
+        revoke_admin(harness, WeeklyDigestRecipient.objects.get(outbox=message))
+        message.refresh_from_db()
+        assert retry_admitted(message) is False
+        with pytest.raises(PermissionError, match="retry is not currently admitted"):
+            resolve(harness, principal, message, "resend", general=None, public=None)
+        assert unknown_inventory(harness.campaign) == 1
+        command = resolve(
+            harness, principal, message, "confirm_unsent", general=None, public=None
+        )
+        confirmed_unsent(message, command)
+        assert unknown_inventory(harness.campaign) == 0
+        control(harness.campaign, "resume")

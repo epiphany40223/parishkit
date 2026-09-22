@@ -22,10 +22,11 @@
   <input type="hidden" name="action" value="{{ command.action }}">
   <h2>{{ command.label }}</h2>
   <label for="evidence-{{ command.action }}">{% translate "Evidence or reason for this decision" %}</label>
-  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% endif %}"></textarea>
+  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% elif command.action == 'confirm_unsent' %} unsent-help{% endif %}"></textarea>
   <p id="help-{{ command.action }}" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
   {% if command.action == 'resend' %}<label><input type="checkbox" name="duplicate_acknowledged" value="yes" required> {% translate "The prior attempt may already have been delivered. I accept the duplicate risk and explicitly authorize another attempt." %}</label>{% endif %}
   {% if command.action == 'accept' %}<p id="acceptance-help">{% translate "Use this only when external evidence confirms acceptance of this exact delivery, not merely because no error was reported." %}</p>{% endif %}
+  {% if command.action == 'confirm_unsent' %}<p id="unsent-help">{% translate "Use this only when the provider's own log shows this exact attempt was not sent. The delivery is recorded as failed and is not resent; no recipient is suppressed." %}</p>{% endif %}
   <button type="submit">{{ command.label }}</button>
 </form>
 {% endfor %}

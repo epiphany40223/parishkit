@@ -4,7 +4,14 @@ from django.db import models
 
 from parishkit.stewardship.storage import ImmutableRecord
 
-ACTIONS = ("note", "accept", "resend", "retry_failed", "retry_unsent")
+ACTIONS = (
+    "note",
+    "accept",
+    "resend",
+    "retry_failed",
+    "retry_unsent",
+    "confirm_unsent",
+)
 
 
 class DeliveryResolution(ImmutableRecord):
