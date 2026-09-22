@@ -492,13 +492,16 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
             cursor.execute(f'DROP ROLE "{name}"')
 
 
-@pytest.mark.parametrize(
-    "role", [ServiceRole.BACKUP_WORKER, ServiceRole.TOKEN_KEY_ROTATION]
-)
-def test_future_owners_have_no_runtime_grant_bundle(role):
-    """Unimplemented operational owners cannot acquire generic fallback authority."""
+def test_future_owners_have_no_runtime_grant_bundle():
+    """Unimplemented operational owners cannot acquire generic fallback authority.
+
+    The backup identity now has exactly its own record and no outbox table.
+    """
     with pytest.raises(ConfigError, match="not implemented"):
-        runtime_grants(role)
+        runtime_grants(ServiceRole.TOKEN_KEY_ROTATION)
+    tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
+    assert tables == {"stewardship_backup_run": {"SELECT", "INSERT"}}
+    assert columns == {}
 
 
 @pytest.fixture

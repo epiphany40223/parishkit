@@ -297,8 +297,15 @@ def test_the_backup_command_admits_only_its_own_login(
             backup_commands._admit_backup_identity()
 
 
-def test_keygen_and_open_commands_roundtrip_and_refuse_generically(tmp_path, capsys):
+def test_keygen_and_open_commands_roundtrip_and_refuse_generically(
+    tmp_path, capsys, monkeypatch
+):
     """The console makes a key, opens a set with it and never echoes inputs."""
+    from parishkit.stewardship import backup_commands
+
+    # CLI unit tests must not retain handlers bound to a finished capture
+    # stream, or later tests' stderr carries a logging error.
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     key = tmp_path / "operator.key"
     assert main(["backup-keygen", "--destination", str(key)]) == 0
     public = json.loads(capsys.readouterr().out)["public_key"]
