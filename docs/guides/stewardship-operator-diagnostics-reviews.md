@@ -14,7 +14,7 @@ found:
   roles and paths; tests check the formatted output; and the
   [backup runbook](stewardship-backup-runbook.md), the
   [deployment runbook](stewardship-deployment-runbook.md) and the
-  [backup guide](stewardship-backup.md) name the events.
+  [backup guide](stewardship-backup.md) name the failure categories.
 - PL-I2 (Low): if the operator paused during a mail outage, resume refuses
   while any delivery is unknown, so the
   [outage recovery](stewardship-launch-runbooks.md#mail-provider-outage) now
@@ -49,3 +49,21 @@ failure, the outage step points to the other resume conditions, and the
 runbooks link this ledger. The operator test still covers the shared
 refusal branch rather than each command's own raise site. A correction
 check follows.
+
+## Round 2
+
+Claude only (Codex produced no structured output). Seven raw findings, one
+validated and corrected:
+
+- Medium: the backup runbook said a dump running past an hour is stopped,
+  but the hour is counted only after `pg_dump` closes its output, so a dump
+  that hangs is never bounded. The runbook no longer promises a limit and
+  names the overdue alert as what reports a dump that never finishes.
+
+The six findings below the validation cutoff were weighed: a failed dump
+logs `backup_dump_failed` and then the command's general configuration
+refusal, which the runbook now says; the dump test parses the formatted
+lines and checks the event, the category and the absent canary there; the
+ledger names failure categories; and two long or stray source lines were
+rewrapped. The operator test still covers the shared refusal branch rather
+than each command's own raise site. A correction check follows.

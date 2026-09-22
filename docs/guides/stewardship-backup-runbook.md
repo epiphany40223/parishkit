@@ -39,12 +39,14 @@ It prints one JSON line naming the sizes, the recipient fingerprint and the
 manifest digest and exits `0`; on any refusal it prints one generic line and
 exits `2`, and the process log records only reviewed values: a
 `startup_rejected` line whose `failure_kind` is the category (a
-configuration refusal, for most causes), and `backup_dump_failed` when the
-database dump itself failed or produced nothing. `pg_dump`'s own text is
-never logged, since it can name hosts, roles and paths. A dump that runs
-past an hour is stopped and logged as an unexpected failure instead. Keep
-the printed manifest digest with the off-host
-copy (the cron job can append the line to a log there): the sealed files
+configuration refusal, for most causes). When the database dump itself
+failed or produced nothing, a `startup_rejected` line with
+`backup_dump_failed` comes first, followed by the command's general
+configuration refusal. `pg_dump`'s own text is never logged, since it can
+name hosts, roles and paths. A dump that never finishes has no time limit
+of its own; the overdue alert below is what reports it. Keep the printed
+manifest digest with the off-host copy (the cron job can append the line
+to a log there): the sealed files
 prove that they were not altered, not who made them, and the digest is how a
 restore proves it is restoring the set the deployment recorded. Schedule it
 from the host's cron twice a day, twelve hours apart and in UTC (a host set
@@ -71,23 +73,22 @@ The scheduler raises the `backup_rpo_breach` operational incident, through
 the configured alert routes, when no backup has completed in the last 24
 hours, once the deployment is in Production or has ever backed up, and
 resolves it when one has. When it fires: run the backup by hand. If it
-refuses, the log names only the category, so check the usual causes in
+refuses, the log names only categories, so check the usual causes in
 turn: the recipient key file is present and readable; the `backups`
 directory is owned by `10001:10001` with mode `0700`; the authority store
 lies inside the archived trees; no offline work (a migration or an upgrade)
 holds the startup lock; the database schema matches the running image (an
 image changed without its migration refuses); the configuration,
 credentials and media trees hold only regular files and directories (no
-symlink) and stay under 256 MiB together; and, when the log's
+symlink) and stay under 256 MiB together; and, when a
 `failure_kind` is `backup_dump_failed`, that the database is running and
 reachable and the backup login's password file still matches (the health
 command in the web container checks the database; the
 [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
-records how these log values were checked). The backup also refuses
-when
+records how these log values were checked). The backup also refuses when
 it does not run under its own profile and database login (a changed Compose
-file, a root user, a writable root filesystem or an extra or writable mount),
-so rerender with `retarget-image` if the Compose file was edited by hand.
+file, a root user, a writable root filesystem or an extra or writable
+mount), so rerender with `retarget-image` if the Compose file was edited by hand.
 Fix the cause, run it again, and
 confirm the off-host copy holds the newest set's three files. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how

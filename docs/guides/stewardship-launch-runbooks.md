@@ -209,7 +209,8 @@ failed task; one the provider may have accepted without confirming becomes
    (described below; confirming, recording it not sent and the held resend
    all work while paused), then resume once the page's other resume
    conditions hold (see
-   [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On the deliveries page (`/admin/deliveries`), choose the **Failed
+   [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
+   the deliveries page (`/admin/deliveries`), choose the **Failed
    delivery** state and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused). Then
