@@ -59,3 +59,16 @@ every kind, edited paragraphs are rewrapped, and the weekly test's import
 moved to module level. The delivery-page parametrization over receipts and
 digests was not taken, because the new SQL assertions cover the admission
 it reads. A further round follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Five raw findings, none validated;
+the review rounds are closed. The low-severity notes below the cutoff are
+recorded for the pre-launch gate rather than carried forward here: the
+specification and guide's "retries of failed or unsent mail wait for
+resume" could say "until the pause is lifted", since a campaign closed while
+paused lifts it by resolution and admits a released message's retry; the
+runbook could add that resume may coalesce a resent invitation or reminder
+like other overdue Family mail; and the tests could assert the Family
+retries' SQL admission, a closed-pause digest resend and the resent hold's
+exact pause version.

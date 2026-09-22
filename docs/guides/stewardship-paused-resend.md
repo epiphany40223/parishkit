@@ -103,7 +103,7 @@ already requires, or to add a forward migration.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; the
-[review rounds](stewardship-paused-resend-reviews.md), full exact-head CI, DCO
-and protected delivery remain open. No deployment, release, live-provider
+Implementation, focused validation and the three
+[review rounds](stewardship-paused-resend-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider
 write or database deletion is authorized by this increment.
