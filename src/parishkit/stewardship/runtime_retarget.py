@@ -60,30 +60,18 @@ def _plan(configuration, recorded, *, image):
     )
 
 
-def _other_image(current, rendered):
-    """The one application image a topology names that its rendering does not.
-
-    Infrastructure images are the same in both, so the difference is the
-    application image the topology was rendered with, if it was rendered at
-    all; a malformed or mixed topology has no such image.
-    """
-    try:
-        known = {s["image"] for s in json.loads(rendered)["services"].values()}
-        named = {s["image"] for s in json.loads(current)["services"].values()}
-    except (ValueError, KeyError, TypeError, AttributeError):
-        return None
-    other = named - known
-    return other.pop() if len(other) == 1 else None
-
-
 def retarget_image(configuration, *, image):
-    """Re-render only the image-bearing artifacts of a completed deployment.
+    """Re-render the generated documents of a completed deployment for an image.
 
-    Returns what changed. A topology on disk may name the recorded image or
-    the requested one, the two states an interrupted retarget can leave, and
-    is brought to the requested one; anything else is a hand edit and is
-    refused. So running the same command again finishes an interrupted
-    retarget, and running it with the recorded image undoes one.
+    Returns what changed. Every generated document, the three topologies, the
+    per-service configurations and the ingress document, is re-derived from
+    the recorded inputs by the code that is running, so a release whose
+    renderer changed reaches the deployment through the same command as one
+    that only changed the image; the passwords and broker ACL are generated
+    once and kept. Only the deployment inputs may not differ. Documents that
+    already match are left alone, so an interrupted retarget is finished by
+    running the same command again and undone by asking for the recorded
+    image, and a repeat is no change.
     """
     root = explicit_path(configuration.paths.root)
     private_directory(root)
@@ -104,32 +92,21 @@ def retarget_image(configuration, *, image):
             "Deployment inputs differ from provisioning; only the image may change."
         )
     layout = RuntimeLayout(configuration)
-    topologies = {layout.service_directory / name for name in TOPOLOGIES}
     changed = recorded["image"] != image
-    stale, renderings = set(), {}
-    for path, value in documents.items():
-        current = read_private(path, maximum=MAX_DOCUMENT)
-        if current == value:
-            continue
-        if path not in topologies:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        # A topology may lag behind (interrupted retarget) or run ahead of the
-        # record (undoing one): it is admitted only if it is exactly the same
-        # inputs rendered with the recorded image, or with the one image it
-        # names instead. Anything else is a hand edit.
-        other = recorded["image"] if changed else _other_image(current, value)
-        if other is None:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        if other not in renderings:
-            renderings[other] = _plan(configuration, recorded, image=other)[3]
-        if current != renderings[other][path]:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        stale.add(path)
+    stale = {
+        path
+        for path, value in documents.items()
+        if read_private(path, maximum=MAX_DOCUMENT) != value
+    }
     for path in (*passwords, acl):
         # Presence and privacy only: the values are generated once and kept.
         read_private(path, maximum=MAX_DOCUMENT)
     if not stale and not changed:
-        return {"image_changed": False, "services_started": False}
+        return {
+            "image_changed": False,
+            "documents_changed": 0,
+            "services_started": False,
+        }
     with StartupLease(layout.interlock, offline=True):
         for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)
@@ -139,4 +116,8 @@ def retarget_image(configuration, *, image):
         if changed:
             write_private(completed, intent, maximum=MAX_DOCUMENT)
             _sync_directory(root)
-    return {"image_changed": changed, "services_started": False}
+    return {
+        "image_changed": changed,
+        "documents_changed": len(stale),
+        "services_started": False,
+    }

@@ -34,6 +34,9 @@ _COMMAND_OPTIONS = {
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
+    "backup": {"config"},
+    "backup-keygen": {"destination"},
+    "backup-open": {"key", "input", "destination"},
     "database-roles": {"config", "confirm_deployment"},
     "database-grants": {"config", "confirm_deployment"},
     "recover-admin": {
@@ -98,6 +101,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "operator-name",
         "reason",
         "request-id",
+        "key",
+        "input",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -151,6 +156,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .runtime_diagnostics import execute_health
 
         return execute_health(args)
+    if args.command in {"backup", "backup-keygen", "backup-open"}:
+        from .backup_commands import execute_backup_command
+
+        return execute_backup_command(args)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

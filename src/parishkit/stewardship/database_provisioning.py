@@ -87,7 +87,37 @@ def _admit_operator(cursor, configuration, marker, *, initial):
             "SELECT EXISTS(SELECT 1 FROM public.stewardship_system_configuration)"
         )
         if cursor.fetchone()[0]:
-            raise ConfigError("Configured SQL changes require upgrade admission.")
+            from .backup import recent_backup_recorded
+
+            # A configured deployment changes only behind a recent verified
+            # backup: the v1 reduction of the deferred upgrade admission.
+            if not recent_backup_recorded(cursor):
+                raise ConfigError("Configured SQL changes require upgrade admission.")
+
+
+def _admit_reader(cursor, login, tables):
+    """The backup login reads everything by membership and writes only its row.
+
+    `pg_read_all_data` makes every table readable, so the ordinary grant
+    comparison cannot apply; instead the membership must be present and no
+    privilege other than SELECT may exist beyond the registry.
+    """
+    cursor.execute("SELECT pg_has_role(%s,'pg_read_all_data','MEMBER')", [login])
+    if cursor.fetchone() != (True,):
+        raise ConfigError("The backup login lacks its read-all membership.")
+    cursor.execute(
+        "SELECT n.nspname,c.relname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "CROSS JOIN unnest(ARRAY['INSERT','UPDATE','DELETE',"
+        "'TRUNCATE','REFERENCES','TRIGGER']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') "
+        "AND has_table_privilege(%s,c.oid,p)",
+        [login],
+    )
+    for schema, table, privilege in cursor.fetchall():
+        if schema != "public" or privilege not in tables.get(table, set()):
+            raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
 
 
 def _check_role(cursor, name, marker, limit):
@@ -210,6 +240,14 @@ def provision_roles(configuration, deployment_id):
                     ),
                 )
             )
+            if role is ServiceRole.BACKUP_WORKER:
+                # pg_dump needs every table; the login is NOINHERIT, so the
+                # membership itself must carry inheritance (PostgreSQL 16+).
+                cursor.execute(
+                    sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(
+                        identifier
+                    )
+                )
         # Migration owns only the application schema, not the database/roles.
         cursor.execute("ALTER SCHEMA public OWNER TO pk_stewardship_migration")
     return {"database_roles_provisioned": True}
@@ -237,7 +275,10 @@ def provision_grants(configuration, deployment_id):
             if role is ServiceRole.MIGRATION:
                 continue
             tables, columns = runtime_grants(role, target=target)
-            _admit_existing_grants(cursor, login, tables, columns)
+            if role is ServiceRole.BACKUP_WORKER:
+                _admit_reader(cursor, login, tables)
+            else:
+                _admit_existing_grants(cursor, login, tables, columns)
             for table, privileges in tables.items():
                 cursor.execute(
                     sql.SQL("GRANT {} ON public.{} TO {}").format(

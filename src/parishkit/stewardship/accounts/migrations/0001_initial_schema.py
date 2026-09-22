@@ -46,6 +46,7 @@ def schema_sql():
                 "fact_verification",
                 "operational_incidents",
                 "due_work_health",
+                "backup",
                 "operational_fanout",
                 "operational_render",
                 "operational_dispatch",

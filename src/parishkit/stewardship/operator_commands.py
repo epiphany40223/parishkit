@@ -110,7 +110,11 @@ def migrate_command(configuration):
                     "SELECT EXISTS(SELECT 1 FROM "
                     "public.stewardship_system_configuration)"
                 )
-                if cursor.fetchone()[0]:
+                from .backup import recent_backup_recorded
+
+                # The v1 reduction of the deferred upgrade admission: a
+                # configured deployment migrates only behind a recent backup.
+                if cursor.fetchone()[0] and not recent_backup_recorded(cursor):
                     raise ConfigError(
                         "Configured upgrades require verified backup admission."
                     )

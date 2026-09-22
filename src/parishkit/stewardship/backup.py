@@ -1,0 +1,259 @@
+"""The v1 backup: a sealed database dump and a sealed copy of the runtime's files.
+
+One run writes a dated directory under the backups path holding the
+PostgreSQL custom-format dump and a tar of the configuration and credentials
+trees, each sealed to the human-held recipient key, and a plaintext manifest
+naming sizes, digests, durations and the key, never contents. Only a completed
+run records a row; the scheduler reads the newest row to alert when a backup
+is overdue, and the offline upgrade commands read it as the verified-backup
+evidence a configured deployment requires. Copying the directory off the host
+is the operator's cron job, as the backup runbook says. The reduced scope,
+and what it defers, is the v1 launch scope's.
+"""
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from parishkit import __version__
+from parishkit.config import ConfigError
+
+from .accounts.authority import _sync_directory
+from .accounts.key_files import read_private
+from .backup_sealing import Recipient, seal
+from .runtime_paths import RuntimeLayout, explicit_path, private_directory
+
+# The specification's window: a successful backup is required every 24 hours,
+# and the offline upgrade commands accept one no older than that.
+REQUIRED_WITHIN = timedelta(hours=24)
+# Successful sets kept on the host; the off-host copy is the operator's.
+RETAINED_SETS = 30
+# The configuration and credentials trees are small; anything larger is not
+# what this backup was designed for and stops before sealing.
+MAX_FILES_BYTES = 256 * 1024 * 1024
+SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
+DUMP = "database.pgdump.sealed"
+FILES = "files.tar.sealed"
+MANIFEST = "manifest.json"
+
+
+def _password(path):
+    """Keep the SQL password in memory only, for the dump process environment."""
+    value = read_private(path).removesuffix(b"\n")
+    if not value or any(byte <= 32 or byte >= 127 for byte in value):
+        raise ConfigError("The backup database password file is invalid.")
+    return value.decode("ascii")
+
+
+def _output_file(directory, name):
+    """Create one owner-only output file that must not already exist."""
+    descriptor = os.open(
+        directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+    )
+    return os.fdopen(descriptor, "wb")
+
+
+def _finish(stream):
+    """Make a completed output durable before the manifest names it."""
+    stream.flush()
+    os.fsync(stream.fileno())
+    stream.close()
+
+
+def archive_files(configuration, sink):
+    """Tar the configuration and credentials trees, regular files only.
+
+    Symlinks, devices and anything else are refused rather than followed or
+    skipped silently: a tree that contains one is not the tree provisioning
+    made. The archive is deterministic apart from file contents and times.
+    """
+    total = 0
+    with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for name in ("config", "credentials"):
+            root = configuration.paths[name]
+            for path in sorted(root.rglob("*")):
+                relative = Path(name) / path.relative_to(root)
+                metadata = path.lstat()
+                if path.is_dir() and not path.is_symlink():
+                    entry = tarfile.TarInfo(str(relative))
+                    entry.type, entry.mode, entry.mtime = (
+                        tarfile.DIRTYPE,
+                        0o700,
+                        int(metadata.st_mtime),
+                    )
+                    archive.addfile(entry)
+                    continue
+                if not path.is_file() or path.is_symlink():
+                    raise ConfigError("The runtime trees contain a non-regular file.")
+                total += metadata.st_size
+                if total > MAX_FILES_BYTES:
+                    raise ConfigError("The runtime trees exceed the backup bound.")
+                entry = tarfile.TarInfo(str(relative))
+                entry.size, entry.mode, entry.mtime = (
+                    metadata.st_size,
+                    0o600,
+                    int(metadata.st_mtime),
+                )
+                with path.open("rb") as stream:
+                    archive.addfile(entry, stream)
+    return total
+
+
+def dump_database(configuration, sink, *, recipient):
+    """Run pg_dump into the sealer; return the plaintext size and digest.
+
+    The password reaches pg_dump through its environment, never its arguments.
+    A failed dump leaves the sealed output unusable and is reported as one
+    generic refusal; pg_dump's own message stays in the process log.
+    """
+    binary = shutil.which("pg_dump")
+    if binary is None:
+        raise ConfigError("pg_dump is not installed in this image.")
+    db = configuration.postgres
+    command = [
+        binary,
+        "--format=custom",
+        "--no-owner",
+        "--no-acl",
+        "--host",
+        db.host,
+        "--port",
+        str(db.port),
+        "--username",
+        db.user,
+        "--dbname",
+        db.name,
+    ]
+    environment = {
+        "PGPASSWORD": _password(db.password_file),
+        "PGCONNECT_TIMEOUT": str(db.connect_timeout),
+        "PGSSLMODE": "disable",
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    }
+    with subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
+    ) as process:
+        count, digest = seal(process.stdout, sink, recipient=recipient, kind="database")
+        _, errors = process.communicate(timeout=3600)
+    if process.returncode != 0 or count == 0:
+        raise ConfigError("The database dump did not complete.")
+    return count, digest
+
+
+def _prune(backups):
+    """Keep the newest retained sets; remove only complete, dated directories."""
+    sets = sorted(
+        path
+        for path in backups.iterdir()
+        if path.is_dir() and not path.is_symlink() and SET_NAME.match(path.name)
+    )
+    for path in sets[:-RETAINED_SETS]:
+        shutil.rmtree(path)
+
+
+def run_backup(configuration, *, record):
+    """Write one sealed backup set and record it; return the manifest.
+
+    `record` persists the completed run's facts (the caller owns the database
+    session) and runs only after every output is durable, so a row never
+    names a set that does not exist. Retention runs after the record.
+    """
+    layout = RuntimeLayout(configuration)
+    recipient = Recipient.load(layout.credential("backup_data"))
+    backups = private_directory(explicit_path(configuration.paths["backups"]))
+    started = datetime.now(UTC)
+    directory = private_directory(
+        backups / started.strftime("%Y%m%dT%H%M%SZ"), create=True
+    )
+    if any(directory.iterdir()):
+        raise ConfigError("A backup set with this name already exists.")
+    clock = time.monotonic()
+    with _output_file(directory, DUMP) as sink:
+        database_bytes, database_digest = dump_database(
+            configuration, sink, recipient=recipient
+        )
+        _finish(sink)
+    database_seconds = round(time.monotonic() - clock, 3)
+    clock = time.monotonic()
+    with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as spool:
+        archive_files(configuration, spool)
+        spool.seek(0)
+        with _output_file(directory, FILES) as sink:
+            files_bytes, files_digest = seal(
+                spool, sink, recipient=recipient, kind="files"
+            )
+            _finish(sink)
+    files_seconds = round(time.monotonic() - clock, 3)
+    manifest = {
+        "version": 1,
+        "application_version": __version__,
+        "started_at": started.isoformat(),
+        "completed_at": datetime.now(UTC).isoformat(),
+        "recipient_fingerprint": recipient.fingerprint,
+        "database": {
+            "file": DUMP,
+            "plaintext_bytes": database_bytes,
+            "plaintext_sha256": database_digest,
+            "sealed_sha256": _sha256(directory / DUMP),
+            "seconds": database_seconds,
+        },
+        "files": {
+            "file": FILES,
+            "plaintext_bytes": files_bytes,
+            "plaintext_sha256": files_digest,
+            "sealed_sha256": _sha256(directory / FILES),
+            "seconds": files_seconds,
+        },
+    }
+    encoded = json.dumps(manifest, indent=2, sort_keys=True).encode() + b"\n"
+    with _output_file(directory, MANIFEST) as sink:
+        sink.write(encoded)
+        _finish(sink)
+    _sync_directory(directory)
+    _sync_directory(backups)
+    record(
+        started_at=started,
+        database_bytes=database_bytes,
+        files_bytes=files_bytes,
+        manifest_digest=hashlib.sha256(encoded).hexdigest(),
+        recipient_fingerprint=recipient.fingerprint,
+        application_version=__version__,
+    )
+    _prune(backups)
+    return manifest
+
+
+def _sha256(path):
+    """Digest one sealed output for the manifest."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def recent_backup_recorded(cursor):
+    """True when a completed backup is recorded within the required window.
+
+    The offline upgrade commands call this on a configured deployment before
+    changing its schema or grants: the row is the evidence, the clock is the
+    database's, and a missing table (a database older than this feature) is
+    the same as no backup.
+    """
+    cursor.execute("SELECT to_regclass('public.stewardship_backup_run')")
+    if cursor.fetchone()[0] is None:
+        return False
+    cursor.execute(
+        "SELECT EXISTS(SELECT 1 FROM public.stewardship_backup_run "
+        "WHERE completed_at>=clock_timestamp()-%s)",
+        [REQUIRED_WITHIN],
+    )
+    return cursor.fetchone()[0]

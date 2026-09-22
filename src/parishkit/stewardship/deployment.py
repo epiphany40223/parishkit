@@ -62,6 +62,7 @@ PATH_DEFAULTS = {
     "logs": "logs",
     "reports": "reports",
     "run": "run",
+    "backups": "backups",
 }
 PERSISTENT_STORES = {"postgresql", "valkey", "caddy", "media"}
 SECRET_NAMES = frozenset(

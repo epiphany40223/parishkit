@@ -17,6 +17,7 @@ from parishkit.stewardship.source.health import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .backup_health import needs_backup_observation, observe_backup_health
 from .dispatch import Handler, RecoveryPlan
 from .due_work_health import needs_due_work_observation, observe_due_work_health
 from .mail_health import needs_mail_observation, observe_mail_health
@@ -52,6 +53,7 @@ def produce_collection(guard):
             and admitted_source_scope() is None
             and not needs_mail_observation()
             and not needs_due_work_observation()
+            and not needs_backup_observation()
         ):
             return ()
         key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
@@ -169,6 +171,12 @@ def _execute(execution):
         try:
             with transaction.atomic():
                 observe_due_work_health()
+        except Exception:
+            execution.check()
+            operational(Event.TASK_FAILED, level="ERROR")
+        try:
+            with transaction.atomic():
+                observe_backup_health()
         except Exception:
             execution.check()
             operational(Event.TASK_FAILED, level="ERROR")

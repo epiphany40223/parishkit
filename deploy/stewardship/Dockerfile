@@ -5,6 +5,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
+# The backup profile dumps the PostgreSQL 18 service with the matching client,
+# which Debian trixie does not carry: take it from the PostgreSQL project's
+# repository, pinned by version, with the signing key checked by digest.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \
+    && echo "0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76  /usr/share/keyrings/pgdg.asc" | sha256sum -c - \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-18=18.6-1.pgdg13+2 \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements/stewardship.txt requirements/stewardship-build.txt requirements/
 # Phase 0 keeps the locked test tools in the same image for local/CI parity.
 # Release size/scanning and the artifact build pipeline are owned by OPS-09.

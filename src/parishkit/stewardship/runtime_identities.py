@@ -15,6 +15,7 @@ def database_identities():
         ServiceRole.CONFIG_INSTALLER,
         ServiceRole.BOOTSTRAP,
         ServiceRole.ADMIN_RECOVERY,
+        ServiceRole.BACKUP_WORKER,
     ):
         result.append((role.value, login_name(role), role, None))
     result.append(("download", login_name("download"), "download", None))

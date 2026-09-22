@@ -20,6 +20,7 @@
 !src/parishkit/stewardship/schema/tables.sql
 !src/parishkit/stewardship/schema/seed.sql
 !src/parishkit/stewardship/schema/guards.sql
+!src/parishkit/stewardship/schema/backup.sql
 !src/parishkit/stewardship/schema/delivery.sql
 !src/parishkit/stewardship/schema/mail_health.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
