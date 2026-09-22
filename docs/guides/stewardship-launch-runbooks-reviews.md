@@ -39,3 +39,35 @@ validated, all corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex produced no output). Fourteen raw findings, six
+validated:
+
+- High: the credential replacement step implied acknowledgement happens by
+  itself; the operator must run `acknowledge-credential` inside each
+  recreated service with the request UUID from the status page, using `exec`
+  and never `compose run`, with exactly one Compose file. The step now says
+  so. Corrected.
+- High: while delivery is paused the resend is not offered for a production
+  Family message, yet resume is refused while any unknown delivery remains,
+  so a Family message the provider shows was not sent cannot be resolved
+  during a pause. This is a product defect, not a documentation one; the
+  runbook now states the gap, forbids a false delivery confirmation to
+  unblock a resume, and gives the interim course, and the code correction is
+  the next increment, before the pre-launch gate.
+- Medium: the resume preconditions omitted already-submitting messages,
+  blocked Family groups and a running activation catch-up; they are listed.
+  Corrected.
+- Medium: the resend step presented the button as always available; its
+  preconditions and what to do when it is absent are stated. Corrected.
+- Medium: the closed-campaign path omitted the clear decision and the
+  cancel refusals; both are described. Corrected.
+- Medium: a failed or expired replacement after consumers were recreated
+  needs them recreated again, not restarted; a failure branch says so.
+  Corrected.
+
+The eight findings the validation step did not confirm were not carried
+forward. Since the second round validated findings, a correction check
+follows.

@@ -121,16 +121,30 @@ restored.
    installer checks connectivity first and sends no message.
 2. When the status page says the candidate passed and is installed, recreate
    every consuming service (for the mailbox, `mail-dispatch`; for ParishSoft
-   and Slack, `worker`) with `up --detach --force-recreate` on the deployment's
-   Compose file, and let each acknowledge the loaded credential, as the
-   runtime guide's setup section and the
-   [credential installer guide](stewardship-credential-installers.md)
-   describe. The web application cannot do this for you.
-3. When every consumer has acknowledged, choose **Review and select the
-   acknowledged fingerprint** on the status page, so the integration's
+   and Slack, `worker`) with `up --detach --force-recreate`, using exactly one
+   Compose file (`compose.json`, or `compose-slack.json` when Slack is
+   configured) and the deployment's usual project name, never an overlay
+   combination.
+3. Acknowledge the credential inside each recreated service yourself; nothing
+   does it for you. Take the request UUID from the status page's **Request:**
+   line and run, for each consumer,
+   `docker compose ... exec -T <service> pk-stewardship acknowledge-credential --config <that service's configuration> --request-id <UUID>`.
+   Use `exec` into the running service, never `compose run`: a one-off
+   container cannot acknowledge. The
+   [credential installer guide](stewardship-credential-installers.md) and the
+   runtime guide's setup section describe the protocol.
+4. When the status page says every required consumer acknowledged, choose
+   **Review and select the acknowledged fingerprint**, so the integration's
    configuration names the credential that is now installed. Until then the
    credential cannot support normal work.
-4. Re-run the smoke check to confirm.
+5. Re-run the smoke check to confirm.
+
+If the status page instead says the replacement was not applied (it failed,
+or the hour ran out), the previous credential is restored and the candidate
+file removed. Recreate the same consumers again with
+`up --detach --force-recreate`, not a restart: a restarted container keeps the
+removed file's old mount and goes on failing. Then re-run the smoke check
+before trying again.
 
 ## Pausing and resuming delivery
 
@@ -151,8 +165,13 @@ only for the current Production campaign.
 3. Fix the cause. The page and the Admin banner show the held, submitting and
    unknown counts.
 4. To resume an active campaign:
-   1. Resolve any `delivery_unknown` messages first (below) and let report
-      preparation reach its safe point; the page refuses to resume until then.
+   1. Clear what the page refuses to resume over: every message still being
+      submitted must finish, every unknown delivery must be resolved (below;
+      the unknown count also includes messages awaiting an idempotent
+      retry), report preparation must reach its safe point, and any blocked
+      Family group on the **Overdue Family-mail planning** panel must be
+      resolved. The resume controls are hidden entirely while an activation
+      catch-up is still running.
    2. Choose **Preview and send a test to the configured Testing recipient**
       and wait until the page says **The current provider and sender accepted
       a test after this pause.** The proof is valid for five minutes.
@@ -169,8 +188,12 @@ If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
 released, and the page instead offers to resolve the held receipts and Admin
 reports by type: release the ones that should still go, after the same
-sender check, and cancel the rest with a reason. This does not reopen Family
-access. The pause clears only once no held or uncertain message remains.
+sender check, and cancel the rest with a reason. A type cannot be cancelled
+while any of its messages is still submitting or unknown, or while report
+preparation is running. This does not reopen Family access. A resolution
+clears the pause only when it leaves nothing held, submitting or unknown; if
+the last unknown delivery is reconciled afterwards, choose **Clear an empty,
+fully resolved pause (select no types)** to clear it.
 
 The [delivery pause guide](stewardship-delivery-pause.md) is the design; the
 [delivery journal](stewardship-delivery-journal.md) explains what the
@@ -200,13 +223,28 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    completes.
 4. If the provider shows it was not sent, choose **Authorize potentially
    duplicate resend**, acknowledging that the Family may receive it twice;
-   this creates a new attempt under the same occurrence.
+   this creates a new attempt under the same occurrence. The button appears
+   only when a resend is still permitted: the campaign is inside its dates
+   and not paused, the Family is still active, eligible and reachable, has
+   not already submitted (no reminder after a response), and no activation
+   catch-up or restore hold is pending. When it is absent, a resend is not
+   permitted now; record that in the note and leave the message unresolved.
 5. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
    resolved.
 
-Never resend outside the portal, and never resolve without a note: the note
-is the only record of why a Family got one message or two.
+Never resend outside the portal, never resolve without a note, and never use
+**Confirm delivery using external evidence** for a message the provider shows
+was *not* sent, even to unblock a resume: the note and the resolution are the
+only record of why a Family got one message, two or none.
+
+**Known v1 gap, being corrected before the pre-launch gate:** while delivery
+is paused, the resend is not offered for a production Family message, yet
+resume is refused while any unknown delivery remains. A Family message that
+the provider shows was not sent therefore cannot be resolved during a pause.
+Until the correction lands, avoid pausing while such a message is unresolved;
+if it happens, record the evidence in a note, leave the message unresolved,
+and escalate rather than confirming a delivery that did not happen.
 
 ## Index
 
