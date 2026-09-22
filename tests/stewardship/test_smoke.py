@@ -194,14 +194,41 @@ def test_slack_posts_only_with_a_channel_and_send(tmp_path, monkeypatch):
         tmp_path, ServiceRole.WORKER, "configured-slack", slack=b"xoxb-token\n"
     )
     monkeypatch.setattr(provider_check_worker, "_slack", outcome("valid"))
-    posts, answers = [], [(200, {"ok": True})]
+    posts, answers, sessions = [], [(200, b'{"ok": true}')], []
 
-    def post(url, *, headers, json, timeout, allow_redirects):
-        posts.append((url, headers, json))
-        status, body = answers[0]
-        return SimpleNamespace(status_code=status, json=lambda: body)
+    class Response:
+        """A streamed answer whose body is read with a bound."""
 
-    monkeypatch.setattr(requests, "post", post)
+        def __init__(self, status, content):
+            self.status_code = status
+            self.raw = SimpleNamespace(read=lambda size, decode_content: content[:size])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class Session:
+        """Records the transport posture the post runs under."""
+
+        def __init__(self):
+            self.trust_env = True
+            sessions.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, *, headers, json, timeout, allow_redirects, stream):
+            assert self.trust_env is False and allow_redirects is False
+            assert stream is True and timeout == 10
+            posts.append((url, headers, json))
+            return Response(*answers[0])
+
+    monkeypatch.setattr(requests, "Session", Session)
     assert smoke.check_slack(configuration) == {"credential": "valid"}
     assert smoke.check_slack(configuration, channel_id="C123") == {
         "credential": "valid"
@@ -215,11 +242,86 @@ def test_slack_posts_only_with_a_channel_and_send(tmp_path, monkeypatch):
     assert body["channel"] == "C123" and "smoke test" in body["text"]
     with pytest.raises(ConfigError):
         smoke.check_slack(configuration, channel_id="bad channel", send=True)
-    # Slack refusing the post, by status or by its own answer, is a refusal.
-    for answer in ((200, {"ok": False, "error": "not_in_channel"}), (500, {})):
+    # Slack refusing the post, by status, by its own answer, with an answer
+    # that is not JSON or one past the bound, is a refusal.
+    oversized = b'{"ok": true, "pad": "' + b"x" * 70000 + b'"}'
+    for answer in (
+        (200, b'{"ok": false, "error": "not_in_channel"}'),
+        (500, b"{}"),
+        (200, b"<html>"),
+        (200, b"[true]"),
+        (200, oversized),
+    ):
         answers[0] = answer
         with pytest.raises(ConfigError, match="refused"):
             smoke.check_slack(configuration, channel_id="C123", send=True)
+    assert all(session.trust_env is False for session in sessions)
+
+
+def test_the_mailbox_token_exchange_uses_only_the_token_endpoint(monkeypatch):
+    """The send-time refresh reaches Google's token URL through the session."""
+    calls = []
+
+    class Session:
+        """A restricted session answering the token exchange."""
+
+        def request(self, method, url, data=None, headers=None):
+            calls.append((method, url, data, headers))
+            return SimpleNamespace(
+                status_code=200, content=b'{"access_token": "t"}', headers={"a": "b"}
+            )
+
+    request = smoke._google_transport(Session())
+    answer = request(
+        smoke.GOOGLE_TOKEN_URI, method="POST", body="grant", headers={"h": "v"}
+    )
+    assert (answer.status, answer.data, answer.headers) == (
+        200,
+        b'{"access_token": "t"}',
+        {"a": "b"},
+    )
+    assert calls == [("POST", smoke.GOOGLE_TOKEN_URI, "grant", {"h": "v"})]
+    for url, method in (
+        ("https://example.invalid/token", "POST"),
+        (smoke.GOOGLE_TOKEN_URI, "GET"),
+    ):
+        with pytest.raises(ValueError):
+            request(url, method=method)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "role, target",
+    [
+        (ServiceRole.SCHEDULER, None),
+        (ServiceRole.BACKUP_WORKER, None),
+        (ServiceRole.CREDENTIAL_INSTALLER, "parishsoft"),
+    ],
+)
+def test_a_non_consumer_profile_is_refused(tmp_path, monkeypatch, capsys, role, target):
+    """Only a deployed web, worker or mail-dispatch service runs the check."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = _service_config(configuration_at(tmp_path), role, target=target)
+    path = tmp_path / "service.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    called = []
+    monkeypatch.setattr(smoke, "check_parishsoft", lambda *a, **k: called.append(a))
+    args = SimpleNamespace(
+        config=str(path),
+        target="parishsoft",
+        organization_id="7",
+        delegated_email=None,
+        send_to=None,
+        channel_id=None,
+        send=None,
+    )
+    assert smoke.execute_smoke(args) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and "smoke check refused" in captured.err
+    assert called == []
 
 
 def test_a_send_failure_reaches_the_console_as_one_generic_line(

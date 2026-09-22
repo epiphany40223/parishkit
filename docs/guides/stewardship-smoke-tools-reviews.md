@@ -27,3 +27,25 @@ both corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex produced no output). Twelve raw findings, three
+validated, all corrected:
+
+- Medium: the Slack post used a default HTTP session, so proxy, CA bundle
+  and netrc settings from the container environment applied to a request
+  carrying the bot token, and the answer was read without a bound. The post
+  now runs in a session that ignores the environment, follows no redirect
+  and reads at most the installer's response bound; a non-JSON or oversized
+  answer is a refusal, and the test asserts the posture.
+- Medium: the send-time token exchange adapter was never exercised. A case
+  drives it against a stub session and asserts the mapped answer and that
+  any other URL or method is refused without a request.
+- Medium: the non-consumer refusal, the command's main containment, was
+  untested. Cases run the console under the scheduler, backup-worker and
+  credential-installer profiles and assert the generic refusal before any
+  check runs.
+
+The nine findings the validation step did not confirm were not carried
+forward.

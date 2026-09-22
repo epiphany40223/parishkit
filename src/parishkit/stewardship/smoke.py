@@ -114,21 +114,44 @@ def check_slack(configuration, *, channel_id=None, send=False):
     value = _credential(configuration, "slack")
     result = {"credential": _outcome("slack", value, {})}
     if send and channel_id is not None and result["credential"] == "valid":
-        import requests
-
         settings = validated_context("slack", {"channel_id": channel_id})
-        response = requests.post(
-            SLACK_POST,
-            headers={"Authorization": "Bearer " + slack_candidate(value)},
-            json={"channel": settings["channel_id"], "text": _text()},
-            timeout=10,
-            allow_redirects=False,
-        )
-        body = response.json() if response.status_code == 200 else {}
-        if body.get("ok") is not True:
+        if not _slack_post(slack_candidate(value), settings["channel_id"]):
             raise ConfigError("Slack refused the smoke message.")
         result["sent"] = True
     return result
+
+
+def _slack_post(token, channel):
+    """Post the fixed message with the installer's transport posture.
+
+    Like the credential checks, the token-bearing request ignores proxy, CA
+    bundle and netrc settings from the environment, follows no redirect and
+    reads a bounded answer; anything but Slack's own `ok` is a refusal.
+    """
+    import requests
+
+    from .provider_check_worker import MAX_RESPONSE
+
+    with requests.Session() as session:
+        session.trust_env = False
+        with session.post(
+            SLACK_POST,
+            headers={"Authorization": "Bearer " + token},
+            json={"channel": channel, "text": _text()},
+            timeout=10,
+            allow_redirects=False,
+            stream=True,
+        ) as response:
+            if response.status_code != 200:
+                return False
+            content = response.raw.read(MAX_RESPONSE + 1, decode_content=True)
+    if len(content) > MAX_RESPONSE:
+        return False
+    try:
+        body = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return type(body) is dict and body.get("ok") is True
 
 
 def check_google_oauth(configuration):

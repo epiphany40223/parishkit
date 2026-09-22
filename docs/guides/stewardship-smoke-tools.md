@@ -56,7 +56,12 @@ With an address or channel the operator names, the command sends one fixed
 message, the subject `ParishKit Stewardship smoke test` and a body naming the
 time, through the same authenticated SMTP session or Slack's
 `chat.postMessage`. The message names nothing about the deployment. A send
-happens only after the credential check passed and only when asked.
+happens only after the credential check passed and only when asked. The
+mailbox's send-time token refresh goes through the installer's restricted
+session; the Slack post keeps the same posture, ignoring proxy, CA bundle and
+netrc settings from the environment, following no redirect and reading a
+bounded answer, so the token never meets a transport the installer would
+refuse.
 
 ### Google login is the human's
 
@@ -74,11 +79,14 @@ public origin. The command prints the URI the deployment expects,
   check that did not pass never sends; the mailbox send happens only after a
   valid check and only with an address, with the fixed subject and body and
   the operator's address, and a refused send-time authentication sends
-  nothing; the Slack post happens only with a channel and `--send`, and
-  Slack refusing it is a refusal; a failure after a valid check reaches the
+  nothing; the send-time token exchange reaches only Google's token URL; the
+  Slack post happens only with a channel and `--send`, under a session that
+  ignores the environment, and Slack refusing it, a non-JSON answer or one
+  past the bound is a refusal; a failure after a valid check reaches the
   console as the one generic line; the OAuth
   document check prints the redirect URI; a consumer without the credential,
-  an unknown target and a non-consumer profile are refused; the console
+  an unknown target and a non-consumer profile (scheduler, backup worker,
+  credential installer) are refused before any check runs; the console
   never echoes an option value, a token or a provider error; the parser
   admits only the smoke options.
 - The real network path is not tested in CI: the runbook's smoke pass before
