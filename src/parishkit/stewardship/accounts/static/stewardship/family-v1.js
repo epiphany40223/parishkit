@@ -6,8 +6,7 @@
   const session = document.querySelector("[data-family-session]");
   const message = document.getElementById("family-flow-message");
   const cancel = document.getElementById("family-cancel");
-  // Page token inputs also serve the sign-out form and ui-v1.js's keepalive
-  // and presence calls, so a refreshed token is written back to all of them.
+  // Read at each request: a CSRF recovery rewrites the page token fields.
   const csrfInput = cancel.querySelector('[name="csrfmiddlewaretoken"]');
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
@@ -93,15 +92,11 @@
         "Accept": "application/json"}, body: JSON.stringify(body)
     });
     if (response.status === 403) {
-      // A stale page token is not an ended session: the server rejected the
-      // request before running it and sent a fresh token. Keep every answer.
-      const denial = response.headers.get("Content-Type")?.includes("application/json") ?
-        await response.json().catch(() => null) : null;
       submissionAttempted = uncertainSubmission;
-      if (denial?.error === "csrf_failed" && typeof denial.csrf_token === "string" && denial.csrf_token) {
-        document.querySelectorAll('[name="csrfmiddlewaretoken"]').forEach((input) => {
-          input.value = denial.csrf_token;
-        });
+      // A stale page token is not an ended session: the server rejected the
+      // request before running it and sent a fresh token (installed by
+      // ui-v1.js's shared helper). Keep every answer; the Family retries.
+      if (await window.stewardshipRecoverCsrf?.(response)) {
         say("This page's security check was out of date and has been refreshed. Your answers are still here. Please try again.");
         return null;
       }

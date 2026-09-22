@@ -472,6 +472,51 @@ def test_failed_keepalive_retains_activity_for_a_bounded_retry(
     assert all(not request.post_data for request in attempts)
 
 
+def test_stale_csrf_keepalive_and_presence_recover_with_one_retry(
+    page, component_origin
+):
+    """A csrf_failed reply installs its fresh token and retries without expiry."""
+    page.clock.install(time=NOW)
+    claims, beats = [], []
+
+    def stale(token):
+        """The server's CSRF failure body carrying a fresh page token."""
+        return {"error": "csrf_failed", "csrf_token": token * 64}
+
+    def keepalive(route):
+        """Reject the stale page token once, then accept the refreshed one."""
+        claims.append(route.request.headers["x-csrftoken"])
+        if len(claims) == 1:
+            route.fulfill(status=403, json=stale("b"))
+        else:
+            route.fulfill(json={"idle_deadline": "2026-09-10T14:00:00Z"})
+
+    def presence(route):
+        """Presence answers the same way when its token is stale."""
+        beats.append(route.request.headers["x-csrftoken"])
+        if beats[-1] == "a" * 64:
+            route.fulfill(status=403, json=stale("c"))
+        else:
+            route.fulfill(json={"recorded": True})
+
+    page.route("**/family/keepalive", keepalive)
+    page.route("**/family/presence", presence)
+    page.goto(component_origin + "/family")
+    page.wait_for_function(
+        "document.querySelector('[name=csrfmiddlewaretoken]').value === 'c'.repeat(64)"
+    )
+    assert beats == ["a" * 64, "c" * 64]
+    page.keyboard.press("Tab")
+    page.clock.fast_forward(6 * 60 * 1000)
+    page.wait_for_function("document.readyState === 'complete'")
+    page.wait_for_timeout(50)
+    assert claims == ["c" * 64, "b" * 64]
+    token = page.locator("#family-cancel [name=csrfmiddlewaretoken]")
+    assert token.input_value() == "b" * 64
+    assert page.locator("#session-expired").is_hidden()
+    assert page.locator("#family-cancel").is_visible()
+
+
 def test_admin_activity_never_uses_family_keepalive(page, component_origin):
     """The Admin clock warns and expires without renewing through Family endpoints."""
     page.clock.install(time=NOW)

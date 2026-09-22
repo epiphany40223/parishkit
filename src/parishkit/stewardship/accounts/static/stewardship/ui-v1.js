@@ -3,6 +3,24 @@
 // Progressive enhancement only: never store answers or credentials in browser
 // storage, and never convert date-only campaign buckets into browser dates.
 (() => {
+  // Family routes answer a stale page token with a 403 JSON body
+  // {error: "csrf_failed", csrf_token}; the rejected request did nothing and
+  // the session is still valid. Install the fresh token in every page token
+  // field (sign-out form, keepalive, presence and family-v1.js all read them)
+  // and report whether the caller may retry once. Shared with family-v1.js.
+  async function recoverCsrf(response) {
+    if (response.status !== 403 ||
+        !response.headers.get("Content-Type")?.includes("application/json")) return false;
+    const denial = await response.json().catch(() => null);
+    if (denial?.error !== "csrf_failed" || typeof denial.csrf_token !== "string" ||
+        !denial.csrf_token) return false;
+    document.querySelectorAll('[name="csrfmiddlewaretoken"]').forEach((input) => {
+      input.value = denial.csrf_token;
+    });
+    return true;
+  }
+  window.stewardshipRecoverCsrf = recoverCsrf;
+
   document.querySelectorAll("time[data-local-instant]").forEach((node) => {
     const date = new Date(node.dateTime);
     if (!Number.isFinite(date.getTime()) || typeof Intl === "undefined") return;
@@ -360,12 +378,15 @@
         familyPresencePending || !csrf ||
         Date.now() + offset >= Math.min(deadline, absolute)) return;
     familyPresencePending = true;
+    const beat = () => fetch("/family/presence", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: {"X-CSRFToken": csrf.value, "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"},
+      body: new URLSearchParams({section: session.dataset.presenceSection || "welcome"})
+    });
     try {
-      await fetch("/family/presence", {
-        method: "POST", credentials: "same-origin", cache: "no-store",
-        headers: {"X-CSRFToken": csrf.value, "Content-Type": "application/x-www-form-urlencoded"},
-        body: new URLSearchParams({section: session.dataset.presenceSection || "welcome"})
-      });
+      // One retry with a refreshed token; a second failure waits for the next beat.
+      if (await recoverCsrf(await beat())) await beat();
     } catch {
       // Presence failure neither renews the session nor replays any form values.
     } finally { familyPresencePending = false; }
@@ -396,11 +417,15 @@
     pending = true;
     dirty = false;
     lastAttempt = Date.now();
+    const claim = () => fetch("/family/keepalive", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"}
+    });
     try {
-      const response = await fetch("/family/keepalive", {
-        method: "POST", credentials: "same-origin", cache: "no-store",
-        headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"}
-      });
+      let response = await claim();
+      // A stale token never reached the view, so the claim is still unused:
+      // retry it once with the refreshed token instead of failing forever.
+      if (await recoverCsrf(response)) response = await claim();
       if (response.ok) {
         const result = await response.json();
         const next = Date.parse(result.idle_deadline);
