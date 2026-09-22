@@ -10,7 +10,10 @@ each command's exact behaviour and refusals, the
 [deployment settings reference](../development/stewardship-deployment.md) owns
 the YAML fields, and the [release image guide](stewardship-release-image.md)
 owns how the image is published and retargeted. Where this runbook and a
-linked guide disagree, the linked guide is right; fix the runbook.
+linked guide disagree, the linked guide is right; fix the runbook. Outages,
+delivery pauses and unknown deliveries during the campaign are the
+[launch runbooks](stewardship-launch-runbooks.md); backup and restore are the
+[backup runbook](stewardship-backup-runbook.md).
 
 Nothing here authorizes a release, a deployment or a Production activation by
 itself. The human pushes release tags, installs on the production host and

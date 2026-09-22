@@ -100,3 +100,31 @@ exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; a real message is sent only when the human runs the command with
 an address.
+
+## Protected delivery
+
+PR #95 delivered candidate `f963c461`, three logical commits plus the PR #94
+receipt and the CI smoke-set rotation, whose tree `df3ce3df` is identical to
+the retained commit-by-commit review history on
+`pr/stewardship-smoke-tools-reviewed` (`d595226f`) and to the landed tree. The
+three [review/fix rounds](stewardship-smoke-tools-reviews.md) were
+single-source under the exemption, with every accepted finding fixed and the
+third validating nothing. The pull request was marked ready before the
+candidate was pushed. Exact-head ready-candidate CI `35723878626` and DCO
+passed all 25 checks, from 11:53:39 to 12:19:55 UTC on September 22, 2026
+(26 minutes 16 seconds). Its first attempt failed one scenario, the complete
+operational Compose setup, whose finalization task was still in
+`retry_wait` when the probe's deadline passed after the configuration
+installer reported one transient unavailable configuration; nothing in this
+increment touches that installer or the setup path, the same scenario passed
+on `main` an hour earlier, and a rerun of the failed jobs on the same
+candidate passed. `origin/main` had no intervening commits since the
+candidate's base `ad43c0d9`. Protected auto-merge landed as `dd15605f` at
+12:20:05 UTC and was verified on freshly fetched `origin/main`, whose second
+parent's tree is the candidate's, before the next increment started. This
+used the standing delivery authority, without deployment or release; no real
+provider was contacted. The failed first attempt and the cancelled run are
+not counted as acceptance.
+
+The smoke tools increment is delivered. The launch scope continues with the
+[launch runbooks](stewardship-launch-runbooks.md).
