@@ -127,6 +127,10 @@ def test_statistics_metadata_is_read_only_and_not_given_to_downloads():
     assert "validation" not in metadata["SELECT"]
     assert metadata["UPDATE"] == {"id"}
     assert "stewardship_source_snapshot" not in tables
+    # The manual refresh coalesces through the lease owner alone; the web
+    # role never reads the whole lease row (fence, phase, deadlines).
+    assert "stewardship_source_lease" not in tables
+    assert columns["stewardship_source_lease"]["SELECT"] >= {"owner_id"}
     download_tables, download_columns = runtime_grants("download")
     assert "stewardship_source_snapshot" not in download_tables
     assert not {"counts", "organization_id"} & download_columns.get(

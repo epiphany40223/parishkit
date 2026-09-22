@@ -26,6 +26,7 @@ from .accounts import (
     ministry_views,
     parish_views,
     presence,
+    refresh_views,
     rule_autosave_views,
     schedule_views,
     security_event_views,
@@ -455,6 +456,7 @@ admin_patterns = [
         security_event_views.acknowledge_event,
         name="security_event_acknowledge",
     ),
+    path("source/refresh", refresh_views.source_refresh, name="source_refresh"),
     path(
         "configuration/ministries", ministry_views.ministry_activity, name="ministries"
     ),

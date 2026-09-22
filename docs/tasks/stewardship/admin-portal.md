@@ -228,8 +228,9 @@ resolution the specification requires, and is delivered under its
 [protected receipt](../../guides/stewardship-rule-autosave.md#protected-delivery).
 The [race and exact-once tests increment](../../guides/stewardship-autosave-races.md)
 adds the cases of .05 the delivered suites did not yet hold and cites where
-the rest live, so .01 to .05 are checked; its review/fix rounds, full
-exact-head CI/DCO and protected delivery remain pending.
+the rest live, so .01 to .05 are checked; it is delivered under its
+[protected receipt](../../guides/stewardship-autosave-races.md#protected-delivery),
+which completes ADM-07.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
@@ -263,6 +264,12 @@ DEBUG excluded by default, and closed level, source, type, actor, correlation,
 campaign and date filters over a stable cursor. .04 stays unchecked until its
 text and JSONL export, full-text search, and entity and Ministry filtering land
 with RPT-09.
+
+The [manual refresh increment](../../guides/stewardship-manual-refresh.md)
+implements .01 under the v1 launch scope: a confirmed, keyed, coalesced
+manual full refresh that leads to the run's progress page, with the home
+page linking to it. Its review/fix rounds, full exact-head CI/DCO and
+protected delivery remain pending, so .01 stays unchecked until then.
 
 ## ADM-09: Census review and ParishSoft publication UI
 

@@ -752,6 +752,24 @@ def component_origin():
                 }
             },
         ),
+        (
+            "/source-refresh",
+            "source-refresh",
+            {
+                "refreshed_at": NOW,
+                "pending": {"running": False, "waiting": False},
+                "request_key": uuid4(),
+            },
+        ),
+        (
+            "/source-refresh-running",
+            "source-refresh",
+            {
+                "refreshed_at": None,
+                "pending": {"running": True, "waiting": False},
+                "request_key": uuid4(),
+            },
+        ),
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
     ):

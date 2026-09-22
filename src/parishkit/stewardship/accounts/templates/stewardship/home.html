@@ -9,7 +9,7 @@
     <p>{{ dashboard.campaign.active_configuration.start_date|parish_date }} – {{ dashboard.campaign.active_configuration.end_date|parish_date }} ({{ dashboard.campaign.active_configuration.timezone }})</p>
     {% else %}<p>{% translate "No current campaign has been configured." %}</p>{% endif %}
     <p>{% translate "Latest successful source refresh:" %}
-      {% if dashboard.refreshed_at %}<time datetime="{{ dashboard.refreshed_at|instant }}" data-local-instant>{{ dashboard.refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}
+      {% if dashboard.refreshed_at %}<time datetime="{{ dashboard.refreshed_at|instant }}" data-local-instant>{{ dashboard.refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}{% if dashboard.can_refresh %} <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a>{% endif %}
     </p>
     {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
