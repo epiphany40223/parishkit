@@ -229,6 +229,15 @@ September 7, 2026: the complete host runner passed 603 tests (3 opt-in Docker
 checks skipped), with 96.91% lines and 95.22% branches. Migration drift reported
 no changes. Ruff and Markdown checks passed.
 
+Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the
+[smoke tools increment](../../guides/stewardship-smoke-tools.md) delivers the
+human-run smoke portion of OPS-09.04: `pk-stewardship smoke`, run inside the
+deployed consumer that holds each credential, reuses the credential
+installers' checks for ParishSoft, the Google Workspace mailbox and Slack,
+validates the Google OAuth client document, and optionally sends one fixed
+message; normal CI stays fake-backed. OPS-09.04 stays unchecked for the rest
+of its scope.
+
 OPS-09.01 is partial: required lint/format/Markdown, manifest-derived coverage,
 and scaffold migration drift are in CI; database-backed migration and frontend
 checks follow their implementation. OPS-09.03 now defines a Linux CI image-build
