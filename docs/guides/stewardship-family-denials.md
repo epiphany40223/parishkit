@@ -84,3 +84,23 @@ Implementation, focused validation and the three
 [review rounds](stewardship-family-denials-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #101 delivered candidate `b1a174db`, two logical commits plus the receipt
+of PR #99, whose tree `41aafe6c` is the retained commit-by-commit review
+history on `pr/stewardship-family-denials-reviewed` (`f8393986`) plus exactly
+that receipt, and is the landed tree. The three
+[review rounds](stewardship-family-denials-reviews.md) were single-source
+under the exemption and validated nothing; their low-severity notes were
+taken where cheap. The pull request was marked ready before the candidate
+was pushed. Exact-head ready-candidate CI `35759619635` and DCO passed all
+25 checks, from 17:16:39 to 17:36:32 UTC on September 22, 2026 (19 minutes
+53 seconds). Earlier runs on superseded draft heads stopped at the
+draft-mode gates, and one was cancelled by the candidate push; none is
+counted as acceptance. `origin/main` had no intervening commits since the
+candidate's base `ed46c7ae`. Protected auto-merge landed as `aabcff6e` at
+17:36:36 UTC and was verified on freshly fetched `origin/main`, whose second
+parent's tree is the candidate's, before the next increment was committed.
+This used the standing delivery authority, without deployment or release; no
+real provider was contacted.
