@@ -16,6 +16,7 @@ LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
     "daily_digest": _("Daily Administrator report"),
+    "weekly_digest": _("Weekly Administrator report"),
     "receipt": _("Submission receipt"),
     "production": _("Production"),
     "testing": _("Testing"),
