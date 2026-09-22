@@ -66,9 +66,11 @@ a new generation already updated every row. What changes is when the locks
 are taken: at the start of Family reconciliation rather than at its final
 write, and they are held until the promotion commits. A Family page load or
 keepalive that arrives in that window waits, holding its own session row,
-with no lock timeout; for an ordinary quarter-hour refresh the window is
-short, and for a large first import it includes code allocation for every
-newly eligible Family. A replay of the same source generation, which writes
+with no lock timeout. For an ordinary quarter-hour refresh the window is
+short; it is longest for a refresh that makes many existing Families
+eligible at once, since it then includes their code allocation. A true first
+import makes no one wait, because no Family can hold a session before its
+row is committed. A replay of the same source generation, which writes
 no Family row, now also locks them all for its duration.
 
 ## Focused validation
