@@ -32,6 +32,7 @@ from parishkit.config import ConfigError
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private
 from .backup_sealing import Recipient, seal
+from .observability import Event, FailureKind, emit
 from .runtime_paths import (
     PROVISIONING_RECORD,
     RuntimeLayout,
@@ -48,8 +49,6 @@ RETAINED_SETS = 30
 # each); anything larger is not what this backup was designed for and stops
 # before sealing.
 MAX_FILES_BYTES = 256 * 1024 * 1024
-# pg_dump diagnostics kept for the process log when a dump fails.
-MAX_DIAGNOSTICS = 16 * 1024
 SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
 DUMP = "database.pgdump.sealed"
 FILES = "files.tar.sealed"
@@ -161,7 +160,8 @@ def dump_database(configuration, sink, *, recipient):
 
     The password reaches pg_dump through its environment, never its arguments.
     A failed dump leaves the sealed output unusable and is reported as one
-    generic refusal; pg_dump's own message stays in the process log.
+    generic refusal plus the ``backup_dump_failed`` failure category in the
+    process log; pg_dump's own stderr is drained and discarded.
     """
     binary = shutil.which("pg_dump")
     if binary is None:
@@ -189,13 +189,15 @@ def dump_database(configuration, sink, *, recipient):
         "PGSSLMODE": "disable",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
     }
-    diagnostics = bytearray()
 
     def drain(stream):
-        """Keep pg_dump's diagnostics, bounded, so a chatty dump cannot stall."""
-        for line in stream:
-            if len(diagnostics) < MAX_DIAGNOSTICS:
-                diagnostics.extend(line[: MAX_DIAGNOSTICS - len(diagnostics)])
+        """Read and discard pg_dump's diagnostics, so a chatty dump cannot stall.
+
+        Its text can name hosts, roles and paths, and the log formatter drops
+        free text anyway; the failure is reported by a reviewed event instead.
+        """
+        while stream.read(65536):
+            pass
 
     with subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
@@ -203,18 +205,17 @@ def dump_database(configuration, sink, *, recipient):
         reader = threading.Thread(target=drain, args=(process.stderr,), daemon=True)
         reader.start()
         count, digest = seal(process.stdout, sink, recipient=recipient, kind="database")
-        process.wait(timeout=3600)
+        # No time limit: a dump that never finishes is reported by the
+        # backup_rpo_breach overdue alert, not by this command.
+        process.wait()
         reader.join(timeout=30)
     if process.returncode != 0 or count == 0:
-        # pg_dump's own message is a diagnostic, not a secret; it goes to the
-        # process log, printable characters only, never to standard output.
-        logging.getLogger("parishkit.stewardship").error(
-            "pg_dump exited %s: %s",
-            process.returncode,
-            "".join(
-                char if 32 <= ord(char) < 127 else " "
-                for char in diagnostics.decode("utf-8", "replace")
-            ).strip(),
+        # Tell the operator the database step failed, as distinct from the
+        # configuration refusals the backup command reports by category.
+        emit(
+            Event.STARTUP_REJECTED,
+            level=logging.ERROR,
+            failure_kind=FailureKind.BACKUP_DUMP,
         )
         raise ConfigError("The database dump did not complete.")
     return count, digest
@@ -333,8 +334,8 @@ class RecentBackupRequired(ConfigError):
     """A configured deployment asked to change without a backup in the window.
 
     The operator commands report every refusal with one generic line; this
-    one also earns a fixed sentence in the process log, since the remedy is
-    always the same and the text names nothing private.
+    one also logs the ``upgrade_backup_required`` failure category, since the
+    remedy is always the same.
     """
 
 

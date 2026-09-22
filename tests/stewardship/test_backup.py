@@ -283,15 +283,22 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
 
 
 @pytest.mark.parametrize("failure", ["exit", "empty"])
-def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
+def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
     deployment, monkeypatch, caplog, capsys, failure
 ):
-    """A nonzero exit or an empty dump refuses; stderr is logged, bounded, printable."""
+    """A nonzero exit or an empty dump refuses with the backup_dump_failed kind.
+
+    The check formats the record exactly as production does: pg_dump's own
+    text never reaches the log, and the event survives the formatter.
+    """
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
     monkeypatch.undo()
     recipient = backup_sealing.Recipient.load(
         RuntimeLayout(deployment).credential("backup_data")
     )
-    noise = b"pg_dump: error: \x01secret\x7f " + b"x" * (backup.MAX_DIAGNOSTICS + 100)
+    # A canary pg_dump message; the padding checks a chatty stderr drains.
+    noise = b"pg_dump: error: secret " + b"x" * 200000
 
     class Process:
         """A pg_dump that fails, or that says nothing at all."""
@@ -317,10 +324,17 @@ def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
         pytest.raises(ConfigError, match="did not complete"),
     ):
         backup.dump_database(deployment, io.BytesIO(), recipient=recipient)
-    (record,) = [r for r in caplog.records if "pg_dump exited" in r.getMessage()]
-    message = record.getMessage()
-    assert "\x01" not in message and "\x7f" not in message
-    assert "secret" in message and len(message) <= backup.MAX_DIAGNOSTICS + 64
+    formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
+    events = [json.loads(line) for line in formatted]
+    assert any(
+        event["message"] == "startup_rejected"
+        and event["extra"].get("failure_kind") == "backup_dump_failed"
+        for event in events
+    )
+    # pg_dump's text is never logged, not even before the formatter drops it.
+    assert not any("secret" in line for line in formatted)
+    assert "secret" not in caplog.text
+    assert not any("secret" in record.getMessage() for record in caplog.records)
     assert capsys.readouterr().out == ""
 
 

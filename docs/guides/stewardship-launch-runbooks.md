@@ -205,15 +205,21 @@ failed task; one the provider may have accepted without confirming becomes
    restart campaign sending: `restart mail-dispatch` on the deployment's
    Compose file and project name. This clears the stopped state; nothing
    else does.
-6. On the deliveries page (`/admin/deliveries`), choose the **Failed
+6. If you paused in step 4, first settle every **Delivery unknown** message
+   (described below; confirming, recording it not sent and the held resend
+   all work while paused), then resume once the page's other resume
+   conditions hold (see
+   [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
+   the deliveries page (`/admin/deliveries`), choose the **Failed
    delivery** state and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
-   its page (the button is offered only when delivery is not paused, so
-   resume first if you paused). Then check the **Pending** and **Waiting to
-   retry** states for messages last changed during the outage whose page
-   offers **Retry delivery not accepted by the provider**, and choose it for
-   each that should still go. Settle any **Delivery unknown** message as
-   described below.
+   its page (the button is offered only when delivery is not paused). Then
+   check the **Pending** and **Waiting to retry** states for messages last
+   changed during the outage whose page offers **Retry delivery not accepted
+   by the provider**, and choose it for each that should still go. If you did
+   not pause, settle any **Delivery unknown** message as described below.
+   The [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
+   records the last check of this step.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been
 restarted, and the **Pending** and **Waiting to retry** lists on the

@@ -93,8 +93,8 @@ first overdue night on its own), opens the incident, and, before any row
 exists, does so only in Production, so a Testing install is not paged before
 its nightly backup is set up; and the offline upgrade commands, which admit a
 configured deployment only when a row completed within the same window and
-otherwise refuse with the generic line plus one fixed sentence in the process
-log naming the missing backup. The day-long window is the operations
+otherwise refuse with the generic line plus a process-log line whose
+failure kind is `upgrade_backup_required`. The day-long window is the operations
 specification's; the reduced form of the deferred upgrade admission is that
 this evidence stands in for verified restore evidence, which the runbook's
 tested restore supplies by hand.
