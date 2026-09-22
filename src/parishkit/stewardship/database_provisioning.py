@@ -87,15 +87,71 @@ def _admit_operator(cursor, configuration, marker, *, initial):
             "SELECT EXISTS(SELECT 1 FROM public.stewardship_system_configuration)"
         )
         if cursor.fetchone()[0]:
-            raise ConfigError("Configured SQL changes require upgrade admission.")
+            from .backup import require_recent_backup
+
+            # A configured deployment changes only behind a recent verified
+            # backup: the v1 reduction of the deferred upgrade admission.
+            require_recent_backup(cursor)
 
 
-def _check_role(cursor, name, marker, limit):
-    """Idempotent retry never adopts, repairs or silently changes an existing role."""
+def _admit_reader(cursor, login, tables):
+    """The backup login reads everything by membership and writes only its row.
+
+    `pg_read_all_data` makes every table readable, so the ordinary grant
+    comparison cannot apply; instead the membership must be present and no
+    privilege other than SELECT may exist beyond the registry.
+    """
+    cursor.execute("SELECT pg_has_role(%s,'pg_read_all_data','MEMBER')", [login])
+    if cursor.fetchone() != (True,):
+        raise ConfigError("The backup login lacks its read-all membership.")
+    cursor.execute(
+        "SELECT n.nspname,c.relname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "CROSS JOIN unnest(ARRAY['INSERT','UPDATE','DELETE',"
+        "'TRUNCATE','REFERENCES','TRIGGER']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') "
+        "AND has_table_privilege(%s,c.oid,p)",
+        [login],
+    )
+    for schema, table, privilege in cursor.fetchall():
+        if schema != "public" or privilege not in tables.get(table, set()):
+            raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
+    # Column-level writes are refused the same way; column reads come with
+    # the membership and need no listing.
+    cursor.execute(
+        "SELECT n.nspname,c.relname,a.attname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "JOIN pg_attribute a ON a.attrelid=c.oid "
+        "CROSS JOIN unnest(ARRAY['INSERT','UPDATE','REFERENCES']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped "
+        "AND has_column_privilege(%s,c.oid,a.attnum,p)",
+        [login],
+    )
+    for schema, table, _, privilege in cursor.fetchall():
+        if schema != "public" or privilege not in tables.get(table, set()):
+            raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
+
+
+# The backup login's only membership, as pg_auth_members reports it.
+READER_MEMBERSHIP = "pg_read_all_data:true:false"
+
+
+def _check_role(cursor, name, marker, limit, *, reader=False):
+    """Idempotent retry never adopts, repairs or silently changes an existing role.
+
+    No foundation login is a member of any role or bypasses row-level
+    security, except the backup login, whose one membership is exactly
+    pg_read_all_data with inheritance and without admin option and which
+    bypasses row-level security for pg_dump; anything else is a foreign role.
+    """
     cursor.execute(
         "SELECT shobj_description(oid,'pg_authid'),rolsuper,rolbypassrls,rolcreatedb,"
         "rolcreaterole,rolreplication,rolinherit,rolcanlogin,rolconnlimit,"
-        "EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid) "
+        "(SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
+        "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
+        "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
         "FROM pg_roles r WHERE rolname=%s",
         (name,),
     )
@@ -103,14 +159,14 @@ def _check_role(cursor, name, marker, limit):
     if row is not None and row != (
         marker,
         False,
-        False,
+        reader,
         False,
         False,
         False,
         False,
         True,
         limit,
-        False,
+        READER_MEMBERSHIP if reader else None,
     ):
         raise ConfigError("Existing database role differs from initial provisioning.")
     return row is not None
@@ -151,7 +207,13 @@ def provision_roles(configuration, deployment_id):
         _admit_operator(cursor, configuration, marker, initial=True)
         # Preflight every identity before the first role/password mutation.
         existing = {
-            name: _check_role(cursor, login, marker, role_limit(configuration, role))
+            name: _check_role(
+                cursor,
+                login,
+                marker,
+                role_limit(configuration, role),
+                reader=role is ServiceRole.BACKUP_WORKER,
+            )
             for name, login, role, _ in identities
         }
         for name, login, _, _ in identities:
@@ -176,13 +238,21 @@ def provision_roles(configuration, deployment_id):
                 verifier = database.pgconn.encrypt_password(
                     passwords[name], login.encode("ascii"), b"scram-sha-256"
                 ).decode("ascii")
+                # pg_dump runs with row security off, which PostgreSQL refuses
+                # for a login subject to a forced policy; the backup login
+                # therefore bypasses row-level security, and nothing else does.
                 cursor.execute(
                     sql.SQL(
-                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS "
+                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
                         "NOCREATEDB NOCREATEROLE NOREPLICATION "
                         "CONNECTION LIMIT {} PASSWORD {}"
                     ).format(
                         identifier,
+                        sql.SQL(
+                            "BYPASSRLS"
+                            if role is ServiceRole.BACKUP_WORKER
+                            else "NOBYPASSRLS"
+                        ),
                         sql.Literal(role_limit(configuration, role)),
                         sql.Literal(verifier),
                     )
@@ -210,6 +280,14 @@ def provision_roles(configuration, deployment_id):
                     ),
                 )
             )
+            if role is ServiceRole.BACKUP_WORKER:
+                # pg_dump needs every table; the login is NOINHERIT, so the
+                # membership itself must carry inheritance (PostgreSQL 16+).
+                cursor.execute(
+                    sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(
+                        identifier
+                    )
+                )
         # Migration owns only the application schema, not the database/roles.
         cursor.execute("ALTER SCHEMA public OWNER TO pk_stewardship_migration")
     return {"database_roles_provisioned": True}
@@ -232,12 +310,21 @@ def provision_grants(configuration, deployment_id):
     ):
         _admit_operator(cursor, configuration, marker, initial=False)
         for _, login, role, target in database_identities():
-            if not _check_role(cursor, login, marker, role_limit(configuration, role)):
+            if not _check_role(
+                cursor,
+                login,
+                marker,
+                role_limit(configuration, role),
+                reader=role is ServiceRole.BACKUP_WORKER,
+            ):
                 raise ConfigError("Database roles must be provisioned before grants.")
             if role is ServiceRole.MIGRATION:
                 continue
             tables, columns = runtime_grants(role, target=target)
-            _admit_existing_grants(cursor, login, tables, columns)
+            if role is ServiceRole.BACKUP_WORKER:
+                _admit_reader(cursor, login, tables)
+            else:
+                _admit_existing_grants(cursor, login, tables, columns)
             for table, privileges in tables.items():
                 cursor.execute(
                     sql.SQL("GRANT {} ON public.{} TO {}").format(

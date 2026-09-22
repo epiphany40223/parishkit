@@ -276,6 +276,11 @@ def runtime_grants(role, *, target=None):
         from .runtime_database import offline_grants
 
         return offline_grants(role), {}
+    if role is ServiceRole.BACKUP_WORKER:
+        # The dump itself reads through the pg_read_all_data membership that
+        # provisioning grants; the registry holds the one row it may write and
+        # read back (the database supplies the completion time).
+        return {"stewardship_backup_run": {"SELECT", "INSERT"}}, {}
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(
             "This service's runtime database authority is not implemented."
@@ -491,6 +496,7 @@ def login_name(role, *, target=None):
             ServiceRole.CONFIG_INSTALLER,
             ServiceRole.BOOTSTRAP,
             ServiceRole.ADMIN_RECOVERY,
+            ServiceRole.BACKUP_WORKER,
             "download",
         }
         or target is not None

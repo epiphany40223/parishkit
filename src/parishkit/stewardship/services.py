@@ -76,6 +76,7 @@ def prepare_development(root: Path) -> None:
         "logs",
         "reports",
         "run",
+        "backups",
         "run/persistent",
         "run/persistent/postgresql",
         "run/persistent/valkey",

@@ -1,13 +1,15 @@
 """Point a provisioned deployment at a newer approved application image.
 
 Provisioning is create-only: a completed runtime root refuses another run. An
-upgrade changes exactly one input, the immutable application image, and the
-only artifacts that name it are the three rendered Compose topologies and the
-completion marker. This command re-renders those from the recorded inputs with
-the new image and refuses anything else: a changed deployment input, a changed
-generated document or password, an unfinished provisioning, or an image the
-profile does not admit. It runs offline, holding the startup interlock
-exclusively, so no online service can observe a half-written topology; it
+upgrade changes exactly one input, the immutable application image. This
+command re-renders every generated document from the recorded inputs with the
+new image, rewrites those that differ and updates the completion marker; it
+refuses a changed deployment input, a missing once-generated password, an
+unfinished provisioning, or an image the profile does not admit. It does not
+create new passwords, SQL logins or storage a later release introduces: a
+deployment provisioned before such a release is reinstalled under the
+pre-production policy. It runs offline, holding the startup interlock
+exclusively, so no online service can observe a half-written document; it
 starts nothing and connects to nothing. Schema migrations, grants and service
 restarts remain the operator's separate, documented upgrade steps.
 """
@@ -49,6 +51,21 @@ def _recorded(path):
     return value
 
 
+def _rederived(document):
+    """The recorded deployment document as the running release would write it.
+
+    A release may add a defaulted field (a new runtime path, say) that the
+    provisioning release never recorded. Loading the recorded document back
+    through the current loader fills in exactly those defaults, so the
+    comparison sees the operator's inputs, not the older release's shape.
+    """
+    from .deployment import load_deployment
+    from .deployment_documents import deployment_document
+
+    # In memory: retarget runs with a read-only root and no writable /tmp.
+    return deployment_document(load_deployment(document=document, environ={}))
+
+
 def _plan(configuration, recorded, *, image):
     """The provisioning plan for the recorded inputs with the given image."""
     checkout, source_root = recorded["checkout"], recorded["bind_source_root"]
@@ -60,30 +77,18 @@ def _plan(configuration, recorded, *, image):
     )
 
 
-def _other_image(current, rendered):
-    """The one application image a topology names that its rendering does not.
-
-    Infrastructure images are the same in both, so the difference is the
-    application image the topology was rendered with, if it was rendered at
-    all; a malformed or mixed topology has no such image.
-    """
-    try:
-        known = {s["image"] for s in json.loads(rendered)["services"].values()}
-        named = {s["image"] for s in json.loads(current)["services"].values()}
-    except (ValueError, KeyError, TypeError, AttributeError):
-        return None
-    other = named - known
-    return other.pop() if len(other) == 1 else None
-
-
 def retarget_image(configuration, *, image):
-    """Re-render only the image-bearing artifacts of a completed deployment.
+    """Re-render the generated documents of a completed deployment for an image.
 
-    Returns what changed. A topology on disk may name the recorded image or
-    the requested one, the two states an interrupted retarget can leave, and
-    is brought to the requested one; anything else is a hand edit and is
-    refused. So running the same command again finishes an interrupted
-    retarget, and running it with the recorded image undoes one.
+    Returns what changed. Every generated document, the three topologies, the
+    per-service configurations and the ingress document, is re-derived from
+    the recorded inputs by the code that is running, so a release whose
+    renderer changed reaches the deployment through the same command as one
+    that only changed the image; the passwords and broker ACL are generated
+    once and kept. Only the deployment inputs may not differ. Documents that
+    already match are left alone, so an interrupted retarget is finished by
+    running the same command again and undone by asking for the recorded
+    image, and a repeat is no change.
     """
     root = explicit_path(configuration.paths.root)
     private_directory(root)
@@ -97,39 +102,31 @@ def retarget_image(configuration, *, image):
         configuration, recorded, image=image
     )
     proposed = json.loads(intent)
+    expected = dict(recorded, deployment=_rederived(recorded["deployment"]))
     if {key: value for key, value in proposed.items() if key != "image"} != {
-        key: value for key, value in recorded.items() if key != "image"
+        key: value for key, value in expected.items() if key != "image"
     }:
         raise ConfigError(
             "Deployment inputs differ from provisioning; only the image may change."
         )
     layout = RuntimeLayout(configuration)
-    topologies = {layout.service_directory / name for name in TOPOLOGIES}
     changed = recorded["image"] != image
-    stale, renderings = set(), {}
-    for path, value in documents.items():
-        current = read_private(path, maximum=MAX_DOCUMENT)
-        if current == value:
-            continue
-        if path not in topologies:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        # A topology may lag behind (interrupted retarget) or run ahead of the
-        # record (undoing one): it is admitted only if it is exactly the same
-        # inputs rendered with the recorded image, or with the one image it
-        # names instead. Anything else is a hand edit.
-        other = recorded["image"] if changed else _other_image(current, value)
-        if other is None:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        if other not in renderings:
-            renderings[other] = _plan(configuration, recorded, image=other)[3]
-        if current != renderings[other][path]:
-            raise ConfigError("A generated document differs; this is not an upgrade.")
-        stale.add(path)
+    # A document the running release renders but the provisioned release did
+    # not is simply absent: it is written like any other differing document.
+    stale = {
+        path
+        for path, value in documents.items()
+        if not path.exists() or read_private(path, maximum=MAX_DOCUMENT) != value
+    }
     for path in (*passwords, acl):
         # Presence and privacy only: the values are generated once and kept.
         read_private(path, maximum=MAX_DOCUMENT)
     if not stale and not changed:
-        return {"image_changed": False, "services_started": False}
+        return {
+            "image_changed": False,
+            "documents_changed": 0,
+            "services_started": False,
+        }
     with StartupLease(layout.interlock, offline=True):
         for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)
@@ -139,4 +136,8 @@ def retarget_image(configuration, *, image):
         if changed:
             write_private(completed, intent, maximum=MAX_DOCUMENT)
             _sync_directory(root)
-    return {"image_changed": changed, "services_started": False}
+    return {
+        "image_changed": changed,
+        "documents_changed": len(stale),
+        "services_started": False,
+    }

@@ -76,6 +76,10 @@ def _service_config(configuration, role, *, target=None, provider_mode="configur
         from .bootstrap import INITIAL_TARGETS
 
         names = {*INITIAL_TARGETS, "google_oauth"}
+    elif role is ServiceRole.BACKUP_WORKER:
+        # The v1 backup seals to the operator's public key and transfers
+        # nothing itself, so the off-host target credential stays uninstalled.
+        names = {"backup_data"}
     else:
         names = {target} if target else ALLOWED_SECRETS.get(role, set())
     secrets = {key: layout.credential(key) for key in names}
@@ -240,6 +244,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             ServiceRole.MIGRATION,
             ServiceRole.ADMIN_RECOVERY,
             ServiceRole.DATABASE_PROVISION,
+            ServiceRole.BACKUP_WORKER,
         )
     ]
     for role, target in roles:
@@ -273,6 +278,21 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             service["volumes"] = [
                 bind(path, read_only=ro)
                 for path, ro in offline_targets(selected).items()
+            ]
+        elif role is ServiceRole.BACKUP_WORKER:
+            from .backup_boundaries import backup_targets
+
+            # One-shot like the offline profiles, but it runs beside the online
+            # services under the shared interlock and reads the runtime trees.
+            service["profiles"] = [name]
+            service["command"] = [
+                "backup",
+                "--config",
+                str(selected.configuration_file),
+            ]
+            service["volumes"] = [
+                bind(path, read_only=ro)
+                for path, ro in backup_targets(selected).items()
             ]
         else:
             service["command"] = [
