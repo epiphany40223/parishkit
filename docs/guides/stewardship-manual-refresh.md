@@ -45,8 +45,8 @@ command. A source that is not the configured organization is an outage to
 the page, never a refresh of another organization. No ParishSoft call and no
 lock wait happens in the web process; the progress page reports the phases
 the task records. The web role gains insert on the refresh request and
-command tables and select on the source lease, which the grant registry
-records.
+command tables; the lease owner it needs to coalesce is already readable
+through the existing column grant, which the grant registry records.
 
 ## Schema
 
@@ -58,7 +58,9 @@ No schema change.
   confirmation page offering the request, one run created for the first
   key, the same key and a new key both leading to that run while it waits
   with one task and two commands recorded, the page saying so, and a
-  further request waiting behind the run once it executes; and Staff, an
+  further request waiting behind the run once it executes; a session
+  revoked after admission and before the domain's own check refused on a
+  new key and a replay alike with nothing recorded; and Staff, an
   anonymous caller, a malformed key and a stray field refused with nothing
   recorded.
 - Two browser cases in every engine against the component page: both
@@ -70,7 +72,9 @@ No schema change.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. No deployment,
+Implementation and focused validation are complete and
+[round 1](stewardship-manual-refresh-reviews.md) is answered; the remaining
+review/fix rounds, full exact-head CI, DCO and protected delivery remain
+open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

@@ -3,7 +3,11 @@
 from uuid import uuid4
 
 import pytest
+from django.db.models import F
+from django.utils import timezone
 
+from parishkit.stewardship.accounts import refresh_views
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source.refresh_models import (
@@ -79,6 +83,37 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         later = run_of(post(browser, uuid4()))
     assert later != root
     assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 2
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_session_ended_under_the_lock_records_no_command(
+    auth_service, google, monkeypatch
+):
+    """The authorize callback denies a revoked session, on a new key and a replay."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    key = uuid4()
+    with web():
+        root = run_of(post(browser, key))
+    assert SourceRefreshCommand.objects.count() == 1
+    real = refresh_views.request_refresh
+
+    def revoked_meanwhile(**values):
+        """Revoke the session after admission, before the domain's own check."""
+        row = PortalSession.objects.get(revoked_at__isnull=True)
+        PortalSession.objects.filter(pk=row.pk, version=row.version).update(
+            revoked_at=timezone.now(), version=F("version") + 1
+        )
+        return real(**values)
+
+    monkeypatch.setattr(refresh_views, "request_refresh", revoked_meanwhile)
+    with web():
+        for replay in (key, uuid4()):
+            assert post(browser, replay).status_code == 403
+    assert SourceRefreshCommand.objects.count() == 1
+    assert SourceRefreshRequest.objects.count() == 1
+    assert str(SourceRefreshRequest.objects.get().task_root_id) == root
 
 
 @pytest.mark.usefixtures("source_singletons")

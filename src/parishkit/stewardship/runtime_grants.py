@@ -26,9 +26,9 @@ WEB_READ_TABLES = frozenset(
         "stewardship_public_credential_handoff",
         "stewardship_source_current",
         # The manual refresh page records a refresh command through the
-        # domain's own admission, which reads the lease and any waiting
-        # request to coalesce; identifiers and window digests only.
-        "stewardship_source_lease",
+        # domain's own admission, which reads any waiting request to coalesce
+        # and the lease owner through the column grant below; identifiers
+        # and window digests only.
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_suggestion",
