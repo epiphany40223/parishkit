@@ -68,8 +68,13 @@ irreversible; a later go-live attempt needs fresh evidence and cleanup.
 
 ## Current status
 
-Investigation and implementation are in progress; none of ADM-05.03/.04/.05 is
-complete. The previously missing runtime preparation caller and Admin controls
+Historical: this section describes the work as it stood before final
+confirmation and withdrawal were delivered by PRs #60 and #61. The
+operator's activation procedure is the launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation).
+
+At the time: investigation and implementation were in progress; none of
+ADM-05.03/.04/.05 was complete. The previously missing runtime preparation caller and Admin controls
 are implemented; final confirmation and withdrawal remain closed. No real
 provider calls, retained-database deletion, deployment, release or historical
 upgrade compatibility is authorized by this work.
