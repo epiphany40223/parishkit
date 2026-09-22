@@ -413,3 +413,64 @@ def test_report_confirmed_unsent_settles_only_for_a_removed_recipient(
             assert [row.disposition for row in fulfilled] == [
                 "empty" if only else "delivered"
             ]
+
+
+def test_readded_administrator_reopens_a_pending_cohort(family_mail):  # noqa: F811
+    """The current roster decides settlement until the occurrence completes.
+
+    Removing the recipient makes the failed report settled; re-adding them
+    before completion reopens the cohort and admits the retry again. A
+    finalizer allocated in the removed window then refuses its claim until the
+    cohort resolves again, which is the documented, harmless noise.
+    """
+    from parishkit.stewardship.jobs.dispatch import execute_hint
+    from parishkit.stewardship.jobs.queues import WorkQueue
+    from parishkit.stewardship.jobs.scheduler import scheduler_session
+    from parishkit.stewardship.reports.digest_finalization import (
+        TASK_TYPE,
+        DailyDigestFinalizeProducer,
+        finalization_handler,
+    )
+    from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
+
+    from .test_daily_digest_dispatch_postgresql import revoke_admin
+
+    harness = activate_response_service(family_mail)
+    complete_empty_catchup(harness.campaign, uuid4())
+    with campaign_clock(INSTANT):
+        ready = allocated(harness, additional_admins=("second@example.org",))
+        recipient = DailyDigestRecipient.objects.get(address="admin@example.org")
+        message = recipient.outbox
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            begin(message, execution)
+            finish_submission(
+                message.pk, execution.claim, FamilyDeliveryResult(Status.PERMANENT, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+        deliver(DailyDigestRecipient.objects.get(address="second@example.org").outbox)
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=ready.snapshot.preparation.occurrence_id
+        )
+        revoke_admin(harness, recipient)
+        assert retry_admitted(message) is False
+        producer = DailyDigestFinalizeProducer(uuid4())
+        with (
+            task_login(ServiceRole.SCHEDULER, exact=True),
+            scheduler_session() as guard,
+        ):
+            (task,) = producer(guard)
+        add_admin(harness, "admin@example.org")
+        with (
+            task_login(ServiceRole.WORKER, exact=True),
+            pytest.raises(PermissionError, match="entire resolved cohort"),
+        ):
+            execute_hint(
+                task.run_id,
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: finalization_handler()},
+            )
+        occurrence.refresh_from_db()
+        assert occurrence.state == "pending"
+        assert retry_admitted(message) is True

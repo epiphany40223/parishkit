@@ -996,22 +996,33 @@ def test_confirmed_unsent_receipt_clears_the_resume_guard(
         )
         confirmed_unsent(receipt, command)
         assert unknown_inventory(item.campaign) == 0
-        if not closed:
-            with web_login():
+        with web_login():
+            if closed:
+                # Closed campaigns cannot resume; the settled receipt leaves
+                # nothing held or unknown, so the closed resolution clears it.
+                _, token = commands.preview_resolution(
+                    *item.arguments, reason="Settled", decision="clear", types=[]
+                )
+            else:
                 _, token = commands.preview_resume(*item.arguments, reason="Settled")
-                commands.confirm(*item.arguments, token=token)
-            item.campaign.refresh_from_db()
-            assert not item.campaign.delivery_paused
+            assert commands.confirm(*item.arguments, token=token).control_id
+        item.campaign.refresh_from_db()
+        assert not item.campaign.delivery_paused
 
 
-def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
-    scheduled, settings
+@pytest.mark.parametrize("removed", [True, False])
+@pytest.mark.parametrize("kind", ["daily_digest", "weekly_digest"])
+def test_closed_skip_counts_only_a_removed_recipients_failed_report(
+    scheduled, settings, kind, removed
 ):
-    """A report confirmed unsent to a removed Admin cannot block the closed skip.
+    """A failed report to a removed Admin cannot block the closed skip.
 
     That report can never be retried, so the closed held-message resolution
     counts it as settled, exactly like a recipient_revoked cancellation, and
     cancelling the rest of the report records the occurrence's semantic skip.
+    A failed report whose recipient is still an Administrator is not settled:
+    the closed proof is false, no skip is recorded and the occurrence stays
+    pending.
     """
     from django.db.models import Case, When
 
@@ -1019,6 +1030,7 @@ def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
     from parishkit.stewardship.jobs.models import TaskRun
     from parishkit.stewardship.jobs.storage import _status
 
+    from .test_daily_digest_dispatch_postgresql import allocated as allocate_daily
     from .test_daily_digest_dispatch_postgresql import revoke_admin
     from .test_delivery_resolution_postgresql import (
         confirmed_unsent,
@@ -1033,18 +1045,30 @@ def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
         service=item.arguments[1],
         rings=SimpleNamespace(general=None, public=None),
     )
+    starts = item.campaign.active_configuration.starts_at
+    daily = kind == "daily_digest"
     with campaign_clock(
-        item.campaign.active_configuration.starts_at + timedelta(days=9)
+        starts + (timedelta(days=2, hours=12) if daily else timedelta(days=9))
     ):
-        submit_while_paused(item, settings, text="Unsent weekly request")
-        status = queue_weekly(harness)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute_weekly(status)
-        # Remove the Admin who is not driving the delivery-control session.
+        if daily:
+            allocate_daily(harness)
+            model = DailyDigestRecipient
+            occurrence_path = "ready__snapshot__preparation__occurrence_id"
+        else:
+            submit_while_paused(item, settings, text="Unsent weekly request")
+            status = queue_weekly(harness)
+            with task_login(ServiceRole.WORKER, exact=True):
+                execute_weekly(status)
+            model = WeeklyDigestRecipient
+            occurrence_path = "snapshot__preparation__occurrence_id"
+        # Fail the copy of the Admin who is not driving the control session.
         admin = PortalUser.objects.get(pk=item.arguments[0].portal_session.principal_id)
-        held, unsent = WeeklyDigestRecipient.objects.select_related(
-            "outbox", "snapshot__preparation"
-        ).order_by(Case(When(address=admin.email, then=0), default=1))
+        held, unsent = model.objects.select_related("outbox").order_by(
+            Case(When(address=admin.email, then=0), default=1)
+        )
+        occurrence_id = model.objects.filter(pk=held.pk).values_list(
+            occurrence_path, flat=True
+        )[0]
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             execution = claim(unsent.outbox)
             assert begin(unsent.outbox, execution) is not None
@@ -1057,15 +1081,11 @@ def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
         with web_login():
             _, token = commands.preview_pause(*item.arguments, reason="Hold reports")
             commands.confirm(*item.arguments, token=token)
-        revoke_admin(harness, unsent)
+        if removed:
+            revoke_admin(harness, unsent)
         message = OutboxMessage.objects.get(pk=unsent.outbox_id)
         command = resolve(
-            harness,
-            admin,
-            message,
-            "confirm_unsent",
-            general=None,
-            public=None,
+            harness, admin, message, "confirm_unsent", general=None, public=None
         )
         confirmed_unsent(message, command)
         assert unknown_inventory(item.campaign) == 0
@@ -1078,10 +1098,19 @@ def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
             *item.arguments,
             reason="Cancel the remaining report",
             decision="cancel",
-            types=["weekly_digest"],
+            types=[kind],
         )
         commands.confirm(*item.arguments, token=token)
-    occurrence_id = held.snapshot.preparation.occurrence_id
     assert OutboxMessage.objects.get(pk=held.outbox_id).state == "cancelled"
-    assert PostCloseMailResolution.objects.filter(occurrence_id=occurrence_id).exists()
-    assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == "skipped"
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_delivery_closed_digest_v1(%s)", [occurrence_id]
+        )
+        assert cursor.fetchone()[0] is removed
+    assert (
+        PostCloseMailResolution.objects.filter(occurrence_id=occurrence_id).exists()
+        is removed
+    )
+    assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == (
+        "skipped" if removed else "pending"
+    )
