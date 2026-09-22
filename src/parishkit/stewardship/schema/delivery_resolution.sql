@@ -15,7 +15,8 @@ CREATE TABLE public.stewardship_delivery_resolution (
     preparation jsonb,
     CONSTRAINT delivery_resolution_action CHECK(action::text=ANY(ARRAY[
         'note'::varchar::text,'accept'::varchar::text,'resend'::varchar::text,
-        'retry_failed'::varchar::text,'retry_unsent'::varchar::text])),
+        'retry_failed'::varchar::text,'retry_unsent'::varchar::text,
+        'confirm_unsent'::varchar::text])),
     CONSTRAINT delivery_resolution_version CHECK(expected_version>0),
     CONSTRAINT delivery_resolution_scrubbed CHECK(preparation IS NULL)
 );
@@ -26,6 +27,8 @@ CREATE TRIGGER delivery_resolution_immutable BEFORE UPDATE OR DELETE ON public.s
 
 -- This is an additional predicate inside the occurrence's existing guarded
 -- transition, not a general update entry point. Web has no occurrence UPDATE.
+-- Each Admin outcome of an unknown delivery pairs one occurrence state with
+-- the exact outbox event its resolution command just recorded.
 CREATE FUNCTION public.stewardship_delivery_resolution_edge_v1(previous jsonb, proposed jsonb)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT session_user='pk_stewardship_web'
@@ -41,6 +44,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND e.actor_id=(proposed->>'actor_id')::uuid AND e.previous_state='delivery_unknown'
           AND ((proposed->>'state'='succeeded' AND m.state='delivered'
                   AND e.action='accept' AND e.reason='admin_external_acceptance')
+            OR (proposed->>'state'='failed' AND m.state='permanent_failure'
+                  AND e.action='fail_unaccepted' AND e.reason='admin_confirmed_unsent')
             OR (proposed->>'state'='pending' AND m.state='pending'
                   AND e.action='authorize_resend' AND e.reason='admin_resend')))
 $$;
@@ -176,22 +181,45 @@ BEGIN
         IF latest.id IS NULL OR latest.root_id<>m.task_id OR latest.state<>'failed'
            OR latest.task_type<>'outbox_delivery' OR latest.domain_request_id<>m.id
         THEN RAISE EXCEPTION 'Resolution requires drained failed execution' USING ERRCODE='23514'; END IF;
-        IF NEW.action='accept' THEN
+        IF NEW.action IN ('accept','confirm_unsent') THEN
+            -- Both settle the current unknown attempt from external evidence
+            -- alone. Neither sends, so neither consults the resend admission:
+            -- they stay available while paused, after the Family submitted or
+            -- lost eligibility, and on a campaign closed while paused.
             IF m.state<>'delivery_unknown' OR NEW.preparation IS NOT NULL OR NEW.retry_task_id IS NOT NULL
                OR EXISTS(SELECT 1 FROM public.stewardship_task_run WHERE root_id=m.task_id AND retry_sequence>latest.retry_sequence)
-            THEN RAISE EXCEPTION 'Acceptance requires the current unresolved attempt' USING ERRCODE='23514'; END IF;
-            UPDATE public.stewardship_outbox_message SET state='delivered',action='accept',
+            THEN RAISE EXCEPTION 'Resolution requires the current unresolved attempt' USING ERRCODE='23514'; END IF;
+            -- confirm_unsent reuses the dispatcher's definitive non-acceptance
+            -- edge (fail_unaccepted to permanent_failure), so every consumer
+            -- treats it as the terminal failure it is. A distinct reason keeps
+            -- it apart from a provider refusal: no recipient is suppressed.
+            -- An Admin report's cohort counts this failure as settled while
+            -- its recipient is not an Administrator (see the digest
+            -- completion proofs), as it does any provider permanent failure.
+            UPDATE public.stewardship_outbox_message SET
+                state=CASE WHEN NEW.action='accept' THEN 'delivered' ELSE 'permanent_failure' END,
+                action=CASE WHEN NEW.action='accept' THEN 'accept' ELSE 'fail_unaccepted' END,
                 command_id=NEW.id,command_digest=command_hash,evidence_note=NEW.evidence_note,
                 evidence_digest=proof,provider_key_digest='',provider_message_digest='',
-                reason='admin_external_acceptance',finished_at=statement_timestamp(),
+                reason=CASE WHEN NEW.action='accept' THEN 'admin_external_acceptance'
+                    ELSE 'admin_confirmed_unsent' END,
+                finished_at=statement_timestamp(),
                 sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL,
                 actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=m.id;
             IF m.purpose NOT IN ('receipt','daily_digest','weekly_digest') THEN
-                UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
-                    actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
-                INSERT INTO public.stewardship_schedule_fulfillment
-                    (id,actor_id,correlation_id,definition_id,mode,target,slot,disposition,occurrence_id)
-                VALUES(gen_random_uuid(),NEW.actor_id,NEW.id,o.definition_id,o.mode,o.target,o.slot,'delivered',o.id);
+                IF NEW.action='accept' THEN
+                    UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
+                        actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
+                    INSERT INTO public.stewardship_schedule_fulfillment
+                        (id,actor_id,correlation_id,definition_id,mode,target,slot,disposition,occurrence_id)
+                    VALUES(gen_random_uuid(),NEW.actor_id,NEW.id,o.definition_id,o.mode,o.target,o.slot,'delivered',o.id);
+                ELSE
+                    -- Failed only after definitive non-acceptance, like a provider
+                    -- permanent failure: no fulfillment, and retry_failed may later
+                    -- reopen it under the ordinary resend admission.
+                    UPDATE public.stewardship_schedule_occurrence SET state='failed',reason='recovery_fail',
+                        actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
+                END IF;
             END IF;
         ELSE
             IF NEW.action NOT IN ('resend','retry_failed','retry_unsent')

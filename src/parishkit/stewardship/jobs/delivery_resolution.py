@@ -228,6 +228,10 @@ def resolve_delivery(
                 "cancelled",
             },
             "accept": {"delivery_unknown"},
+            # The provider's own evidence shows the attempt was not sent. Like
+            # accept it neither prepares nor sends, so it needs no resend
+            # admission and settles the attempt as a definitive failure.
+            "confirm_unsent": {"delivery_unknown"},
             "resend": {"delivery_unknown"},
             "retry_failed": {"permanent_failure"},
             # Includes an attempt definitively not accepted by the provider;

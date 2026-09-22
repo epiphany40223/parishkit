@@ -226,7 +226,8 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
 
 
 @pytest.mark.parametrize(
-    "action", ["note", "accept", "resend", "retry_failed", "retry_unsent"]
+    "action",
+    ["note", "accept", "confirm_unsent", "resend", "retry_failed", "retry_unsent"],
 )
 def test_delivery_forms_apply_once_with_current_session_and_csrf(
     family_mail,  # noqa: F811
@@ -280,6 +281,10 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             assert b"<script>evidence</script>" not in result.content
             if action == "accept":
                 assert b"Retry is currently unavailable" not in result.content
+            if action == "confirm_unsent":
+                # The Admin record is not presented as a provider refusal.
+                assert b"Not sent, per provider records; no resend" in result.content
+                assert b"Not accepted; delivery failed" not in result.content
         assert DeliveryResolution.objects.count() == 1
         message.refresh_from_db()
         command = DeliveryResolution.objects.get()
@@ -291,6 +296,8 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             if retrying
             else "delivered"
             if action == "accept"
+            else "permanent_failure"
+            if action == "confirm_unsent"
             else "delivery_unknown"
         )
         assert message.version == old_version + (
@@ -304,10 +311,9 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             child = TaskRun.objects.get(pk=command.retry_task_id)
             assert child.state == "queued" and child.parent_id == message.task_id
         assert ScheduleFulfillment.objects.count() == (1 if action == "accept" else 0)
-        if action == "accept":
-            assert (
-                ScheduleOccurrence.objects.get(pk=message.semantic_key).state
-                == "succeeded"
+        if action in {"accept", "confirm_unsent"}:
+            assert ScheduleOccurrence.objects.get(pk=message.semantic_key).state == (
+                "succeeded" if action == "accept" else "failed"
             )
         assert AuditEvent.objects.filter(subject_id=command.pk).count() == 1
         if action != "note":

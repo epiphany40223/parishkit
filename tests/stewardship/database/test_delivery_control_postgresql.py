@@ -587,3 +587,74 @@ def test_resume_materializes_every_due_digest_day(scheduled, monkeypatch, tmp_pa
             == len(expected[definition.pk]) - 1
         )
         assert selected.task_id is None and selected.outbox_id is None
+
+
+def test_confirmed_unsent_initial_clears_the_real_resume_guard(
+    delivery_scheduled, monkeypatch, tmp_path
+):
+    """The real resume refuses an unknown initial until it is settled as unsent.
+
+    After confirm_unsent the failed occurrence is deferred Family recovery, as a
+    provider's permanent failure is, so it no longer blocks the campaign resume.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction as Action
+
+    from .campaign_builders import advance
+    from .test_delivery_resolution_postgresql import (
+        confirmed_unsent,
+        resolve,
+        unknown_inventory,
+    )
+    from .test_outbox_postgresql import change, submit
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    item = delivery_scheduled
+    occurrence, status = future_message(item)
+    with campaign_clock(occurrence.due_at):
+        task = claim(status)
+        advance(
+            occurrence, task.worker_id, "running", task_id=task.run_id, fence=task.fence
+        )
+        change(submit(status, task=task), Action.MARK_UNKNOWN)
+        advance(occurrence, task.worker_id, "delivery_unknown", fence=task.fence)
+        act(task, "permanent_failure")
+    due = item.campaign.active_configuration.starts_at + timedelta(days=1)
+    with campaign_clock(due):
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Review unknown")
+            commands.confirm(*item.arguments, token=token)
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        assert unknown_inventory(item.campaign) == 1
+        with web_login(), pytest.raises(StaleRecordError):
+            commands.preview_resume(*item.arguments, reason="Too early")
+        message = OutboxMessage.objects.get(pk=status.message_id)
+        # Resolution is keyless for confirm_unsent, so no key rings are needed.
+        harness = SimpleNamespace(
+            service=item.arguments[1],
+            rings=SimpleNamespace(general=None, public=None),
+        )
+        command = resolve(
+            harness,
+            user("admin@example.org"),
+            message,
+            "confirm_unsent",
+            general=None,
+            public=None,
+        )
+        confirmed_unsent(message, command)
+        occurrence.refresh_from_db()
+        assert occurrence.state == "failed"
+        assert not ScheduleFulfillment.objects.filter(occurrence=occurrence).exists()
+        assert unknown_inventory(item.campaign) == 0
+        with web_login():
+            impact = commands.family_recovery_impact(item.campaign.pk)
+            assert impact["blocked"] == 0 and impact["deferred"] == 1
+            _, token = commands.preview_resume(*item.arguments, reason="Settled")
+            commands.confirm(*item.arguments, token=token)
+        item.campaign.refresh_from_db()
+        assert not item.campaign.delivery_paused
+        occurrence.refresh_from_db()
+        assert occurrence.state == "failed"

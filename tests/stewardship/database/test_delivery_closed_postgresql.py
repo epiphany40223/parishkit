@@ -933,3 +933,202 @@ def test_closed_paused_receipt_resend_follows_the_held_resolution(
         receipt.refresh_from_db()
         _, _, attempt = resend(receipt)
         assert attempt is not None and receipt.pause_hold_id is None
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_confirmed_unsent_receipt_clears_the_resume_guard(
+    scheduled, settings, monkeypatch, tmp_path, closed
+):
+    """The real Admin resume refuses an unknown receipt until it is settled.
+
+    Recording the provider's evidence that the receipt was not sent settles it
+    without a resend, including on a campaign closed while paused.
+    """
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import (
+        confirmed_unsent,
+        resolve,
+        unknown_inventory,
+    )
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    # Receipt resolution is keyless, so the resolver's key rings stay empty.
+    harness = SimpleNamespace(
+        campaign=item.campaign,
+        service=item.arguments[1],
+        rings=SimpleNamespace(general=None, public=None),
+    )
+    starts = item.campaign.active_configuration.starts_at
+    with campaign_clock(starts + timedelta(hours=1)):
+        receipt = submit_while_paused(item, settings).outbox
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(SimpleNamespace(task_id=receipt.task_id))
+            assert begin(receipt, execution) is not None
+            finish_submission(
+                receipt.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=receipt.task_id)), "permanent_failure")
+        receipt.refresh_from_db()
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Hold mail")
+            commands.confirm(*item.arguments, token=token)
+        assert unknown_inventory(item.campaign) == 1
+        if not closed:
+            accepted_sender_check(item, monkeypatch, tmp_path)
+            with web_login(), pytest.raises(StaleRecordError):
+                commands.preview_resume(*item.arguments, reason="Too early")
+    clock = starts + timedelta(hours=2)
+    if closed:
+        close_campaign(item.campaign, uuid4())
+        clock = item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    with campaign_clock(clock):
+        command = resolve(
+            harness,
+            user("admin@example.org"),
+            receipt,
+            "confirm_unsent",
+            general=None,
+            public=None,
+        )
+        confirmed_unsent(receipt, command)
+        assert unknown_inventory(item.campaign) == 0
+        with web_login():
+            if closed:
+                # Closed campaigns cannot resume; the settled receipt leaves
+                # nothing held or unknown, so the closed resolution clears it.
+                _, token = commands.preview_resolution(
+                    *item.arguments, reason="Settled", decision="clear", types=[]
+                )
+            else:
+                _, token = commands.preview_resume(*item.arguments, reason="Settled")
+            assert commands.confirm(*item.arguments, token=token).control_id
+        item.campaign.refresh_from_db()
+        assert not item.campaign.delivery_paused
+
+
+@pytest.mark.parametrize("removed", [True, False])
+@pytest.mark.parametrize("kind", ["daily_digest", "weekly_digest"])
+def test_closed_skip_counts_only_a_removed_recipients_failed_report(
+    scheduled, settings, kind, removed
+):
+    """A failed report to a removed Admin cannot block the closed skip.
+
+    That report can never be retried, so the closed held-message resolution
+    counts it as settled, exactly like a recipient_revoked cancellation, and
+    cancelling the rest of the report records the occurrence's semantic skip.
+    A failed report whose recipient is still an Administrator is not settled:
+    the closed proof is false, no skip is recorded and the occurrence stays
+    pending.
+    """
+    from django.db.models import Case, When
+
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_daily_digest_dispatch_postgresql import allocated as allocate_daily
+    from .test_daily_digest_dispatch_postgresql import revoke_admin
+    from .test_delivery_resolution_postgresql import (
+        confirmed_unsent,
+        resolve,
+        unknown_inventory,
+    )
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    harness = SimpleNamespace(
+        campaign=item.campaign,
+        service=item.arguments[1],
+        rings=SimpleNamespace(general=None, public=None),
+    )
+    starts = item.campaign.active_configuration.starts_at
+    daily = kind == "daily_digest"
+    with campaign_clock(
+        starts + (timedelta(days=2, hours=12) if daily else timedelta(days=9))
+    ):
+        if daily:
+            allocate_daily(harness)
+            model = DailyDigestRecipient
+            occurrence_path = "ready__snapshot__preparation__occurrence_id"
+        else:
+            submit_while_paused(item, settings, text="Unsent weekly request")
+            status = queue_weekly(harness)
+            with task_login(ServiceRole.WORKER, exact=True):
+                execute_weekly(status)
+            model = WeeklyDigestRecipient
+            occurrence_path = "snapshot__preparation__occurrence_id"
+        # Fail the copy of the Admin who is not driving the control session.
+        admin = PortalUser.objects.get(pk=item.arguments[0].portal_session.principal_id)
+        held, unsent = model.objects.select_related("outbox").order_by(
+            Case(When(address=admin.email, then=0), default=1)
+        )
+        occurrence_id = model.objects.filter(pk=held.pk).values_list(
+            occurrence_path, flat=True
+        )[0]
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(unsent.outbox)
+            assert begin(unsent.outbox, execution) is not None
+            finish_submission(
+                unsent.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.UNKNOWN, 1),
+            )
+        act(_status(TaskRun.objects.get(pk=unsent.outbox.task_id)), "permanent_failure")
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Hold reports")
+            commands.confirm(*item.arguments, token=token)
+        if removed:
+            revoke_admin(harness, unsent)
+        message = OutboxMessage.objects.get(pk=unsent.outbox_id)
+        command = resolve(
+            harness, admin, message, "confirm_unsent", general=None, public=None
+        )
+        confirmed_unsent(message, command)
+        assert unknown_inventory(item.campaign) == 0
+        close_campaign(item.campaign, uuid4())
+    with (
+        campaign_clock(item.campaign.active_configuration.ends_at + timedelta(hours=1)),
+        web_login(),
+    ):
+        _, token = commands.preview_resolution(
+            *item.arguments,
+            reason="Cancel the remaining report",
+            decision="cancel",
+            types=[kind],
+        )
+        commands.confirm(*item.arguments, token=token)
+    assert OutboxMessage.objects.get(pk=held.outbox_id).state == "cancelled"
+
+    def settled():
+        """Read the closed digest proof for this occurrence."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_delivery_closed_digest_v1(%s)", [occurrence_id]
+            )
+            return cursor.fetchone()[0]
+
+    assert settled() is removed
+    assert (
+        PostCloseMailResolution.objects.filter(occurrence_id=occurrence_id).exists()
+        is removed
+    )
+    assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == (
+        "skipped" if removed else "pending"
+    )
+    if not removed:
+        # The documented ordering: once the closed resolution has cancelled
+        # the other copies, a later removal settles the proof but can no
+        # longer record the skip, so the report stays pending.
+        with campaign_clock(
+            item.campaign.active_configuration.ends_at + timedelta(hours=2)
+        ):
+            revoke_admin(harness, unsent)
+        assert settled() is True
+        assert not PostCloseMailResolution.objects.filter(
+            occurrence_id=occurrence_id
+        ).exists()
+        assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == "pending"

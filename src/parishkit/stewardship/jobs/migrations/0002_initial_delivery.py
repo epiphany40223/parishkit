@@ -824,6 +824,7 @@ class Migration(migrations.Migration):
                                         "resend",
                                         "retry_failed",
                                         "retry_unsent",
+                                        "confirm_unsent",
                                     )
                                 ),
                                 name="delivery_resolution_action",
