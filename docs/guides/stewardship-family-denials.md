@@ -80,7 +80,7 @@ optional access-denied help are unchanged.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. The three
-[review rounds](stewardship-family-denials-reviews.md), CI and protected
-delivery remain open. No deployment, release, live-provider write or database
+Implementation, focused validation and the three
+[review rounds](stewardship-family-denials-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

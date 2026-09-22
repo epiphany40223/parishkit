@@ -29,3 +29,10 @@ temporary text and the Family retry route. The signed-in Admin 503 wording
 ("Sign-in temporarily unavailable") was kept as documented: the old text
 said sign-in was unavailable too. A single kind-to-text mapping in place of
 the template's parallel branches was not taken. A further round follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Two raw findings, none validated;
+the review rounds are closed. The low-severity notes (the 429-or-503 rule
+expressed in three helpers, and Family `denied()` accepting its kind
+positionally) were not carried forward.
