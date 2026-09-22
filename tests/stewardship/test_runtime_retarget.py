@@ -64,13 +64,18 @@ def test_only_the_image_changes_and_a_repeat_changes_nothing(deployment):
     assert images(deployment) == {OLD}
     assert retarget.retarget_image(deployment, image=NEW) == {
         "image_changed": True,
+        "documents_changed": 3,
         "services_started": False,
     }
     assert images(deployment) == {NEW}
     assert record(deployment)["image"] == NEW
     assert read_private(layout.service_directory / "web.yaml") == web
     assert read_private(layout.database_password("web")) == password
-    assert retarget.retarget_image(deployment, image=NEW)["image_changed"] is False
+    assert retarget.retarget_image(deployment, image=NEW) == {
+        "image_changed": False,
+        "documents_changed": 0,
+        "services_started": False,
+    }
     # Provisioning itself still refuses a completed root.
     with pytest.raises(ConfigError, match="already provisioned"):
         provisioning.provision_runtime(deployment, image=NEW)
@@ -92,6 +97,7 @@ def test_a_production_deployment_moves_between_digests_only(tmp_path):
     assert images(configuration, "ghcr.io/") == {digests[0]}
     assert retarget.retarget_image(configuration, image=digests[1]) == {
         "image_changed": True,
+        "documents_changed": 3,
         "services_started": False,
     }
     assert images(configuration, "ghcr.io/") == {digests[1]}
@@ -147,32 +153,49 @@ def test_an_interrupted_retarget_is_undone_by_the_recorded_image(
     assert images(deployment) == {NEW} and record(deployment)["image"] == OLD
     assert retarget.retarget_image(deployment, image=OLD) == {
         "image_changed": False,
+        "documents_changed": 3,
         "services_started": False,
     }
     assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
-    # A topology naming neither image is a hand edit, whichever image is asked.
+
+
+def test_generated_documents_are_re_rendered_by_the_running_code(deployment):
+    """A document that differs from the current rendering is rewritten, not kept.
+
+    This is how a release whose renderer changed a per-service document or
+    the ingress document reaches a deployment; generated documents are never
+    edited by hand, so a stray edit is simply replaced too.
+    """
+    layout = RuntimeLayout(deployment)
+    web = layout.service_directory / "web.yaml"
+    original = read_private(web)
+    write_private(web, b"rendered by an older release")
     compose = layout.service_directory / "compose.json"
     write_private(compose, b'{"services": {}}')
-    for image in (OLD, NEW):
-        with pytest.raises(ConfigError, match="not an upgrade"):
-            retarget.retarget_image(deployment, image=image)
-    assert read_private(compose) == b'{"services": {}}'
+    assert retarget.retarget_image(deployment, image=OLD) == {
+        "image_changed": False,
+        "documents_changed": 2,
+        "services_started": False,
+    }
+    assert read_private(web) == original
+    assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
 
 
 def test_any_other_change_is_refused_and_nothing_is_written(deployment):
-    """Changed inputs, edited documents and online services all refuse."""
+    """Changed inputs, missing passwords, bad images and online services refuse."""
     layout = RuntimeLayout(deployment)
     before = read_private(layout.service_directory / "compose.json")
     with pytest.raises(ConfigError, match="only the image may change"):
         retarget.retarget_image(
             replace(deployment, public_origin="http://localhost:9999"), image=NEW
         )
-    web = layout.service_directory / "web.yaml"
-    original = read_private(web)
-    write_private(web, b"edited by hand")
-    with pytest.raises(ConfigError, match="not an upgrade"):
+    password = layout.database_password("web")
+    kept = read_private(password)
+    password.unlink()
+    # A generated password is never re-created: its absence is a refusal.
+    with pytest.raises(ValueError):
         retarget.retarget_image(deployment, image=NEW)
-    write_private(web, original)
+    write_private(password, kept)
     with pytest.raises(ConfigError):
         retarget.retarget_image(deployment, image="ghcr.io/else/where:latest")
     # An online service holds the interlock shared: no topology is replaced.
@@ -213,6 +236,7 @@ def test_retarget_cli_reports_the_change_and_never_echoes_private_input(
     assert main(["retarget-image", "--config", str(config), "--image", NEW]) == 0
     assert json.loads(capsys.readouterr().out) == {
         "image_changed": True,
+        "documents_changed": 3,
         "services_started": False,
     }
     assert images(deployment) == {NEW}

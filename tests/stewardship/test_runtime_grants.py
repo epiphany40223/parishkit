@@ -163,9 +163,13 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
             )
             assert grants.get(table, set()) & writes == expected
             assert not set(columns.get(table, {})) & writes
-    for role in (ServiceRole.BACKUP_WORKER, ServiceRole.TOKEN_KEY_ROTATION):
-        with pytest.raises(ConfigError):
-            runtime_grants(role)
+    # The backup identity writes only its own record; rotation stays reserved.
+    assert runtime_grants(ServiceRole.BACKUP_WORKER) == (
+        {"stewardship_backup_run": {"SELECT", "INSERT"}},
+        {},
+    )
+    with pytest.raises(ConfigError):
+        runtime_grants(ServiceRole.TOKEN_KEY_ROTATION)
 
 
 def test_config_installer_can_replace_boundaries_without_audit_or_family_reads():
@@ -201,7 +205,8 @@ def test_public_handoff_grants_separate_discovery_from_publication():
     [
         ("unknown", None),
         (ServiceRole.CREDENTIAL_INSTALLER, "unknown"),
-        (ServiceRole.BACKUP_WORKER, None),
+        (ServiceRole.TOKEN_KEY_ROTATION, None),
+        (ServiceRole.BACKUP_WORKER, "metrics"),
         (ServiceRole.WEB, "metrics"),
         (ServiceRole.CONFIG_INSTALLER, "metrics"),
         (ServiceRole.BOOTSTRAP, "metrics"),

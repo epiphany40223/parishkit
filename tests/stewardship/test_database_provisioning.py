@@ -103,20 +103,24 @@ def test_existing_role_must_match_every_restricted_attribute(existing):
 
 
 @pytest.mark.parametrize(
-    "identity, marker, populated, configured, allowed",
+    "identity, marker, populated, configured, backup, allowed",
     [
-        ("operator", None, False, False, True),
-        ("operator", "matching", False, False, True),
-        ("other", None, False, False, False),
-        ("operator", "foreign", False, False, False),
-        ("operator", None, True, False, False),
-        ("operator", "matching", False, True, False),
+        ("operator", None, False, False, None, True),
+        ("operator", "matching", False, False, None, True),
+        ("other", None, False, False, None, False),
+        ("operator", "foreign", False, False, None, False),
+        ("operator", None, True, False, None, False),
+        # A configured database changes only behind a recent recorded backup:
+        # no backup table, a stale backup and a recent one.
+        ("operator", "matching", False, True, "absent", False),
+        ("operator", "matching", False, True, "stale", False),
+        ("operator", "matching", False, True, "recent", True),
     ],
 )
 def test_initial_operator_database_admission_refuses_ownership_or_data_mismatch(
-    tmp_path, identity, marker, populated, configured, allowed
+    tmp_path, identity, marker, populated, configured, backup, allowed
 ):
-    """Only an empty or exactly bound unconfigured database can be provisioned."""
+    """Only an empty, exactly bound or recently backed-up database is admitted."""
     configuration = configuration_at(tmp_path)
     rows = [
         (
@@ -132,6 +136,9 @@ def test_initial_operator_database_admission_refuses_ownership_or_data_mismatch(
     rows.append(("stewardship_system_configuration" if configured else None,))
     if configured:
         rows.append((True,))
+        rows.append(("stewardship_backup_run" if backup != "absent" else None,))
+        if backup != "absent":
+            rows.append((backup == "recent",))
     cursor = Cursor(rows)
     if allowed:
         provisioning._admit_operator(cursor, configuration, "matching", initial=True)
@@ -188,6 +195,7 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     monkeypatch.setattr(provisioning, "_check_role", lambda *args: True)
     monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
     monkeypatch.setattr(provisioning, "_admit_existing_grants", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
