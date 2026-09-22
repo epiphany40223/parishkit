@@ -92,8 +92,10 @@ runtime root in the operators' notes: an upgrade and a restore both need them.
 
 The deployment is safe to explore in Testing mode: Testing-routed mail goes
 only to staff test addresses and no Family link is live. Before the pre-launch
-gate, the human runs the smoke tools of the launch scope's item 5 against this
-deployment, staff validate the Family form, content, templates, schedules and
+gate, the human runs the [smoke checks](stewardship-smoke-tools.md) inside the
+deployed containers (ParishSoft read, Google Workspace mailbox with one test
+message, optional Slack, and the Google OAuth client followed by a real
+sign-in), staff validate the Family form, content, templates, schedules and
 reports, and the load check of the launch scope's reduced item 7 runs here.
 Bugs found now are fixed by ordinary pull requests and reach the host through
 the [upgrade](#upgrade) below, except a release that adds a SQL login, a

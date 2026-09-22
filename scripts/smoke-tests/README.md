@@ -103,3 +103,43 @@ scripts/smoke-tests/slack-notification.py \
 
 The Slack notification smoke test previews the target and message by default. Add
 `--send` only after confirming the preview is safe to post.
+
+## Stewardship (deployed credentials)
+
+The Stewardship application keeps each provider credential in the deployed
+consumer that uses it, so its smoke check runs inside that container with the
+same Compose file and project name the deployment uses, and reads only the
+credential already mounted there. The
+[smoke tools guide](../../docs/guides/stewardship-smoke-tools.md) explains
+what each check proves; the
+[deployment runbook](../../docs/guides/stewardship-deployment-runbook.md#validation-in-testing-mode)
+says when to run them.
+
+```sh
+# ParishSoft: the key sees exactly the configured organization (read-only).
+docker compose ... exec -T worker pk-stewardship smoke \
+  --config /opt/parishkit/config/services/worker.yaml \
+  --target parishsoft --organization-id 12345
+
+# Google Workspace mailbox: authenticate, then send one fixed message.
+docker compose ... exec -T mail-dispatch pk-stewardship smoke \
+  --config /opt/parishkit/config/services/mail-dispatch.yaml \
+  --target google_workspace --delegated-email stewardship@parish.example \
+  --send-to operator@parish.example
+
+# Slack (worker recreated from compose-slack.json): authenticate the bot
+# token, then post one fixed message.
+docker compose ... exec -T worker pk-stewardship smoke \
+  --config /opt/parishkit/config/services/worker-slack.yaml \
+  --target slack --channel-id C0123456789 --send
+
+# Google login: validate the OAuth client document and print the redirect
+# URI to register; then sign in at the public origin yourself.
+docker compose ... exec -T web pk-stewardship smoke \
+  --config /opt/parishkit/config/services/web.yaml --target google_oauth
+```
+
+Each command prints one JSON line (`credential` is `valid`, `invalid` or
+`unavailable`; `sent` says whether a message went out) and exits `0`, or one
+generic line and exit `2`. Omit `--send-to` or `--send` to check without
+sending. Nothing is printed about the credential itself.
