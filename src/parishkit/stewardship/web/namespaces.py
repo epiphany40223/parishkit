@@ -1,6 +1,6 @@
 """The one path rule that separates Family and Admin cookie namespaces.
 
-Dependency-free so session, CSRF, error and gate code can all share it
+Dependency-free so session, CSRF and access-gate code can all share it
 without importing models. Only cookie transport is shared: Family and Admin
 never read each other's session or CSRF cookies, so a login or rotation in
 one namespace cannot invalidate the other's open pages.

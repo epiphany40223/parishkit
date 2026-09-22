@@ -7,6 +7,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import Client
 
 from parishkit.stewardship.accounts.sessions import NamespacedCsrfMiddleware
+from parishkit.stewardship.campaigns.credential_models import FamilySession
 
 from .auth_builders import start
 from .test_family_auth_postgresql import family_service as family_service
@@ -38,13 +39,6 @@ def admin_login(client):
 def keepalive(client, token):
     """The Family tab's empty CSRF-protected activity claim."""
     return client.post("/family/keepalive", b"", HTTP_X_CSRFTOKEN=token, **JSON)
-
-
-def keepalive_from(client, token, origin):
-    """A keepalive carrying an explicit browser Origin header."""
-    return client.post(
-        "/family/keepalive", b"", HTTP_X_CSRFTOKEN=token, HTTP_ORIGIN=origin, **JSON
-    )
 
 
 def test_family_page_token_survives_admin_login(family_service, google):
@@ -91,40 +85,42 @@ def test_login_still_rotates_its_own_namespace_token(family_service, google):
     assert stale.status_code == 403
 
 
-def test_family_csrf_failure_is_distinguishable_and_recoverable(family_service):
-    """A stale Family token gets a fresh one; other failures keep the plain 403."""
-    client, _ = login(family_service.code)
-    response = client.post("/family/form", b"{}", HTTP_X_CSRFTOKEN="x" * 64, **JSON)
-    assert response.status_code == 403
-    assert response["Cache-Control"] == "no-store"
-    body = response.json()
-    assert body["error"] == "csrf_failed"
-    assert keepalive(client, body["csrf_token"]).status_code == 200
-    plain = client.post("/family/keepalive", HTTP_X_CSRFTOKEN="x" * 64)
-    assert plain.status_code == 403
-    assert plain.content == b"Access is not authorized.\n"
-    admin = client.post("/admin/logout", HTTP_X_CSRFTOKEN="x" * 64, **JSON)
-    assert admin.status_code == 403
-    assert admin.content == b"Access is not authorized.\n"
+def test_stale_family_token_after_second_sign_in_cannot_act(family_service):
+    """A second Family sign-in replaces the tab's session; its old token is refused.
 
-
-def test_family_origin_failure_is_not_recoverable(family_service):
-    """A fresh token cannot fix a foreign Origin, so it stays a plain 403."""
+    Family CSRF rotates only on a Family login, which also revokes every
+    earlier Family session in the browser. The old tab must not act on the
+    newer session, so its stale token gets the plain 403 with no recovery.
+    """
     client, _ = login(family_service.code)
+    first = FamilySession.objects.get()
     token = page_token(client, "/family/")
-    foreign = keepalive_from(client, token, "https://attacker.example")
-    assert foreign.status_code == 403
-    assert foreign.content == b"Access is not authorized.\n"
-    missing = client.post("/family/keepalive", b"", **JSON)
-    assert missing.status_code == 403
-    assert missing.json()["error"] == "csrf_failed"
+    second = client.post(
+        "/",
+        {
+            "code": family_service.code,
+            "csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value,
+        },
+    )
+    assert second.status_code == 302
+    replacement = FamilySession.objects.get(revoked_at__isnull=True)
+    assert replacement.pk != first.pk
+    first.refresh_from_db()
+    assert first.revoked_at is not None
+    before = replacement.last_activity_at
+    refused = keepalive(client, token)
+    assert refused.status_code == 403
+    assert refused.content == b"Access is not authorized.\n"
+    replacement.refresh_from_db()
+    assert replacement.last_activity_at == before
 
 
 def test_real_family_session_end_is_not_a_csrf_failure(family_service):
-    """With a valid token, an ended session still reports session_ended."""
+    """A signed-out Family with a valid token gets session_ended, not CSRF."""
     client, _ = login(family_service.code)
     token = page_token(client, "/family/")
-    assert client.post("/family/logout", {"csrfmiddlewaretoken": token}).status_code
+    logout = client.post("/family/logout", {"csrfmiddlewaretoken": token})
+    assert logout.status_code == 302
     body = b'{"testing_acknowledged": true}'
     response = client.post("/family/form", body, HTTP_X_CSRFTOKEN=token, **JSON)
     assert response.status_code == 403
