@@ -62,7 +62,14 @@ review of every version consumer, which this correction does not need.
   it.
 
 Locking every row costs no more than the old write did, since a refresh with
-a new generation already updated every row.
+a new generation already updated every row. What changes is when the locks
+are taken: at the start of Family reconciliation rather than at its final
+write, and they are held until the promotion commits. A Family page load or
+keepalive that arrives in that window waits, holding its own session row,
+with no lock timeout; for an ordinary quarter-hour refresh the window is
+short, and for a large first import it includes code allocation for every
+newly eligible Family. A replay of the same source generation, which writes
+no Family row, now also locks them all for its duration.
 
 ## Focused validation
 

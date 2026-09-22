@@ -215,6 +215,8 @@ def reconcile_families(
         # now, after Campaign and population, in pk order. NO KEY UPDATE is
         # the mode those UPDATEs already take, so this only moves the same
         # row locks earlier; activity locks one row and nothing after it.
+        # Activity holds its FamilySession row while it waits here, so the
+        # rest of this promotion must never lock or update a FamilySession.
         existing = {
             row.family_duid: row
             for row in FamilyCampaign.objects.filter(campaign=campaign)
