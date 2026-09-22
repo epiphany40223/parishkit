@@ -56,8 +56,10 @@ Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the
 the single-architecture application image from a release tag, adds the
 `retarget-image` upgrade command for a provisioned deployment and removes the
 checked-in production overlay whose commands could never start; production
-Compose is the provisioner's rendered topology only. OPS-01.02 stays open for
-the offline commands the deployment runbook still needs.
+Compose is the provisioner's rendered topology only. The
+[deployment runbook](../../guides/stewardship-deployment-runbook.md) orders
+the first installation and the upgrade from those commands. OPS-01.02 stays
+open for the offline commands later phases still need.
 
 ## OPS-02: Durable runtime paths and least-privilege secrets
 
