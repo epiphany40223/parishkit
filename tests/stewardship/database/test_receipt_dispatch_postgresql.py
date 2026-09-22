@@ -189,6 +189,81 @@ def test_held_receipt_resumes_without_coalescing(live_response_service):
     assert message.pause_hold_id is None and message.state == "delivered"
 
 
+@pytest.mark.parametrize(
+    "action,status", [("resend", Status.UNKNOWN), ("retry_failed", Status.PERMANENT)]
+)
+def test_paused_receipt_resend_is_held_until_resume(
+    live_response_service, action, status
+):
+    """An unknown receipt can be resent while paused, so the pause can resume.
+
+    Only the unknown state earns the pause exception: a failed receipt's retry
+    still waits for resume.
+    """
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.jobs.delivery_resolution_models import (
+        DeliveryResolution,
+    )
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import (
+        resolve,
+        retry_admitted,
+        unknown_inventory,
+    )
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    harness = live_response_service
+    message = receipt(harness, production=True)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        begin(message, execution)
+        finish_submission(message.pk, execution.claim, FamilyDeliveryResult(status, 1))
+    act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+    control(harness.campaign, "pause")
+    message.refresh_from_db()
+    # The SQL admission, not only the Web preparation that refuses first,
+    # grants the pause exception to the unknown state alone.
+    assert retry_admitted(message) is (action == "resend")
+    if action == "retry_failed":
+        with pytest.raises((PermissionError, DatabaseError)):
+            resolve(
+                harness,
+                user("admin@example.org"),
+                message,
+                action,
+                general=None,
+                public=None,
+            )
+        assert not DeliveryResolution.objects.exists()
+        assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+        return
+    # The unresolved delivery is what the Admin resume guard refuses over;
+    # authorizing the resend is what clears it.
+    assert unknown_inventory(harness.campaign) == 1
+    result = resolve(
+        harness,
+        user("admin@example.org"),
+        message,
+        "resend",
+        general=None,
+        public=None,
+    )
+    message.refresh_from_db()
+    assert message.state == "pending" and message.pause_hold_id is not None
+    assert unknown_inventory(harness.campaign) == 0
+    retry = OutboxMessage(pk=message.pk, task_id=result.retry_task_id)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(retry)
+        assert begin(message, execution) is None
+    control(harness.campaign, "resume")
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert begin(message, execution) is not None
+
+
 def test_seed_render_cannot_be_submitted_by_the_actual_mail_role(response_service):
     """A compromised caller cannot send the database-owned allocation placeholder."""
     from parishkit.stewardship.campaigns.work_locks import work_transaction

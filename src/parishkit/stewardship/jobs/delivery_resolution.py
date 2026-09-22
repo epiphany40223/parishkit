@@ -59,7 +59,11 @@ def _prepare(message, *, general, public, public_origin):
         message.mode == "testing" and epoch.pk != message.rehearsal_epoch_id
     ):
         raise PermissionError("This delivery belongs to an earlier scope.")
-    if message.mode == "production" and scope.campaign.delivery_paused:
+    if (
+        message.mode == "production"
+        and scope.campaign.delivery_paused
+        and not _resolving_unknown(message)
+    ):
         raise PermissionError("Resume campaign delivery before authorizing a retry.")
     occurrence = ScheduleOccurrence.objects.select_related(
         "revision", "definition"
@@ -105,11 +109,21 @@ def _prepare(message, *, general, public, public_origin):
     }
 
 
+def _resolving_unknown(message):
+    """Whether a pause may still admit this retry: the resend of an unknown delivery.
+
+    Resume refuses while any delivery is unknown, so fencing its resend too would
+    deadlock a paused campaign. The resent message returns to pending, where the
+    pause hold keeps it unsent until resume.
+    """
+    return message.state == "delivery_unknown"
+
+
 def _prepare_receipt(message):
     """Request a database-owned seed; Web cannot author a receipt delivery body."""
     from .receipt_dispatch import receipt_disposition
 
-    if receipt_disposition(message) is not None:
+    if receipt_disposition(message, paused_ok=_resolving_unknown(message)) is not None:
         raise PermissionError("Receipt retry is not currently admitted.")
     return {"receipt": True}
 
@@ -117,11 +131,13 @@ def _prepare_receipt(message):
 def _prepare_digest(message):
     """Request only a fixed database seed, never read or author the report body."""
     queries = {
-        "daily_digest": "SELECT stewardship_daily_dispatch_live_v1(%s)",
-        "weekly_digest": "SELECT stewardship_weekly_dispatch_live_v1(%s)",
+        "daily_digest": "SELECT stewardship_daily_dispatch_live_v1(%s,%s)",
+        "weekly_digest": "SELECT stewardship_weekly_dispatch_live_v1(%s,%s)",
     }
     with connection.cursor() as cursor:
-        cursor.execute(queries[message.purpose], [message.pk])
+        cursor.execute(
+            queries[message.purpose], [message.pk, _resolving_unknown(message)]
+        )
         if cursor.fetchone()[0] is not True:
             raise PermissionError("Digest retry is not currently admitted.")
     return {message.purpose: True}

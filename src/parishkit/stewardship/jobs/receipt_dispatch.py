@@ -49,11 +49,13 @@ def bound_receipt(message):
     )
 
 
-def receipt_disposition(message):
+def receipt_disposition(message, *, paused_ok=False):
     """Post-close live receipts remain obligations; only obsolete Testing is cancelled.
 
     A receipt has no schedule revision or Family access credential. Its original
     rehearsal epoch comes from the submission, never from a new current epoch.
+    Only resend admission passes ``paused_ok``: it checks everything else while
+    the pause hold, not this check, keeps the resent receipt unsent.
     """
     from .family_mail_dispatch import FamilyDeliveryHeld
 
@@ -91,6 +93,7 @@ def receipt_disposition(message):
     if (
         message.mode == "production"
         and campaign.delivery_paused
+        and not paused_ok
         and not message_released(message)
     ):
         return "delivery_paused"

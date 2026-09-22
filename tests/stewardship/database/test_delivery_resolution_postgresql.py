@@ -57,6 +57,26 @@ def failed_delivery(harness, status=FamilyDeliveryStatus.UNKNOWN):
     return message
 
 
+def unknown_inventory(campaign):
+    """Read the unknown count the Admin resume guard refuses over."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT inventory->>'unknown' FROM stewardship_delivery_control_inventory"
+            " WHERE campaign_id=%s",
+            [campaign.pk],
+        )
+        return int(cursor.fetchone()[0])
+
+
+def retry_admitted(message):
+    """Read the authoritative SQL resolution admission, beneath Web preparation."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_delivery_retry_admitted_v1(%s)", [message.pk]
+        )
+        return cursor.fetchone()[0]
+
+
 def resolve(harness, principal, message, action, **options):
     """Only public/general keys and restricted Web SQL reach the command service."""
     values = dict(
@@ -241,20 +261,57 @@ def test_campaign_end_allows_evidence_but_not_a_new_send(family_mail, action):  
             assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
 
 
-@pytest.mark.parametrize("action", ["accept", "resend"])
-def test_pause_preserves_resolution_but_fences_new_sends(family_mail, action):  # noqa: F811
-    """A durable pause cannot turn external evidence into another provider call."""
+@pytest.mark.parametrize(
+    "action,status",
+    [
+        ("accept", FamilyDeliveryStatus.UNKNOWN),
+        ("resend", FamilyDeliveryStatus.UNKNOWN),
+        ("retry_failed", FamilyDeliveryStatus.PERMANENT),
+        ("retry_unsent", None),
+    ],
+)
+def test_pause_resolves_uncertainty_but_fences_new_sends(family_mail, action, status):  # noqa: F811
+    """A pause keeps unknown deliveries resolvable, but no provider call crosses it.
+
+    Resume refuses while any delivery is unknown, so a resend is admitted and held
+    by the pause rather than refused; retries of failed or unsent mail wait for
+    resume.
+    """
+    from types import SimpleNamespace
+
     from .test_outbox_boundaries_postgresql import control
 
     principal = user("admin@example.org")
     harness = activate_response_service(family_mail)
     complete_empty_catchup(harness.campaign, uuid4())
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
-        message = failed_delivery(harness)
+        message = failed_delivery(harness, status)
         control(harness.campaign, "pause")
         if action == "accept":
             resolve(harness, principal, message, action)
             assert ScheduleFulfillment.objects.count() == 1
+        elif action == "resend":
+            # The unresolved delivery is what the Admin resume guard refuses
+            # over; authorizing the resend is what clears it.
+            assert unknown_inventory(harness.campaign) == 1
+            receipt = resolve(harness, principal, message, action)
+            message.refresh_from_db()
+            assert message.state == "pending" and message.pause_hold_id is not None
+            assert unknown_inventory(harness.campaign) == 0
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                execution = claim(SimpleNamespace(task_id=receipt.retry_task_id))
+                begin = dict(
+                    private=harness.rings.private,
+                    public_origin="http://localhost:8000",
+                )
+                assert begin_submission(message.pk, execution.claim, **begin) is None
+            # The resolved uncertainty no longer blocks resume, which releases
+            # the held resend to the provider.
+            control(harness.campaign, "resume")
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                assert begin_submission(message.pk, execution.claim, **begin)
+            message.refresh_from_db()
+            assert message.state == "submitting" and message.pause_hold_id is None
         else:
             with pytest.raises((PermissionError, DatabaseError)):
                 resolve(harness, principal, message, action)

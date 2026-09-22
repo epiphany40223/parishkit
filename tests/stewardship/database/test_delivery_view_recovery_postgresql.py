@@ -11,6 +11,7 @@ from django.db.models import F
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.family_delivery import FamilyDeliveryStatus
 from parishkit.stewardship.jobs import delivery_views
 from parishkit.stewardship.jobs.delivery_resolution_models import DeliveryResolution
 from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
@@ -106,18 +107,33 @@ def test_refusal_clearance_hides_dirty_source_and_returns_conflict(family_mail, 
     assert not RecipientRefusalResolution.objects.exists()
 
 
-def test_pause_hides_resend_without_hiding_evidence_acceptance(family_mail, google):
-    """UI commands follow the same fresh-send admission as the authoritative SQL."""
+@pytest.mark.parametrize(
+    "status,shown,hidden",
+    [
+        (FamilyDeliveryStatus.UNKNOWN, ("accept", "resend"), ()),
+        (FamilyDeliveryStatus.PERMANENT, (), ("retry_failed",)),
+    ],
+)
+def test_pause_offers_unknown_resend_but_hides_other_retries(
+    family_mail, google, status, shown, hidden
+):
+    """UI commands follow the same admission as the authoritative SQL.
+
+    A paused campaign still offers the held resend of an unknown delivery, since
+    resume refuses until it is resolved, but not a retry of failed mail.
+    """
     harness = activate_response_service(family_mail)
     complete_empty_catchup(harness.campaign, uuid4())
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
-        message = failed_delivery(harness)
+        message = failed_delivery(harness, status)
         control(harness.campaign, "pause")
         browser, _ = signed_in()
         response = browser.get(f"/admin/deliveries/{message.pk}")
         assert response.status_code == 200
-        assert b'name="action" value="resend"' not in response.content
-        assert b'name="action" value="accept"' in response.content
+        for action in shown:
+            assert f'name="action" value="{action}"'.encode() in response.content
+        for action in hidden:
+            assert f'name="action" value="{action}"'.encode() not in response.content
 
 
 def test_resend_replay_does_not_require_keys_again(family_mail, google, monkeypatch):

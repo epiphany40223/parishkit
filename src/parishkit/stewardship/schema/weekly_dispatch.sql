@@ -1,6 +1,9 @@
 -- Weekly messages share the isolated MAIL claim and SMTP evidence protocol, but
 -- never inherit Family credential reads, refusal propagation or group writes.
-CREATE FUNCTION stewardship_weekly_dispatch_live_v1(message uuid)
+-- paused_ok admits a held resend of an unknown delivery while paused; the
+-- pause hold, not this gate, then keeps it unsent. Workers call the
+-- one-argument form, so every provider attempt still honours the pause.
+CREATE FUNCTION stewardship_weekly_dispatch_live_v1(message uuid,paused_ok boolean DEFAULT false)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_outbox_message m
         JOIN stewardship_weekly_digest_recipient recipient ON recipient.outbox_id=m.id AND recipient.id=m.semantic_key
@@ -14,7 +17,7 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         WHERE m.id=$1 AND m.purpose='weekly_digest' AND m.credential_namespace='none' AND m.family_id IS NULL
           AND m.campaign_id=p.campaign_id AND m.mode=p.mode AND p.phase='complete'
           AND o.state IN ('pending','running') AND o.due_at<=stewardship_campaign_now_v1()
-          AND (NOT (m.mode='production' AND c.delivery_paused) OR stewardship_delivery_message_released_v1(m.id))
+          AND (paused_ok OR NOT (m.mode='production' AND c.delivery_paused) OR stewardship_delivery_message_released_v1(m.id))
           AND stewardship_weekly_digest_scope_v1(p.campaign_id,p.revision_id,p.campaign_configuration_id,p.mode,p.rehearsal_epoch_id)
           AND NOT stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
 $$;
