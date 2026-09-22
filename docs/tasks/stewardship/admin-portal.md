@@ -236,7 +236,7 @@ which completes ADM-07.
 
 Scope and dependencies: [ADM-08 work package](../../plans/stewardship/admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs).
 
-- [ ] ADM-08.01 — Build coalesced manual refresh controls.
+- [x] ADM-08.01 — Build coalesced manual refresh controls.
 - [ ] ADM-08.02 — Build additional-information and manual-census queues.
 - [x] ADM-08.03 — Build scoped Ministry follow-up controls.
 - [ ] ADM-08.04 — Build searchable Admin logs and timezone-aware exports.
@@ -268,8 +268,9 @@ with RPT-09.
 The [manual refresh increment](../../guides/stewardship-manual-refresh.md)
 implements .01 under the v1 launch scope: a confirmed, keyed, coalesced
 manual full refresh that leads to the run's progress page, with the home
-page linking to it. Its review/fix rounds, full exact-head CI/DCO and
-protected delivery remain pending, so .01 stays unchecked until then.
+page linking to it; it is delivered under its
+[protected receipt](../../guides/stewardship-manual-refresh.md#protected-delivery),
+so .01 is checked.
 
 ## ADM-09: Census review and ParishSoft publication UI
 
