@@ -70,7 +70,7 @@ No schema change.
 ## Checkpoint
 
 The tests are complete and pass locally and
-[rounds 1 to 3](stewardship-autosave-races-reviews.md) are answered; the
+[rounds 1 to 4](stewardship-autosave-races-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. With them ADM-07.01 to .05 are
 checked in the task map. M5 and Gate 3 remain open. No deployment, release,

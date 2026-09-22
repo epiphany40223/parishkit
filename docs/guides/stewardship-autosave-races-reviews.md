@@ -54,3 +54,16 @@ corrected:
 
 The eleven findings the validation step did not confirm were not carried
 forward.
+
+## Round 4
+
+Claude only (Codex out of quota). A correction check of the three rounds'
+corrections: ten raw findings, one validated and corrected:
+
+- Medium: the case claimed intake writes its audit once but never captured
+  the count before the first apply, so it proved only that resubmissions add
+  nothing. It now captures the count before intake and asserts exactly one
+  audit row was written by it.
+
+The nine findings the validation step did not confirm were not carried
+forward.

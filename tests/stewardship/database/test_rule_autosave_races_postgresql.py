@@ -56,10 +56,13 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
     assert login.status_code == 302
     values = intent(store, role="administrator")
     before = ConfigurationChangeRequest.objects.count()
+    unaudited = AuditEvent.objects.count()
     with web():
         receipt = state(apply(browser, values).json())
-        # Intake wrote its audit with the checkpoint; resubmissions write none.
+        # Intake wrote exactly one audit row with the checkpoint; resubmissions
+        # write none.
         audited = AuditEvent.objects.count()
+        assert audited == unaudited + 1
         for _ in range(2):
             assert state(apply(browser, values).json()) == receipt
     assert AuditEvent.objects.count() == audited
