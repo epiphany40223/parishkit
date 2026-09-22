@@ -32,7 +32,7 @@ from parishkit.config import ConfigError
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private
 from .backup_sealing import Recipient, seal
-from .observability import Event, emit
+from .observability import Event, FailureKind, emit
 from .runtime_paths import (
     PROVISIONING_RECORD,
     RuntimeLayout,
@@ -160,7 +160,8 @@ def dump_database(configuration, sink, *, recipient):
 
     The password reaches pg_dump through its environment, never its arguments.
     A failed dump leaves the sealed output unusable and is reported as one
-    generic refusal; pg_dump's own message stays in the process log.
+    generic refusal plus the ``backup_dump_failed`` failure category in the
+    process log; pg_dump's own stderr is drained and discarded.
     """
     binary = shutil.which("pg_dump")
     if binary is None:
@@ -195,7 +196,7 @@ def dump_database(configuration, sink, *, recipient):
         Its text can name hosts, roles and paths, and the log formatter drops
         free text anyway; the failure is reported by a reviewed event instead.
         """
-        for _ in stream:
+        while stream.read(65536):
             pass
 
     with subprocess.Popen(
@@ -209,7 +210,11 @@ def dump_database(configuration, sink, *, recipient):
     if process.returncode != 0 or count == 0:
         # Tell the operator the database step failed, as distinct from the
         # configuration refusals the backup command reports by category.
-        emit(Event.BACKUP_DUMP_FAILED, level=logging.ERROR)
+        emit(
+            Event.STARTUP_REJECTED,
+            level=logging.ERROR,
+            failure_kind=FailureKind.BACKUP_DUMP,
+        )
         raise ConfigError("The database dump did not complete.")
     return count, digest
 
@@ -327,7 +332,7 @@ class RecentBackupRequired(ConfigError):
     """A configured deployment asked to change without a backup in the window.
 
     The operator commands report every refusal with one generic line; this
-    one also logs the reviewed ``upgrade_backup_required`` event, since the
+    one also logs the ``upgrade_backup_required`` failure category, since the
     remedy is always the same.
     """
 

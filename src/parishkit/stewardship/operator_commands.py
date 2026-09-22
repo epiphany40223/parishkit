@@ -278,9 +278,13 @@ def execute_operator(args):
         if type(error) is RecentBackupRequired:
             # The one refusal whose remedy is always the same: name it in the
             # process log with a reviewed event the log formatter keeps.
-            from .observability import Event, emit
+            from .observability import Event, FailureKind, emit
 
-            emit(Event.UPGRADE_BACKUP_REQUIRED, level=logging.ERROR)
+            emit(
+                Event.STARTUP_REJECTED,
+                level=logging.ERROR,
+                failure_kind=FailureKind.BACKUP_REQUIRED,
+            )
         print(
             "ERROR: offline operation refused or failed; verify profile, inputs, "
             "permissions, interlock and database readiness",

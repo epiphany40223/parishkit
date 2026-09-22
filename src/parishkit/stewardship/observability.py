@@ -41,10 +41,6 @@ class Event(StrEnum):
     HANDOFF_KEY_MISMATCH = "credential_handoff_key_mismatch"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
     AUTH_HEALTH_FAILED = "authentication_health_observation_failed"
-    # Operator diagnostics the runbooks name. The formatter drops free text, so
-    # a refusal an operator must act on needs its own reviewed event.
-    BACKUP_DUMP_FAILED = "backup_dump_failed"
-    UPGRADE_BACKUP_REQUIRED = "upgrade_backup_required"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -57,6 +53,11 @@ class FailureKind(StrEnum):
     CONFIGURATION = "configuration_unavailable"
     FILESYSTEM = "filesystem_unavailable"
     UNEXPECTED = "unexpected_failure"
+    # Operator refusals the runbooks name. The formatter drops free text, and
+    # Event names are mirrored by a SQL constraint, so these ride on the
+    # reviewed startup_rejected event as categories instead.
+    BACKUP_DUMP = "backup_dump_failed"
+    BACKUP_REQUIRED = "upgrade_backup_required"
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(

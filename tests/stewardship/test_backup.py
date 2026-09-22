@@ -286,7 +286,7 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
 def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
     deployment, monkeypatch, caplog, capsys, failure
 ):
-    """A nonzero exit or an empty dump refuses and logs backup_dump_failed.
+    """A nonzero exit or an empty dump refuses with the backup_dump_failed kind.
 
     The check formats the record exactly as production does: pg_dump's own
     text never reaches the log, and the event survives the formatter.
@@ -297,7 +297,8 @@ def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
     recipient = backup_sealing.Recipient.load(
         RuntimeLayout(deployment).credential("backup_data")
     )
-    noise = b"pg_dump: error: \x01secret\x7f " + b"x" * 20000
+    # A canary pg_dump message; the padding checks a chatty stderr drains.
+    noise = b"pg_dump: error: secret " + b"x" * 200000
 
     class Process:
         """A pg_dump that fails, or that says nothing at all."""
@@ -325,7 +326,9 @@ def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
         backup.dump_database(deployment, io.BytesIO(), recipient=recipient)
     formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
     assert any('"backup_dump_failed"' in line for line in formatted)
-    assert not any("secret" in line for line in formatted)
+    # pg_dump's text is never logged, not even before the formatter drops it.
+    assert "secret" not in caplog.text
+    assert not any("secret" in record.getMessage() for record in caplog.records)
     assert capsys.readouterr().out == ""
 
 
