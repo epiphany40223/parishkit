@@ -74,3 +74,14 @@ The three findings below the validation cutoff were taken as well: an
 expired links page refuses with a generic "Check this value." error, a
 blocked withdrawal usually needs a new sign-in before its new preview, and
 the edited paragraphs are rewrapped. A further correction check follows.
+
+## Round 4
+
+Claude only (Codex produced no output). Correction check: five raw
+findings, none validated. Four low-severity notes that an Administrator
+would meet on the day were corrected anyway: every button on the cleanup and
+links pages expires with its five-minute page, the nightly full refresh also
+makes a preparation stale, the recovery's second full refresh follows the
+timing notes, and deltas run outside go-live too; the pull request citations
+now use one form. Because these follow the fourth round, a final correction
+check follows.

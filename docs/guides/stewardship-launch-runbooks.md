@@ -60,8 +60,10 @@ still the design record for preparation and disposal),
   and finish step 6 within that window.
 - The prepared Family links of step 5 are bound to the ParishSoft data they
   were prepared from, and the scheduled delta refresh runs every 15 minutes
-  (on the quarter hour) during go-live. The next delta that lands after
-  preparation makes it stale. Start step 5 just after a quarter-hour delta
+  (on the quarter hour), including during go-live; the nightly full refresh
+  (at the ParishSoft integration's nightly time, 02:00 by default) does the
+  same, so avoid that hour. Any refresh that lands after preparation makes
+  it stale. Start step 5 just after a quarter-hour delta
   has finished, and go straight on to step 6.
 - Plan for both: cleanup, the wait for a delta and preparation often use up
   most of the 30 minutes. If cleanup finishes late in the window, start a
@@ -107,15 +109,16 @@ still the design record for preparation and disposal),
    Testing.** Open or reload the links page only after the delta has
    finished: until the Family eligibility catches up with the new data it
    says the preparation inputs are unavailable, so wait a moment and reload.
-   A page left open for more than five minutes refuses **Prepare inactive
-   Family links** with a generic "Check this value." error; reload it and try
-   again. Preparation sends no email and changes no Family code. If a
+   Every button on the cleanup and links pages (prepare, cancel, retry) is
+   refused with a generic "Check this value." error once its page has been
+   open for more than five minutes; reload the page and try again. Preparation sends no email and changes no Family code. If a
    refresh lands first, the page says the preparation is cancelled or no
    longer current. To prepare again, choose **Cancel and discard these
    inactive links**, wait until its disposal worker finishes (**Retry failed
    disposal** if it fails), and only then does **Prepare inactive Family
    links** reappear. If the 30-minute window has also lapsed, run another full
-   refresh first, then discard and prepare again.
+   refresh first, timed as in the timing notes above, then discard and
+   prepare again.
 6. **Administrator: confirm.** Choose **Review final Production
    confirmation** and copy the page's address (or keep it open in another
    tab) before signing in: the page requires a Google sign-in made after the

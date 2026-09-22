@@ -21,8 +21,8 @@ No endpoint may nominate arbitrary deletion targets, inventory counts, actor
 identity or privileged callbacks. No GET sends a message or starts cleanup.
 
 This increment stopped before Production activation/withdrawal: link
-preparation, confirmation and withdrawal were delivered later (pull requests
-59, 60 and 61), and the operator procedure is the launch runbooks'
+preparation, confirmation and withdrawal were delivered later (PRs #59, #60
+and #61), and the operator procedure is the launch runbooks'
 [Production activation](stewardship-launch-runbooks.md#production-activation).
 As written at the time: those later
 ADM-05 commands must recheck current readiness under short final locks and
