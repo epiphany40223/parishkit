@@ -20,7 +20,11 @@ access with gate acquisition, and preserve completed cleanup on cancellation.
 No endpoint may nominate arbitrary deletion targets, inventory counts, actor
 identity or privileged callbacks. No GET sends a message or starts cleanup.
 
-This increment stops before Production activation/withdrawal. Those later
+This increment stopped before Production activation/withdrawal: link
+preparation, confirmation and withdrawal were delivered later (PRs #59, #60
+and #61), and the operator procedure is the launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation).
+As written at the time: those later
 ADM-05 commands must recheck current readiness under short final locks and
 exercise the required direct-activation load/catch-up handoff. Keep their SQL
 and application guards closed until that owner is complete. This is a

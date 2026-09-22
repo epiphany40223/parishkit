@@ -4,8 +4,9 @@ The operator's procedures for the situations the
 [v1 launch scope](../plans/stewardship/v1-launch.md#launch-critical-remaining-work)
 (item 6, the launch portion of
 [OPS-08.05](../tasks/stewardship/operations.md#ops-08-observability-health-and-operational-runbooks))
-expects during the first live campaign: a mail-provider outage, a ParishSoft
-outage, pausing and resuming delivery, and messages whose delivery is unknown.
+expects during the first live campaign: Production activation and
+withdrawal, a mail-provider outage, a ParishSoft outage, pausing and resuming
+delivery, and messages whose delivery is unknown.
 Deployment, upgrade and rollback are the
 [deployment runbook](stewardship-deployment-runbook.md); backup and restore are
 the [backup runbook](stewardship-backup-runbook.md); checking a credential
@@ -36,6 +37,129 @@ that links to unresolved `delivery_unknown` messages. Notices are sent only
 when an incident opens, escalates or resolves, so a quiet day is normal and
 proves nothing; for a heartbeat, watch for the daily Admin report arriving on
 schedule.
+
+## Production activation
+
+Activation is an Administrator's portal workflow with one operator step at
+each end. It is irreversible in part: the Testing cleanup in step 4 deletes
+the rehearsal data for good, even if the transition is later cancelled or
+withdrawn. Plan it for a quiet hour, with the Administrator and the operator
+both available. The design is in the
+[go-live readiness](stewardship-go-live-readiness.md),
+[link preparation](stewardship-production-activation.md) (historical, but
+still the design record for preparation and disposal),
+[Production confirmation](stewardship-production-confirmation.md) and
+[withdrawal](stewardship-production-withdrawal.md) guides.
+
+**Timing.** Two clocks govern steps 3 to 6, so do them in one sitting:
+
+- The readiness checks accept a **full** ParishSoft refresh only for 30
+  minutes (the default source-staleness window) from the moment it
+  *started*, and they are checked again when cleanup starts and at the final
+  confirmation. Start the full refresh with **Refresh now** on the home page
+  and finish step 6 within that window.
+- The prepared Family links of step 5 are bound to the ParishSoft data they
+  were prepared from, and the scheduled delta refresh runs every 15 minutes
+  (on the quarter hour), including during go-live; the nightly full refresh
+  (at the ParishSoft integration's nightly time, 02:00 by default) does the
+  same, so avoid that hour. Any refresh that lands after preparation makes
+  it stale. Start step 5 just after a quarter-hour delta
+  has finished, and go straight on to step 6.
+- Plan for both: cleanup, the wait for a delta and preparation often use up
+  most of the 30 minutes. If cleanup finishes late in the window, start a
+  second full refresh once cleanup has completed and just after a
+  quarter-hour delta has finished, so that the full refresh, the Family
+  eligibility catch-up, preparation and confirmation all finish before the
+  next quarter hour. Refreshes never run side by side: a delta that comes
+  due while the full refresh runs starts right after it and makes the
+  preparation stale. Time a full refresh on the validation deployment
+  beforehand; if it takes most of fifteen minutes, this path does not fit and
+  the first full refresh must carry the whole procedure. Refresh is allowed
+  during cleanup's hold. The home page's last-refreshed time shows when a
+  refresh finished.
+
+1. **Operator: back up.** Run the backup by hand and confirm its off-host
+   copy, as the [backup runbook](stewardship-backup-runbook.md) says.
+2. **Administrator: clear readiness.** From the campaign's settings page,
+   choose **Review go-live readiness and Testing cleanup impact**
+   (`/admin/campaign/<campaign id>/go-live`). The page lists what still needs
+   attention, each item with its remedy. Clear these beforehand: every
+   provider credential must have a current check; a selected Family test
+   email must have been previewed and sent successfully with the current
+   configuration; no Testing delivery may be unfinished or unknown; and no
+   configuration change may be pending. Then start the full refresh with
+   **Refresh now** on the home page and wait for it to finish. Reviewing and
+   verifying readiness change nothing; only **Start Testing cleanup** in step
+   4 acts.
+3. **Administrator: verify and read the impact.** Choose **Verify readiness
+   and public origin**. Read the Family and Admin report mail impact: the page
+   says whether confirming now would make the campaign active immediately
+   (initial mail is then prepared at once) or schedule it for its start date.
+4. **Administrator: start the cleanup.** Within five minutes of the preview,
+   tick **I acknowledge that deleting the inventoried Testing data is
+   irreversible.** and choose **Start Testing cleanup**. Rehearsal codes and
+   links stop working and no new Testing work starts. Watch the progress page
+   until it says **Cleanup is complete.** A failed run offers **Retry failed
+   cleanup from its checkpoints**; cancelling releases the hold but restores
+   nothing.
+5. **Administrator: prepare the links.** Just after a quarter-hour delta
+   refresh has finished, choose **Prepare inactive Family links** on the
+   cleanup page, then again on the **Prepare Family links** page it opens,
+   and wait for **Inactive links are prepared. The campaign remains in
+   Testing.** Open or reload the links page only after the delta has
+   finished: until the Family eligibility catches up with the new data it
+   says the preparation inputs are unavailable, so wait a moment and reload.
+   Every button on the cleanup and links pages (prepare, cancel, retry) is
+   refused with a generic "Check this value." error once its page has been
+   open for more than five minutes; reload the page and try again. Preparation sends no email and changes no Family code. If a
+   refresh lands first, the page says the preparation is cancelled or no
+   longer current. To prepare again, choose **Cancel and discard these
+   inactive links**, wait until its disposal worker finishes (**Retry failed
+   disposal** if it fails), and only then does **Prepare inactive Family
+   links** reappear. If the 30-minute window has also lapsed, run another full
+   refresh first, timed as in the timing notes above, then discard and
+   prepare again.
+6. **Administrator: confirm.** Choose **Review final Production
+   confirmation** and copy the page's address (or keep it open in another
+   tab) before signing in: the page requires a Google sign-in made after the
+   cleanup completed and within the last five minutes, and **Sign in again
+   with Google** returns you to the portal home page, not here. Sign in, go
+   straight back to the copied address, choose **Verify final readiness and
+   mail impact**, check the exact preview (start and close dates, and
+   immediate versus scheduled), type `Production`, and choose **Confirm
+   Production**, all within five minutes of the sign-in. A changed input
+   means a new preview, not a failure.
+7. **Administrator: watch the result.** The **Production activation
+   progress** page (`/admin/campaign/<campaign id>/production`) shows the
+   outcome. A campaign that became active prepares its initial mail in the
+   background until **Initial campaign mail preparation complete**; a
+   terminal failure offers **Retry failed mail preparation**, and nothing
+   rolls Production back. A campaign confirmed before its start is scheduled:
+   no initial preparation runs, and the ordinary schedule sends its mail from
+   the start date.
+8. **Operator: back up again.** Take a backup once the progress page is
+   settled, and again after each large send, so a restore loses as little as
+   possible.
+
+**Withdrawal** returns a *scheduled* campaign to draft in Testing, and is
+possible only before its start: once the start passes, the campaign is active
+and cannot be withdrawn. Open **Withdraw from Production** from the progress
+page and copy its address, sign in again with Google (which returns to the
+home page), go back to the copied address, give a reason, acknowledge that
+deleted Testing data cannot be restored, choose **Preview withdrawal** and
+then **Confirm withdrawal from Production**. If the preview reports work in
+flight or uncertain, the confirm button is withheld: resolve that work, sign
+in again if more than five minutes have passed since the last sign-in, then
+preview again and confirm within five minutes and before the start.
+Withdrawal is refused while delivery is paused: the progress page then hides
+the withdrawal link, and the withdrawal page says the campaign is
+not eligible, as it does for an active campaign. Resume first, which needs
+the sender test described below, so do not pause a scheduled campaign you may
+want to withdraw while the provider is down. After a withdrawal, going live
+again needs the whole cycle above, including a new cleanup.
+
+The [review ledger](stewardship-activation-runbook-reviews.md) records how
+this procedure was checked against the code.
 
 ## Mail-provider outage
 
@@ -189,8 +313,10 @@ invitations and reminders follow the ordinary close policy and cannot be
 released, and the page instead offers to resolve the held receipts and Admin
 reports by type: release the ones that should still go, after the same
 sender check, and cancel the rest with a reason. A type cannot be cancelled
-while any of its messages is still submitting or unknown, or while report
-preparation is running. This does not reopen Family access. A resolution
+while any of its messages is still submitting or unknown, and no resolution
+at all (release, cancel or clearing an empty pause) is accepted while a
+daily or weekly report is still being prepared: wait for it to finish. This
+does not reopen Family access. A resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,
 fully resolved pause (select no types)** to clear it.
@@ -266,4 +392,4 @@ only record of why a Family got one message, two or none.
 | Check a credential against its provider | [Smoke tools guide](stewardship-smoke-tools.md) |
 | Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
-| Production activation and withdrawal | [Production activation guide](stewardship-production-activation.md) |
+| Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
