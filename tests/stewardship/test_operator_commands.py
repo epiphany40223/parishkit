@@ -86,6 +86,24 @@ def test_operator_failures_do_not_print_exception_values(
     assert "private" not in output.out + output.err
 
 
+def test_a_missing_backup_refusal_is_named_in_the_formatted_log(
+    monkeypatch, tmp_path, capsys, caplog
+):
+    """The upgrade admission's refusal survives the production log formatter."""
+    from parishkit.stewardship.backup import RecentBackupRequired
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    def fail(path):
+        raise RecentBackupRequired("No backup is recorded.")
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    with caplog.at_level("ERROR", logger="parishkit.stewardship"):
+        assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
+    assert any('"upgrade_backup_required"' in line for line in formatted)
+    assert "refused" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("value", [None, "private-token", True, "0" * 32])
 def test_operator_confirmations_require_canonical_uuid(value):
     with pytest.raises(ValueError):

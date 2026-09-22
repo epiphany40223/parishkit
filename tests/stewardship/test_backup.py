@@ -283,15 +283,21 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
 
 
 @pytest.mark.parametrize("failure", ["exit", "empty"])
-def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
+def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
     deployment, monkeypatch, caplog, capsys, failure
 ):
-    """A nonzero exit or an empty dump refuses; stderr is logged, bounded, printable."""
+    """A nonzero exit or an empty dump refuses and logs backup_dump_failed.
+
+    The check formats the record exactly as production does: pg_dump's own
+    text never reaches the log, and the event survives the formatter.
+    """
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
     monkeypatch.undo()
     recipient = backup_sealing.Recipient.load(
         RuntimeLayout(deployment).credential("backup_data")
     )
-    noise = b"pg_dump: error: \x01secret\x7f " + b"x" * (backup.MAX_DIAGNOSTICS + 100)
+    noise = b"pg_dump: error: \x01secret\x7f " + b"x" * 20000
 
     class Process:
         """A pg_dump that fails, or that says nothing at all."""
@@ -317,10 +323,9 @@ def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
         pytest.raises(ConfigError, match="did not complete"),
     ):
         backup.dump_database(deployment, io.BytesIO(), recipient=recipient)
-    (record,) = [r for r in caplog.records if "pg_dump exited" in r.getMessage()]
-    message = record.getMessage()
-    assert "\x01" not in message and "\x7f" not in message
-    assert "secret" in message and len(message) <= backup.MAX_DIAGNOSTICS + 64
+    formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
+    assert any('"backup_dump_failed"' in line for line in formatted)
+    assert not any("secret" in line for line in formatted)
     assert capsys.readouterr().out == ""
 
 
