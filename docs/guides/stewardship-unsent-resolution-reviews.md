@@ -47,5 +47,6 @@ current-attempt error, and the guard's duplicated purpose test is folded
 into one branch. A negative test of the occurrence edge predicate was not
 taken: the Web role cannot evaluate it outside the definer guard (it lacks
 the outbox event grant) and any other role fails its session check, so the
-guard's own refusals remain its coverage. The last note is not carried
-forward. A correction check follows.
+guard's own refusals remain its coverage. The last note, that the guide
+claimed resumes the tests did not prove, is covered by the second Medium's
+correction. A correction check follows.
