@@ -124,45 +124,36 @@ ARC-06/OPS-02 will attach narrow mounts and queues alongside their enforcement.
 OPS-04 owns bootstrap/online exclusion, migrations, and production validation.
 Do not enable these profiles to bypass unfinished prerequisites.
 
-## Production structure, not deployment instructions
+## Production Compose is rendered, not checked in
 
-The production overlay has no build context or checkout mount. Every app role
-uses one required GHCR digest, assembled from `STEWARDSHIP_GHCR_REPOSITORY`
-(`owner/repository`) and `STEWARDSHIP_IMAGE_SHA256` (64 hexadecimal characters).
-The image name follows the [release specification](../specs/stewardship/operations/spec.md):
-`ghcr.io/<owner>/<repository>/parishkit@sha256:<hex>`. For repository
-`example/parishkit`, the `/parishkit/parishkit` suffix is intentional: the first
-component is the GitHub repository and the second is its application image.
-Docker rejects malformed digests. The overlay also requires
-`STEWARDSHIP_HOSTNAME`, an operator-installed `STEWARDSHIP_CADDY_CONFIG_FILE`, and
-`STEWARDSHIP_PRODUCTION_POSTGRES_PASSWORD_FILE`. Production cannot fall back to
-the generated development password. Combine only one overlay with the base;
-never combine development and production overlays.
-
-Only Caddy publishes production ports (`80`/`443`). It is disabled behind the
-`pending-ingress` profile until ingress/startup validation lands. Its container
-hardening is also unfinished; the explicit implementation and validation
-prerequisites are in
-[OPS-03 items 1 and 5](../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).
-Do not enable ingress merely because the template-validation test passes.
-The checked-in
-[Caddyfile](../../deploy/stewardship/Caddyfile) is a reference template, not an
-automatically installed configuration. It denies internal paths before proxying,
-with access logging off pending tested redaction. Operators must copy that
-template to their managed configuration location and set
-`STEWARDSHIP_CADDY_CONFIG_FILE` to that file; Compose mounts only the supplied
-file and does not enforce the template's contents. Installation and ingress
-validation remain pending work, not a reason to enable this profile now.
-Production services still refuse startup. TLS, static serving, and release
-artifacts are not yet operational or approved.
+There is no production overlay in `deploy/stewardship`. The
+[operational runtime guide](../guides/stewardship-runtime.md) provisions a
+production deployment from its typed YAML configuration, rendering the
+complete topology (online services, offline bootstrap/migration profiles and
+Caddy) into `config/services/compose*.json` under the runtime root, with
+every application role on one immutable image
+`ghcr.io/<owner>/<repository>/parishkit@sha256:<hex>`, as the
+[release specification](../specs/stewardship/operations/spec.md#compose-files-and-images)
+requires. For repository `example/parishkit`, the `/parishkit/parishkit`
+suffix is intentional: the first component is the GitHub repository and the
+second is its application image. The release workflow publishes that image
+from a tagged commit and records its digest in the GitHub Release; a
+provisioned deployment moves to a newer digest with `retarget-image`, as the
+[release image guide](../guides/stewardship-release-image.md) describes. The
+`docker compose` command is never pointed at the checked-in files for
+production. The checked-in [Caddyfile](../../deploy/stewardship/Caddyfile) is
+the reference the rendered ingress follows; the runtime's own ingress tests
+validate the rendered configuration.
 
 Python, PostgreSQL, Valkey, and Caddy use multi-architecture image digests.
 PostgreSQL 18 persists at `/var/lib/postgresql`, following its
 [version-specific volume layout](https://hub.docker.com/_/postgres).
 Build tools are pinned in `requirements/stewardship-build.txt`; app and test
 dependencies use `requirements/stewardship.txt`. Phase 0 includes test tools
-in the one image for parity. OPS-09 owns release scanning, provenance, SBOM,
-and publication; no image has been published.
+in the one image for parity. The application image is single-architecture
+(`linux/amd64`) for v1; release scanning, provenance, SBOM and
+multi-architecture publication are
+[cut from v1](../plans/stewardship/v1-launch.md#cut-from-v1).
 
 ## Validation
 
@@ -206,8 +197,9 @@ not matter. Host collection always covers the full baseline independently of
 the outer pytest selection; the image manifest comes from its actual baseline
 run. Collection errors, missing manifests, and empty collections fail closed.
 
-Opt-in host checks render both overlays and exercise a disposable development
-project (build the image first):
+Opt-in host checks render the development overlay and exercise a disposable
+development project (build the image first); the rendered production topology
+is validated by `test_operational_compose.py` under the runtime tests:
 
 ```sh
 PARISHKIT_RUN_COMPOSE_TESTS=1 PARISHKIT_RUN_COMPOSE_SMOKE=1 python -m pytest tests/stewardship/test_compose.py -q -s
@@ -215,7 +207,8 @@ PARISHKIT_RUN_COMPOSE_TESTS=1 PARISHKIT_RUN_COMPOSE_SMOKE=1 python -m pytest tes
 
 In PowerShell, set both variables through `$env:` before invoking pytest.
 The `PARISHKIT_RUN_COMPOSE_TESTS` checks also validate the committed Caddy
-template using the production overlay's pinned image and a synthetic hostname.
+template using the runtime renderer's pinned Caddy image
+(`runtime_topology.CADDY_IMAGE`) and a synthetic hostname.
 They run `caddy adapt --validate` and assert that all three internal-path 404
 rules precede the catch-all proxy. The validation container has no network or
 published ports, receives the template through stdin, and uses temporary Caddy

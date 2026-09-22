@@ -17,7 +17,9 @@ V1 launch override (September 21, 2026): select work from the
 [v1 launch scope](../../plans/stewardship/v1-launch.md) first. It lists the
 launch-critical tasks, the task IDs cut or reduced for v1, and the schedule to
 the October 3, 2026 go-live. Leave deferred task IDs unchecked. Current
-status: ADM-07 is complete (PR #89); ADM-08.01 manual refresh is in review.
+status: ADM-08.01 manual refresh is delivered (PR #91); the release image and
+image retargeting slice of the production deployment is in review, with the
+deployment runbook next.
 
 ## How to select the next work
 

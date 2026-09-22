@@ -30,6 +30,7 @@ _COMMAND_OPTIONS = {
     "acknowledge-credential": {"config", "request_id"},
     "collect-static": {"destination"},
     "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
+    "retarget-image": {"config", "image"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
@@ -186,6 +187,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "ERROR: runtime provisioning refused or interrupted; use empty "
                 "owner-only targets or resume the exact original inputs",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.command == "retarget-image":
+        from .runtime_retarget import retarget_image
+
+        # The upgrade path for a provisioned root: only the image may change.
+        # Like provisioning, refusals stay generic so no private input or
+        # configuration detail reaches the console.
+        try:
+            if args.config is None or args.image is None:
+                raise ConfigError(
+                    "Explicit deployment configuration and image required."
+                )
+            result = retarget_image(load_deployment(args.config), image=args.image)
+        except Exception:
+            print(
+                "ERROR: image retarget refused; stop online services, keep the "
+                "recorded deployment inputs and use an approved image",
                 file=sys.stderr,
             )
             return 2

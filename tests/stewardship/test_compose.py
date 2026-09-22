@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 import yaml
 
+from parishkit.stewardship import runtime_topology
 from parishkit.stewardship.deployment import SECRET_NAMES
 from parishkit.stewardship.services import prepare_development
 from parishkit.stewardship.urls import internal_patterns
@@ -187,8 +188,8 @@ def test_scaffold_roles_have_no_accidental_authority():
             assert "PARISHKIT_ROOT:-/opt/parishkit" in mount["source"]
 
 
-def test_development_and_production_overlays():
-    """Live code is read-only in development and absent from production inputs."""
+def test_development_overlay():
+    """Live code is read-only in development; production has no overlay file."""
     development = definition("compose.development.yaml")
     web = development["services"]["web"]
     assert web["ports"] == ["127.0.0.1:${STEWARDSHIP_HTTP_PORT:-8000}:8000"]
@@ -202,15 +203,9 @@ def test_development_and_production_overlays():
         "web",
         "--bind-all-interfaces",
     ]
-    production = definition("compose.production.yaml")
-    for name, service in production["services"].items():
-        assert "build" not in service
-        if name not in {"caddy", "postgres"}:
-            assert service["image"].startswith("ghcr.io/")
-            assert "@sha256:${STEWARDSHIP_IMAGE_SHA256:?" in service["image"]
-            assert not service.get("ports") and not service.get("volumes")
-    assert production["services"]["caddy"]["ports"] == ["80:80", "443:443"]
-    assert production["services"]["caddy"]["profiles"] == ["pending-ingress"]
+    # Production Compose is rendered by the provisioner from the deployment
+    # configuration, never checked in; a stale overlay must not reappear.
+    assert not (DEPLOY / "compose.production.yaml").exists()
 
 
 def test_test_fixture_mounts_require_existing_read_only_sources():
@@ -262,11 +257,6 @@ def compose_environment(root):
             if not key.startswith(("STEWARDSHIP_", "COMPOSE_", "PARISHKIT_"))
         },
         "PARISHKIT_ROOT": str(root),
-        "STEWARDSHIP_GHCR_REPOSITORY": "example/parishkit",
-        "STEWARDSHIP_IMAGE_SHA256": "0" * 64,
-        "STEWARDSHIP_HOSTNAME": "stewardship.example.invalid",
-        "STEWARDSHIP_PRODUCTION_POSTGRES_PASSWORD_FILE": str(root / "prod-db-password"),
-        "STEWARDSHIP_CADDY_CONFIG_FILE": str(root / "Caddyfile"),
     }
 
 
@@ -282,7 +272,7 @@ def test_caddy_template_denies_internal_paths_before_proxy():
     Exact route assertions intentionally require review of matcher/order changes.
     """
     hostname = "stewardship.example.invalid"
-    image = definition("compose.production.yaml")["services"]["caddy"]["image"]
+    image = runtime_topology.CADDY_IMAGE
     result = subprocess.run(
         [
             "docker",
@@ -425,9 +415,13 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
     os.environ.get("PARISHKIT_RUN_COMPOSE_TESTS") != "1",
     reason="explicit opt-in required for Docker Compose checks",
 )
-@pytest.mark.parametrize("profile", ["development", "production"])
-def test_rendered_compose_contract(profile, tmp_path):
-    """Check actual Compose merges without starting or deploying production."""
+def test_rendered_compose_contract(tmp_path):
+    """Check the actual development Compose merge without starting anything.
+
+    Production Compose is rendered by the provisioner and validated by
+    `test_operational_compose.py`; there is no checked-in production overlay.
+    """
+    profile = "development"
     result = subprocess.run(
         [
             "docker",
@@ -455,54 +449,33 @@ def test_rendered_compose_contract(profile, tmp_path):
         definition(f"compose.{profile}.yaml")["services"]
     )
     assert set(config["services"]) == expected_services
-    if profile == "development":
-        assert (
-            config["services"]["tests"]["environment"]["PARISHKIT_TEST_CHECKOUT_ROOT"]
-            == "/app/checkout-build-inputs"
-        )
-        web = config["services"]["web"]
-        assert "--bind-all-interfaces" in web["command"]
-        assert len(web["ports"]) == 1
-        assert web["ports"][0]["host_ip"] == "127.0.0.1"
-        assert web["ports"][0]["target"] == 8000
-        fixtures = definition("compose.development.yaml")["services"]["tests"][
-            "volumes"
-        ]
-        expected_mounts = {
-            mount["target"]: str((DEPLOY / mount["source"]).resolve())
-            for mount in fixtures
-        }
-        mounts = config["services"]["tests"]["volumes"]
-        assert {mount["target"]: mount["source"] for mount in mounts} == expected_mounts
-        for mount in mounts:
-            assert mount["type"] == "bind" and mount["read_only"] is True
-            # Compose may omit a false boolean when serializing normalized JSON.
-            assert mount.get("bind", {}).get("create_host_path", False) is False
+    assert (
+        config["services"]["tests"]["environment"]["PARISHKIT_TEST_CHECKOUT_ROOT"]
+        == "/app/checkout-build-inputs"
+    )
+    web = config["services"]["web"]
+    assert "--bind-all-interfaces" in web["command"]
+    assert len(web["ports"]) == 1
+    assert web["ports"][0]["host_ip"] == "127.0.0.1"
+    assert web["ports"][0]["target"] == 8000
+    fixtures = definition("compose.development.yaml")["services"]["tests"]["volumes"]
+    expected_mounts = {
+        mount["target"]: str((DEPLOY / mount["source"]).resolve()) for mount in fixtures
+    }
+    mounts = config["services"]["tests"]["volumes"]
+    assert {mount["target"]: mount["source"] for mount in mounts} == expected_mounts
+    for mount in mounts:
+        assert mount["type"] == "bind" and mount["read_only"] is True
+        # Compose may omit a false boolean when serializing normalized JSON.
+        assert mount.get("bind", {}).get("create_host_path", False) is False
     for name, service in config["services"].items():
         if name not in {"web", "caddy"}:
             assert not service.get("ports")
-        if profile == "production":
-            assert not service.get("build")
-            if name not in {"caddy", "postgres", "valkey"}:
-                assert (
-                    service["image"]
-                    == "ghcr.io/example/parishkit/parishkit@sha256:" + "0" * 64
-                )
-            if name != "caddy":
-                assert not service.get("ports")
-            for mount in service.get("volumes", []):
-                assert not mount["source"].startswith(str(ROOT))
     for service, target in [("postgres", "/var/lib/postgresql"), ("valkey", "/data")]:
         mounts = config["services"][service]["volumes"]
         mount = next(item for item in mounts if item["target"] == target)
         directory = "postgresql" if service == "postgres" else service
         assert mount["source"] == str(tmp_path / "run/persistent" / directory)
-    if profile == "production":
-        mounts = config["services"]["postgres"]["volumes"]
-        password = next(
-            item for item in mounts if item["target"].startswith("/run/secrets")
-        )
-        assert password["source"] == str(tmp_path / "prod-db-password")
 
 
 @pytest.mark.skipif(
