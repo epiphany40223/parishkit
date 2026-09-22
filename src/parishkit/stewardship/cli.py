@@ -37,6 +37,15 @@ _COMMAND_OPTIONS = {
     "backup": {"config"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
+    "smoke": {
+        "config",
+        "target",
+        "organization_id",
+        "delegated_email",
+        "send_to",
+        "channel_id",
+        "send",
+    },
     "database-roles": {"config", "confirm_deployment"},
     "database-grants": {"config", "confirm_deployment"},
     "recover-admin": {
@@ -103,8 +112,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "request-id",
         "key",
         "input",
+        "target",
+        "organization-id",
+        "delegated-email",
+        "send-to",
+        "channel-id",
     ):
         parser.add_argument("--" + option)
+    parser.add_argument(
+        "--send",
+        action="store_true",
+        default=None,
+        help="smoke only: post the one fixed Slack message after a valid check",
+    )
     parser.add_argument(
         "--bind-all-interfaces",
         action="store_true",
@@ -160,6 +180,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .backup_commands import execute_backup_command
 
         return execute_backup_command(args)
+    if args.command == "smoke":
+        from .smoke import execute_smoke
+
+        return execute_smoke(args)
     if args.command == "collect-static":
         from .static_assets import collect_static
 
