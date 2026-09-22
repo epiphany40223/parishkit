@@ -325,8 +325,14 @@ def test_a_failed_dump_is_refused_and_named_by_a_reviewed_event(
     ):
         backup.dump_database(deployment, io.BytesIO(), recipient=recipient)
     formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
-    assert any('"backup_dump_failed"' in line for line in formatted)
+    events = [json.loads(line) for line in formatted]
+    assert any(
+        event["message"] == "startup_rejected"
+        and event["extra"].get("failure_kind") == "backup_dump_failed"
+        for event in events
+    )
     # pg_dump's text is never logged, not even before the formatter drops it.
+    assert not any("secret" in line for line in formatted)
     assert "secret" not in caplog.text
     assert not any("secret" in record.getMessage() for record in caplog.records)
     assert capsys.readouterr().out == ""
