@@ -128,8 +128,8 @@ the shared limiter; syntactic parsing alone does not enable authentication.
 `PARISHKIT_ROOT` or `--runtime-root` overrides it. Each child has a YAML
 `paths.<name>` override and a `PATH_<UPPERCASE_NAME>` environment suffix:
 
-- `config`, `credentials`, `cache`, `logs`, `reports`, and `run` default to
-  same-named directories immediately under the root.
+- `config`, `credentials`, `cache`, `logs`, `reports`, `run`, and `backups`
+  default to same-named directories immediately under the root.
 - `authority` defaults to `config/stewardship` under the resolved config path.
 - `persistent_root` defaults to `persistent` under the resolved run path.
 - `postgresql`, `valkey`, `caddy`, and `media` each default to a same-named

@@ -131,7 +131,7 @@ def test_credential_target_cannot_replace_another_runtime_input(tmp_path, kind):
 
 
 @pytest.mark.parametrize(
-    "storage", ["reports", "cache", "media", "authority", "postgresql"]
+    "storage", ["reports", "cache", "media", "authority", "postgresql", "backups"]
 )
 def test_runtime_password_cannot_be_exposed_through_other_storage(tmp_path, storage):
     """Public/static or independently writable trees cannot contain SQL passwords."""
@@ -185,7 +185,7 @@ def test_named_broker_overrides_cannot_alias_or_escape_isolation(tmp_path, kind)
 
 
 @pytest.mark.parametrize(
-    "storage", ["reports", "media", "authority", "postgresql", "cache"]
+    "storage", ["reports", "media", "authority", "postgresql", "cache", "backups"]
 )
 def test_service_configuration_cannot_live_in_writable_storage(tmp_path, storage):
     """Read-only metadata mounts cannot be replaced through a broad data mount."""

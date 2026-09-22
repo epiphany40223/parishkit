@@ -4,6 +4,7 @@ This module never opens a credential file, connects to a service, or creates a
 directory. The later startup validator checks the actual deployment state.
 """
 
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -62,6 +63,7 @@ PATH_DEFAULTS = {
     "logs": "logs",
     "reports": "reports",
     "run": "run",
+    "backups": "backups",
 }
 PERSISTENT_STORES = {"postgresql", "valkey", "caddy", "media"}
 SECRET_NAMES = frozenset(
@@ -252,22 +254,31 @@ def load_deployment(
     *,
     environ: Mapping[str, str] | None = None,
     overrides: Mapping[str, str] | None = None,
+    document: Mapping | None = None,
 ) -> DeploymentConfiguration:
     """Resolve explicit overrides > environment > YAML > development defaults.
 
     Override and environment names are identical; explicit overrides come from
     the CLI. Environment/CLI paths are cwd-relative, YAML paths file-relative.
     Only documented names are consumed from the environment. A production
-    profile has no implicit public origin or credential fallback.
+    profile has no implicit public origin or credential fallback. An already
+    parsed `document` (a recorded deployment document, whose paths are
+    absolute) is validated exactly as a file would be, without touching disk.
     """
     env = os.environ if environ is None else environ
     explicit = {} if overrides is None else overrides
-    try:
-        document = load_yaml_config(
-            path, required=path is not None, reject_duplicate_keys=True
-        )
-    except (ConfigError, OSError, UnicodeError):
-        raise ConfigError("deployment YAML is unreadable or invalid") from None
+    if document is not None:
+        if path is not None:
+            raise ConfigError("Give a deployment file or a document, not both.")
+        # A private copy: validation must not share structure with the caller.
+        document = json.loads(json.dumps(document))
+    else:
+        try:
+            document = load_yaml_config(
+                path, required=path is not None, reject_duplicate_keys=True
+            )
+        except (ConfigError, OSError, UnicodeError):
+            raise ConfigError("deployment YAML is unreadable or invalid") from None
     _mapping(
         document,
         # Recognize other tools' sections without interpreting their contents.

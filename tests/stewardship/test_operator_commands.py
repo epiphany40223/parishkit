@@ -215,7 +215,16 @@ def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
 
 
 @pytest.mark.parametrize(
-    "case", ["wrong-login", "superuser", "configured", "missing-policy", "valid"]
+    "case",
+    [
+        "wrong-login",
+        "superuser",
+        "configured",
+        "configured-stale",
+        "configured-backed",
+        "missing-policy",
+        "valid",
+    ],
 )
 def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     """Fast refusal-path evidence complements actual CLI/SQL Compose migration tests."""
@@ -239,12 +248,15 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
         identity[0] = "pk_stewardship_web"
     if case == "superuser":
         identity[2] = True
-    rows = [
-        tuple(identity),
-        ("system_configuration",),
-        (case == "configured",),
-        None if case == "missing-policy" else (4,),
-    ]
+    configured = case.startswith("configured")
+    rows = [tuple(identity), ("system_configuration",), (configured,)]
+    if configured:
+        # A configured database migrates only behind a recent recorded backup:
+        # no backup table at all, a stale one, and a recent one.
+        rows.append((None if case == "configured" else "backup_run",))
+        if case != "configured":
+            rows.append((case == "configured-backed",))
+    rows.append(None if case == "missing-policy" else (4,))
     database = MagicMock()
     database.cursor.return_value.__enter__.return_value.fetchone.side_effect = rows
     monkeypatch.setattr("django.db.connection", database)
@@ -259,11 +271,13 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     )
     migrate = MagicMock()
     monkeypatch.setattr("django.core.management.call_command", migrate)
-    if case == "valid":
+    if case in {"valid", "configured-backed"}:
         assert operator_commands.migrate_command(configuration) == {
             "migrations_current": True
         }
     else:
         with pytest.raises(ConfigError):
             operator_commands.migrate_command(configuration)
-    assert migrate.call_count == int(case in {"missing-policy", "valid"})
+    assert migrate.call_count == int(
+        case in {"missing-policy", "valid", "configured-backed"}
+    )

@@ -87,13 +87,28 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
         assert service["security_opt"] == ["no-new-privileges:true"]
         for mount in service["volumes"]:
             assert mount["bind"]["create_host_path"] is False
-            assert Path(mount["source"]) not in {
-                configuration.paths["config"],
-                configuration.paths["credentials"],
-                configuration.paths.root,
-                Path("/var/run/docker.sock"),
-            }
-        if name in {"bootstrap", "migration", "admin-recovery", "database-provision"}:
+            assert Path(mount["source"]) != configuration.paths.root
+            assert Path(mount["source"]) != Path("/var/run/docker.sock")
+            # Only the one-shot backup profile reads the whole configuration and
+            # credentials trees, read-only, to seal them to the operator's key.
+            if name != "backup-worker":
+                assert Path(mount["source"]) not in {
+                    configuration.paths["config"],
+                    configuration.paths["credentials"],
+                }
+        if name == "backup-worker":
+            mounts = {Path(m["source"]): m["read_only"] for m in service["volumes"]}
+            assert mounts[configuration.paths["config"]] is True
+            assert mounts[configuration.paths["credentials"]] is True
+            assert mounts[configuration.paths["backups"]] is False
+            assert service["command"][0] == "backup"
+        if name in {
+            "bootstrap",
+            "migration",
+            "admin-recovery",
+            "database-provision",
+            "backup-worker",
+        }:
             assert service["profiles"] == [name]
             assert service["restart"] == "no"
         else:

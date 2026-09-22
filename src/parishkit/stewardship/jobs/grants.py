@@ -33,6 +33,9 @@ def task_runtime_grants(role):
         raise ConfigError("This service has no general task SQL authority.")
     tables = {table: {"SELECT"} for table in READ_TABLES}
     tables["stewardship_due_work_health"] = {"SELECT"}
+    # The operational collection judges whether the required backup is overdue
+    # from the newest completed run; the row holds sizes and digests only.
+    tables["stewardship_backup_run"] = {"SELECT"}
     if role is ServiceRole.SCHEDULER:
         tables["stewardship_due_work_health"].add("INSERT")
     tables["stewardship_task_run"].add("INSERT")
