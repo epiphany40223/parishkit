@@ -85,8 +85,19 @@ def runtime():
 
 
 def denial(*, status=403, retry=None, admin=True):
-    """Uniform retryable response, with no provider details or denied identity."""
-    response = login_denial(admin=admin, status=status)
+    """Uniform retryable response, with no provider details or denied identity.
+
+    The kind follows the status alone, as Family ``denied()`` does: a rate
+    limit (429) or outage (503) uses the temporary-unavailability text, as the
+    architecture specification requires of Admin OAuth and Family code entry,
+    and that reaches every caller, signed-in Admin report views included. Any
+    other refusal keeps the original generic text.
+    """
+    response = login_denial(
+        admin=admin,
+        status=status,
+        kind="unavailable" if status in (429, 503) else "",
+    )
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))

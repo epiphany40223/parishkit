@@ -51,7 +51,7 @@ def test_optional_public_help_failure_keeps_fixed_safe_fallback(
         assert (
             b"Family campaign sign-in"
             if slot == "login_help"
-            else b"Sign-in is unavailable"
+            else b"This Family code cannot be found or used."
         ) in response.content
         assert response["Cache-Control"] == "no-store"
         assert calls == [slot]
@@ -203,10 +203,14 @@ def test_public_help_is_selected_uniform_and_private_placeholder_free(
         assert all(
             page.status_code == (200 if slot == "login_help" else 403) for page in pages
         )
-        assert len({page.content for page in pages}) == 1
-        body = pages[0].content.decode()
-        assert "Public contact for" in body and ": [][][]" in body
-        assert "valid@example.org" not in body and "not-a-token" not in body
+        # Rejected codes are byte-identical to each other. The link denial is a
+        # different fixed kind, but carries the same identity-free help.
+        codes = pages if slot == "login_help" else pages[:2]
+        assert len({page.content for page in codes}) == 1
+        for page in pages:
+            body = page.content.decode()
+            assert "Public contact for" in body and ": [][][]" in body
+            assert "valid@example.org" not in body and "not-a-token" not in body
     select_content(harness, slot, "<p>Changed public contact instructions</p>")
     with web_login():
         assert all(

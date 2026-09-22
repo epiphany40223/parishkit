@@ -1,8 +1,25 @@
 {% extends 'stewardship/base.html' %}{% load i18n %}
-{% block title %}{% translate "Access unavailable" %}{% endblock %}
+{% comment %}
+  One page per denial kind, never per reason: every rejected Family code shares
+  the "code" text and every rejected secure link shares the "link" text, so
+  the page cannot reveal why a credential failed. The code and link sentences
+  are quoted from the parishioner-portal specification.
+{% endcomment %}
+{% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow panel">
+  {% if kind == "code" %}
+  <h1>{% translate "Family code not accepted" %}</h1>
+  <p>{% translate "This Family code cannot be found or used." %}</p>
+  {% elif kind == "link" %}
+  <h1>{% translate "Family link not accepted" %}</h1>
+  <p>{% translate "This secure Family link cannot be found or used." %}</p>
+  {% elif kind == "unavailable" %}
+  <h1>{% translate "Sign-in temporarily unavailable" %}</h1>
+  <p>{% translate "Sign-in is temporarily unavailable. Please try again later." %}</p>
+  {% else %}
   <h1>{% translate "Access unavailable" %}</h1>
   <p>{% translate "Sign-in is unavailable. Please try again." %}</p>
+  {% endif %}
   {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
-  <p><a href="{{ retry_path }}">{% translate "Try signing in again" %}</a></p>
+  <p><a href="{{ retry_path }}">{% if kind == "code" %}{% translate "Try another Family code" %}{% elif kind == "link" %}{% translate "Enter your Family code instead" %}{% else %}{% translate "Try signing in again" %}{% endif %}</a></p>
 </section>{% endblock %}
