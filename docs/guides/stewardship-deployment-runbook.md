@@ -96,7 +96,9 @@ gate, the human runs the smoke tools of the launch scope's item 5 against this
 deployment, staff validate the Family form, content, templates, schedules and
 reports, and the load check of the launch scope's reduced item 7 runs here.
 Bugs found now are fixed by ordinary pull requests and reach the host through
-the [upgrade](#upgrade) below.
+the [upgrade](#upgrade) below when the release changes no schema and no
+grant, and by reinstalling the validation deployment otherwise, until the
+upgrade admission described there lands.
 
 ## Production activation
 
@@ -120,7 +122,9 @@ launch scope's
 allows; after the freeze, every schema change is a forward migration and this
 procedure is the only way forward. It applies the operations specification's
 [production upgrade](../specs/stewardship/operations/spec.md#production-upgrades-deferred)
-sequence with the commands that exist:
+sequence with the commands that exist. Two of them are still fail-closed on a
+configured deployment, as the [known limitations](#known-v1-limitations)
+record; the procedure says where.
 
 1. **Back up first.** Take the nightly backup or a fresh one now and verify
    it as the backup runbook requires. Do not continue without a verified
@@ -140,14 +144,28 @@ sequence with the commands that exist:
    It rewrites the three rendered Compose files and the provisioning record
    to the new digest and refuses anything else: a changed deployment YAML, a
    hand-edited generated file or a still-running online service each stop it
-   with nothing written. Fix the cause rather than working around the
-   refusal; if it was interrupted, run it again with the same digest.
-   Details: [release image guide](stewardship-release-image.md#retargeting-changes-the-image-and-nothing-else).
-4. **Migrate.** Pull the new image (`pull` on the rewritten Compose file),
-   then `run --rm migration`, which applies forward migrations with the
-   schema owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
-   which installs any new runtime grants. Both refuse a mismatched
-   deployment; neither touches data outside the schema change.
+   with nothing written. It runs in the new image so that the new release
+   renders the topology it will run under; that also means a release whose
+   renderer changes any *other* generated document (a per-service YAML or
+   the Caddyfile) is refused as "a generated document differs", with
+   nothing written and no cause for the operator to fix. Until retargeting
+   re-renders those documents (see the known limitations), such a release
+   reaches a validation deployment only by reinstalling it. If the command
+   was interrupted, run it again with the same digest. Details:
+   [release image guide](stewardship-release-image.md#retargeting-changes-the-image-and-nothing-else).
+4. **Migrate.** Pull the new image (`pull` on the rewritten Compose file).
+   Then, *only when the release changed the schema or the runtime grants*,
+   `run --rm migration`, which applies forward migrations with the schema
+   owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
+   which installs new runtime grants. On a deployment that has completed
+   first installation both commands are currently refused ("Configured
+   upgrades require verified backup admission"): the admission that lets
+   them run after a verified backup is the backup increment's work (launch
+   scope item 4) and is not yet delivered. Until it lands, a release that
+   changes the schema or a grant cannot be applied to a configured
+   deployment; before the schema freeze the validation deployment is
+   reinstalled instead, and after it this step must exist. A release that
+   changes neither skips this step entirely.
 5. **Start and check.** Bring the online services back with `up --detach`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever
    the deployment uses) and project name, then `caddy`. Run the health
@@ -161,18 +179,30 @@ registry; nothing here deletes it.
 ## Rollback
 
 An application-only rollback is possible when the new release made no schema
-change: repeat the upgrade with the previous digest. When the release changed
-the schema, an older image must never be pointed at the newer database; the
-rollback is a database restore from the backup taken in upgrade step 1,
-following the launch scope's
+change: stop the online services, run `retarget-image` with the previous
+digest (in that previous image), pull, and start; step 4 is not repeated.
+When the release changed the schema, an older image must never be pointed at
+the newer database; the rollback is a database restore from the backup taken
+in upgrade step 1, following the launch scope's
 [manual restore procedure](../plans/stewardship/v1-launch.md#manual-restore-for-v1-replaces-item-2)
-and the backup runbook. That procedure keeps the scheduler, worker and
-mail-dispatch services stopped until an Administrator has compared the
-restored delivery state with the mail provider's own logs, so no Family
-message is sent twice.
+and the backup runbook, and it must include the image: with every online
+service still stopped, after the database is restored and before anything
+is started, run `retarget-image` back to the previous digest, or the new
+image would start against the restored, older schema and refuse. The
+restore procedure keeps the scheduler, worker and mail-dispatch services
+stopped until an Administrator has compared the restored delivery state with
+the mail provider's own logs, so no Family message is sent twice.
 
 ## Known v1 limitations
 
+- On a configured deployment, `migration` and `database-grants` are refused
+  until the backup increment supplies the verified-backup upgrade admission
+  (the reduced form of OPS-04.03); a release that changes the schema or a
+  grant cannot yet be applied to one. This must be closed before the schema
+  freeze, since every later schema change is a forward migration.
+- `retarget-image` refuses a release whose renderer changes a per-service
+  YAML or the Caddyfile, because it changes only the image; re-rendering the
+  other generated documents at retarget is also part of that increment.
 - Upgrade readiness checks and upgrade-path tests are deferred; the operator
   follows this runbook by hand and the backup is the safety net.
 - The image is single-architecture (`linux/amd64`); the host must be x86-64.
