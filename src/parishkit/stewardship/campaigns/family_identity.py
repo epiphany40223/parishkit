@@ -208,9 +208,18 @@ def reconcile_families(
             raise StorageInvariantError(
                 "A stale source generation cannot replace Family population."
             )
+        # Both bulk updates below write an in-memory row.version + 1. Family
+        # activity (authenticated_family) bumps the same version outside the
+        # work order, so an unlocked read let a concurrent bump commit first
+        # and the version guard (23514) roll back the whole promotion. Lock
+        # now, after Campaign and population, in pk order. NO KEY UPDATE is
+        # the mode those UPDATEs already take, so this only moves the same
+        # row locks earlier; activity locks one row and nothing after it.
         existing = {
             row.family_duid: row
             for row in FamilyCampaign.objects.filter(campaign=campaign)
+            .select_for_update(no_key=True)
+            .order_by("pk")
         }
         now = _now()
         new = []
