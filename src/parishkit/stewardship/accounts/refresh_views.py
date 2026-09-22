@@ -114,11 +114,16 @@ def _request(request, service, actor):
             correlation_id=current_correlation(),
             authorize=authorize,
         )
+    except (SourceOrganizationChanged, SourceScopeChanged):
+        # The typed source refusals are permission errors by class; they keep
+        # their own meaning and reach the route's handler for them.
+        raise
     except PermissionError:
         if denied:
             raise
-        # The domain refused for want of a configured organization, not for
-        # this Administrator: an outage to the page, as the page itself says.
+        # A plain permission error the domain raised for want of a configured
+        # organization, not a denial of this Administrator: an outage to the
+        # page, as the page itself says.
         raise ConfigError(
             "Source refresh requires its configured organization."
         ) from None

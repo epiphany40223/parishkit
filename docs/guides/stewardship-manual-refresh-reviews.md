@@ -54,3 +54,17 @@ corrections: sixteen raw findings, one validated and corrected:
 
 The fifteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 4
+
+Claude only (Codex out of quota). A correction check of the three rounds'
+corrections: twelve raw findings, one validated and corrected:
+
+- Medium: the typed source refusals are permission errors by class, so the
+  generic branch caught them too and rewrote a scope or organization change
+  as a missing organization; the answer was the same outage, the log
+  attribution was not. The typed refusals are now re-raised ahead of the
+  generic branch and reach the route's own handler for them.
+
+The eleven findings the validation step did not confirm were not carried
+forward.
