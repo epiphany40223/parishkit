@@ -54,17 +54,41 @@ unknown message, as **Record that the provider did not send it (no resend)**.
   is not a recipient refusal. Sealed substitutions and any pause binding are
   cleared as the acceptance clears them. The audit event is
   `delivery_resolution_confirm_unsent`.
+- **Admin reports.** A report's occurrence completes only when every
+  recipient's message is delivered or was cancelled because its recipient
+  stopped being an Administrator (`recipient_revoked`). A report confirmed
+  unsent to a recipient who is no longer an Administrator can never be
+  retried, so the guard freezes that fact, using the same test the digest
+  dispatchers apply before cancelling a revoked recipient, in the distinct
+  reason `admin_unsent_recipient_revoked`. The daily and weekly completion
+  proofs and the closed-pause digest coverage count that reason as settled,
+  exactly like the `recipient_revoked` cancellation, so the report completes
+  (and the weekly watermark advances) once the rest of its cohort is
+  delivered, or a campaign closed while paused can record its skip. With no
+  live worker behind the settlement, the existing metadata finalizer
+  completes the occurrence, as it does after an Admin acceptance. A report
+  whose recipient is still an Administrator keeps
+  `admin_confirmed_unsent`: an ordinary failure that holds its cohort open
+  until **Retry failed delivery** sends it.
 - **Consequences.** The message leaves the delivery-control inventory's
   unknown count, so resume (or the closed-pause resolution) can proceed, and
-  a receipt waiting behind it is no longer blocked. Report completion,
-  schedule reconciliation and recovery treat it exactly as a provider
-  permanent failure. A later **Retry failed delivery** is an ordinary retry
-  of a failed message, still governed by the resend admission.
+  a receipt waiting behind it is no longer blocked. Schedule reconciliation
+  and recovery treat it exactly as a provider permanent failure; for an
+  invitation or reminder, the resume plan defers the failed occurrence as
+  ordinary Family recovery. A later **Retry failed delivery** is an ordinary
+  retry of a failed message, still governed by the resend admission. The
+  attempt history labels the Admin record by its reason, not as a provider
+  refusal.
 
 Reusing `fail_unaccepted` rather than adding an outbox action keeps every
 consumer of the outbox vocabulary, which already handles a permanent failure
 from `delivery_unknown`, unchanged. The Admin origin is distinguishable by
-reason, actor and the resolution journal row.
+reason, actor and the resolution journal row. The outbox has no edge from
+`delivery_unknown` to `cancelled`, so a revoked recipient's report is not
+relabelled as the dispatcher's cancellation; freezing the revocation in the
+reason at the time of the evidence, rather than rereading the current roster
+in the completion proofs, keeps those proofs monotonic if the address later
+becomes an Administrator again.
 
 ## Schema
 
@@ -72,14 +96,18 @@ reason, actor and the resolution journal row.
   `stewardship_delivery_resolution` accepts `confirm_unsent` (also in the
   initial Django migration's model state).
 - `stewardship_delivery_resolution_guard_v1` handles the new action beside
-  `accept`.
+  `accept` and chooses the report reason.
+- `stewardship_daily_digest_completion_ready`,
+  `stewardship_weekly_digest_completion_ready` and
+  `stewardship_delivery_closed_digest_v1` count
+  `admin_unsent_recipient_revoked` as settled.
 - `stewardship_delivery_resolution_edge_v1` admits the occurrence edge from
   `delivery_unknown` to `failed` only when the same command recorded the
   `fail_unaccepted` event with reason `admin_confirmed_unsent`.
 
 No table, index, trigger, grant or policy changes, and no stored data
-changes. The fresh-install baseline's constraint and function fingerprints
-are updated under the pre-production policy. The change lands before the
+changes. The fresh-install baseline's constraint, function and relation
+(view) fingerprints are updated under the pre-production policy. The change lands before the
 [schema freeze](../plans/stewardship/v1-launch.md#production-readiness-activation-and-schema-freeze);
 a validation deployment installed from an earlier baseline lacks it, and, as
 the launch scope requires, the human decides whether to reinstall that
@@ -87,35 +115,51 @@ deployment or add a forward migration.
 
 ## Focused validation
 
-- PostgreSQL, Family mail: on a paused production campaign, an unknown
-  invitation whose Family was refreshed to no deliverable address is refused
-  a resend (the SQL admission is false); `confirm_unsent` leaves the message
-  `permanent_failure` with the Admin evidence and reason, the occurrence
-  `failed`, no fulfillment, no refusal and no new task; the unknown count
-  goes from one to zero; a replay of the same command is idempotent; the
-  campaign resumes; a later retry of the failure is still refused.
+- PostgreSQL, Family mail, real resume: with an invitation unknown on a
+  paused campaign and a current sender check, the Admin resume preview is
+  refused; after `confirm_unsent` the occurrence is `failed` with no
+  fulfillment, the Family recovery plan shows it deferred and nothing
+  blocked, and the real resume preview and confirmation succeed.
+- PostgreSQL, Family mail, refused resend: on a paused production campaign,
+  an unknown invitation whose Family was refreshed to no deliverable address
+  is refused a resend (the SQL admission is false); `confirm_unsent` leaves
+  the message `permanent_failure` with the Admin evidence and reason, the
+  occurrence `failed`, no fulfillment, no refusal and no new task; the
+  unknown count goes from one to zero; a replay of the same command is
+  idempotent; and, with only the pause flag lifted, a retry of the failure
+  is still refused because the Family is ineligible.
 - PostgreSQL, receipt: with the real Admin delivery controls, resume is
   refused while an unknown receipt remains; after `confirm_unsent` the
   resume preview and confirmation succeed. The same settlement works on a
   campaign closed while paused.
-- PostgreSQL, weekly report: on a paused campaign, an unknown report whose
-  recipient is no longer an Administrator is refused a resend and settled by
-  `confirm_unsent` from another Admin; the unknown count goes from one to
-  zero. A daily report settles the same way while paused.
+- PostgreSQL, daily and weekly reports with two Admins: confirmed unsent
+  while paused, the unknown count goes from one to zero. When the recipient
+  was removed first, the resend is refused and the other Admin's later
+  delivery completes the occurrence with a delivered fulfillment (and
+  advances the weekly watermark). When the recipient is still an
+  Administrator, the occurrence stays pending with no fulfillment and a
+  retry of the failure is admitted. Without the completion change, the
+  removed-recipient cases stay pending.
+- PostgreSQL, closed while paused: a weekly report confirmed unsent to a
+  removed Admin no longer blocks the closed resolution, which cancels the
+  other Admin's held report and records the occurrence's skip. Without the
+  coverage change, no skip is recorded.
 - Refusals: a failed, delivered or never-submitted message is refused by the
-  service and, inserted directly under the Web role, by the SQL trigger; a
-  blank note is refused by the service and by the trigger; a duplicate
-  acknowledgement is refused; Web still cannot update the outbox.
+  service and, inserted directly under the Web role, by the trigger's
+  current-attempt check; a blank note is refused by the service and by the
+  trigger; a duplicate acknowledgement is refused; Web still cannot update
+  the outbox.
 - Delivery page: the action is offered beside the acceptance for an unknown
   delivery, also while paused, and not for a failed one; the actual form
-  applies once with CSRF, its replay redirects and a stale command conflicts.
+  applies once with CSRF, its replay redirects, a stale command conflicts,
+  and the history shows the Admin record, not a provider refusal.
 - The resolution, closed resolution, delivery control, delivery view,
-  receipt dispatch, daily and weekly resolution and schema baseline suites
-  pass.
+  receipt dispatch, daily and weekly resolution, digest completion and
+  finalization, and schema baseline suites pass.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. The
-[review rounds](stewardship-unsent-resolution-reviews.md), exact-head CI, DCO
-and protected delivery remain open. No deployment, release, live-provider
+Implementation, focused validation and round 1 of the
+[review rounds](stewardship-unsent-resolution-reviews.md) are complete; the
+remaining rounds, exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider
 write or database deletion is authorized by this increment.

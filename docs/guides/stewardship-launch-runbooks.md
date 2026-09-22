@@ -256,7 +256,12 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    provider evidence in the note. The message is recorded as a failed
    delivery, exactly as if the provider had refused it, but no recipient
    address is suppressed; an invitation or reminder occurrence becomes
-   failed, not fulfilled. It no longer counts as unknown, so a paused
+   failed, not fulfilled. A report whose recipient is no longer an
+   Administrator counts as settled, like a report cancelled for a removed
+   Administrator, so the report completes once its other recipients have it;
+   a report whose recipient is still an Administrator stays failed and holds
+   the report open until you choose **Retry failed delivery**. The message
+   no longer counts as unknown, so a paused
    campaign can resume, and a receipt waiting behind it is no longer
    blocked. This action is available during a pause and on a campaign closed
    while paused. A later **Retry failed delivery** stays subject to the
