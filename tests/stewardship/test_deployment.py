@@ -51,6 +51,32 @@ def test_operational_alert_policy_defaults_and_override_precedence(tmp_path):
     )
 
 
+def test_rendered_service_documents_keep_the_operational_alert_policy(tmp_path):
+    """Services load the rendered document, so the policy must survive rendering."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    path = config_file(
+        tmp_path,
+        {
+            "operational_alerts": {
+                "suppression_seconds": 120,
+                "escalation_seconds": 180,
+                "source_stale_seconds": 2400,
+            }
+        },
+    )
+    configuration = load_deployment(path, environ={})
+    document = deployment_document(configuration)
+    (tmp_path / "rendered").mkdir()
+    rendered = config_file(tmp_path / "rendered", document["deployment"])
+    policy = load_deployment(rendered, environ={}).operational_alerts
+    assert (
+        policy.suppression_seconds,
+        policy.escalation_seconds,
+        policy.source_stale_seconds,
+    ) == (120, 180, 2400)
+
+
 @pytest.mark.parametrize(
     "values",
     [
