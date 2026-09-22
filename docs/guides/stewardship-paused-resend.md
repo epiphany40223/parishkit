@@ -35,9 +35,9 @@ retries of failed or unsent mail still wait for resume.
   Family mail; the unresolved-sibling check for receipts; report completion
   and a current Administrator recipient for digests.
 - The receipt, daily and weekly send gates gain a `paused_ok` argument that
-  defaults to false. Only the resolution admission passes it. Every worker
-  and dispatch call uses the one-argument form, so no provider attempt
-  crosses a pause.
+  defaults to false. Only resolution admission and the Web resolution
+  preparation pass it; every worker and dispatch call uses the one-argument
+  form, so no provider attempt crosses a pause.
 - The Web preparation checks apply the same rule: the Family-mail preparation
   check, the receipt disposition (which gains a matching `paused_ok` keyword)
   and the digest check.
@@ -47,6 +47,12 @@ attaches the current pause hold as it does for any message entering
 `pending` while paused; the send gate refuses it; resume releases it with the
 rest of the held mail, under the same overdue coalescing plan. The unknown
 count falls when the resend is authorized, so the resume can proceed.
+
+A campaign closed while paused cannot resume. There a resent receipt or
+report is held at the current pause version like any other and is released
+or cancelled by the closed held-message resolution; one that resolution
+already released carries no new hold and is sent at once, as a released
+message always is.
 
 The delivery detail page therefore offers **Authorize potentially duplicate
 resend** during a pause whenever it would be offered otherwise, and still
@@ -73,12 +79,15 @@ already requires, or to add a forward migration.
 ## Focused validation
 
 - PostgreSQL, Family mail: with the campaign paused, confirming an unknown
-  delivery still completes it; a resend is admitted, leaves the message
-  pending under the pause hold, is refused by the send gate, and is sent after
-  resume; a retry of a failed or unsent message is still refused with no
-  resolution or task recorded.
-- PostgreSQL, receipt and daily report: an unknown message resent while
-  paused is held, refused by the send gate and sent after resume.
+  delivery still completes it; the unknown count the resume guard refuses
+  over is one before the resend and zero after it; the resend leaves the
+  message pending under the pause hold, is refused by the send gate, and is
+  sent after resume; a retry of a failed or unsent message is still refused
+  with no resolution or task recorded.
+- PostgreSQL, receipt, daily report and weekly report: the same unknown count
+  before and after; resent while paused, the message is held, refused by the
+  send gate and sent after resume; a retry of a failed one is still refused
+  with no resolution or task recorded.
 - PostgreSQL, delivery page: a paused campaign offers the resend and the
   acceptance for an unknown delivery and hides the retry of a failed one.
 - The existing resolution, weekly, delivery view, delivery control, closed

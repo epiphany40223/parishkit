@@ -57,6 +57,17 @@ def failed_delivery(harness, status=FamilyDeliveryStatus.UNKNOWN):
     return message
 
 
+def unknown_inventory(campaign):
+    """Read the unknown count the Admin resume guard refuses over."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT inventory->>'unknown' FROM stewardship_delivery_control_inventory"
+            " WHERE campaign_id=%s",
+            [campaign.pk],
+        )
+        return int(cursor.fetchone()[0])
+
+
 def resolve(harness, principal, message, action, **options):
     """Only public/general keys and restricted Web SQL reach the command service."""
     values = dict(
@@ -271,9 +282,13 @@ def test_pause_resolves_uncertainty_but_fences_new_sends(family_mail, action, st
             resolve(harness, principal, message, action)
             assert ScheduleFulfillment.objects.count() == 1
         elif action == "resend":
+            # The unresolved delivery is what the Admin resume guard refuses
+            # over; authorizing the resend is what clears it.
+            assert unknown_inventory(harness.campaign) == 1
             receipt = resolve(harness, principal, message, action)
             message.refresh_from_db()
             assert message.state == "pending" and message.pause_hold_id is not None
+            assert unknown_inventory(harness.campaign) == 0
             with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
                 execution = claim(SimpleNamespace(task_id=receipt.retry_task_id))
                 begin = dict(

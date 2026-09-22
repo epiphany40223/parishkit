@@ -20,7 +20,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated, begin
 from .test_daily_digest_planning_postgresql import INSTANT
-from .test_delivery_resolution_postgresql import resolve
+from .test_delivery_resolution_postgresql import resolve, unknown_inventory
 from .test_family_mail_dispatch_postgresql import claim
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_policy_postgresql import user
@@ -175,25 +175,42 @@ def test_web_cannot_supply_report_payload_or_invoke_private_seed(
                     cursor.execute(sql, [message.pk])
 
 
-def test_paused_report_resend_is_held_until_resume(family_mail):  # noqa: F811
-    """An unknown Admin report can be resent while paused, so the pause can resume."""
+@pytest.mark.parametrize(
+    "action,status", [("resend", Status.UNKNOWN), ("retry_failed", Status.PERMANENT)]
+)
+def test_paused_report_resend_is_held_until_resume(family_mail, action, status):  # noqa: F811
+    """An unknown Admin report can be resent while paused, so the pause can resume.
+
+    Only the unknown state earns the pause exception: a failed report's retry
+    still waits for resume.
+    """
+    from parishkit.stewardship.jobs.delivery_resolution_models import (
+        DeliveryResolution,
+    )
+
     from .test_outbox_boundaries_postgresql import control
 
     harness = activate_response_service(family_mail)
     complete_empty_catchup(harness.campaign, uuid4())
     with campaign_clock(INSTANT):
-        _, message = failed(harness, Status.UNKNOWN)
+        _, message = failed(harness, status)
         control(harness.campaign, "pause")
+        principal = user("admin@example.org")
+        if action == "retry_failed":
+            with pytest.raises((PermissionError, DatabaseError)):
+                resolve(harness, principal, message, action, general=None, public=None)
+            assert not DeliveryResolution.objects.exists()
+            assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+            return
+        # The unresolved delivery is what the Admin resume guard refuses over;
+        # authorizing the resend is what clears it.
+        assert unknown_inventory(harness.campaign) == 1
         command = resolve(
-            harness,
-            user("admin@example.org"),
-            message,
-            "resend",
-            general=None,
-            public=None,
+            harness, principal, message, action, general=None, public=None
         )
         message.refresh_from_db()
         assert message.state == "pending" and message.pause_hold_id is not None
+        assert unknown_inventory(harness.campaign) == 0
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             execution = claim(SimpleNamespace(task_id=command.retry_task_id))
             assert begin(message, execution) is None

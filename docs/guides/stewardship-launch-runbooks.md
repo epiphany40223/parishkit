@@ -233,9 +233,12 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    restore hold stands in the way; for a submission receipt, no other message
    for that Family is still submitting or unknown; for a daily or weekly Admin
    report, report preparation is complete and the recipient is still an
-   Administrator. A pause does not prevent the resend: the resent message is
-   held with the rest of the paused mail and goes only when delivery resumes,
-   and resolving it lets the resume proceed. When the button is absent, a resend is not permitted now;
+   Administrator. A pause does not prevent the resend, and resolving the
+   message lets the resume proceed: on an active campaign the resent message
+   is held with the rest of the paused mail and goes only when delivery
+   resumes; on a campaign closed while paused, a resent receipt or report
+   joins the held messages you release or cancel by type (above), and one
+   already released goes without waiting. When the button is absent, a resend is not permitted now;
    record that in the note and leave the message unresolved. The rules are
    recorded in the [Family-mail resolution guide](stewardship-family-mail-resolution.md)
    for invitations and reminders, the
