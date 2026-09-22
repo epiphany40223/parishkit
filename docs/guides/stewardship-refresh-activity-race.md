@@ -87,8 +87,8 @@ no Family row, now also locks them all for its duration.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. The three
-[review rounds](stewardship-refresh-activity-race-reviews.md), full
-exact-head CI, DCO and protected delivery remain open. No deployment,
+Implementation, focused validation and the three
+[review rounds](stewardship-refresh-activity-race-reviews.md) are complete;
+full exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

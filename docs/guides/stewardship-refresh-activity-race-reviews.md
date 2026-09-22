@@ -33,3 +33,11 @@ through their code allocation. A test of the code-allocation path's double
 write and a lock timeout on Family requests were not taken: the locks were
 already held through the rest of the promotion by the old final write, and
 the guide records the latency. A further round follows.
+
+## Round 3
+
+Claude only (Codex produced no structured output). Three raw findings, none
+validated; the review rounds are closed. The low-severity notes (the guide's
+lock order omits two earlier shared locks that do not affect the argument,
+the race test accepts any blocker rather than the refresh's own backend, and
+its outcome list is positional) were not carried forward.
