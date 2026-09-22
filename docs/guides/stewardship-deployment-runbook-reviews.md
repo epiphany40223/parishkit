@@ -61,3 +61,27 @@ check follows.
 Claude only (Codex produced no output). Correction check: one raw finding,
 none validated. This closes the review rounds: two full rounds and one
 correction check, every accepted finding fixed.
+
+## Protected delivery
+
+PR #93 delivered candidate `4d30d823`, one logical commit plus the PR #92
+receipt, whose tree `f4907649` is identical to the retained commit-by-commit
+review history on `pr/stewardship-deployment-runbook-reviewed` (`6ce5adf0`)
+and to the landed tree. The three rounds above, two full rounds and one
+correction check, were single-source under the exemption, with every
+accepted finding fixed and the last check validating nothing. The pull
+request was marked ready before the candidate was pushed, and the candidate
+was pushed once the ready-for-review run for the previous head was in
+progress, so that run was cancelled by the candidate's own. Exact-head
+ready-candidate CI `35704627655` and DCO passed all 25 checks, from 08:24:26
+to 08:43:40 UTC on September 22, 2026 (19 minutes 14 seconds). `origin/main`
+had no intervening commits since the candidate's base `f29f9ef1`. Protected
+auto-merge landed as `e2c97abd` at 08:43:42 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment started. This used the standing delivery authority,
+without deployment or release. The cancelled runs are not counted as
+acceptance.
+
+The deployment runbook is delivered. The production deployment item's two
+recorded limitations are closed by the
+[v1 backup increment](stewardship-backup.md), which follows.
