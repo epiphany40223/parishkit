@@ -7,9 +7,9 @@
     {% if refreshed_at %}<time datetime="{{ refreshed_at|instant }}" data-local-instant>{{ refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}
   </p>
   {% if pending.running %}<p class="notice">{% translate "A refresh is running now. No second refresh starts beside it; the one you request will follow it as soon as it finishes." %}</p>
-  {% elif pending.waiting %}<p class="notice">{% translate "A refresh is already waiting to run. Requesting another takes you to that same run rather than adding one." %}</p>
+  {% elif pending.waiting %}<p class="notice">{% translate "A full refresh is already waiting to run. Your request may join that run rather than adding one; you will be taken to whichever run carries it." %}</p>
   {% else %}<p>{% translate "A full refresh reads every Family, Member and Ministry from ParishSoft again and promotes the result when it completes. It runs in the background; you will be taken to its progress page." %}</p>{% endif %}
-  <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail. Requesting it again before it finishes returns the same run." %}</p>
+  <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail. Submitting this page again before the run finishes returns the same run." %}</p>
 </section>
 <form method="post" action="{% url 'admin:source_refresh' %}">
   {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">

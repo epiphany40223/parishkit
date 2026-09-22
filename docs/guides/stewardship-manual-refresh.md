@@ -34,7 +34,10 @@ This slice gives it its first browser caller and nothing else: the page
 chooses a fresh key per render, the confirmation passes it with the manual
 cause and the Administrator's identity, and the domain owner's rules decide
 whether a new run is created. The page's own reading of running or waiting
-work is wording for the Administrator, never the coalescing decision.
+work is wording for the Administrator, never the coalescing decision: it
+counts a full refresh whose run is nonterminal and not running, which is
+what the owner could coalesce into, and promises only that the request may
+join it.
 
 ### Authority and cost
 
@@ -76,7 +79,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 and 2](stewardship-manual-refresh-reviews.md) are answered; the
+[rounds 1 to 3](stewardship-manual-refresh-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. No deployment,
 release, live-provider write or database deletion is authorized by this

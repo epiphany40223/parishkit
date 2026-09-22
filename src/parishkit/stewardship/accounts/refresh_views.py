@@ -25,6 +25,7 @@ from parishkit.stewardship.source.errors import (
     SourceOrganizationChanged,
     SourceScopeChanged,
 )
+from parishkit.stewardship.source.refresh_models import SourceRefreshRequest
 from parishkit.stewardship.source.requests import TASK_TYPE, request_refresh
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -44,20 +45,22 @@ class RefreshForm(forms.Form):
 
 
 def _pending():
-    """Whether a refresh is running or waiting, for the page's wording only.
+    """Whether a refresh is running or a full one waits, for the page's wording.
 
-    The domain owner decides coalescing under its own lock; this read only
-    tells the Administrator what to expect.
+    The domain owner decides coalescing under its own lock, from the window,
+    the lease and the promotion state as well; this read only tells the
+    Administrator what to expect, so it counts what the owner could coalesce
+    into, a full refresh whose run is nonterminal and not running, and the
+    page promises no more than that the request may join it.
     """
-    states = set(
-        TaskRun.objects.filter(task_type=TASK_TYPE, state__in=NONTERMINAL_STATES)
-        .values_list("state", flat=True)
-        .distinct()
+    nonterminal = TaskRun.objects.filter(
+        task_type=TASK_TYPE, state__in=NONTERMINAL_STATES
     )
-    return {
-        "running": "running" in states,
-        "waiting": bool(states - {"running"}),
-    }
+    running = nonterminal.filter(state="running").values("root_id")
+    waiting = SourceRefreshRequest.objects.filter(
+        kind="full", task_root_id__in=nonterminal.values("root_id")
+    ).exclude(task_root_id__in=running)
+    return {"running": running.exists(), "waiting": waiting.exists()}
 
 
 def _page(request, service):

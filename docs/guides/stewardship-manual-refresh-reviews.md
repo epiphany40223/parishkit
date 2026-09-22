@@ -40,3 +40,17 @@ corrected:
 
 The fourteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex out of quota). A correction check of the two rounds'
+corrections: sixteen raw findings, one validated and corrected:
+
+- Medium: the page called any waiting refresh task a run the request would
+  join, although the domain coalesces only a waiting full refresh of the
+  same window whose root is neither leased nor promoted. The page now counts
+  full refresh requests whose run is nonterminal and not running, and says
+  the request may join that run.
+
+The fifteen findings the validation step did not confirm were not carried
+forward.
