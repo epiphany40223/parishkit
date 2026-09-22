@@ -16,8 +16,8 @@ validated, all corrected:
 
 - High: the upgrade's migration step presented `migration` and
   `database-grants` as working, but on a deployment that has completed
-  first installation both are refused ("Configured upgrades require verified
-  backup admission"; OPS-04.03's admission is deferred). The step now says
+  first installation both are refused, because the upgrade admission a
+  configured deployment requires (OPS-04.03) is deferred. The step now says
   so, says the backup increment supplies the admission and that a release
   changing the schema or a grant cannot yet be applied to a configured
   deployment; the validation section, the upgrade introduction, the known
@@ -37,3 +37,21 @@ validated, all corrected:
 
 The ten findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex produced no output). Eleven raw findings, two validated,
+both corrected:
+
+- Medium: the runbook quoted a refusal message the operator never sees:
+  only the migration command raises it, the grants command raises another,
+  and the offline command wrapper prints one generic line with exit status
+  2 in every case. The step now describes the refusal as the operator meets
+  it and gives the cause in prose.
+- Medium: the runtime guide's upgrade paragraph quoted the same message; it
+  now describes the generic refusal and its cause, and this ledger's round 1
+  entry no longer quotes it either.
+
+The nine findings the validation step did not confirm were not carried
+forward. Since the second round validated findings, a third, correction-only
+check follows.

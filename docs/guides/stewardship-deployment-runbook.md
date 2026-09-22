@@ -158,10 +158,12 @@ record; the procedure says where.
    `run --rm migration`, which applies forward migrations with the schema
    owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
    which installs new runtime grants. On a deployment that has completed
-   first installation both commands are currently refused ("Configured
-   upgrades require verified backup admission"): the admission that lets
-   them run after a verified backup is the backup increment's work (launch
-   scope item 4) and is not yet delivered. Until it lands, a release that
+   first installation both commands are currently refused, each with the
+   generic offline-refusal error on standard error and exit status 2 (the
+   cause is that a configured deployment requires an upgrade admission that
+   does not exist yet); the admission that lets them run after a verified
+   backup is the backup increment's work (launch scope item 4) and is not
+   yet delivered. Until it lands, a release that
    changes the schema or a grant cannot be applied to a configured
    deployment; before the schema freeze the validation deployment is
    reinstalled instead, and after it this step must exist. A release that
