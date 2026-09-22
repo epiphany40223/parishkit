@@ -117,13 +117,28 @@ def test_a_session_ended_under_the_lock_records_no_command(
 
 
 @pytest.mark.usefixtures("source_singletons")
-def test_only_an_administrator_may_request_a_refresh(auth_service, google):
+def test_only_an_administrator_may_request_a_refresh(auth_service, google, monkeypatch):
     """Staff and anonymous callers are refused; malformed keys are refused."""
     publish(source())
     add_rules(auth_service.store, address("reader@example.org", ("staff",)))
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
+        # A source without its configured organization is an outage to the
+        # page, never a denial of this Administrator.
+        with monkeypatch.context() as patched:
+
+            def unconfigured(scope):
+                """The domain's own refusal for a missing organization."""
+                raise PermissionError("Source refresh requires its organization.")
+
+            patched.setattr(
+                "parishkit.stewardship.source.requests._organization", unconfigured
+            )
+            outage = post(browser, uuid4())
+            assert outage.status_code == 503
+            assert outage.json()["errors"][0]["code"] == "unavailable"
+        assert not SourceRefreshRequest.objects.exists()
         assert browser.post(URL, {"request_key": str(uuid4())}).status_code == 403
         bad = browser.post(
             URL,

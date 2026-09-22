@@ -25,3 +25,18 @@ corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex out of quota). Fifteen raw findings, one validated and
+corrected:
+
+- Medium: the domain refuses a source without its configured organization
+  with a plain permission error, which the route answered as a denial of
+  the Administrator while the page itself answers the same condition as an
+  outage. The route now tells the two apart by whether its own
+  authorization callback denied, and answers the domain's refusal as
+  unavailable; a case asserts it.
+
+The fourteen findings the validation step did not confirm were not carried
+forward.

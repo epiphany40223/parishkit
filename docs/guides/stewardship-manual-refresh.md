@@ -41,8 +41,10 @@ work is wording for the Administrator, never the coalescing decision.
 The page and the confirmation require the current session, the configure
 capability and CSRF; the authorization callback the primitive runs under its
 lock rechecks the same Administrator, so a revoked session cannot record a
-command. A source that is not the configured organization is an outage to
-the page, never a refresh of another organization. No ParishSoft call and no
+command. A source that is not the configured organization, or an integration
+without one, is an outage to the page, never a refresh of another
+organization and never a denial of the Administrator: the route tells the
+domain's refusal from its own by whether its callback denied. No ParishSoft call and no
 lock wait happens in the web process; the progress page reports the phases
 the task records. The web role gains insert on the refresh request and
 command tables; the lease owner it needs to coalesce is already readable
@@ -60,7 +62,8 @@ No schema change.
   with one task and two commands recorded, the page saying so, and a
   further request waiting behind the run once it executes; a session
   revoked after admission and before the domain's own check refused on a
-  new key and a replay alike with nothing recorded; and Staff, an
+  new key and a replay alike with nothing recorded; and a source without
+  its configured organization answered as unavailable, Staff, an
   anonymous caller, a malformed key and a stray field refused with nothing
   recorded.
 - Two browser cases in every engine against the component page: both
@@ -73,8 +76,8 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[round 1](stewardship-manual-refresh-reviews.md) is answered; the remaining
-review/fix rounds, full exact-head CI, DCO and protected delivery remain
+[rounds 1 and 2](stewardship-manual-refresh-reviews.md) are answered; the
+correction check, full exact-head CI, DCO and protected delivery remain
 open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

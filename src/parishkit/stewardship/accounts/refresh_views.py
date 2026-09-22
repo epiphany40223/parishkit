@@ -91,18 +91,34 @@ def _request(request, service, actor):
     if key.version != 4:
         raise ValueError("Invalid refresh key.")
 
+    denied = []
+
     def authorize(scope):
         """Admission is the current Administrator's, rechecked under the lock."""
         fresh = authenticated_admin(request, store=service.store, read_only=True)
-        return allows(fresh, Capability.CONFIGURE) and fresh.identity == actor.identity
+        allowed = (
+            allows(fresh, Capability.CONFIGURE) and fresh.identity == actor.identity
+        )
+        if not allowed:
+            denied.append(True)
+        return allowed
 
-    receipt = request_refresh(
-        command_id=key,
-        cause="manual",
-        actor_id=actor.identity,
-        correlation_id=current_correlation(),
-        authorize=authorize,
-    )
+    try:
+        receipt = request_refresh(
+            command_id=key,
+            cause="manual",
+            actor_id=actor.identity,
+            correlation_id=current_correlation(),
+            authorize=authorize,
+        )
+    except PermissionError:
+        if denied:
+            raise
+        # The domain refused for want of a configured organization, not for
+        # this Administrator: an outage to the page, as the page itself says.
+        raise ConfigError(
+            "Source refresh requires its configured organization."
+        ) from None
     return HttpResponseRedirect(f"/admin/background/task/{receipt.task_root_id}")
 
 
