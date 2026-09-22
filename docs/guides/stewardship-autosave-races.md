@@ -74,3 +74,28 @@ The tests are complete and pass locally and the
 exact-head CI, DCO and protected delivery remain open. With them ADM-07.01 to .05 are
 checked in the task map. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #89 delivered candidate `7f6232c9`, two logical commits plus the PR #88
+receipt, whose tree `a1c5f47f` is identical to the retained commit-by-commit
+review history on `pr/stewardship-autosave-races-reviewed` (`21f5ca5b`) and
+to the landed tree. The six
+[review/fix rounds](stewardship-autosave-races-reviews.md) were
+single-source under the exemption, with every accepted finding fixed and the
+sixth, a correction check, validating nothing. The pull request was marked
+ready before the candidate was pushed, and the candidate was pushed once the
+ready-for-review run for the previous head was in progress, so that run was
+cancelled by the candidate's own. Exact-head ready-candidate CI
+`35671418869` and DCO passed all 25 checks, from 00:20:03 to 00:37:34 UTC on
+September 22, 2026 (17 minutes 31 seconds). `origin/main` had no intervening
+commits since the candidate's base `44f53cb3`. Protected auto-merge landed as
+`189c4d0d` at 00:37:41 UTC and was verified on freshly fetched `origin/main`,
+whose second parent's tree is the candidate's, before the next increment
+started. This used the standing delivery authority, without deployment or
+release, and supersedes the checkpoint above. The cancelled and
+retained-history runs are not counted as acceptance.
+
+The user-rule race and exact-once tests increment is delivered, and with it
+ADM-07 is complete: its five tasks are checked in the task map. M5 and the
+pre-launch gate remain open.
