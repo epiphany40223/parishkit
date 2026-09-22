@@ -223,9 +223,10 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
 3. If the provider shows it was sent, choose **Confirm delivery using
    external evidence**; the message is marked delivered and its occurrence
    completes.
-4. If the provider shows it was not sent, choose **Authorize potentially
-   duplicate resend**, acknowledging that the Family may receive it twice;
-   this creates a new attempt under the same occurrence. The button appears
+4. If the provider shows it was not sent and it should still go, choose
+   **Authorize potentially duplicate resend**, acknowledging that the Family
+   may receive it twice; this creates a new attempt under the same
+   occurrence. The button appears
    only when a resend is still permitted, and the conditions differ by kind:
    for an invitation or reminder, the campaign is inside its dates, the
    Family is still active, eligible and reachable and has not submitted, the
@@ -239,8 +240,8 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    resumes; on a campaign closed while paused, a resent receipt or report
    joins the held messages you release or cancel by type (above), and one
    already released goes without waiting. When the button is absent, a
-   resend is not permitted now; record that in the note and leave the message
-   unresolved. The rules are recorded in the
+   resend is not permitted now; use the next step instead. The rules are
+   recorded in the
    [Family-mail resolution guide](stewardship-family-mail-resolution.md) for
    invitations and reminders, the
    [submission receipts guide](stewardship-submission-receipts.md) for
@@ -248,14 +249,29 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    [weekly](stewardship-weekly-digests.md) digest guides for Admin reports;
    the [paused resend guide](stewardship-paused-resend.md) covers every kind
    during a pause.
-5. If you cannot tell, leave it unresolved and note why; an unresolved
+5. If the provider shows it was not sent and no resend is wanted or
+   permitted (for example, the Family has since submitted or become
+   ineligible, or the report's recipient is no longer an Administrator),
+   choose **Record that the provider did not send it (no resend)**, with the
+   provider evidence in the note. The message is recorded as a failed
+   delivery, exactly as if the provider had refused it, but no recipient
+   address is suppressed; an invitation or reminder occurrence becomes
+   failed, not fulfilled. It no longer counts as unknown, so a paused
+   campaign can resume, and a receipt waiting behind it is no longer
+   blocked. This action is available during a pause and on a campaign closed
+   while paused. A later **Retry failed delivery** stays subject to the
+   ordinary retry conditions. The
+   [unsent resolution guide](stewardship-unsent-resolution.md) records the
+   design.
+6. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
    resolved.
 
 Never resend outside the portal, never resolve without a note, and never use
 **Confirm delivery using external evidence** for a message the provider shows
-was *not* sent, even to unblock a resume: the note and the resolution are the
-only record of why a Family got one message, two or none.
+was *not* sent, even to unblock a resume: record it as not sent instead. The
+note and the resolution are the only record of why a Family got one message,
+two or none.
 
 ## Index
 

@@ -64,7 +64,11 @@ past delivery. Production pause likewise denies retries of failed or unsent
 mail, but still admits the resend of an unknown delivery, because resume
 refuses while any delivery is unknown; the resent message returns to pending
 under the pause hold and is sent only after resume (see the
-[paused resend guide](stewardship-paused-resend.md)). Ordinary source, mode,
+[paused resend guide](stewardship-paused-resend.md)). When the provider shows
+an unknown delivery was not sent and no resend is wanted or admitted, the
+Admin records it as confirmed unsent instead, which never depends on retry
+admission (see the [unsent resolution guide](stewardship-unsent-resolution.md)).
+Ordinary source, mode,
 epoch, restore, gate and semantic-fulfillment checks remain in force. Error
 pages provide fixed recovery links without echoing submitted private evidence.
 

@@ -591,7 +591,14 @@ The Admin delivery-resolution screen may re-run provider reconciliation, mark
 the occurrence delivered when external evidence supports that result, or
 explicitly authorize a resend after acknowledging that a duplicate is possible.
 The latter creates a numbered attempt under the same semantic occurrence; it
-does not silently turn the unknown attempt into a failure. Every resolution,
+does not silently turn the unknown attempt into a failure. When the provider's
+own record shows the attempt was not sent, the Admin may instead record that
+with evidence and no resend: the attempt becomes the same definitive
+non-acceptance a permanent provider failure records (the occurrence `failed`,
+unfulfilled), without suppressing any recipient, and it needs no resend
+admission (see the
+[unsent resolution guide](../../../guides/stewardship-unsent-resolution.md)).
+Every resolution,
 evidence note, and resend authorization is audited. Until resolution, the row
 is not treated as successful for delivery statistics or as eligible for an
 automatic catch-up duplicate.
