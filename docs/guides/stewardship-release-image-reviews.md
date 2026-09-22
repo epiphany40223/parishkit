@@ -58,3 +58,21 @@ validated, both corrected:
 
 The eleven findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex produced no output). Fourteen raw findings, two
+validated, both corrected:
+
+- Medium: the Compose guide's validation section still said the opt-in
+  checks render both overlays, contradicting its own statement that no
+  production overlay exists. It now says the checks render the development
+  overlay and that the rendered production topology is validated by the
+  operational Compose suite.
+- Medium: the same section attributed the pinned Caddy image of the
+  template check to the production overlay; it now names the runtime
+  renderer's pinned image.
+
+The twelve findings the validation step did not confirm were not carried
+forward. Since the third round validated findings, a fourth, correction-only
+check follows.

@@ -197,8 +197,9 @@ not matter. Host collection always covers the full baseline independently of
 the outer pytest selection; the image manifest comes from its actual baseline
 run. Collection errors, missing manifests, and empty collections fail closed.
 
-Opt-in host checks render both overlays and exercise a disposable development
-project (build the image first):
+Opt-in host checks render the development overlay and exercise a disposable
+development project (build the image first); the rendered production topology
+is validated by `test_operational_compose.py` under the runtime tests:
 
 ```sh
 PARISHKIT_RUN_COMPOSE_TESTS=1 PARISHKIT_RUN_COMPOSE_SMOKE=1 python -m pytest tests/stewardship/test_compose.py -q -s
@@ -206,7 +207,8 @@ PARISHKIT_RUN_COMPOSE_TESTS=1 PARISHKIT_RUN_COMPOSE_SMOKE=1 python -m pytest tes
 
 In PowerShell, set both variables through `$env:` before invoking pytest.
 The `PARISHKIT_RUN_COMPOSE_TESTS` checks also validate the committed Caddy
-template using the production overlay's pinned image and a synthetic hostname.
+template using the runtime renderer's pinned Caddy image
+(`runtime_topology.CADDY_IMAGE`) and a synthetic hostname.
 They run `caddy adapt --validate` and assert that all three internal-path 404
 rules precede the catch-all proxy. The validation container has no network or
 published ports, receives the template through stdin, and uses temporary Caddy
