@@ -102,10 +102,9 @@ No schema change.
 
 ## Checkpoint
 
-Implementation and focused validation are complete and the three
-[review rounds](stewardship-release-image-reviews.md) are corrected; the
-correction check, full exact-head CI, DCO and protected delivery remain
-open. No deployment,
+Implementation, focused validation and the
+[review rounds](stewardship-release-image-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; the first image publication happens only when the human pushes a
 release tag.

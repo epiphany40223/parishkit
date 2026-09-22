@@ -93,3 +93,9 @@ findings, one validated and corrected:
 
 The two findings the validation step did not confirm were not carried
 forward. A fifth, correction-only check follows.
+
+## Round 5
+
+Claude only (Codex produced no output). Correction check: three raw
+findings, none validated. This closes the review rounds: three full rounds
+and two correction checks, every accepted finding fixed.
