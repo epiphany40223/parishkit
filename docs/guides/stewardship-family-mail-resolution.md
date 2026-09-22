@@ -59,8 +59,12 @@ updates only current Family deliverability; other unresolved refusals continue
 to suppress the address. A cleared address does not directly send mail. Failed
 local-preparation Task pages expose replay-safe retry only for the latest run.
 
-Campaign end and Production pause deny new retries but permit evidence-backed
-confirmation of past delivery. Ordinary source, mode, epoch, restore, gate and
+Campaign end denies new retries but permits evidence-backed confirmation of
+past delivery. Production pause likewise denies retries of failed or unsent
+mail, but still admits the resend of an unknown delivery, because resume
+refuses while any delivery is unknown; the resent message returns to pending
+under the pause hold and is sent only after resume (see the
+[paused resend guide](stewardship-paused-resend.md)). Ordinary source, mode, epoch, restore, gate and
 semantic-fulfillment checks remain in force. Error pages provide fixed recovery
 links without echoing submitted private evidence.
 

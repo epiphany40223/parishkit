@@ -534,8 +534,10 @@ Nothing is rerouted to the Testing recipient. Operational notifications and
 explicit readiness/test-recipient sends remain allowed.
 
 Messages already `submitting` may have reached the provider and
-`delivery_unknown` messages retain their reconciliation workflow; the pause UI
-states this limitation and tracks both. Workers recheck the pause immediately
+`delivery_unknown` messages retain their reconciliation workflow, including an
+authorized resend, which returns the message to pending under the pause hold
+so it is sent only after resume; the pause UI states this limitation and
+tracks both. Retries of failed or unsent messages wait for resume. Workers recheck the pause immediately
 before provider submission, so no later production attempt crosses the pause.
 The campaign header and background-work view show a persistent delivery-paused
 banner, duration, actor/reason, held counts/types, and provider-uncertain counts.

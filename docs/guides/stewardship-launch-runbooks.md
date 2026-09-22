@@ -208,10 +208,12 @@ and did not confirm or deny within the attempt, so the application cannot
 know whether a Family received it. Automatic retry stops for that message, a
 warning is recorded, and the Background work page shows the Admin-only link
 to the unresolved rows. The
-[background-processing specification](../specs/stewardship/background-processing/spec.md#family-invitations-and-reminders)
-owns the policy; the
-[delivery resolution guide](stewardship-family-mail-resolution.md) owns the
-workflow.
+[background-processing specification](../specs/stewardship/background-processing/spec.md)
+owns the policy for each kind:
+[invitations and reminders](../specs/stewardship/background-processing/spec.md#family-invitations-and-reminders),
+[receipts](../specs/stewardship/background-processing/spec.md#submission-confirmation)
+and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
+The guides linked in step 4 own each kind's resolution workflow.
 
 For each message, from its detail page (`/admin/deliveries/<message id>`):
 
@@ -225,15 +227,15 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    duplicate resend**, acknowledging that the Family may receive it twice;
    this creates a new attempt under the same occurrence. The button appears
    only when a resend is still permitted, and the conditions differ by kind:
-   for an invitation or reminder, the campaign is inside its dates and not
-   paused, the Family is still active, eligible and reachable and has not
-   submitted, the slot is not already fulfilled, and no refresh, activation
-   catch-up or restore hold stands in the way; for a submission receipt, the
-   campaign is not paused (unless the receipt was released after a close) and
-   no other message for that Family is still submitting or unknown; for a
-   daily or weekly Admin report, the campaign is not paused (with the same
-   exception), report preparation is complete and the recipient is still an
-   Administrator. When the button is absent, a resend is not permitted now;
+   for an invitation or reminder, the campaign is inside its dates, the
+   Family is still active, eligible and reachable and has not submitted, the
+   slot is not already fulfilled, and no refresh, activation catch-up or
+   restore hold stands in the way; for a submission receipt, no other message
+   for that Family is still submitting or unknown; for a daily or weekly Admin
+   report, report preparation is complete and the recipient is still an
+   Administrator. A pause does not prevent the resend: the resent message is
+   held with the rest of the paused mail and goes only when delivery resumes,
+   and resolving it lets the resume proceed. When the button is absent, a resend is not permitted now;
    record that in the note and leave the message unresolved. The rules are
    recorded in the [Family-mail resolution guide](stewardship-family-mail-resolution.md)
    for invitations and reminders, the
@@ -248,15 +250,6 @@ Never resend outside the portal, never resolve without a note, and never use
 **Confirm delivery using external evidence** for a message the provider shows
 was *not* sent, even to unblock a resume: the note and the resolution are the
 only record of why a Family got one message, two or none.
-
-**Known v1 gap, being corrected before the pre-launch gate:** while delivery
-is paused on an active campaign, the resend is not offered for any live
-message (invitations, reminders, submission receipts and Admin reports), yet
-resume is refused while any unknown delivery remains. A message the provider
-shows was not sent therefore cannot be resolved during a pause.
-Until the correction lands, avoid pausing while such a message is unresolved;
-if it happens, record the evidence in a note, leave the message unresolved,
-and escalate rather than confirming a delivery that did not happen.
 
 ## Index
 
