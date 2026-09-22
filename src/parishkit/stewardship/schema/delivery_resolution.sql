@@ -134,6 +134,7 @@ DECLARE m public.stewardship_outbox_message%ROWTYPE;
     o public.stewardship_schedule_occurrence%ROWTYPE;
     latest public.stewardship_task_run%ROWTYPE;
     rendering uuid; sealed jsonb; proof text; command_hash text; replacement uuid; next_action text;
+    unsent_reason text:='admin_confirmed_unsent';
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=NEW.message_id;
@@ -193,28 +194,44 @@ BEGIN
             -- edge (fail_unaccepted to permanent_failure), so every consumer
             -- treats it as the terminal failure it is. A distinct reason keeps
             -- it apart from a provider refusal: no recipient is suppressed.
+            -- An Admin report whose recipient is no longer an Administrator
+            -- (the digest dispatchers' recipient_revoked test) can never be
+            -- retried, so its reason also freezes that fact at the time of
+            -- the evidence: digest completion and closed coverage then count
+            -- it as settled, exactly like a recipient_revoked cancellation.
+            -- A still-admitted recipient's report stays an ordinary failure
+            -- that keeps its cohort open until retry_failed delivers it.
+            IF NEW.action='confirm_unsent' AND m.purpose IN ('daily_digest','weekly_digest')
+               AND NOT EXISTS(SELECT 1 FROM public.stewardship_system_configuration runtime
+                   JOIN public.stewardship_address_rule a ON a.configuration_id=runtime.active_configuration_id
+                   WHERE a.roles @> '["administrator"]'::jsonb AND a.email IN (
+                       SELECT address FROM public.stewardship_daily_digest_recipient WHERE outbox_id=m.id
+                       UNION ALL
+                       SELECT address FROM public.stewardship_weekly_digest_recipient WHERE outbox_id=m.id))
+            THEN unsent_reason:='admin_unsent_recipient_revoked'; END IF;
             UPDATE public.stewardship_outbox_message SET
                 state=CASE WHEN NEW.action='accept' THEN 'delivered' ELSE 'permanent_failure' END,
                 action=CASE WHEN NEW.action='accept' THEN 'accept' ELSE 'fail_unaccepted' END,
                 command_id=NEW.id,command_digest=command_hash,evidence_note=NEW.evidence_note,
                 evidence_digest=proof,provider_key_digest='',provider_message_digest='',
-                reason=CASE WHEN NEW.action='accept' THEN 'admin_external_acceptance'
-                    ELSE 'admin_confirmed_unsent' END,
+                reason=CASE WHEN NEW.action='accept' THEN 'admin_external_acceptance' ELSE unsent_reason END,
                 finished_at=statement_timestamp(),
                 sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL,
                 actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=m.id;
-            IF m.purpose NOT IN ('receipt','daily_digest','weekly_digest') AND NEW.action='accept' THEN
-                UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
-                    actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
-                INSERT INTO public.stewardship_schedule_fulfillment
-                    (id,actor_id,correlation_id,definition_id,mode,target,slot,disposition,occurrence_id)
-                VALUES(gen_random_uuid(),NEW.actor_id,NEW.id,o.definition_id,o.mode,o.target,o.slot,'delivered',o.id);
-            ELSIF m.purpose NOT IN ('receipt','daily_digest','weekly_digest') THEN
-                -- Failed only after definitive non-acceptance, like a provider
-                -- permanent failure: no fulfillment, and retry_failed may later
-                -- reopen it under the ordinary resend admission.
-                UPDATE public.stewardship_schedule_occurrence SET state='failed',reason='recovery_fail',
-                    actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
+            IF m.purpose NOT IN ('receipt','daily_digest','weekly_digest') THEN
+                IF NEW.action='accept' THEN
+                    UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
+                        actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
+                    INSERT INTO public.stewardship_schedule_fulfillment
+                        (id,actor_id,correlation_id,definition_id,mode,target,slot,disposition,occurrence_id)
+                    VALUES(gen_random_uuid(),NEW.actor_id,NEW.id,o.definition_id,o.mode,o.target,o.slot,'delivered',o.id);
+                ELSE
+                    -- Failed only after definitive non-acceptance, like a provider
+                    -- permanent failure: no fulfillment, and retry_failed may later
+                    -- reopen it under the ordinary resend admission.
+                    UPDATE public.stewardship_schedule_occurrence SET state='failed',reason='recovery_fail',
+                        actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
+                END IF;
             END IF;
         ELSE
             IF NEW.action NOT IN ('resend','retry_failed','retry_unsent')

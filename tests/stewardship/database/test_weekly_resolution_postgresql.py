@@ -241,31 +241,73 @@ def test_paused_weekly_resend_is_held_until_resume(
             assert begin(message, execution) is not None
 
 
-def test_paused_unknown_for_a_removed_admin_is_confirmed_unsent(live_response_service):
-    """A former Admin's unsent report needs no resend, only a truthful settlement.
+@pytest.mark.parametrize("revoked", [True, False])
+def test_paused_unknown_report_confirmed_unsent_settles_its_cohort(
+    live_response_service, revoked
+):
+    """Provider evidence of no send settles uncertainty without a resend.
 
-    Its resend is no longer admitted, so without this outcome the unknown count
-    could never reach zero and the pause could never resume.
+    For a recipient who is no longer an Administrator the report can never be
+    retried, so, like a recipient_revoked cancellation, it no longer holds the
+    cohort open: the other Admin's delivery completes the occurrence and
+    advances the watermark. A still-current recipient's report stays an
+    ordinary failure: the cohort stays open and retry_failed is admitted.
     """
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleFulfillment
+
     from .test_delivery_resolution_postgresql import confirmed_unsent
     from .test_outbox_boundaries_postgresql import control
+    from .test_weekly_completion_postgresql import history
 
     harness = live_response_service
     principal = user("second@example.org")
     with campaign_clock(INSTANT):
-        _, message = failed(
+        snapshot, message = failed(
             harness, Status.UNKNOWN, additional_admins=("second@example.org",)
         )
+        other = WeeklyDigestRecipient.objects.get(
+            snapshot=snapshot, address="second@example.org"
+        ).outbox
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=snapshot.preparation.occurrence_id
+        )
         control(harness.campaign, "pause")
-        revoke_admin(harness, WeeklyDigestRecipient.objects.get(outbox=message))
-        message.refresh_from_db()
-        assert retry_admitted(message) is False
-        with pytest.raises(PermissionError, match="retry is not currently admitted"):
-            resolve(harness, principal, message, "resend", general=None, public=None)
+        if revoked:
+            revoke_admin(harness, WeeklyDigestRecipient.objects.get(outbox=message))
+            message.refresh_from_db()
+            assert retry_admitted(message) is False
+            with pytest.raises(
+                PermissionError, match="retry is not currently admitted"
+            ):
+                resolve(
+                    harness, principal, message, "resend", general=None, public=None
+                )
         assert unknown_inventory(harness.campaign) == 1
         command = resolve(
             harness, principal, message, "confirm_unsent", general=None, public=None
         )
-        confirmed_unsent(message, command)
+        confirmed_unsent(message, command, revoked=revoked)
         assert unknown_inventory(harness.campaign) == 0
+        occurrence.refresh_from_db()
+        assert occurrence.state == "pending"
+        # Lift only the pause flag so the remaining Admin's report can go.
         control(harness.campaign, "resume")
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(other)
+            assert begin(other, execution) is not None
+            finish_submission(
+                other.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+            )
+        occurrence.refresh_from_db()
+        # Overdue slots coalesced into this occurrence have their own rows.
+        fulfilled = ScheduleFulfillment.objects.filter(
+            occurrence=occurrence, slot=occurrence.slot
+        )
+        if revoked:
+            assert occurrence.state == "succeeded"
+            assert [row.disposition for row in fulfilled] == ["delivered"]
+            assert history(snapshot).watermark == 1
+        else:
+            assert occurrence.state == "pending" and not fulfilled.exists()
+            assert history(snapshot).watermark == 0
+            assert retry_admitted(message) is True

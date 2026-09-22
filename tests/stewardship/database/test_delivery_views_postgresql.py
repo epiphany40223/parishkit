@@ -281,6 +281,10 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             assert b"<script>evidence</script>" not in result.content
             if action == "accept":
                 assert b"Retry is currently unavailable" not in result.content
+            if action == "confirm_unsent":
+                # The Admin record is not presented as a provider refusal.
+                assert b"Not sent, per provider records; no resend" in result.content
+                assert b"Not accepted; delivery failed" not in result.content
         assert DeliveryResolution.objects.count() == 1
         message.refresh_from_db()
         command = DeliveryResolution.objects.get()

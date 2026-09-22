@@ -476,11 +476,13 @@ def test_refreshed_ineligible_family_cannot_retry(family_mail):  # noqa: F811
         assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
 
 
-def confirmed_unsent(message, command):
+def confirmed_unsent(message, command, *, revoked=False):
     """Assert the terminal failure an unsent confirmation shares with the provider.
 
     The message ends as a definitive non-acceptance with the Admin's evidence,
-    never as a success, a fulfillment or a recipient refusal.
+    never as a success, a fulfillment or a recipient refusal. An Admin report
+    whose recipient is no longer an Administrator carries the frozen revoked
+    reason that digest completion counts as settled.
     """
     from parishkit.stewardship.audit.models import AuditEvent
     from parishkit.stewardship.jobs.recipient_models import RecipientRefusal
@@ -489,7 +491,7 @@ def confirmed_unsent(message, command):
     assert message.state == "permanent_failure" and message.finished_at
     assert (message.action, message.reason) == (
         "fail_unaccepted",
-        "admin_confirmed_unsent",
+        "admin_unsent_recipient_revoked" if revoked else "admin_confirmed_unsent",
     )
     assert message.actor_id == command.actor_id and message.command_id == command.pk
     assert message.evidence_note == command.evidence_note
@@ -528,7 +530,7 @@ def test_confirm_unsent_resolves_a_paused_unknown_that_cannot_be_resent(family_m
         with pytest.raises((PermissionError, DatabaseError)):
             resolve(harness, principal, message, "resend")
         # The Admin resume guard refuses over this count; the real resume
-        # command's refusal is exercised with a receipt in the closed suite.
+        # commands are exercised in the delivery-control and closed suites.
         assert unknown_inventory(harness.campaign) == 1
         old_version = message.version
         command = resolve(harness, principal, message, "confirm_unsent")
@@ -546,10 +548,11 @@ def test_confirm_unsent_resolves_a_paused_unknown_that_cannot_be_resent(family_m
             expected_version=old_version,
         )
         assert replay.pk == command.pk and DeliveryResolution.objects.count() == 1
+        # Lift only the pause flag (this ledger does not run the resume guard),
+        # so the refusal below comes from the Family's ineligibility alone: a
+        # later retry of the failure is an ordinary, still-inadmissible retry.
         control(harness.campaign, "resume")
-        harness.campaign.refresh_from_db()
-        assert not harness.campaign.delivery_paused
-        # A later retry of the failure is an ordinary, still-inadmissible retry.
+        assert retry_admitted(message) is False
         with pytest.raises((PermissionError, DatabaseError)):
             resolve(harness, principal, message, "retry_failed")
         assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
@@ -573,7 +576,9 @@ def test_confirm_unsent_is_only_for_an_unknown_delivery(family_mail, status):  #
         latest = TaskRun.objects.filter(root_id=message.task_id).get()
         with (
             task_login(ServiceRole.WEB, exact=True),
-            pytest.raises(DatabaseError),
+            pytest.raises(
+                DatabaseError, match="Resolution requires the current unresolved"
+            ),
             transaction.atomic(),
         ):
             command = uuid4()

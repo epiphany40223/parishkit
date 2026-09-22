@@ -226,28 +226,70 @@ def test_paused_report_resend_is_held_until_resume(family_mail, action, status):
             assert begin(message, execution) is not None
 
 
-def test_paused_unknown_report_is_confirmed_unsent_without_resend(family_mail):  # noqa: F811
+@pytest.mark.parametrize("revoked", [True, False])
+def test_paused_unknown_report_confirmed_unsent_settles_its_cohort(
+    family_mail,  # noqa: F811
+    revoked,
+):
     """Provider evidence of no send settles an Admin report while paused.
 
-    Unlike a resend it queues no Task and leaves nothing held for resume.
+    Unlike a resend it queues no Task. A revoked recipient's report is settled
+    like a recipient_revoked cancellation, so the other Admin's delivery
+    completes the report; a current recipient's report keeps it open for an
+    admitted retry_failed.
     """
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleFulfillment
+    from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
+
+    from .test_daily_digest_dispatch_postgresql import revoke_admin
     from .test_delivery_resolution_postgresql import confirmed_unsent
     from .test_outbox_boundaries_postgresql import control
 
     harness = activate_response_service(family_mail)
     complete_empty_catchup(harness.campaign, uuid4())
+    principal = user("second@example.org")
     with campaign_clock(INSTANT):
-        _, message = failed(harness, Status.UNKNOWN)
+        ready = allocated(harness, additional_admins=("second@example.org",))
+        recipient = DailyDigestRecipient.objects.get(address="admin@example.org")
+        message = recipient.outbox
+        other = DailyDigestRecipient.objects.get(address="second@example.org").outbox
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            begin(message, execution)
+            finish_submission(
+                message.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+        message.refresh_from_db()
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=ready.snapshot.preparation.occurrence_id
+        )
         control(harness.campaign, "pause")
+        if revoked:
+            revoke_admin(harness, recipient)
+            assert retry_admitted(message) is False
         assert unknown_inventory(harness.campaign) == 1
         command = resolve(
-            harness,
-            user("admin@example.org"),
-            message,
-            "confirm_unsent",
-            general=None,
-            public=None,
+            harness, principal, message, "confirm_unsent", general=None, public=None
         )
-        confirmed_unsent(message, command)
+        confirmed_unsent(message, command, revoked=revoked)
         assert unknown_inventory(harness.campaign) == 0
+        # Lift only the pause flag so the remaining Admin's report can go.
         control(harness.campaign, "resume")
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(other)
+            assert begin(other, execution) is not None
+            finish_submission(
+                other.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+            )
+        occurrence.refresh_from_db()
+        # Overdue slots coalesced into this occurrence have their own rows.
+        fulfilled = ScheduleFulfillment.objects.filter(
+            occurrence=occurrence, slot=occurrence.slot
+        )
+        if revoked:
+            assert occurrence.state == "succeeded"
+            assert [row.disposition for row in fulfilled] == ["delivered"]
+        else:
+            assert occurrence.state == "pending" and not fulfilled.exists()
+            assert retry_admitted(message) is True

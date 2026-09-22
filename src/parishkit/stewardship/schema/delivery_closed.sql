@@ -204,7 +204,10 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         WHERE link.occurrence_id=$1 AND NOT (m.state='delivered' OR m.state='cancelled' AND (
             m.reason='recipient_revoked' OR EXISTS(
                 SELECT 1 FROM public.stewardship_delivery_message_resolution resolution
-                WHERE resolution.message_id=m.id AND resolution.decision='cancel'))))
+                WHERE resolution.message_id=m.id AND resolution.decision='cancel'))
+            -- Confirmed never sent to a revoked recipient: settled like the
+            -- recipient_revoked cancellation, as digest completion counts it.
+            OR m.state='permanent_failure' AND m.reason='admin_unsent_recipient_revoked'))
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_delivery_closed_digest_v1(uuid) FROM PUBLIC;
 

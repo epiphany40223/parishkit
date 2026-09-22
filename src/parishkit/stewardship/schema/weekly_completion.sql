@@ -18,6 +18,10 @@ CREATE VIEW stewardship_weekly_digest_completion_ready AS
           LEFT JOIN stewardship_outbox_message m ON m.id=r.outbox_id
           WHERE r.snapshot_id=s.id AND r.address=wanted.address
             AND (m.state='delivered' OR (m.state='cancelled' AND m.reason='recipient_revoked')
+              -- An Admin's evidence that a revoked recipient's report was never
+              -- sent settles it like the cancellation; the metadata finalizer
+              -- completes the occurrence, since no worker owns that settlement.
+              OR (m.state='permanent_failure' AND m.reason='admin_unsent_recipient_revoked')
               OR (r.outbox_id IS NULL AND r.information='[]'::jsonb AND r.corrections='[]'::jsonb
                 AND jsonb_array_length(r.covered_messages)>0))
             AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(r.covered_messages) proof(message_id)

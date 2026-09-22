@@ -1002,3 +1002,86 @@ def test_confirmed_unsent_receipt_clears_the_resume_guard(
                 commands.confirm(*item.arguments, token=token)
             item.campaign.refresh_from_db()
             assert not item.campaign.delivery_paused
+
+
+def test_closed_weekly_skip_counts_a_revoked_recipient_confirmed_unsent(
+    scheduled, settings
+):
+    """A report confirmed unsent to a removed Admin cannot block the closed skip.
+
+    That report can never be retried, so the closed held-message resolution
+    counts it as settled, exactly like a recipient_revoked cancellation, and
+    cancelling the rest of the report records the occurrence's semantic skip.
+    """
+    from django.db.models import Case, When
+
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_daily_digest_dispatch_postgresql import revoke_admin
+    from .test_delivery_resolution_postgresql import (
+        confirmed_unsent,
+        resolve,
+        unknown_inventory,
+    )
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    harness = SimpleNamespace(
+        campaign=item.campaign,
+        service=item.arguments[1],
+        rings=SimpleNamespace(general=None, public=None),
+    )
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(days=9)
+    ):
+        submit_while_paused(item, settings, text="Unsent weekly request")
+        status = queue_weekly(harness)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        # Remove the Admin who is not driving the delivery-control session.
+        admin = PortalUser.objects.get(pk=item.arguments[0].portal_session.principal_id)
+        held, unsent = WeeklyDigestRecipient.objects.select_related(
+            "outbox", "snapshot__preparation"
+        ).order_by(Case(When(address=admin.email, then=0), default=1))
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(unsent.outbox)
+            assert begin(unsent.outbox, execution) is not None
+            finish_submission(
+                unsent.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.UNKNOWN, 1),
+            )
+        act(_status(TaskRun.objects.get(pk=unsent.outbox.task_id)), "permanent_failure")
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Hold reports")
+            commands.confirm(*item.arguments, token=token)
+        revoke_admin(harness, unsent)
+        message = OutboxMessage.objects.get(pk=unsent.outbox_id)
+        command = resolve(
+            harness,
+            admin,
+            message,
+            "confirm_unsent",
+            general=None,
+            public=None,
+        )
+        confirmed_unsent(message, command, revoked=True)
+        assert unknown_inventory(item.campaign) == 0
+        close_campaign(item.campaign, uuid4())
+    with (
+        campaign_clock(item.campaign.active_configuration.ends_at + timedelta(hours=1)),
+        web_login(),
+    ):
+        _, token = commands.preview_resolution(
+            *item.arguments,
+            reason="Cancel the remaining report",
+            decision="cancel",
+            types=["weekly_digest"],
+        )
+        commands.confirm(*item.arguments, token=token)
+    occurrence_id = held.snapshot.preparation.occurrence_id
+    assert OutboxMessage.objects.get(pk=held.outbox_id).state == "cancelled"
+    assert PostCloseMailResolution.objects.filter(occurrence_id=occurrence_id).exists()
+    assert ScheduleOccurrence.objects.get(pk=occurrence_id).state == "skipped"
