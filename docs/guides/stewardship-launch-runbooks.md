@@ -22,7 +22,8 @@ Administrator by email, and by Slack when the optional channel is configured,
 when an incident opens, escalates or resolves; repeat notices are suppressed
 and warnings escalate to critical after the windows set in the deployment
 YAML's `operational_alerts` (900 seconds each by default, 30 minutes for
-source staleness), as the
+source staleness; set before provisioning, since a later change needs a
+reinstall), as the
 [operational alerts guide](stewardship-operational-alerts.md#operational-policy-configuration)
 describes. Notices name the deployment mode and the incident kind only, never
 a Family, a credential or a message.
@@ -169,12 +170,17 @@ the critical-events banner; Family or staff mail stops arriving; the
 deliveries page (`/admin/deliveries`) shows messages in `retry_wait`.
 
 **The system does:** it opens the incident on a systemic failure or on three
-consecutive unavailable results for the same provider configuration, keeps
-retrying due messages on their schedule, and resolves the incident by itself
-only after a real healthy SMTP observation newer than the last failure, as the
-[mail health guide](stewardship-mail-health.md) explains. A message the
-provider may have accepted without confirming becomes `delivery_unknown`
-(below) rather than being retried.
+consecutive unavailable results for the same provider configuration, and
+resolves the incident by itself only after a real healthy SMTP observation
+newer than the last failure, as the
+[mail health guide](stewardship-mail-health.md) explains. The same failure
+also stops campaign sending in the running `mail-dispatch` process, by
+design, until that process restarts: invitations, reminders, receipts and
+reports stay queued (`pending` or `retry_wait`) even after the provider
+recovers and the incident resolves, because the incident's health check
+runs elsewhere. A message that met a systemic failure becomes
+`permanent_failure`; one the provider may have accepted without confirming
+becomes `delivery_unknown` (below). Neither is retried automatically.
 
 **You do:**
 
@@ -193,10 +199,18 @@ provider may have accepted without confirming becomes `delivery_unknown`
    describes.
 4. If the outage is long during the live campaign and reminders would bunch
    up, pause delivery (below) and resume when the provider is back.
+5. Once the provider is healthy again (the smoke check says `valid`),
+   restart campaign sending: `restart mail-dispatch` on the deployment's
+   Compose file and project name. This clears the stopped state; nothing
+   else does.
+6. On the deliveries page, filter for `permanent_failure` messages from the
+   outage window and choose **Retry failed delivery** on each that should
+   still go; settle any `delivery_unknown` message as described below.
 
-**It is over when:** the incident resolves by itself after the next
-successful send, and `retry_wait` messages drain. Do not resend by hand and
-do not resolve a `delivery_unknown` message without evidence.
+**It is over when:** the incident has resolved, `mail-dispatch` has been
+restarted, and queued campaign mail is draining (the deliveries page's
+`pending` and `retry_wait` counts fall). Do not resend by hand outside the
+portal, and do not resolve a `delivery_unknown` message without evidence.
 
 ## ParishSoft outage
 
@@ -295,7 +309,10 @@ only for the current Production campaign.
       retry), report preparation must reach its safe point, and any blocked
       Family group on the **Overdue Family-mail planning** panel must be
       resolved. The resume controls are hidden entirely while an activation
-      catch-up is still running. A report preparation that has *failed* never
+      catch-up is incomplete, including one whose preparation has failed: if
+      the **Production activation progress** page shows a failure, choose
+      **Retry failed mail preparation** there and wait for **Initial campaign
+      mail preparation complete**. A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
       report task on the Background work page (`/admin/background`; the
       home page lists only the latest five failures of the past day), fix

@@ -124,7 +124,11 @@ deployment:
     source_stale_seconds: 1800
 ```
 
-Each window is bounded to 60–86,400 seconds. Environment/explicit deployment
+Each window is bounded to 60–86,400 seconds. Services read the policy from
+their rendered configuration, which provisioning writes from the deployment
+YAML, so set it before provisioning: `retarget-image` treats a later change
+as a changed deployment input and refuses it, and before the schema freeze
+such a change is taken by reinstalling. Environment/explicit deployment
 overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS`,
 `PARISHKIT_STEWARDSHIP_OPERATIONAL_ESCALATION_SECONDS` and
 `PARISHKIT_STEWARDSHIP_OPERATIONAL_SOURCE_STALE_SECONDS`, with the existing
