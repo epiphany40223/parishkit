@@ -180,16 +180,26 @@ sequence with the commands that exist.
    off-host copy, then run `retarget-image` with the new digest again in
    the new image, as step 3 does, and repeat this step. If the previous
    image's `retarget-image` refuses (its error names no cause; a release
-   that added a deployment field is one), follow the database-restore
-   [rollback](#rollback) from the step 1 backup and start the upgrade again
-   at step 1; that restore loses whatever the online services wrote between
-   the step 1 backup and step 2 and needs the full restore procedure,
-   including its comparison with the mail provider's logs. The
+   that added a deployment field is one), the database is still untouched,
+   because the migration refused before applying anything; what stands in
+   the way is the provisioning record step 3 rewrote. Open the step 1 set's
+   `files.tar` with `backup-open` where the private key is kept, extract it
+   into an empty private staging directory, move the current
+   `.stewardship-provisioned.json` aside under a new name (never delete
+   it), put the set's record in its place, owned by `10001:10001` with
+   mode `0600`, and run the previous image's `retarget-image` again; then
+   continue as above. Restore nothing else from the set: the online
+   services changed the database and the other trees after it was taken.
+   Only if that retarget still refuses, follow the database-restore
+   [rollback](#rollback) from the step 1 backup, which loses whatever the
+   online services wrote between the step 1 backup and step 2 and needs
+   the full restore procedure, including its comparison with the mail
+   provider's logs. The
    [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) records
-   how this recovery was checked. A release that changes neither the schema nor a grant still
-   pulls, but skips the migration and grant commands. `database-grants` never revokes:
-   for a release that *narrows* a runtime grant on a table that still
-   exists, it refuses the whole run, because a login already holds a
+   how this recovery was checked. A release that changes neither the
+   schema nor a grant still pulls, but skips the migration and grant
+   commands. `database-grants` never revokes: for a release that
+   *narrows* a runtime grant on a table that still exists, it refuses the whole run, because a login already holds a
    privilege the new release no longer lists, and the new release's
    services would refuse that excess privilege anyway. Step 1's check
    catches such a release before anything stops: before the schema freeze it

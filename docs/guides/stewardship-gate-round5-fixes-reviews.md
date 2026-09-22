@@ -56,3 +56,18 @@ new image directly; the forward retarget runs in the new image; the
 previous image's retarget refusal is not tied to a cause the operator
 cannot see; and the corrected texts link this ledger. A correction check
 follows.
+
+## Round 2
+
+Claude and Codex both answered; Codex approved with no findings. Claude
+raised two findings, one validated and corrected:
+
+- Medium: when the previous image's `retarget-image` refuses, the
+  migration was refused before applying anything, so the database is
+  untouched and a full database restore would discard the online services'
+  writes for nothing. The recovery now restores only the provisioning
+  record from the step 1 set and retargets back again, keeping the
+  database-restore rollback as the fallback if that still refuses.
+
+The Low below the cutoff was taken: the paragraph after the recovery is
+rewrapped. A correction check follows.
