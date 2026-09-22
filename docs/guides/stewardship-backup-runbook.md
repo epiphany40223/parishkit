@@ -43,8 +43,9 @@ the dump itself failed. Keep the printed manifest digest with the off-host
 copy (the cron job can append the line to a log there): the sealed files
 prove that they were not altered, not who made them, and the digest is how a
 restore proves it is restoring the set the deployment recorded. Schedule it
-from the host's cron twice a day, twelve hours apart and in UTC (for
-example after the campaign's nightly work and again twelve hours later), and
+from the host's cron twice a day, twelve hours apart and in UTC (a host set
+to UTC, or `CRON_TZ=UTC` where the host's cron supports it; for example
+after the campaign's nightly work and again twelve hours later), and
 once immediately before Production activation and before every upgrade. The
 overdue alert below fires after 24 hours without a completed backup, so a
 single nightly run would page on any late night, and a local-time schedule
@@ -69,10 +70,15 @@ resolves it when one has. When it fires: run the backup by hand. If it
 refuses, the log names only the category, so check the usual causes in
 turn: the recipient key file is present and readable; the `backups`
 directory is owned by `10001:10001` with mode `0700`; the authority store
-lies inside the configuration tree; no set directory with the same minute's
-name already exists; and the database is reachable (a failed dump logs
-`pg_dump`'s own message). Fix the cause, run it again, and confirm the
-off-host copy holds the newest set's three files.
+lies inside the archived trees; no offline work (a migration or an upgrade)
+holds the startup lock; the database schema matches the running image (an
+image changed without its migration refuses); the configuration,
+credentials and media trees hold only regular files and directories (no
+symlink) and stay under 256 MiB together; and the database is reachable (a
+failed dump logs `pg_dump`'s own message). Fix the cause, run it again, and
+confirm the off-host copy holds the newest set's three files. The
+[gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
+this checklist was checked against the code.
 
 ## Restore drill
 

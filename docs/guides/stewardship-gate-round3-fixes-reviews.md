@@ -27,3 +27,25 @@ finding. The Codex reviewer has been out of quota since September 20, 2026;
 under the human's exemption, extended through October 30, 2026, a completed
 Claude-only pass counts as a round, and each round records which sources
 answered.
+
+## Round 1
+
+Claude only (Codex produced no structured output). Eight raw findings, one
+validated and corrected:
+
+- Medium: the outage runbook's new steps named internal states and a
+  list-page action. The deliveries page filters by labels (**Failed
+  delivery**, **Pending**, **Waiting to retry**), offers **Retry failed
+  delivery** only on each message's page and only while delivery is not
+  paused, and shows no counts; the steps and the exit condition now describe
+  the page as it is.
+
+All seven findings below the validation cutoff were taken: a failed delivery
+also follows five exhausted attempts or exhausted preparation retries; the
+backup checklist adds the startup lock, a pending migration, non-regular
+files and the size bound, and no longer names an impossible same-name set;
+the runbook says how to schedule in UTC; the alerts guide says environment
+overrides act only where the deployment YAML is loaded and must be repeated
+at retarget; tests now show every rendered service document carries the
+policy and that retarget refuses a changed policy; and the runbooks link
+this ledger. A correction check follows.

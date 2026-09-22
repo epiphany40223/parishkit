@@ -178,9 +178,11 @@ also stops campaign sending in the running `mail-dispatch` process, by
 design, until that process restarts: invitations, reminders, receipts and
 reports stay queued (`pending` or `retry_wait`) even after the provider
 recovers and the incident resolves, because the incident's health check
-runs elsewhere. A message that met a systemic failure becomes
-`permanent_failure`; one the provider may have accepted without confirming
-becomes `delivery_unknown` (below). Neither is retried automatically.
+runs elsewhere. A message that met a systemic failure becomes a failed
+delivery, as does one that used up its five provider attempts or its
+preparation retries during the outage; one the provider may have accepted
+without confirming becomes `delivery_unknown` (below). Neither is retried
+automatically.
 
 **You do:**
 
@@ -203,14 +205,20 @@ becomes `delivery_unknown` (below). Neither is retried automatically.
    restart campaign sending: `restart mail-dispatch` on the deployment's
    Compose file and project name. This clears the stopped state; nothing
    else does.
-6. On the deliveries page, filter for `permanent_failure` messages from the
-   outage window and choose **Retry failed delivery** on each that should
-   still go; settle any `delivery_unknown` message as described below.
+6. On the deliveries page (`/admin/deliveries`), choose the **Failed
+   delivery** state and look at the messages last changed during the outage.
+   Open each one that should still go and choose **Retry failed delivery** on
+   its page (the button is offered only when delivery is not paused, so
+   resume first if you paused). Settle any **Delivery unknown** message as
+   described below.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been
-restarted, and queued campaign mail is draining (the deliveries page's
-`pending` and `retry_wait` counts fall). Do not resend by hand outside the
-portal, and do not resolve a `delivery_unknown` message without evidence.
+restarted, and the **Pending** and **Waiting to retry** lists on the
+deliveries page are no longer growing and their messages move on as their
+due times pass. Do not resend by hand outside the portal, and do not resolve
+a `delivery_unknown` message without evidence. The
+[gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
+this procedure was checked against the code.
 
 ## ParishSoft outage
 
