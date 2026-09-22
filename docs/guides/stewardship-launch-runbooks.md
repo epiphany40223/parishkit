@@ -224,11 +224,19 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
 4. If the provider shows it was not sent, choose **Authorize potentially
    duplicate resend**, acknowledging that the Family may receive it twice;
    this creates a new attempt under the same occurrence. The button appears
-   only when a resend is still permitted: the campaign is inside its dates
-   and not paused, the Family is still active, eligible and reachable, has
-   not already submitted (no reminder after a response), and no activation
-   catch-up or restore hold is pending. When it is absent, a resend is not
-   permitted now; record that in the note and leave the message unresolved.
+   only when a resend is still permitted, and the conditions differ by kind:
+   for an invitation or reminder, the campaign is inside its dates and not
+   paused, the Family is still active, eligible and reachable and has not
+   submitted, the slot is not already fulfilled, and no refresh, activation
+   catch-up or restore hold stands in the way; for a submission receipt, the
+   campaign is not paused (unless the receipt was released after a close) and
+   no other message for that Family is still submitting or unknown; for a
+   daily or weekly Admin report, the campaign is not paused (with the same
+   exception), report preparation is complete and the recipient is still an
+   Administrator. When the button is absent, a resend is not permitted now;
+   record that in the note and leave the message unresolved. The
+   [delivery resolution guide](stewardship-family-mail-resolution.md) has
+   the full rules.
 5. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
    resolved.
@@ -239,9 +247,10 @@ was *not* sent, even to unblock a resume: the note and the resolution are the
 only record of why a Family got one message, two or none.
 
 **Known v1 gap, being corrected before the pre-launch gate:** while delivery
-is paused, the resend is not offered for a production Family message, yet
-resume is refused while any unknown delivery remains. A Family message that
-the provider shows was not sent therefore cannot be resolved during a pause.
+is paused on an active campaign, the resend is not offered for any live
+message (invitations, reminders, submission receipts and Admin reports), yet
+resume is refused while any unknown delivery remains. A message the provider
+shows was not sent therefore cannot be resolved during a pause.
 Until the correction lands, avoid pausing while such a message is unresolved;
 if it happens, record the evidence in a note, leave the message unresolved,
 and escalate rather than confirming a delivery that did not happen.

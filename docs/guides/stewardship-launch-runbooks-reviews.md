@@ -50,10 +50,11 @@ validated:
   recreated service with the request UUID from the status page, using `exec`
   and never `compose run`, with exactly one Compose file. The step now says
   so. Corrected.
-- High: while delivery is paused the resend is not offered for a production
-  Family message, yet resume is refused while any unknown delivery remains,
-  so a Family message the provider shows was not sent cannot be resolved
-  during a pause. This is a product defect, not a documentation one; the
+- High: while delivery is paused the resend is not offered for a live
+  message (round 3 widened this from Family mail to receipts and Admin
+  reports too), yet resume is refused while any unknown delivery remains, so
+  a message the provider shows was not sent cannot be resolved during a
+  pause. This is a product defect, not a documentation one; the
   runbook now states the gap, forbids a false delivery confirmation to
   unblock a resume, and gives the interim course, and the code correction is
   the next increment, before the pre-launch gate.
@@ -71,3 +72,18 @@ validated:
 The eight findings the validation step did not confirm were not carried
 forward. Since the second round validated findings, a correction check
 follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Correction check: five raw
+findings, two validated, both corrected:
+
+- Medium: the stated pause gap also covers submission receipts and Admin
+  reports, whose resend admission refuses during a pause as well; the gap
+  now names every live message type, and the code correction covers them.
+- Medium: the resend conditions listed were those of invitations and
+  reminders only; the step now gives the receipt and Admin-report
+  conditions separately and links the delivery resolution guide.
+
+The three findings the validation step did not confirm were not carried
+forward. A further correction check follows.
