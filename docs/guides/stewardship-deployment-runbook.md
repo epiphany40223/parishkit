@@ -129,7 +129,9 @@ procedure is the only way forward. It applies the operations specification's
 [production upgrade](../specs/stewardship/operations/spec.md#production-upgrades-deferred)
 sequence with the commands that exist.
 
-1. **Back up first.** Run the backup now (`run --rm backup-worker`, as the
+1. **Check the release, then back up.** Read the release notes first: a
+   release that narrows a runtime grant cannot be taken by this procedure
+   (see step 4). Then run the backup (`run --rm backup-worker`, as the
    [backup runbook](stewardship-backup-runbook.md#the-nightly-backup) says)
    and confirm its off-host copy. Do not continue without it: it is the only
    rollback, and step 4 refuses a configured deployment whose newest recorded
@@ -165,9 +167,30 @@ sequence with the commands that exist.
    first installation both commands admit the change only when a backup
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
-   process log carries one fixed sentence naming the missing backup. A release that changes neither the schema
-   nor a grant skips this step entirely.
-5. **Start and check.** Bring the online services back with `up --detach`
+   process log carries one fixed sentence naming the missing backup. A
+   release that changes neither the schema nor a grant still pulls, but
+   skips the migration and grant commands. `database-grants` never revokes:
+   for a release that *narrows* a runtime grant on a table that still
+   exists, it refuses the whole run, because a login already holds a
+   privilege the new release no longer lists, and the new release's
+   services would refuse that excess privilege anyway. Step 1's check
+   catches such a release before anything stops: before the schema freeze it
+   is taken by reinstalling, and after it the release must bring its own
+   revocation step. `migration` runs first and commits, so if
+   `database-grants` refuses after a successful migration, start neither
+   image: recover with the database-restore [rollback](#rollback) (or,
+   before the freeze, by reinstalling).
+5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
+   stylesheets from `cache/static`, which `collect-static` fills once and
+   never overwrites, so a release that changes or adds a static file would
+   otherwise ship its templates with the previous release's scripts. With
+   `caddy` still stopped, move `cache/static` aside under the name of the
+   release being replaced (for example `cache/static.PREVIOUS_DIGEST`, never
+   deleting it), create an empty `cache/static` owned by `10001:10001` with
+   mode `0700`, and run `collect-static` into it in the *new* image, exactly
+   as first installation does. Keep the old tree until the release is
+   accepted; a rollback puts it back.
+6. **Start and check.** Bring the online services back with `up --detach`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever
    the deployment uses) and project name, then `caddy`. Run the health
    command and open the public origin. Confirm in the portal that background
@@ -179,11 +202,18 @@ registry; nothing here deletes it.
 
 ## Rollback
 
-An application-only rollback is possible when the new release made no schema
-change: stop the online services, run `retarget-image` with the previous
-digest (in that previous image), pull, and start; step 4 is not repeated.
-When the release changed the schema, an older image must never be pointed at
-the newer database; the rollback is a database restore from the backup taken
+An application-only rollback is possible only when the new release changed
+neither the schema nor any runtime grant, and added no deployment field:
+stop the online services, run `retarget-image` with the previous digest (in
+that previous image), pull, put the previous release's static tree back
+(move the new `cache/static` aside and restore the one step 5 kept, or
+collect into an empty `cache/static` in the previous image), and start;
+step 4 is not repeated. A grant the new release added is refused as
+excessive by the previous release's services, and a deployment field it
+added makes the previous release's `retarget-image` refuse the provisioning
+record, so either case needs the database restore below. When the release
+changed the schema, an older image must never be pointed at the newer
+database; the rollback is a database restore from the backup taken
 in upgrade step 1, following the launch scope's
 [manual restore procedure](../plans/stewardship/v1-launch.md#manual-restore-for-v1-replaces-item-2)
 and the [backup runbook](stewardship-backup-runbook.md#restore-for-real), and
@@ -211,7 +241,16 @@ explain.
   runbook's restore drill supplies by hand. Automated readiness checks and
   upgrade-path tests are deferred; the operator follows this runbook by hand
   and the backup is the safety net.
+- An upgrade cannot narrow a runtime grant on a table that still exists: the
+  grant command refuses a login that already holds a privilege the release
+  no longer lists, and nothing revokes it. Before the schema freeze such a
+  release is taken by reinstalling; after it, the release must bring its own
+  revocation step.
 - The image is single-architecture (`linux/amd64`); the host must be x86-64.
 - Restore is a manual procedure and may require re-sending some Family links
   by hand, as the launch scope records for the pre-launch gate to approve.
 - Keys generated at install are not rotated during v1.
+
+The [runbook corrections ledger](stewardship-runbook-corrections-reviews.md)
+records how the upgrade, rollback and restore procedures were last checked
+against the code.

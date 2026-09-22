@@ -125,8 +125,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    bind-source layout as the lost host. Create the runtime root as
    [Storage and identities](stewardship-runtime.md#storage-and-identities)
    says, then create, owned by `10001:10001` with mode `0700`, the
-   directories that are not in the set: `backups`, `cache`, `cache/static`,
-   `logs`, `reports`, `run`, `run/persistent`, and under it `caddy`,
+   directories that are not in the set: `backups`, `cache`, `logs`,
+   `reports`, `run`, `run/persistent`, and under it `caddy`,
    `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
    `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
    exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
@@ -147,10 +147,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `credentials`, `media` to `run/persistent/media`, and the record to the
    runtime root itself. Give everything back to `10001:10001`; the archive
    records owner-only modes (`0700` directories, `0600` files).
-5. **Replacement host only: static files and roles.** Run `collect-static`
-   into `cache/static` as the deployment runbook's first installation does.
-   Start `postgres` and `valkey` with `up --detach --wait postgres valkey`,
-   then run
+5. **Replacement host only: roles.** Start `postgres` and `valkey` with
+   `up --detach --wait postgres valkey`, then run
    `run --rm database-provision database-roles --config PROVISION_CONFIG --confirm-deployment UUID`
    with the deployment's UUID. It creates the roles with the restored
    password files on the new, empty database.
@@ -191,7 +189,16 @@ layout; where the deployment YAML overrides a path, use that path instead.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
-   image digest.
+   image digest. Then give that image its own static files, on every host
+   (a replacement host has no `cache/static` yet, so it starts at the
+   empty one). First move any current `cache/static` aside under a name that does not
+   exist yet (moving onto an existing directory nests the tree). Then either
+   put back the tree an upgrade kept for the set's release, or create an
+   empty `cache/static` owned by `10001:10001` with mode `0700` and run
+   `collect-static` into it in the set's image, as the deployment runbook's
+   [upgrade](stewardship-deployment-runbook.md#upgrade) does. The static
+   tree is not in the set, and a newer release's scripts must not be served
+   with the restored release's pages.
 8. **Start web alone and review.** Start `web` and `caddy` only, and run the
    health command. An Administrator pauses delivery on the campaign's
    delivery control page if it is not already paused, then compares the
@@ -203,6 +210,12 @@ layout; where the deployment YAML overrides a path, use that path instead.
 9. **Take a fresh backup.** Run the backup at once, then re-enable the
    backup and off-host copy cron jobs. The backup records a new run, which
    later upgrade admissions require, and captures the restored state.
+10. **Delete the decrypted copies.** Once the review in step 8 is complete,
+    securely delete `database.pgdump`, `files.tar` and the staging directory
+    on the host and on the machine that holds the private key. They hold
+    every Family's data and every credential in plain form; the sealed set
+    off the host is the copy to keep. Keep the moved-aside trees only until
+    the restored deployment is accepted, then delete them the same way.
 
 ## Restore limitations in v1
 

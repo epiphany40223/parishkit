@@ -71,7 +71,10 @@ unknown message, as **Record that the provider did not send it (no resend)**.
   Admin command or a roster change), the existing metadata finalizer
   completes the occurrence, as it does after an Admin acceptance. A failed
   report whose recipient is still an Administrator holds its cohort open
-  until **Retry failed delivery** sends it.
+  until **Retry failed delivery** sends it, when no pause is involved; on a
+  paused active campaign that retry is not offered, and resume's overdue
+  report plan coalesces the occurrence into the next combined report of its
+  kind, which carries its dates to the current Administrators.
 - **Consequences.** The message leaves the delivery-control inventory's
   unknown count, so resume (or the closed-pause resolution) can proceed, and
   a receipt waiting behind it is no longer blocked. Schedule reconciliation
@@ -220,3 +223,28 @@ Implementation, focused validation and the six rounds in the
 [review ledger](stewardship-unsent-resolution-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #100 delivered candidate `19a4db78`, three logical commits (the
+resolution, a standalone weekly report label and the documentation) plus
+the receipt of PR #101. Its content is the retained commit-by-commit review
+history on `pr/stewardship-unsent-resolution-reviewed` (`5490d25c`), applied
+onto the merge of PR #101 with identical content hunks (only the launch
+runbook was also touched by an intervening pull request), plus exactly that
+receipt; its related PostgreSQL suites (203 tests) passed on that combined
+tree, and the candidate tree `eb59b869` is the landed tree. The six
+[review rounds](stewardship-unsent-resolution-reviews.md) were single-source
+under the exemption; rounds 1 to 5 validated nine findings, all corrected,
+and round 6 validated nothing. The pull request was marked ready before the
+candidate was pushed. Exact-head ready-candidate CI `35769407521` and DCO
+passed all 25 checks, from 18:46:26 to 19:06:51 UTC on September 22, 2026
+(20 minutes 25 seconds). Earlier runs on superseded draft heads stopped at
+the draft-mode gates, and one was cancelled by the candidate push; none is
+counted as acceptance. `origin/main` had no intervening commits since the
+candidate's base `aabcff6e`. Protected auto-merge landed as `95ddef08` at
+19:07:15 UTC and was verified on freshly fetched `origin/main`, whose second
+parent's tree is the candidate's, before the next increment was committed.
+This used the standing delivery authority, without deployment or release;
+no real provider was contacted. The reinstall-or-migrate decision for the
+validation deployment remains the human's.
