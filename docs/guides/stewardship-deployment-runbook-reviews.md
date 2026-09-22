@@ -55,3 +55,9 @@ both corrected:
 The nine findings the validation step did not confirm were not carried
 forward. Since the second round validated findings, a third, correction-only
 check follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Correction check: one raw finding,
+none validated. This closes the review rounds: two full rounds and one
+correction check, every accepted finding fixed.
