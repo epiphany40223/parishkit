@@ -540,9 +540,14 @@ resent message returns to pending under the current pause hold: on an active
 campaign it is sent only after resume, and on a campaign closed while paused
 it follows the held-message resolution below, where a message that resolution
 already released carries no new hold and is sent without waiting. Retries of
-failed or unsent messages wait for resume. Workers recheck the pause
-immediately before provider submission, so no later production attempt
-crosses the pause.
+failed or unsent messages wait for resume. When the provider's own record
+shows an unknown message was not sent and no resend is wanted or admitted, an
+Admin records that with evidence instead: the message becomes a failed
+delivery without a resend or recipient suppression, so it stops counting as
+unknown and resume can proceed (see the
+[unsent resolution guide](../../../guides/stewardship-unsent-resolution.md)).
+Workers recheck the pause immediately before provider submission, so no later
+production attempt crosses the pause.
 The campaign header and background-work view show a persistent delivery-paused
 banner, duration, actor/reason, held counts/types, and provider-uncertain counts.
 
