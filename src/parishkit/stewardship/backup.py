@@ -205,7 +205,9 @@ def dump_database(configuration, sink, *, recipient):
         reader = threading.Thread(target=drain, args=(process.stderr,), daemon=True)
         reader.start()
         count, digest = seal(process.stdout, sink, recipient=recipient, kind="database")
-        process.wait(timeout=3600)
+        # No time limit: a dump that never finishes is reported by the
+        # backup_rpo_breach overdue alert, not by this command.
+        process.wait()
         reader.join(timeout=30)
     if process.returncode != 0 or count == 0:
         # Tell the operator the database step failed, as distinct from the

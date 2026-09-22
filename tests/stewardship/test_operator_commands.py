@@ -1,5 +1,6 @@
 """Offline CLI requires explicit intent and never reflects sensitive failures."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -99,8 +100,12 @@ def test_a_missing_backup_refusal_is_named_in_the_formatted_log(
     monkeypatch.setattr(operator_commands, "load_deployment", fail)
     with caplog.at_level("ERROR", logger="parishkit.stewardship"):
         assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
-    formatted = [SafeJsonFormatter().format(record) for record in caplog.records]
-    assert any('"upgrade_backup_required"' in line for line in formatted)
+    events = [json.loads(SafeJsonFormatter().format(r)) for r in caplog.records]
+    assert any(
+        event["message"] == "startup_rejected"
+        and event["extra"].get("failure_kind") == "upgrade_backup_required"
+        for event in events
+    )
     assert "refused" in capsys.readouterr().err
 
 
