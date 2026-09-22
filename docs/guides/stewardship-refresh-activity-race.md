@@ -92,3 +92,24 @@ Implementation, focused validation and the three
 full exact-head CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.
+
+## Protected delivery
+
+PR #103 delivered candidate `e7bc7371`, two logical commits plus the
+receipt of PR #102, whose content is the retained commit-by-commit review
+history on `pr/stewardship-refresh-activity-race-reviewed` (`e15dc36f`) with
+identical content hunks, plus exactly that receipt; the race and Family
+identity suites passed on that combined tree, and the candidate tree
+`43f57a09` is the landed tree. The three
+[review rounds](stewardship-refresh-activity-race-reviews.md) were
+single-source under the exemption and validated nothing. The pull request
+was marked ready before the candidate was pushed. Exact-head ready-candidate
+CI `35777493915` and DCO passed all 25 checks, from 20:00:55 to 20:33:00 UTC
+on September 22, 2026 (32 minutes 5 seconds). Earlier runs on superseded
+draft heads stopped at the draft-mode gates, and one was cancelled by the
+candidate push; none is counted as acceptance. `origin/main` had no
+intervening commits since the candidate's base `79713a6d`. Protected
+auto-merge landed as `b969a55e` at 20:33:11 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment was committed. This used the standing delivery
+authority, without deployment or release; no real provider was contacted.

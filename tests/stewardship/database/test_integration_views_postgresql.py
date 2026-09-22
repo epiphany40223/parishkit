@@ -40,7 +40,7 @@ SECRET = "SYNTHETIC-PRIVATE-CANDIDATE"
 def post(browser, url, values):
     """Every HTTP mutation goes through real Django CSRF enforcement."""
     return browser.post(
-        url, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        url, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

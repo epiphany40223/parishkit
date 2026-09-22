@@ -49,7 +49,9 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
             assert browser.post(path, values).status_code == 403
             for _ in range(2):
                 result = browser.post(
-                    path, values, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value
+                    path,
+                    values,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert result.status_code == 302
             assert b"retry-daily-digest" not in browser.get(page_path).content
@@ -58,7 +60,7 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
                 browser.post(
                     f"/admin/background/tasks/{retry.pk}/retry-daily-digest",
                     values,
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 409
             )
@@ -66,7 +68,7 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
                 browser.post(
                     path,
                     {"command_id": str(uuid4())},
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 409
             )

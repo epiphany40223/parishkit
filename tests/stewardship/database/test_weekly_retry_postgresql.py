@@ -42,7 +42,9 @@ def test_weekly_retry_form_requires_csrf_and_exact_latest_run(response_service, 
             assert browser.post(path, values).status_code == 403
             for _ in range(2):
                 result = browser.post(
-                    path, values, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value
+                    path,
+                    values,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert result.status_code == 302
             assert b"retry-weekly-digest" not in browser.get(page_path).content
@@ -50,7 +52,7 @@ def test_weekly_retry_form_requires_csrf_and_exact_latest_run(response_service, 
                 browser.post(
                     path,
                     {"command_id": str(uuid4())},
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 409
             )

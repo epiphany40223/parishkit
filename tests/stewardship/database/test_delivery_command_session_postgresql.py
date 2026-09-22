@@ -93,7 +93,7 @@ def submit(form):
         return form.browser.post(
             form.path,
             form.values,
-            HTTP_X_CSRFTOKEN=form.browser.cookies["csrftoken"].value,
+            HTTP_X_CSRFTOKEN=form.browser.cookies["pk_admin_csrf"].value,
         )
 
 

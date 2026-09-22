@@ -48,7 +48,7 @@ def web():
 def post(browser, values):
     """Use the genuine CSRF cookie; roles may repeat, as ticked boxes do."""
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        URL, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 
@@ -499,7 +499,7 @@ def test_a_review_signed_for_one_administrator_is_refused_for_another(
         refused = other.post(
             URL,
             {
-                "csrfmiddlewaretoken": other.cookies["csrftoken"].value,
+                "csrfmiddlewaretoken": other.cookies["pk_admin_csrf"].value,
                 "action": "confirm",
                 "preview": signed,
             },
@@ -693,7 +693,7 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
         assert post(browser, extra | {"extra": "x"}).status_code == 400
         queried = browser.post(
             URL + "?kind=domain",
-            {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value} | extra,
+            {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value} | extra,
         )
         assert queried.status_code == 400
         assert browser.get(URL).status_code == 405
@@ -743,7 +743,7 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
     with web():
         refused = other.post(
             URL,
-            {"csrfmiddlewaretoken": other.cookies["csrftoken"].value} | extra,
+            {"csrfmiddlewaretoken": other.cookies["pk_admin_csrf"].value} | extra,
         )
         assert refused.status_code == 403
     # The second Administrator's and the leader's rules were two more installed

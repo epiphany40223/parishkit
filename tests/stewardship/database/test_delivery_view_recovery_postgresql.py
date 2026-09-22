@@ -33,7 +33,7 @@ def post(browser, path, values):
     """Use the browser's real CSRF secret under restricted SQL session identity."""
     with task_login(ServiceRole.WEB, exact=True):
         return browser.post(
-            path, values, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value
+            path, values, HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value
         )
 
 

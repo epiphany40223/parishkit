@@ -66,7 +66,7 @@ def test_history_is_get_only_and_revision_is_campaign_scoped(auth_service, googl
     count = ConfigurationChangeRequest.objects.count()
     assert (
         browser.post(
-            path, {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+            path, {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
         ).status_code
         == 405
     )

@@ -34,7 +34,7 @@ URL = "/admin/logs"
 
 def post(browser, values=None):
     """Filters travel only with a genuine CSRF token."""
-    token = browser.cookies["csrftoken"].value
+    token = browser.cookies["pk_admin_csrf"].value
     return browser.post(URL, {"csrfmiddlewaretoken": token} | (values or {}))
 
 

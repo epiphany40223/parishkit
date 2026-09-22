@@ -30,7 +30,7 @@ def post(client, path, payload):
         path,
         payload,
         content_type="application/json",
-        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+        HTTP_X_CSRFTOKEN=client.cookies["pk_family_csrf"].value,
     )
 
 

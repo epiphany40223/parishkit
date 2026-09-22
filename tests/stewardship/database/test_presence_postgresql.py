@@ -36,7 +36,7 @@ def beat(browser, **values):
     return browser.post(
         FAMILY,
         {"section": "welcome", **values},
-        HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+        HTTP_X_CSRFTOKEN=browser.cookies["pk_family_csrf"].value,
     )
 
 
@@ -219,6 +219,8 @@ def test_heartbeat_requires_csrf_and_does_not_accept_admin_login(
     family, _ = login(family_service.code)
     assert family.post(FAMILY, {"section": "welcome"}).status_code == 403
     admin, _ = signed_in()
+    # A valid Family-namespace CSRF token isolates the refusal to the session.
+    assert admin.get("/").status_code == 200
     assert beat(admin).status_code == 403
     assert family.get(FAMILY).status_code == 405
 

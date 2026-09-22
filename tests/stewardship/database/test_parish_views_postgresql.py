@@ -38,7 +38,7 @@ def fields(store, **changes):
 def post(browser, values):
     """Use a genuine authenticated CSRF cookie for every proposed mutation."""
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        URL, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 
