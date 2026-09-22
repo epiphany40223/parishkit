@@ -368,3 +368,35 @@ def test_renderer_refuses_unsupported_multi_container_runtime(tmp_path):
     )
     with pytest.raises(ConfigError, match="one web container"):
         render_runtime(configuration, image="parishkit-stewardship:development")
+
+
+@pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
+def test_every_rendered_service_document_carries_the_alert_policy(tmp_path, mode):
+    """Services load the renderer's documents, so every one must keep the policy.
+
+    This checks the documents render_runtime actually writes, in every provider
+    mode, for every role (online services, the backup worker, migration,
+    bootstrap and credential installers), not a hand-built configuration.
+    """
+    from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+
+    policy = IncidentPolicy(
+        suppression_seconds=120, escalation_seconds=180, source_stale_seconds=2400
+    )
+    configuration = replace(configuration_at(tmp_path), operational_alerts=policy)
+    _, documents = render_runtime(
+        configuration, image="parishkit-stewardship:development", provider_mode=mode
+    )
+    rendered = [
+        value
+        for value in documents.values()
+        if isinstance(value, dict) and "deployment" in value
+    ]
+    roles = {document["deployment"]["service_role"] for document in rendered}
+    assert {"web", "worker", "scheduler", "mail-dispatch", "backup-worker"} <= roles
+    for document in rendered:
+        assert document["deployment"]["operational_alerts"] == {
+            "suppression_seconds": 120,
+            "escalation_seconds": 180,
+            "source_stale_seconds": 2400,
+        }

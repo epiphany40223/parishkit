@@ -42,6 +42,9 @@ def deployment_document(configuration):
         "authentication_limits": asdict(configuration.authentication_limits),
         "runtime_budget": asdict(configuration.runtime_budget),
         "runtime_network": asdict(configuration.runtime_network),
+        # Every service loads its rendered document, not the operator's YAML,
+        # so an omitted section silently reverts to its defaults there.
+        "operational_alerts": asdict(configuration.operational_alerts),
     }
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target

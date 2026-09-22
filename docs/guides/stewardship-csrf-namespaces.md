@@ -90,3 +90,25 @@ Implementation, focused validation and the three
 [review rounds](stewardship-csrf-namespaces-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #104 delivered candidate `641226c7`, two logical commits plus the
+receipt of PR #103, whose content is the retained review history on
+`pr/stewardship-csrf-namespaces-reviewed` (`9668fb6e`), squashed with
+identical content hunks, plus exactly that receipt; the CSRF, race, Family
+authentication and presence suites passed on that combined tree, and the
+candidate tree `a834daf9` is the landed tree. The three
+[review rounds](stewardship-csrf-namespaces-reviews.md) were single-source
+under the exemption; rounds 1 and 2 validated two findings, resolved in the
+end by removing the token recovery first proposed, and round 3 validated
+nothing. The pull request was marked ready before the candidate was pushed.
+Exact-head ready-candidate CI `35781946181` and DCO passed all 25 checks,
+from 20:41:44 to 21:06:57 UTC on September 22, 2026 (25 minutes 13
+seconds). Earlier runs on superseded heads were cancelled by the candidate
+push; none is counted as acceptance. `origin/main` had no intervening
+commits since the candidate's base `b969a55e`. Protected auto-merge landed
+as `3d5cbe6d` at 21:08:25 UTC and was verified on freshly fetched
+`origin/main`, whose second parent's tree is the candidate's, before the
+next increment was committed. This used the standing delivery authority,
+without deployment or release; no real provider was contacted.
