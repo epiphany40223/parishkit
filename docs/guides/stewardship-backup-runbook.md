@@ -37,13 +37,18 @@ docker compose ... run --rm backup-worker
 
 It prints one JSON line naming the sizes, the recipient fingerprint and the
 manifest digest and exits `0`; on any refusal it prints one generic line and
-exits `2`, and the process log has the cause. Keep the printed manifest
-digest with the off-host copy (the cron job can append the line to a log
-there): the sealed files prove that they were not altered, not who made
-them, and the digest is how a restore proves it is restoring the set the
-deployment recorded. Schedule it from the host's cron every night,
-after the campaign's own nightly work, and once immediately before Production
-activation and before every upgrade. Each run leaves a dated directory under
+exits `2`, and the process log records only the failure's category (a
+configuration refusal, for most causes), plus `pg_dump`'s own message when
+the dump itself failed. Keep the printed manifest digest with the off-host
+copy (the cron job can append the line to a log there): the sealed files
+prove that they were not altered, not who made them, and the digest is how a
+restore proves it is restoring the set the deployment recorded. Schedule it
+from the host's cron twice a day, twelve hours apart and in UTC (for
+example after the campaign's nightly work and again twelve hours later), and
+once immediately before Production activation and before every upgrade. The
+overdue alert below fires after 24 hours without a completed backup, so a
+single nightly run would page on any late night, and a local-time schedule
+gains an hour at the daylight-saving change. Each run leaves a dated directory under
 `backups/` in the runtime root with `database.pgdump.sealed`,
 `files.tar.sealed` and `manifest.json`; the newest thirty complete sets are
 kept. A failed run leaves its directory without a manifest for inspection;
@@ -60,10 +65,14 @@ application does not transfer anything itself.
 The scheduler raises the `backup_rpo_breach` operational incident, through
 the configured alert routes, when no backup has completed in the last 24
 hours, once the deployment is in Production or has ever backed up, and
-resolves it when one has. When it fires: run the backup by hand, read its
-refusal cause in the log, and fix the cause (usually the recipient key file,
-the output directory's ownership, or the database). Confirm the off-host copy
-holds the newest set's three files.
+resolves it when one has. When it fires: run the backup by hand. If it
+refuses, the log names only the category, so check the usual causes in
+turn: the recipient key file is present and readable; the `backups`
+directory is owned by `10001:10001` with mode `0700`; the authority store
+lies inside the configuration tree; no set directory with the same minute's
+name already exists; and the database is reachable (a failed dump logs
+`pg_dump`'s own message). Fix the cause, run it again, and confirm the
+off-host copy holds the newest set's three files.
 
 ## Restore drill
 
