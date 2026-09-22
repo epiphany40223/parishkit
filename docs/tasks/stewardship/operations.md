@@ -51,6 +51,14 @@ commands now have actual registry, SQL and container integration evidence.
 OPS-01.02 stays open for remaining later-phase/offline commands. Existing OPS-02
 isolation is rechecked without broadening mounts or sharing provider credentials.
 
+Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the
+[release image increment](../../guides/stewardship-release-image.md) publishes
+the single-architecture application image from a release tag, adds the
+`retarget-image` upgrade command for a provisioned deployment and removes the
+checked-in production overlay whose commands could never start; production
+Compose is the provisioner's rendered topology only. OPS-01.02 stays open for
+the offline commands the deployment runbook still needs.
+
 ## OPS-02: Durable runtime paths and least-privilege secrets
 
 Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets).
@@ -211,7 +219,10 @@ and isolated Compose smoke job; remote execution is not yet claimed. The earlier
 macOS/arm64 smoke evidence remains under OPS-01. Browser/accessibility, full
 database integrations, multi-architecture release/SBOM/scanning/provenance, all
 acceptance/load suites, and real-provider human-run smoke tools remain open.
-All current tests are fake-backed. No image or release tag is published.
+All current tests are fake-backed. No release tag has been pushed; the
+[release image increment](../../guides/stewardship-release-image.md) makes the
+tag publish the single-architecture application image the v1 launch scope
+substitutes for OPS-09.06, and only the human pushes a tag.
 
 September 14, 2026: the later delivery ledgers supersede the initial remote-CI
 status above. PR #27 passed full Linux container, 2,418 PostgreSQL and 639
