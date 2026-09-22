@@ -45,11 +45,17 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
                   AND e.action='authorize_resend' AND e.reason='admin_resend')))
 $$;
 
+-- Resolution admission, never a send gate. A pause fences retries of failed or
+-- unsent mail, but not the resend of an unknown delivery: resume refuses while
+-- any delivery is unknown, so fencing it too would deadlock the pause. The
+-- resent message returns to pending, where the pause hold keeps it unsent.
 CREATE FUNCTION public.stewardship_delivery_retry_admitted_v1(message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT public.stewardship_receipt_dispatch_live_v1(message)
-      OR public.stewardship_daily_dispatch_live_v1(message)
-      OR public.stewardship_weekly_dispatch_live_v1(message) OR EXISTS (
+    WITH resolving AS (SELECT EXISTS(SELECT 1 FROM public.stewardship_outbox_message
+        WHERE id=message AND state='delivery_unknown') AS unknown)
+    SELECT public.stewardship_receipt_dispatch_live_v1(message,resolving.unknown)
+      OR public.stewardship_daily_dispatch_live_v1(message,resolving.unknown)
+      OR public.stewardship_weekly_dispatch_live_v1(message,resolving.unknown) OR EXISTS (
         SELECT 1 FROM public.stewardship_outbox_message m
         JOIN public.stewardship_schedule_occurrence o ON o.id=m.semantic_key AND o.outbox_id=m.id
         JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id AND d.current_revision_id=o.revision_id
@@ -63,13 +69,14 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND f.active AND f.email_eligible AND f.email_deliverable AND f.source_generation=cur.generation
           AND p.starts_at<=public.stewardship_campaign_now_v1() AND p.ends_at>public.stewardship_campaign_now_v1()
           AND public.stewardship_export_admitted_v1(c.id,true)
-          AND ((m.mode='production' AND o.production_cycle=c.production_cycle AND c.state IN ('scheduled','active') AND NOT c.delivery_paused AND f.effective_submission_id IS NULL)
+          AND ((m.mode='production' AND o.production_cycle=c.production_cycle AND c.state IN ('scheduled','active') AND (NOT c.delivery_paused OR m.state='delivery_unknown') AND f.effective_submission_id IS NULL)
             OR (m.mode='testing' AND c.state='draft' AND k.rehearsal_epoch_id=m.rehearsal_epoch_id
               AND EXISTS(SELECT 1 FROM public.stewardship_rehearsal_epoch e WHERE e.id=k.rehearsal_epoch_id AND e.state='active')
               AND NOT EXISTS(SELECT 1 FROM public.stewardship_submission s WHERE s.family_id=f.id AND s.mode='test' AND s.rehearsal_epoch_id=k.rehearsal_epoch_id)))
           AND NOT EXISTS(SELECT 1 FROM public.stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL)
           AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment s WHERE s.definition_id=o.definition_id AND s.mode=o.mode AND s.target=o.target AND s.slot=o.slot)
           AND NOT EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h WHERE h.definition_id=o.definition_id AND h.mode=o.mode AND h.target=o.target AND h.slot=o.slot AND h.state IN ('unreviewed','assumed_delivered')))
+    FROM resolving
 $$;
 
 -- Only the non-callable command trigger can use this owner-rights preparation

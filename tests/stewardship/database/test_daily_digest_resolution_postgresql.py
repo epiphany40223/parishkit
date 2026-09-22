@@ -173,3 +173,30 @@ def test_web_cannot_supply_report_payload_or_invoke_private_seed(
                     connection.cursor() as cursor,
                 ):
                     cursor.execute(sql, [message.pk])
+
+
+def test_paused_report_resend_is_held_until_resume(family_mail):  # noqa: F811
+    """An unknown Admin report can be resent while paused, so the pause can resume."""
+    from .test_outbox_boundaries_postgresql import control
+
+    harness = activate_response_service(family_mail)
+    complete_empty_catchup(harness.campaign, uuid4())
+    with campaign_clock(INSTANT):
+        _, message = failed(harness, Status.UNKNOWN)
+        control(harness.campaign, "pause")
+        command = resolve(
+            harness,
+            user("admin@example.org"),
+            message,
+            "resend",
+            general=None,
+            public=None,
+        )
+        message.refresh_from_db()
+        assert message.state == "pending" and message.pause_hold_id is not None
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(SimpleNamespace(task_id=command.retry_task_id))
+            assert begin(message, execution) is None
+        control(harness.campaign, "resume")
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            assert begin(message, execution) is not None

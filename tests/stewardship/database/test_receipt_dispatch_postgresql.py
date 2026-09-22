@@ -189,6 +189,45 @@ def test_held_receipt_resumes_without_coalescing(live_response_service):
     assert message.pause_hold_id is None and message.state == "delivered"
 
 
+def test_paused_receipt_resend_is_held_until_resume(live_response_service):
+    """An unknown receipt can be resent while paused, so the pause can resume."""
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import resolve
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    harness = live_response_service
+    message = receipt(harness, production=True)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        begin(message, execution)
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+        )
+    act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+    control(harness.campaign, "pause")
+    message.refresh_from_db()
+    result = resolve(
+        harness,
+        user("admin@example.org"),
+        message,
+        "resend",
+        general=None,
+        public=None,
+    )
+    message.refresh_from_db()
+    assert message.state == "pending" and message.pause_hold_id is not None
+    retry = OutboxMessage(pk=message.pk, task_id=result.retry_task_id)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(retry)
+        assert begin(message, execution) is None
+    control(harness.campaign, "resume")
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert begin(message, execution) is not None
+
+
 def test_seed_render_cannot_be_submitted_by_the_actual_mail_role(response_service):
     """A compromised caller cannot send the database-owned allocation placeholder."""
     from parishkit.stewardship.campaigns.work_locks import work_transaction
