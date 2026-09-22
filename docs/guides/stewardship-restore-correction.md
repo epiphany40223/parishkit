@@ -101,7 +101,7 @@ emptied schema and reports success when `pg_restore` fails.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; the
-[review rounds](stewardship-restore-correction-reviews.md), full exact-head
-CI, DCO and protected delivery remain open. No deployment, release,
+Implementation, focused validation and the four
+[review rounds](stewardship-restore-correction-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.

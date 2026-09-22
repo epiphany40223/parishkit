@@ -89,3 +89,13 @@ and the boundary module's docstring did not mention the record and media;
 and the size bound was checked only after a file had been read, which now
 happens before. Because these changes follow the third round, a correction
 check follows.
+
+## Round 4
+
+Claude only (Codex produced no output). Correction check: six raw findings,
+none validated; the review rounds are closed. The low-severity notes (the
+size-bound test does not isolate the before-read order, a docstring and a
+test name that omit the provisioning record, an `O_NOFOLLOW` refusal that
+surfaces as an operating-system error rather than the generic refusal, a
+media directory vanishing during enumeration, and a few long lines) were not
+carried forward.
