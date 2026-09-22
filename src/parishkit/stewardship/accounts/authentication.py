@@ -85,8 +85,15 @@ def runtime():
 
 
 def denial(*, status=403, retry=None, admin=True):
-    """Uniform retryable response, with no provider details or denied identity."""
-    response = login_denial(admin=admin, status=status)
+    """Uniform retryable response, with no provider details or denied identity.
+
+    Admin routes keep the original generic text. The only non-Admin caller is
+    the ``/access/<token>`` rate-limit/outage gate, which uses the Family
+    temporary-unavailability text.
+    """
+    response = login_denial(
+        admin=admin, status=status, kind="" if admin else "unavailable"
+    )
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))

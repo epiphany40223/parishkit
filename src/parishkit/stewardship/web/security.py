@@ -88,14 +88,29 @@ def private_response(message, *, status=200):
     return response
 
 
-def login_denial(*, admin=False, status=403, public_content=""):
-    """Accessible uniform error with a fixed retry route, never an input redirect."""
+# Denial kinds select only the fixed message category, never a reason within
+# it. "code" and "link" are the Family portal's generic credential failures;
+# "unavailable" is rate limiting or a limiter/configuration outage. The empty
+# default keeps the original generic sign-in text used by Admin routes and by
+# Family fetch endpoints whose bodies are never displayed.
+DENIAL_KINDS = frozenset({"", "code", "link", "unavailable"})
+
+
+def login_denial(*, admin=False, status=403, public_content="", kind=""):
+    """Accessible uniform error with a fixed retry route, never an input redirect.
+
+    Callers choose ``kind`` from ``DENIAL_KINDS`` by denial category alone, so
+    every reason within one category renders byte-identical content.
+    """
+    if kind not in DENIAL_KINDS:
+        raise ValueError("Unsupported denial kind.")
     response = HttpResponse(
         render_to_string(
             "stewardship/denied.html",
             {
                 "retry_path": "/admin/login" if admin else "/",
                 "public_content": public_content,
+                "kind": kind,
             },
         ),
         status=status,

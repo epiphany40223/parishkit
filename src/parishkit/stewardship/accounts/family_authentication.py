@@ -94,10 +94,21 @@ def _optional_public_help(slot):
     return content
 
 
-def denied(*, status=403, retry=None):
-    """Unknown, inactive and non-parishioner credentials use identical responses."""
+def denied(kind="", *, status=403, retry=None):
+    """Unknown, inactive and non-parishioner credentials use identical responses.
+
+    ``kind`` names only the denial category ("code" or "link"), never the
+    reason, so every rejected credential of one category renders identically.
+    Rate limiting (429) and outages (503) always use the generic temporary
+    unavailability text instead: the status already distinguishes them, and a
+    Family that is merely throttled must not be told its code is wrong.
+    """
+    if status in {429, 503}:
+        kind = "unavailable"
     response = login_denial(
-        status=status, public_content=_optional_public_help("access_denied")
+        status=status,
+        public_content=_optional_public_help("access_denied"),
+        kind=kind,
     )
     response.stewardship_safe_error = True
     if retry:
@@ -385,7 +396,7 @@ def entry(request):
         delay = service.limiter.counters([ip, pair] if pair else [ip], failure=True)
         service.limiter.failed("family", request.client_address, candidate=fingerprint)
         record_login_rejection("family_login_failed")
-        return denied(status=429 if delay else 403, retry=delay)
+        return denied("code", status=429 if delay else 403, retry=delay)
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)
 
@@ -409,7 +420,7 @@ def access(request, token):
                 candidate=service.limiter.fingerprint("invalid_link", token),
             )
         record_link_rejection()
-        return denied()
+        return denied("link")
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)
 

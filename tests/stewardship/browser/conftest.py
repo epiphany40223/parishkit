@@ -772,6 +772,13 @@ def component_origin():
         ),
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
+        ("/denied-code", "denied", {"retry_path": "/", "kind": "code"}),
+        ("/denied-link", "denied", {"retry_path": "/", "kind": "link"}),
+        (
+            "/denied-unavailable",
+            "denied",
+            {"retry_path": "/", "kind": "unavailable"},
+        ),
     ):
         responses[path] = (
             "text/html",
