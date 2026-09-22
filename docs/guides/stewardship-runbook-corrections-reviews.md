@@ -70,3 +70,19 @@ has the same recovery as a missing button; the deployment runbook links this
 ledger; the restore's static step warns against moving onto an existing name
 or offers the kept tree; and two long lines are rewrapped. A correction
 check follows.
+
+## Round 3
+
+Claude only (Codex produced no structured output). Correction check: five
+raw findings, two validated (both Medium), both corrected:
+
+- Medium: an expired resume preview is refused with "Check this value.",
+  which the recovery sentence did not name; it now does, and the closed
+  resolution names each clock's symptom (a Low note on the same point).
+- Medium: the release-notes check for a narrowed grant sat inside step 4,
+  after the services were stopped and retargeted; it now opens step 1.
+
+The remaining low-severity notes were taken: the restore's static step says
+to move the current tree aside first and then either put back the kept tree
+or collect a new one, and the ragged paragraphs are reflowed. A further
+correction check follows.

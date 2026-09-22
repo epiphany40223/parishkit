@@ -129,7 +129,9 @@ procedure is the only way forward. It applies the operations specification's
 [production upgrade](../specs/stewardship/operations/spec.md#production-upgrades-deferred)
 sequence with the commands that exist.
 
-1. **Back up first.** Run the backup now (`run --rm backup-worker`, as the
+1. **Check the release, then back up.** Read the release notes first: a
+   release that narrows a runtime grant cannot be taken by this procedure
+   (see step 4). Then run the backup (`run --rm backup-worker`, as the
    [backup runbook](stewardship-backup-runbook.md#the-nightly-backup) says)
    and confirm its off-host copy. Do not continue without it: it is the only
    rollback, and step 4 refuses a configured deployment whose newest recorded
@@ -171,10 +173,10 @@ sequence with the commands that exist.
    for a release that *narrows* a runtime grant on a table that still
    exists, it refuses the whole run, because a login already holds a
    privilege the new release no longer lists, and the new release's
-   services would refuse that excess privilege anyway. Check the release
-   notes for a narrowed grant before step 2: before the schema freeze such a
-   release is taken by reinstalling, and after it the release must bring its
-   own revocation step. `migration` runs first and commits, so if
+   services would refuse that excess privilege anyway. Step 1's check
+   catches such a release before anything stops: before the schema freeze it
+   is taken by reinstalling, and after it the release must bring its own
+   revocation step. `migration` runs first and commits, so if
    `database-grants` refuses after a successful migration, start neither
    image: recover with the database-restore [rollback](#rollback) (or,
    before the freeze, by reinstalling).
@@ -184,10 +186,10 @@ sequence with the commands that exist.
    otherwise ship its templates with the previous release's scripts. With
    `caddy` still stopped, move `cache/static` aside under the name of the
    release being replaced (for example `cache/static.PREVIOUS_DIGEST`, never
-   deleting it), create an empty `cache/static`
-   owned by `10001:10001` with mode `0700`, and run `collect-static` into it
-   in the *new* image, exactly as first installation does. Keep the old tree
-   until the release is accepted; a rollback puts it back.
+   deleting it), create an empty `cache/static` owned by `10001:10001` with
+   mode `0700`, and run `collect-static` into it in the *new* image, exactly
+   as first installation does. Keep the old tree until the release is
+   accepted; a rollback puts it back.
 6. **Start and check.** Bring the online services back with `up --detach`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever
    the deployment uses) and project name, then `caddy`. Run the health
@@ -241,8 +243,8 @@ explain.
   and the backup is the safety net.
 - An upgrade cannot narrow a runtime grant on a table that still exists: the
   grant command refuses a login that already holds a privilege the release
-  no longer lists, and nothing revokes it.
-  Before the schema freeze such a release is taken by reinstalling.
+  no longer lists, and nothing revokes it. Before the schema freeze such a
+  release is taken by reinstalling.
 - The image is single-architecture (`linux/amd64`); the host must be x86-64.
 - Restore is a manual procedure and may require re-sending some Family links
   by hand, as the launch scope records for the pre-launch gate to approve.

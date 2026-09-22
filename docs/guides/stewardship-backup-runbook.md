@@ -189,13 +189,12 @@ layout; where the deployment YAML overrides a path, use that path instead.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
-   image digest. Then give that image its own static files, on every host:
-   move any current `cache/static` aside under a name that does not exist
-   yet (moving onto an existing directory nests the tree), or put back the
-   tree an upgrade kept for the set's release; otherwise create an empty one
-   owned by
-   `10001:10001` with mode `0700`, and run `collect-static` into it in the
-   set's image, as the deployment runbook's
+   image digest. Then give that image its own static files, on every host.
+   First move any current `cache/static` aside under a name that does not
+   exist yet (moving onto an existing directory nests the tree). Then either
+   put back the tree an upgrade kept for the set's release, or create an
+   empty `cache/static` owned by `10001:10001` with mode `0700` and run
+   `collect-static` into it in the set's image, as the deployment runbook's
    [upgrade](stewardship-deployment-runbook.md#upgrade) does. The static
    tree is not in the set, and a newer release's scripts must not be served
    with the restored release's pages.

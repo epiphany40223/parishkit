@@ -322,8 +322,9 @@ only for the current Production campaign.
       the sign-in, the test and the preview. Every input is checked again;
       anything that changed cancels the confirmation without releasing mail,
       and you preview again. If the confirm button is missing, or confirming
-      reports an authentication error or changed inputs, a clock has run
-      out: sign in again as in step 2, send a new test, and preview again.
+      reports an authentication error, changed inputs or "Check this
+      value." (an expired preview), a clock has run out: sign in again as in
+      step 2, send a new test, and preview again.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
@@ -335,11 +336,12 @@ at all (release, cancel or clearing an empty pause) is accepted while a
 daily or weekly report is still being prepared: wait for it to finish, and
 if its preparation has failed, retry it from the Background work page as in
 step 4.1 above. Every resolution (release, cancel or clear) needs a Google
-sign-in from the last five minutes, and a release also needs the
-five-minute sender test, in one go as for a resume; a missing confirm
-button, or an authentication error on confirming, means the sign-in has
-expired. This does not reopen Family access. A
-resolution
+sign-in from the last five minutes and is confirmed within five minutes of
+its preview, and a release also needs the five-minute sender test, all in
+one go as for a resume. A missing confirm button or an authentication error
+means the sign-in has expired, "Check this value." means the preview has,
+and "This information changed" after a release means the sender test has;
+recover as for a resume. This does not reopen Family access. A resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,
 fully resolved pause (select no types)** to clear it.
