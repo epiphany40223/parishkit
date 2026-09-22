@@ -21,7 +21,6 @@ from pathlib import Path
 
 from parishkit.config import ConfigError
 
-from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.integration_candidates import (
     GOOGLE_TOKEN_URI,
     slack_candidate,
@@ -57,24 +56,22 @@ def _credential(configuration, target):
 
 def check_parishsoft(configuration, *, organization_id):
     """Read-only: the exact organization the key sees is the configured one."""
-    from .provider_check_worker import CheckSession, _parishsoft
-
     settings = validated_context("parishsoft", {"organization_id": organization_id})
     value = _credential(configuration, "parishsoft")
-    return {"credential": _outcome(_parishsoft, value, settings, CheckSession())}
+    return {"credential": _outcome("parishsoft", value, settings)}
 
 
 def check_workspace(configuration, *, delegated_email, send_to=None):
     """Authenticate the mailbox; with an address, send one fixed message."""
-    from .provider_check_worker import CheckSession, _workspace
-
     # The installer's mailbox check reads only the delegated address; the
     # sender, reply-to and recipient fields belong to its later delivery check.
     settings = {"delegated_email": normalized_email(delegated_email)}
     value = _credential(configuration, "google_workspace")
-    result = {"credential": _outcome(_workspace, value, settings, CheckSession())}
+    result = {"credential": _outcome("google_workspace", value, settings)}
     if send_to is not None and result["credential"] == "valid":
         from parishkit.email.google_workspace import xoauth2_string
+
+        from .provider_check_worker import CheckSession
 
         credentials = workspace_candidate(value, delegated_email=delegated_email)
         credentials.refresh(_google_transport(CheckSession()))
@@ -114,10 +111,8 @@ def _google_transport(session):
 
 def check_slack(configuration, *, channel_id=None, send=False):
     """Authenticate the token; with a channel and --send, post one fixed message."""
-    from .provider_check_worker import CheckSession, _slack
-
     value = _credential(configuration, "slack")
-    result = {"credential": _outcome(_slack, value, {}, CheckSession())}
+    result = {"credential": _outcome("slack", value, {})}
     if send and channel_id is not None and result["credential"] == "valid":
         import requests
 
@@ -148,12 +143,11 @@ def check_google_oauth(configuration):
     }
 
 
-def _outcome(check, value, settings, session):
-    """Map the installer's tri-state (True/False/unavailable) to a word."""
-    try:
-        return "valid" if check(value, settings, session) else "invalid"
-    except CredentialValidationUnavailable:
-        return "unavailable"
+def _outcome(target, value, settings):
+    """The installer's own classification of one check, word for word."""
+    from .provider_check_worker import classify
+
+    return classify(target, value, settings)
 
 
 def execute_smoke(args):

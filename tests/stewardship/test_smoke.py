@@ -4,8 +4,10 @@ import json
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.stewardship import provider_check_worker, smoke
 from parishkit.stewardship.accounts.credential_errors import (
     CredentialValidationUnavailable,
@@ -43,6 +45,31 @@ def outcome(verdict):
     return check
 
 
+def raising(error):
+    """An installer check that fails the way the real one does."""
+
+    def check(value, settings, session):
+        raise error
+
+    return check
+
+
+# How the real checks signal each outcome: a rejected ParishSoft key is an
+# API error, a malformed credential file a parser refusal, an outage a
+# transport error or an unexplained failure.
+REAL_FAILURES = [
+    (ParishSoftAPIError(401, "/organizations/search", "denied"), "invalid"),
+    (ParishSoftAPIError(403, "/organizations/search", "denied"), "invalid"),
+    (ParishSoftAPIError(503, "/organizations/search", "down"), "unavailable"),
+    (ConfigError("malformed credential"), "invalid"),
+    (requests.ConnectionError("no route"), "unavailable"),
+    (requests.Timeout("slow"), "unavailable"),
+    (OSError("reset"), "unavailable"),
+    (ValueError("organization differs"), "unavailable"),
+    (CredentialValidationUnavailable(), "unavailable"),
+]
+
+
 @pytest.mark.parametrize("verdict", ["valid", "invalid", "unavailable"])
 def test_parishsoft_check_maps_the_installer_outcome(tmp_path, monkeypatch, verdict):
     """The read-only tenant check reaches the same three words as installation."""
@@ -63,6 +90,34 @@ def test_parishsoft_check_maps_the_installer_outcome(tmp_path, monkeypatch, verd
         smoke.check_parishsoft(configuration, organization_id=0)
 
 
+@pytest.mark.parametrize("error, expected", REAL_FAILURES)
+@pytest.mark.parametrize(
+    "target, role, mode, check",
+    [
+        ("parishsoft", ServiceRole.WORKER, "configured", "_parishsoft"),
+        ("google_workspace", ServiceRole.MAIL_DISPATCH, "configured", "_workspace"),
+        ("slack", ServiceRole.WORKER, "configured-slack", "_slack"),
+    ],
+)
+def test_real_failures_classify_as_installation_does(
+    tmp_path, monkeypatch, error, expected, target, role, mode, check
+):
+    """Each target's real exception types reach the installer's own words."""
+    configuration = consumer(tmp_path, role, mode, **{target: b"credential\n"})
+    monkeypatch.setattr(provider_check_worker, check, raising(error))
+    result = {
+        "parishsoft": lambda: smoke.check_parishsoft(configuration, organization_id=7),
+        "google_workspace": lambda: smoke.check_workspace(
+            configuration, delegated_email="mail@parish.example", send_to="a@b.example"
+        ),
+        "slack": lambda: smoke.check_slack(configuration, channel_id="C1", send=True),
+    }[target]()
+    # A check that did not pass never sends.
+    assert result == {"credential": expected}
+    # The installer's own helper classifies the same failure the same way.
+    assert provider_check_worker.classify(target, b"credential\n", {}) == expected
+
+
 def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
     tmp_path, monkeypatch
 ):
@@ -78,7 +133,7 @@ def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
             token="secret-token", refresh=lambda request: None
         ),
     )
-    sent = []
+    sent, auth_code = [], [235]
 
     class Smtp:
         def __init__(self, *args, **kwargs):
@@ -95,8 +150,9 @@ def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
 
         def docmd(self, command, argument=""):
             assert command == "AUTH" and argument.startswith("XOAUTH2 ")
-            assert "secret-token" not in argument.split(" ", 1)[1][:0]
-            return 235, b""
+            # The token travels only inside the base64 SASL string.
+            assert "secret-token" not in argument
+            return auth_code[0], b""
 
         def send_message(self, message):
             sent.append(message)
@@ -116,7 +172,15 @@ def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
     assert message["To"] == "operator@parish.example"
     assert message["Subject"] == smoke.SUBJECT
     assert "smoke test" in message.get_content()
+    # A mailbox that refuses the send-time authentication sends nothing.
+    auth_code[0] = 535
+    with pytest.raises(ConfigError, match="refused"):
+        smoke.check_workspace(
+            configuration, delegated_email="mail@parish.example", send_to="x@y.example"
+        )
+    assert len(sent) == 1
     # An invalid credential never sends.
+    auth_code[0] = 235
     monkeypatch.setattr(provider_check_worker, "_workspace", outcome("invalid"))
     assert smoke.check_workspace(
         configuration, delegated_email="mail@parish.example", send_to="x@y.example"
@@ -130,13 +194,12 @@ def test_slack_posts_only_with_a_channel_and_send(tmp_path, monkeypatch):
         tmp_path, ServiceRole.WORKER, "configured-slack", slack=b"xoxb-token\n"
     )
     monkeypatch.setattr(provider_check_worker, "_slack", outcome("valid"))
-    posts = []
+    posts, answers = [], [(200, {"ok": True})]
 
     def post(url, *, headers, json, timeout, allow_redirects):
         posts.append((url, headers, json))
-        return SimpleNamespace(status_code=200, json=lambda: {"ok": True})
-
-    import requests
+        status, body = answers[0]
+        return SimpleNamespace(status_code=status, json=lambda: body)
 
     monkeypatch.setattr(requests, "post", post)
     assert smoke.check_slack(configuration) == {"credential": "valid"}
@@ -152,6 +215,45 @@ def test_slack_posts_only_with_a_channel_and_send(tmp_path, monkeypatch):
     assert body["channel"] == "C123" and "smoke test" in body["text"]
     with pytest.raises(ConfigError):
         smoke.check_slack(configuration, channel_id="bad channel", send=True)
+    # Slack refusing the post, by status or by its own answer, is a refusal.
+    for answer in ((200, {"ok": False, "error": "not_in_channel"}), (500, {})):
+        answers[0] = answer
+        with pytest.raises(ConfigError, match="refused"):
+            smoke.check_slack(configuration, channel_id="C123", send=True)
+
+
+def test_a_send_failure_reaches_the_console_as_one_generic_line(
+    tmp_path, monkeypatch, capsys
+):
+    """A failure after a valid check echoes no address, token or provider text."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = consumer(
+        tmp_path, ServiceRole.MAIL_DISPATCH, google_workspace=b"{}"
+    )
+    path = tmp_path / "mail-dispatch.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    monkeypatch.setattr(provider_check_worker, "_workspace", outcome("valid"))
+
+    def refused(*args, **kwargs):
+        raise OSError("private-provider-text")
+
+    monkeypatch.setattr(smoke, "workspace_candidate", refused)
+    args = SimpleNamespace(
+        config=str(path),
+        target="google_workspace",
+        organization_id=None,
+        delegated_email="mail@parish.example",
+        send_to="private-recipient@parish.example",
+        channel_id=None,
+        send=None,
+    )
+    assert smoke.execute_smoke(args) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and "smoke check refused" in captured.err
+    assert "private" not in captured.err
 
 
 def test_oauth_document_shape_and_redirect_uri(tmp_path):

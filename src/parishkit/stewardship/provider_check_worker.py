@@ -205,13 +205,23 @@ def check_request(raw):
         target, settings, value = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return "invalid"
+    return classify(target, value, settings)
+
+
+def classify(target, value, settings):
+    """Run one provider check in the restricted session and name its outcome.
+
+    The installer's helper and the human-run smoke command share this
+    ladder, so "valid", "invalid" and "unavailable" mean the same in both.
+    """
     try:
         with CheckSession() as session:
-            valid = {
+            check = {
                 "parishsoft": _parishsoft,
                 "google_workspace": _workspace,
                 "slack": _slack,
-            }[target](value, settings, session)
+            }[target]
+            valid = check(value, settings, session)
         return "valid" if valid is True else "invalid"
     except (ConfigError, CryptographicError):
         # Closed candidate parsers reject malformed private bytes locally.

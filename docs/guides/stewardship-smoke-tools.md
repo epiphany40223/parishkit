@@ -38,9 +38,13 @@ address or provider error text is printed.
 The credential installers already validate each provider credential in an
 endpoint-restricted session: exact-tenant organization validation for
 ParishSoft, a token refresh and an SMTP `AUTH XOAUTH2` for Google Workspace,
-and `auth.test` for Slack. The smoke command calls those same functions on
-the mounted credential file, so a passing smoke check means what a passing
-installation means, and no second validation code path can drift. It runs
+and `auth.test` for Slack, and one classification turns each check's result
+or exception into `valid`, `invalid` or `unavailable` (a rejected key or a
+malformed credential file is invalid; an outage or an unexplained failure is
+unavailable, never a rejection). The smoke command runs that same
+classification on the mounted credential file, so a passing smoke check
+means what a passing installation means, and no second validation code path
+can drift. It runs
 where the credential is: `docker compose ... exec -T worker` for ParishSoft
 and Slack, `mail-dispatch` for the mailbox, `web` for the OAuth client. No
 service gains a mount, and the command refuses to run under any other
@@ -63,11 +67,16 @@ public origin. The command prints the URI the deployment expects,
 
 ## Focused validation
 
-- Database-free, with a fake session and SMTP: each target's check maps the
-  installer's valid, invalid and unavailable outcomes to the fixed words;
-  the mailbox send happens only after a valid check and only with an
-  address, with the fixed subject and body and the operator's address; the
-  Slack post happens only with a channel and `--send`; the OAuth
+- Database-free, with a fake session and SMTP: for every target, the real
+  failure types (a 401 or 403 ParishSoft rejection, a provider error, a
+  malformed credential, a connection error, a timeout, an unexplained
+  failure) classify exactly as the installer's helper classifies them, and a
+  check that did not pass never sends; the mailbox send happens only after a
+  valid check and only with an address, with the fixed subject and body and
+  the operator's address, and a refused send-time authentication sends
+  nothing; the Slack post happens only with a channel and `--send`, and
+  Slack refusing it is a refusal; a failure after a valid check reaches the
+  console as the one generic line; the OAuth
   document check prints the redirect URI; a consumer without the credential,
   an unknown target and a non-consumer profile are refused; the console
   never echoes an option value, a token or a provider error; the parser
