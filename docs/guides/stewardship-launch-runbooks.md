@@ -24,17 +24,25 @@ YAML's `operational_alerts` (900 seconds each by default, 30 minutes for
 source staleness), as the
 [operational alerts guide](stewardship-operational-alerts.md#operational-policy-configuration)
 describes. Notices name the deployment mode and the incident kind only, never
-a Family, a credential or a message. The Admin home page lists open security
-events; the Background work page lists queued and running work and carries
-the Admin-only warning that links to unresolved `delivery_unknown` messages.
-If you receive no notices at all for a day, check that the mail provider is
-healthy (below) before assuming quiet means healthy.
+a Family, a credential or a message.
+
+Operational email goes out through the same Google Workspace mailbox as
+campaign mail, so during a mail-provider outage its own alert may never
+arrive. Configure the optional Slack channel for that reason. In the portal,
+every Admin page shows **Critical events recorded in the past 24 hours** when
+there are any, the home page lists open security events and recent failed
+background tasks, and the Background work page carries the Admin-only warning
+that links to unresolved `delivery_unknown` messages. Notices are sent only
+when an incident opens, escalates or resolves, so a quiet day is normal and
+proves nothing; for a heartbeat, watch for the daily Admin report arriving on
+schedule.
 
 ## Mail-provider outage
 
-**You see:** the `mail_provider_unavailable` incident opens, by email and
-Slack if configured; Family or staff mail stops arriving; the deliveries page
-(`/admin/deliveries`) shows messages in `retry_wait`.
+**You see:** the `mail_provider_unavailable` incident opens, reaching you by
+Slack if configured (its email may not arrive, for the reason above) and as
+the critical-events banner; Family or staff mail stops arriving; the
+deliveries page (`/admin/deliveries`) shows messages in `retry_wait`.
 
 **The system does:** it opens the incident on a systemic failure or on three
 consecutive unavailable results for the same provider configuration, keeps
@@ -49,12 +57,16 @@ provider may have accepted without confirming becomes `delivery_unknown`
 1. Check the provider's own status and the Workspace admin console for the
    delegated mailbox (suspended account, revoked delegation, quota).
 2. Run the mailbox smoke check inside `mail-dispatch`
-   (`smoke --target google_workspace --delegated-email …`). `unavailable` is
-   the provider; `invalid` is the credential.
-3. If the credential is invalid, install a replacement through the setup
-   wizard's credential flow and acknowledge it, following the
-   [credential installer guide](stewardship-credential-installers.md); the
-   installer validates the new credential before it is used.
+   (`smoke --target google_workspace --delegated-email …`), with the exact
+   delegated address the integration uses. `invalid` means Google refused the
+   credential *or its delegation*: a revoked domain-wide delegation, a
+   suspended mailbox or a mistyped address all read as invalid, and replacing
+   the key fixes none of them. `unavailable` means an outage or a failure the
+   check could not explain; treat it as the provider until shown otherwise.
+3. Only when the admin console shows the delegation and mailbox are fine and
+   the check still says `invalid`, replace the service-account key, as
+   [Replacing a provider credential](#replacing-a-provider-credential) below
+   describes.
 4. If the outage is long during the live campaign and reminders would bunch
    up, pause delivery (below) and resume when the provider is back.
 
@@ -85,8 +97,9 @@ credential or the source.
    read-only smoke check inside `worker`
    (`smoke --target parishsoft --organization-id …`).
 2. If the key is invalid or the organization differs, do not replace it
-   blindly: confirm with the parish which organization is right, then install
-   the replacement through the credential flow.
+   blindly: confirm with the parish which organization is right, then replace
+   it as [Replacing a provider credential](#replacing-a-provider-credential)
+   below describes.
 3. When the provider is back, use **Refresh now** on the home page
    (`/admin/source/refresh`) rather than waiting for the next scheduled run.
 
@@ -94,26 +107,70 @@ credential or the source.
 entered by Families during the outage was never at risk: submissions are
 stored against the snapshot and reconciled on the next refresh.
 
+## Replacing a provider credential
+
+A replacement is a timed, two-sided change: the installer checks and installs
+the new credential, and every service that uses it must then be recreated
+and acknowledge it, within one hour, or the previous working credential is
+restored.
+
+1. In the portal, open **Integrations**, then the provider's **Replace
+   credential** page (`/admin/configuration/integrations/<target>/credential`),
+   after signing in with Google within the last five minutes. Submit the new
+   credential; it is sealed at once and never shown again. The isolated
+   installer checks connectivity first and sends no message.
+2. When the status page says the candidate passed and is installed, recreate
+   every consuming service (for the mailbox, `mail-dispatch`; for ParishSoft
+   and Slack, `worker`) with `up --detach --force-recreate` on the deployment's
+   Compose file, and let each acknowledge the loaded credential, as the
+   runtime guide's setup section and the
+   [credential installer guide](stewardship-credential-installers.md)
+   describe. The web application cannot do this for you.
+3. When every consumer has acknowledged, choose **Review and select the
+   acknowledged fingerprint** on the status page, so the integration's
+   configuration names the credential that is now installed. Until then the
+   credential cannot support normal work.
+4. Re-run the smoke check to confirm.
+
 ## Pausing and resuming delivery
 
-Pausing holds every live Family message and the digests you select while
-leaving the portal and the Family form open; it is the tool for a provider
-outage, a content mistake found after the schedule started, or any moment
-when you need mail to stop now.
+Pausing holds all unsent live mail, Family messages, submission receipts and
+daily and weekly Admin reports alike, while the portal and the Family form
+stay open; Families can still submit, and their confirmations are held too.
+It is the tool for a provider outage, a content mistake found after the
+schedule started, or any moment when mail must stop now. The controls exist
+only for the current Production campaign.
 
 1. Open the campaign's delivery control page
-   (`/admin/campaign/<campaign id>/delivery`).
+   (`/admin/campaign/<campaign id>/delivery`), signed in with Google within the
+   last five minutes.
 2. Choose **Preview pause**, give the reason, and confirm with the fresh
-   preview. Messages already handed to the provider are not recalled; queued
-   and due ones are held.
-3. While paused, held messages accumulate: Family messages, and by type the
-   submission receipts and daily and weekly Admin reports. Fix the cause.
-4. To resume, choose **Preview resume**, give the reason, and confirm.
-   Resuming releases every held unsent Family message on its schedule. The
-   receipts and Admin reports held meanwhile are resolved separately on the
-   same page: release the types that should still go, cancel the ones that
-   should not, and clear the pause record once every type is resolved; a
-   later pause invalidates an unfinished resolution preview.
+   preview. Messages already being submitted may still reach the provider and
+   cannot be recalled; everything else unsent is held, and new mail created
+   while paused is held as it is created.
+3. Fix the cause. The page and the Admin banner show the held, submitting and
+   unknown counts.
+4. To resume an active campaign:
+   1. Resolve any `delivery_unknown` messages first (below) and let report
+      preparation reach its safe point; the page refuses to resume until then.
+   2. Choose **Preview and send a test to the configured Testing recipient**
+      and wait until the page says **The current provider and sender accepted
+      a test after this pause.** The proof is valid for five minutes.
+   3. Give the reason and choose **Preview resume**. Review the exact
+      preview: overdue invitations and reminders are coalesced (redundant
+      slots coalesced, inapplicable ones skipped), overdue daily or weekly
+      reports each become one report obligation, every held receipt is
+      released, and future work keeps its original due time.
+   4. Choose **Confirm resume of live delivery**. Every input is checked
+      again; anything that changed cancels the confirmation without releasing
+      mail, and you preview again.
+
+If the campaign closes while delivery is paused, resuming no longer applies:
+invitations and reminders follow the ordinary close policy and cannot be
+released, and the page instead offers to resolve the held receipts and Admin
+reports by type: release the ones that should still go, after the same
+sender check, and cancel the rest with a reason. This does not reopen Family
+access. The pause clears only once no held or uncertain message remains.
 
 The [delivery pause guide](stewardship-delivery-pause.md) is the design; the
 [delivery journal](stewardship-delivery-journal.md) explains what the
@@ -158,6 +215,6 @@ is the only record of why a Family got one message or two.
 | Install, upgrade, roll back | [Deployment runbook](stewardship-deployment-runbook.md) |
 | Nightly backup, off-host copy, restore drill, real restore | [Backup runbook](stewardship-backup-runbook.md) |
 | Check a credential against its provider | [Smoke tools guide](stewardship-smoke-tools.md) |
-| Replace a provider credential | [Credential installer guide](stewardship-credential-installers.md) |
+| Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
 | Production activation and withdrawal | [Production activation guide](stewardship-production-activation.md) |
