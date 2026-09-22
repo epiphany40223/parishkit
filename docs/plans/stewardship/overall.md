@@ -13,6 +13,15 @@ Execution tracking: [top-level task plan](../../tasks/stewardship/overall.md),
 [per-spec checklists](../../tasks/stewardship/README.md), and
 [demonstration/review evidence](../../tasks/stewardship/milestones.md).
 
+## V1 launch scope
+
+Human decision, September 21, 2026: the first live campaign goes live on
+October 3, 2026. The [v1 launch scope](v1-launch.md) cuts or reduces planned
+work for that launch, sets the launch schedule, replaces Gate 3 and the
+v1-relevant parts of Gates 4 and 5 with one pre-launch gate, and adjusts the
+delivery cycle below. Where it conflicts with this plan, it governs until the
+launch. Deferred work stays in these plans and is added back afterward.
+
 ## Implementation principles
 
 1. Build in small, signed, reviewable commits and topic-branch pull requests;
@@ -181,6 +190,10 @@ completed round, recorded as single-source with the observed Codex failure.
 Claude-only passes already completed during the outage count as rounds; their
 findings were fixed with post-fix validation. Resume dual-source rounds when the
 exemption lapses or Codex returns, whichever is first.
+
+Human decision, September 21, 2026: the second exemption is extended on the
+same terms through October 30, 2026, covering the
+[v1 launch](v1-launch.md) and the post-launch ParishSoft write-back work.
 
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the

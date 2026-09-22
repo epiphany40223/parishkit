@@ -13,6 +13,11 @@ are not dependency-ready requirements until production-readiness work is
 explicitly activated; older evidence describes what was tested then, not work
 to recreate after baseline consolidation.
 
+V1 launch override (September 21, 2026): select work from the
+[v1 launch scope](../../plans/stewardship/v1-launch.md) first. It lists the
+launch-critical tasks, the task IDs cut or reduced for v1, and the schedule to
+the October 3, 2026 go-live. Leave deferred task IDs unchecked.
+
 ## How to select the next work
 
 1. Find the earliest incomplete phase whose preceding review gate has passed and
