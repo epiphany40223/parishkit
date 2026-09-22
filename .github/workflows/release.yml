@@ -127,8 +127,68 @@ jobs:
           path: release-notes.md
           if-no-files-found: error
 
-  publish:
+  # The production runtime admits only ghcr.io/<owner>/<repository>/parishkit
+  # by digest, and this is the only job that publishes that image. It runs
+  # after the tagged commit passed the full validation above, with the
+  # package scope alone, so no image leaves the workflow unvalidated.
+  publish-image:
     needs: validate-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Name the image
+        id: name
+        run: |
+          # GHCR requires a lowercase repository path, and so does the
+          # runtime's approved image pattern.
+          repository="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${repository}/parishkit" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the application image
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          docker build \
+            --file deploy/stewardship/Dockerfile \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:${GITHUB_SHA}" \
+            .
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "${GH_TOKEN}" \
+            | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Push the image and record its digest
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:${GITHUB_SHA}"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${VERSION}")"
+          printf '\nApplication image: `%s`\n' "${digest}" | tee image-digest.txt
+
+      - name: Upload the image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digest
+          path: image-digest.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [validate-build, publish-image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -144,10 +204,18 @@ jobs:
         with:
           name: release-notes
 
+      - name: Download the image digest
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digest
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The release names the exact immutable reference the deployment
+          # configuration must carry; operators copy it, never a tag.
+          cat image-digest.txt >> release-notes.md
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release edit "${GITHUB_REF_NAME}" \
               --title "${GITHUB_REF_NAME}" \
