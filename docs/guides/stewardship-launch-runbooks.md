@@ -46,6 +46,8 @@ the rehearsal data for good, even if the transition is later cancelled or
 withdrawn. Plan it for a quiet hour, with the Administrator and the operator
 both available. The design is in the
 [go-live readiness](stewardship-go-live-readiness.md),
+[link preparation](stewardship-production-activation.md) (historical, but
+still the design record for preparation and disposal),
 [Production confirmation](stewardship-production-confirmation.md) and
 [withdrawal](stewardship-production-withdrawal.md) guides.
 
@@ -61,6 +63,12 @@ both available. The design is in the
   (on the quarter hour) during go-live. The next delta that lands after
   preparation makes it stale. Start step 5 just after a quarter-hour delta
   has finished, and go straight on to step 6.
+- Plan for both: cleanup, the wait for a delta and preparation often use up
+  most of the 30 minutes. If cleanup finishes late in the window, run a
+  second full refresh once cleanup has completed, timed to finish just after
+  a quarter-hour delta, and then prepare and confirm at once. Refresh is
+  allowed during cleanup's hold, and this avoids a wasted prepare-and-discard
+  cycle. The home page's last-refreshed time shows when a refresh finished.
 
 1. **Operator: back up.** Run the backup by hand and confirm its off-host
    copy, as the [backup runbook](stewardship-backup-runbook.md) says.
@@ -90,7 +98,11 @@ both available. The design is in the
    refresh has finished, choose **Prepare inactive Family links** on the
    cleanup page, then again on the **Prepare Family links** page it opens,
    and wait for **Inactive links are prepared. The campaign remains in
-   Testing.** Preparation sends no email and changes no Family code. If a
+   Testing.** Open or reload the links page only after the delta has
+   finished: until the Family eligibility catches up with the new data it
+   says the preparation inputs are unavailable, so wait a moment and reload,
+   and a page left open for more than five minutes asks to be refreshed
+   before it accepts **Prepare inactive Family links**. Preparation sends no email and changes no Family code. If a
    refresh lands first, the page says the preparation is cancelled or no
    longer current. To prepare again, choose **Cancel and discard these
    inactive links**, wait until its disposal worker finishes (**Retry failed
@@ -126,8 +138,8 @@ page and copy its address, sign in again with Google (which returns to the
 home page), go back to the copied address, give a reason, acknowledge that
 deleted Testing data cannot be restored, choose **Preview withdrawal** and
 then **Confirm withdrawal from Production**. If the preview reports work in
-flight or uncertain, the confirm button is withheld until that work is
-resolved. Withdrawal is refused while delivery is paused: the progress page
+flight or uncertain, the confirm button is withheld: resolve that work, then
+preview again, and confirm within five minutes and before the start. Withdrawal is refused while delivery is paused: the progress page
 then hides the withdrawal link, and the withdrawal page says the campaign is
 not eligible, as it does for an active campaign. Resume first, which needs
 the sender test described below, so do not pause a scheduled campaign you may
@@ -368,4 +380,4 @@ only record of why a Family got one message, two or none.
 | Check a credential against its provider | [Smoke tools guide](stewardship-smoke-tools.md) |
 | Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
-| Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
+| Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |

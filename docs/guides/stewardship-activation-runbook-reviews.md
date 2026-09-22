@@ -40,3 +40,19 @@ readiness no longer claims the whole page changes nothing, withdrawal
 describes what a paused or blocked campaign shows, the historical notes are
 fully in the past tense and credit the link preparation increment too, and
 the runbook links this ledger. A correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no output). Correction check: four raw
+findings, one validated and corrected:
+
+- Medium: as sequenced, cleanup, the wait for a quarter-hour delta and
+  preparation make lapsing the 30-minute full-refresh window the likely path,
+  and the procedure gave only after-the-fact recovery. The timing notes now
+  plan a second full refresh after cleanup, timed to finish just after a
+  delta, before preparing and confirming.
+
+The three findings below the validation cutoff were taken as well: reload
+the links page after the delta and within five minutes, link the link
+preparation design record, and preview a blocked withdrawal again after
+resolving its work. A further correction check follows.
