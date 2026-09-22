@@ -156,3 +156,11 @@ findings, three validated (all Medium), all corrected:
 
 The eight findings the validation step did not confirm were not carried
 forward. A further correction check follows.
+
+## Round 6
+
+Claude only (Codex produced no structured output). Correction check: two
+raw findings, none validated; the review rounds are closed. The validation
+list now names the removal-after-resolution case round 5 added; the other
+note, that the button, the decision list and the attempt history phrase the
+same decision three ways, was not carried forward.

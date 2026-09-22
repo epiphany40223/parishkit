@@ -192,8 +192,10 @@ deployment or add a forward migration.
   unsent to a removed Admin no longer blocks the closed resolution, which
   cancels the other Admin's held report and records the occurrence's skip.
   When the recipient is still an Administrator, the closed proof is false,
-  no skip is recorded and the occurrence stays pending. Without the coverage
-  change, no skip is recorded.
+  no skip is recorded and the occurrence stays pending; removing the
+  recipient after that resolution settles the proof but still records no
+  skip, as the recovery's ordering warns. Without the coverage change, no
+  skip is recorded.
 - PostgreSQL, reopening: a daily report failed to an Admin who is then
   removed is settled; re-adding the Admin before completion keeps the
   occurrence pending, admits the retry again, and refuses the claim of the
@@ -214,8 +216,7 @@ deployment or add a forward migration.
 
 ## Checkpoint
 
-Implementation and focused validation are complete, and the
-[review ledger](stewardship-unsent-resolution-reviews.md) records every round
-so far; the last correction check, full exact-head CI, DCO and protected
-delivery remain open. No deployment, release, live-provider write or
+Implementation, focused validation and the six rounds in the
+[review ledger](stewardship-unsent-resolution-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
