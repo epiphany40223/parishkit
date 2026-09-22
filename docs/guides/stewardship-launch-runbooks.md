@@ -49,18 +49,32 @@ both available. The design is in the
 [Production confirmation](stewardship-production-confirmation.md) and
 [withdrawal](stewardship-production-withdrawal.md) guides.
 
+**Timing.** Two clocks govern steps 3 to 6, so do them in one sitting:
+
+- The readiness checks accept a **full** ParishSoft refresh only for 30
+  minutes (the default source-staleness window) from the moment it
+  *started*, and they are checked again when cleanup starts and at the final
+  confirmation. Start the full refresh with **Refresh now** on the home page
+  and finish step 6 within that window.
+- The prepared Family links of step 5 are bound to the ParishSoft data they
+  were prepared from, and the scheduled delta refresh runs every 15 minutes
+  (on the quarter hour) during go-live. The next delta that lands after
+  preparation makes it stale. Start step 5 just after a quarter-hour delta
+  has finished, and go straight on to step 6.
+
 1. **Operator: back up.** Run the backup by hand and confirm its off-host
    copy, as the [backup runbook](stewardship-backup-runbook.md) says.
 2. **Administrator: clear readiness.** From the campaign's settings page,
    choose **Review go-live readiness and Testing cleanup impact**
    (`/admin/campaign/<campaign id>/go-live`). The page lists what still needs
-   attention, each item with its remedy. The ones that usually need action
-   on the day: a **full** ParishSoft refresh must have completed recently
-   (a delta refresh does not count, and an old full refresh must be run
-   again); every provider credential must have a current check; a selected
-   Family test email must have been previewed and sent successfully with the
-   current configuration; and no Testing delivery may be unfinished or
-   unknown. Nothing on this page changes the campaign.
+   attention, each item with its remedy. Clear these beforehand: every
+   provider credential must have a current check; a selected Family test
+   email must have been previewed and sent successfully with the current
+   configuration; no Testing delivery may be unfinished or unknown; and no
+   configuration change may be pending. Then start the full refresh with
+   **Refresh now** on the home page and wait for it to finish. Reviewing and
+   verifying readiness change nothing; only **Start Testing cleanup** in step
+   4 acts.
 3. **Administrator: verify and read the impact.** Choose **Verify readiness
    and public origin**. Read the Family and Admin report mail impact: the page
    says whether confirming now would make the campaign active immediately
@@ -72,21 +86,27 @@ both available. The design is in the
    until it says **Cleanup is complete.** A failed run offers **Retry failed
    cleanup from its checkpoints**; cancelling releases the hold but restores
    nothing.
-5. **Administrator: prepare the links.** Choose **Prepare inactive Family
-   links** and wait for **Inactive links are prepared. The campaign remains
-   in Testing.** Preparation sends no email and changes no Family code. It is
-   bound to the current ParishSoft data: if a refresh lands before
-   confirmation, the page says the preparation is no longer current, and you
-   prepare again from the cleanup page. Avoid starting a manual refresh
-   between here and step 6.
+5. **Administrator: prepare the links.** Just after a quarter-hour delta
+   refresh has finished, choose **Prepare inactive Family links** on the
+   cleanup page, then again on the **Prepare Family links** page it opens,
+   and wait for **Inactive links are prepared. The campaign remains in
+   Testing.** Preparation sends no email and changes no Family code. If a
+   refresh lands first, the page says the preparation is cancelled or no
+   longer current. To prepare again, choose **Cancel and discard these
+   inactive links**, wait until its disposal worker finishes (**Retry failed
+   disposal** if it fails), and only then does **Prepare inactive Family
+   links** reappear. If the 30-minute window has also lapsed, run another full
+   refresh first, then discard and prepare again.
 6. **Administrator: confirm.** Choose **Review final Production
-   confirmation**. The page requires a Google sign-in made after the cleanup
-   completed and within the last five minutes: choose **Sign in again with
-   Google**, come back, then choose **Verify final readiness and mail
-   impact**. Check the exact preview (start and close dates, and immediate
-   versus scheduled), type `Production`, and choose **Confirm Production**
-   before the preview expires. A changed input means a new preview, not a
-   failure.
+   confirmation** and copy the page's address (or keep it open in another
+   tab) before signing in: the page requires a Google sign-in made after the
+   cleanup completed and within the last five minutes, and **Sign in again
+   with Google** returns you to the portal home page, not here. Sign in, go
+   straight back to the copied address, choose **Verify final readiness and
+   mail impact**, check the exact preview (start and close dates, and
+   immediate versus scheduled), type `Production`, and choose **Confirm
+   Production**, all within five minutes of the sign-in. A changed input
+   means a new preview, not a failure.
 7. **Administrator: watch the result.** The **Production activation
    progress** page (`/admin/campaign/<campaign id>/production`) shows the
    outcome. A campaign that became active prepares its initial mail in the
@@ -102,13 +122,20 @@ both available. The design is in the
 **Withdrawal** returns a *scheduled* campaign to draft in Testing, and is
 possible only before its start: once the start passes, the campaign is active
 and cannot be withdrawn. Open **Withdraw from Production** from the progress
-page, sign in again with Google, give a reason, acknowledge that deleted
-Testing data cannot be restored, choose **Preview withdrawal** and then
-**Confirm withdrawal from Production**. Withdrawal is refused while delivery
-is paused: resume first, which needs the sender test described below, so do
-not pause a scheduled campaign you may want to withdraw while the provider is
-down. After a withdrawal, going live again needs the whole cycle above,
-including a new cleanup.
+page and copy its address, sign in again with Google (which returns to the
+home page), go back to the copied address, give a reason, acknowledge that
+deleted Testing data cannot be restored, choose **Preview withdrawal** and
+then **Confirm withdrawal from Production**. If the preview reports work in
+flight or uncertain, the confirm button is withheld until that work is
+resolved. Withdrawal is refused while delivery is paused: the progress page
+then hides the withdrawal link, and the withdrawal page says the campaign is
+not eligible, as it does for an active campaign. Resume first, which needs
+the sender test described below, so do not pause a scheduled campaign you may
+want to withdraw while the provider is down. After a withdrawal, going live
+again needs the whole cycle above, including a new cleanup.
+
+The [review ledger](stewardship-activation-runbook-reviews.md) records how
+this procedure was checked against the code.
 
 ## Mail-provider outage
 
