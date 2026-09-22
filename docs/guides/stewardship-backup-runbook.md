@@ -78,7 +78,9 @@ turn: the recipient key file is present and readable; the `backups`
 directory is owned by `10001:10001` with mode `0700`; the authority store
 lies inside the archived trees; no offline work (a migration or an upgrade)
 holds the startup lock; the database schema matches the running image (an
-image changed without its migration refuses); the configuration,
+image changed without its migration refuses; in the middle of an upgrade,
+the [deployment runbook's migrate step](stewardship-deployment-runbook.md#upgrade)
+says how to take the backup under the previous image); the configuration,
 credentials and media trees hold only regular files and directories (no
 symlink) and stay under 256 MiB together; and, when a
 `failure_kind` is `database_unavailable` (the command's own connection,
@@ -220,9 +222,12 @@ layout; where the deployment YAML overrides a path, use that path instead.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
-   image digest. Then give that image its own static files, on every host
-   (a replacement host has no `cache/static` yet, so it starts at the
-   empty one). First move any current `cache/static` aside under a name that does not
+   image digest. The deployment YAML is not in the set: if it names a
+   field that release does not know, `retarget-image` refuses with no
+   cause, so remove such a field first, as the deployment runbook's
+   [rollback](stewardship-deployment-runbook.md#rollback) says. Then give
+   that image its own static files, on every host (a replacement host has
+   no `cache/static` yet, so it starts at the empty one). First move any current `cache/static` aside under a name that does not
    exist yet (moving onto an existing directory nests the tree). Then either
    put back the tree an upgrade kept for the set's release, or create an
    empty `cache/static` owned by `10001:10001` with mode `0700` and run
