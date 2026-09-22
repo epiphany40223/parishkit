@@ -66,3 +66,12 @@ round 1 entry no longer repeats the wrong claim, the backup checklist adds
 the profile and database-login refusals, and the topology test now checks
 every document the renderer writes, in every provider mode, for every role.
 A further correction check follows.
+
+## Round 3
+
+Claude only (Codex produced no structured output). Correction check: four
+raw findings, none validated; the review rounds are closed. The low-severity
+notes (the pause caveat also applies to the unsent retry, the launch runbook
+states the alert-policy reinstall unconditionally, the mount checklist omits
+a read-only output, and the topology test's role guard is narrower than its
+docstring) were not carried forward.
