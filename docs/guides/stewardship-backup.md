@@ -20,8 +20,10 @@ procedure; this guide is the design.
 
 A new one-shot Compose profile, `backup-worker`, runs
 `pk-stewardship backup --config BACKUP_CONFIG` beside the online services. It
-dumps the database with `pg_dump` under its own SQL identity, archives the
-configuration and credentials trees, seals both to the operator's public key,
+dumps the database with `pg_dump` under its own SQL identity, owners and
+privileges included, archives the configuration, credentials and media trees
+(the media tree and kept privileges come from the
+[restore correction](stewardship-restore-correction.md)), seals both to the operator's public key,
 writes a plaintext manifest of sizes and digests, records one row in
 `stewardship_backup_run`, and keeps the newest thirty complete sets on the
 host (a failed run's directory, without a manifest, neither counts nor is
@@ -62,7 +64,7 @@ the operator chooses off the host and is never read by the application.
 ### The whole trees, read-only, by one identity
 
 The backup profile is neither an online role nor an offline profile. It
-mounts the configuration and credentials trees read-only, its output
+mounts the configuration, credentials and media trees read-only, its output
 directory read-write, and nothing else beyond its own inputs, admitted from
 kernel mount evidence like every other profile; it holds the startup
 interlock shared, so it cannot overlap offline work and offline work cannot

@@ -148,7 +148,7 @@ Scope and dependencies: [OPS-05 work package](../../plans/stewardship/operations
 
 Evidence: the [v1 backup increment](../../guides/stewardship-backup.md)
 delivers the [v1 launch scope's reduced item 6](../../plans/stewardship/v1-launch.md#reduced-for-v1):
-a sealed nightly `pg_dump` plus the configuration and credentials trees under
+a sealed nightly `pg_dump` plus the configuration, credentials and media trees under
 the `backup-worker` profile and its own SQL identity, a human-held key made by
 `backup-keygen` and used by `backup-open`, one append-only record per
 completed run, the `backup_rpo_breach` incident after 24 hours without one,

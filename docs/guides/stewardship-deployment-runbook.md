@@ -196,7 +196,10 @@ is started, run `retarget-image` back to the previous digest, or the new
 image would start against the restored, older schema and refuse. The
 restore procedure keeps the scheduler, worker and mail-dispatch services
 stopped until an Administrator has compared the restored delivery state with
-the mail provider's own logs, so no Family message is sent twice.
+the mail provider's own logs; v1 cannot prevent a second copy of mail sent
+after the backup, as its
+[restore limitations](stewardship-backup-runbook.md#restore-limitations-in-v1)
+explain.
 
 ## Known v1 limitations
 
