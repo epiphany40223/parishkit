@@ -388,3 +388,101 @@ def test_restored_deployment_epoch_invalidates_existing_family_session(family_se
         family_link_epoch=uuid4(), version=F("version") + 1
     )
     assert client.get("/family/").status_code == 302
+
+
+# Fixed denial texts. The code and link sentences quote the parishioner-portal
+# specification; the outage sentence is the generic temporary-unavailability
+# response shared by rate limiting and limiter/configuration outages.
+CODE_DENIAL = b"This Family code cannot be found or used."
+LINK_DENIAL = b"This secure Family link cannot be found or used."
+UNAVAILABLE = b"Sign-in is temporarily unavailable. Please try again later."
+DENIAL_TEXTS = (CODE_DENIAL, LINK_DENIAL, UNAVAILABLE, b"Sign-in is unavailable.")
+
+
+def denial_kind(response):
+    """Return the single fixed denial text a response renders, and its retry link."""
+    shown = [text for text in DENIAL_TEXTS if text in response.content]
+    assert len(shown) == 1, shown
+    assert b'href="/"' in response.content
+    assert response["Cache-Control"] == "no-store"
+    return shown[0]
+
+
+def test_every_rejected_code_reason_renders_one_identical_code_page(family_service):
+    """Unknown, malformed, wrong-mode, ineligible and closed codes are indistinct.
+
+    Each attempt uses its own source address so no limiter budget is reached;
+    the page must name the code-denial kind and nothing about the reason.
+    """
+    production = FamilyCampaign.objects.get()
+    production_code = family_service.rings.general.decrypt(
+        production.code_ciphertext, context=production_code_context(production.pk)
+    ).decode()
+    addresses = iter(f"192.0.2.{index}" for index in range(1, 50))
+
+    def attempt(code):
+        """Submit one manual code from a fresh source address."""
+        return Client().post("/", {"code": code}, REMOTE_ADDR=next(addresses))
+
+    responses = [
+        attempt("ZZZZZZZZ"),  # unknown
+        attempt("bad"),  # malformed, never looked up
+        attempt(production_code),  # Production code during Testing
+    ]
+    populate(
+        family_service.campaign,
+        family_service.rings,
+        [FamilyStatus(1, False, False, False, False, "inactive", "ineligible")],
+        generation=2,
+    )
+    responses.append(attempt(family_service.code))  # inactive/ineligible Family
+    populate(family_service.campaign, family_service.rings, generation=3)
+    ends_at = family_service.campaign.active_configuration.ends_at
+    with campaign_clock(ends_at + timedelta(hours=1)):
+        responses.append(attempt(family_service.code))  # closed campaign
+    assert {response.status_code for response in responses} == {403}
+    assert {denial_kind(response) for response in responses} == {CODE_DENIAL}
+    assert b"Try another Family code" in responses[0].content
+    assert len({response.content for response in responses}) == 1
+    assert not FamilySession.objects.exists()
+
+
+def test_every_rejected_link_reason_renders_one_identical_link_page(family_service):
+    """Unknown and invalidated links share one page pointing to manual entry."""
+    unknown = Client().get("/access/unknown-token", REMOTE_ADDR="192.0.2.10")
+    invalidate_rehearsal(
+        campaign_id=family_service.campaign.pk, admit=lambda *args: True
+    )
+    revoked = Client().get("/access/" + family_service.token, REMOTE_ADDR="192.0.2.11")
+    for response in (unknown, revoked):
+        assert response.status_code == 403
+        assert denial_kind(response) == LINK_DENIAL
+        assert b"Enter your Family code instead" in response.content
+    assert unknown.content == revoked.content
+
+
+def test_rate_limit_and_limiter_outage_render_temporary_unavailability(
+    family_service, monkeypatch
+):
+    """Throttling and outage keep their statuses but never claim the code is bad."""
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+
+    client = Client(enforce_csrf_checks=True)
+    for _ in range(6):
+        _, limited = login("ZZZZZZZZ", client)
+    assert limited.status_code == 429 and limited["Retry-After"]
+    _, still_limited = login("ZZZZZZZZ", client)
+    assert still_limited.status_code == 429
+
+    def unavailable(*args, **kwargs):
+        """Simulate the Valkey limiter store failing before credential lookup."""
+        raise LimiterUnavailable("synthetic-private-diagnostic")
+
+    monkeypatch.setattr(family_service.service.limiter, "counters", unavailable)
+    outage = Client().post("/", {"code": "ZZZZZZZZ"}, REMOTE_ADDR="192.0.2.20")
+    assert outage.status_code == 503 and outage["Retry-After"] == "5"
+    assert b"synthetic-private-diagnostic" not in outage.content
+    for response in (limited, still_limited, outage):
+        assert denial_kind(response) == UNAVAILABLE
+        assert b"Try signing in again" in response.content
+    assert limited.content == still_limited.content == outage.content
