@@ -66,7 +66,8 @@ No schema change.
   further request waiting behind the run once it executes; a session
   revoked after admission and before the domain's own check refused on a
   new key and a replay alike with nothing recorded; and a source without
-  its configured organization answered as unavailable, Staff, an
+  its configured organization answered as unavailable, a post without its
+  CSRF token, Staff, a never-signed-in
   anonymous caller, a malformed key and a stray field refused with nothing
   recorded.
 - Two browser cases in every engine against the component page: both
@@ -79,7 +80,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 to 5](stewardship-manual-refresh-reviews.md) are answered; the
+[rounds 1 to 6](stewardship-manual-refresh-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. No deployment,
 release, live-provider write or database deletion is authorized by this

@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from django.db.models import F
+from django.test import Client
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import refresh_views
@@ -127,7 +128,7 @@ def test_a_session_ended_under_the_lock_records_no_command(
 
 @pytest.mark.usefixtures("source_singletons")
 def test_only_an_administrator_may_request_a_refresh(auth_service, google, monkeypatch):
-    """Staff and anonymous callers are refused; malformed keys are refused."""
+    """Staff, anonymous and token-less callers are refused; so are malformed keys."""
     publish(source())
     add_rules(auth_service.store, address("reader@example.org", ("staff",)))
     browser, login = signed_in()
@@ -148,7 +149,14 @@ def test_only_an_administrator_may_request_a_refresh(auth_service, google, monke
             assert outage.status_code == 503
             assert outage.json()["errors"][0]["code"] == "unavailable"
         assert not SourceRefreshRequest.objects.exists()
+        # A missing CSRF token is refused before the route sees the request.
         assert browser.post(URL, {"request_key": str(uuid4())}).status_code == 403
+        # An anonymous caller, with or without a CSRF token of its own, is
+        # refused by admission and records nothing.
+        anonymous = Client(enforce_csrf_checks=False)
+        assert anonymous.get(URL).status_code == 403
+        assert anonymous.post(URL, {"request_key": str(uuid4())}).status_code == 403
+        assert not SourceRefreshRequest.objects.exists()
         bad = browser.post(
             URL,
             {

@@ -82,3 +82,17 @@ corrections: ten raw findings, one validated and corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 6
+
+Claude only (Codex out of quota). A correction check of the five rounds'
+corrections: twelve raw findings, one validated and corrected:
+
+- Medium: the refusals case claimed an anonymous caller but only posted
+  from the signed-in Administrator without a CSRF token, which the
+  middleware refuses before the route. A never-signed-in client now makes
+  the anonymous GET and POST, refused by admission with nothing recorded,
+  and the token-less post stands as its own assertion.
+
+The eleven findings the validation step did not confirm were not carried
+forward.
