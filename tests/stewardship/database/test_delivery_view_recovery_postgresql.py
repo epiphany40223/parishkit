@@ -110,8 +110,12 @@ def test_refusal_clearance_hides_dirty_source_and_returns_conflict(family_mail, 
 @pytest.mark.parametrize(
     "status,shown,hidden",
     [
-        (FamilyDeliveryStatus.UNKNOWN, ("accept", "resend"), ()),
-        (FamilyDeliveryStatus.PERMANENT, (), ("retry_failed",)),
+        (FamilyDeliveryStatus.UNKNOWN, ("accept", "confirm_unsent", "resend"), ()),
+        (
+            FamilyDeliveryStatus.PERMANENT,
+            (),
+            ("retry_failed", "accept", "confirm_unsent"),
+        ),
     ],
 )
 def test_pause_offers_unknown_resend_but_hides_other_retries(
@@ -120,7 +124,9 @@ def test_pause_offers_unknown_resend_but_hides_other_retries(
     """UI commands follow the same admission as the authoritative SQL.
 
     A paused campaign still offers the held resend of an unknown delivery, since
-    resume refuses until it is resolved, but not a retry of failed mail.
+    resume refuses until it is resolved, but not a retry of failed mail. Settling
+    an unknown delivery as confirmed unsent is offered beside acceptance, and
+    only while the delivery is unknown.
     """
     harness = activate_response_service(family_mail)
     complete_empty_catchup(harness.campaign, uuid4())

@@ -204,7 +204,18 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         WHERE link.occurrence_id=$1 AND NOT (m.state='delivered' OR m.state='cancelled' AND (
             m.reason='recipient_revoked' OR EXISTS(
                 SELECT 1 FROM public.stewardship_delivery_message_resolution resolution
-                WHERE resolution.message_id=m.id AND resolution.decision='cancel'))))
+                WHERE resolution.message_id=m.id AND resolution.decision='cancel'))
+            -- A failed report to a recipient who is not currently an
+            -- Administrator: settled like the recipient_revoked cancellation,
+            -- as the digest completion proofs count it.
+            OR m.state='permanent_failure' AND NOT EXISTS(
+                SELECT 1 FROM public.stewardship_system_configuration runtime
+                JOIN public.stewardship_address_rule admin
+                    ON admin.configuration_id=runtime.active_configuration_id
+                WHERE admin.roles @> '["administrator"]'::jsonb AND admin.email IN (
+                    SELECT address FROM public.stewardship_daily_digest_recipient WHERE outbox_id=m.id
+                    UNION ALL
+                    SELECT address FROM public.stewardship_weekly_digest_recipient WHERE outbox_id=m.id))))
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_delivery_closed_digest_v1(uuid) FROM PUBLIC;
 

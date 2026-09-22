@@ -41,6 +41,10 @@ def components(now):
                 for action, label in (
                     ("note", "Save evidence note"),
                     ("accept", "Confirm delivery using external evidence"),
+                    (
+                        "confirm_unsent",
+                        "Record that the provider did not send it (no resend)",
+                    ),
                     ("resend", "Authorize potentially duplicate resend"),
                 )
             ],

@@ -259,7 +259,9 @@ def delivery_detail(request, message_id):
         actions = ["note"] if campaign.state != "archived" and can_resolve else []
         if task and task["state"] == "failed" and actions:
             if message["state"] == "delivery_unknown":
-                actions.append("accept")
+                # Both settle the attempt from external evidence without a
+                # send, so neither depends on the resend admission (can_retry).
+                actions += ["accept", "confirm_unsent"]
                 if can_retry:
                     actions.append("resend")
             elif can_retry:
@@ -270,6 +272,7 @@ def delivery_detail(request, message_id):
         labels = {
             "note": _("Save evidence note"),
             "accept": _("Confirm delivery using external evidence"),
+            "confirm_unsent": _("Record that the provider did not send it (no resend)"),
             "resend": _("Authorize potentially duplicate resend"),
             "retry_failed": _("Retry failed delivery"),
             "retry_unsent": _("Retry delivery not accepted by the provider"),

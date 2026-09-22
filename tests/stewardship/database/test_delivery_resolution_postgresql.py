@@ -474,3 +474,176 @@ def test_refreshed_ineligible_family_cannot_retry(family_mail):  # noqa: F811
             resolve(family_mail, principal, message, "resend")
         assert not DeliveryResolution.objects.exists()
         assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+
+
+def confirmed_unsent(message, command):
+    """Assert the terminal failure an unsent confirmation shares with the provider.
+
+    The message ends as a definitive non-acceptance with the Admin's evidence,
+    never as a success, a fulfillment or a recipient refusal.
+    """
+    from parishkit.stewardship.audit.models import AuditEvent
+    from parishkit.stewardship.jobs.recipient_models import RecipientRefusal
+
+    message.refresh_from_db()
+    assert message.state == "permanent_failure" and message.finished_at
+    assert (message.action, message.reason) == (
+        "fail_unaccepted",
+        "admin_confirmed_unsent",
+    )
+    assert message.actor_id == command.actor_id and message.command_id == command.pk
+    assert message.evidence_note == command.evidence_note
+    assert message.sealed_substitutions is None and message.pause_hold_id is None
+    assert command.retry_task_id is None and command.preparation is None
+    assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+    assert not RecipientRefusal.objects.exists()
+    assert AuditEvent.objects.filter(
+        subject_id=command.pk, event_type="delivery_resolution_confirm_unsent"
+    ).exists()
+
+
+def test_confirm_unsent_resolves_a_paused_unknown_that_cannot_be_resent(family_mail):  # noqa: F811
+    """Provider evidence of no send settles uncertainty when no resend is admitted.
+
+    Otherwise the unknown count never reaches zero and resume is refused forever.
+    The failed occurrence stays governed by the ordinary retry admission.
+    """
+    from .response_builders import response_source
+    from .test_outbox_boundaries_postgresql import control
+    from .test_recipient_suppressions_postgresql import refresh
+
+    principal = user("admin@example.org")
+    harness = activate_response_service(family_mail)
+    complete_empty_catchup(harness.campaign, uuid4())
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = failed_delivery(harness)
+        control(harness.campaign, "pause")
+        # The Family no longer has a deliverable address, so no resend is due.
+        source = response_source()
+        source.member_contactinfos.clear()
+        source.members[3]["emailAddress"] = ""
+        refresh(harness, source)
+        message.refresh_from_db()
+        assert retry_admitted(message) is False
+        with pytest.raises((PermissionError, DatabaseError)):
+            resolve(harness, principal, message, "resend")
+        # The Admin resume guard refuses over this count; the real resume
+        # commands are exercised in the delivery-control and closed suites.
+        assert unknown_inventory(harness.campaign) == 1
+        old_version = message.version
+        command = resolve(harness, principal, message, "confirm_unsent")
+        confirmed_unsent(message, command)
+        assert message.version == old_version + 1
+        assert ScheduleOccurrence.objects.get(pk=message.semantic_key).state == "failed"
+        assert not ScheduleFulfillment.objects.exists()
+        assert unknown_inventory(harness.campaign) == 0
+        replay = resolve(
+            harness,
+            principal,
+            message,
+            "confirm_unsent",
+            command_id=command.pk,
+            expected_version=old_version,
+        )
+        assert replay.pk == command.pk and DeliveryResolution.objects.count() == 1
+        # Lift only the pause flag (this ledger does not run the resume guard),
+        # so the refusal below comes from the Family's ineligibility alone: a
+        # later retry of the failure is an ordinary, still-inadmissible retry.
+        control(harness.campaign, "resume")
+        assert retry_admitted(message) is False
+        with pytest.raises((PermissionError, DatabaseError)):
+            resolve(harness, principal, message, "retry_failed")
+        assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+
+
+@pytest.mark.parametrize(
+    "status", [FamilyDeliveryStatus.PERMANENT, FamilyDeliveryStatus.ACCEPTED, None]
+)
+def test_confirm_unsent_is_only_for_an_unknown_delivery(family_mail, status):  # noqa: F811
+    """A settled or unsent delivery has no uncertainty to resolve.
+
+    Web preparation refuses first; the compiled command trigger refuses the same
+    intent independently when inserted directly under the Web role.
+    """
+    principal = user("admin@example.org")
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = failed_delivery(family_mail, status)
+        state, version = message.state, message.version
+        with pytest.raises(StaleRecordError):
+            resolve(family_mail, principal, message, "confirm_unsent")
+        latest = TaskRun.objects.filter(root_id=message.task_id).get()
+        with (
+            task_login(ServiceRole.WEB, exact=True),
+            pytest.raises(
+                DatabaseError, match="Resolution requires the current unresolved"
+            ),
+            transaction.atomic(),
+        ):
+            command = uuid4()
+            DeliveryResolution.objects.create(
+                id=command,
+                correlation_id=command,
+                actor_id=principal.pk,
+                message_id=message.pk,
+                expected_version=version,
+                action="confirm_unsent",
+                evidence_note="Provider log shows no send.",
+                duplicate_acknowledged=False,
+                previous_task_id=latest.pk,
+            )
+        message.refresh_from_db()
+        assert (message.state, message.version) == (state, version)
+        assert not DeliveryResolution.objects.exists()
+
+
+def test_confirm_unsent_requires_evidence_and_web_cannot_fail_mail_itself(family_mail):  # noqa: F811
+    """The Admin note is mandatory; Web still has no direct outbox authority."""
+    principal = user("admin@example.org")
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = failed_delivery(family_mail)
+        for note in ("", "   \n"):
+            with pytest.raises(ValueError):
+                resolve(family_mail, principal, message, "confirm_unsent", note=note)
+        with pytest.raises(ValueError):
+            resolve(
+                family_mail,
+                principal,
+                message,
+                "confirm_unsent",
+                duplicate_acknowledged=True,
+            )
+        # The compiled trigger independently refuses a blank note inserted
+        # directly under the Web role, beneath the service's own validation.
+        latest = TaskRun.objects.filter(root_id=message.task_id).get()
+        with (
+            task_login(ServiceRole.WEB, exact=True),
+            pytest.raises(DatabaseError),
+            transaction.atomic(),
+        ):
+            command = uuid4()
+            DeliveryResolution.objects.create(
+                id=command,
+                correlation_id=command,
+                actor_id=principal.pk,
+                message_id=message.pk,
+                expected_version=message.version,
+                action="confirm_unsent",
+                evidence_note="   ",
+                duplicate_acknowledged=False,
+                previous_task_id=latest.pk,
+            )
+        with (
+            task_login(ServiceRole.WEB, exact=True),
+            pytest.raises(DatabaseError) as error,
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "UPDATE stewardship_outbox_message SET state='permanent_failure',"
+                "action='fail_unaccepted' WHERE id=%s",
+                [message.pk],
+            )
+        assert error.value.__cause__.sqlstate == "42501"
+        message.refresh_from_db()
+        assert message.state == "delivery_unknown"
+        assert not DeliveryResolution.objects.exists()
