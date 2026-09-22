@@ -105,3 +105,24 @@ Implementation, focused validation and the four
 [review rounds](stewardship-restore-correction-reviews.md) are complete; full
 exact-head CI, DCO and protected delivery remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #98 delivered candidate `c8fdf57d`, two logical commits plus the PR #97
+receipt, whose tree `a6e53e8f` is the retained commit-by-commit review
+history on `pr/stewardship-backup-restore-reviewed` (`8d236f1b`) plus exactly
+that receipt, and is the landed tree. The four
+[review rounds](stewardship-restore-correction-reviews.md) were single-source
+under the exemption; rounds 1 and 2 validated thirteen findings, all
+corrected, and rounds 3 and 4 validated nothing. The pull request was marked
+ready before the candidate was pushed. Exact-head ready-candidate CI
+`35752374256` and DCO passed all 25 checks, from 16:10:48 to 16:30:45 UTC on
+September 22, 2026 (19 minutes 57 seconds). Earlier runs on superseded draft
+heads stopped at the draft-mode gates, and one was cancelled by the
+candidate push; none is counted as acceptance. `origin/main` had no
+intervening commits since the candidate's base `4b36435d`. Protected
+auto-merge landed as `16a9f2b0` at 16:31:05 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment was committed. This used the standing delivery authority,
+without deployment or release; no real provider was contacted. The restore
+drill on the validation deployment remains the human's.

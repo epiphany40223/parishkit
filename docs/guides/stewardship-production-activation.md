@@ -68,11 +68,19 @@ irreversible; a later go-live attempt needs fresh evidence and cleanup.
 
 ## Current status
 
-Investigation and implementation are in progress; none of ADM-05.03/.04/.05 is
-complete. The previously missing runtime preparation caller and Admin controls
-are implemented; final confirmation and withdrawal remain closed. No real
-provider calls, retained-database deletion, deployment, release or historical
-upgrade compatibility is authorized by this work.
+Historical: this guide, including its later checkpoint sections, describes
+the inactive-link preparation increment as it stood when it was written,
+before final confirmation and withdrawal were delivered by later pull
+requests (#60 and #61). Status statements below are as of that time. The
+operator's activation procedure is the launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation).
+
+At the time: investigation and implementation were in progress; none of
+ADM-05.03/.04/.05 was complete. The previously missing runtime preparation
+caller and Admin controls had been implemented; final confirmation and
+withdrawal were still closed. No real provider calls, retained-database
+deletion, deployment, release or historical upgrade compatibility was
+authorized by that work.
 
 ## Internal preparation checkpoint
 

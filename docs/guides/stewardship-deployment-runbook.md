@@ -110,15 +110,12 @@ no backup login, password, directory or record table, and must be reinstalled.
 
 ## Production activation
 
-Activation is an Administrator's action in the portal, not an operator's
-command: the campaign's go-live page checks readiness, cleans up the Testing
-state and activates Production, as the
-[go-live readiness](stewardship-go-live-readiness.md) and
-[production activation](stewardship-production-activation.md) guides describe.
-Before the Administrator activates, the operator runs the backup and confirms
-its off-host copy, as the [backup runbook](stewardship-backup-runbook.md)
-says. Activation is scheduled for October 1, 2026 in the launch
-scope's [schedule](../plans/stewardship/v1-launch.md#schedule).
+Activation is an Administrator's workflow in the portal, bracketed by the
+operator's backups; the step-by-step procedure, including withdrawal, is the
+launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation).
+Activation is scheduled for October 1, 2026 in the launch scope's
+[schedule](../plans/stewardship/v1-launch.md#schedule).
 
 ## Upgrade
 
