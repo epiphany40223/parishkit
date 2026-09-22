@@ -63,8 +63,9 @@ Campaign end denies new retries but permits evidence-backed confirmation of
 past delivery. Production pause likewise denies retries of failed or unsent
 mail, but still admits the resend of an unknown delivery, because resume
 refuses while any delivery is unknown; the resent message returns to pending
-under the pause hold and is sent only after resume (see the [paused resend
-guide](stewardship-paused-resend.md)). When the provider shows an unknown
+under the pause hold and waits for resume, whose recovery plan may replace or
+cancel it (see the [paused resend guide](stewardship-paused-resend.md) and the
+[launch runbooks](stewardship-launch-runbooks.md#messages-in-delivery_unknown)). When the provider shows an unknown
 delivery was not sent and no resend is wanted or admitted, the Admin records it
 as confirmed unsent instead, which never depends on retry admission (see the
 [unsent resolution guide](stewardship-unsent-resolution.md)). Ordinary source,

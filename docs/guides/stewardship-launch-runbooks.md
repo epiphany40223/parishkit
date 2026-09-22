@@ -422,14 +422,17 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    report, report preparation is complete and the recipient is still an
    Administrator. A pause does not prevent the resend, and resolving the
    message lets the resume proceed: on an active campaign the resent message
-   is held with the rest of the paused mail and goes only when delivery
-   resumes, except that a resent scheduled daily or weekly report is
-   cancelled when delivery resumes and folded into the next combined report
-   of its kind, as for a failed report in step 5 (no content is lost; a
-   resent manually requested weekly report is held and sent like other
-   mail; the
-   [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) records
-   the check);
+   is held with the rest of the paused mail, and the resume's recovery plan
+   decides it like any held message. A resent scheduled daily or weekly
+   report is cancelled and folded into the next combined report of its
+   kind, as for a failed report in step 5 (no content is lost; a resent
+   manually requested weekly report is sent); a resent reminder is
+   replaced by a later reminder due during the pause, and a resent
+   invitation or reminder is cancelled if the Family has since submitted,
+   become ineligible or lost every deliverable address; otherwise it is
+   sent (the
+   [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) and the
+   [pre-launch gate](stewardship-prelaunch-gate.md) record the checks);
    on a campaign closed while paused, a resent receipt or report
    joins the held messages you release or cancel by type (above), and one
    already released goes without waiting. When the button is absent, a
