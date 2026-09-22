@@ -85,3 +85,11 @@ makes a preparation stale, the recovery's second full refresh follows the
 timing notes, and deltas run outside go-live too; the pull request citations
 now use one form. Because these follow the fourth round, a final correction
 check follows.
+
+## Round 5
+
+Claude only (Codex produced no output). Correction check: three raw
+findings, none validated; the review rounds are closed. The low-severity
+notes (one unwrapped line, the recovery's discard not being inside the
+quarter-hour budget, and the expiry list not naming the disposal retry) were
+not carried forward.
