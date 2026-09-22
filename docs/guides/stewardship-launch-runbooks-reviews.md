@@ -87,3 +87,16 @@ findings, two validated, both corrected:
 
 The three findings the validation step did not confirm were not carried
 forward. A further correction check follows.
+
+## Round 4
+
+Claude only (Codex produced no output). Correction check: two raw findings,
+one validated and corrected:
+
+- Medium: the new link sent every kind to the Family-mail resolution guide,
+  which covers invitations and reminders only. The step now links that
+  guide for invitations and reminders, the submission receipts guide for
+  receipts and the daily and weekly digest guides for Admin reports.
+
+The finding the validation step did not confirm was not carried forward. A
+further correction check follows.

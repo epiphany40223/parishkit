@@ -234,9 +234,12 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    daily or weekly Admin report, the campaign is not paused (with the same
    exception), report preparation is complete and the recipient is still an
    Administrator. When the button is absent, a resend is not permitted now;
-   record that in the note and leave the message unresolved. The
-   [delivery resolution guide](stewardship-family-mail-resolution.md) has
-   the full rules.
+   record that in the note and leave the message unresolved. The rules are
+   recorded in the [Family-mail resolution guide](stewardship-family-mail-resolution.md)
+   for invitations and reminders, the
+   [submission receipts guide](stewardship-submission-receipts.md) for
+   receipts, and the [daily](stewardship-daily-digests.md) and
+   [weekly](stewardship-weekly-digests.md) digest guides for Admin reports.
 5. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
    resolved.
