@@ -90,3 +90,18 @@ raised three findings, two validated and corrected:
 
 The Low below the cutoff was taken: this ledger's summary now describes
 the corrected recovery. A correction check follows.
+
+## Round 4
+
+Claude and Codex both answered; Codex approved with no findings. Claude
+raised two findings, one validated and corrected:
+
+- Medium: a deployment YAML naming a field the previous release does not
+  know is refused before the provisioning record is read, so the rollback's
+  fallback to a database restore would refuse the same way after
+  discarding writes. The rollback now removes such a field from the YAML
+  first (it can hold only its default) and then puts back the record, and
+  says the database restore needs the same.
+
+The Low below the cutoff was taken: a long source line was rewrapped. A
+correction check follows.

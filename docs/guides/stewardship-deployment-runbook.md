@@ -205,9 +205,10 @@ sequence with the commands that exist.
    how this recovery was checked. A release that changes neither the
    schema nor a grant still pulls, but skips the migration and grant
    commands. `database-grants` never revokes: for a release that
-   *narrows* a runtime grant on a table that still exists, it refuses the whole run, because a login already holds a
-   privilege the new release no longer lists, and the new release's
-   services would refuse that excess privilege anyway. Step 1's check
+   *narrows* a runtime grant on a table that still exists, it refuses the
+   whole run, because a login already holds a privilege the new release no
+   longer lists, and the new release's services would refuse that excess
+   privilege anyway. Step 1's check
    catches such a release before anything stops: before the schema freeze it
    is taken by reinstalling, and after it the release must bring its own
    revocation step. `migration` runs first and commits, so if
@@ -246,10 +247,13 @@ step 4 is not repeated. A grant the new release added is refused as
 excessive by the previous release's services, so it needs the database
 restore below. A deployment field the new release added makes the previous
 release's `retarget-image` refuse the provisioning record the new release
-wrote; while the deployment YAML still names only fields the previous
-release knows, put back the step 1 set's record as
-[upgrade step 4](#upgrade) describes and continue this rollback, and
-otherwise use the database restore below. When the release
+wrote, and a deployment YAML that names that field is refused before the
+record is read, by this rollback and by the database restore alike. So
+first remove any field the previous release does not know from the
+deployment YAML (step 3 admitted only inputs equal to the recorded ones,
+so such a field can hold only its default; the database restore below
+needs the same), then put back the step 1 set's record as
+[upgrade step 4](#upgrade) describes and continue this rollback. When the release
 changed the schema, an older image must never be pointed at the newer
 database; the rollback is a database restore from the backup taken
 in upgrade step 1, following the launch scope's
