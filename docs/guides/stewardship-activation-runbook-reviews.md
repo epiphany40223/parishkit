@@ -93,3 +93,25 @@ findings, none validated; the review rounds are closed. The low-severity
 notes (one unwrapped line, the recovery's discard not being inside the
 quarter-hour budget, and the expiry list not naming the disposal retry) were
 not carried forward.
+
+## Protected delivery
+
+PR #99 delivered candidate `e51e656e`, one documentation commit plus the
+receipt of PR #98. Its content is the retained commit-by-commit review
+history on `pr/stewardship-activation-runbook-reviewed` (`06b05cda`), applied
+as a patch onto the merge of PR #98 with identical content hunks (one file
+both pull requests touched differs only in its blob index), plus exactly
+that receipt; the candidate tree `fc8a6e3f` is the landed tree. The five
+rounds above were single-source under the exemption; rounds 1 to 3
+validated six findings, all corrected, and rounds 4 and 5 validated
+nothing. The pull request was marked ready before the candidate was pushed.
+Exact-head ready-candidate CI `35754790164` and DCO passed all 25 checks,
+from 16:32:30 to 17:03:10 UTC on September 22, 2026 (30 minutes 40
+seconds). Earlier runs on superseded draft heads stopped at the draft-mode
+gates, and one was cancelled by the candidate push; none is counted as
+acceptance. `origin/main` had no intervening commits since the candidate's
+base `16a9f2b0`. Protected auto-merge landed as `ed46c7ae` at 17:03:31 UTC
+and was verified on freshly fetched `origin/main`, whose second parent's
+tree is the candidate's, before the next increment was committed. This used
+the standing delivery authority, without deployment or release; no real
+provider was contacted.
