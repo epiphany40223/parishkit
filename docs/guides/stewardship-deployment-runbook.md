@@ -168,9 +168,19 @@ sequence with the commands that exist.
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
    process log carries a `startup_rejected` line whose `failure_kind` is
-   `upgrade_backup_required`. A
-   release that changes neither the schema nor a grant still pulls, but
-   skips the migration and grant commands. `database-grants` never revokes:
+   `upgrade_backup_required`. Run steps 1 to 4 in one sitting: once step 3
+   has run, the backup profile runs the new image, which refuses the
+   not-yet-migrated schema, so the step 1 backup cannot simply be taken
+   again. If the migration refuses for a missing backup, keep the online
+   services stopped, run `retarget-image` back to the previous digest (in
+   that previous image), take the backup and confirm its off-host copy,
+   then retarget to the new digest again and repeat this step. If the
+   previous image's `retarget-image` refuses because the release added a
+   deployment field, follow the database-restore [rollback](#rollback) from
+   the step 1 backup instead (nothing has changed since, because the
+   services have been stopped since step 2) and start the upgrade again at
+   step 1. A release that changes neither the schema nor a grant still
+   pulls, but skips the migration and grant commands. `database-grants` never revokes:
    for a release that *narrows* a runtime grant on a table that still
    exists, it refuses the whole run, because a login already holds a
    privilege the new release no longer lists, and the new release's

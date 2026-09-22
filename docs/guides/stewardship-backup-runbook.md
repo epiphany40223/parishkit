@@ -78,7 +78,9 @@ turn: the recipient key file is present and readable; the `backups`
 directory is owned by `10001:10001` with mode `0700`; the authority store
 lies inside the archived trees; no offline work (a migration or an upgrade)
 holds the startup lock; the database schema matches the running image (an
-image changed without its migration refuses); the configuration,
+image changed without its migration refuses; in the middle of an upgrade,
+the [deployment runbook's migrate step](stewardship-deployment-runbook.md#upgrade)
+says how to take the backup under the previous image); the configuration,
 credentials and media trees hold only regular files and directories (no
 symlink) and stay under 256 MiB together; and, when a
 `failure_kind` is `database_unavailable` (the command's own connection,
