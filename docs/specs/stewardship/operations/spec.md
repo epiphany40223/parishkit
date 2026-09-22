@@ -385,6 +385,16 @@ Validate these relationships when overriding any deadline or scaling services.
 
 ## Backup
 
+The [v1 launch scope](../../../plans/stewardship/v1-launch.md#reduced-for-v1)
+reduces this section for the first live campaign: the
+[v1 backup](../../../guides/stewardship-backup.md) is an operator-run
+one-shot profile that seals a `pg_dump` and the configuration and credentials
+trees to a human-held key, records each completed run, raises the overdue
+incident below, and admits configured upgrades behind a recent run; the
+off-host copy is the operator's, and the consistent manifests, isolated
+backup-worker routing, purge-triggered backup, revalidation, escrow workflow
+and key rotation described here are deferred past the launch.
+
 The application provides a shared backup service invoked by its scheduled task,
 operator command, or guarded campaign-purge web workflow. Each invocation
 creates one consistent backup set containing:

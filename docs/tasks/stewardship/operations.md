@@ -127,9 +127,14 @@ and production-shaped tests perform role provisioning, key/bootstrap preparation
 schema-owner migration, restricted grants, bootstrap activation, configured
 restart, offline recovery preview/confirmation, mutual exclusion and supervisor
 crash recovery. Negative tests cover drift, mismatches, partial provisioning,
-mounts and process/SQL budgets. OPS-04.03 and the upgrade part of .05 remain held
-for OPS-05's verified-backup evidence; configured migrations fail closed instead
-of implementing an unverified upgrade. Initial-install/restart scope is complete.
+mounts and process/SQL budgets. Initial-install/restart scope is complete.
+Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the
+[v1 backup increment](../../guides/stewardship-backup.md) supplies the reduced
+form of OPS-04.03: the migration profile and `database-grants` admit a
+configured deployment when a backup completed within the last 24 hours is
+recorded, and `retarget-image` re-renders every generated document for the new
+release. Automated upgrade readiness checks and the upgrade-path tests of .05
+remain deferred.
 
 ## OPS-05: Backup service and purge-triggered backup
 
@@ -141,7 +146,17 @@ Scope and dependencies: [OPS-05 work package](../../plans/stewardship/operations
 - [ ] OPS-05.04 — Implement operator-only secret escrow and off-host recovery verification.
 - [ ] OPS-05.05 — Test backup failures, revalidation, retention, RPO alerts, and restore evidence.
 
-Evidence: Not started.
+Evidence: the [v1 backup increment](../../guides/stewardship-backup.md)
+delivers the [v1 launch scope's reduced item 6](../../plans/stewardship/v1-launch.md#reduced-for-v1):
+a sealed nightly `pg_dump` plus the configuration and credentials trees under
+the `backup-worker` profile and its own SQL identity, a human-held key made by
+`backup-keygen` and used by `backup-open`, one append-only record per
+completed run, the `backup_rpo_breach` incident after 24 hours without one,
+host retention of thirty sets, and the
+[backup runbook](../../guides/stewardship-backup-runbook.md) for the nightly
+run, the off-host copy and the restore drill. The task IDs stay unchecked:
+consistent manifests, transfer, revalidation, isolated routing, escrow and the
+full failure/RPO test matrix are the deferred remainder.
 
 ## OPS-06: Restore and state-aware release
 

@@ -21,7 +21,8 @@ records the pushed digest in the GitHub Release, so the operator copies the
 exact `ghcr.io/…/parishkit@sha256:…` reference into the deployment YAML. The
 human still pushes every release tag. A new command,
 `pk-stewardship retarget-image --config CONFIG --image IMAGE`, points a
-provisioned deployment at a newer approved image and changes nothing else.
+provisioned deployment at a newer approved image, re-rendering its generated
+documents and nothing else.
 The `compose.production.yaml` scaffold, whose service commands refused to
 start, is removed in favour of the provisioner's rendered topologies.
 
@@ -41,25 +42,28 @@ repository's package scope; no long-lived registry credential is stored. The
 digest, not a tag, is what the runtime admits: the release notes carry it, so
 the value the operator deploys is the value the workflow pushed.
 
-### Retargeting changes the image and nothing else
+### Retargeting re-renders the generated documents
 
 Provisioning is create-only and records its inputs and image in a completion
-marker; a completed root refuses another run. The only artifacts that name
-the image are the three rendered Compose topologies and that marker.
-Retargeting re-derives every document from the operator's current inputs
-with the new image and refuses unless the recorded deployment inputs are
-unchanged, every other generated document is byte-identical on disk, the
-passwords and broker ACL are present and private, and the image is one the
-profile admits. A topology itself is admitted only in the two states an
-interrupted retarget can leave, the same inputs rendered with the recorded
-image or with the one image it names instead; anything else is a hand edit
-and is refused. It holds the startup interlock exclusively, so no online
-service can observe a half-written topology, writes the topologies and then
-the marker, and changes the marker only when the image changes. So running
-the same command again finishes an interrupted retarget, running it with
-the recorded image undoes one, and a repeat is no change. It starts nothing
-and connects to nothing: migrations, grants and service restarts stay the
-operator's separate upgrade steps.
+marker; a completed root refuses another run. Retargeting re-derives every
+generated document, the three rendered Compose topologies, the per-service
+configurations and the ingress document, from the recorded inputs with the
+new image, by the code that is running, and refuses unless the recorded
+deployment inputs are unchanged, the passwords and broker ACL are present
+and private, and the image is one the profile admits. Documents that already
+match are left alone and the rest are rewritten, so a release whose renderer
+changed reaches a deployment through the same command as one that only
+changed the image; generated documents are never edited by hand, so a stray
+edit is simply replaced. It holds the startup interlock exclusively, so no
+online service can observe a half-written document, writes the documents and
+then the marker, and changes the marker only when the image changes. So
+running the same command again finishes an interrupted retarget, running it
+with the recorded image undoes one, and a repeat is no change. It starts
+nothing and connects to nothing: migrations, grants and service restarts
+stay the operator's separate upgrade steps. (The first delivery of this
+command changed only the topologies and refused any other differing
+document; the [v1 backup increment](stewardship-backup.md) widened it as the
+deployment runbook required.)
 
 ### The scaffold is gone, not fixed
 

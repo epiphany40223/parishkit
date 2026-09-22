@@ -294,21 +294,21 @@ afterward. Follow the
 notifications retain their later delivery-worker owner; offline recovery does not
 send provider email itself.
 
-An upgrade changes the image of a provisioned deployment and nothing else:
-`pk-stewardship retarget-image --config CONFIG --image IMAGE` rewrites the
-three rendered topologies and the provisioning record to a newer approved
-digest under the offline startup exclusion, refusing any other difference
-from the recorded inputs, as the
+An upgrade changes the image of a provisioned deployment and re-renders its
+generated documents: `pk-stewardship retarget-image --config CONFIG --image IMAGE`
+rewrites the rendered topologies, per-service configurations and ingress
+document that differ, and the provisioning record, for a newer approved
+digest under the offline startup exclusion, refusing any difference in the
+recorded deployment inputs, as the
 [release image guide](stewardship-release-image.md) explains. It starts
-nothing; the operator takes a verified backup first, stops the online
-services, retargets, and starts the services again, in the order the
-[deployment runbook](stewardship-deployment-runbook.md#upgrade) gives. A
-release that changes the schema or a runtime grant also needs the migration
-profile and `database-grants`, and on a configured deployment both are still
-refused, with the generic offline-refusal error and exit status 2, because
-the upgrade admission a configured deployment requires does not exist until
-the backup increment supplies it from verified-backup evidence; the runbook
-records the limitation. The first-deployment command is not a backup
+nothing; the operator runs the [backup](stewardship-backup-runbook.md) first,
+stops the online services, retargets, and starts the services again, in the
+order the [deployment runbook](stewardship-deployment-runbook.md#upgrade)
+gives. A release that changes the schema or a runtime grant also needs the
+migration profile and `database-grants`; on a configured deployment both
+admit the change only when a backup completed within the last 24 hours is
+recorded, and otherwise refuse with the generic offline-refusal error and
+exit status 2. The first-deployment command is not a backup
 bypass. An incompatible schema requires the approved restore path, not an
 older image pointed at a newer database. Keep credential escrow separate from
 ordinary backup output and retain the matching key material. Automated
