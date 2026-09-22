@@ -67,3 +67,16 @@ corrections: ten raw findings, one validated and corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 5
+
+Claude only (Codex out of quota). A correction check of the four rounds'
+corrections: eleven raw findings, one validated and corrected:
+
+- Medium: the checkpoint proof had the shape round 4 corrected for the
+  audit count: the post-activation count was captured only after two
+  resubmissions had run. It is now captured right after activation, asserted
+  to exceed intake's, and asserted unchanged after the resubmissions.
+
+The ten findings the validation step did not confirm were not carried
+forward.

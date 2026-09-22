@@ -72,9 +72,14 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
     ).count()
     assert checkpoints == 1
     assert installed(store, request_id).state == "applied"
-    # Activation wrote its audit rows once, with exactly one security event.
+    # Activation wrote its audit rows and checkpoints once, with exactly one
+    # security event; the resubmissions that follow add none of them.
     activated = AuditEvent.objects.count()
     assert activated > audited
+    settled = ConfigurationRequestCheckpoint.objects.filter(
+        request_id=request_id
+    ).count()
+    assert settled > checkpoints
     assert (
         PolicySecurityEvent.objects.filter(activation__request_id=request_id).count()
         == 1
@@ -83,6 +88,10 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
         for _ in range(2):
             assert apply(browser, values).json()["state"] == "applied"
     assert AuditEvent.objects.count() == activated
+    assert (
+        ConfigurationRequestCheckpoint.objects.filter(request_id=request_id).count()
+        == settled
+    )
     assert (
         PolicySecurityEvent.objects.filter(activation__request_id=request_id).count()
         == 1
@@ -94,15 +103,6 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
             request_key=values["request_key"]
         ).count()
         == 1
-    )
-    # Activation appended its checkpoints once; resubmission appended none.
-    later = ConfigurationRequestCheckpoint.objects.filter(request_id=request_id).count()
-    assert later > checkpoints
-    with web():
-        apply(browser, values)
-    assert (
-        ConfigurationRequestCheckpoint.objects.filter(request_id=request_id).count()
-        == later
     )
 
 
