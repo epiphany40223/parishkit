@@ -21,6 +21,9 @@ from .deployment import DeploymentConfiguration
 APPLICATION_UID = 10001
 APPLICATION_GID = 10001
 
+# Written once when provisioning completes, at the runtime root.
+PROVISIONING_RECORD = ".stewardship-provisioned.json"
+
 
 def explicit_path(value):
     """Accept a concrete non-root absolute path without any symlink traversal."""
@@ -104,6 +107,11 @@ class RuntimeLayout:
     def service_directory(self):
         """Operator-rendered per-process metadata contains references, not secrets."""
         return self.configuration.paths["config"] / "services"
+
+    @property
+    def provisioning_record(self):
+        """The completed provisioning record every later retarget compares against."""
+        return explicit_path(self.configuration.paths.root) / PROVISIONING_RECORD
 
     @property
     def interlock(self):

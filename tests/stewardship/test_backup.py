@@ -9,6 +9,7 @@ import io
 import json
 import shutil
 import tarfile
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -59,6 +60,10 @@ def opened(path, key):
 
 def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
     """Both outputs open with the private key and the manifest names them."""
+    # Uploaded branding is restored with the database that refers to it.
+    branding = deployment.paths["media"] / "branding"
+    branding.mkdir(parents=True, exist_ok=True)
+    (branding / "logo.png").write_bytes(b"\x89PNG synthetic")
     records = []
     manifest = backup.run_backup(
         deployment, record=lambda **facts: records.append(facts)
@@ -86,6 +91,16 @@ def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
         str(Path("credentials") / password.relative_to(deployment.paths["credentials"]))
         in names
     )
+    assert "media/branding/logo.png" in names
+    assert ".stewardship-provisioned.json" in names
+    with tarfile.open(fileobj=io.BytesIO(plain)) as archive:
+        # Tree roots are recorded owner-only, so extraction cannot widen them.
+        roots = {m.name: m for m in archive.getmembers() if "/" not in m.name}
+    assert {name: roots[name].mode for name in ("config", "credentials", "media")} == {
+        "config": 0o700,
+        "credentials": 0o700,
+        "media": 0o700,
+    }
     assert not any(name.startswith("backups") for name in names)
     written = json.loads((directory / backup.MANIFEST).read_text())
     assert written == manifest
@@ -101,6 +116,66 @@ def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
         }
     ]
     assert len(records[0]["manifest_digest"]) == 64
+
+
+def test_a_media_file_removed_during_the_backup_is_left_out(deployment, monkeypatch):
+    """Branding cleanup may delete a bundle mid-backup; that must not fail it."""
+    branding = deployment.paths["media"] / "branding"
+    branding.mkdir(parents=True, exist_ok=True)
+    kept, removed = branding / "kept.png", branding / "removed.png"
+    kept.write_bytes(b"kept")
+    removed.write_bytes(b"removed")
+    real = backup._file
+
+    def vanishing(archive, name, path, **options):
+        """Delete the second file just before it is opened, like a cleanup."""
+        if path == removed:
+            removed.unlink()
+        return real(archive, name, path, **options)
+
+    monkeypatch.setattr(backup, "_file", vanishing)
+    sink = io.BytesIO()
+    backup.archive_files(deployment, sink)
+    with tarfile.open(fileobj=io.BytesIO(sink.getvalue())) as archive:
+        names = set(archive.getnames())
+    assert "media/branding/kept.png" in names
+    assert "media/branding/removed.png" not in names
+    # Outside media a vanishing file is a real fault, not a race to tolerate.
+    web = RuntimeLayout(deployment).service_directory / "web.yaml"
+
+    def missing(archive, name, path, **options):
+        """Make one configuration file disappear."""
+        if path == web:
+            raise FileNotFoundError(path)
+        return real(archive, name, path, **options)
+
+    monkeypatch.setattr(backup, "_file", missing)
+    with pytest.raises(FileNotFoundError):
+        backup.archive_files(deployment, io.BytesIO())
+
+
+def test_the_size_bound_refuses_before_reading_a_file(deployment, monkeypatch):
+    """A file larger than what remains of the bound is refused unread."""
+    branding = deployment.paths["media"] / "branding"
+    branding.mkdir(parents=True, exist_ok=True)
+    (branding / "large.png").write_bytes(b"x" * 4096)
+    monkeypatch.setattr(backup, "MAX_FILES_BYTES", 2048)
+    with pytest.raises(ConfigError, match="exceed the backup bound"):
+        backup.archive_files(deployment, io.BytesIO())
+
+
+def test_an_authority_outside_the_archived_trees_refuses_the_run(deployment, tmp_path):
+    """A moved authority store would silently be missing from every set."""
+    moved = replace(
+        deployment,
+        paths=replace(
+            deployment.paths,
+            values={**deployment.paths.values, "authority": tmp_path / "elsewhere"},
+        ),
+    )
+    with pytest.raises(ConfigError, match="authority store"):
+        backup.run_backup(moved, record=lambda **facts: None)
+    assert not any(deployment.paths["backups"].iterdir())
 
 
 def test_retention_keeps_the_newest_sets_and_only_dated_directories(deployment):
@@ -201,6 +276,8 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
     assert options["env"]["PGPASSWORD"] == password
     assert password not in " ".join(command)
     assert command[:2] == ["/usr/bin/pg_dump", "--format=custom"]
+    # Owners and ACLs carry every REVOKE from PUBLIC and every runtime grant.
+    assert "--no-owner" not in command and "--no-acl" not in command
     assert command[command.index("--username") + 1] == deployment.postgres.user
     assert deployment.postgres.user == "pk_stewardship_backup_worker"
 

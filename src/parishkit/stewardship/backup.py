@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -31,15 +32,21 @@ from parishkit.config import ConfigError
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private
 from .backup_sealing import Recipient, seal
-from .runtime_paths import RuntimeLayout, explicit_path, private_directory
+from .runtime_paths import (
+    PROVISIONING_RECORD,
+    RuntimeLayout,
+    explicit_path,
+    private_directory,
+)
 
 # The specification's window: a successful backup is required every 24 hours,
 # and the offline upgrade commands accept one no older than that.
 REQUIRED_WITHIN = timedelta(hours=24)
 # Complete sets kept on the host; the off-host copy is the operator's.
 RETAINED_SETS = 30
-# The configuration and credentials trees are small; anything larger is not
-# what this backup was designed for and stops before sealing.
+# The archived trees are small (branding images are at most a few megabytes
+# each); anything larger is not what this backup was designed for and stops
+# before sealing.
 MAX_FILES_BYTES = 256 * 1024 * 1024
 # pg_dump diagnostics kept for the process log when a dump fails.
 MAX_DIAGNOSTICS = 16 * 1024
@@ -72,42 +79,80 @@ def _finish(stream):
     stream.close()
 
 
+# Everything a replacement host needs beside the database: the authority and
+# rendered documents, every credential, and the uploaded branding the restored
+# database refers to.
+ARCHIVED_TREES = ("config", "credentials", "media")
+
+
+def _directory(archive, name, metadata):
+    """Record one owner-only directory, so extraction never widens its mode."""
+    entry = tarfile.TarInfo(str(name))
+    entry.type, entry.mode, entry.mtime = tarfile.DIRTYPE, 0o700, int(metadata.st_mtime)
+    archive.addfile(entry)
+
+
+def _file(archive, name, path, *, budget=MAX_FILES_BYTES):
+    """Record one regular file from a single open descriptor; return its size.
+
+    Opening first and then reading exactly the descriptor's size keeps a
+    file replaced by rename (how branding is written) consistent, and refuses
+    a symlink or special file rather than following it. The size bound is
+    checked before any content is read.
+    """
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ConfigError("The runtime trees contain a non-regular file.")
+        if metadata.st_size > budget:
+            raise ConfigError("The runtime trees exceed the backup bound.")
+        entry = tarfile.TarInfo(str(name))
+        entry.size, entry.mode, entry.mtime = (
+            metadata.st_size,
+            0o600,
+            int(metadata.st_mtime),
+        )
+        archive.addfile(entry, stream)
+    return metadata.st_size
+
+
 def archive_files(configuration, sink):
-    """Tar the configuration and credentials trees, regular files only.
+    """Tar the archived trees and the provisioning record, regular files only.
 
     Symlinks, devices and anything else are refused rather than followed or
     skipped silently: a tree that contains one is not the tree provisioning
-    made. The archive is deterministic apart from file contents and times.
+    made. Members are named by tree, not by host path, so the restore moves
+    each tree to wherever the deployment configures it. Online services write
+    media while this runs, so a media file or directory that disappears
+    before it is read is left out rather than failing the night's backup.
     """
     total = 0
     with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
-        for name in ("config", "credentials"):
+        record = RuntimeLayout(configuration).provisioning_record
+        total += _file(archive, PROVISIONING_RECORD, record)
+        # Each file is bounded by what remains, before its content is read.
+        for name in ARCHIVED_TREES:
             root = configuration.paths[name]
+            _directory(archive, name, root.lstat())
             for path in sorted(root.rglob("*")):
                 relative = Path(name) / path.relative_to(root)
-                metadata = path.lstat()
-                if path.is_dir() and not path.is_symlink():
-                    entry = tarfile.TarInfo(str(relative))
-                    entry.type, entry.mode, entry.mtime = (
-                        tarfile.DIRTYPE,
-                        0o700,
-                        int(metadata.st_mtime),
+                try:
+                    metadata = path.lstat()
+                    if stat.S_ISDIR(metadata.st_mode):
+                        _directory(archive, relative, metadata)
+                        continue
+                    if not stat.S_ISREG(metadata.st_mode):
+                        raise ConfigError(
+                            "The runtime trees contain a non-regular file."
+                        )
+                    total += _file(
+                        archive, relative, path, budget=MAX_FILES_BYTES - total
                     )
-                    archive.addfile(entry)
+                except FileNotFoundError:
+                    if name != "media":
+                        raise
                     continue
-                if not path.is_file() or path.is_symlink():
-                    raise ConfigError("The runtime trees contain a non-regular file.")
-                total += metadata.st_size
-                if total > MAX_FILES_BYTES:
-                    raise ConfigError("The runtime trees exceed the backup bound.")
-                entry = tarfile.TarInfo(str(relative))
-                entry.size, entry.mode, entry.mtime = (
-                    metadata.st_size,
-                    0o600,
-                    int(metadata.st_mtime),
-                )
-                with path.open("rb") as stream:
-                    archive.addfile(entry, stream)
     return total
 
 
@@ -122,11 +167,13 @@ def dump_database(configuration, sink, *, recipient):
     if binary is None:
         raise ConfigError("pg_dump is not installed in this image.")
     db = configuration.postgres
+    # Owners and privileges are kept: every definer function's REVOKE from
+    # PUBLIC and every runtime grant live only in the ACLs, so a dump without
+    # them restores a database the services' own admission refuses. The same
+    # role names exist wherever the deployment's roles were provisioned.
     command = [
         binary,
         "--format=custom",
-        "--no-owner",
-        "--no-acl",
         "--host",
         db.host,
         "--port",
@@ -200,6 +247,15 @@ def run_backup(configuration, *, record):
     names a set that does not exist. Retention runs after the record.
     """
     layout = RuntimeLayout(configuration)
+    # An authority moved outside the archived trees would be silently left out
+    # of every set. Refuse here, at run time, not when topologies render: the
+    # override stays a supported deployment, it just cannot be backed up.
+    if not any(
+        configuration.paths[name] == configuration.paths["authority"]
+        or configuration.paths[name] in configuration.paths["authority"].parents
+        for name in ARCHIVED_TREES
+    ):
+        raise ConfigError("The authority store must live inside an archived tree.")
     recipient = Recipient.load(layout.credential("backup_data"))
     backups = private_directory(explicit_path(configuration.paths["backups"]))
     started = datetime.now(UTC)
