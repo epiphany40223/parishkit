@@ -53,3 +53,25 @@ validated (four High, five Medium), all corrected:
 
 The twelve findings the validation step did not confirm were not carried
 forward. A correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no output). Correction check: eleven raw
+findings, four validated (all Medium), all corrected:
+
+- Medium: the authority check ran whenever the backup profile's topology
+  rendered, so it would have blocked provisioning and `retarget-image` for a
+  supported authority override. It now runs when a backup runs, and a test
+  shows the override still renders.
+- Medium: the replacement host also needs the operator's deployment YAML and
+  UUID from off the host, the same runtime root path, the same overrides and
+  the same bind-source layout; step 3 now says so.
+- Medium: the gate-approved drill was a same-host restore, which skips the
+  replacement-host steps. A pre-activation run on a second disposable host,
+  through web's health check, now rehearses them.
+- Medium: the nightly backup cron could start mid-restore and record a mixed
+  set as the newest; step 1 now disables the backup and off-host copy jobs
+  until the fresh backup of step 9.
+
+The seven findings the validation step did not confirm were not carried
+forward. A further round follows.

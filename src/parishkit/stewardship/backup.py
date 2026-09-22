@@ -243,6 +243,15 @@ def run_backup(configuration, *, record):
     names a set that does not exist. Retention runs after the record.
     """
     layout = RuntimeLayout(configuration)
+    # An authority moved outside the archived trees would be silently left out
+    # of every set. Refuse here, at run time, not when topologies render: the
+    # override stays a supported deployment, it just cannot be backed up.
+    if not any(
+        configuration.paths[name] == configuration.paths["authority"]
+        or configuration.paths[name] in configuration.paths["authority"].parents
+        for name in ARCHIVED_TREES
+    ):
+        raise ConfigError("The authority store must live inside an archived tree.")
     recipient = Recipient.load(layout.credential("backup_data"))
     backups = private_directory(explicit_path(configuration.paths["backups"]))
     started = datetime.now(UTC)

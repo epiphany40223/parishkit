@@ -74,8 +74,8 @@ def test_other_roles_secrets_and_overlapping_output_are_refused(tmp_path):
         boundaries.backup_targets(inside)
 
 
-def test_an_authority_outside_the_archived_trees_is_refused(tmp_path):
-    """A moved authority store would silently be missing from every set."""
+def test_an_authority_override_still_renders_a_backup_profile(tmp_path):
+    """The override stays supported: only running a backup refuses it."""
     configuration = backup_configuration(tmp_path)
     moved = replace(
         configuration,
@@ -87,8 +87,7 @@ def test_an_authority_outside_the_archived_trees_is_refused(tmp_path):
             },
         ),
     )
-    with pytest.raises(ConfigError, match="authority store"):
-        boundaries.backup_targets(moved)
+    assert configuration.paths["config"] in boundaries.backup_targets(moved)
 
 
 def test_mount_evidence_must_match_exactly(tmp_path):

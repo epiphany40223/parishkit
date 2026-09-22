@@ -39,14 +39,6 @@ def backup_targets(configuration):
     if set(configuration.secrets) != {"backup_data"}:
         raise ConfigError("The backup profile receives only its recipient key.")
     archived = [configuration.paths[name] for name in ARCHIVED_TREES]
-    # An authority moved outside the config tree would be silently left out of
-    # every set while the backup still reported success.
-    if not any(
-        tree == configuration.paths["authority"]
-        or tree in configuration.paths["authority"].parents
-        for tree in archived
-    ):
-        raise ConfigError("The authority store must live inside an archived tree.")
     trees = {tree: True for tree in archived} | {configuration.paths["backups"]: False}
     if configuration.paths["backups"] in archived or any(
         tree in configuration.paths["backups"].parents

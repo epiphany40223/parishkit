@@ -74,7 +74,11 @@ and whenever the restore procedure changes:
 - **Before activation**, run the whole procedure on the validation
   deployment itself, still in Testing mode, restoring its own newest set.
   Its credentials and mail routing are the ones it already uses, so every
-  step, including starting the background services, is safe.
+  step, including starting the background services, is safe. Then rehearse
+  the replacement-host steps too: restore the same set onto a second,
+  disposable host that is not on the public DNS, through web's health check
+  in step 8, and destroy that host afterwards. The same-host run skips steps
+  3 and 5, and a real replacement is when they matter.
 - **After activation**, never start a second live copy of Production. Use a
   disposable host that is not on the public origin's DNS, run the procedure
   only up to starting web and checking its health in step 8, and never start
@@ -82,7 +86,7 @@ and whenever the restore procedure changes:
   carries every Production credential and every Family's data. Destroy the
   host and its disks afterwards.
 
-The gate approves the pre-activation drill's evidence. Record the date, the
+The gate approves the evidence of both pre-activation runs. Record the date, the
 set name, the manifest digests, the image digest and the outcome in the
 parish's operations notes, then delete the decrypted files.
 
@@ -96,7 +100,10 @@ rendered Compose file the deployment runs (`compose.json` or
 `compose-slack.json`) and its fixed project name. Paths are the default
 layout; where the deployment YAML overrides a path, use that path instead.
 
-1. **Stop.** Stop every online service and `caddy`: `stop caddy web worker
+1. **Stop.** Disable the host's backup and off-host copy cron jobs until
+   step 9: a backup that starts mid-restore would archive a mix of old and
+   restored files, record itself as the newest set and be copied off the
+   host. Then stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
    Leave `postgres` and `valkey` running. The scheduler, worker and
    mail-dispatch services stay stopped until step 8.
@@ -110,7 +117,12 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `files.tar` to the host over a private channel.
 3. **Replacement host only: prepare it.** Never run `provision-runtime`
    here: it would generate new passwords that the restored roles and files
-   do not have. Create the runtime root as
+   do not have. Bring the operator's deployment YAML and the deployment UUID,
+   both kept off the host with the private key: `retarget-image` rebuilds its
+   plan from that YAML and refuses unless everything but the image matches
+   the restored record, and the rendered documents hold absolute host paths.
+   So use the same runtime root path, the same path overrides and the same
+   bind-source layout as the lost host. Create the runtime root as
    [Storage and identities](stewardship-runtime.md#storage-and-identities)
    says, then create, owned by `10001:10001` with mode `0700`, the
    directories that are not in the set: `backups`, `cache`, `cache/static`,
@@ -185,8 +197,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    restored state does not show as delivered (see the limitations below).
    Then start `scheduler`, `worker`, `mail-dispatch`, `config-installer` and
    the credential installers, and resume delivery deliberately.
-9. **Take a fresh backup.** Run the backup at once. It records a new run,
-   which later upgrade admissions require, and captures the restored state.
+9. **Take a fresh backup.** Run the backup at once, then re-enable the
+   backup and off-host copy cron jobs. The backup records a new run, which
+   later upgrade admissions require, and captures the restored state.
 
 ## Restore limitations in v1
 
@@ -222,8 +235,8 @@ the following, and the pre-launch gate approves them as known limitations:
 - The set covers the default locations: the `config`, `credentials` and
   `media` trees and the provisioning record. A deployment that overrides an
   individual credential or password file to a path outside the credentials
-  tree must copy that file off the host itself; the backup refuses only an
-  authority store outside the archived trees.
+  tree must copy that file off the host itself. An authority store outside
+  the archived trees is still a valid deployment, but its backup run refuses.
 - The sealed files are anonymous encryption to the public key: they prove
   they were not altered, not who made them. The recorded manifest digest,
   kept off the host, is the origin check; there is no host-held signing key.

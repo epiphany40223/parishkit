@@ -51,8 +51,9 @@ emptied schema and reports success when `pg_restore` fails.
   tree, with owner-only root entries, and the completed provisioning record;
   the backup profile mounts `media` and the record read-only. Each file is
   read from one open descriptor, and a media file that disappears during the
-  backup is left out rather than failing it. The backup refuses to run when
-  the authority store is outside the archived trees.
+  backup is left out rather than failing it. A backup run refuses when the
+  authority store is outside the archived trees; such a deployment still
+  provisions and retargets.
 - The runbook's **Restore for real** gives exact steps: stop the online
   services; open and verify the set; on a replacement host, create the
   directories and startup lock outside the set without running
@@ -70,7 +71,8 @@ emptied schema and reports success when `pg_restore` fails.
   It advises a backup by hand after each large send. The deployment runbook's
   rollback and the launch scope's manual restore now say the same.
 - The drill rehearses the whole real restore on the validation deployment
-  before activation. After activation it runs on a disposable host off the
+  before activation, plus the replacement-host steps on a second disposable
+  host off the public DNS, through web's health check. After activation it runs on a disposable host off the
   public DNS, stops once web is healthy, never starts the background
   services, and destroys the host afterwards.
 
@@ -78,7 +80,7 @@ emptied schema and reports success when `pg_restore` fails.
 
 - Pure: the backup profile's targets are the three trees, the key, the lock,
   the provisioning record and the output; an authority outside the archived
-  trees is refused; a set's archive holds a branding file, the provisioning
+  trees still renders a backup profile but refuses the backup run; a set's archive holds a branding file, the provisioning
   record and `0700` tree roots; a media file removed mid-backup is left out,
   while a missing configuration file still fails it; the dump command keeps
   owners and privileges. The backup, backup boundary, topology, service boundary,

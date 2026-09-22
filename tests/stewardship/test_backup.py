@@ -9,6 +9,7 @@ import io
 import json
 import shutil
 import tarfile
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -151,6 +152,20 @@ def test_a_media_file_removed_during_the_backup_is_left_out(deployment, monkeypa
     monkeypatch.setattr(backup, "_file", missing)
     with pytest.raises(FileNotFoundError):
         backup.archive_files(deployment, io.BytesIO())
+
+
+def test_an_authority_outside_the_archived_trees_refuses_the_run(deployment, tmp_path):
+    """A moved authority store would silently be missing from every set."""
+    moved = replace(
+        deployment,
+        paths=replace(
+            deployment.paths,
+            values={**deployment.paths.values, "authority": tmp_path / "elsewhere"},
+        ),
+    )
+    with pytest.raises(ConfigError, match="authority store"):
+        backup.run_backup(moved, record=lambda **facts: None)
+    assert not any(deployment.paths["backups"].iterdir())
 
 
 def test_retention_keeps_the_newest_sets_and_only_dated_directories(deployment):
