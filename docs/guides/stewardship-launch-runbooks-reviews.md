@@ -108,3 +108,26 @@ none validated. The low-severity note, that the section introduction still
 names only the Family-mail policy and guide, fell below the validation
 cutoff; the paused-resend correction, which rewrites that section, will
 address it. The review rounds are closed.
+
+## Protected delivery
+
+PR #96 delivered candidate `ccbb32f3`, one documentation commit plus the PR
+#95 receipt, whose tree `43c4d47c` is identical to the retained
+commit-by-commit review history on `pr/stewardship-launch-runbooks-reviewed`
+(`23b50d3e`) and to the landed tree. The five rounds above were single-source
+under the exemption, with every validated finding corrected and the last
+validating nothing. The pull request was marked ready before the candidate
+was pushed. Exact-head ready-candidate CI `35729088797` and DCO passed all 25
+checks, from 12:45:09 to 13:05:26 UTC on September 22, 2026 (20 minutes 17
+seconds). Earlier runs on superseded draft heads stopped at the draft-mode
+gates, which require a ready pull request, and one was cancelled by the
+candidate push; none is counted as acceptance. `origin/main` had no
+intervening commits since the candidate's base `dd15605f`. Protected
+auto-merge landed as `aa29a162` at 13:06:48 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment was committed. This used the standing delivery authority,
+without deployment or release; no real provider was contacted.
+
+The launch runbooks are delivered. The launch scope continues with the
+[paused resend correction](stewardship-paused-resend.md), then the pre-launch
+gate.
