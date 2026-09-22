@@ -100,3 +100,11 @@ one validated and corrected:
 
 The finding the validation step did not confirm was not carried forward. A
 further correction check follows.
+
+## Round 5
+
+Claude only (Codex produced no output). Correction check: one raw finding,
+none validated. The low-severity note, that the section introduction still
+names only the Family-mail policy and guide, fell below the validation
+cutoff; the paused-resend correction, which rewrites that section, will
+address it. The review rounds are closed.
