@@ -46,7 +46,7 @@ def upload():
 def post(browser, url, values):
     """Use the actual CSRF cookie instead of bypassing the middleware."""
     return browser.post(
-        url, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        url, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

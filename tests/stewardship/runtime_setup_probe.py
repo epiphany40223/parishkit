@@ -88,7 +88,7 @@ def main():
         """Use the current CSRF token and actual form owners for every mutation."""
         response = browser.post(
             path,
-            data | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value},
+            data | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
             secure=origin.scheme == "https",
             HTTP_ORIGIN=deployment.public_origin,
         )

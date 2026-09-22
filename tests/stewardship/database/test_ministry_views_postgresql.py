@@ -31,7 +31,7 @@ URL = "/admin/configuration/ministries"
 def post(browser, values):
     """Use the real CSRF cookie for each mutation, including signed confirmation."""
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        URL, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

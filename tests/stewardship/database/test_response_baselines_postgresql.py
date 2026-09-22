@@ -162,7 +162,11 @@ def test_metadata_writes_require_common_order(response_service):
 def test_lost_session_cannot_issue_private_inputs(response_service):
     response_service.client.post(
         "/family/logout",
-        {"csrfmiddlewaretoken": response_service.client.cookies["csrftoken"].value},
+        {
+            "csrfmiddlewaretoken": response_service.client.cookies[
+                "pk_family_csrf"
+            ].value
+        },
     )
     with pytest.raises(FamilyAdmissionDenied):
         issue(response_service, testing_acknowledged=True)
@@ -182,7 +186,11 @@ def test_logout_cancels_unfinished_baseline_and_pin(response_service):
     baseline = issue(response_service, testing_acknowledged=True).baseline
     response = response_service.client.post(
         "/family/logout",
-        {"csrfmiddlewaretoken": response_service.client.cookies["csrftoken"].value},
+        {
+            "csrfmiddlewaretoken": response_service.client.cookies[
+                "pk_family_csrf"
+            ].value
+        },
     )
     assert response.status_code == 302
     baseline.refresh_from_db()

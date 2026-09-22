@@ -49,7 +49,7 @@ def web():
 def post(browser, values):
     """Use the genuine CSRF cookie; selections may repeat, as ticked boxes do."""
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        URL, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

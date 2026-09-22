@@ -30,7 +30,7 @@ def acknowledge(browser, event_id):
     with web():
         return browser.post(
             f"/admin/security-events/{event_id}/acknowledge",
-            {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value},
+            {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
         )
 
 
@@ -189,7 +189,7 @@ def test_acknowledgement_needs_an_administrator_and_a_real_event(
     event = PolicySecurityEvent.objects.get(target="new@example.org")
     assert acknowledge(browser, uuid4()).status_code == 404
     route = f"/admin/security-events/{event.pk}/acknowledge"
-    csrf = {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+    csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     with web():
         assert browser.get(route).status_code == 405
         assert browser.post(route).status_code == 403

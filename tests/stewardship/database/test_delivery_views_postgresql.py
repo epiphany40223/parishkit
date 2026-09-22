@@ -216,7 +216,7 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
             result = browser.post(
                 path + "/clear",
                 values,
-                HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )
             assert result.status_code == 302 and result["Location"] == path
         result = browser.get(path)
@@ -273,7 +273,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
                 response = browser.post(
                     path + "/resolve",
                     values,
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert response.status_code == 302 and response["Location"] == path
             result = browser.get(path)
@@ -322,7 +322,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
                 browser.post(
                     path + "/resolve",
                     stale,
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 409
             )
@@ -344,7 +344,7 @@ def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # n
                 action="accept",
                 note="private-evidence-marker",
             ),
-            HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
         )
     assert response.status_code == 400
     assert response["Content-Type"].startswith("text/html")
@@ -388,14 +388,14 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
                 result = browser.post(
                     path + "/retry-family-preparation",
                     values,
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert result.status_code == 302
             assert b"retry-family-preparation" not in browser.get(page_path).content
             conflict = browser.post(
                 path + "/retry-family-preparation",
                 {"command_id": str(uuid4())},
-                HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )
             assert conflict.status_code == 409
         assert TaskRun.objects.get(pk=ticket.task_id).state == "failed"

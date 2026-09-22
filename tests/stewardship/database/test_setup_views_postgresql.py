@@ -32,7 +32,7 @@ def setup_http(request, bootstrapped, monkeypatch, settings):  # noqa: F811
 def post(browser, path, values):
     """Use the current browser CSRF cookie on every ordinary form submission."""
     return browser.post(
-        path, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        path, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

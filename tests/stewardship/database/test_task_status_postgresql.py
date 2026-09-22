@@ -218,7 +218,9 @@ def test_detail_missing_identity_and_unsupported_methods_do_not_change_tasks(
     """The API exposes no accidental claim/retry/cancel command through POST."""
     browser, _ = signed_in()
     assert browser.get(f"{BASE}/{uuid4()}").status_code == 404
-    response = browser.post(BASE, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+    response = browser.post(
+        BASE, HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value
+    )
     assert response.status_code == 405
     assert not TaskRun.objects.exists()
 

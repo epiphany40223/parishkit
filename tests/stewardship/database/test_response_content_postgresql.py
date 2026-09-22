@@ -43,7 +43,7 @@ def test_optional_public_help_failure_keeps_fixed_safe_fallback(
             else harness.client.post(
                 "/",
                 {"code": "invalid"},
-                HTTP_X_CSRFTOKEN=harness.client.cookies["csrftoken"].value,
+                HTTP_X_CSRFTOKEN=harness.client.cookies["pk_family_csrf"].value,
             )
         )
         assert response.status_code == (200 if slot == "login_help" else 403)
@@ -192,7 +192,7 @@ def test_public_help_is_selected_uniform_and_private_placeholder_free(
                 harness.client.post(
                     "/",
                     {"code": candidate},
-                    HTTP_X_CSRFTOKEN=harness.client.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=harness.client.cookies["pk_family_csrf"].value,
                 )
             )
         result.append(harness.client.get("/access/not-a-token"))
