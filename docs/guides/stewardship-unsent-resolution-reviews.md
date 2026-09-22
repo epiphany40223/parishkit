@@ -50,3 +50,40 @@ the outbox event grant) and any other role fails its session check, so the
 guard's own refusals remain its coverage. The last note, that the guide
 claimed resumes the tests did not prove, is covered by the second Medium's
 correction. A correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no output); the correction check of round 1.
+Six raw findings, two validated (both Medium), both corrected:
+
+- Medium: the frozen `admin_unsent_recipient_revoked` reason covered only a
+  removal before the evidence. A report confirmed unsent while its recipient
+  was still an Administrator, who was removed afterwards, could never
+  settle: no outbox edge leaves `permanent_failure` for `cancelled`, the
+  retry gate requires an Administrator recipient, and the proofs did not
+  count it. A provider permanent failure followed by removal had the same
+  gap. The daily and weekly completion proofs and the closed-pause digest
+  coverage now count any report in `permanent_failure` whose recipient is
+  not currently an Administrator of the active configuration, the
+  dispatchers' `recipient_revoked` test, as settled, whatever ended it. The
+  frozen reason became redundant and was removed, leaving one rule; the
+  guide documents that the live read can reopen a pending occurrence if the
+  address becomes an Administrator again, while a completed one never
+  changes. New cases cover confirmation then removal and a provider failure
+  then removal.
+- Medium: the metadata finalizer path was untested, because every case
+  finished with the other Admin's delivery, whose worker settles the cohort
+  itself. Each kind now runs the real finalizer producer and task whenever
+  the last settlement has no worker: the other copy delivered first with
+  `confirm_unsent` last, the two removal-after cases, and a removed only
+  recipient, which completes with an empty fulfillment. Each asserts the
+  occurrence, its fulfillment and, weekly, the watermark.
+
+All four findings below the validation cutoff were taken: the runbook and
+guide describe the closed-while-paused case of a still-admitted
+recipient's failed report and the operator's path (removing a recipient who
+should no longer be an Administrator settles it); the history label is one
+template filter backed by a reason mapping, with unit tests; the daily
+removed-recipient case asserts the service refuses the resend, like the
+weekly one; and the guide's long lines are rewrapped. A further round
+follows.

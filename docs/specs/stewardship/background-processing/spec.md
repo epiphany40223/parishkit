@@ -596,9 +596,9 @@ own record shows the attempt was not sent, the Admin may instead record that
 with evidence and no resend: the attempt becomes the same definitive
 non-acceptance a permanent provider failure records (the occurrence `failed`,
 unfulfilled), without suppressing any recipient, and it needs no resend
-admission. An Administrator report to a recipient who is no longer an
-Administrator counts as settled for report completion, like a revoked
-recipient's cancellation (see the
+admission. A failed Administrator report to a recipient who is not
+currently an Administrator counts as settled for report completion, like a
+revoked recipient's cancellation, whatever ended it (see the
 [unsent resolution guide](../../../guides/stewardship-unsent-resolution.md)).
 Every resolution,
 evidence note, and resend authorization is audited. Until resolution, the row
