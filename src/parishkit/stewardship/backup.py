@@ -38,8 +38,9 @@ from .runtime_paths import RuntimeLayout, explicit_path, private_directory
 REQUIRED_WITHIN = timedelta(hours=24)
 # Complete sets kept on the host; the off-host copy is the operator's.
 RETAINED_SETS = 30
-# The configuration and credentials trees are small; anything larger is not
-# what this backup was designed for and stops before sealing.
+# The archived trees are small (branding images are at most a few megabytes
+# each); anything larger is not what this backup was designed for and stops
+# before sealing.
 MAX_FILES_BYTES = 256 * 1024 * 1024
 # pg_dump diagnostics kept for the process log when a dump fails.
 MAX_DIAGNOSTICS = 16 * 1024
@@ -72,8 +73,14 @@ def _finish(stream):
     stream.close()
 
 
+# Everything a replacement host needs beside the database: the authority and
+# rendered documents, every credential, and the uploaded branding the restored
+# database refers to.
+ARCHIVED_TREES = ("config", "credentials", "media")
+
+
 def archive_files(configuration, sink):
-    """Tar the configuration and credentials trees, regular files only.
+    """Tar the configuration, credentials and media trees, regular files only.
 
     Symlinks, devices and anything else are refused rather than followed or
     skipped silently: a tree that contains one is not the tree provisioning
@@ -81,7 +88,7 @@ def archive_files(configuration, sink):
     """
     total = 0
     with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
-        for name in ("config", "credentials"):
+        for name in ARCHIVED_TREES:
             root = configuration.paths[name]
             for path in sorted(root.rglob("*")):
                 relative = Path(name) / path.relative_to(root)
@@ -122,11 +129,13 @@ def dump_database(configuration, sink, *, recipient):
     if binary is None:
         raise ConfigError("pg_dump is not installed in this image.")
     db = configuration.postgres
+    # Owners and privileges are kept: every definer function's REVOKE from
+    # PUBLIC and every runtime grant live only in the ACLs, so a dump without
+    # them restores a database the services' own admission refuses. The same
+    # role names exist wherever the deployment's roles were provisioned.
     command = [
         binary,
         "--format=custom",
-        "--no-owner",
-        "--no-acl",
         "--host",
         db.host,
         "--port",

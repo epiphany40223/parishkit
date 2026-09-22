@@ -59,6 +59,10 @@ def opened(path, key):
 
 def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
     """Both outputs open with the private key and the manifest names them."""
+    # Uploaded branding is restored with the database that refers to it.
+    branding = deployment.paths["media"] / "branding"
+    branding.mkdir(parents=True, exist_ok=True)
+    (branding / "logo.png").write_bytes(b"\x89PNG synthetic")
     records = []
     manifest = backup.run_backup(
         deployment, record=lambda **facts: records.append(facts)
@@ -86,6 +90,7 @@ def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
         str(Path("credentials") / password.relative_to(deployment.paths["credentials"]))
         in names
     )
+    assert "media/branding/logo.png" in names
     assert not any(name.startswith("backups") for name in names)
     written = json.loads((directory / backup.MANIFEST).read_text())
     assert written == manifest
@@ -201,6 +206,8 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
     assert options["env"]["PGPASSWORD"] == password
     assert password not in " ".join(command)
     assert command[:2] == ["/usr/bin/pg_dump", "--format=custom"]
+    # Owners and ACLs carry every REVOKE from PUBLIC and every runtime grant.
+    assert "--no-owner" not in command and "--no-acl" not in command
     assert command[command.index("--username") + 1] == deployment.postgres.user
     assert deployment.postgres.user == "pk_stewardship_backup_worker"
 

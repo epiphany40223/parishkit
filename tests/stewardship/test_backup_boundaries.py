@@ -27,7 +27,7 @@ def mounts(targets, *extra):
     return result + list(extra)
 
 
-def test_targets_are_the_two_trees_the_key_the_lock_and_the_output(tmp_path):
+def test_targets_are_the_three_trees_the_key_the_lock_and_the_output(tmp_path):
     """Inputs inside the read-only trees fold in; the output is the one write."""
     configuration = backup_configuration(tmp_path)
     layout = RuntimeLayout(configuration)
@@ -35,6 +35,7 @@ def test_targets_are_the_two_trees_the_key_the_lock_and_the_output(tmp_path):
     assert targets == {
         configuration.paths["config"]: True,
         configuration.paths["credentials"]: True,
+        configuration.paths["media"]: True,
         configuration.paths["backups"]: False,
         layout.interlock: True,
     }
@@ -70,6 +71,23 @@ def test_other_roles_secrets_and_overlapping_output_are_refused(tmp_path):
     )
     with pytest.raises(ConfigError, match="inside what it backs up"):
         boundaries.backup_targets(inside)
+
+
+def test_an_authority_outside_the_archived_trees_is_refused(tmp_path):
+    """A moved authority store would silently be missing from every set."""
+    configuration = backup_configuration(tmp_path)
+    moved = replace(
+        configuration,
+        paths=replace(
+            configuration.paths,
+            values={
+                **configuration.paths.values,
+                "authority": tmp_path.parent / (tmp_path.name + "-authority"),
+            },
+        ),
+    )
+    with pytest.raises(ConfigError, match="authority store"):
+        boundaries.backup_targets(moved)
 
 
 def test_mount_evidence_must_match_exactly(tmp_path):
