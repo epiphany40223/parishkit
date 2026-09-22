@@ -37,3 +37,24 @@ validated, all corrected:
 
 The eight findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex produced no output). Thirteen raw findings, two
+validated, both corrected:
+
+- Medium: release tags are annotated, so `GITHUB_SHA` on a tag push may
+  name the tag object rather than the commit it points to, and the image's
+  commit tag would not have been the immutable commit tag the specification
+  promises. The image job now resolves the commit as the validation job
+  does and uses it for the second tag; the workflow test asserts the
+  derivation and that `GITHUB_SHA` is not used.
+- Medium: every retarget case ran under the development profile with the
+  renderer patched, so the production admission path was never driven. A
+  case now provisions a production root with one digest, moves it to
+  another, asserts the Caddyfile and service documents are unchanged, and
+  asserts a tag-form image and a development image are refused under the
+  real renderer.
+
+The eleven findings the validation step did not confirm were not carried
+forward.

@@ -39,13 +39,20 @@ def test_image_job_runs_after_validation_with_only_package_scope():
     assert "tr '[:upper:]' '[:lower:]'" in naming
     assert "image=ghcr.io/${repository}/parishkit" in naming
     assert "version=${GITHUB_REF_NAME#v}" in naming
-    build = steps["Build the application image"]["run"]
-    assert "--file deploy/stewardship/Dockerfile" in build
+    # An annotated tag's GITHUB_SHA may be the tag object: the commit tag is
+    # the commit the tag points to, resolved as the validation job does.
+    assert 'commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")' in naming
+    build = steps["Build the application image"]
+    assert "--file deploy/stewardship/Dockerfile" in build["run"]
+    push = steps["Push the image and record its digest"]
+    for step in (build, push):
+        assert step["env"]["COMMIT"] == "${{ steps.name.outputs.commit }}"
+        assert '"${IMAGE}:${COMMIT}"' in step["run"]
+        assert "GITHUB_SHA" not in step["run"]
     login = steps["Log in to GHCR"]
     assert login["env"] == {"GH_TOKEN": "${{ github.token }}"}
     assert "--password-stdin" in login["run"]
-    push = steps["Push the image and record its digest"]["run"]
-    assert "RepoDigests" in push and "image-digest.txt" in push
+    assert "RepoDigests" in push["run"] and "image-digest.txt" in push["run"]
     upload = steps["Upload the image digest"]["with"]
     assert upload == {
         "name": "image-digest",

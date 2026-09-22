@@ -15,7 +15,8 @@ and follows the [pre-production development policy](../specs/stewardship/operati
 
 Pushing a release tag now builds the single-architecture `linux/amd64`
 application image from the tagged commit, pushes it to GHCR as
-`ghcr.io/<owner>/<repository>/parishkit:<version>` and `:<commit>`, and
+`ghcr.io/<owner>/<repository>/parishkit:<version>` and `:<commit>` (the
+commit the annotated tag points to), and
 records the pushed digest in the GitHub Release, so the operator copies the
 exact `ghcr.io/…/parishkit@sha256:…` reference into the deployment YAML. The
 human still pushes every release tag. A new command,
@@ -87,9 +88,13 @@ No schema change.
   unfinished provisioning and a root never provisioned are refused; the
   console command reports the change as JSON and answers a missing option,
   an unreadable configuration, a configuration whose raw error would name
-  its contents and a refused image with one generic message; the release
-  workflow's image job depends on validation, holds only the package scope
-  and tags the lowercase repository path.
+  its contents and a refused image with one generic message; a production
+  root moves from one digest of the repository's image to another with its
+  Caddyfile and service documents unchanged and refuses a tag-form or
+  development image under the real renderer; the release workflow's image
+  job depends on validation, holds only the package scope, tags the
+  lowercase repository path with the version and the commit the annotated
+  tag points to, and the release notes carry the digest.
 - The Compose contract, build contract, provisioning and release workflow
   suites pass with the scaffold removed; the development Compose merge and
   the pinned Caddy template validation pass under the opt-in Compose checks.
@@ -97,9 +102,9 @@ No schema change.
 
 ## Checkpoint
 
-Implementation and focused validation are complete and the first of three
-[review rounds](stewardship-release-image-reviews.md) is corrected; the
-remaining rounds, full exact-head CI, DCO and protected delivery remain
+Implementation and focused validation are complete and two of three
+[review rounds](stewardship-release-image-reviews.md) are corrected; the
+remaining round, full exact-head CI, DCO and protected delivery remain
 open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; the first image publication happens only when the human pushes a

@@ -147,20 +147,24 @@ jobs:
         id: name
         run: |
           # GHCR requires a lowercase repository path, and so does the
-          # runtime's approved image pattern.
+          # runtime's approved image pattern. Release tags are annotated, so
+          # GITHUB_SHA may name the tag object; the commit tag must name the
+          # commit the tag points to, resolved as validate-build does.
           repository="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           echo "image=ghcr.io/${repository}/parishkit" >> "$GITHUB_OUTPUT"
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")" >> "$GITHUB_OUTPUT"
 
       - name: Build the application image
         env:
           IMAGE: ${{ steps.name.outputs.image }}
           VERSION: ${{ steps.name.outputs.version }}
+          COMMIT: ${{ steps.name.outputs.commit }}
         run: |
           docker build \
             --file deploy/stewardship/Dockerfile \
             --tag "${IMAGE}:${VERSION}" \
-            --tag "${IMAGE}:${GITHUB_SHA}" \
+            --tag "${IMAGE}:${COMMIT}" \
             .
 
       - name: Log in to GHCR
@@ -174,9 +178,10 @@ jobs:
         env:
           IMAGE: ${{ steps.name.outputs.image }}
           VERSION: ${{ steps.name.outputs.version }}
+          COMMIT: ${{ steps.name.outputs.commit }}
         run: |
           docker push "${IMAGE}:${VERSION}"
-          docker push "${IMAGE}:${GITHUB_SHA}"
+          docker push "${IMAGE}:${COMMIT}"
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${VERSION}")"
           printf '\nApplication image: `%s`\n' "${digest}" | tee image-digest.txt
 

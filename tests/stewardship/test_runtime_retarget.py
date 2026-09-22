@@ -10,7 +10,7 @@ from parishkit.stewardship import runtime_provisioning as provisioning
 from parishkit.stewardship import runtime_retarget as retarget
 from parishkit.stewardship.accounts.key_files import read_private, write_private
 from parishkit.stewardship.cli import main
-from parishkit.stewardship.deployment import load_deployment
+from parishkit.stewardship.deployment import DeploymentProfile, load_deployment
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.startup_interlock import StartupLease
 
@@ -35,8 +35,8 @@ def deployment(tmp_path, monkeypatch):
     return configuration
 
 
-def images(configuration):
-    """Every image named by the three rendered topologies."""
+def images(configuration, prefix="parishkit-stewardship"):
+    """Every application image named by the three rendered topologies."""
     layout = RuntimeLayout(configuration)
     found = set()
     for name in retarget.TOPOLOGIES:
@@ -44,7 +44,7 @@ def images(configuration):
         found |= {
             service["image"]
             for service in compose["services"].values()
-            if service["image"].startswith("parishkit-stewardship")
+            if service["image"].startswith(prefix)
         }
     return found
 
@@ -74,6 +74,38 @@ def test_only_the_image_changes_and_a_repeat_changes_nothing(deployment):
     # Provisioning itself still refuses a completed root.
     with pytest.raises(ConfigError, match="already provisioned"):
         provisioning.provision_runtime(deployment, image=NEW)
+
+
+def test_a_production_deployment_moves_between_digests_only(tmp_path):
+    """The real production admission: digests move, the ingress document stays."""
+    digests = ["ghcr.io/example/parishkit/parishkit@sha256:" + c * 64 for c in "ab"]
+    configuration = replace(
+        load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path / "rt")}),
+        profile=DeploymentProfile.PRODUCTION,
+        public_origin="https://parish.example",
+        trusted_proxy_hops=1,
+    )
+    provisioning.provision_runtime(configuration, image=digests[0])
+    layout = RuntimeLayout(configuration)
+    caddyfile = read_private(layout.service_directory / "Caddyfile")
+    web = read_private(layout.service_directory / "web.yaml")
+    assert images(configuration, "ghcr.io/") == {digests[0]}
+    assert retarget.retarget_image(configuration, image=digests[1]) == {
+        "image_changed": True,
+        "services_started": False,
+    }
+    assert images(configuration, "ghcr.io/") == {digests[1]}
+    assert record(configuration)["image"] == digests[1]
+    assert read_private(layout.service_directory / "Caddyfile") == caddyfile
+    assert read_private(layout.service_directory / "web.yaml") == web
+    compose = json.loads(read_private(layout.service_directory / "compose.json"))
+    assert compose["services"]["caddy"]["restart"] == "unless-stopped"
+    assert compose["services"]["web"]["image"] == digests[1]
+    # Only a digest of the repository's own image is admitted in production.
+    for refused in ("ghcr.io/example/parishkit/parishkit:1.2.3", OLD):
+        with pytest.raises(ConfigError):
+            retarget.retarget_image(configuration, image=refused)
+    assert images(configuration, "ghcr.io/") == {digests[1]}
 
 
 def test_an_interrupted_retarget_is_finished_by_repeating_it(deployment, monkeypatch):
