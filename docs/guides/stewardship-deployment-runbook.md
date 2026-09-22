@@ -182,8 +182,11 @@ sequence with the commands that exist.
    image's `retarget-image` refuses (its error names no cause; a release
    that added a deployment field is one), the database is still untouched,
    because the migration refused before applying anything; what stands in
-   the way is the provisioning record step 3 rewrote. Open the step 1
-   set's files as the backup runbook's
+   the way is a deployment field the previous release does not know, in
+   the deployment YAML or in the provisioning record step 3 rewrote.
+   Remove any such field from the deployment YAML (step 3 admitted only
+   inputs equal to the recorded ones, so it can hold only its default).
+   Then open the step 1 set's files as the backup runbook's
    [Restore for real](stewardship-backup-runbook.md#restore-for-real) steps
    2 and 4 describe (confirm the set against its recorded manifest digest,
    open `files.tar.sealed` with `backup-open` where the private key is
@@ -248,12 +251,12 @@ excessive by the previous release's services, so it needs the database
 restore below. A deployment field the new release added makes the previous
 release's `retarget-image` refuse the provisioning record the new release
 wrote, and a deployment YAML that names that field is refused before the
-record is read, by this rollback and by the database restore alike. So
-first remove any field the previous release does not know from the
-deployment YAML (step 3 admitted only inputs equal to the recorded ones,
-so such a field can hold only its default; the database restore below
-needs the same), then put back the step 1 set's record as
-[upgrade step 4](#upgrade) describes and continue this rollback. When the release
+record is read, by this rollback and by the database restore alike; the
+error names no cause. So when the previous image's `retarget-image`
+refuses, remove any field the previous release does not know from the
+deployment YAML and put back the step 1 set's record, both as
+[upgrade step 4](#upgrade) describes, and run it again; the database
+restore below needs the same YAML change. When the release
 changed the schema, an older image must never be pointed at the newer
 database; the rollback is a database restore from the backup taken
 in upgrade step 1, following the launch scope's

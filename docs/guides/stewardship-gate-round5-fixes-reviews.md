@@ -105,3 +105,19 @@ raised two findings, one validated and corrected:
 
 The Low below the cutoff was taken: a long source line was rewrapped. A
 correction check follows.
+
+## Round 5
+
+Claude and Codex both answered and raised the same Medium, validated and
+corrected, with two Lows from Claude also taken:
+
+- Medium (both sources): the upgrade recovery put back the provisioning
+  record but not the deployment YAML, which the previous image reads
+  first and refuses when it names a field that release does not know. The
+  recovery now removes such a field before putting back the record.
+- Low: the backup runbook's Restore for real step 7 now says the same,
+  since the YAML is not in the set; and the rollback says the YAML change
+  and the record swap apply when the previous image's `retarget-image`
+  refuses, since its error names no cause.
+
+A correction check follows.
