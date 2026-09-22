@@ -60,6 +60,8 @@ def backup_targets(configuration):
         configuration.postgres.password_file,
         configuration.secrets["backup_data"],
         layout.interlock,
+        # A replacement host cannot retarget without the completed record.
+        layout.provisioning_record,
     ):
         # A file already under a read-only tree needs no mount of its own; one
         # outside every tree is mounted read-only by itself.

@@ -22,7 +22,12 @@ from parishkit.config import ConfigError
 
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private, write_private
-from .runtime_paths import RuntimeLayout, explicit_path, private_directory
+from .runtime_paths import (
+    PROVISIONING_RECORD,
+    RuntimeLayout,
+    explicit_path,
+    private_directory,
+)
 from .runtime_provisioning import MAX_DOCUMENT, provisioning_plan
 from .startup_interlock import StartupLease
 
@@ -92,7 +97,7 @@ def retarget_image(configuration, *, image):
     """
     root = explicit_path(configuration.paths.root)
     private_directory(root)
-    completed = root / ".stewardship-provisioned.json"
+    completed = root / PROVISIONING_RECORD
     if not completed.exists():
         raise ConfigError("Provisioning is unfinished; resume it before upgrading.")
     recorded = _recorded(completed)

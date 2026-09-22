@@ -78,11 +78,13 @@ workflow. The runbook must say to:
 1. Stop the scheduler, general worker and mail-dispatch services **before**
    restoring, and keep them stopped, so no scheduled or retried Family mail
    is sent from restored state.
-2. Restore the database, configuration and credentials from the latest
-   verified backup.
-3. Start only the web service, and have an Administrator review the delivery and outbox state against the mail
-   provider's own logs. Any message that may already have been sent must not
-   be resent automatically.
+2. Restore the database, configuration, credentials and media from the
+   latest verified backup.
+3. Start only the web service (behind `caddy`), pause the campaign's
+   delivery, and have an Administrator review the delivery and outbox state
+   against the mail provider's own logs. This review is best effort: v1
+   cannot mark a message sent after the backup as delivered, so such a
+   message can be sent again when delivery resumes (see below).
 4. Only then restart background services, with the campaign's delivery paused
    if there is any doubt, and resume delivery deliberately.
 

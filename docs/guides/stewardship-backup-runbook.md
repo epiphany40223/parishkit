@@ -67,15 +67,24 @@ holds the newest set's three files.
 
 ## Restore drill
 
-Before the pre-launch gate, and whenever the restore procedure changes,
-rehearse [Restore for real](#restore-for-real) end to end on a deployment
-that is not Production: the validation deployment before activation, or a
-disposable host built from the same release. A drill that only counts rows
-in a database proves nothing about startup, so it runs every step, including
-starting the web service and checking its health. The gate approves the
-drill's evidence. Record the date, the set name, the manifest digests, the
-image digest and the outcome in the parish's operations notes, then delete
-the decrypted files.
+A drill that only counts rows proves nothing about startup, so the drill
+rehearses [Restore for real](#restore-for-real). Before the pre-launch gate,
+and whenever the restore procedure changes:
+
+- **Before activation**, run the whole procedure on the validation
+  deployment itself, still in Testing mode, restoring its own newest set.
+  Its credentials and mail routing are the ones it already uses, so every
+  step, including starting the background services, is safe.
+- **After activation**, never start a second live copy of Production. Use a
+  disposable host that is not on the public origin's DNS, run the procedure
+  only up to starting web and checking its health in step 8, and never start
+  the scheduler, worker, mail-dispatch, installers or `caddy` there: the set
+  carries every Production credential and every Family's data. Destroy the
+  host and its disks afterwards.
+
+The gate approves the pre-activation drill's evidence. Record the date, the
+set name, the manifest digests, the image digest and the outcome in the
+parish's operations notes, then delete the decrypted files.
 
 ## Restore for real
 
@@ -84,12 +93,13 @@ A real restore follows the launch scope's
 and the deployment runbook's [rollback](stewardship-deployment-runbook.md#rollback).
 Commands below follow the deployment's usual `docker compose` prefix: the one
 rendered Compose file the deployment runs (`compose.json` or
-`compose-slack.json`) and its fixed project name.
+`compose-slack.json`) and its fixed project name. Paths are the default
+layout; where the deployment YAML overrides a path, use that path instead.
 
 1. **Stop.** Stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
    Leave `postgres` and `valkey` running. The scheduler, worker and
-   mail-dispatch services stay stopped until step 6.
+   mail-dispatch services stay stopped until step 8.
 2. **Open the set.** On the machine with the private key, confirm the set is
    the one the deployment recorded (the SHA-256 of `manifest.json` equals the
    digest the backup printed and the off-host log kept), then decrypt both
@@ -98,39 +108,76 @@ rendered Compose file the deployment runs (`compose.json` or
    and the same for `files.tar.sealed`. Each prints the kind, size and
    digest, which must match the manifest. Copy `database.pgdump` and
    `files.tar` to the host over a private channel.
-3. **Restore the files, whole.** The archive holds the `config`,
-   `credentials` and `media` trees of the runtime root, taken together with
-   the database. Restore all three from the same set, never only the files
-   that are missing: a configuration or credential changed after the backup
-   no longer matches the restored database, and the services refuse to start
-   against it. Move each current tree aside (for example to
-   `config.pre-restore`), never delete it, extract `files.tar` into the
-   runtime root, and give the three trees back to UID/GID `10001:10001`. The
-   archive keeps owner-only modes.
-4. **Restore the database.** On the same host, the cluster keeps the
-   deployment's roles. On a replacement host, first start `postgres` on the
-   restored runtime root and run
-   `run --rm database-provision database-roles --config PROVISION_CONFIG --confirm-deployment UUID`,
-   which creates the roles with the restored password files on the new, empty
-   database. Then replace the database's contents in one transaction, as the
-   cluster's operator login, from inside the database container:
+3. **Replacement host only: prepare it.** Never run `provision-runtime`
+   here: it would generate new passwords that the restored roles and files
+   do not have. Create the runtime root as
+   [Storage and identities](stewardship-runtime.md#storage-and-identities)
+   says, then create, owned by `10001:10001` with mode `0700`, the
+   directories that are not in the set: `backups`, `cache`, `cache/static`,
+   `logs`, `reports`, `run`, and under `run/persistent` the directories
+   `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
+   `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
+   exactly the line `parishkit-stewardship-startup-v1`. Pull the release
+   image, and point the public origin's DNS at this host (`caddy` obtains a
+   new certificate; its store is not backed up).
+4. **Restore the files, whole.** The archive holds the `config`,
+   `credentials` and `media` trees, named by tree rather than by host path,
+   and the provisioning record `.stewardship-provisioned.json`. Restore all of
+   them from the same set, never only the files that are missing: a
+   configuration or credential changed after the backup no longer matches the
+   restored database, and the services refuse to start against it. Extract
+   `files.tar` into an empty private staging directory. Move each current
+   tree aside (for example `config` to `config.pre-restore`), never delete
+   it, then move `config` to the runtime root's `config`, `credentials` to its
+   `credentials`, `media` to `run/persistent/media`, and the record to the
+   runtime root itself. Give everything back to `10001:10001`; the archive
+   records owner-only modes (`0700` directories, `0600` files).
+5. **Replacement host only: static files and roles.** Run `collect-static`
+   into `cache/static` as the deployment runbook's first installation does.
+   Start `postgres` and `valkey` with `up --detach --wait postgres valkey`,
+   then run
+   `run --rm database-provision database-roles --config PROVISION_CONFIG --confirm-deployment UUID`
+   with the deployment's UUID. It creates the roles with the restored
+   password files on the new, empty database.
+6. **Restore the database.** Replace the application schema's whole
+   contents in one transaction, as the cluster's operator login, inside the
+   database container. First copy the dump in and convert it to SQL, so a
+   damaged or truncated dump fails before anything changes:
 
    ```sh
-   docker compose ... exec -T postgres pg_restore \
-     --username pk_stewardship_operator --dbname DATABASE_NAME \
-     --clean --if-exists --single-transaction --exit-on-error < database.pgdump
+   docker compose ... exec -T postgres sh -c 'cat > /tmp/restore.pgdump' < database.pgdump
+   docker compose ... exec -T postgres pg_restore --file=/tmp/restore.sql /tmp/restore.pgdump
    ```
 
-   Keep the deployment's database: never drop and recreate it, because its
-   provisioning marker and database-level privileges belong to the database,
-   not to the dump. The dump carries every owner and privilege, so no
-   `database-grants` or `migration` step follows. A failed restore rolls back
-   whole and leaves the previous contents in place.
-5. **Point at the set's image.** Run `retarget-image` back to the image the
+   Only when both succeed, empty the schema and load it as one transaction:
+
+   ```sh
+   docker compose ... exec -T postgres sh -c 'printf "%s\n" \
+     "DROP SCHEMA public CASCADE;" "CREATE SCHEMA public;" \
+     "GRANT USAGE ON SCHEMA public TO PUBLIC;" > /tmp/prefix.sql'
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE_NAME --single-transaction -v ON_ERROR_STOP=1 --quiet \
+     -f /tmp/prefix.sql -f /tmp/restore.sql
+   docker compose ... exec -T postgres rm /tmp/restore.pgdump /tmp/restore.sql /tmp/prefix.sql
+   ```
+
+   Never pipe `pg_restore` straight into `psql`: if `pg_restore` fails
+   mid-stream, `psql` still commits the empty schema and reports success.
+   Emptying the schema first removes objects a later release added (the
+   rollback after a schema change), which a plain `pg_restore --clean` would
+   leave behind. Keep the deployment's database itself: never drop and
+   recreate it, because its provisioning marker and database-level
+   privileges belong to the database, not to the dump. The dump carries every
+   owner and privilege, including the schema's owner, so no `database-grants`
+   or `migration` step follows. Any error in the load rolls the whole
+   transaction back and leaves the previous contents in place; fix the cause
+   and run it again. The container's `/tmp` is memory-backed and disappears
+   when the container stops.
+7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
    image digest.
-6. **Start web alone and review.** Start `web` and `caddy` only, and run the
+8. **Start web alone and review.** Start `web` and `caddy` only, and run the
    health command. An Administrator pauses delivery on the campaign's
    delivery control page if it is not already paused, then compares the
    restored deliveries with the mail provider's own sent log for the period
@@ -138,7 +185,7 @@ rendered Compose file the deployment runs (`compose.json` or
    restored state does not show as delivered (see the limitations below).
    Then start `scheduler`, `worker`, `mail-dispatch`, `config-installer` and
    the credential installers, and resume delivery deliberately.
-7. **Take a fresh backup.** Run the backup at once. It records a new run,
+9. **Take a fresh backup.** Run the backup at once. It records a new run,
    which later upgrade admissions require, and captures the restored state.
 
 ## Restore limitations in v1
@@ -172,6 +219,11 @@ the following, and the pre-launch gate approves them as known limitations:
   automated restore are the operator's by hand; the deferred remainder is
   listed in the launch scope.
 - The private key is not rotated during v1.
+- The set covers the default locations: the `config`, `credentials` and
+  `media` trees and the provisioning record. A deployment that overrides an
+  individual credential or password file to a path outside the credentials
+  tree must copy that file off the host itself; the backup refuses only an
+  authority store outside the archived trees.
 - The sealed files are anonymous encryption to the public key: they prove
   they were not altered, not who made them. The recorded manifest digest,
   kept off the host, is the origin check; there is no host-held signing key.

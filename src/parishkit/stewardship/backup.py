@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -31,7 +32,12 @@ from parishkit.config import ConfigError
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private
 from .backup_sealing import Recipient, seal
-from .runtime_paths import RuntimeLayout, explicit_path, private_directory
+from .runtime_paths import (
+    PROVISIONING_RECORD,
+    RuntimeLayout,
+    explicit_path,
+    private_directory,
+)
 
 # The specification's window: a successful backup is required every 24 hours,
 # and the offline upgrade commands accept one no older than that.
@@ -79,42 +85,70 @@ def _finish(stream):
 ARCHIVED_TREES = ("config", "credentials", "media")
 
 
+def _directory(archive, name, metadata):
+    """Record one owner-only directory, so extraction never widens its mode."""
+    entry = tarfile.TarInfo(str(name))
+    entry.type, entry.mode, entry.mtime = tarfile.DIRTYPE, 0o700, int(metadata.st_mtime)
+    archive.addfile(entry)
+
+
+def _file(archive, name, path):
+    """Record one regular file from a single open descriptor; return its size.
+
+    Opening first and then reading exactly the descriptor's size keeps a
+    file replaced by rename (how branding is written) consistent, and refuses
+    a symlink or special file rather than following it.
+    """
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ConfigError("The runtime trees contain a non-regular file.")
+        entry = tarfile.TarInfo(str(name))
+        entry.size, entry.mode, entry.mtime = (
+            metadata.st_size,
+            0o600,
+            int(metadata.st_mtime),
+        )
+        archive.addfile(entry, stream)
+    return metadata.st_size
+
+
 def archive_files(configuration, sink):
-    """Tar the configuration, credentials and media trees, regular files only.
+    """Tar the archived trees and the provisioning record, regular files only.
 
     Symlinks, devices and anything else are refused rather than followed or
     skipped silently: a tree that contains one is not the tree provisioning
-    made. The archive is deterministic apart from file contents and times.
+    made. Members are named by tree, not by host path, so the restore moves
+    each tree to wherever the deployment configures it. Online services write
+    media while this runs, so a media file or directory that disappears
+    before it is read is left out rather than failing the night's backup.
     """
     total = 0
     with tarfile.open(fileobj=sink, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        record = RuntimeLayout(configuration).provisioning_record
+        total += _file(archive, PROVISIONING_RECORD, record)
         for name in ARCHIVED_TREES:
             root = configuration.paths[name]
+            _directory(archive, name, root.lstat())
             for path in sorted(root.rglob("*")):
                 relative = Path(name) / path.relative_to(root)
-                metadata = path.lstat()
-                if path.is_dir() and not path.is_symlink():
-                    entry = tarfile.TarInfo(str(relative))
-                    entry.type, entry.mode, entry.mtime = (
-                        tarfile.DIRTYPE,
-                        0o700,
-                        int(metadata.st_mtime),
-                    )
-                    archive.addfile(entry)
+                try:
+                    metadata = path.lstat()
+                    if stat.S_ISDIR(metadata.st_mode):
+                        _directory(archive, relative, metadata)
+                        continue
+                    if not stat.S_ISREG(metadata.st_mode):
+                        raise ConfigError(
+                            "The runtime trees contain a non-regular file."
+                        )
+                    total += _file(archive, relative, path)
+                except FileNotFoundError:
+                    if name != "media":
+                        raise
                     continue
-                if not path.is_file() or path.is_symlink():
-                    raise ConfigError("The runtime trees contain a non-regular file.")
-                total += metadata.st_size
                 if total > MAX_FILES_BYTES:
                     raise ConfigError("The runtime trees exceed the backup bound.")
-                entry = tarfile.TarInfo(str(relative))
-                entry.size, entry.mode, entry.mtime = (
-                    metadata.st_size,
-                    0o600,
-                    int(metadata.st_mtime),
-                )
-                with path.open("rb") as stream:
-                    archive.addfile(entry, stream)
     return total
 
 

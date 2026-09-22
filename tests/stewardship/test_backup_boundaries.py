@@ -38,6 +38,7 @@ def test_targets_are_the_three_trees_the_key_the_lock_and_the_output(tmp_path):
         configuration.paths["media"]: True,
         configuration.paths["backups"]: False,
         layout.interlock: True,
+        layout.provisioning_record: True,
     }
     assert configuration.paths["backups"] == tmp_path / "backups"
     assert set(configuration.secrets) == {"backup_data"}
