@@ -55,3 +55,14 @@ def test_admin_rate_limits_and_outages_read_as_temporary(status, text):
     assert b'href="/admin/login"' in response.content
     # Retry-After accompanies only the retryable statuses, as before.
     assert (response.get("Retry-After") == "5") is (status != 403)
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_access_gate_rate_limits_and_outages_use_the_family_route(status):
+    """The /access/ middleware path renders the temporary text, retrying at /."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    response = denial(status=status, retry=5, admin=False)
+    assert response.status_code == status and response["Retry-After"] == "5"
+    assert TEXTS["unavailable"] in response.content
+    assert b'href="/"' in response.content
