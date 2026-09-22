@@ -75,3 +75,24 @@ notes (the pause caveat also applies to the unsent retry, the launch runbook
 states the alert-policy reinstall unconditionally, the mount checklist omits
 a read-only output, and the topology test's role guard is narrower than its
 docstring) were not carried forward.
+
+## Protected delivery
+
+PR #105 delivered candidate `28a56f26`, two logical commits plus the
+receipt of PR #104, whose content is the retained review history on
+`pr/stewardship-gate-round3-fixes-reviewed` (`14c86bb7`), squashed with
+identical content hunks, plus exactly that receipt; the deployment,
+topology, retarget and backup suites passed on that tree, and the
+candidate tree `7d84f36c` is the landed tree. The three rounds above were
+single-source under the exemption; rounds 1 and 2 validated two findings,
+both corrected, and round 3 validated nothing. The pull request was marked
+ready before the candidate was pushed. Exact-head ready-candidate CI
+`35787849027` and DCO passed all 25 checks, from 21:38:29 to 21:59:24 UTC
+on September 22, 2026 (20 minutes 55 seconds). Earlier runs on superseded
+heads were cancelled by the candidate push; none is counted as acceptance.
+`origin/main` had no intervening commits since the candidate's base
+`3d5cbe6d`. Protected auto-merge landed as `2c16c49e` at 21:59:26 UTC and
+was verified on freshly fetched `origin/main`, whose second parent's tree
+is the candidate's, before the next increment was committed. This used the
+standing delivery authority, without deployment or release; no real
+provider was contacted.
