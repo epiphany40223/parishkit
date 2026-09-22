@@ -190,6 +190,7 @@ class RuntimeLayout:
                 "media",
                 "cache",
                 "logs",
+                "backups",
             )
         ]
         roots += [

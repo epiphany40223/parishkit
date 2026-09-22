@@ -41,7 +41,10 @@ deployment recorded. Schedule it from the host's cron every night,
 after the campaign's own nightly work, and once immediately before Production
 activation and before every upgrade. Each run leaves a dated directory under
 `backups/` in the runtime root with `database.pgdump.sealed`,
-`files.tar.sealed` and `manifest.json`; the newest thirty sets are kept.
+`files.tar.sealed` and `manifest.json`; the newest thirty complete sets are
+kept. A failed run leaves its directory without a manifest for inspection;
+it never counts toward the thirty and is not removed, so delete it by hand
+once the cause is understood.
 
 Copy the `backups/` directory off the host after each run, with `rsync` or
 `rclone` from the same cron job to the parish's off-host storage; the sealed

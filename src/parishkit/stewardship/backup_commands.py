@@ -49,6 +49,36 @@ def _open(key, source, destination):
     return {"kind": kind, "plaintext_bytes": count, "plaintext_sha256": digest}
 
 
+def _admit_backup_identity():
+    """The session is the backup login with exactly the attributes it was given.
+
+    Like every other process that opens the database, the command proves its
+    identity before acting: a rendered document naming another login must not
+    dump or record under it. The backup login alone bypasses row-level
+    security and belongs to pg_read_all_data; everything else is refused.
+    """
+    from django.db import connection
+
+    from .database_provisioning import READER_MEMBERSHIP
+    from .runtime_database import require_no_temporary_authority
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT current_user,session_user,rolsuper,rolbypassrls,rolcreatedb,"
+            "rolcreaterole,rolreplication,rolinherit,"
+            "(SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
+            "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
+            "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
+            "FROM pg_roles r WHERE rolname=current_user"
+        )
+        row = cursor.fetchone()
+    login = "pk_stewardship_backup_worker"
+    attributes = (False, True, False, False, False, False)  # super, bypass, ...
+    if row != (login, login, *attributes, READER_MEMBERSHIP):
+        raise ConfigError("The backup command requires its own database login.")
+    require_no_temporary_authority()
+
+
 def _backup(config):
     """Run one backup set in the admitted backup profile and record it."""
     from .backup import run_backup
@@ -68,6 +98,7 @@ def _backup(config):
         from .jobs.backup_models import BackupRun
         from .runtime_database import require_current_schema
 
+        _admit_backup_identity()
         require_current_schema()
         recorded = {}
 

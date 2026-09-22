@@ -186,6 +186,25 @@ def test_generated_documents_are_re_rendered_by_the_running_code(deployment):
     assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
 
 
+def test_a_record_from_a_release_without_a_defaulted_path_still_matches(deployment):
+    """A new default in the deployment document is not an operator change."""
+    marker = deployment.paths.root / ".stewardship-provisioned.json"
+    recorded = record(deployment)
+    # The provisioning release knew no backups path; drop it from the record.
+    del recorded["deployment"]["deployment"]["paths"]["backups"]
+    write_private(marker, json.dumps(recorded).encode())
+    assert retarget.retarget_image(deployment, image=NEW)["image_changed"] is True
+    assert record(deployment)["deployment"]["deployment"]["paths"]["backups"] == str(
+        deployment.paths["backups"]
+    )
+    # A real input change is still refused.
+    recorded = record(deployment)
+    recorded["deployment"]["deployment"]["public_origin"] = "http://localhost:9999"
+    write_private(marker, json.dumps(recorded).encode())
+    with pytest.raises(ConfigError, match="only the image may change"):
+        retarget.retarget_image(deployment, image=NEW)
+
+
 def test_any_other_change_is_refused_and_nothing_is_written(deployment):
     """Changed inputs, missing passwords, bad images and online services refuse."""
     layout = RuntimeLayout(deployment)

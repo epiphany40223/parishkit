@@ -23,7 +23,9 @@ A new one-shot Compose profile, `backup-worker`, runs
 dumps the database with `pg_dump` under its own SQL identity, archives the
 configuration and credentials trees, seals both to the operator's public key,
 writes a plaintext manifest of sizes and digests, records one row in
-`stewardship_backup_run`, and keeps the newest thirty sets on the host. Two
+`stewardship_backup_run`, and keeps the newest thirty complete sets on the
+host (a failed run's directory, without a manifest, neither counts nor is
+removed). Two
 console commands run wherever the operator keeps the private key:
 `backup-keygen` makes the key pair and `backup-open` decrypts one sealed file.
 The scheduler's operational collection opens the existing
@@ -66,8 +68,12 @@ kernel mount evidence like every other profile; it holds the startup
 interlock shared, so it cannot overlap offline work and offline work cannot
 start under it. Its SQL identity, `pk_stewardship_backup_worker`, reads every
 table through `pg_read_all_data` (granted with inheritance, since the login is
-`NOINHERIT`) and may insert and read back its own record and nothing else,
-which provisioning verifies instead of the ordinary grant comparison. The v1
+`NOINHERIT`), bypasses row-level security, because `pg_dump` runs with row
+security off and PostgreSQL refuses that for a login bound by a forced
+policy, and may insert and read back its own record and nothing else, which
+provisioning verifies, table and column privileges alike, instead of the
+ordinary grant comparison; the command proves that identity before it dumps
+or records, as every other database client does. The v1
 launch scope accepts this reduced escrow, a read-only view sealed to a
 human-held key, in place of the deferred operator escrow workflow.
 
@@ -78,11 +84,14 @@ never names a set that does not exist and a failed run leaves absence plus a
 failed set directory without a manifest. The row holds sizes, digests, the
 recipient fingerprint and the application version, never a path or a
 credential, and is append-only. Two readers use it: the scheduler's
-collection, which opens the overdue incident when the newest row is older
-than 24 hours, and, before any row exists, only in Production, so a Testing
-install is not paged before its nightly backup is set up; and the offline
-upgrade commands, which admit a configured deployment only when a row
-completed within the same window. The day-long window is the operations
+collection, which wakes itself when the newest row is older than 24 hours
+(nothing else produces this incident, so an idle deployment must notice the
+first overdue night on its own), opens the incident, and, before any row
+exists, does so only in Production, so a Testing install is not paged before
+its nightly backup is set up; and the offline upgrade commands, which admit a
+configured deployment only when a row completed within the same window and
+otherwise refuse with the generic line plus one fixed sentence in the process
+log naming the missing backup. The day-long window is the operations
 specification's; the reduced form of the deferred upgrade admission is that
 this evidence stands in for verified restore evidence, which the runbook's
 tested restore supplies by hand.

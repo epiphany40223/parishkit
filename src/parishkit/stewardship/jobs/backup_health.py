@@ -26,10 +26,15 @@ REQUIRED_WITHIN = timedelta(hours=24)
 
 
 def needs_backup_observation():
-    """Idle collection wakes only while an overdue episode may need resolving."""
+    """Wake idle collection when a backup is overdue or its episode is open.
+
+    Nothing else produces this incident, so an idle deployment must notice
+    the first overdue night itself; both reads are single rows under the
+    collector's work order.
+    """
     return OperationalIncident.objects.filter(
         kind=IncidentKind.BACKUP_RPO_BREACH, resolved_at__isnull=True
-    ).exists()
+    ).exists() or backup_overdue(database_now())
 
 
 def production_mode():

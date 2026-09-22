@@ -48,3 +48,52 @@ validated, all corrected:
 
 The nineteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex produced no output), two shards. Thirty-one raw findings,
+eleven validated, all corrected:
+
+- Critical: `pg_dump` runs with row security off, which PostgreSQL refuses
+  for a login bound by a forced row-level policy, and seven tables force
+  one, so the nightly dump could never complete on a real deployment. The
+  backup login is now created `BYPASSRLS`, the only login that is; the
+  role check expects it; the guide says so.
+- High: the container provisioning test read only an unprotected table
+  under the default row security. It now reads a policy-forced table with
+  row security off under the backup login, `pg_dump`'s precondition.
+- Medium: the dump's failure path was untested. Cases now drive a nonzero
+  exit and an empty dump, asserting the refusal, the bounded printable
+  diagnostics in the process log and nothing on standard output.
+- Medium: the runbook promised the process log names the cause of a
+  refused upgrade, but the operator wrapper logged nothing. A refused
+  backup admission is now its own exception, and the wrapper logs one fixed
+  sentence naming the missing backup; the runbook and guide say exactly
+  that.
+- Medium: retention counted failed sets, so a run of failures evicted good
+  ones. Only complete sets, those with a manifest, count and go; failed
+  directories stay for the operator, as the runbook now says.
+- Medium: the read-all admission dropped the column-privilege sweep. It now
+  refuses column-level writes beyond the registry; fake-cursor cases cover
+  both sweeps.
+- Medium: the retarget intent comparison used the fully defaulted
+  deployment document, so a release adding a default (this one adds the
+  backups path) would refuse. The recorded document is now re-derived
+  through the running loader before comparison, so only operator inputs are
+  compared; a case retargets a record without the backups path and still
+  refuses a changed origin.
+- Medium: the new backups path was outside the runtime layout's overlap
+  checks; it is now a root, and the path suites cover it.
+- Medium: the exact PGDG pin disappears when a newer build is published,
+  breaking every image build until bumped. The release image guide and the
+  Dockerfile record the coupling with the server digest and the expected
+  failure.
+- Medium: the backup command did not prove its database identity. It now
+  requires the session to be the backup login with exactly its attributes
+  and membership, and no temporary authority, before dumping or recording.
+- Medium: nothing woke the collector for the first overdue night on an
+  idle deployment. The observation need now includes an overdue backup, and
+  the PostgreSQL case asserts the scheduler produces the collection.
+
+The twenty findings the validation step did not confirm were not carried
+forward.

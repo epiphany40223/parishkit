@@ -87,12 +87,11 @@ def _admit_operator(cursor, configuration, marker, *, initial):
             "SELECT EXISTS(SELECT 1 FROM public.stewardship_system_configuration)"
         )
         if cursor.fetchone()[0]:
-            from .backup import recent_backup_recorded
+            from .backup import require_recent_backup
 
             # A configured deployment changes only behind a recent verified
             # backup: the v1 reduction of the deferred upgrade admission.
-            if not recent_backup_recorded(cursor):
-                raise ConfigError("Configured SQL changes require upgrade admission.")
+            require_recent_backup(cursor)
 
 
 def _admit_reader(cursor, login, tables):
@@ -118,6 +117,21 @@ def _admit_reader(cursor, login, tables):
     for schema, table, privilege in cursor.fetchall():
         if schema != "public" or privilege not in tables.get(table, set()):
             raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
+    # Column-level writes are refused the same way; column reads come with
+    # the membership and need no listing.
+    cursor.execute(
+        "SELECT n.nspname,c.relname,a.attname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "JOIN pg_attribute a ON a.attrelid=c.oid "
+        "CROSS JOIN unnest(ARRAY['INSERT','UPDATE','REFERENCES']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped "
+        "AND has_column_privilege(%s,c.oid,a.attnum,p)",
+        [login],
+    )
+    for schema, table, _, privilege in cursor.fetchall():
+        if schema != "public" or privilege not in tables.get(table, set()):
+            raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
 
 
 # The backup login's only membership, as pg_auth_members reports it.
@@ -127,9 +141,10 @@ READER_MEMBERSHIP = "pg_read_all_data:true:false"
 def _check_role(cursor, name, marker, limit, *, reader=False):
     """Idempotent retry never adopts, repairs or silently changes an existing role.
 
-    No foundation login is a member of any role, except the backup login,
-    whose one membership is exactly pg_read_all_data with inheritance and
-    without admin option; anything else is a foreign role.
+    No foundation login is a member of any role or bypasses row-level
+    security, except the backup login, whose one membership is exactly
+    pg_read_all_data with inheritance and without admin option and which
+    bypasses row-level security for pg_dump; anything else is a foreign role.
     """
     cursor.execute(
         "SELECT shobj_description(oid,'pg_authid'),rolsuper,rolbypassrls,rolcreatedb,"
@@ -144,7 +159,7 @@ def _check_role(cursor, name, marker, limit, *, reader=False):
     if row is not None and row != (
         marker,
         False,
-        False,
+        reader,
         False,
         False,
         False,
@@ -223,13 +238,21 @@ def provision_roles(configuration, deployment_id):
                 verifier = database.pgconn.encrypt_password(
                     passwords[name], login.encode("ascii"), b"scram-sha-256"
                 ).decode("ascii")
+                # pg_dump runs with row security off, which PostgreSQL refuses
+                # for a login subject to a forced policy; the backup login
+                # therefore bypasses row-level security, and nothing else does.
                 cursor.execute(
                     sql.SQL(
-                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS "
+                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
                         "NOCREATEDB NOCREATEROLE NOREPLICATION "
                         "CONNECTION LIMIT {} PASSWORD {}"
                     ).format(
                         identifier,
+                        sql.SQL(
+                            "BYPASSRLS"
+                            if role is ServiceRole.BACKUP_WORKER
+                            else "NOBYPASSRLS"
+                        ),
                         sql.Literal(role_limit(configuration, role)),
                         sql.Literal(verifier),
                     )

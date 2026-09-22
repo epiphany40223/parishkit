@@ -36,7 +36,7 @@ from .runtime_paths import RuntimeLayout, explicit_path, private_directory
 # The specification's window: a successful backup is required every 24 hours,
 # and the offline upgrade commands accept one no older than that.
 REQUIRED_WITHIN = timedelta(hours=24)
-# Successful sets kept on the host; the off-host copy is the operator's.
+# Complete sets kept on the host; the off-host copy is the operator's.
 RETAINED_SETS = 30
 # The configuration and credentials trees are small; anything larger is not
 # what this backup was designed for and stops before sealing.
@@ -174,11 +174,19 @@ def dump_database(configuration, sink, *, recipient):
 
 
 def _prune(backups):
-    """Keep the newest retained sets; remove only complete, dated directories."""
+    """Keep the newest retained complete sets; count and remove only those.
+
+    A failed run's directory has no manifest: it is left for inspection and
+    never counts toward retention, so a run of failures cannot evict good
+    sets. The operator removes failed directories by hand.
+    """
     sets = sorted(
         path
         for path in backups.iterdir()
-        if path.is_dir() and not path.is_symlink() and SET_NAME.match(path.name)
+        if path.is_dir()
+        and not path.is_symlink()
+        and SET_NAME.match(path.name)
+        and (path / MANIFEST).is_file()
     )
     for path in sets[:-RETAINED_SETS]:
         shutil.rmtree(path)
@@ -263,6 +271,24 @@ def _sha256(path):
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+class RecentBackupRequired(ConfigError):
+    """A configured deployment asked to change without a backup in the window.
+
+    The operator commands report every refusal with one generic line; this
+    one also earns a fixed sentence in the process log, since the remedy is
+    always the same and the text names nothing private.
+    """
+
+
+def require_recent_backup(cursor):
+    """Refuse a configured change unless a backup is recorded in the window."""
+    if not recent_backup_recorded(cursor):
+        raise RecentBackupRequired(
+            "Configured upgrades require upgrade admission: a backup recorded "
+            "within 24 hours."
+        )
 
 
 def recent_backup_recorded(cursor):

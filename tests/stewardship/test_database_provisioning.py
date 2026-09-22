@@ -93,7 +93,8 @@ def test_existing_role_must_match_every_restricted_attribute(existing):
         else (
             "foreign" if existing == "foreign" else "marker",
             False,
-            False,
+            # The reader rows bypass row-level security, as pg_dump needs.
+            existing in {"reader", "reader-admin"},
             False,
             False,
             False,
@@ -227,22 +228,26 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
 
 
 @pytest.mark.parametrize(
-    "membership, privileges, accepted",
+    "membership, privileges, columns, accepted",
     [
-        ((True,), [], True),
-        ((False,), [], False),
-        ((True,), [("public", "stewardship_backup_run", "INSERT")], True),
-        ((True,), [("public", "stewardship_campaign", "INSERT")], False),
-        ((True,), [("public", "stewardship_backup_run", "UPDATE")], False),
-        ((True,), [("other", "stewardship_backup_run", "INSERT")], False),
+        ((True,), [], [], True),
+        ((False,), [], [], False),
+        ((True,), [("public", "stewardship_backup_run", "INSERT")], [], True),
+        ((True,), [("public", "stewardship_campaign", "INSERT")], [], False),
+        ((True,), [("public", "stewardship_backup_run", "UPDATE")], [], False),
+        ((True,), [("other", "stewardship_backup_run", "INSERT")], [], False),
+        # A column-level write beyond the registry is refused the same way.
+        ((True,), [], [("public", "stewardship_campaign", "name", "UPDATE")], False),
+        ((True,), [], [("public", "stewardship_backup_run", "id", "INSERT")], True),
     ],
 )
 def test_reader_admission_requires_membership_and_only_its_writes(
-    membership, privileges, accepted
+    membership, privileges, columns, accepted
 ):
     """The read-all member may hold no write beyond its own record."""
     cursor = Cursor([membership])
-    cursor.fetchall = lambda: privileges
+    sweeps = iter([privileges, columns])
+    cursor.fetchall = lambda: next(sweeps)
     tables = {"stewardship_backup_run": {"SELECT", "INSERT"}}
     if accepted:
         provisioning._admit_reader(cursor, "pk_stewardship_backup_worker", tables)

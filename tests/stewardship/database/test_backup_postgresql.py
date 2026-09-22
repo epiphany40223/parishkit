@@ -17,6 +17,7 @@ from parishkit.stewardship.jobs.operational_models import OperationalIncident
 from parishkit.stewardship.jobs.ownership import database_now
 
 from .test_background_grants_postgresql import task_login
+from .test_operational_collection_postgresql import schedule
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -95,6 +96,10 @@ def test_overdue_is_judged_from_the_newest_run_and_the_mode(monkeypatch):
     observe()
     assert episode() is None
     monkeypatch.setattr(backup_health, "production_mode", lambda: True)
+    # An idle deployment must wake its own collector for the first breach.
+    with work_transaction():
+        assert backup_health.needs_backup_observation() is True
+    assert schedule() != ()
     observe()
     assert episode() is not None
     recorded()
@@ -118,7 +123,8 @@ def test_a_stale_backup_opens_and_a_fresh_one_resolves_in_testing_too():
     recorded()
     observe()
     assert episode() is None
-    assert not backup_health.needs_backup_observation()
+    with work_transaction():
+        assert not backup_health.needs_backup_observation()
 
 
 def test_upgrade_admission_reads_the_same_evidence():

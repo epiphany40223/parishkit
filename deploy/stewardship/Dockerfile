@@ -7,7 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 # The backup profile dumps the PostgreSQL 18 service with the matching client,
 # which Debian trixie does not carry: take it from the PostgreSQL project's
-# repository, pinned by version, with the signing key checked by digest.
+# repository, pinned by version, with the signing key checked by digest. That
+# repository keeps only the newest build per major version, so this pin and
+# the postgres:18.6 server digest in runtime_topology.py move together when a
+# new build is published; until then the build fails with "version not found".
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \

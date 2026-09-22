@@ -112,12 +112,20 @@ def test_retention_keeps_the_newest_sets_and_only_dated_directories(deployment):
         (backups / name).mkdir(mode=0o700)
         (backups / name / backup.MANIFEST).write_text("{}")
     (backups / "operator-notes").mkdir(mode=0o700)
+    # A failed run's directory has no manifest: it neither counts nor goes.
+    failed = backups / (start - timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
+    failed.mkdir(mode=0o700)
+    (failed / backup.DUMP).write_bytes(b"partial")
     backup.run_backup(deployment, record=lambda **facts: None)
     remaining = sorted(p.name for p in backups.iterdir())
-    assert "operator-notes" in remaining
-    dated = [name for name in remaining if backup.SET_NAME.match(name)]
-    assert len(dated) == backup.RETAINED_SETS
-    assert dated[0] == (start + timedelta(days=3)).strftime("%Y%m%dT%H%M%SZ")
+    assert "operator-notes" in remaining and failed.name in remaining
+    complete = [
+        name
+        for name in remaining
+        if backup.SET_NAME.match(name) and (backups / name / backup.MANIFEST).exists()
+    ]
+    assert len(complete) == backup.RETAINED_SETS
+    assert complete[0] == (start + timedelta(days=3)).strftime("%Y%m%dT%H%M%SZ")
 
 
 def test_refusals_leave_no_record(deployment, tmp_path):
@@ -195,6 +203,48 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
     assert command[:2] == ["/usr/bin/pg_dump", "--format=custom"]
     assert command[command.index("--username") + 1] == deployment.postgres.user
     assert deployment.postgres.user == "pk_stewardship_backup_worker"
+
+
+@pytest.mark.parametrize("failure", ["exit", "empty"])
+def test_a_failed_dump_is_refused_and_its_diagnostics_reach_the_log(
+    deployment, monkeypatch, caplog, capsys, failure
+):
+    """A nonzero exit or an empty dump refuses; stderr is logged, bounded, printable."""
+    monkeypatch.undo()
+    recipient = backup_sealing.Recipient.load(
+        RuntimeLayout(deployment).credential("backup_data")
+    )
+    noise = b"pg_dump: error: \x01secret\x7f " + b"x" * (backup.MAX_DIAGNOSTICS + 100)
+
+    class Process:
+        """A pg_dump that fails, or that says nothing at all."""
+
+        def __init__(self, command, **options):
+            self.stdout = io.BytesIO(DUMP if failure == "exit" else b"")
+            self.stderr = io.BytesIO(noise + b"\n")
+            self.returncode = 1 if failure == "exit" else 0
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(backup.shutil, "which", lambda name: "/usr/bin/pg_dump")
+    monkeypatch.setattr(backup.subprocess, "Popen", Process)
+    with (
+        caplog.at_level("ERROR", logger="parishkit.stewardship"),
+        pytest.raises(ConfigError, match="did not complete"),
+    ):
+        backup.dump_database(deployment, io.BytesIO(), recipient=recipient)
+    (record,) = [r for r in caplog.records if "pg_dump exited" in r.getMessage()]
+    message = record.getMessage()
+    assert "\x01" not in message and "\x7f" not in message
+    assert "secret" in message and len(message) <= backup.MAX_DIAGNOSTICS + 64
+    assert capsys.readouterr().out == ""
 
 
 def test_keygen_and_open_commands_roundtrip_and_refuse_generically(tmp_path, capsys):

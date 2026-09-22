@@ -1,6 +1,7 @@
 """Explicit offline commands, never available through web or background queues."""
 
 import json
+import logging
 import secrets
 from importlib import import_module
 from uuid import UUID, uuid4
@@ -110,14 +111,12 @@ def migrate_command(configuration):
                     "SELECT EXISTS(SELECT 1 FROM "
                     "public.stewardship_system_configuration)"
                 )
-                from .backup import recent_backup_recorded
+                from .backup import require_recent_backup
 
                 # The v1 reduction of the deferred upgrade admission: a
                 # configured deployment migrates only behind a recent backup.
-                if cursor.fetchone()[0] and not recent_backup_recorded(cursor):
-                    raise ConfigError(
-                        "Configured upgrades require verified backup admission."
-                    )
+                if cursor.fetchone()[0]:
+                    require_recent_backup(cursor)
         from .runtime_database import require_role_capacity
 
         require_role_capacity(configuration)
@@ -273,7 +272,16 @@ def execute_operator(args):
             )
         else:
             raise ConfigError("Unsupported operator command.")
-    except Exception:
+    except Exception as error:
+        from .backup import RecentBackupRequired
+
+        if type(error) is RecentBackupRequired:
+            # The one refusal whose remedy is always the same and whose text
+            # names nothing private: say so in the process log.
+            logging.getLogger("parishkit.stewardship").error(
+                "Configured upgrade refused: no backup is recorded within the "
+                "last 24 hours; run the backup first."
+            )
         print(
             "ERROR: offline operation refused or failed; verify profile, inputs, "
             "permissions, interlock and database readiness",

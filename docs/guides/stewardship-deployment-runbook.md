@@ -156,7 +156,7 @@ sequence with the commands that exist.
    first installation both commands admit the change only when a backup
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
-   process log names the cause. A release that changes neither the schema
+   process log carries one fixed sentence naming the missing backup. A release that changes neither the schema
    nor a grant skips this step entirely.
 5. **Start and check.** Bring the online services back with `up --detach`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever

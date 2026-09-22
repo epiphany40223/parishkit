@@ -65,6 +65,19 @@ command changed only the topologies and refused any other differing
 document; the [v1 backup increment](stewardship-backup.md) widened it as the
 deployment runbook required.)
 
+### The image carries the matching PostgreSQL client
+
+The [v1 backup](stewardship-backup.md) dumps the database from inside the
+application image, so the image installs `postgresql-client-18` from the
+PostgreSQL project's repository, pinned to the exact build that matches the
+server image's `postgres:18.6` digest in `runtime_topology.py`. That
+repository keeps only the newest build of each major version: when 18.7, or a
+rebuild of 18.6, is published, the pinned build disappears and every image
+build, the release workflow's included, fails with "version not found" until
+the pin is moved. That failure is expected, not a defect. Bump the client pin
+and the server digest together, in one change, so `pg_dump` never runs against
+a newer server than itself.
+
 ### The scaffold is gone, not fixed
 
 The pre-production `compose.production.yaml` described services whose

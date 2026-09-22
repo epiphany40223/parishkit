@@ -15,6 +15,8 @@ restarts remain the operator's separate, documented upgrade steps.
 import json
 import os
 import stat
+import tempfile
+from pathlib import Path
 
 from parishkit.config import ConfigError
 
@@ -47,6 +49,23 @@ def _recorded(path):
     }:
         raise ConfigError("The provisioning record has an unknown shape.")
     return value
+
+
+def _rederived(document):
+    """The recorded deployment document as the running release would write it.
+
+    A release may add a defaulted field (a new runtime path, say) that the
+    provisioning release never recorded. Loading the recorded document back
+    through the current loader fills in exactly those defaults, so the
+    comparison sees the operator's inputs, not the older release's shape.
+    """
+    from .deployment import load_deployment
+    from .deployment_documents import deployment_document
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as handle:
+        json.dump(document, handle)
+        handle.flush()
+        return deployment_document(load_deployment(Path(handle.name), environ={}))
 
 
 def _plan(configuration, recorded, *, image):
@@ -85,8 +104,9 @@ def retarget_image(configuration, *, image):
         configuration, recorded, image=image
     )
     proposed = json.loads(intent)
+    expected = dict(recorded, deployment=_rederived(recorded["deployment"]))
     if {key: value for key, value in proposed.items() if key != "image"} != {
-        key: value for key, value in recorded.items() if key != "image"
+        key: value for key, value in expected.items() if key != "image"
     }:
         raise ConfigError(
             "Deployment inputs differ from provisioning; only the image may change."
