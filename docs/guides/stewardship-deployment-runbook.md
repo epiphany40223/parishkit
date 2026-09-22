@@ -167,7 +167,7 @@ sequence with the commands that exist.
    first installation both commands admit the change only when a backup
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
-   process log carries one fixed sentence naming the missing backup. A
+   process log carries the event `upgrade_backup_required`. A
    release that changes neither the schema nor a grant still pulls, but
    skips the migration and grant commands. `database-grants` never revokes:
    for a release that *narrows* a runtime grant on a table that still

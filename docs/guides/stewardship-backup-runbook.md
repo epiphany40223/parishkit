@@ -37,9 +37,10 @@ docker compose ... run --rm backup-worker
 
 It prints one JSON line naming the sizes, the recipient fingerprint and the
 manifest digest and exits `0`; on any refusal it prints one generic line and
-exits `2`, and the process log records only the failure's category (a
-configuration refusal, for most causes), plus `pg_dump`'s own message when
-the dump itself failed. Keep the printed manifest digest with the off-host
+exits `2`, and the process log records only reviewed events: the failure's
+category (a configuration refusal, for most causes), and the event
+`backup_dump_failed` when the database dump itself failed. `pg_dump`'s own
+text is never logged, since it can name hosts, roles and paths. Keep the printed manifest digest with the off-host
 copy (the cron job can append the line to a log there): the sealed files
 prove that they were not altered, not who made them, and the digest is how a
 restore proves it is restoring the set the deployment recorded. Schedule it
@@ -74,8 +75,10 @@ lies inside the archived trees; no offline work (a migration or an upgrade)
 holds the startup lock; the database schema matches the running image (an
 image changed without its migration refuses); the configuration,
 credentials and media trees hold only regular files and directories (no
-symlink) and stay under 256 MiB together; and the database is reachable (a
-failed dump logs `pg_dump`'s own message). The backup also refuses when
+symlink) and stay under 256 MiB together; and, when the log shows
+`backup_dump_failed`, that the database is running and reachable and the
+backup login's password file still matches (the health command in the web
+container checks the database). The backup also refuses when
 it does not run under its own profile and database login (a changed Compose
 file, a root user, a writable root filesystem or an extra or writable mount),
 so rerender with `retarget-image` if the Compose file was edited by hand.
