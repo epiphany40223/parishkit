@@ -205,6 +205,16 @@ runbooks. Broader feature metrics, durable log ingestion/viewing, Admin/Slack
 delivery and backup/source/mail/purge runbooks retain their later owners; mixed
 tasks .01/.02/.04/.05/.06 therefore remain unchecked.
 
+Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the launch
+portion of OPS-08.05 is the
+[deployment runbook](../../guides/stewardship-deployment-runbook.md), the
+[backup runbook](../../guides/stewardship-backup-runbook.md) and the
+[launch runbooks](../../guides/stewardship-launch-runbooks.md) for alert
+routing, mail-provider and ParishSoft outages, delivery pause and resume and
+`delivery_unknown` messages. OPS-08.05 stays unchecked for the purge,
+restore-release and retention runbooks the launch scope defers, and OPS-08.06's
+failure-injection exercises remain later work.
+
 ## OPS-09: CI, coverage, browser, acceptance, and release pipeline
 
 Scope and dependencies: [OPS-09 work package](../../plans/stewardship/operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline).
