@@ -86,8 +86,7 @@ database tests read the namespace cookie their route uses.
 
 ## Checkpoint
 
-Implementation, focused validation, review round 1 and its correction
-check (round 2) are complete. The remaining
-[review rounds](stewardship-csrf-namespaces-reviews.md), CI and protected
-delivery remain open. No deployment, release, live-provider write or
+Implementation, focused validation and the three
+[review rounds](stewardship-csrf-namespaces-reviews.md) are complete; full
+exact-head CI, DCO and protected delivery remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.

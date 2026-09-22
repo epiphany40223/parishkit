@@ -47,3 +47,11 @@ sign-in in the same client the first tab's old token is refused and cannot
 renew the new session. One low-severity note was taken: the Family logout
 in the session-end test asserts its 302. The other low-severity notes
 concerned the removed recovery and are moot. A further round follows.
+
+## Round 3
+
+Claude only (Codex produced no structured output). Two raw findings, none
+validated; the review rounds are closed. The low-severity notes (the
+malformed-cookie test does not use a well-formed 64-character value or show
+a refused POST, and the attribute test does not check `max-age`) were not
+carried forward.
