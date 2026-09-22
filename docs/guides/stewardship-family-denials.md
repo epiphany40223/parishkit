@@ -32,8 +32,8 @@ category, never a reason within it. The kinds and their callers:
 | --- | --- | --- |
 | `code` | This Family code cannot be found or used. | Manual code entry, 403 |
 | `link` | This secure Family link cannot be found or used. | `/access/<token>`, 403 |
-| `unavailable` | Sign-in is temporarily unavailable. Please try again later. | Any Family 429 or 503 |
-| default | Sign-in is unavailable. Please try again. | Admin; Family fetch 400/403 |
+| `unavailable` | Sign-in is temporarily unavailable. Please try again later. | Any 429 or 503, Family or Admin |
+| default | Sign-in is unavailable. Please try again. | Other Admin refusals; Family fetch 400/403 |
 
 - Family `denied()` maps any 429 or 503 to `unavailable`. That covers the
   manual entry limiter checks, including the failure that crosses the limit,
@@ -41,7 +41,11 @@ category, never a reason within it. The kinds and their callers:
   keepalive and presence.
 - The `/access/` rate-limit and outage gate in the authentication middleware,
   and the access-gate outage path on Family routes, use `unavailable`.
-- Admin routes keep the original generic text and retry route.
+- Admin refusals with a 429 or 503 status, on the sign-in routes and the
+  access gate, use `unavailable` too, since the architecture specification
+  gives Admin OAuth and Family code entry the same generic
+  temporary-unavailability response; other Admin refusals keep the original
+  generic text, and every Admin page keeps the Admin retry route.
 - The keepalive and presence endpoints are called by page scripts that never
   display the response body, so their 400 and ended-session 403 keep the
   default text.
@@ -59,13 +63,15 @@ optional access-denied help are unchanged.
   rehearsal return 403 with one identical link page; the pair-limit 429, a
   repeat 429 and a limiter outage 503 render one identical
   temporary-unavailability page with no private diagnostic.
-- PostgreSQL, access gates: an invalid setup marker keeps the Admin generic
-  text and gives `/`, `/family/` and `/access/` the temporary-unavailability
-  text with `Retry-After: 5`.
+- PostgreSQL, access gates: an invalid setup marker gives `/admin/`, `/`,
+  `/family/` and `/access/` the temporary-unavailability text, with
+  `Retry-After: 5` on the Family routes.
 - PostgreSQL, public help: configured access-denied help stays identity-free
   on both the code and link pages, and rejected codes stay byte-identical.
 - Pure: each kind renders only its own text with `no-store` and a fixed retry
-  link, Admin keeps its text and route, and an unknown kind is rejected.
+  link, Admin's default text and route are unchanged, Admin 429 and 503
+  refusals render the temporary text while a 403 keeps the default, and an
+  unknown kind is rejected.
 - Browser: the three new denial pages pass the accessibility and responsive
   component checks in Chromium, Firefox and WebKit.
 
