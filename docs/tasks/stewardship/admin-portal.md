@@ -180,11 +180,11 @@ unmaterialized-obligation matrix keep .01/.03/.04/.05 open for later owners.
 
 Scope and dependencies: [ADM-07 work package](../../plans/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments).
 
-- [ ] ADM-07.01 — Build login-rule tables with serialized autosave and conflict recovery.
-- [ ] ADM-07.02 — Implement low-friction role edits and high-impact notifications.
-- [ ] ADM-07.03 — Build chair suggestions, grant provenance, and inherited-role review.
-- [ ] ADM-07.04 — Build manual assignment and runtime-suspension review.
-- [ ] ADM-07.05 — Test rapid autosave, uncertain outcomes, precedence, and policy races.
+- [x] ADM-07.01 — Build login-rule tables with serialized autosave and conflict recovery.
+- [x] ADM-07.02 — Implement low-friction role edits and high-impact notifications.
+- [x] ADM-07.03 — Build chair suggestions, grant provenance, and inherited-role review.
+- [x] ADM-07.04 — Build manual assignment and runtime-suspension review.
+- [x] ADM-07.05 — Test rapid autosave, uncertain outcomes, precedence, and policy races.
 
 Evidence: In progress. The
 [portal users review increment](../../guides/stewardship-portal-users.md) adds
@@ -224,8 +224,12 @@ each assignment, and is delivered under its
 The [login-rule autosave queue increment](../../guides/stewardship-rule-autosave.md)
 adds the autosave of role checkbox changes of .01 through keyed configuration
 requests with the queue, applied-digest adoption, pause and conflict
-resolution the specification requires; the tests of .05 remain, so every
-task stays unchecked.
+resolution the specification requires, and is delivered under its
+[protected receipt](../../guides/stewardship-rule-autosave.md#protected-delivery).
+The [race and exact-once tests increment](../../guides/stewardship-autosave-races.md)
+adds the cases of .05 the delivered suites did not yet hold and cites where
+the rest live, so .01 to .05 are checked; its review/fix rounds, full
+exact-head CI/DCO and protected delivery remain pending.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
