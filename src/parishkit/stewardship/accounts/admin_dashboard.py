@@ -25,7 +25,13 @@ def summary(actor, configuration, now):
         .values_list("promoted_at", flat=True)
         .first()
     )
-    result = {"campaign": campaign, "refreshed_at": refreshed_at}
+    result = {
+        "campaign": campaign,
+        "refreshed_at": refreshed_at,
+        # Only an Administrator may request a manual refresh; the link is
+        # offered to nobody else.
+        "can_refresh": allows(actor, Capability.CONFIGURE),
+    }
     if campaign is not None:
         result["next_mail"] = (
             ScheduleRevision.objects.filter(

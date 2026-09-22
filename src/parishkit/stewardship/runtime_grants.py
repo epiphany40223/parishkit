@@ -25,6 +25,12 @@ WEB_READ_TABLES = frozenset(
         "stewardship_provider_context",
         "stewardship_public_credential_handoff",
         "stewardship_source_current",
+        # The manual refresh page records a refresh command through the
+        # domain's own admission, which reads the lease and any waiting
+        # request to coalesce; identifiers and window digests only.
+        "stewardship_source_lease",
+        "stewardship_source_refresh_request",
+        "stewardship_source_refresh_command",
         "stewardship_chair_suggestion",
         "stewardship_chair_seed_intent",
         # The suspended-assignment review reads the episodes, the receipts
@@ -114,6 +120,8 @@ WEB_READ_TABLES = frozenset(
 
 WEB_INSERT_TABLES = frozenset(
     [
+        "stewardship_source_refresh_request",
+        "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
         "stewardship_setup_attempt",
         "stewardship_setup_draft_section",
