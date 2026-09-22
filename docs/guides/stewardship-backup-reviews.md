@@ -133,3 +133,10 @@ check follows.
 Claude only (Codex produced no output), two shards. Correction check: five
 raw findings, none validated. This closes the review rounds: three full
 rounds and one correction check, every accepted finding fixed.
+
+## Round 5
+
+Claude only (Codex produced no output), two shards. Correction check of the
+standalone correction made after the first exact-head candidate failed (the
+backup console test's leaked logging handler and the outbox boundary suite's
+stale expectation): two raw findings, none validated.
