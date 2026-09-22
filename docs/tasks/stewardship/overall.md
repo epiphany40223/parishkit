@@ -17,8 +17,8 @@ V1 launch override (September 21, 2026): select work from the
 [v1 launch scope](../../plans/stewardship/v1-launch.md) first. It lists the
 launch-critical tasks, the task IDs cut or reduced for v1, and the schedule to
 the October 3, 2026 go-live. Leave deferred task IDs unchecked. Current
-status: the launch runbooks are delivered (PR #96); the paused-resend
-correction is in review, with the pre-launch gate next.
+status: the paused-resend correction is delivered (PR #97); the pre-launch
+gate reviews are in progress.
 
 ## How to select the next work
 
