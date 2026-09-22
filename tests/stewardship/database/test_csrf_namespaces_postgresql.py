@@ -3,7 +3,10 @@
 import re
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 from django.test import Client
+
+from parishkit.stewardship.accounts.sessions import NamespacedCsrfMiddleware
 
 from .auth_builders import start
 from .test_family_auth_postgresql import family_service as family_service
@@ -35,6 +38,13 @@ def admin_login(client):
 def keepalive(client, token):
     """The Family tab's empty CSRF-protected activity claim."""
     return client.post("/family/keepalive", b"", HTTP_X_CSRFTOKEN=token, **JSON)
+
+
+def keepalive_from(client, token, origin):
+    """A keepalive carrying an explicit browser Origin header."""
+    return client.post(
+        "/family/keepalive", b"", HTTP_X_CSRFTOKEN=token, HTTP_ORIGIN=origin, **JSON
+    )
 
 
 def test_family_page_token_survives_admin_login(family_service, google):
@@ -98,6 +108,18 @@ def test_family_csrf_failure_is_distinguishable_and_recoverable(family_service):
     assert admin.content == b"Access is not authorized.\n"
 
 
+def test_family_origin_failure_is_not_recoverable(family_service):
+    """A fresh token cannot fix a foreign Origin, so it stays a plain 403."""
+    client, _ = login(family_service.code)
+    token = page_token(client, "/family/")
+    foreign = keepalive_from(client, token, "https://attacker.example")
+    assert foreign.status_code == 403
+    assert foreign.content == b"Access is not authorized.\n"
+    missing = client.post("/family/keepalive", b"", **JSON)
+    assert missing.status_code == 403
+    assert missing.json()["error"] == "csrf_failed"
+
+
 def test_real_family_session_end_is_not_a_csrf_failure(family_service):
     """With a valid token, an ended session still reports session_ended."""
     client, _ = login(family_service.code)
@@ -116,3 +138,39 @@ def test_malformed_namespace_cookie_is_replaced(family_service):
     assert client.get("/").status_code in {200, 302}
     secret = client.cookies["pk_family_csrf"].value
     assert re.fullmatch(r"[A-Za-z0-9]{32}", secret)
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_namespace_cookie_attributes(family_service, settings, secure):
+    """The test cookie jar ignores Path, so assert each Set-Cookie directly."""
+    settings.CSRF_COOKIE_SECURE = secure
+    settings.CSRF_COOKIE_DOMAIN = "testserver" if secure else None
+    for path, name, scope in (
+        ("/", "pk_family_csrf", "/"),
+        ("/admin/login", "pk_admin_csrf", "/admin/"),
+    ):
+        response = Client().get(path)
+        assert response.status_code == 200
+        cookie = response.cookies[name]
+        assert cookie["path"] == scope
+        assert cookie["httponly"] is True
+        assert cookie["samesite"] == "Lax"
+        assert bool(cookie["secure"]) is secure
+        assert cookie["domain"] == ("testserver" if secure else "")
+        assert "csrftoken" not in response.cookies
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"CSRF_USE_SESSIONS": True},
+        {"CSRF_COOKIE_NAME": "other"},
+        {"CSRF_COOKIE_PATH": "/family/"},
+    ],
+)
+def test_unsupported_csrf_settings_refuse_to_load(settings, override):
+    """Settings the namespaced cookies would silently ignore fail at load time."""
+    for key, value in override.items():
+        setattr(settings, key, value)
+    with pytest.raises(ImproperlyConfigured):
+        NamespacedCsrfMiddleware(lambda request: None)

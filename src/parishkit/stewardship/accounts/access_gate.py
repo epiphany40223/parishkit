@@ -6,6 +6,7 @@ from django.utils.deprecation import MiddlewareMixin
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.web.namespaces import is_admin
 from parishkit.stewardship.web.security import login_denial
 
 from .authentication import runtime
@@ -43,7 +44,7 @@ class AccessGateMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         """Direct HTML and partial/POST endpoints share the same state admission."""
-        admin = request.path_info.startswith("/admin/")
+        admin = is_admin(request)
         family = (
             request.path_info == "/"
             or request.path_info.startswith("/family/")

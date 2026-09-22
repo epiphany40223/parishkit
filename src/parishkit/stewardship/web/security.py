@@ -19,6 +19,7 @@ from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.deployment import DeploymentProfile
+from parishkit.stewardship.web.namespaces import is_admin
 
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
@@ -137,15 +138,23 @@ def csrf_failure(request, reason=""):
 
     The Family client treats its JSON endpoints' 403 as an ended session and
     clears unsaved answers. A stale page token is not an ended session, so a
-    Family JSON request gets a distinguishable body carrying a fresh token for
-    this browser's own Family CSRF cookie. Only same-origin script can read
-    it, exactly like the token already rendered into Family pages; the
-    rejected request itself still does nothing.
+    Family JSON request with a token or cookie problem gets a distinguishable
+    body carrying a fresh token for this browser's own Family CSRF cookie.
+    Only same-origin script can read it, exactly like the token already
+    rendered into Family pages; the rejected request itself still does
+    nothing.
     """
-    # The same path rule as accounts.sessions.cookie_namespace, kept local so
-    # this dependency-free module does not import the session models.
-    family = not request.path_info.startswith("/admin/")
-    if family and "application/json" in request.headers.get("Accept", ""):
+    # Only a missing or stale token or cookie is recoverable with a fresh
+    # token. Origin and Referer failures stay a plain 403, so the client shows
+    # a definite failure instead of an endless "refreshed, try again" loop.
+    # Django phrases every token/cookie reason as "CSRF token ..." or "CSRF
+    # cookie ..." and every other reason as "Origin/Referer checking failed".
+    recoverable = reason.startswith(("CSRF token ", "CSRF cookie "))
+    if (
+        recoverable
+        and not is_admin(request)
+        and "application/json" in request.headers.get("Accept", "")
+    ):
         response = JsonResponse(
             {"error": "csrf_failed", "csrf_token": get_token(request)}, status=403
         )

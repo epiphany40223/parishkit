@@ -4,9 +4,10 @@ import hashlib
 import json
 from importlib import import_module
 
-from django.conf import settings
+from django.conf import global_settings, settings
 from django.contrib.sessions.exceptions import SessionInterrupted
 from django.contrib.sessions.models import Session
+from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, transaction
 from django.db.models import F, Q, Value
 from django.db.models.functions import Greatest
@@ -22,6 +23,7 @@ from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
 
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.web.namespaces import cookie_namespace
 
 from .models import AdminRevocation, PortalSession, PortalUser
 from .policy import current_principal
@@ -37,19 +39,6 @@ from .session_policy import (
 from .session_policy import (
     FAMILY_IDLE as FAMILY_IDLE,
 )
-
-# (session cookie, CSRF cookie, cookie path) for each namespace. Only the
-# transport is shared: Family and Admin never read each other's cookies, so a
-# login or rotation in one namespace cannot invalidate the other's open pages.
-FAMILY_COOKIES = ("pk_family", "pk_family_csrf", "/")
-ADMIN_COOKIES = ("pk_admin", "pk_admin_csrf", "/admin/")
-
-
-def cookie_namespace(request):
-    """Select the namespace by path, identically for session and CSRF state."""
-    if request.path_info.startswith("/admin/"):
-        return ADMIN_COOKIES
-    return FAMILY_COOKIES
 
 
 class NamespacedSessionMiddleware:
@@ -104,7 +93,24 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
     Rotation on login or privilege change still replaces the secret, now only
     within its own namespace. CSRF_USE_SESSIONS is not used because it would
     persist a database session for every anonymous sign-in page view.
+
+    The namespace supplies the cookie name and path; CSRF_COOKIE_DOMAIN,
+    AGE, SECURE, HTTPONLY and SAMESITE apply as usual. Settings this class
+    would silently ignore refuse to load instead.
     """
+
+    def __init__(self, get_response):
+        """Refuse CSRF settings that the namespaced cookies cannot honor."""
+        if (
+            settings.CSRF_USE_SESSIONS
+            or settings.CSRF_COOKIE_NAME != global_settings.CSRF_COOKIE_NAME
+            or settings.CSRF_COOKIE_PATH != global_settings.CSRF_COOKIE_PATH
+        ):
+            raise ImproperlyConfigured(
+                "Namespaced CSRF cookies set their own name and path and "
+                "do not support CSRF_USE_SESSIONS."
+            )
+        super().__init__(get_response)
 
     def _get_secret(self, request):
         """Read the namespace secret; a malformed value is replaced, not trusted."""
@@ -124,6 +130,7 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
             name,
             request.META["CSRF_COOKIE"],
             max_age=settings.CSRF_COOKIE_AGE,
+            domain=settings.CSRF_COOKIE_DOMAIN,
             path=path,
             secure=settings.CSRF_COOKIE_SECURE,
             httponly=settings.CSRF_COOKIE_HTTPONLY,
