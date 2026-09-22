@@ -51,7 +51,7 @@ def intent(store, **values):
 def apply(browser, values):
     """Send with the genuine CSRF token in the header, as the script does."""
     return browser.post(
-        APPLY, values, headers={"X-CSRFToken": browser.cookies["csrftoken"].value}
+        APPLY, values, headers={"X-CSRFToken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

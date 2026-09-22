@@ -19,7 +19,7 @@ def test_logout_preserves_sealed_cleanup_detail(response_service):
     client = response_service.client
     result = client.post(
         "/family/logout",
-        {"csrfmiddlewaretoken": client.cookies["csrftoken"].value},
+        {"csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value},
     )
     assert result.status_code == 302
     session = FamilySession.objects.get(pk=form.baseline.family_session_id)

@@ -86,7 +86,8 @@ def login(code, client=None):
     client = client or Client(enforce_csrf_checks=True)
     assert client.get("/").status_code == 200
     response = client.post(
-        "/", {"code": code, "csrfmiddlewaretoken": client.cookies["csrftoken"].value}
+        "/",
+        {"code": code, "csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value},
     )
     return client, response
 
@@ -110,7 +111,7 @@ def test_multipart_keepalive_is_a_bad_request_not_a_server_error(family_service)
     assert response.status_code == 302
     response = client.post(
         "/family/keepalive",
-        {"csrfmiddlewaretoken": client.cookies["csrftoken"].value, "claim": "x"},
+        {"csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value, "claim": "x"},
     )
     assert response.status_code == 400
 
@@ -132,7 +133,7 @@ def test_family_login_reuses_only_the_fresh_locked_scope(family_service, monkeyp
         "/",
         {
             "code": family_service.code,
-            "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
+            "csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value,
         },
     )
     assert response.status_code == 302
@@ -152,7 +153,7 @@ def test_ordered_family_cleanup_preserves_audit_attribution(family_service):
     response = client.post(
         "/family/logout",
         {
-            "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
+            "csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value,
         },
     )
     assert response.status_code == 302
@@ -290,7 +291,7 @@ def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(
         ).status_code
         == 403
     )
-    csrf = client.cookies["csrftoken"].value
+    csrf = client.cookies["pk_family_csrf"].value
     assert (
         client.post(
             "/family/keepalive",
@@ -370,7 +371,8 @@ def test_logout_does_not_touch_admin_cookie(family_service):
     client, _ = login(family_service.code)
     client.cookies["pk_admin"] = "separate-admin-cookie"
     response = client.post(
-        "/family/logout", {"csrfmiddlewaretoken": client.cookies["csrftoken"].value}
+        "/family/logout",
+        {"csrfmiddlewaretoken": client.cookies["pk_family_csrf"].value},
     )
     assert response.status_code == 302
     assert response.cookies["pk_family"]["max-age"] == 0

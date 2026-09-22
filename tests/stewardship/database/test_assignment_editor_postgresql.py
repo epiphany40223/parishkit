@@ -42,7 +42,7 @@ def web():
 def post(browser, values, url=URL):
     """Use the genuine CSRF cookie."""
     return browser.post(
-        url, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        url, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

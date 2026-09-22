@@ -202,7 +202,7 @@ def test_csrf_logout_clears_only_admin_and_ordered_cleanup_works(auth_service, g
     assert client.post("/admin/logout").status_code == 403
     assert client.get("/admin/logout").status_code == 405
     response = client.post(
-        "/admin/logout", {"csrfmiddlewaretoken": client.cookies["csrftoken"].value}
+        "/admin/logout", {"csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value}
     )
     assert response.status_code == 302
     row.refresh_from_db()
@@ -325,12 +325,12 @@ def test_changed_privileges_rotate_cookie_without_refreshing_authentication(
     browser, _ = signed_in()
     original = PortalSession.objects.get()
     cookie = browser.cookies["pk_admin"].value
-    csrf = browser.cookies["csrftoken"].value
+    csrf = browser.cookies["pk_admin_csrf"].value
     principal = Principal(original.principal_id, frozenset({"staff"}))
     monkeypatch.setattr(sessions, "current_principal", lambda *args: principal)
     assert browser.get("/admin/").status_code == 200
     assert browser.cookies["pk_admin"].value != cookie
-    assert browser.cookies["csrftoken"].value != csrf
+    assert browser.cookies["pk_admin_csrf"].value != csrf
     replacement = PortalSession.objects.get(revoked_at__isnull=True)
     assert replacement.authenticated_at == original.authenticated_at
     assert replacement.expires_at == original.expires_at

@@ -107,7 +107,7 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
         # Identifying values never travel in a URL.
         assert browser.get(URL + "?email=blocked@example.org").status_code == 400
         # With a genuine CSRF token, so the view itself refuses the method.
-        token = browser.cookies["csrftoken"].value
+        token = browser.cookies["pk_admin_csrf"].value
         assert browser.post(URL, {"csrfmiddlewaretoken": token}).status_code == 405
     # Three identities presented the example.org claim, but the rule authorizes
     # only the colleague: the Administrator and the refused address each have an

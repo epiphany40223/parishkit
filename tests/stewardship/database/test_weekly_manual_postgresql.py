@@ -243,7 +243,7 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
                 browser.post(
                     path,
                     values | {"acknowledge": ""},
-                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
                 == 400
             )
@@ -265,7 +265,9 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for _ in range(2):
                 response = browser.post(
-                    path, values, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value
+                    path,
+                    values,
+                    HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert response.status_code == (409 if stale else 302)
                 assert response["Cache-Control"] == "no-store"

@@ -41,7 +41,7 @@ def post(browser, key):
         URL,
         {
             "request_key": str(key),
-            "csrfmiddlewaretoken": browser.cookies["csrftoken"].value,
+            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
         },
     )
 
@@ -161,7 +161,7 @@ def test_only_an_administrator_may_request_a_refresh(auth_service, google, monke
             URL,
             {
                 "request_key": "not-a-key",
-                "csrfmiddlewaretoken": browser.cookies["csrftoken"].value,
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
             },
         )
         assert bad.status_code == 400
@@ -170,7 +170,7 @@ def test_only_an_administrator_may_request_a_refresh(auth_service, google, monke
             {
                 "request_key": str(uuid4()),
                 "extra": "1",
-                "csrfmiddlewaretoken": browser.cookies["csrftoken"].value,
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
             },
         )
         assert stray.status_code == 400

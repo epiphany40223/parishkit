@@ -64,7 +64,10 @@ def http_scenario(scenario, google, settings):  # noqa: F811
 def post(browser, url, data=None, **extra):
     """API requests carry CSRF in its standard header, never a query string."""
     return browser.post(
-        url, data or {}, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value, **extra
+        url,
+        data or {},
+        HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        **extra,
     )
 
 
@@ -223,6 +226,6 @@ def test_form_csrf_and_invalid_cancel_are_distinct_from_completed_conflict(
     queued = create(http_scenario)
     response = browser.post(
         f"/admin/exports/{queued.pk}/cancel",
-        {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value},
+        {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
     )
     assert response.status_code == 200

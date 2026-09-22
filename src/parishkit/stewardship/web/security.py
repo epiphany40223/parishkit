@@ -14,7 +14,8 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.deployment import DeploymentProfile
@@ -132,7 +133,25 @@ def error_response(request, *, status):
 
 
 def csrf_failure(request, reason=""):
-    """Do not disclose the supplied origin, cookie, referer or framework reason."""
+    """Do not disclose the supplied origin, cookie, referer or framework reason.
+
+    The Family client treats its JSON endpoints' 403 as an ended session and
+    clears unsaved answers. A stale page token is not an ended session, so a
+    Family JSON request gets a distinguishable body carrying a fresh token for
+    this browser's own Family CSRF cookie. Only same-origin script can read
+    it, exactly like the token already rendered into Family pages; the
+    rejected request itself still does nothing.
+    """
+    # The same path rule as accounts.sessions.cookie_namespace, kept local so
+    # this dependency-free module does not import the session models.
+    family = not request.path_info.startswith("/admin/")
+    if family and "application/json" in request.headers.get("Accept", ""):
+        response = JsonResponse(
+            {"error": "csrf_failed", "csrf_token": get_token(request)}, status=403
+        )
+        response.stewardship_safe_error = True
+        response["Cache-Control"] = "no-store"
+        return response
     return error_response(request, status=403)
 
 

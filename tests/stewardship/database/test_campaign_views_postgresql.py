@@ -51,7 +51,7 @@ def fields(store, row=None, **changes):
 def post(browser, path, values):
     """Every mutation includes the current CSRF cookie from a genuine login."""
     return browser.post(
-        path, values | {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
+        path, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
 
 

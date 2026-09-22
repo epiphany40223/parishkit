@@ -10,7 +10,13 @@ from django.contrib.sessions.models import Session
 from django.db import connection, transaction
 from django.db.models import F, Q, Value
 from django.db.models.functions import Greatest
-from django.middleware.csrf import rotate_token
+from django.middleware.csrf import (
+    CSRF_ALLOWED_CHARS,
+    CSRF_SECRET_LENGTH,
+    CsrfViewMiddleware,
+    InvalidTokenFormat,
+    rotate_token,
+)
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
@@ -32,6 +38,19 @@ from .session_policy import (
     FAMILY_IDLE as FAMILY_IDLE,
 )
 
+# (session cookie, CSRF cookie, cookie path) for each namespace. Only the
+# transport is shared: Family and Admin never read each other's cookies, so a
+# login or rotation in one namespace cannot invalidate the other's open pages.
+FAMILY_COOKIES = ("pk_family", "pk_family_csrf", "/")
+ADMIN_COOKIES = ("pk_admin", "pk_admin_csrf", "/admin/")
+
+
+def cookie_namespace(request):
+    """Select the namespace by path, identically for session and CSRF state."""
+    if request.path_info.startswith("/admin/"):
+        return ADMIN_COOKIES
+    return FAMILY_COOKIES
+
 
 class NamespacedSessionMiddleware:
     """Only cookie transport is shared; no endpoint imports the other namespace."""
@@ -42,8 +61,7 @@ class NamespacedSessionMiddleware:
 
     def __call__(self, request):
         """Django save/expiry semantics without per-request global setting changes."""
-        admin = request.path_info.startswith("/admin/")
-        name, path = ("pk_admin", "/admin/") if admin else ("pk_family", "/")
+        name, _, path = cookie_namespace(request)
         request.session = self.store(request.COOKIES.get(name))
         response = self.get_response(request)
         session = request.session
@@ -74,6 +92,44 @@ class NamespacedSessionMiddleware:
                 samesite="Lax",
             )
         return response
+
+
+class NamespacedCsrfMiddleware(CsrfViewMiddleware):
+    """Django CSRF checks with one secret cookie per session namespace.
+
+    Django reads a single global CSRF_COOKIE_NAME, so a Family login's
+    rotate_token() used to invalidate tokens rendered in open Admin pages in
+    the same browser, and vice versa. Only the two cookie hooks change; token
+    masking, comparison, origin/referer checks and rotation are Django's.
+    Rotation on login or privilege change still replaces the secret, now only
+    within its own namespace. CSRF_USE_SESSIONS is not used because it would
+    persist a database session for every anonymous sign-in page view.
+    """
+
+    def _get_secret(self, request):
+        """Read the namespace secret; a malformed value is replaced, not trusted."""
+        secret = request.COOKIES.get(cookie_namespace(request)[1])
+        if secret is None:
+            return None
+        # These cookies never held Django's pre-4.0 masked form, so only an
+        # unmasked secret is well formed.
+        if len(secret) != CSRF_SECRET_LENGTH or set(secret) - set(CSRF_ALLOWED_CHARS):
+            raise InvalidTokenFormat("malformed")
+        return secret
+
+    def _set_csrf_cookie(self, request, response):
+        """Write the secret with the global CSRF cookie attributes, per namespace."""
+        _, name, path = cookie_namespace(request)
+        response.set_cookie(
+            name,
+            request.META["CSRF_COOKIE"],
+            max_age=settings.CSRF_COOKIE_AGE,
+            path=path,
+            secure=settings.CSRF_COOKIE_SECURE,
+            httponly=settings.CSRF_COOKIE_HTTPONLY,
+            samesite=settings.CSRF_COOKIE_SAMESITE,
+        )
+        patch_vary_headers(response, ("Cookie",))
 
 
 def database_now():

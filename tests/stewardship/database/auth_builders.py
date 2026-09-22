@@ -130,7 +130,7 @@ def start(client):
     """Use the browser's CSRF form, not a fabricated authenticated session."""
     assert client.get("/admin/login").status_code == 200
     response = client.post(
-        "/admin/login", {"csrfmiddlewaretoken": client.cookies["csrftoken"].value}
+        "/admin/login", {"csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value}
     )
     assert response.status_code == 302
     return parse_qs(urlsplit(response["Location"]).query)

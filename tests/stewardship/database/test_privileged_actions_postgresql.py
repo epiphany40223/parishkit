@@ -93,7 +93,7 @@ def test_admission_rejects_before_durable_intent(auth_service, google, failure):
         browser.post(
             "/admin/logout",
             {
-                "csrfmiddlewaretoken": browser.cookies["csrftoken"].value,
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
             },
         )
     with pytest.raises(PermissionError):

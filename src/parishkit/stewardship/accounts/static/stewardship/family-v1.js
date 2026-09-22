@@ -6,7 +6,9 @@
   const session = document.querySelector("[data-family-session]");
   const message = document.getElementById("family-flow-message");
   const cancel = document.getElementById("family-cancel");
-  const csrf = cancel.querySelector('[name="csrfmiddlewaretoken"]').value;
+  // Page token inputs also serve the sign-out form and ui-v1.js's keepalive
+  // and presence calls, so a refreshed token is written back to all of them.
+  const csrfInput = cancel.querySelector('[name="csrfmiddlewaretoken"]');
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
@@ -87,10 +89,25 @@
   async function send(path, body) {
     const response = await fetch(path, {
       method: "POST", credentials: "same-origin", cache: "no-store",
-      headers: {"Content-Type": "application/json", "X-CSRFToken": csrf,
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfInput.value,
         "Accept": "application/json"}, body: JSON.stringify(body)
     });
-    if (response.status === 403) { submissionAttempted = uncertainSubmission; expired(); return null; }
+    if (response.status === 403) {
+      // A stale page token is not an ended session: the server rejected the
+      // request before running it and sent a fresh token. Keep every answer.
+      const denial = response.headers.get("Content-Type")?.includes("application/json") ?
+        await response.json().catch(() => null) : null;
+      submissionAttempted = uncertainSubmission;
+      if (denial?.error === "csrf_failed" && typeof denial.csrf_token === "string" && denial.csrf_token) {
+        document.querySelectorAll('[name="csrfmiddlewaretoken"]').forEach((input) => {
+          input.value = denial.csrf_token;
+        });
+        say("This page's security check was out of date and has been refreshed. Your answers are still here. Please try again.");
+        return null;
+      }
+      expired();
+      return null;
+    }
     if (!response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unavailable response");
     }

@@ -463,3 +463,41 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
         "Unsubmitted changes have not been saved"
         not in page.locator("main").inner_text()
     )
+
+
+def test_stale_csrf_token_keeps_answers_and_retries_with_fresh_token(
+    page, component_origin
+):
+    """A CSRF rejection is not a session end: answers stay and the token refreshes."""
+    submissions = []
+
+    def submit(route):
+        """Reject the first stale token as the server's CSRF failure view does."""
+        submissions.append(route.request)
+        if len(submissions) == 1:
+            route.fulfill(
+                status=403, json={"error": "csrf_failed", "csrf_token": "b" * 64}
+            )
+        else:
+            route.fulfill(json={"accepted": True})
+
+    prepare(page, component_origin, submit=submit)
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_label("First name (required)").fill("Kept edit")
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Your answers are still here"
+    )
+    assert "session has ended" not in page.locator("main").inner_text()
+    expect(page.locator("#family-cancel")).to_be_visible()
+    assert page.locator('[name="csrfmiddlewaretoken"]').input_value() == "b" * 64
+    page.get_by_role("button", name="Back to edit").click()
+    expect(page.get_by_label("First name (required)")).to_have_value("Kept edit")
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    assert submissions[1].headers["x-csrftoken"] == "b" * 64
+    assert submissions[1].post_data_json["answers"]["members"]["3"]["first_name"] == (
+        "Kept edit"
+    )
