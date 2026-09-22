@@ -151,7 +151,8 @@ updated under the pre-production policy. No other object changes.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. No deployment,
+Implementation, focused validation and the
+[review rounds](stewardship-backup-reviews.md) are complete; full exact-head
+CI, DCO and protected delivery remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

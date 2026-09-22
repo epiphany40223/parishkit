@@ -127,3 +127,9 @@ five validated (two the same defect), all corrected:
 The eight findings the validation step did not confirm were not carried
 forward. Since the third round validated findings, a fourth, correction-only
 check follows.
+
+## Round 4
+
+Claude only (Codex produced no output), two shards. Correction check: five
+raw findings, none validated. This closes the review rounds: three full
+rounds and one correction check, every accepted finding fixed.
