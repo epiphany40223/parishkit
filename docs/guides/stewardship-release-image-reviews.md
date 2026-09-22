@@ -76,3 +76,20 @@ validated, both corrected:
 The twelve findings the validation step did not confirm were not carried
 forward. Since the third round validated findings, a fourth, correction-only
 check follows.
+
+## Round 4
+
+Claude only (Codex produced no output). Correction check: three raw
+findings, one validated and corrected:
+
+- Medium: the round 1 specification correction sent the reader to the
+  startup and upgrades section for the retargeting command, but that
+  section's deferred-upgrades subsection still described the image change
+  as future work and named no command. The subsection now says the image
+  of a provisioned deployment changes only through the retargeting command
+  under the offline startup exclusion, with the operator's migration,
+  grants and start steps following, and links to this guide; automated
+  checks stay deferred.
+
+The two findings the validation step did not confirm were not carried
+forward. A fifth, correction-only check follows.

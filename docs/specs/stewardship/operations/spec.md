@@ -238,7 +238,14 @@ human explicitly activates production-readiness work. At that point declare the
 supported baseline and compatibility policy before adding forward upgrades.
 
 A production upgrade requires a successful recent backup, pulls pinned images, runs migration checks
-and migrations, then restarts services. Migrations must be forward-safe for the
+and migrations, then restarts services. The image of a provisioned deployment
+changes only through the image-retargeting command, which rewrites the rendered
+topologies and the provisioning record under the offline startup exclusion and
+refuses any other change; the operator then runs the migration profile and the
+grants command and starts the services, as the
+[release image guide](../../../guides/stewardship-release-image.md) and the
+runtime guide describe. Automated migration checks, upgrade readiness checks
+and upgrade-path tests remain deferred. Migrations must be forward-safe for the
 declared rollout; destructive column removal follows expand/migrate/contract
 across releases.
 
