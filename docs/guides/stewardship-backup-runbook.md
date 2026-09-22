@@ -125,8 +125,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    bind-source layout as the lost host. Create the runtime root as
    [Storage and identities](stewardship-runtime.md#storage-and-identities)
    says, then create, owned by `10001:10001` with mode `0700`, the
-   directories that are not in the set: `backups`, `cache`, `cache/static`,
-   `logs`, `reports`, `run`, `run/persistent`, and under it `caddy`,
+   directories that are not in the set: `backups`, `cache`, `logs`,
+   `reports`, `run`, `run/persistent`, and under it `caddy`,
    `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
    `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
    exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
@@ -189,8 +189,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its
-   image digest. Then give that image its own static files, on every host.
-   First move any current `cache/static` aside under a name that does not
+   image digest. Then give that image its own static files, on every host
+   (a replacement host has no `cache/static` yet, so it starts at the
+   empty one). First move any current `cache/static` aside under a name that does not
    exist yet (moving onto an existing directory nests the tree). Then either
    put back the tree an upgrade kept for the set's release, or create an
    empty `cache/static` owned by `10001:10001` with mode `0700` and run

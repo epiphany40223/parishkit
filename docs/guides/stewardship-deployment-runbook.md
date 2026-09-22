@@ -244,7 +244,8 @@ explain.
 - An upgrade cannot narrow a runtime grant on a table that still exists: the
   grant command refuses a login that already holds a privilege the release
   no longer lists, and nothing revokes it. Before the schema freeze such a
-  release is taken by reinstalling.
+  release is taken by reinstalling; after it, the release must bring its own
+  revocation step.
 - The image is single-architecture (`linux/amd64`); the host must be x86-64.
 - Restore is a manual procedure and may require re-sending some Family links
   by hand, as the launch scope records for the pre-launch gate to approve.

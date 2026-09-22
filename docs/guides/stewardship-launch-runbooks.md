@@ -340,8 +340,9 @@ sign-in from the last five minutes and is confirmed within five minutes of
 its preview, and a release also needs the five-minute sender test, all in
 one go as for a resume. A missing confirm button or an authentication error
 means the sign-in has expired, "Check this value." means the preview has,
-and "This information changed" after a release means the sender test has;
-recover as for a resume. This does not reopen Family access. A resolution
+and "This information changed" means something the preview relied on moved
+(the sender test expired, report preparation started, or the held messages
+changed); recover as for a resume. This does not reopen Family access. A resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,
 fully resolved pause (select no types)** to clear it.

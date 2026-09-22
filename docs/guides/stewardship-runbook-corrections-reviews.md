@@ -86,3 +86,13 @@ The remaining low-severity notes were taken: the restore's static step says
 to move the current tree aside first and then either put back the kept tree
 or collect a new one, and the ragged paragraphs are reflowed. A further
 correction check follows.
+
+## Round 4
+
+Claude only (Codex produced no structured output). Correction check: four
+raw findings, none validated; the review rounds are closed. Its four
+low-severity notes were taken because they correct what an operator reads:
+the runtime guide gives a restore the same either/or as a rollback, "This
+information changed" names everything the preview relied on, a replacement
+host no longer pre-creates `cache/static`, and the grant-narrowing
+limitation states the after-freeze path.
