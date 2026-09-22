@@ -596,14 +596,13 @@ own record shows the attempt was not sent, the Admin may instead record that
 with evidence and no resend: the attempt becomes the same definitive
 non-acceptance a permanent provider failure records (the occurrence `failed`,
 unfulfilled), without suppressing any recipient, and it needs no resend
-admission. A failed Administrator report to a recipient who is not
-currently an Administrator counts as settled for report completion, like a
-revoked recipient's cancellation, whatever ended it (see the
-[unsent resolution guide](../../../guides/stewardship-unsent-resolution.md)).
-Every resolution,
-evidence note, and resend authorization is audited. Until resolution, the row
-is not treated as successful for delivery statistics or as eligible for an
-automatic catch-up duplicate.
+admission (see the
+[unsent resolution guide](../../../guides/stewardship-unsent-resolution.md));
+for an Administrator report, the
+[digest completion rule](#administrator-digests) decides whether that failure
+settles its cohort. Every resolution, evidence note, and resend authorization
+is audited. Until resolution, the row is not treated as successful for
+delivery statistics or as eligible for an automatic catch-up duplicate.
 
 A permanent address refusal records that recipient/family, suppresses that
 normalized address until its source value changes or an Admin clears the
@@ -636,13 +635,23 @@ addresses are not exposed to other recipients.
 The generation-time recipient cohort is immutable. Before each submission,
 recheck the recipient's current Administrator authority. Safely cancel a revoked
 recipient's unsent message with `recipient_revoked`, retaining the cancellation
-as an audited withdrawal of that recipient obligation, never as delivery. The
-occurrence completes when every original recipient is either accepted (including
-proven earlier accepted coverage) or has this guarded withdrawal. If every
-recipient was withdrawn, record `daily_digest_no_current_recipients` and an
-`empty` fulfillment, not a delivered fulfillment. Newly added or later re-added
-Administrators do not reopen completed historical cohorts. Provider-submitting
-or uncertain messages still require ordinary reconciliation before cancellation.
+as an audited withdrawal of that recipient obligation, never as delivery. A
+message that ended in `permanent_failure` (a provider refusal or an Admin's
+[confirmed-unsent record](../../../guides/stewardship-unsent-resolution.md))
+whose recipient is not currently an Administrator can never be retried, so it
+settles that recipient's obligation the same way, never as delivery. The
+occurrence completes when every original recipient is accepted (including
+proven earlier accepted coverage), has this guarded withdrawal, or has such a
+failure. If no recipient was accepted, record
+`daily_digest_no_current_recipients` (weekly:
+`weekly_digest_no_current_recipients`) and an `empty` fulfillment, not a
+delivered fulfillment. Because the failure settles by the current roster, an
+address re-added as an Administrator before completion reopens its still
+pending cohort, and its failed message may be retried again; newly added or
+later re-added Administrators never reopen completed historical cohorts. A
+failure to a current Administrator holds the cohort open until an explicit
+retry. Provider-submitting or uncertain messages still require ordinary
+reconciliation before cancellation or settlement.
 
 ### Daily campaign digest
 

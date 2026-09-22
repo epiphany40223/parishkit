@@ -95,7 +95,17 @@ again and **Retry failed delivery** is admitted again. A completed
 occurrence never changes. An earlier revision froze the removal in a
 separate reason at resolution time; it was removed because it missed a
 removal after the evidence and a provider failure followed by removal,
-leaving one rule for both.
+leaving one rule for both. The authoritative rule is the
+[Administrator digests](../specs/stewardship/background-processing/spec.md#administrator-digests)
+completion rule.
+
+One expected, harmless side effect of the live read: if the scheduler
+allocates the report's metadata finalizer while the recipient is removed and
+the address is then made an Administrator again, that finalizer's claim is
+refused ("Digest finalization requires the entire resolved cohort") until
+the cohort resolves again. No second finalizer is allocated for the report,
+nothing is sent, and the occurrence stays pending; the retry is admitted
+again.
 
 On a campaign closed while paused, a failed report whose recipient is still
 an Administrator cannot be retried (the closed campaign admits no retry of
@@ -147,8 +157,9 @@ deployment or add a forward migration.
   is still refused because the Family is ineligible.
 - PostgreSQL, receipt: with the real Admin delivery controls, resume is
   refused while an unknown receipt remains; after `confirm_unsent` the
-  resume preview and confirmation succeed. The same settlement works on a
-  campaign closed while paused.
+  resume preview and confirmation succeed. On a campaign closed while paused,
+  `confirm_unsent` settles the receipt and the closed resolution's clear of
+  the now fully resolved pause is accepted.
 - PostgreSQL, daily and weekly reports, six cases each with the real
   dispatcher, finalizer producer and finalize task:
   - removed before `confirm_unsent` while paused: the resend is refused by
@@ -170,10 +181,16 @@ deployment or add a forward migration.
   The confirmation-then-removal and provider-failure-then-removal cases
   could not pass under the previous revision's frozen-reason rule, which
   never counted those failures as settled.
-- PostgreSQL, closed while paused: a weekly report confirmed unsent to a
-  removed Admin no longer blocks the closed resolution, which cancels the
-  other Admin's held report and records the occurrence's skip. Without the
-  coverage change, no skip is recorded.
+- PostgreSQL, closed while paused, daily and weekly: a report confirmed
+  unsent to a removed Admin no longer blocks the closed resolution, which
+  cancels the other Admin's held report and records the occurrence's skip.
+  When the recipient is still an Administrator, the closed proof is false,
+  no skip is recorded and the occurrence stays pending. Without the coverage
+  change, no skip is recorded.
+- PostgreSQL, reopening: a daily report failed to an Admin who is then
+  removed is settled; re-adding the Admin before completion keeps the
+  occurrence pending, admits the retry again, and refuses the claim of the
+  finalizer allocated in the removed window.
 - Refusals: a failed, delivered or never-submitted message is refused by the
   service and, inserted directly under the Web role, by the trigger's
   current-attempt check; a blank note is refused by the service and by the
@@ -190,8 +207,9 @@ deployment or add a forward migration.
 
 ## Checkpoint
 
-Implementation, focused validation and rounds 1 and 2 of the
-[review rounds](stewardship-unsent-resolution-reviews.md) are complete; the
-remaining round, exact-head CI, DCO and protected delivery remain open. No
+Implementation, focused validation and the three
+[review rounds](stewardship-unsent-resolution-reviews.md) are complete, with
+round 3's correction check to follow; exact-head CI, DCO and protected
+delivery remain open. No
 deployment, release, live-provider write or database deletion is authorized
 by this increment.

@@ -87,3 +87,38 @@ template filter backed by a reason mapping, with unit tests; the daily
 removed-recipient case asserts the service refuses the resend, like the
 weekly one; and the guide's long lines are rewrapped. A further round
 follows.
+
+## Round 3
+
+Claude only (Codex produced no output). Six raw findings, one validated
+(Medium), corrected:
+
+- Medium: the background-processing specification's Administrator digests
+  paragraph, the authoritative completion rule, still said a cohort
+  completes only when every recipient is accepted or withdrawn as
+  `recipient_revoked`; the new settled outcome appeared only as an aside in
+  the delivery-resolution paragraph. The rule now lives in the
+  Administrator digests paragraph: a `permanent_failure` to a recipient who
+  is not currently an Administrator settles that obligation, a cohort with
+  no accepted recipient yields the empty disposition, a re-added
+  Administrator reopens a still pending cohort while completed cohorts never
+  reopen, and a failure to a current Administrator holds the cohort open.
+  The aside is replaced by a link to that paragraph and to the unsent
+  resolution guide.
+
+All four findings below the validation cutoff were taken: a daily
+closed-while-paused case joins the weekly one, and both kinds now have the
+negative case (a still-Administrator recipient's failed report: the closed
+proof is false, no skip is recorded, the occurrence stays pending); a
+reopen test removes and re-adds the Administrator before completion and
+asserts the occurrence stays pending, the retry is admitted again and the
+finalizer allocated in the removed window refuses its claim, which the
+guide documents as expected noise rather than changing claim admission;
+the closed receipt case now runs the closed resolution, clearing the fully
+resolved pause, after `confirm_unsent`; and the ragged runbook, Family-mail
+resolution guide and specification paragraphs are reflowed. The Administrator
+test is kept inline in each of the five SQL predicates rather than moved to a
+shared helper: a plain SQL function called from a view reads with the
+caller's privileges, and a role reading these views may lack the address-rule
+grant, while a view reads its tables with its owner's rights. A correction
+check follows.

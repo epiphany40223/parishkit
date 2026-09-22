@@ -249,29 +249,26 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    [weekly](stewardship-weekly-digests.md) digest guides for Admin reports;
    the [paused resend guide](stewardship-paused-resend.md) covers every kind
    during a pause.
-5. If the provider shows it was not sent and no resend is wanted or
-   permitted (for example, the Family has since submitted or become
-   ineligible, or the report's recipient is no longer an Administrator),
-   choose **Record that the provider did not send it (no resend)**, with the
-   provider evidence in the note. The message is recorded as a failed
-   delivery, exactly as if the provider had refused it, but no recipient
-   address is suppressed; an invitation or reminder occurrence becomes
-   failed, not fulfilled. A failed report whose recipient is not currently
-   an Administrator counts as settled, like a report cancelled for a removed
-   Administrator, so the report completes once its other recipients have it,
-   whether the recipient was removed before or after; a failed report whose
-   recipient is still an Administrator holds the report open until you
-   choose **Retry failed delivery**. On a campaign closed while paused that
-   retry is not available: if the recipient should no longer be an
-   Administrator, remove them through the ordinary configuration change and
-   the report settles, so the closed resolution can record its skip. The
-   message
-   no longer counts as unknown, so a paused
-   campaign can resume, and a receipt waiting behind it is no longer
-   blocked. This action is available during a pause and on a campaign closed
-   while paused. A later **Retry failed delivery** stays subject to the
-   ordinary retry conditions. The
-   [unsent resolution guide](stewardship-unsent-resolution.md) records the
+5. If the provider shows it was not sent and no resend is wanted or permitted
+   (for example, the Family has since submitted or become ineligible, or the
+   report's recipient is no longer an Administrator), choose **Record that the
+   provider did not send it (no resend)**, with the provider evidence in the
+   note. The message is recorded as a failed delivery, exactly as if the
+   provider had refused it, but no recipient address is suppressed; an
+   invitation or reminder occurrence becomes failed, not fulfilled. A failed
+   report whose recipient is not currently an Administrator counts as settled,
+   like a report cancelled for a removed Administrator, so the report completes
+   once its other recipients have it, whether the recipient was removed before
+   or after; a failed report whose recipient is still an Administrator holds
+   the report open until you choose **Retry failed delivery**. On a campaign
+   closed while paused that retry is not available: if the recipient should no
+   longer be an Administrator, remove them through the ordinary configuration
+   change and the report settles, so the closed resolution can record its skip.
+   The message no longer counts as unknown, so a paused campaign can resume,
+   and a receipt waiting behind it is no longer blocked. This action is
+   available during a pause and on a campaign closed while paused. A later
+   **Retry failed delivery** stays subject to the ordinary retry conditions.
+   The [unsent resolution guide](stewardship-unsent-resolution.md) records the
    design.
 6. If you cannot tell, leave it unresolved and note why; an unresolved
    message blocks schedule edits for its occurrence and is listed until
