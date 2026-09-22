@@ -168,13 +168,51 @@ sequence with the commands that exist.
    completed within the last 24 hours is recorded (step 1); otherwise each
    refuses with the generic offline-refusal error and exit status 2, and the
    process log carries a `startup_rejected` line whose `failure_kind` is
-   `upgrade_backup_required`. A
-   release that changes neither the schema nor a grant still pulls, but
-   skips the migration and grant commands. `database-grants` never revokes:
-   for a release that *narrows* a runtime grant on a table that still
-   exists, it refuses the whole run, because a login already holds a
-   privilege the new release no longer lists, and the new release's
-   services would refuse that excess privilege anyway. Step 1's check
+   `upgrade_backup_required`. Run steps 1 to 4 in one sitting: once step 3
+   has run, the backup profile runs the new image, which refuses a schema
+   with migrations still to apply, so a step 1 backup that has aged cannot
+   simply be taken again. When either command refuses for a missing
+   backup, keep the online services stopped. If the release changes no
+   schema, or `migration` already succeeded, the schema matches the new
+   image: take the backup (`run --rm backup-worker`), confirm its off-host
+   copy and repeat this step. Otherwise run `retarget-image` back to the
+   previous digest in that previous image, take the backup and confirm its
+   off-host copy, then run `retarget-image` with the new digest again in
+   the new image, as step 3 does, and repeat this step. If the previous
+   image's `retarget-image` refuses, first confirm the previous digest
+   against the operators' notes and that every online service is stopped,
+   since its error names no cause. The database is still untouched,
+   because the migration refused before applying anything; the likely
+   cause is a deployment field the previous release does not know, in
+   the deployment YAML or in the provisioning record step 3 rewrote.
+   Remove any such field from the deployment YAML (step 3 admitted only
+   inputs equal to the recorded ones, so it can hold only its default).
+   Then open the step 1 set's files as the backup runbook's
+   [Restore for real](stewardship-backup-runbook.md#restore-for-real) steps
+   2 and 4 describe (confirm the set against its recorded manifest digest,
+   open `files.tar.sealed` with `backup-open` where the private key is
+   kept, bring the result to the host privately and extract it into an
+   empty private staging directory), move the current
+   `.stewardship-provisioned.json` aside under a new name (never delete
+   it), put the set's record in its place, owned by `10001:10001` with
+   mode `0600`, and run the previous image's `retarget-image` again; then
+   securely delete the decrypted `files.tar` and the staging directory on
+   the host and on the key machine, as that procedure's step 10 does, and
+   continue as above. Restore nothing else from the set: the online
+   services changed the database and the other trees after it was taken.
+   Only if that retarget still refuses, follow the database-restore
+   [rollback](#rollback) from the step 1 backup, which loses whatever the
+   online services wrote between the step 1 backup and step 2 and needs
+   the full restore procedure, including its comparison with the mail
+   provider's logs. The
+   [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) records
+   how this recovery was checked. A release that changes neither the
+   schema nor a grant still pulls, but skips the migration and grant
+   commands. `database-grants` never revokes: for a release that
+   *narrows* a runtime grant on a table that still exists, it refuses the
+   whole run, because a login already holds a privilege the new release no
+   longer lists, and the new release's services would refuse that excess
+   privilege anyway. Step 1's check
    catches such a release before anything stops: before the schema freeze it
    is taken by reinstalling, and after it the release must bring its own
    revocation step. `migration` runs first and commits, so if
@@ -204,15 +242,22 @@ registry; nothing here deletes it.
 ## Rollback
 
 An application-only rollback is possible only when the new release changed
-neither the schema nor any runtime grant, and added no deployment field:
+neither the schema nor any runtime grant:
 stop the online services, run `retarget-image` with the previous digest (in
 that previous image), pull, put the previous release's static tree back
 (move the new `cache/static` aside and restore the one step 5 kept, or
 collect into an empty `cache/static` in the previous image), and start;
 step 4 is not repeated. A grant the new release added is refused as
-excessive by the previous release's services, and a deployment field it
-added makes the previous release's `retarget-image` refuse the provisioning
-record, so either case needs the database restore below. When the release
+excessive by the previous release's services, so it needs the database
+restore below. A deployment field the new release added makes the previous
+release's `retarget-image` refuse the provisioning record the new release
+wrote, and a deployment YAML that names that field is refused before the
+record is read, by this rollback and by the database restore alike; the
+error names no cause. So when the previous image's `retarget-image`
+refuses, remove any field the previous release does not know from the
+deployment YAML and put back the step 1 set's record, both as
+[upgrade step 4](#upgrade) describes, and run it again; the database
+restore below needs the same YAML change. When the release
 changed the schema, an older image must never be pointed at the newer
 database; the rollback is a database restore from the backup taken
 in upgrade step 1, following the launch scope's
