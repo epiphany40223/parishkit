@@ -41,11 +41,14 @@ category, never a reason within it. The kinds and their callers:
   keepalive and presence.
 - The `/access/` rate-limit and outage gate in the authentication middleware,
   and the access-gate outage path on Family routes, use `unavailable`.
-- Admin refusals with a 429 or 503 status, on the sign-in routes and the
-  access gate, use `unavailable` too, since the architecture specification
-  gives Admin OAuth and Family code entry the same generic
-  temporary-unavailability response; other Admin refusals keep the original
-  generic text, and every Admin page keeps the Admin retry route.
+- Every Admin refusal with a 429 or 503 status uses `unavailable` too, since
+  the architecture specification gives Admin OAuth and Family code entry the
+  same generic temporary-unavailability response. That reaches the sign-in
+  routes, the access gate and signed-in pages such as the report views,
+  which call the same helper for restore review, database and limiter
+  outages (their old text also read "Sign-in is unavailable"). Other Admin
+  refusals keep the original generic text, and every Admin page keeps the
+  Admin retry route.
 - The keepalive and presence endpoints are called by page scripts that never
   display the response body, so their 400 and ended-session 403 keep the
   default text.

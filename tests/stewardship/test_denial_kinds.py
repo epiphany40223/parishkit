@@ -25,9 +25,9 @@ def test_each_kind_renders_only_its_fixed_text(kind):
 
 
 def test_admin_default_text_and_retry_route_are_unchanged():
-    """Admin denials still use the original generic text and Admin retry route."""
-    response = login_denial(admin=True, status=503)
-    assert response.status_code == 503
+    """An Admin refusal that is not a rate limit or outage keeps the old text."""
+    response = login_denial(admin=True, status=403)
+    assert response.status_code == 403
     assert TEXTS[""] in response.content
     assert b'href="/admin/login"' in response.content
 
@@ -53,3 +53,5 @@ def test_admin_rate_limits_and_outages_read_as_temporary(status, text):
     response = denial(status=status, retry=5 if status != 403 else None)
     assert response.status_code == status and text in response.content
     assert b'href="/admin/login"' in response.content
+    # Retry-After accompanies only the retryable statuses, as before.
+    assert (response.get("Retry-After") == "5") is (status != 403)

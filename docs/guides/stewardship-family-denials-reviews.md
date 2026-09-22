@@ -10,3 +10,14 @@ exemption, extended through October 30, 2026, a completed Claude-only pass
 counts as a round, and each round records which sources answered.
 
 No rounds have been completed yet.
+
+## Round 1
+
+Claude only (Codex produced no output). Four raw findings, none validated.
+Three low-severity notes were taken: Admin `denial()` now derives the kind
+from the status alone, like Family `denied()`, so a future non-Admin 400 or
+403 cannot read as an outage; the guide says every Admin 429 or 503 changes,
+signed-in report views included; the default-kind test uses a 403, which is
+the case that keeps the old text, and the Admin test checks `Retry-After`.
+The remaining note, an end-to-end `/access/` rate-limit case, was not
+carried forward. A further round follows.
