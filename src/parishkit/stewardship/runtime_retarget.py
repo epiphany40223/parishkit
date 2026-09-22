@@ -49,11 +49,41 @@ def _recorded(path):
     return value
 
 
+def _plan(configuration, recorded, *, image):
+    """The provisioning plan for the recorded inputs with the given image."""
+    checkout, source_root = recorded["checkout"], recorded["bind_source_root"]
+    return provisioning_plan(
+        configuration,
+        image=image,
+        checkout=None if checkout is None else explicit_path(checkout),
+        bind_source_root=None if source_root is None else explicit_path(source_root),
+    )
+
+
+def _other_image(current, rendered):
+    """The one application image a topology names that its rendering does not.
+
+    Infrastructure images are the same in both, so the difference is the
+    application image the topology was rendered with, if it was rendered at
+    all; a malformed or mixed topology has no such image.
+    """
+    try:
+        known = {s["image"] for s in json.loads(rendered)["services"].values()}
+        named = {s["image"] for s in json.loads(current)["services"].values()}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    other = named - known
+    return other.pop() if len(other) == 1 else None
+
+
 def retarget_image(configuration, *, image):
     """Re-render only the image-bearing artifacts of a completed deployment.
 
-    Returns what changed. An image equal to the recorded one changes nothing,
-    so an interrupted retarget is finished by running the same command again.
+    Returns what changed. A topology on disk may name the recorded image or
+    the requested one, the two states an interrupted retarget can leave, and
+    is brought to the requested one; anything else is a hand edit and is
+    refused. So running the same command again finishes an interrupted
+    retarget, and running it with the recorded image undoes one.
     """
     root = explicit_path(configuration.paths.root)
     private_directory(root)
@@ -61,14 +91,10 @@ def retarget_image(configuration, *, image):
     if not completed.exists():
         raise ConfigError("Provisioning is unfinished; resume it before upgrading.")
     recorded = _recorded(completed)
-    checkout, source_root = recorded["checkout"], recorded["bind_source_root"]
     # The plan re-derives every document from the operator's current inputs
     # with the new image; only the image may differ from what was recorded.
-    configuration, _, passwords, documents, acl, intent = provisioning_plan(
-        configuration,
-        image=image,
-        checkout=None if checkout is None else explicit_path(checkout),
-        bind_source_root=None if source_root is None else explicit_path(source_root),
+    configuration, _, passwords, documents, acl, intent = _plan(
+        configuration, recorded, image=image
     )
     proposed = json.loads(intent)
     if {key: value for key, value in proposed.items() if key != "image"} != {
@@ -79,22 +105,38 @@ def retarget_image(configuration, *, image):
         )
     layout = RuntimeLayout(configuration)
     topologies = {layout.service_directory / name for name in TOPOLOGIES}
+    changed = recorded["image"] != image
+    stale, renderings = set(), {}
     for path, value in documents.items():
-        if path in topologies:
+        current = read_private(path, maximum=MAX_DOCUMENT)
+        if current == value:
             continue
-        if read_private(path, maximum=MAX_DOCUMENT) != value:
+        if path not in topologies:
             raise ConfigError("A generated document differs; this is not an upgrade.")
+        # A topology may lag behind (interrupted retarget) or run ahead of the
+        # record (undoing one): it is admitted only if it is exactly the same
+        # inputs rendered with the recorded image, or with the one image it
+        # names instead. Anything else is a hand edit.
+        other = recorded["image"] if changed else _other_image(current, value)
+        if other is None:
+            raise ConfigError("A generated document differs; this is not an upgrade.")
+        if other not in renderings:
+            renderings[other] = _plan(configuration, recorded, image=other)[3]
+        if current != renderings[other][path]:
+            raise ConfigError("A generated document differs; this is not an upgrade.")
+        stale.add(path)
     for path in (*passwords, acl):
         # Presence and privacy only: the values are generated once and kept.
         read_private(path, maximum=MAX_DOCUMENT)
-    if recorded["image"] == image:
+    if not stale and not changed:
         return {"image_changed": False, "services_started": False}
     with StartupLease(layout.interlock, offline=True):
-        for path in sorted(topologies):
+        for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)
         _sync_directory(layout.service_directory)
         # The record changes last: until it does, rerunning this command with
         # the same image rewrites the topologies instead of reporting no change.
-        write_private(completed, intent, maximum=MAX_DOCUMENT)
-        _sync_directory(root)
-    return {"image_changed": True, "services_started": False}
+        if changed:
+            write_private(completed, intent, maximum=MAX_DOCUMENT)
+            _sync_directory(root)
+    return {"image_changed": changed, "services_started": False}

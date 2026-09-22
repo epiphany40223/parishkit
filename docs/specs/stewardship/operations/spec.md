@@ -7,13 +7,17 @@ and validation. Shared ParishKit repository/release rules remain in the
 
 ## Compose files and images
 
-The repository provides a base Compose definition plus explicit development
-and production overlays/profiles. Running the documented development command on
-Linux, macOS, or Windows starts a usable HTTP environment without TLS. Source,
-templates, and static inputs are bind-mounted from the checkout so ordinary
-changes reload without rebuilding the application image.
+The repository provides a base Compose definition plus a development overlay.
+Running the documented development command on Linux, macOS, or Windows starts
+a usable HTTP environment without TLS. Source, templates, and static inputs
+are bind-mounted from the checkout so ordinary changes reload without
+rebuilding the application image.
 
-Production Compose references immutable GHCR image tags/digests, never a host
+Production Compose is not checked in: the runtime provisioning command renders
+it from the typed deployment configuration into the runtime root, and the
+image-retargeting command is the only way its image changes afterward (see
+[startup and upgrades](#startup-and-upgrades)). It references one immutable
+GHCR image digest, never a host
 checkout. It includes web, general worker, dedicated mail-dispatch worker,
 scheduler, dedicated backup worker, configuration installer, target-specific
 credential installers, the explicit token-key-rotation profile, PostgreSQL,
@@ -30,11 +34,16 @@ uses `/tmp`/declared volumes for writes, includes health checks, and handles
 termination signals. Third-party database/proxy/broker images are official,
 pinned major/minor lines, and updated to supported security patch releases.
 
-Release-tag workflow builds `linux/amd64` and `linux/arm64` application images,
-attests provenance, produces an SBOM, scans critical/high vulnerabilities, and
-pushes `ghcr.io/<repository>/parishkit:<version>` plus the immutable commit tag.
-It preserves existing Python sdist/wheel and GitHub Release behavior. A human
-still explicitly authorizes release-tag push.
+Release-tag workflow builds the application image from the tagged commit
+after that commit's full validation, pushes
+`ghcr.io/<repository>/parishkit:<version>` plus the immutable commit tag, and
+records the pushed digest in the GitHub Release, since the deployment names
+the image by digest. It preserves existing Python sdist/wheel and GitHub
+Release behavior. A human still explicitly authorizes release-tag push. For
+v1 the image is `linux/amd64` only; the `linux/arm64` image, provenance
+attestation, SBOM and vulnerability scanning are
+[deferred](../../../plans/stewardship/v1-launch.md#cut-from-v1) past the
+launch.
 
 ## Runtime storage
 

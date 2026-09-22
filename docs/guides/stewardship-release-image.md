@@ -49,11 +49,15 @@ Retargeting re-derives every document from the operator's current inputs
 with the new image and refuses unless the recorded deployment inputs are
 unchanged, every other generated document is byte-identical on disk, the
 passwords and broker ACL are present and private, and the image is one the
-profile admits. It holds the startup interlock exclusively, so no online
+profile admits. A topology itself is admitted only in the two states an
+interrupted retarget can leave, the same inputs rendered with the recorded
+image or with the one image it names instead; anything else is a hand edit
+and is refused. It holds the startup interlock exclusively, so no online
 service can observe a half-written topology, writes the topologies and then
-the marker, and treats an image equal to the recorded one as no change, so an
-interrupted retarget is finished by running it again. It starts nothing and
-connects to nothing: migrations, grants and service restarts stay the
+the marker, and changes the marker only when the image changes. So running
+the same command again finishes an interrupted retarget, running it with
+the recorded image undoes one, and a repeat is no change. It starts nothing
+and connects to nothing: migrations, grants and service restarts stay the
 operator's separate upgrade steps.
 
 ### The scaffold is gone, not fixed
@@ -76,12 +80,16 @@ No schema change.
   the new image while every other document and password stays; a repeat
   changes nothing and provisioning still refuses the completed root; an
   interrupted retarget, topologies written but record not, is finished by
-  repeating it; a changed deployment input, a hand-edited document, an
-  unapproved image and an online service holding the interlock are refused
-  with nothing written; an unfinished provisioning and a root never
-  provisioned are refused; the CLI refuses without echoing private input;
-  the release workflow's image job depends on validation, holds only the
-  package scope and tags the lowercase repository path.
+  repeating it and undone by asking for the recorded image; a topology
+  naming neither image is refused whichever image is asked; a changed
+  deployment input, a hand-edited document, an unapproved image and an
+  online service holding the interlock are refused with nothing written; an
+  unfinished provisioning and a root never provisioned are refused; the
+  console command reports the change as JSON and answers a missing option,
+  an unreadable configuration, a configuration whose raw error would name
+  its contents and a refused image with one generic message; the release
+  workflow's image job depends on validation, holds only the package scope
+  and tags the lowercase repository path.
 - The Compose contract, build contract, provisioning and release workflow
   suites pass with the scaffold removed; the development Compose merge and
   the pinned Caddy template validation pass under the opt-in Compose checks.
@@ -89,8 +97,10 @@ No schema change.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. No deployment,
+Implementation and focused validation are complete and the first of three
+[review rounds](stewardship-release-image-reviews.md) is corrected; the
+remaining rounds, full exact-head CI, DCO and protected delivery remain
+open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment; the first image publication happens only when the human pushes a
 release tag.

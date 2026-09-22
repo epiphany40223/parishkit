@@ -95,6 +95,38 @@ def test_an_interrupted_retarget_is_finished_by_repeating_it(deployment, monkeyp
     assert record(deployment)["image"] == NEW
 
 
+def test_an_interrupted_retarget_is_undone_by_the_recorded_image(
+    deployment, monkeypatch
+):
+    """Topologies written, record not: the recorded image puts them back."""
+    with monkeypatch.context() as patched:
+        patched.setattr(
+            retarget, "write_private", lambda *a, **k: (_ for _ in ()).throw(OSError())
+        )
+        with pytest.raises(OSError):
+            retarget.retarget_image(deployment, image=NEW)
+    # Nothing was written, so write the topologies by hand as the interrupted
+    # command would have, leaving the record on the old image.
+    layout = RuntimeLayout(deployment)
+    documents = retarget._plan(deployment, record(deployment), image=NEW)[3]
+    for name in retarget.TOPOLOGIES:
+        path = layout.service_directory / name
+        write_private(path, documents[path])
+    assert images(deployment) == {NEW} and record(deployment)["image"] == OLD
+    assert retarget.retarget_image(deployment, image=OLD) == {
+        "image_changed": False,
+        "services_started": False,
+    }
+    assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
+    # A topology naming neither image is a hand edit, whichever image is asked.
+    compose = layout.service_directory / "compose.json"
+    write_private(compose, b'{"services": {}}')
+    for image in (OLD, NEW):
+        with pytest.raises(ConfigError, match="not an upgrade"):
+            retarget.retarget_image(deployment, image=image)
+    assert read_private(compose) == b'{"services": {}}'
+
+
 def test_any_other_change_is_refused_and_nothing_is_written(deployment):
     """Changed inputs, edited documents and online services all refuse."""
     layout = RuntimeLayout(deployment)
@@ -139,10 +171,31 @@ def test_an_unfinished_provisioning_is_not_upgraded(tmp_path, monkeypatch):
         retarget.retarget_image(missing, image=OLD)
 
 
-def test_retarget_cli_never_echoes_private_error_or_input(capsys):
-    """No default target, traceback or raw configuration error reaches the console."""
-    assert main(["retarget-image", "--config", "private-input"]) == 2
+def test_retarget_cli_reports_the_change_and_never_echoes_private_input(
+    deployment, tmp_path, monkeypatch, capsys
+):
+    """The console gets the JSON result or the generic refusal, nothing else."""
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path / "rt"))
+    config = tmp_path / "operator.yaml"
+    config.write_text("deployment: {schema_version: 1}\n", encoding="utf-8")
+    assert main(["retarget-image", "--config", str(config), "--image", NEW]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "image_changed": True,
+        "services_started": False,
+    }
+    assert images(deployment) == {NEW}
+    # A missing option, an unreadable configuration, a configuration whose
+    # raw error would name its contents and a refused image all get the same
+    # generic message.
+    assert main(["retarget-image", "--config", str(config)]) == 2
     assert main(["retarget-image", "--image", "private-image"]) == 2
+    assert main(["retarget-image", "--config", "private-input", "--image", NEW]) == 2
+    config.write_text("deployment: {profile: private-profile}\n", encoding="utf-8")
+    assert main(["retarget-image", "--config", str(config), "--image", NEW]) == 2
+    config.write_text("deployment: {schema_version: 1}\n", encoding="utf-8")
+    assert main(["retarget-image", "--config", str(config), "--image", "x:y"]) == 2
     captured = capsys.readouterr()
-    assert "private-i" not in captured.out + captured.err
-    assert captured.err.count("image retarget refused") == 2
+    assert "private-" not in captured.out + captured.err
+    assert not captured.out
+    assert captured.err.count("image retarget refused") == 5
+    assert images(deployment) == {NEW}
