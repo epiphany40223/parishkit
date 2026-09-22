@@ -839,3 +839,97 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
         assert not ScheduleFulfillment.objects.filter(
             occurrence_id=delivered_occurrence, disposition="delivered"
         ).exists()
+
+
+def test_closed_paused_receipt_resend_follows_the_held_resolution(
+    scheduled, settings, monkeypatch, tmp_path
+):
+    """A closed paused campaign cannot resume, so its resend follows release.
+
+    An unknown receipt resent there is held at the current pause and goes only
+    once the closed resolution releases receipts. A receipt that resolution
+    already released carries no new hold, so resending it goes at once.
+    """
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import resolve, retry_admitted
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    # Receipt resolution is keyless, so the resolver's key rings stay empty.
+    harness = SimpleNamespace(
+        campaign=item.campaign,
+        service=item.arguments[1],
+        rings=SimpleNamespace(general=None, public=None),
+    )
+    principal = user("admin@example.org")
+
+    def unknown(message, task_id):
+        """Send one attempt to an unknown provider outcome and drain its task."""
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(SimpleNamespace(task_id=task_id))
+            assert begin(message, execution) is not None
+            finish_submission(
+                message.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=task_id)), "permanent_failure")
+        message.refresh_from_db()
+        assert message.state == "delivery_unknown"
+
+    def resend(message):
+        """Authorize the resend and return the retry task's admission verdict."""
+        assert retry_admitted(message) is True
+        command = resolve(
+            harness, principal, message, "resend", general=None, public=None
+        )
+        message.refresh_from_db()
+        assert message.state == "pending"
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(SimpleNamespace(task_id=command.retry_task_id))
+            return command, execution, begin(message, execution)
+
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(hours=1)
+    ):
+        receipt = submit_while_paused(item, settings).outbox
+        unknown(receipt, receipt.task_id)
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Hold mail")
+            commands.confirm(*item.arguments, token=token)
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(days=9)
+    ):
+        # A held weekly report keeps the closed pause in place after receipts
+        # are released, so the released-receipt case is observed while paused.
+        status = queue_weekly(harness)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        close_campaign(item.campaign, uuid4())
+    with campaign_clock(
+        item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    ):
+        command, execution, attempt = resend(receipt)
+        assert attempt is None and receipt.pause_hold_id is not None
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        with web_login():
+            _, token = commands.preview_resolution(
+                *item.arguments,
+                reason="Release receipts",
+                decision="release",
+                types=["receipt"],
+            )
+            assert commands.confirm(*item.arguments, token=token).control_id is None
+        item.campaign.refresh_from_db()
+        receipt.refresh_from_db()
+        assert item.campaign.delivery_paused and receipt.pause_hold_id is None
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            assert begin(receipt, execution) is not None
+            finish_submission(
+                receipt.pk, execution.claim, FamilyDeliveryResult(Status.UNKNOWN, 1)
+            )
+        act(_status(TaskRun.objects.get(pk=command.retry_task_id)), "permanent_failure")
+        receipt.refresh_from_db()
+        _, _, attempt = resend(receipt)
+        assert attempt is not None and receipt.pause_hold_id is None
