@@ -124,8 +124,8 @@ def test_current_marker_changes_and_invalid_marker_results_fail_closed(
     response = browser.get("/admin/")
     assert response.status_code == 503
     assert b"synthetic-private-value" not in response.content
-    # Admin keeps its generic text; Family routes say the outage is temporary.
-    assert b"Sign-in is unavailable. Please try again." in response.content
+    # An outage reads as temporary on Admin and Family routes alike.
+    assert b"Sign-in is temporarily unavailable." in response.content
     for path in ("/", "/family/", "/access/opaque"):
         response = Client().get(path)
         assert response.status_code == 503 and response["Retry-After"] == "5"

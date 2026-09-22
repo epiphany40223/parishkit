@@ -87,12 +87,15 @@ def runtime():
 def denial(*, status=403, retry=None, admin=True):
     """Uniform retryable response, with no provider details or denied identity.
 
-    Admin routes keep the original generic text. The only non-Admin caller is
-    the ``/access/<token>`` rate-limit/outage gate, which uses the Family
-    temporary-unavailability text.
+    A rate limit (429) or outage (503) uses the temporary-unavailability text
+    for Admin and Family alike, as the architecture specification requires of
+    Admin OAuth and Family code entry; any other Admin refusal keeps the
+    original generic text. The only non-Admin caller is the ``/access/<token>``
+    rate-limit/outage gate.
     """
+    unavailable = status in (429, 503) or not admin
     response = login_denial(
-        admin=admin, status=status, kind="" if admin else "unavailable"
+        admin=admin, status=status, kind="unavailable" if unavailable else ""
     )
     response.stewardship_safe_error = True
     if retry:

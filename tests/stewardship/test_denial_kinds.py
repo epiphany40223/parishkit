@@ -36,3 +36,20 @@ def test_unknown_kind_fails_closed():
     """A misspelled kind is a programming error, not a silent fallback."""
     with pytest.raises(ValueError):
         login_denial(kind="expired")
+
+
+@pytest.mark.parametrize(
+    "status,text",
+    [
+        (429, b"Sign-in is temporarily unavailable. Please try again later."),
+        (503, b"Sign-in is temporarily unavailable. Please try again later."),
+        (403, b"Sign-in is unavailable. Please try again."),
+    ],
+)
+def test_admin_rate_limits_and_outages_read_as_temporary(status, text):
+    """Admin OAuth shares the Family temporary text; other refusals do not."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    response = denial(status=status, retry=5 if status != 403 else None)
+    assert response.status_code == status and text in response.content
+    assert b'href="/admin/login"' in response.content

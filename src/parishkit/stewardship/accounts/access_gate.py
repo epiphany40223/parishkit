@@ -92,10 +92,8 @@ class AccessGateMiddleware(MiddlewareMixin):
                 return HttpResponseRedirect("/admin/")
         except (ConfigError, LimiterUnavailable):
             # Keep the missing-runtime scaffold closed, with a stable retry URL.
-            # Family routes say this is temporary; Admin keeps its generic text.
-            response = login_denial(
-                admin=admin, status=503, kind="" if admin else "unavailable"
-            )
+            # An outage reads as temporary on Admin and Family routes alike.
+            response = login_denial(admin=admin, status=503, kind="unavailable")
             response["Retry-After"] = "5"
             return response
         return None
