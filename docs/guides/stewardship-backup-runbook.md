@@ -225,9 +225,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    image digest. The deployment YAML is not in the set: if it names a
    field that release does not know, `retarget-image` refuses with no
    cause, so remove such a field first, as the deployment runbook's
-   [rollback](stewardship-deployment-runbook.md#rollback) says. Then give that image its own static files, on every host
-   (a replacement host has no `cache/static` yet, so it starts at the
-   empty one). First move any current `cache/static` aside under a name that does not
+   [rollback](stewardship-deployment-runbook.md#rollback) says. Then give
+   that image its own static files, on every host (a replacement host has
+   no `cache/static` yet, so it starts at the empty one). First move any current `cache/static` aside under a name that does not
    exist yet (moving onto an existing directory nests the tree). Then either
    put back the tree an upgrade kept for the set's release, or create an
    empty `cache/static` owned by `10001:10001` with mode `0700` and run

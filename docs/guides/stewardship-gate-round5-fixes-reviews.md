@@ -10,9 +10,10 @@ found:
   operator able neither to back up nor to migrate. The
   [deployment runbook's upgrade](stewardship-deployment-runbook.md#upgrade)
   now says to run steps 1 to 4 in one sitting and how to recover: retarget
-  back, back up, retarget forward; if the previous image refuses the
-  rewritten provisioning record, put back the step 1 set's record, and
-  use the database-restore rollback only if that still refuses; the
+  back, back up, retarget forward; if the previous image refuses, remove
+  any deployment field it does not know from the YAML and put back the
+  step 1 set's provisioning record, and use the database-restore rollback
+  only if that still refuses; the
   [backup runbook](stewardship-backup-runbook.md#checking) checklist points
   there.
 - PL-I2 (Low): the launch runbooks said a report resent on a paused active
@@ -121,3 +122,12 @@ corrected, with two Lows from Claude also taken:
   refuses, since its error names no cause.
 
 A correction check follows.
+
+## Round 6
+
+Claude and Codex both answered; Codex approved with no findings and none
+of Claude's three findings was validated, so the review rounds are closed.
+The three Lows were taken as wording corrections: the recovery checks the
+previous digest and the stopped services before treating a refusal as a
+new deployment field, this ledger's summary includes the YAML step, and a
+long source line was rewrapped.

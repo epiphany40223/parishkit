@@ -179,10 +179,11 @@ sequence with the commands that exist.
    previous digest in that previous image, take the backup and confirm its
    off-host copy, then run `retarget-image` with the new digest again in
    the new image, as step 3 does, and repeat this step. If the previous
-   image's `retarget-image` refuses (its error names no cause; a release
-   that added a deployment field is one), the database is still untouched,
-   because the migration refused before applying anything; what stands in
-   the way is a deployment field the previous release does not know, in
+   image's `retarget-image` refuses, first confirm the previous digest
+   against the operators' notes and that every online service is stopped,
+   since its error names no cause. The database is still untouched,
+   because the migration refused before applying anything; the likely
+   cause is a deployment field the previous release does not know, in
    the deployment YAML or in the provisioning record step 3 rewrote.
    Remove any such field from the deployment YAML (step 3 admitted only
    inputs equal to the recorded ones, so it can hold only its default).
