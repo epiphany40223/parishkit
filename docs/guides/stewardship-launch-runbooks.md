@@ -179,10 +179,10 @@ design, until that process restarts: invitations, reminders, receipts and
 reports stay queued (`pending` or `retry_wait`) even after the provider
 recovers and the incident resolves, because the incident's health check
 runs elsewhere. A message that met a systemic failure becomes a failed
-delivery, as does one that used up its five provider attempts or its
-preparation retries during the outage; one the provider may have accepted
-without confirming becomes `delivery_unknown` (below). Neither is retried
-automatically.
+delivery, as does one that used up its five provider attempts; one whose
+preparation retries ran out stays pending, or waiting to retry, with a
+failed task; one the provider may have accepted without confirming becomes
+`delivery_unknown` (below). None of these is retried automatically.
 
 **You do:**
 
@@ -209,7 +209,10 @@ automatically.
    delivery** state and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused, so
-   resume first if you paused). Settle any **Delivery unknown** message as
+   resume first if you paused). Then check the **Pending** and **Waiting to
+   retry** states for messages last changed during the outage whose page
+   offers **Retry delivery not accepted by the provider**, and choose it for
+   each that should still go. Settle any **Delivery unknown** message as
    described below.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been

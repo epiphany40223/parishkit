@@ -41,7 +41,8 @@ validated and corrected:
   the page as it is.
 
 All seven findings below the validation cutoff were taken: a failed delivery
-also follows five exhausted attempts or exhausted preparation retries; the
+also follows five exhausted attempts (round 2 corrected the claim about
+exhausted preparation retries); the
 backup checklist adds the startup lock, a pending migration, non-regular
 files and the size bound, and no longer names an impossible same-name set;
 the runbook says how to schedule in UTC; the alerts guide says environment
@@ -49,3 +50,19 @@ overrides act only where the deployment YAML is loaded and must be repeated
 at retarget; tests now show every rendered service document carries the
 policy and that retarget refuses a changed policy; and the runbooks link
 this ledger. A correction check follows.
+
+## Round 2
+
+Claude only (Codex produced no structured output). Correction check: four
+raw findings, one validated and corrected:
+
+- Medium: exhausted preparation retries do not make a failed delivery; the
+  message stays pending or waiting to retry with a failed task, and its page
+  offers **Retry delivery not accepted by the provider**. The runbook now
+  says so and adds that step to the outage recovery.
+
+The three findings below the validation cutoff were taken: this ledger's
+round 1 entry no longer repeats the wrong claim, the backup checklist adds
+the profile and database-login refusals, and the topology test now checks
+every document the renderer writes, in every provider mode, for every role.
+A further correction check follows.

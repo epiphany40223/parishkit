@@ -75,7 +75,11 @@ holds the startup lock; the database schema matches the running image (an
 image changed without its migration refuses); the configuration,
 credentials and media trees hold only regular files and directories (no
 symlink) and stay under 256 MiB together; and the database is reachable (a
-failed dump logs `pg_dump`'s own message). Fix the cause, run it again, and
+failed dump logs `pg_dump`'s own message). The backup also refuses when
+it does not run under its own profile and database login (a changed Compose
+file, a root user, a writable root filesystem or an extra or writable mount),
+so rerender with `retarget-image` if the Compose file was edited by hand.
+Fix the cause, run it again, and
 confirm the off-host copy holds the newest set's three files. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this checklist was checked against the code.

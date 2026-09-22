@@ -370,24 +370,31 @@ def test_renderer_refuses_unsupported_multi_container_runtime(tmp_path):
         render_runtime(configuration, image="parishkit-stewardship:development")
 
 
-def test_every_rendered_service_document_carries_the_alert_policy(tmp_path):
-    """Services load their rendered document, so each must keep the policy."""
-    from parishkit.stewardship.deployment import ServiceRole
-    from parishkit.stewardship.deployment_documents import deployment_document
+@pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
+def test_every_rendered_service_document_carries_the_alert_policy(tmp_path, mode):
+    """Services load the renderer's documents, so every one must keep the policy.
+
+    This checks the documents render_runtime actually writes, in every provider
+    mode, for every role (online services, the backup worker, migration,
+    bootstrap and credential installers), not a hand-built configuration.
+    """
     from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
-    from parishkit.stewardship.runtime_topology import _service_config
 
     policy = IncidentPolicy(
         suppression_seconds=120, escalation_seconds=180, source_stale_seconds=2400
     )
     configuration = replace(configuration_at(tmp_path), operational_alerts=policy)
-    for role in (
-        ServiceRole.WEB,
-        ServiceRole.WORKER,
-        ServiceRole.SCHEDULER,
-        ServiceRole.MAIL_DISPATCH,
-    ):
-        document = deployment_document(_service_config(configuration, role))
+    _, documents = render_runtime(
+        configuration, image="parishkit-stewardship:development", provider_mode=mode
+    )
+    rendered = [
+        value
+        for value in documents.values()
+        if isinstance(value, dict) and "deployment" in value
+    ]
+    roles = {document["deployment"]["service_role"] for document in rendered}
+    assert {"web", "worker", "scheduler", "mail-dispatch", "backup-worker"} <= roles
+    for document in rendered:
         assert document["deployment"]["operational_alerts"] == {
             "suppression_seconds": 120,
             "escalation_seconds": 180,
