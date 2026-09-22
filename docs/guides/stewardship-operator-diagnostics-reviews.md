@@ -85,3 +85,8 @@ naming the overdue alert as the bound; the backup commands' docstring says
 the process log records only a reviewed category; and the operator test
 parses the formatted line and checks the event and the category. A
 correction check follows.
+
+## Round 4
+
+Claude only (Codex produced no structured output). Correction check: no
+findings; the review rounds are closed.
