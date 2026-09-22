@@ -31,9 +31,13 @@ project name the deployment uses:
 docker compose ... run --rm backup-worker
 ```
 
-It prints one JSON line naming the sizes and the recipient fingerprint and
-exits `0`; on any refusal it prints one generic line and exits `2`, and the
-process log has the cause. Schedule it from the host's cron every night,
+It prints one JSON line naming the sizes, the recipient fingerprint and the
+manifest digest and exits `0`; on any refusal it prints one generic line and
+exits `2`, and the process log has the cause. Keep the printed manifest
+digest with the off-host copy (the cron job can append the line to a log
+there): the sealed files prove that they were not altered, not who made
+them, and the digest is how a restore proves it is restoring the set the
+deployment recorded. Schedule it from the host's cron every night,
 after the campaign's own nightly work, and once immediately before Production
 activation and before every upgrade. Each run leaves a dated directory under
 `backups/` in the runtime root with `database.pgdump.sealed`,
@@ -60,7 +64,11 @@ Before the pre-launch gate, and whenever the restore procedure changes,
 restore the newest set into a disposable environment; the gate approves the
 drill's evidence:
 
-1. On a machine with the private key, decrypt both files:
+1. On a machine with the private key, first confirm the set is the one the
+   deployment recorded: the SHA-256 of `manifest.json` must equal the
+   manifest digest the backup printed and the off-host log kept (or the
+   `manifest_digest` of the matching `stewardship_backup_run` row in the
+   live deployment). Then decrypt both files:
    `pk-stewardship backup-open --key PRIVATE_KEY_FILE --input database.pgdump.sealed --destination database.pgdump`
    and the same for `files.tar.sealed`. Each prints the kind, size and
    digest, which must match the manifest.
@@ -97,3 +105,6 @@ services, with delivery paused if there is any doubt.
   automated restore are the operator's by hand; the deferred remainder is
   listed in the launch scope.
 - The private key is not rotated during v1.
+- The sealed files are anonymous encryption to the public key: they prove
+  they were not altered, not who made them. The recorded manifest digest,
+  kept off the host, is the origin check; there is no host-held signing key.

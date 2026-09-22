@@ -66,8 +66,8 @@ def test_the_header_names_the_recipient_and_the_kind(keys, tmp_path):
 
 
 def body_start(data):
-    """Where the first frame begins: after the magic and the header line."""
-    return data.index(b"\n", len(sealing.MAGIC)) + 1
+    """Where the first data frame begins: after the header line and its frame."""
+    return data.index(b"\n", len(sealing.MAGIC)) + 1 + sealing.HEADER_FRAME
 
 
 @pytest.mark.parametrize(
@@ -79,6 +79,12 @@ def body_start(data):
         (lambda d: d[:-5] + bytes([d[-5] ^ 1]) + d[-4:], "authentication"),
         (lambda d: d[: len(sealing.MAGIC)] + b"{}\n" + d[body_start(d) :], "malformed"),
         (lambda d: b"NOPE" + d[4:], "not a sealed"),
+        # The header is bound to the data key: rewriting a field around the
+        # same chunks is refused even though every chunk still authenticates.
+        (
+            lambda d: d.replace(b'"kind": "database"', b'"kind": "files"', 1),
+            "not the one",
+        ),
     ],
 )
 def test_a_changed_sealed_backup_is_refused(keys, tamper, message):

@@ -45,7 +45,14 @@ chunks whose nonces are their positions, so a chunk cannot be dropped, moved
 or repeated undetected and a truncated or appended file is refused; the data
 key travels in a sealed box only the X25519 private key opens. The header
 names the recipient key's fingerprint, so a wrong key is a clear refusal
-before any chunk is read. The public key is installed as the `backup_data`
+before any chunk is read, and its digest is the first authenticated chunk,
+so a header rewritten around the same chunks is refused. The sealed box is
+anonymous encryption: anyone holding the public key, which is a plain
+credential file, can produce a file that opens. A set's origin is therefore
+proved by its manifest digest, which the backup records in its row and
+prints for the operator to keep off the host, and which the restore drill
+compares; this is a known v1 limitation in place of a host-held signing key.
+The public key is installed as the `backup_data`
 credential file by hand, since it is not secret and no installer flow exists
 for it; the private key is written owner-only by `backup-keygen` to a place
 the operator chooses off the host and is never read by the application.
@@ -91,9 +98,10 @@ not differ. The runbook's earlier limitation is closed.
 
 ## Schema
 
-One added table, `stewardship_backup_run`, with its append-only guard and a
-completion-time index; the fresh-install baseline and fingerprint are updated
-under the pre-production policy. No other object changes.
+One added table, `stewardship_backup_run`, with its append-only guard and its
+primary key as the only index (the table holds one row per night and both
+readers take the newest); the fresh-install baseline and fingerprint are
+updated under the pre-production policy. No other object changes.
 
 ## Focused validation
 
@@ -121,8 +129,9 @@ under the pre-production policy. No other object changes.
   none; the admission accepts a run inside the window and not one outside;
   the worker and scheduler read the record and cannot write it; the
   operational collection and due-work suites still pass.
-- The schema audit shows one added table, one function, one trigger and two
-  indexes; ruff, formatting, Markdown lint and migration drift pass.
+- The schema audit shows one added table, one function, one trigger and one
+  index (the primary key); ruff, formatting, Markdown lint and migration drift
+  pass.
 - The real `pg_dump` runs only in the application image; the runbook's
   restore drill is the human-run end-to-end check.
 

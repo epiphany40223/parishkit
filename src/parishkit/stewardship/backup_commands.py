@@ -69,14 +69,22 @@ def _backup(config):
         from .runtime_database import require_current_schema
 
         require_current_schema()
-        manifest = run_backup(
-            configuration, record=lambda **facts: BackupRun.objects.create(**facts)
-        )
+        recorded = {}
+
+        def record(**facts):
+            """Persist the run and keep its digest for the operator's notes."""
+            recorded.update(facts)
+            BackupRun.objects.create(**facts)
+
+        manifest = run_backup(configuration, record=record)
+    # The manifest digest is what the operator records off the host and
+    # compares at restore, since the sealed files alone prove no origin.
     return {
         "backup_recorded": True,
         "database_bytes": manifest["database"]["plaintext_bytes"],
         "files_bytes": manifest["files"]["plaintext_bytes"],
         "recipient_fingerprint": manifest["recipient_fingerprint"],
+        "manifest_digest": recorded["manifest_digest"],
     }
 
 

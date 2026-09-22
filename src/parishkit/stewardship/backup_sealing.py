@@ -30,6 +30,8 @@ MAX_HEADER = 4096
 # Each chunk carries its 24-byte nonce and 16-byte tag.
 NONCE = SecretBox.NONCE_SIZE
 FRAME = NONCE + CHUNK + SecretBox.MACBYTES
+# Chunk 0 is the header's digest; data chunks follow it.
+HEADER_FRAME = NONCE + 32 + SecretBox.MACBYTES
 
 
 class SealError(ConfigError):
@@ -98,7 +100,10 @@ def seal(source, sink, *, recipient, kind):
     The count and digest describe the plaintext, so a manifest can name what
     was backed up without keeping it. The final chunk may be short; a
     zero-length input still writes one empty authenticated chunk, so an empty
-    file and a truncated file are never confused.
+    file and a truncated file are never confused. The sealed box is anonymous:
+    anyone holding the public key can produce a file that opens, so a set's
+    origin is proved by the manifest digest the backup records, not by the
+    file itself.
     """
     if not isinstance(recipient, Recipient) or kind not in {"database", "files"}:
         raise TypeError("A recipient and a known backup kind are required.")
@@ -110,8 +115,13 @@ def seal(source, sink, *, recipient, kind):
         "chunk": CHUNK,
         "key": base64.b64encode(SealedBox(recipient.public).encrypt(key)).decode(),
     }
-    sink.write(MAGIC + json.dumps(header, sort_keys=True).encode() + b"\n")
-    box, digest, total, index = SecretBox(key), hashlib.sha256(), 0, 0
+    line = json.dumps(header, sort_keys=True).encode() + b"\n"
+    sink.write(MAGIC + line)
+    box, digest, total = SecretBox(key), hashlib.sha256(), 0
+    # Chunk 0 binds the header to the data key: a header rewritten around the
+    # same chunks, or chunks moved under another header, fail to open.
+    sink.write(box.encrypt(hashlib.sha256(line).digest(), _nonce(0)))
+    index = 1
     while True:
         chunk = source.read(CHUNK)
         digest.update(chunk)
@@ -135,9 +145,26 @@ def _header(source):
         if header["version"] != 1 or header["chunk"] != CHUNK:
             raise ValueError
         header["key"] = base64.b64decode(header["key"], validate=True)
+        header["digest"] = hashlib.sha256(line).digest()
         return header
     except (ValueError, KeyError, TypeError):
         raise SealError("The sealed backup header is malformed.") from None
+
+
+def _frame(source, box, index, size):
+    """Read and open one authenticated frame at its position."""
+    frame = source.read(NONCE + size + SecretBox.MACBYTES)
+    if len(frame) < NONCE + SecretBox.MACBYTES:
+        raise SealError("The sealed backup is truncated.")
+    # The frame carries the nonce it was sealed with; it must be this
+    # position's, so a moved or repeated chunk fails here, and anything
+    # appended after the final short chunk is read into it and fails too.
+    try:
+        if frame[:NONCE] != _nonce(index):
+            raise CryptoError
+        return box.decrypt(frame[NONCE:], _nonce(index))
+    except CryptoError:
+        raise SealError("The sealed backup failed authentication.") from None
 
 
 def open_sealed(source, sink, *, private):
@@ -156,20 +183,12 @@ def open_sealed(source, sink, *, private):
         key = SealedBox(private).decrypt(header["key"])
     except CryptoError:
         raise SealError("The sealed backup key could not be opened.") from None
-    box, digest, total, index = SecretBox(key), hashlib.sha256(), 0, 0
+    box, digest, total = SecretBox(key), hashlib.sha256(), 0
+    if _frame(source, box, 0, hashlib.sha256().digest_size) != header["digest"]:
+        raise SealError("The sealed backup header is not the one sealed.")
+    index = 1
     while True:
-        frame = source.read(FRAME)
-        if len(frame) < NONCE + SecretBox.MACBYTES:
-            raise SealError("The sealed backup is truncated.")
-        # The frame carries the nonce it was sealed with; it must be this
-        # position's, so a moved or repeated chunk fails here, and anything
-        # appended after the final short chunk is read into it and fails too.
-        try:
-            if frame[:NONCE] != _nonce(index):
-                raise CryptoError
-            chunk = box.decrypt(frame[NONCE:], _nonce(index))
-        except CryptoError:
-            raise SealError("The sealed backup failed authentication.") from None
+        chunk = _frame(source, box, index, CHUNK)
         digest.update(chunk)
         total += len(chunk)
         sink.write(chunk)

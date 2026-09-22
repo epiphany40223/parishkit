@@ -73,14 +73,25 @@ def test_operator_password_validation_is_bounded_and_private(tmp_path, value):
             provisioning._password(path)
 
 
-@pytest.mark.parametrize("existing", [None, "matching", "foreign"])
+@pytest.mark.parametrize(
+    "existing", [None, "matching", "foreign", "member", "reader", "reader-admin"]
+)
 def test_existing_role_must_match_every_restricted_attribute(existing):
-    """An existing role is never adopted merely because its name is expected."""
+    """An existing role is never adopted merely because its name is expected.
+
+    Ordinary logins belong to no role; the backup login belongs to exactly
+    pg_read_all_data with inheritance and without admin option.
+    """
+    membership = {
+        "member": "some_role:true:false",
+        "reader": provisioning.READER_MEMBERSHIP,
+        "reader-admin": "pg_read_all_data:true:true",
+    }.get(existing)
     row = (
         None
         if existing is None
         else (
-            "marker" if existing == "matching" else "foreign",
+            "foreign" if existing == "foreign" else "marker",
             False,
             False,
             False,
@@ -89,17 +100,21 @@ def test_existing_role_must_match_every_restricted_attribute(existing):
             False,
             True,
             16,
-            False,
+            membership,
         )
     )
-    cursor = Cursor([row])
-    if existing == "foreign":
-        with pytest.raises(ConfigError):
-            provisioning._check_role(cursor, "web", "marker", 16)
-    else:
-        assert provisioning._check_role(cursor, "web", "marker", 16) is (
-            existing is not None
-        )
+    for reader in (False, True):
+        cursor = Cursor([row])
+        # A plain login matches without membership; the backup login only with
+        # exactly its reader membership; everything else is foreign.
+        accepted = existing is None or existing == ("reader" if reader else "matching")
+        if accepted:
+            assert provisioning._check_role(
+                cursor, "web", "marker", 16, reader=reader
+            ) is (existing is not None)
+        else:
+            with pytest.raises(ConfigError):
+                provisioning._check_role(cursor, "web", "marker", 16, reader=reader)
 
 
 @pytest.mark.parametrize(
@@ -159,9 +174,10 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
 
-    def role_check(*args):
+    def role_check(*args, reader=False):
         """No mutation may precede completion of every role preflight."""
         assert not cursor.statements
+        assert reader is (args[1] == "pk_stewardship_backup_worker")
         admissions.append(args[1])
         return existing
 
@@ -192,7 +208,7 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     cursor = Cursor()
     monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
-    monkeypatch.setattr(provisioning, "_check_role", lambda *args: True)
+    monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
     monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
     monkeypatch.setattr(provisioning, "_admit_existing_grants", lambda *args: None)
     monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
@@ -205,9 +221,34 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
         "ALL" not in statement and "private-password" not in statement
         for statement in cursor.statements
     )
-    monkeypatch.setattr(provisioning, "_check_role", lambda *args: False)
+    monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: False)
     with pytest.raises(ConfigError, match="before grants"):
         provisioning.provision_grants(configuration, uuid4())
+
+
+@pytest.mark.parametrize(
+    "membership, privileges, accepted",
+    [
+        ((True,), [], True),
+        ((False,), [], False),
+        ((True,), [("public", "stewardship_backup_run", "INSERT")], True),
+        ((True,), [("public", "stewardship_campaign", "INSERT")], False),
+        ((True,), [("public", "stewardship_backup_run", "UPDATE")], False),
+        ((True,), [("other", "stewardship_backup_run", "INSERT")], False),
+    ],
+)
+def test_reader_admission_requires_membership_and_only_its_writes(
+    membership, privileges, accepted
+):
+    """The read-all member may hold no write beyond its own record."""
+    cursor = Cursor([membership])
+    cursor.fetchall = lambda: privileges
+    tables = {"stewardship_backup_run": {"SELECT", "INSERT"}}
+    if accepted:
+        provisioning._admit_reader(cursor, "pk_stewardship_backup_worker", tables)
+    else:
+        with pytest.raises(ConfigError):
+            provisioning._admit_reader(cursor, "pk_stewardship_backup_worker", tables)
 
 
 def test_operator_connection_uses_separate_password_argument(tmp_path, monkeypatch):

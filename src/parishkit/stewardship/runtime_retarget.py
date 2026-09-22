@@ -93,10 +93,12 @@ def retarget_image(configuration, *, image):
         )
     layout = RuntimeLayout(configuration)
     changed = recorded["image"] != image
+    # A document the running release renders but the provisioned release did
+    # not is simply absent: it is written like any other differing document.
     stale = {
         path
         for path, value in documents.items()
-        if read_private(path, maximum=MAX_DOCUMENT) != value
+        if not path.exists() or read_private(path, maximum=MAX_DOCUMENT) != value
     }
     for path in (*passwords, acl):
         # Presence and privacy only: the values are generated once and kept.

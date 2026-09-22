@@ -13,12 +13,14 @@ and what it defers, is the v1 launch scope's.
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -39,6 +41,8 @@ RETAINED_SETS = 30
 # The configuration and credentials trees are small; anything larger is not
 # what this backup was designed for and stops before sealing.
 MAX_FILES_BYTES = 256 * 1024 * 1024
+# pg_dump diagnostics kept for the process log when a dump fails.
+MAX_DIAGNOSTICS = 16 * 1024
 SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
 DUMP = "database.pgdump.sealed"
 FILES = "files.tar.sealed"
@@ -138,12 +142,33 @@ def dump_database(configuration, sink, *, recipient):
         "PGSSLMODE": "disable",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
     }
+    diagnostics = bytearray()
+
+    def drain(stream):
+        """Keep pg_dump's diagnostics, bounded, so a chatty dump cannot stall."""
+        for line in stream:
+            if len(diagnostics) < MAX_DIAGNOSTICS:
+                diagnostics.extend(line[: MAX_DIAGNOSTICS - len(diagnostics)])
+
     with subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
     ) as process:
+        reader = threading.Thread(target=drain, args=(process.stderr,), daemon=True)
+        reader.start()
         count, digest = seal(process.stdout, sink, recipient=recipient, kind="database")
-        _, errors = process.communicate(timeout=3600)
+        process.wait(timeout=3600)
+        reader.join(timeout=30)
     if process.returncode != 0 or count == 0:
+        # pg_dump's own message is a diagnostic, not a secret; it goes to the
+        # process log, printable characters only, never to standard output.
+        logging.getLogger("parishkit.stewardship").error(
+            "pg_dump exited %s: %s",
+            process.returncode,
+            "".join(
+                char if 32 <= ord(char) < 127 else " "
+                for char in diagnostics.decode("utf-8", "replace")
+            ).strip(),
+        )
         raise ConfigError("The database dump did not complete.")
     return count, digest
 

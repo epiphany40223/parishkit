@@ -172,9 +172,10 @@ def test_dump_uses_the_password_environment_and_needs_pg_dump(deployment, monkey
         def __init__(self, command, **options):
             calls.append((command, options))
             self.stdout, self.returncode = io.BytesIO(DUMP), 0
+            self.stderr = io.BytesIO(b"pg_dump: warning: synthetic\n")
 
-        def communicate(self, timeout=None):
-            return b"", b""
+        def wait(self, timeout=None):
+            return self.returncode
 
         def __enter__(self):
             return self

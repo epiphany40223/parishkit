@@ -172,12 +172,17 @@ def test_generated_documents_are_re_rendered_by_the_running_code(deployment):
     write_private(web, b"rendered by an older release")
     compose = layout.service_directory / "compose.json"
     write_private(compose, b'{"services": {}}')
+    # A document this release renders that the provisioning release did not.
+    added = layout.service_directory / "backup-worker.yaml"
+    kept = read_private(added)
+    added.unlink()
     assert retarget.retarget_image(deployment, image=OLD) == {
         "image_changed": False,
-        "documents_changed": 2,
+        "documents_changed": 3,
         "services_started": False,
     }
     assert read_private(web) == original
+    assert read_private(added) == kept
     assert images(deployment) == {OLD} and record(deployment)["image"] == OLD
 
 

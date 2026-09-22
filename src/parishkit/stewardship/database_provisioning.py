@@ -120,12 +120,23 @@ def _admit_reader(cursor, login, tables):
             raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
 
 
-def _check_role(cursor, name, marker, limit):
-    """Idempotent retry never adopts, repairs or silently changes an existing role."""
+# The backup login's only membership, as pg_auth_members reports it.
+READER_MEMBERSHIP = "pg_read_all_data:true:false"
+
+
+def _check_role(cursor, name, marker, limit, *, reader=False):
+    """Idempotent retry never adopts, repairs or silently changes an existing role.
+
+    No foundation login is a member of any role, except the backup login,
+    whose one membership is exactly pg_read_all_data with inheritance and
+    without admin option; anything else is a foreign role.
+    """
     cursor.execute(
         "SELECT shobj_description(oid,'pg_authid'),rolsuper,rolbypassrls,rolcreatedb,"
         "rolcreaterole,rolreplication,rolinherit,rolcanlogin,rolconnlimit,"
-        "EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid) "
+        "(SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
+        "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
+        "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
         "FROM pg_roles r WHERE rolname=%s",
         (name,),
     )
@@ -140,7 +151,7 @@ def _check_role(cursor, name, marker, limit):
         False,
         True,
         limit,
-        False,
+        READER_MEMBERSHIP if reader else None,
     ):
         raise ConfigError("Existing database role differs from initial provisioning.")
     return row is not None
@@ -181,7 +192,13 @@ def provision_roles(configuration, deployment_id):
         _admit_operator(cursor, configuration, marker, initial=True)
         # Preflight every identity before the first role/password mutation.
         existing = {
-            name: _check_role(cursor, login, marker, role_limit(configuration, role))
+            name: _check_role(
+                cursor,
+                login,
+                marker,
+                role_limit(configuration, role),
+                reader=role is ServiceRole.BACKUP_WORKER,
+            )
             for name, login, role, _ in identities
         }
         for name, login, _, _ in identities:
@@ -270,7 +287,13 @@ def provision_grants(configuration, deployment_id):
     ):
         _admit_operator(cursor, configuration, marker, initial=False)
         for _, login, role, target in database_identities():
-            if not _check_role(cursor, login, marker, role_limit(configuration, role)):
+            if not _check_role(
+                cursor,
+                login,
+                marker,
+                role_limit(configuration, role),
+                reader=role is ServiceRole.BACKUP_WORKER,
+            ):
                 raise ConfigError("Database roles must be provisioned before grants.")
             if role is ServiceRole.MIGRATION:
                 continue

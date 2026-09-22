@@ -223,6 +223,18 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
                 assert cursor.fetchall() == []
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     cursor.execute("SELECT * FROM stewardship_configuration_version")
+            if role is ServiceRole.BACKUP_WORKER:
+                # The dump reads every table through its inherited membership
+                # and may write only its own record.
+                cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
+                assert cursor.fetchone() == (0,)
+                cursor.execute(
+                    "SELECT pg_has_role(current_user,'pg_read_all_data','USAGE'),"
+                    "has_table_privilege(current_user,"
+                    "'stewardship_backup_run','INSERT'),"
+                    "has_table_privilege(current_user,'stewardship_campaign','INSERT')"
+                )
+                assert cursor.fetchone() == (True, True, False)
     from parishkit.stewardship.bootstrap import provision_initial_files
 
     bootstrap = replace(
