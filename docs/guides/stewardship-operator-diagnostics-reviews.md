@@ -90,3 +90,24 @@ correction check follows.
 
 Claude only (Codex produced no structured output). Correction check: no
 findings; the review rounds are closed.
+
+## Protected delivery
+
+PR #106 delivered candidate `21cd2117`, two logical commits plus the
+receipt of PR #105, whose content is the retained review history on
+`pr/stewardship-typed-operator-diagnostics-reviewed` (`16eed7d8`), squashed
+with identical content, plus exactly that receipt; the backup,
+operator-command, observability and backup-boundary suites passed on that
+tree, and the candidate tree `a4004d8d` is the landed tree. The four rounds
+above were single-source under the exemption; rounds 1 to 3 each validated
+one finding, all corrected, and round 4 found nothing. The pull request was
+marked ready before the candidate was pushed. Exact-head ready-candidate CI
+`35791956064` and DCO passed all 25 checks, from 22:21:50 to 22:42:23 UTC
+on September 22, 2026 (20 minutes 33 seconds). Earlier runs on superseded
+draft heads were cancelled or stopped at their shard-completeness checks;
+none is counted as acceptance. `origin/main` had no intervening commits
+since the candidate's base `2c16c49e`. Protected auto-merge landed as
+`d23d20d5` at 22:42:30 UTC and was verified on freshly fetched
+`origin/main`, whose second parent's tree is the candidate's, before the
+next increment was committed. This used the standing delivery authority,
+without deployment or release; no real provider was contacted.
