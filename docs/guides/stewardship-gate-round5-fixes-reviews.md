@@ -10,8 +10,9 @@ found:
   operator able neither to back up nor to migrate. The
   [deployment runbook's upgrade](stewardship-deployment-runbook.md#upgrade)
   now says to run steps 1 to 4 in one sitting and how to recover: retarget
-  back, back up, retarget forward, or, when the release added a deployment
-  field, the database-restore rollback from the step 1 backup; the
+  back, back up, retarget forward; if the previous image refuses the
+  rewritten provisioning record, put back the step 1 set's record, and
+  use the database-restore rollback only if that still refuses; the
   [backup runbook](stewardship-backup-runbook.md#checking) checklist points
   there.
 - PL-I2 (Low): the launch runbooks said a report resent on a paused active
@@ -71,3 +72,21 @@ raised two findings, one validated and corrected:
 
 The Low below the cutoff was taken: the paragraph after the recovery is
 rewrapped. A correction check follows.
+
+## Round 3
+
+Claude and Codex both answered; Codex approved with no findings. Claude
+raised three findings, two validated and corrected:
+
+- Medium: the record-only recovery decrypted the whole files set without
+  the restore procedure's handling; it now follows Restore for real steps
+  2 and 4 to open and extract the set and step 10 to delete the decrypted
+  copies.
+- Medium: the Rollback section still said a deployment field the new
+  release added forces a database restore, contradicting the corrected
+  upgrade step; it now puts back the step 1 set's record while the
+  deployment YAML names only fields the previous release knows, and keeps
+  the restore for the other cases.
+
+The Low below the cutoff was taken: this ledger's summary now describes
+the corrected recovery. A correction check follows.

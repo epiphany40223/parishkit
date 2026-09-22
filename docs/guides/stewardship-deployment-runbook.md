@@ -182,12 +182,18 @@ sequence with the commands that exist.
    image's `retarget-image` refuses (its error names no cause; a release
    that added a deployment field is one), the database is still untouched,
    because the migration refused before applying anything; what stands in
-   the way is the provisioning record step 3 rewrote. Open the step 1 set's
-   `files.tar` with `backup-open` where the private key is kept, extract it
-   into an empty private staging directory, move the current
+   the way is the provisioning record step 3 rewrote. Open the step 1
+   set's files as the backup runbook's
+   [Restore for real](stewardship-backup-runbook.md#restore-for-real) steps
+   2 and 4 describe (confirm the set against its recorded manifest digest,
+   open `files.tar.sealed` with `backup-open` where the private key is
+   kept, bring the result to the host privately and extract it into an
+   empty private staging directory), move the current
    `.stewardship-provisioned.json` aside under a new name (never delete
    it), put the set's record in its place, owned by `10001:10001` with
    mode `0600`, and run the previous image's `retarget-image` again; then
+   securely delete the decrypted `files.tar` and the staging directory on
+   the host and on the key machine, as that procedure's step 10 does, and
    continue as above. Restore nothing else from the set: the online
    services changed the database and the other trees after it was taken.
    Only if that retarget still refuses, follow the database-restore
@@ -231,15 +237,19 @@ registry; nothing here deletes it.
 ## Rollback
 
 An application-only rollback is possible only when the new release changed
-neither the schema nor any runtime grant, and added no deployment field:
+neither the schema nor any runtime grant:
 stop the online services, run `retarget-image` with the previous digest (in
 that previous image), pull, put the previous release's static tree back
 (move the new `cache/static` aside and restore the one step 5 kept, or
 collect into an empty `cache/static` in the previous image), and start;
 step 4 is not repeated. A grant the new release added is refused as
-excessive by the previous release's services, and a deployment field it
-added makes the previous release's `retarget-image` refuse the provisioning
-record, so either case needs the database restore below. When the release
+excessive by the previous release's services, so it needs the database
+restore below. A deployment field the new release added makes the previous
+release's `retarget-image` refuse the provisioning record the new release
+wrote; while the deployment YAML still names only fields the previous
+release knows, put back the step 1 set's record as
+[upgrade step 4](#upgrade) describes and continue this rollback, and
+otherwise use the database restore below. When the release
 changed the schema, an older image must never be pointed at the newer
 database; the rollback is a database restore from the backup taken
 in upgrade step 1, following the launch scope's
