@@ -295,18 +295,32 @@ only for the current Production campaign.
       retry), report preparation must reach its safe point, and any blocked
       Family group on the **Overdue Family-mail planning** panel must be
       resolved. The resume controls are hidden entirely while an activation
-      catch-up is still running.
-   2. Choose **Preview and send a test to the configured Testing recipient**
-      and wait until the page says **The current provider and sender accepted
-      a test after this pause.** The proof is valid for five minutes.
+      catch-up is still running. A report preparation that has *failed* never
+      reaches its safe point by itself: find the failed daily or weekly
+      report task on the Background work page (`/admin/background`) or the
+      home page's failed-task list, fix its cause (usually ParishSoft
+      availability), choose **Retry report work** on the task's page, and
+      wait for it to complete.
+   2. Two five-minute clocks govern the rest, so do steps 2 to 4 in one go.
+      Confirming needs a Google sign-in from the last five minutes, and
+      **Sign in again with Google** returns you to the portal home page, not
+      here: copy this page's address first, sign in, and go straight back.
+      Then choose **Preview and send a test to the configured Testing
+      recipient** and wait until the page says **The current provider and
+      sender accepted a test after this pause.** That proof is also valid
+      for five minutes, and the preview and the confirmation both check it
+      again.
    3. Give the reason and choose **Preview resume**. Review the exact
       preview: overdue invitations and reminders are coalesced (redundant
       slots coalesced, inapplicable ones skipped), overdue daily or weekly
       reports each become one report obligation, every held receipt is
       released, and future work keeps its original due time.
-   4. Choose **Confirm resume of live delivery**. Every input is checked
-      again; anything that changed cancels the confirmation without releasing
-      mail, and you preview again.
+   4. Choose **Confirm resume of live delivery**, within five minutes of
+      both the sign-in and the test. Every input is checked again; anything
+      that changed cancels the confirmation without releasing mail, and you
+      preview again. If the confirm button is missing, the sign-in has
+      expired: sign in again as in step 2, send a new test, and preview
+      again.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
@@ -315,8 +329,11 @@ reports by type: release the ones that should still go, after the same
 sender check, and cancel the rest with a reason. A type cannot be cancelled
 while any of its messages is still submitting or unknown, and no resolution
 at all (release, cancel or clearing an empty pause) is accepted while a
-daily or weekly report is still being prepared: wait for it to finish. This
-does not reopen Family access. A resolution
+daily or weekly report is still being prepared: wait for it to finish, and
+if its preparation has failed, retry it from the Background work page as in
+step 4.1 above. A release needs the same fresh sign-in and five-minute
+sender test as a resume, in one go. This does not reopen Family access. A
+resolution
 clears the pause only when it leaves nothing held, submitting or unknown; if
 the last unknown delivery is reconciled afterwards, choose **Clear an empty,
 fully resolved pause (select no types)** to clear it.
@@ -386,7 +403,11 @@ For each message, from its detail page (`/admin/deliveries/<message id>`):
    like a report cancelled for a removed Administrator, so the report completes
    once its other recipients have it, whether the recipient was removed before
    or after; a failed report whose recipient is still an Administrator holds
-   the report open until you choose **Retry failed delivery**. On a campaign
+   the report open until you choose **Retry failed delivery**, when no pause
+   is involved. On an active campaign that is paused, that retry is not
+   offered, and resuming folds the report into the next combined report of
+   its kind, which carries its dates to the current Administrators; do not
+   wait for the button. On a campaign
    closed while paused that retry is not available: if the recipient should no
    longer be an Administrator, remove them through the ordinary configuration
    change and the report settles, so the closed resolution can record its

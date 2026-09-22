@@ -71,7 +71,10 @@ unknown message, as **Record that the provider did not send it (no resend)**.
   Admin command or a roster change), the existing metadata finalizer
   completes the occurrence, as it does after an Admin acceptance. A failed
   report whose recipient is still an Administrator holds its cohort open
-  until **Retry failed delivery** sends it.
+  until **Retry failed delivery** sends it, when no pause is involved; on a
+  paused active campaign that retry is not offered, and resume's overdue
+  report plan coalesces the occurrence into the next combined report of its
+  kind, which carries its dates to the current Administrators.
 - **Consequences.** The message leaves the delivery-control inventory's
   unknown count, so resume (or the closed-pause resolution) can proceed, and
   a receipt waiting behind it is no longer blocked. Schedule reconciliation

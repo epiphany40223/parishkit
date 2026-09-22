@@ -111,7 +111,11 @@ deployment/provider credential is required. It refuses nonempty targets and neve
 clears a directory. Inspect a partial failed output, preserve it under a separate
 operator-selected name and recreate an empty destination at the configured path
 before retrying; do not mix user uploads or authenticated exports into public static
-storage. Caddy mounts the completed static tree read-only.
+storage. Caddy mounts the completed static tree read-only. Because the
+collector never overwrites a tree, every upgrade, rollback and restore
+refreshes it into a new empty `cache/static` with the image being started,
+as the [deployment runbook](stewardship-deployment-runbook.md#upgrade)
+describes.
 
 Supply the Google OAuth client document in its exact owner-only credential file:
 JSON with only `client_id` and `client_secret`. Configure authorized Google redirect
