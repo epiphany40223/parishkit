@@ -384,10 +384,26 @@ or no deliverable address cancels it. No Critical, High or Medium finding
 from rounds 4 to 6 remains unresolved; round 3's uncorrected Medium was
 later corrected by PR #109 (round 7).
 
+### Round 7
+
+At the human's direction, round 3's open Medium was corrected by PR #109
+before exit. A correction check of PL-I2 and PL-I4 on `f79376f7` (the merge
+of PR #109) by two independent Claude reviewers (Codex was out of credits)
+found no Critical, High or Medium finding; every quote matched. The PL-I4
+reviewer found nothing: preview and confirmation agree, and every decision
+behaves correctly with stranded rows beside held reports and unknown rows.
+The PL-I2 reviewer raised one Low, taken in this pull request: when only
+stranded invitations and reminders are held, release and cancel are
+refused for want of a selected type, and the only admissible action was
+labelled as clearing an empty pause. The page and the launch runbooks now
+say to choose Clear with no types, and the option no longer calls the
+pause empty.
+
 ## Exit
 
 Open, awaiting the human. Every Critical, High and Medium finding that the
-seven rounds validated is corrected (EXITCHECK). The gate exits only when
+seven rounds validated is corrected, and round 7 checked the last
+correction clean. The gate exits only when
 the human gives explicit product, security and operations approval of the
 launch and of the known limitations above; nothing here infers it. Before
 that approval, the human also:
