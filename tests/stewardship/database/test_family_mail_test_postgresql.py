@@ -37,6 +37,9 @@ from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
     finish_submission,
 )
+from parishkit.stewardship.jobs.family_mail_dispatch_recovery import (
+    cancel_abandoned_family_test,
+)
 from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.jobs.family_mail_test_tasks import (
     TASK_TYPE,
@@ -874,38 +877,27 @@ def test_lost_template_and_lasting_ineligibility_cancel_the_test(family_test):
     assert FamilyMailTest.objects.filter(state="prepared").count() == 2
 
 
-def test_abandoned_dispatch_recovery_cancels_the_unsent_test(family_test, monkeypatch):
-    """Lost leases, not in-process exceptions: recovery cancels after the budget.
+def abandon_until_settled(message, owner, *, first_claimed=False):
+    """Claim, let a one-second lease expire and run real recovery until terminal.
 
-    Each round claims the dispatch, lets its one-second lease expire and runs
-    the real recovery owner. Until the budget is spent the message stays
-    pending; the last round cancels it and settles the task, so the test can
-    never block Testing cleanup with no live task left to settle it.
+    Lost leases, not in-process exceptions. Each round is a real claim; the
+    recovery owner decides the disposition from durable evidence alone.
     """
-    from pathlib import Path
     from threading import Event
 
     from parishkit.stewardship.jobs.dispatch import recover_hint
-    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
-        MAX_ATTEMPTS,
-        delivery_handler,
-    )
     from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE as DISPATCH
 
     from .test_taskrun_postgresql import act, expire
 
-    harness, browser, path, _ = family_test
-    request_tickets(browser, path, [1])
-    (message,) = prepare_tests(harness)
-    monkeypatch.setattr(
-        "parishkit.stewardship.jobs.family_mail_delivery_tasks.RECOVERY_RETRY_SECONDS",
-        1,
-    )
-    owner = delivery_handler(None, credential_path=Path("/unused"))
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        if attempt > 1:
+    rounds = 0
+    while True:
+        status = _status(TaskRun.objects.get(pk=message.task_id))
+        if status.state in {"succeeded", "failed", "cancelled"}:
+            return rounds
+        if status.state != "running":
             Event().wait(1.1)  # The recovery retry delay must have elapsed.
-        status = act(_status(TaskRun.objects.get(pk=message.task_id)), "claim")
+            status = act(status, "claim")
         status = act(status, "heartbeat", lease_seconds=1)
         expire(status)
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
@@ -915,18 +907,183 @@ def test_abandoned_dispatch_recovery_cancels_the_unsent_test(family_test, monkey
                 worker_id=uuid4(),
                 handlers={DISPATCH: owner},
             )
-        message.refresh_from_db()
-        task = TaskRun.objects.get(pk=message.task_id)
-        if attempt < MAX_ATTEMPTS:
-            assert message.state == "pending" and task.state == "retry_wait"
-        else:
-            assert message.state == "cancelled" and task.state == "cancelled"
-    assert message.reason == "preparation_failed" and message.attempt == 0
-    assert message.sealed_substitutions is None
-    from parishkit.stewardship.campaigns.cleanup_preview import cleanup_preview
+        rounds += 1
+        assert rounds <= 10, "recovery never settled the abandoned test"
 
+
+@pytest.mark.parametrize("transient_first", [False, True])
+def test_abandoned_dispatch_recovery_cancels_the_unsent_test(
+    family_test, monkeypatch, transient_first
+):
+    """Recovery cancels a definitely unsent test once the budget is spent.
+
+    Until then the message stays unsent and the task waits to retry; the
+    last round cancels the message and settles the task, so the test can
+    never block Testing cleanup with no live task left to settle it. A
+    transient provider refusal before abandonment is a definite
+    non-acceptance and cancels the same way.
+    """
+    from pathlib import Path
+
+    from parishkit.stewardship.campaigns.cleanup_preview import cleanup_preview
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        MAX_ATTEMPTS,
+        delivery_handler,
+    )
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.RECOVERY_RETRY_SECONDS",
+        1,
+    )
+    if transient_first:
+        deliver(harness, message, Status.TRANSIENT)
+        assert message.state == "retry_wait" and message.attempt == 1
+    owner = delivery_handler(None, credential_path=Path("/unused"))
+    rounds = abandon_until_settled(message, owner)
+    message.refresh_from_db()
+    task = TaskRun.objects.get(pk=message.task_id)
+    assert message.state == "cancelled" and task.state == "cancelled"
+    assert message.reason == "preparation_failed"
+    assert message.attempt == (1 if transient_first else 0)
+    assert message.sealed_substitutions is None
+    # The provider attempt's claim is the first abandoned round.
+    assert rounds == MAX_ATTEMPTS
     with work_transaction():
         assert not cleanup_preview(harness.campaign.pk).unresolved
+
+
+def recovery_cancel(status, message, *, reason="preparation_failed"):
+    """Attempt the raw recovery cancel the MAIL owner would issue."""
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+    from parishkit.stewardship.jobs.outbox_storage import change_message
+    from parishkit.stewardship.jobs.outbox_validation import DeliveryEvidence
+
+    return change_message(
+        message_id=message.pk,
+        action=DeliveryAction.CANCEL_UNSENT,
+        command_id=uuid4(),
+        expected_version=message.version,
+        actor_id=uuid4(),
+        correlation_id=status.run_id,
+        evidence=DeliveryEvidence(reason=reason),
+        admit=lambda *args: True,
+    )
+
+
+def abandon(message, times):
+    """Abandon the message's task the given number of times without recovery."""
+    from threading import Event
+
+    from .test_taskrun_postgresql import act, expire
+
+    status = _status(TaskRun.objects.get(pk=message.task_id))
+    for _ in range(times):
+        if status.state == "abandoned":
+            status = act(status, "recovery_retry")
+            Event().wait(1.1)  # The one-second retry delay must have elapsed.
+        if status.state != "running":
+            status = act(status, "claim")
+        status = act(status, "heartbeat", lease_seconds=1)
+        status = expire(status)
+    return status
+
+
+@pytest.mark.parametrize("case", ["budget", "purpose", "reason", "uncertain"])
+def test_mail_role_recovery_cancel_is_refused_outside_its_exact_conditions(
+    family_test, case
+):
+    """SQL admits the recovery cancel only for an exhausted, definitely unsent test."""
+    from parishkit.stewardship.campaigns.credential_keys import (
+        initialize_key_inventories,
+    )
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import MAX_ATTEMPTS
+
+    harness, browser, path, _ = family_test
+    if case == "purpose":
+        from .test_family_mail_dispatch_postgresql import prepare
+
+        with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+            message = prepare(harness)
+    else:
+        request_tickets(browser, path, [1])
+        (message,) = prepare_tests(harness)
+    if case == "uncertain":
+        # An idempotent retry keeps its payload and outcome; nothing may cancel it.
+        from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+        from parishkit.stewardship.jobs.outbox_storage import change_message
+        from parishkit.stewardship.jobs.outbox_validation import DeliveryEvidence
+
+        initialize_key_inventories(harness.rings.private)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            begin_submission(
+                message.pk,
+                execution.claim,
+                private=harness.rings.private,
+                public_origin=ORIGIN,
+            )
+        message.refresh_from_db()
+        with work_transaction():
+            change_message(
+                message_id=message.pk,
+                action=DeliveryAction.RETRY_IDEMPOTENT,
+                command_id=uuid4(),
+                expected_version=message.version,
+                actor_id=execution.claim.worker_id,
+                correlation_id=execution.claim.run_id,
+                evidence=DeliveryEvidence(
+                    evidence_digest="a" * 64,
+                    evidence_note="synthetic uncertain retry",
+                    reason="smtp_transient",
+                ),
+                retry_seconds=1,
+                admit=lambda *args: True,
+            )
+        message.refresh_from_db()
+        assert message.state == "retry_wait" and message.action == "retry_idempotent"
+    status = abandon(message, 1 if case == "budget" else MAX_ATTEMPTS)
+    assert status.state == "abandoned"
+    message.refresh_from_db()
+    with (
+        task_login(ServiceRole.MAIL_DISPATCH, exact=True),
+        pytest.raises(IntegrityError),
+        work_transaction(),
+    ):
+        recovery_cancel(
+            status,
+            message,
+            reason="recovery_unknown" if case == "reason" else "preparation_failed",
+        )
+    message.refresh_from_db()
+    assert message.state in {"pending", "retry_wait"}
+    if case == "uncertain":
+        with pytest.raises(PermissionError), work_transaction():
+            cancel_abandoned_family_test(status, actor_id=uuid4())
+
+
+def test_scheduler_recovery_hint_admission_writes_nothing(family_test):
+    """The recovery plan is a pure predicate; the scheduler cannot write outbox rows."""
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        MAX_ATTEMPTS,
+        delivery_handler,
+        recover_delivery,
+    )
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    status = abandon(message, MAX_ATTEMPTS)
+    handler = delivery_handler(None, scheduler=True)
+    assert handler.recover is recover_delivery
+    with task_login(ServiceRole.SCHEDULER, exact=True), work_transaction():
+        assert handler.admit("recovery_hint", status) is True
+        assert handler.admit("recovery_cancel", status) is True
+    message.refresh_from_db()
+    assert message.state == "pending" and message.version == 1
+    assert TaskRun.objects.get(pk=message.task_id).state == "abandoned"
 
 
 def test_queued_ticket_for_a_lastingly_ineligible_family_is_cancelled(family_test):

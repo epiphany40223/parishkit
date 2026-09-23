@@ -76,6 +76,19 @@ def test_acknowledgement_is_required_before_any_lookup():
         )
 
 
+def test_sql_recovery_budget_mirrors_the_python_attempt_budget():
+    """Lowering either budget without the other must fail here, not in production."""
+    from pathlib import Path
+
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as delivery
+
+    text = (
+        Path(delivery.__file__).parents[1] / "schema" / "family_dispatch.sql"
+    ).read_text()
+    assert f"t.attempt>={delivery.MAX_ATTEMPTS} AND own.purpose='family_test'" in text
+    assert text.count("t.attempt>=") == 1
+
+
 def test_form_reports_bad_duid_lists_as_field_errors():
     """The page re-renders with the typed list and a message, not a generic error."""
     from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
