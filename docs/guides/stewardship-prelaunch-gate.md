@@ -450,3 +450,23 @@ runbook no longer lists the campaign's end as a cancellation on resume,
 which the resume cannot reach because it is offered only before the end;
 and the Family-mail resolution guide, which round 6 also named, now says
 the resume's recovery plan may replace or cancel a resent message.
+
+## Protected delivery
+
+PR #108 delivered candidate `9bed4d9f`, two logical commits plus the
+receipt of PR #107, whose content is the retained review history on
+`pr/stewardship-prelaunch-gate-reviewed` (`b491c8c7`), squashed with
+identical content, plus exactly that receipt; Markdown lint passed on that
+tree, and the candidate tree `f8009b29` is the landed tree. The two record
+review rounds above were recorded by source: round 1 dual-source, round 2
+Claude-only under the exemption, validating nothing. The pull request was
+marked ready before the candidate was pushed. Exact-head ready-candidate CI
+`35798982655` and DCO passed all 25 checks, from 23:46:07 UTC on September
+22 to 00:05:33 UTC on September 23, 2026 (19 minutes 26 seconds). Earlier
+runs on superseded draft heads are not counted as acceptance. `origin/main`
+had no intervening commits since the candidate's base `d4206390`. Protected
+auto-merge landed as `1fce35dc` at 00:05:41 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's,
+before the next increment was committed. Merging it recorded evidence only;
+the gate stayed open. This used the standing delivery authority, without
+deployment or release; no real provider was contacted.
