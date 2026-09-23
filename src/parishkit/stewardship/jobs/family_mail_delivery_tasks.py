@@ -423,7 +423,9 @@ def _settle_failed_family_test(execution):
         # Already cancelled (for example by go-live invalidation) is settled.
         if message.state == "cancelled":
             return True
-        if message.state not in {"pending", "retry_wait"}:
+        # The same predicate recovery uses: an uncertain idempotent retry is
+        # never cancelled here either; it falls through to the failed task.
+        if not definitely_unsent(message):
             return False
         cancel_unsent(message.pk, execution.claim, reason="preparation_failed")
     return True

@@ -877,7 +877,7 @@ def test_lost_template_and_lasting_ineligibility_cancel_the_test(family_test):
     assert FamilyMailTest.objects.filter(state="prepared").count() == 2
 
 
-def abandon_until_settled(message, owner, *, first_claimed=False):
+def abandon_until_settled(message, owner):
     """Claim, let a one-second lease expire and run real recovery until terminal.
 
     Lost leases, not in-process exceptions. Each round is a real claim; the
@@ -1047,9 +1047,11 @@ def test_mail_role_recovery_cancel_is_refused_outside_its_exact_conditions(
     status = abandon(message, 1 if case == "budget" else MAX_ATTEMPTS)
     assert status.state == "abandoned"
     message.refresh_from_db()
+    # Outside the exact recovery conditions the write needs a live claim,
+    # which an abandoned task no longer has.
     with (
         task_login(ServiceRole.MAIL_DISPATCH, exact=True),
-        pytest.raises(IntegrityError),
+        pytest.raises(IntegrityError, match="live exact claim"),
         work_transaction(),
     ):
         recovery_cancel(
@@ -1062,6 +1064,58 @@ def test_mail_role_recovery_cancel_is_refused_outside_its_exact_conditions(
     if case == "uncertain":
         with pytest.raises(PermissionError), work_transaction():
             cancel_abandoned_family_test(status, actor_id=uuid4())
+
+
+def test_recovery_of_an_already_cancelled_test_only_settles_the_task(family_test):
+    """A test cancelled under its claim, then abandoned, needs no second cancel."""
+    from pathlib import Path
+
+    from parishkit.stewardship.campaigns.credential_keys import (
+        initialize_key_inventories,
+    )
+    from parishkit.stewardship.campaigns.rehearsals import invalidate_rehearsal
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
+    from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE as DISPATCH
+
+    from .test_taskrun_postgresql import act, expire
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    initialize_key_inventories(harness.rings.private)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+    invalidate_rehearsal(campaign_id=harness.campaign.pk, admit=lambda *args: True)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert (
+            begin_submission(
+                message.pk,
+                execution.claim,
+                private=harness.rings.private,
+                public_origin=ORIGIN,
+            )
+            is None
+        )
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.reason == "scope_replaced"
+    version = message.version
+    status = act(
+        _status(TaskRun.objects.get(pk=message.task_id)), "heartbeat", lease_seconds=1
+    )
+    expire(status)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert recover_hint(
+            message.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={
+                DISPATCH: delivery_handler(None, credential_path=Path("/unused"))
+            },
+        )
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.version == version
+    assert TaskRun.objects.get(pk=message.task_id).state == "cancelled"
 
 
 def test_scheduler_recovery_hint_admission_writes_nothing(family_test):
