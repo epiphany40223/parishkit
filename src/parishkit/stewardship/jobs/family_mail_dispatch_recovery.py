@@ -61,6 +61,19 @@ def record_abandoned_submission(status, *, actor_id):
     return result
 
 
+def definitely_unsent(row):
+    """Whether no provider attempt can have delivered this unsent message.
+
+    Never submitted, or waiting to retry after the provider's definite
+    non-acceptance. An uncertain idempotent retry keeps its payload and
+    outcome and is never cancelled; the outbox guard refuses that as well.
+    The dispatch SQL recovery clause applies the same two conditions.
+    """
+    return (row.state == "pending" and row.attempt == 0) or (
+        row.state == "retry_wait" and row.action == "retry_unaccepted"
+    )
+
+
 def cancel_abandoned_family_test(status, *, actor_id):
     """Cancel an unsent chosen-Family test whose abandoned dispatch cannot prepare.
 
@@ -74,7 +87,7 @@ def cancel_abandoned_family_test(status, *, actor_id):
     if (
         status.state != "abandoned"
         or row.purpose != "family_test"
-        or row.state not in {"pending", "retry_wait"}
+        or not definitely_unsent(row)
     ):
         raise PermissionError("Family test recovery cancellation is not admitted.")
 
