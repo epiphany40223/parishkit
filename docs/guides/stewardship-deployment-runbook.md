@@ -231,8 +231,46 @@ sign-out, and the main staff pages: home, campaign and schedules,
 reports and exports, deliveries, and background work.
 
 **Load.** The launch scope's single load check at the parish's real Family
-count runs against this deployment; its tool is development work scheduled
-for September 25–29 and is not yet available.
+count runs against this deployment, inside its web container, while the
+Testing Family portal is open (the draft campaign's dates include today and
+its Testing credentials exist, as for the Family-form test above):
+
+```text
+docker compose ... exec -T web pk-stewardship load-check --config WEB_CONFIG > load-check.json
+```
+
+It only reads, in read-only transactions with statement and lock time
+limits. It times loading the Family form's source inputs for a sample of
+eligible Families (`--samples`, default 200: half the largest households,
+half spread across the rest), serially and with a few concurrent readers
+(`--concurrency`, default 4, never more than the web service's threads or
+the web database login's spare connections), and the first pages of the
+statistics, financial and information reports, 20 times each, one at a
+time. It sends no mail, signs no one in, writes nothing, never touches Valkey
+and prints only counts and seconds. The verdict compares each p95 with the
+architecture specification's targets: 2 seconds for the Family form's inputs
+and the statistics page, 3 seconds for a report's first page. The form timing
+covers the per-Family source read, not the whole page, so it is a lower bound
+for opening the form. A phase stops after five failed reads, and the whole
+check after 15 minutes; anything not reached counts as not run and fails
+the check. A Family that stops being eligible during the check is skipped,
+but a phase that measures fewer than half its samples fails.
+
+- Exit `0`, `"result": "pass"`: passed; keep the JSON with the gate evidence.
+- Exit `1`, `"result": "fail"`: a target was missed or reads failed; report
+  it as a launch blocker.
+- Exit `2`: it did not produce a verdict, and the one-line error says why.
+  It was refused (invalid options, no portal-eligible Families, no spare web
+  database connections, offline work in progress, or otherwise not the web
+  container of an open Testing campaign with promoted data); the Testing
+  portal closed, the campaign became unavailable or the parish data was
+  refreshed during the check (run it again); or an unexpected error stopped
+  it (see the process log).
+
+If a Testing invitation run exists for the current Testing credentials, the
+output also times it under `invitation_run`, for information only. Run the
+check outside an upgrade. The [load check guide](stewardship-load-check.md)
+records its design.
 
 **Not testable before activation.** Delivery pause and resume exist only for
 the Production campaign.
