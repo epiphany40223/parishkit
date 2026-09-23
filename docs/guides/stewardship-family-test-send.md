@@ -66,8 +66,10 @@ here by which sources answered.
 ### Round 1
 
 Claude and Codex both answered (two Claude shards). Twenty-two raw
-findings; eight validated and corrected, with every Low below the cutoff
-taken:
+findings; eight validated and corrected (three Highs and five Mediums,
+covering the five distinct defects below: some were reported by both
+sources, or by one source at two severities), with every Low below the
+cutoff taken:
 
 - High (both sources): a test message whose dispatch preparation failed for
   good (for example after its template was removed) stayed pending with no
@@ -167,7 +169,8 @@ PostgreSQL tests across the affected suites passed, and the candidate tree
 `5d3eecf2` is the landed tree. The four rounds above had two Claude shards
 each and Codex in round 1; rounds 1 to 3 validated three Highs and seven
 Mediums, all corrected, and round 4 validated none. The first candidate's
-exact-head CI (`35824483608`) failed two checks, corrected as recorded
+exact-head CI (`35824483608`) failed in two jobs (four checks with their
+aggregate jobs), corrected as recorded
 above and not counted as acceptance. Exact-head ready-candidate CI
 `35827926031` and DCO passed all 25 checks, from 06:41:21 to 07:01:25 UTC on
 September 23, 2026 (20 minutes 4 seconds). `origin/main` had no intervening

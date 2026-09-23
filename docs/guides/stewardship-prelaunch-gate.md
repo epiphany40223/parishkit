@@ -145,7 +145,7 @@ the affected scope before the gate exits.
 | PR #109 stranded Family mail on a closed campaign (gate round 3) | [Three single-source rounds and protected delivery](stewardship-closed-stranded-family-reviews.md) | PL-I2, PL-I4 |
 | PR #111 validation runbook corrections | [Review rounds and protected delivery](stewardship-validation-runbook-reviews.md) | PL-I5 |
 | PR #112 load check | [Three dual-source rounds and protected delivery](stewardship-load-check.md) | PL-I5 |
-| PR #113 chosen-Family test sends | [Four rounds and protected delivery](stewardship-family-test-send.md) | PL-I1, PL-I2, PL-I4 |
+| PR #113 chosen-Family test sends | [Four rounds (round 1 dual-source, rounds 2-4 single-source) plus candidate-CI correction review, and protected delivery](stewardship-family-test-send.md) | PL-I1, PL-I2, PL-I4 |
 
 Not reused as shipping-code evidence:
 
@@ -205,7 +205,11 @@ database path. PR #109 changed the closed-campaign resolution; the full
 PostgreSQL suite ran again, sharded, in its exact-head CI (`35810068360`,
 all 25 checks passed), whose tree is the merged `f79376f7`. By the human's
 direction, that CI run is the regression evidence for it, rather than a
-repeated single-server run.
+repeated single-server run. PR #112 added a read-only command and changed no
+database path; PR #113 added a migration, a table, an outbox purpose, SQL
+guards and mail-dispatch changes, and the full PostgreSQL suite ran again,
+sharded, in its exact-head CI (`35827926031`, all 25 checks passed), whose
+tree is the merged `f9b68cab`, the current regression evidence.
 
 The schema freeze audit installed `2c16c49e` fresh and compared its catalog
 with the committed fresh-install baseline
@@ -423,7 +427,8 @@ that approval, the human also:
 
 - reinstalls the validation deployment from the current release, since the
   backup release, PR #97, PR #100, PR #109 and PR #113 changed the
-  fresh-install schema and PR #105 added the rendered `operational_alerts` policy;
+  fresh-install schema and PR #105 added the rendered `operational_alerts`
+  policy;
 - runs the provider smoke checks and the restore drills (the full drill on
   the validation deployment, and the replacement-host steps on a
   disposable host), as the
@@ -544,3 +549,14 @@ the close-out, each through its own review rounds; this update lists them,
 records the schema baseline regenerated for PR #113, and adds it to the
 schema changes the validation reinstall covers. Its reviews are recorded
 below.
+
+### Record update review round 1
+
+Claude only (Codex did not answer). Five raw findings, one validated and
+corrected: the regression paragraph stopped at PR #109, so the record had no
+stated full-suite evidence for PR #113's database changes; it now cites
+PR #113's exact-head CI, which ran the full PostgreSQL suite on the current
+tree. The Lows were taken: PR #113's row states its sources and the
+correction review, a long line was rewrapped, and PR #113's receipt counts
+its failed checks consistently and explains its round 1 tally. A correction
+check follows.
