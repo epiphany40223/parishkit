@@ -131,3 +131,24 @@ The three Lows were taken as wording corrections: the recovery checks the
 previous digest and the stopped services before treating a refusal as a
 new deployment field, this ledger's summary includes the YAML step, and a
 long source line was rewrapped.
+
+## Protected delivery
+
+PR #107 delivered candidate `ee53f53d`, two logical commits plus the
+receipt of PR #106, whose content is the retained review history on
+`pr/stewardship-upgrade-backup-recovery-reviewed` (`e1f5d2bd`), squashed
+with identical content, plus exactly that receipt; Markdown lint passed on
+that tree, and the candidate tree `63d3ee2c` is the landed tree. The six
+rounds above were dual-source: Claude and Codex both answered each round
+(round 1's Codex pass was run by hand with pika's own command). Rounds 1 to
+5 validated findings, all corrected, and round 6 validated none. The pull
+request was marked ready before the candidate was pushed. Exact-head
+ready-candidate CI `35796135950` and DCO passed all 25 checks, from
+23:10:39 to 23:30:06 UTC on September 22, 2026 (19 minutes 27 seconds).
+Earlier runs on superseded draft heads are not counted as acceptance.
+`origin/main` had no intervening commits since the candidate's base
+`d23d20d5`. Protected auto-merge landed as `d4206390` at 23:30:09 UTC and
+was verified on freshly fetched `origin/main`, whose second parent's tree
+is the candidate's, before the next increment was committed. This used the
+standing delivery authority, without deployment or release; no real
+provider was contacted.
