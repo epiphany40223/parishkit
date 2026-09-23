@@ -503,3 +503,23 @@ the close-out rounds have their own section, and the freeze paragraph says
 the human directed PR #109 after confirming staff validation had not
 started, and the limitations say the validation deployment may use real
 data.
+
+### Close-out protected delivery
+
+PR #110 delivered candidate `e1421e9b`, two logical commits plus the
+receipt of PR #109, whose content is the retained review history on
+`pr/stewardship-gate-closeout-reviewed` (`52c5ef41`), squashed with
+identical content, plus exactly that receipt; Markdown lint passed on that
+tree, and the candidate tree `9c492281` is the landed tree. The two
+close-out rounds above were single-source under the exemption, validating
+nothing. The pull request was marked ready before the candidate was pushed.
+Exact-head ready-candidate CI `35813037363` and DCO passed all 25 checks,
+from 03:06:44 to 03:27:12 UTC on September 23, 2026 (20 minutes 28
+seconds). Earlier runs on superseded draft heads are not counted as
+acceptance. `origin/main` had no intervening commits since the candidate's
+base `f79376f7`. Protected auto-merge landed as `9b40b81e` at 03:27:23 UTC
+and was verified on freshly fetched `origin/main`, whose second parent's
+tree is the candidate's, before the next increment was committed. Merging
+it recorded evidence only; the gate stayed open. This used the standing
+delivery authority, without deployment or release; no real provider was
+contacted.
