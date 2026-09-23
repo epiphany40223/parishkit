@@ -216,6 +216,23 @@ def deliver(harness, message, status=Status.ACCEPTED):
     return mail
 
 
+def age_session(delta):
+    """Move the single Admin session's Google sign-in back or forward in time.
+
+    ``authenticated_at`` is immutable to every runtime login, so this is a
+    disposable schema-owner fixture edit with the row's guards suspended only
+    for this statement; every application check afterwards runs fully guarded.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE stewardship_portal_session DISABLE TRIGGER USER")
+        cursor.execute(
+            "UPDATE stewardship_portal_session "
+            "SET authenticated_at=authenticated_at-%s",
+            [delta],
+        )
+        cursor.execute("ALTER TABLE stewardship_portal_session ENABLE TRIGGER USER")
+
+
 def code_of(harness, message):
     """Open the sealed reference with the private key MAIL would use."""
     retained = message.render
@@ -344,15 +361,19 @@ def test_worker_issues_a_missing_credential_that_signs_in_only_within_dates(
 
     from parishkit.stewardship.campaigns.credential_models import FamilySession
 
+    client = Client(enforce_csrf_checks=True)
+    with campaign_clock(starts_at):
+        assert client.get("/").status_code == 200
+    csrf = client.cookies["pk_family_csrf"].value
     with campaign_clock(starts_at - timedelta(days=1)):
-        client = Client(enforce_csrf_checks=True)
+        # The portal itself is closed, and a code posted anyway is refused.
         client.get("/")
-        csrf = client.cookies.get("pk_family_csrf")
-        if csrf is not None:
-            response = client.post(
-                "/", {"code": code, "csrfmiddlewaretoken": csrf.value}
-            )
-            assert response.status_code != 302
+        assert (
+            "pk_family_csrf" not in client.cookies
+            or client.cookies["pk_family_csrf"].value == csrf
+        )
+        response = client.post("/", {"code": code, "csrfmiddlewaretoken": csrf})
+        assert response.status_code != 302
         assert not FamilySession.objects.filter(rehearsal_epoch_id=epoch_id).exists()
     with campaign_clock(starts_at):
         _, response = login(code)
@@ -388,8 +409,8 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
             == 400
         )
     assert not FamilyMailTest.objects.exists()
-    # A stale Google sign-in is refused by web, and a forged fresh timestamp
-    # is refused by SQL against the actual session record.
+    # A stale Google sign-in is refused by web, and a forged timestamp is
+    # refused by SQL against the actual session record.
     with monkeypatch.context() as patch:
         patch.setattr(
             intake,
@@ -407,20 +428,29 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
         assert response.status_code == 503, response.content
     assert not FamilyMailTest.objects.exists()
     assert not TaskRun.objects.filter(task_type=TASK_TYPE).exists()
+    # A real session whose Google sign-in is older than five minutes: web
+    # refuses, and SQL refuses the genuinely matching but stale timestamp too.
+    age_session(timedelta(minutes=10))
+    with web_login():
+        response = post(
+            browser, path, {"action": "confirm", "preview": token, "acknowledge": "on"}
+        )
+    assert response.status_code == 403
     with monkeypatch.context() as patch:
-
-        def stale(request):
-            raise PermissionError("Please authenticate with Google again.")
-
-        patch.setattr(intake, "require_fresh", stale)
+        patch.setattr(
+            intake,
+            "require_fresh",
+            lambda request: request.portal_session.authenticated_at,
+        )
         with web_login():
             response = post(
                 browser,
                 path,
                 {"action": "confirm", "preview": token, "acknowledge": "on"},
             )
-        assert response.status_code == 403
+        assert response.status_code == 503, response.content
     assert not FamilyMailTest.objects.exists()
+    age_session(-timedelta(minutes=10))
     # Production offers no chosen-Family test at all.
     from .response_builders import activate_response_service
 
@@ -428,9 +458,9 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
     with web_login():
         assert browser.get(path).status_code == 403
         page = browser.get(sample)
-    assert page.status_code in {200, 409}
-    if page.status_code == 200:
-        assert page.context["families_url"] is None
+    # An unpaused Production campaign has no fictional sample either, so the
+    # page is refused as stale and offers no chosen-Family link anywhere.
+    assert page.status_code == 409 and b"/families" not in page.content
 
 
 def test_at_most_ten_tests_may_be_in_progress_per_campaign(family_test, monkeypatch):
@@ -624,3 +654,221 @@ def test_scope_change_cancels_unsent_test_and_cleanup_inventories_the_rest(
     assert ticket.state == "prepared" and ticket.family_id is None
     with work_transaction():
         assert not cleanup_preview(harness.campaign.pk).unresolved
+
+
+def test_revoked_admin_stops_preparation_before_the_sweep(family_test, monkeypatch):
+    """The worker rechecks the Admin's authority itself; SQL rechecks it again."""
+    harness, browser, path, _ = family_test
+    (ticket,), _ = request_tickets(browser, path, [1])
+    PortalUser.objects.filter(pk=ticket.requested_by_id).update(
+        disabled=True, version=F("version") + 1
+    )
+    owner = family_test_handler(
+        general=harness.rings.general,
+        mac=harness.rings.mac,
+        public=harness.rings.public,
+        public_origin=ORIGIN,
+    )
+    # Even a worker that believes the scope is live cannot write the message.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "parishkit.stewardship.jobs.family_mail_test_tasks.scope_live",
+            lambda ticket: True,
+        )
+        with task_login(ServiceRole.WORKER, exact=True):
+            execution = claim_hint(
+                ticket.task_id,
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: owner},
+            )
+            with (
+                maintain_execution(execution),
+                pytest.raises(IntegrityError, match="preparation ownership"),
+            ):
+                owner.execute(execution)
+    assert not OutboxMessage.objects.filter(purpose="family_test").exists()
+    task = TaskRun.objects.get(pk=ticket.task_id)
+    assert task.state == "running"
+    ticket.refresh_from_db()
+    assert ticket.state == "queued" and ticket.family_id is not None
+    # Unpatched, the worker recognises the lost authority and cancels its task.
+    # The claim is still live; a fresh execution lifetime continues it.
+    from parishkit.stewardship.jobs.dispatch import Execution
+
+    execution = Execution(execution.claim, owner, execution.correlation_id)
+    with task_login(ServiceRole.WORKER, exact=True), maintain_execution(execution):
+        owner.execute(execution)
+    assert TaskRun.objects.get(pk=ticket.task_id).state == "cancelled"
+    assert not OutboxMessage.objects.filter(purpose="family_test").exists()
+    with task_login(ServiceRole.SCHEDULER, exact=True):
+        assert recover_pending() == 1
+    ticket.refresh_from_db()
+    assert ticket.state == "cancelled" and ticket.family_id is None
+
+
+def test_temporary_gate_defers_without_charging_or_cancelling(family_test, monkeypatch):
+    """Restore review holds a claimed ticket; it is retried once the gate lifts."""
+    from threading import Event
+
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        preparation_attempts,
+    )
+    from parishkit.stewardship.jobs.phases import TaskPhase
+
+    from .campaign_builders import restored_runtime
+
+    harness, browser, path, _ = family_test
+    (ticket,), _ = request_tickets(browser, path, [1])
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_test_tasks.HELD_RETRY_SECONDS", 1
+    )
+    owner = family_test_handler(
+        general=harness.rings.general,
+        mac=harness.rings.mac,
+        public=harness.rings.public,
+        public_origin=ORIGIN,
+    )
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            ticket.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: owner},
+        )
+    with restored_runtime(harness.campaign.active_configuration.starts_at):
+        with task_login(ServiceRole.WORKER, exact=True), maintain_execution(execution):
+            owner.execute(execution)
+        status = _status(TaskRun.objects.get(pk=ticket.task_id))
+        assert status.state == "retry_wait" and status.phase is TaskPhase.RECONCILING
+        assert preparation_attempts(status) == 0
+        ticket.refresh_from_db()
+        assert ticket.state == "queued" and ticket.family_id is not None
+        # The sweep leaves a temporarily held ticket alone, and a new claim
+        # is refused while the gate holds; the scan skips it and comes back.
+        with task_login(ServiceRole.SCHEDULER, exact=True):
+            assert recover_pending() == 0
+        Event().wait(1.1)
+        with (
+            task_login(ServiceRole.WORKER, exact=True),
+            pytest.raises(PermissionError, match="not admitted"),
+        ):
+            claim_hint(
+                ticket.task_id,
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: owner},
+            )
+    assert not OutboxMessage.objects.exists()
+    assert TaskRun.objects.get(pk=ticket.task_id).state == "retry_wait"
+    (message,) = prepare_tests(harness)
+    ticket.refresh_from_db()
+    assert ticket.state == "prepared" and ticket.outbox_id == message.pk
+    assert TaskRun.objects.get(pk=ticket.task_id).state == "succeeded"
+
+
+def test_exhausted_dispatch_preparation_cancels_the_unsent_test(
+    family_test, monkeypatch, tmp_path
+):
+    """A test the mail worker can never prepare ends cancelled, never pending."""
+    from parishkit.stewardship.accounts.key_files import write_private
+    from parishkit.stewardship.campaigns.credential_keys import (
+        initialize_key_inventories,
+    )
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
+    from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE as DISPATCH
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    initialize_key_inventories(harness.rings.private)
+    credential = tmp_path / "workspace"
+    write_private(credential, KEY)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("synthetic rendering failure")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_dispatch_content.current_content",
+        broken,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.MAX_ATTEMPTS", 1
+    )
+    owner = delivery_handler(
+        harness.service.store,
+        private=harness.rings.private,
+        public_origin=ORIGIN,
+        credential_path=credential,
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+        execution = claim_hint(
+            message.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={DISPATCH: owner},
+        )
+        with maintain_execution(execution):
+            owner.execute(execution)
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.reason == "preparation_failed"
+    assert message.attempt == 0 and message.sealed_substitutions is None
+    assert TaskRun.objects.get(pk=message.task_id).state == "cancelled"
+    from parishkit.stewardship.campaigns.cleanup_preview import cleanup_preview
+
+    with work_transaction():
+        assert not cleanup_preview(harness.campaign.pk).unresolved
+
+
+def test_lost_template_and_lasting_ineligibility_cancel_the_test(family_test):
+    """Durable losses after preparation cancel; only reconciliation waits hold."""
+    from .response_builders import response_source
+    from .test_recipient_suppressions_postgresql import refresh
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    request_tickets(browser, path, [1])
+    first, second = prepare_tests(harness)
+    # A clean, current reconciliation that leaves the Family without a
+    # deliverable address is not a wait: the Family's real mail would not go.
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    refresh(harness, data)
+    assert deliver(harness, first) is None
+    assert first.state == "cancelled" and first.reason == "family_ineligible"
+    refresh(harness, response_source())
+    # Replace the schedule's template and remove the original record: the
+    # remaining message's ticket names a template the configuration lost.
+    definition = ScheduleDefinition.objects.get()
+    replacement = content(
+        str(harness.campaign.pk),
+        kind="email",
+        slot="initial",
+        html="<p>Replaced {{ family_code }} {{ family_url }}</p>",
+        text="Replaced {{ family_code }} {{ family_url }}",
+    )
+    original = FamilyMailTest.objects.get(outbox_id=second.pk).template.record_id
+    assert (
+        change(
+            harness.service.store,
+            harness.service.store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **replacement},
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": str(definition.pk),
+                    "values": {
+                        "template_version": replacement["id"],
+                        "subject": replacement["values"]["subject"],
+                    },
+                },
+                {"operation": "remove", "section": "content", "id": str(original)},
+            ],
+        ).state
+        == "applied"
+    )
+    assert deliver(harness, second) is None
+    assert second.state == "cancelled" and second.reason == "scope_replaced"
+    assert FamilyMailTest.objects.filter(state="prepared").count() == 2

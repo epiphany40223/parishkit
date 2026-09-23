@@ -4,7 +4,7 @@
 
 import pytest
 from django.core import signing
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts import (
@@ -594,15 +594,13 @@ def test_cancel_control_survives_committed_worker_progress(ready_cleanup):
 
 
 def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
-    ready_cleanup, monkeypatch
+    ready_cleanup,
 ):
     """A real Family test is Testing mail: unresolved it blocks, settled it is cleaned.
 
     The ticket outlives cleanup with no Family link; the message and the
     Family's Testing credential do not.
     """
-    from uuid import uuid4
-
     from django.core import signing
 
     from parishkit.stewardship.accounts import campaign_family_test as intake
@@ -630,11 +628,18 @@ def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
     family = FamilyCampaign.objects.filter(
         campaign=campaign, portal_eligible=True, email_deliverable=True
     ).order_by("family_duid")[0]
-    # The fixture's login is older than the five-minute window; bind the
-    # ticket to that session's actual Google timestamp, which SQL verifies.
-    monkeypatch.setattr(
-        intake, "require_fresh", lambda request: request.portal_session.authenticated_at
-    )
+    # The fixture's login predates the five-minute window; make the session's
+    # Google sign-in genuinely fresh with the guards suspended only for this
+    # disposable fixture statement, so the real freshness checks run unchanged.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE stewardship_portal_session DISABLE TRIGGER USER")
+        cursor.execute(
+            "UPDATE stewardship_portal_session SET authenticated_at=clock_timestamp(),"
+            "last_activity_at=clock_timestamp() WHERE id=%s",
+            [request.portal_session.pk],
+        )
+        cursor.execute("ALTER TABLE stewardship_portal_session ENABLE TRIGGER USER")
+    request.portal_session.refresh_from_db()
     with web_login():
         preview = intake.prepare(
             request, service, campaign.pk, template.record_id, (family.family_duid,)
@@ -683,4 +688,4 @@ def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
     ticket = FamilyMailTest.objects.get(pk=tickets[0].pk)
     assert ticket.state == "prepared" and ticket.family_id is None
     assert ticket.outbox_id == message.pk
-    assert uuid4() != ticket.pk
+    assert not FamilyMailTest.objects.filter(family_id__isnull=False).exists()

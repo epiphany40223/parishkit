@@ -101,12 +101,14 @@ def test_recovery_follows_the_ticket_not_the_exception(
     """Abandoned work completes only from a committed receipt, never a resend."""
     ticket = SimpleNamespace(state=state)
     monkeypatch.setattr(tasks, "owned_test", lambda status: ticket)
+    monkeypatch.setattr(tasks, "_attempts", lambda status: status.attempt)
     monkeypatch.setattr(
         tasks,
         "disposition",
-        lambda row: {"prepared": "complete", "cancelled": "safe_cancel"}.get(
-            row.state, None if scope_live else "safe_cancel"
-        ),
+        lambda row, source_check=False: {
+            "prepared": "complete",
+            "cancelled": "safe_cancel",
+        }.get(row.state, None if scope_live else "safe_cancel"),
     )
     plan = tasks.recover_test(SimpleNamespace(state="abandoned", attempt=attempt))
     assert plan.action == expected
@@ -123,6 +125,8 @@ def test_recovery_follows_the_ticket_not_the_exception(
         ("safe_cancel", "complete", False),
         ("claim", None, True),
         ("effect", "complete", True),
+        ("retryable_failure", None, True),
+        ("progress", "complete", True),
         ("explicit_retry", None, False),
         ("lease_expired", None, True),
     ],
@@ -132,5 +136,25 @@ def test_admission_requires_matching_terminal_evidence(
 ):
     """Completion and cancellation need their exact proof; ordinary steps do not."""
     monkeypatch.setattr(tasks, "owned_test", lambda status: SimpleNamespace())
-    monkeypatch.setattr(tasks, "disposition", lambda ticket: terminal)
+    monkeypatch.setattr(
+        tasks, "disposition", lambda ticket, source_check=False: terminal
+    )
     assert tasks.admit_test(action, SimpleNamespace(state="running")) is expected
+
+
+def test_held_ticket_is_skipped_at_claim_but_deferred_during_execution(monkeypatch):
+    """A temporary gate denies claiming quietly and surfaces as a hold mid-effect."""
+
+    def held(ticket, source_check=False):
+        raise tasks.FamilyTestHeld("synthetic gate")
+
+    monkeypatch.setattr(tasks, "owned_test", lambda status: SimpleNamespace())
+    monkeypatch.setattr(tasks, "disposition", held)
+    status = SimpleNamespace(state="running")
+    assert tasks.admit_test("claim", status) is False
+    assert tasks.admit_test("hint", status) is False
+    with pytest.raises(tasks.FamilyTestHeld):
+        tasks.admit_test("effect", status)
+    with pytest.raises(tasks.FamilyTestHeld):
+        tasks.admit_test("safe_cancel", status)
+    assert tasks.recover_test(SimpleNamespace(state="abandoned", attempt=1)) is None
