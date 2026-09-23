@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.web.contracts import filters
 
+from .admin_editing import form_action
 from .authentication import runtime
 from .campaign_family_test import (
     SALT,
@@ -44,10 +45,6 @@ REASON_LABELS = {
     "undeliverable": _("No deliverable email address"),
     "stale_source": _("Waiting for source reconciliation"),
 }
-FIELDS = {
-    "preview": {"action", "families"},
-    "confirm": {"action", "preview", "acknowledge"},
-}
 
 
 class FamilyTestForm(forms.Form):
@@ -75,15 +72,21 @@ class FamilyTestConfirmForm(forms.Form):
 def _action(request):
     """Reject hidden, repeated and cross-action fields before reading any value."""
     filters(request.GET, allowed=set())
-    action = request.POST.get("action")
-    if (
-        request.FILES
-        or action not in FIELDS
-        or set(request.POST) - FIELDS[action] - {"csrfmiddlewaretoken"}
-        or any(len(values) != 1 for _, values in request.POST.lists())
-    ):
+    if request.FILES:
         raise ValueError("Invalid Family test fields.")
-    return action
+    return form_action(
+        request.POST, preview_fields={"families"}, confirm_fields={"acknowledge"}
+    )
+
+
+def _label(item):
+    """Describe a ticket by its message once one exists, never by stale intent."""
+    if item["message_state"] is not None:
+        return MESSAGE_LABELS.get(item["message_state"], _("Unknown status"))
+    if item["state"] == "prepared":
+        # Testing cleanup deleted the message; the ticket alone is retained.
+        return _("Removed by Testing cleanup or finished")
+    return TICKET_LABELS[item["state"]]
 
 
 def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
@@ -118,13 +121,7 @@ def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
             "sendable": all(choice.eligible for choice in preview.families)
             and len(preview.families) <= preview.available,
             "items": [
-                item
-                | {
-                    "label": TICKET_LABELS[item["state"]]
-                    if item["message_state"] is None
-                    else MESSAGE_LABELS.get(item["message_state"], _("Unknown status"))
-                }
-                for item in recent_tickets(campaign_id)
+                item | {"label": _label(item)} for item in recent_tickets(campaign_id)
             ],
             "sample_url": reverse(
                 "admin:campaign_mail", args=[campaign_id, revision_id]
