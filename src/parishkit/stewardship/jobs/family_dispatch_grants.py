@@ -9,6 +9,7 @@ METADATA_FIELDS = (
     "mode",
     "routing",
     "purpose",
+    "action",
     "credential_namespace",
     "rehearsal_epoch_id",
     "state",

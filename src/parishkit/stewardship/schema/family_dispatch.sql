@@ -124,14 +124,20 @@ BEGIN
                 AND proposed->>'state'='delivery_unknown' AND own.state='delivery_unknown'));
     -- A chosen-Family test whose abandoned dispatch exhausted its preparation
     -- budget is cancelled by recovery: nothing else would ever settle it, and
-    -- an unsent Testing message blocks Testing cleanup for good.
+    -- an unsent Testing message blocks Testing cleanup for good. Only a
+    -- definitely unsent message qualifies: never submitted, or waiting after
+    -- the provider's definite non-acceptance. An uncertain (idempotent) retry
+    -- keeps its payload and outcome. The literal 5 mirrors MAX_ATTEMPTS in
+    -- jobs/family_mail_delivery_tasks.py; a pure test pins the two together.
     recovering:=recovering OR (t.state='abandoned' AND t.attempt>=5 AND own.purpose='family_test'
-        AND own.attempt=0 AND NEW.actor_id IS NOT NULL AND proposed->>'reason'='preparation_failed'
+        AND NEW.actor_id IS NOT NULL AND proposed->>'reason'='preparation_failed'
         AND proposed->>'action'='cancel_unsent'
         AND ((TG_TABLE_NAME='stewardship_outbox_message' AND proposed->>'id'=own.id::text
-                AND own.state IN ('pending','retry_wait'))
+                AND ((own.state='pending' AND own.attempt=0)
+                    OR (own.state='retry_wait' AND own.action='retry_unaccepted')))
             OR (TG_TABLE_NAME='stewardship_outbox_event' AND proposed->>'message_id'=own.id::text
-                AND own.state='cancelled')));
+                AND own.state='cancelled' AND own.action='cancel_unsent'
+                AND own.reason='preparation_failed')));
     IF recovering THEN RETURN NEW; END IF;
     IF t.id IS NULL OR t.task_type<>'outbox_delivery' OR t.state<>'running'
        OR t.worker_id IS DISTINCT FROM NEW.actor_id OR t.lease_expires_at<=clock_timestamp()
