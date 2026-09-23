@@ -53,7 +53,9 @@ REFERENCE_FAMILIES = 5000
 REFERENCE_MEMBERS = 10000
 # Per-sample outcomes other than a timing: an unavailable read is None; a
 # Family the portal no longer admits is skipped; a sample the bounded stop
-# never reached is not run. Neither word is ever printed as a value.
+# never reached is not run. The sentinels themselves are only counted, never
+# listed, but the same words are also fixed status values ({"status":
+# "skipped"}, {"status": "not_run"}), so both stay in FIXED_WORDS.
 SKIPPED = "skipped"
 NOT_RUN = "not_run"
 # Occurrence outcomes that no longer change. The schedule model owns this
@@ -147,12 +149,28 @@ class LoadCheckRefused(ConfigError):
     """Admission failed before or during the run; no verdict may be published."""
 
 
+class InvalidOptions(LoadCheckRefused):
+    """--samples or --concurrency is outside its bounds."""
+
+
+class NoConnectionHeadroom(LoadCheckRefused):
+    """The deployment's rollout_overlap leaves the web login no spare connection."""
+
+
+class NoEligibleFamilies(LoadCheckRefused):
+    """The current campaign has no portal-eligible Family, so nothing to measure."""
+
+
 class SourceChanged(RuntimeError):
     """The promoted source moved during the run, so the samples mix populations."""
 
 
 class PortalClosed(RuntimeError):
     """The Testing Family portal closed mid-run; later samples measure nothing."""
+
+
+class CampaignUnavailable(RuntimeError):
+    """A post-measurement campaign read was refused or timed out; run it again."""
 
 
 # Pure helpers: option admission, sampling, summaries and output safety. None
@@ -170,7 +188,7 @@ def bounded_option(value, *, default, bounds):
         or not value.isdecimal()
         or not low <= int(value) <= high
     ):
-        raise ConfigError("Load check options must be bounded positive integers.")
+        raise InvalidOptions("Load check options must be bounded positive integers.")
     return int(value)
 
 
@@ -875,11 +893,15 @@ def background_counts():
 
 def measure(budget, store, *, samples, concurrency):
     """Run every measurement against the open Testing campaign, bounded in time."""
+    from django.db import DatabaseError
+
     from .campaigns.read_guards import ReadUnavailable
 
     headroom = web_headroom(budget)
     if headroom < 1:
-        raise LoadCheckRefused("The web login has no spare connection for a reader.")
+        raise NoConnectionHeadroom(
+            "The web login has no spare connection for a reader."
+        )
     workers = effective_concurrency(concurrency, budget.web_threads, headroom)
     deadline = monotonic() + RUN_SECONDS_CAP
     with bounded_read():
@@ -891,22 +913,32 @@ def measure(budget, store, *, samples, concurrency):
             source = current_source()
             rows = family_campaign_rows(campaign_id)
             households = household_sizes(campaign_id, source.snapshot_id)
-    except ReadUnavailable:
-        # Admission, not measurement: a purging campaign or a lock timeout on
-        # the purge barrier means the check cannot start, so it is refused.
+    except (ReadUnavailable, DatabaseError):
+        # Admission, not measurement: a purging campaign, a lock timeout on
+        # the purge barrier or a cancelled statement means the check cannot
+        # start, so it is refused rather than reported as an error.
         raise LoadCheckRefused("Campaign reads are unavailable.") from None
+    if not households:
+        raise NoEligibleFamilies("No portal-eligible Family to measure.")
     chosen = choose_samples(households, samples)
     read = partial(time_form_inputs, store, scope, source, form_input_arguments(scope))
     serial = phase(chosen, read, Stopper(deadline))
     concurrent, threads = run_threads(
         chosen, workers, read, release=_close_connection, stop=Stopper(deadline)
     )
-    with _guard(campaign_id):
-        require_same_source(source)
-    reports, statistics = measure_reports(scope, deadline)
-    with _guard(campaign_id):
-        timeline = invitation_timeline(*invitation_rows(campaign_id, scope.epoch_id))
-        require_same_source(source)
+    try:
+        with _guard(campaign_id):
+            require_same_source(source)
+        reports, statistics = measure_reports(scope, deadline)
+        with _guard(campaign_id):
+            timeline = invitation_timeline(
+                *invitation_rows(campaign_id, scope.epoch_id)
+            )
+            require_same_source(source)
+    except (ReadUnavailable, DatabaseError):
+        # The campaign became unavailable after the samples were taken; the
+        # samples are fine, but the run cannot finish, so the operator reruns.
+        raise CampaignUnavailable("Campaign reads were lost mid-run.") from None
     with bounded_read():
         end = background_counts()
     return build_document(
@@ -959,6 +991,30 @@ def load_check_command(configuration, *, samples, concurrency):
             connections.close_all()
 
 
+def _refusal(error):
+    """Fixed refusal wording chosen by exception type, never by its text.
+
+    The specific refusals point the operator at the one thing to change; the
+    remaining refusals share the deployment-side checklist.
+    """
+    if isinstance(error, InvalidOptions):
+        return (
+            "invalid --samples or --concurrency; --samples takes 1 to 1000 and "
+            "--concurrency 1 to 8"
+        )
+    if isinstance(error, NoConnectionHeadroom):
+        return (
+            "no spare web database connections; the deployment's rollout_overlap "
+            "leaves no headroom for a reader"
+        )
+    if isinstance(error, NoEligibleFamilies):
+        return "no portal-eligible Families in the current campaign; nothing to measure"
+    return (
+        "load check refused; verify the web profile, Testing mode, an open "
+        "current campaign and a promoted source"
+    )
+
+
 def execute_load_check(args):
     """Console entry: one fixed JSON document, or one generic line per outcome.
 
@@ -998,13 +1054,16 @@ def execute_load_check(args):
             file=sys.stderr,
         )
         return 2
-    except (ConfigError, PermissionError) as error:
-        emit_failure(error, event=Event.STARTUP_REJECTED)
+    except CampaignUnavailable:
+        emit(Event.STARTUP_REJECTED, level=logging.WARNING)
         print(
-            "ERROR: load check refused; verify the web profile, Testing mode, an "
-            "open current campaign and a promoted source",
+            "ERROR: the campaign became unavailable during the check; run it again",
             file=sys.stderr,
         )
+        return 2
+    except (ConfigError, PermissionError) as error:
+        emit_failure(error, event=Event.STARTUP_REJECTED)
+        print("ERROR: " + _refusal(error), file=sys.stderr)
         return 2
     except Exception as error:
         emit_failure(error, event=Event.TASK_FAILED)

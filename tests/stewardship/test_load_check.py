@@ -393,7 +393,8 @@ def test_cli_passes_admitted_options_and_refuses_unbounded_ones(monkeypatch, cap
     assert main(["load-check", "--config", "c", "--samples", "1001"]) == 2
     output = capsys.readouterr()
     assert output.out == "" and len(seen) == 2
-    assert output.err.count("ERROR: load check refused") == 2
+    assert output.err.count("ERROR: invalid --samples or --concurrency") == 2
+    assert "load check refused" not in output.err
 
 
 def test_cli_refuses_missing_config_without_touching_the_deployment(
@@ -415,6 +416,10 @@ def test_cli_refuses_missing_config_without_touching_the_deployment(
         (PermissionError("private admission detail"), "load check refused"),
         (load_check.SourceChanged("private generation"), "source changed during"),
         (load_check.PortalClosed("private portal"), "portal closed during"),
+        (load_check.CampaignUnavailable("private"), "became unavailable during"),
+        (load_check.NoConnectionHeadroom("private"), "no spare web database"),
+        (load_check.NoEligibleFamilies("private"), "no portal-eligible Families"),
+        (load_check.InvalidOptions("private"), "invalid --samples or --concurrency"),
         (StartupBusy("private path"), "offline maintenance"),
     ],
 )
@@ -445,6 +450,10 @@ def test_cli_classifies_each_outcome_with_its_own_generic_line(
         "load check refused": [load_check.Event.STARTUP_REJECTED],
         "source changed during": [load_check.Event.FACT_DRIFT],
         "portal closed during": [load_check.Event.STARTUP_REJECTED],
+        "became unavailable during": [load_check.Event.STARTUP_REJECTED],
+        "no spare web database": [load_check.Event.STARTUP_REJECTED],
+        "no portal-eligible Families": [load_check.Event.STARTUP_REJECTED],
+        "invalid --samples or --concurrency": [load_check.Event.STARTUP_REJECTED],
         "offline maintenance": [],
     }
     assert events == expected[line]
@@ -653,3 +662,67 @@ def test_unavailable_admission_guard_is_a_refusal_not_an_error(monkeypatch):
     monkeypatch.setattr(load_check, "_guard", lambda campaign_id: Unavailable())
     with pytest.raises(load_check.LoadCheckRefused):
         load_check.measure(RuntimeBudget(), "store", samples=1, concurrency=1)
+
+
+def admission_fakes(monkeypatch, households):
+    """Fake every read before sampling so measure() can be driven without SQL."""
+    from contextlib import nullcontext
+
+    monkeypatch.setattr(load_check, "bounded_read", nullcontext)
+    monkeypatch.setattr(load_check, "current_campaign_id", lambda: "campaign")
+    monkeypatch.setattr(load_check, "background_counts", dict)
+    monkeypatch.setattr(load_check, "open_scope", lambda store, cid: "scope")
+    monkeypatch.setattr(load_check, "current_source", lambda: load_check.Source("s", 1))
+    monkeypatch.setattr(load_check, "family_campaign_rows", lambda cid: 5)
+    monkeypatch.setattr(load_check, "household_sizes", lambda cid, sid: households)
+    monkeypatch.setattr(load_check, "form_input_arguments", lambda scope: {})
+    monkeypatch.setattr(load_check, "_close_connection", lambda: None)
+    monkeypatch.setattr(
+        load_check, "time_form_inputs", lambda store, scope, source, args, duid: 0.1
+    )
+
+
+class Raising:
+    """A guard whose entry fails the way a lost or timed-out campaign read does."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def __enter__(self):
+        raise self.error
+
+    def __exit__(self, *error):
+        return False
+
+
+def test_zero_eligible_families_is_a_refusal_not_an_empty_failure(monkeypatch):
+    from contextlib import nullcontext
+
+    admission_fakes(monkeypatch, [])
+    monkeypatch.setattr(load_check, "_guard", lambda campaign_id: nullcontext())
+    with pytest.raises(load_check.NoEligibleFamilies):
+        load_check.measure(RuntimeBudget(), "store", samples=3, concurrency=1)
+
+
+@pytest.mark.parametrize("kind", ["read_unavailable", "database"])
+def test_admission_guard_errors_refuse_and_later_guard_errors_ask_for_a_rerun(
+    monkeypatch, kind
+):
+    """Before sampling a lost read is a refusal; after it, a rerun request."""
+    from contextlib import nullcontext
+
+    from django.db import OperationalError
+
+    from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+
+    error = (
+        ReadUnavailable("private") if kind == "read_unavailable" else OperationalError()
+    )
+    admission_fakes(monkeypatch, [(1, 2), (2, 1)])
+    monkeypatch.setattr(load_check, "_guard", lambda campaign_id: Raising(error))
+    with pytest.raises(load_check.LoadCheckRefused):
+        load_check.measure(RuntimeBudget(), "store", samples=2, concurrency=1)
+    guards = iter([nullcontext(), Raising(error)])
+    monkeypatch.setattr(load_check, "_guard", lambda campaign_id: next(guards))
+    with pytest.raises(load_check.CampaignUnavailable):
+        load_check.measure(RuntimeBudget(), "store", samples=2, concurrency=1)
