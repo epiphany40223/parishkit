@@ -195,6 +195,22 @@ def test_testing_override_cannot_be_used_in_production():
         render(identity(), testing_recipient="test@example.org")
 
 
+def test_family_test_renders_like_an_invitation_with_the_testing_banner():
+    """A chosen-Family test is the real template plus the mandatory Testing routing."""
+    scope = replace(identity(testing=True), purpose="family_test")
+    content = render(scope)
+    assert content.routed_recipients == ("test@example.org",)
+    assert content.subject.startswith("[TEST] ") and "instead of" in content.text
+    assert CODE_PLACEHOLDER in content.html and LINK_PLACEHOLDER in content.text
+    private, token, sealed = credentials(scope, content)
+    reference = open_family_credentials(
+        identity=scope, render=content, sealed=sealed, private=private
+    )
+    assert reference.token_id == token and reference.code == "IABCDEFG"
+    with pytest.raises(ValueError):
+        replace(identity(), purpose="family_test")
+
+
 def test_submission_receipts_cannot_use_credential_bearing_renderer():
     """BG-07 receipts use a separate non-credential rendering contract."""
     with pytest.raises(TypeError, match="exact Family"):

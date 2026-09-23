@@ -159,6 +159,39 @@ def test_identity_rejects_cross_mode_routing_and_credential_fallback(changes):
         identity(**changes)
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"credential_namespace": "none"},
+        {
+            "mode": "production",
+            "routing": "production",
+            "credential_namespace": "production",
+        },
+        {"family_id": None},
+    ],
+)
+def test_family_test_identity_is_testing_only_rehearsal_mail(changes):
+    """A chosen-Family test carries a rehearsal credential and never leaves Testing."""
+    valid = identity(
+        purpose="family_test",
+        credential_namespace="rehearsal",
+        rehearsal_epoch_id=uuid4(),
+    )
+    assert valid.purpose == "family_test"
+    with pytest.raises(ValueError):
+        identity(
+            **(
+                dict(
+                    purpose="family_test",
+                    credential_namespace="rehearsal",
+                    rehearsal_epoch_id=uuid4(),
+                )
+                | changes
+            )
+        )
+
+
 def test_valid_identity_namespaces_and_operational_scope():
     """Legitimate disjoint modes and non-Family operational mail remain available."""
     assert identity().credential_namespace == "none"

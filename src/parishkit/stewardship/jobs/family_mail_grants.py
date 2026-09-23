@@ -4,6 +4,12 @@
 def add_family_mail_grants(tables, columns, *, worker):
     """Schedulers allocate opaque tickets; workers insert narrowly guarded mail."""
     tables.setdefault("stewardship_family_mail_preparation", set()).add("SELECT")
+    # Chosen-Family test tickets: the worker completes one under its live claim,
+    # the scheduler settles stale ones; SQL guards own both transitions. Web
+    # alone inserts them.
+    tables.setdefault("stewardship_family_mail_test", set()).update(
+        {"SELECT", "UPDATE"}
+    )
     if not worker:
         tables["stewardship_family_mail_preparation"].add("INSERT")
         tables.setdefault("stewardship_rehearsal_epoch", set()).add("INSERT")

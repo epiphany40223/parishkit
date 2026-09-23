@@ -57,11 +57,21 @@ def editable_configuration(service):
     return value
 
 
-def form_action(parameters, *, preview_fields, multiple_fields=frozenset()):
-    """Reject hidden, repeated and cross-action fields before constructing intent."""
+def form_action(
+    parameters,
+    *,
+    preview_fields,
+    multiple_fields=frozenset(),
+    confirm_fields=frozenset(),
+):
+    """Reject hidden, repeated and cross-action fields before constructing intent.
+
+    ``confirm_fields`` names the few explicit confirmation inputs, such as an
+    acknowledgement checkbox, that accompany the signed preview.
+    """
     fields = {
         "preview": {"action", "csrfmiddlewaretoken", *preview_fields},
-        "confirm": {"action", "csrfmiddlewaretoken", "preview"},
+        "confirm": {"action", "csrfmiddlewaretoken", "preview", *confirm_fields},
     }
     action = parameters.get("action")
     if (

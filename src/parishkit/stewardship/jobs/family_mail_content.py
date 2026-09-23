@@ -65,10 +65,15 @@ def _no_reserved_markers(value):
 
 
 def _family_identity(identity):
-    """Only invitations/reminders carry credentials; receipts have no access values."""
+    """Only invitations, reminders and chosen-Family tests carry credentials.
+
+    Receipts have no access values. A Family test renders the same template with
+    the Family's own Testing code and link, so it shares this contract.
+    """
     if not isinstance(identity, DeliveryIdentity) or identity.purpose not in {
         "initial",
         "reminder",
+        "family_test",
     }:
         raise TypeError("An exact Family delivery identity is required.")
     expected = "production" if identity.mode == "production" else "rehearsal"

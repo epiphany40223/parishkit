@@ -9,6 +9,7 @@ METADATA_FIELDS = (
     "mode",
     "routing",
     "purpose",
+    "action",
     "credential_namespace",
     "rehearsal_epoch_id",
     "state",
@@ -59,6 +60,7 @@ def add_dispatch_grants(tables, columns):
         "stewardship_restore_delivery_hold",
         "stewardship_recipient_resolution",
         "stewardship_family_mail_preparation",
+        "stewardship_family_mail_test",
         "stewardship_family_eligibility",
     ):
         tables.setdefault(table, set()).add("SELECT")
@@ -92,6 +94,7 @@ def add_dispatch_grants(tables, columns):
             "family_duid",
             "source_generation",
             "active",
+            "portal_eligible",
             "email_eligible",
             "email_deliverable",
             "effective_submission_id",

@@ -25,6 +25,7 @@ DELIVERY_PURPOSES = (
     "initial",
     "reminder",
     "receipt",
+    "family_test",
     "daily_digest",
     "weekly_digest",
     "operational",
@@ -181,7 +182,7 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
             models.CheckConstraint(
                 condition=(
                     models.Q(
-                        purpose__in=["initial", "reminder", "receipt"],
+                        purpose__in=["initial", "reminder", "receipt", "family_test"],
                         family__isnull=False,
                     )
                     | models.Q(
@@ -195,6 +196,15 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                     )
                 ),
                 name="outbox_family_purpose",
+            ),
+            # A chosen-Family test send is Testing-only rehearsal mail; no
+            # retry or resolution path may reclassify it as Production.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(purpose="family_test")
+                    | models.Q(mode="testing", credential_namespace="rehearsal")
+                ),
+                name="outbox_family_test_testing",
             ),
             models.CheckConstraint(
                 condition=(

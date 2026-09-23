@@ -75,6 +75,9 @@ def campaign_mail(request, campaign_id, revision_id):
                     "text": preview.sample.text,
                 },
                 "testing_recipient": preview.sample.recipient,
+                # Real chosen-Family sends exist only for a Testing draft whose
+                # schedules use this template.
+                "families_url": preview.families_url,
                 "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
                 "unknown": rows.filter(state="delivery_unknown").exists(),
                 "items": items,

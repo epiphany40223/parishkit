@@ -61,6 +61,22 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         assert table not in grants
 
 
+def test_family_test_tickets_have_one_writer_per_transition():
+    """Web inserts, worker and scheduler update under SQL guards, mail only reads."""
+    table = "stewardship_family_mail_test"
+    expected = {
+        ServiceRole.WEB: {"SELECT", "INSERT"},
+        ServiceRole.WORKER: {"SELECT", "UPDATE"},
+        ServiceRole.SCHEDULER: {"SELECT", "UPDATE"},
+        ServiceRole.MAIL_DISPATCH: {"SELECT"},
+    }
+    for role, grants in expected.items():
+        tables, columns = runtime_grants(role)
+        assert tables[table] == grants and table not in columns, role
+    tables, columns = runtime_grants("download")
+    assert table not in tables and table not in columns
+
+
 def test_web_only_reads_source_owned_assignment_overlays():
     """Browser requests cannot become source-reconciliation writers."""
     tables, columns = runtime_grants(ServiceRole.WEB)

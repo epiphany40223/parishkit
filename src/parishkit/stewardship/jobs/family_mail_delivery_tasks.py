@@ -33,9 +33,15 @@ from .family_mail_dispatch import (
     FamilyDeliveryHeld,
     begin_submission,
     bound_dispatch,
+    cancel_unsent,
     disposition,
     finish_submission,
     retry_delay,
+)
+from .family_mail_dispatch_recovery import (
+    cancel_abandoned_family_test,
+    definitely_unsent,
+    record_abandoned_submission,
 )
 from .models import TaskRunEvent
 from .ownership import database_now, lock_task_claim
@@ -44,6 +50,8 @@ from .queues import WorkQueue
 from .storage import _status
 
 LOG = logging.getLogger(__name__)
+# How soon an abandoned, still-unsent delivery may be claimed again.
+RECOVERY_RETRY_SECONDS = 30
 
 
 class DeliveryCircuit:
@@ -118,16 +126,20 @@ def preparation_attempts(status):
 
 
 def recovery_plan(status):
-    """A missing receipt never authorizes SMTP retransmission after submission."""
+    """Decide abandoned work's disposition from durable evidence; write nothing.
+
+    Admission repeats this decision (including the scheduler's recovery
+    hints), so it must stay pure; ``recover_delivery`` applies its effects.
+    A missing receipt never authorizes SMTP retransmission after submission.
+    """
     row = bound_dispatch(status)
     if status.state != "abandoned":
         raise PermissionError("Family recovery requires an abandoned Task.")
     if row.state == "submitting":
         if row.provider_deadline > database_now():
             return None
-        from .family_mail_dispatch_recovery import record_abandoned_submission
-
-        record_abandoned_submission(status, actor_id=uuid4())
+        # The recovery owner records the uncertain attempt before this plan
+        # is applied; the message then reads delivery_unknown.
         return RecoveryPlan("recovery_fail")
     action = {
         "delivered": "recovery_complete",
@@ -138,12 +150,35 @@ def recovery_plan(status):
         "retry_wait": "recovery_retry",
     }[row.state]
     if action == "recovery_retry" and preparation_attempts(status) >= MAX_ATTEMPTS:
-        action = "recovery_fail"
+        # A chosen-Family test nothing else can settle is cancelled, not left
+        # unsent; the SQL recovery clause admits exactly these two states and
+        # its literal budget mirrors MAX_ATTEMPTS.
+        action = (
+            "recovery_cancel"
+            if row.purpose == "family_test" and definitely_unsent(row)
+            else "recovery_fail"
+        )
     return (
-        RecoveryPlan(action, retry_seconds=30)
+        RecoveryPlan(action, retry_seconds=RECOVERY_RETRY_SECONDS)
         if action == "recovery_retry"
         else RecoveryPlan(action)
     )
+
+
+def recover_delivery(status):
+    """Apply the plan's owning effects under the abandoned Task, then return it.
+
+    Only the recovering MAIL consumer reaches this; admission never does.
+    """
+    plan = recovery_plan(status)
+    if plan is None:
+        return None
+    row = bound_dispatch(status)
+    if row.state == "submitting":
+        record_abandoned_submission(status, actor_id=uuid4())
+    elif plan.action == "recovery_cancel" and row.state != "cancelled":
+        cancel_abandoned_family_test(status, actor_id=uuid4())
+    return plan
 
 
 def admit_task(action, status, *, store, circuit):
@@ -215,7 +250,7 @@ def delivery_handler(
     return Handler(
         queue=WorkQueue.MAIL,
         admit=partial(admit_task, store=store, circuit=circuit),
-        recover=recovery_plan,
+        recover=recover_delivery,
         execute=_unavailable
         if scheduler
         else partial(
@@ -346,7 +381,10 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
                 )
             if attempt >= MAX_ATTEMPTS:
                 LOG.error("Family mail preparation failed after bounded retries.")
-                execution.transition("permanent_failure")
+                if _settle_failed_family_test(execution):
+                    execution.transition("safe_cancel")
+                else:
+                    execution.transition("permanent_failure")
             else:
                 execution.transition(
                     "retryable_failure", retry_seconds=retry_delay(attempt)
@@ -368,6 +406,29 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
         execution.transition(
             "complete" if status.state.value == "delivered" else "permanent_failure"
         )
+
+
+def _settle_failed_family_test(execution):
+    """A chosen-Family test that cannot be prepared is cancelled, never left unsent.
+
+    Its key is an Admin ticket, not a schedule occurrence: no planner, retry or
+    Admin resolution would ever settle a pending test, and an unsent Testing
+    message blocks Testing cleanup for good. Scheduled mail keeps its ordinary
+    failed task, which planning and Admin retry still own.
+    """
+    with execution.control.lock, work_transaction():
+        message = bound_dispatch(_status(lock_task_claim(execution.claim)))
+        if message.purpose != "family_test":
+            return False
+        # Already cancelled (for example by go-live invalidation) is settled.
+        if message.state == "cancelled":
+            return True
+        # The same predicate recovery uses: an uncertain idempotent retry is
+        # never cancelled here either; it falls through to the failed task.
+        if not definitely_unsent(message):
+            return False
+        cancel_unsent(message.pk, execution.claim, reason="preparation_failed")
+    return True
 
 
 def _finish_no_send(execution):

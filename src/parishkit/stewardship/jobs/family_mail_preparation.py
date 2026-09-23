@@ -97,7 +97,7 @@ def prepare_occurrence(ticket, claim, *, general, mac, public, public_origin):
     )
     render = current_render(
         identity,
-        row,
+        UUID(row.revision.values["template_version"]),
         scope,
         source,
         public_origin=public_origin,

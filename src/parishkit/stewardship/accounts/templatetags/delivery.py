@@ -18,6 +18,7 @@ LABELS = {
     "daily_digest": _("Daily Administrator report"),
     "weekly_digest": _("Weekly Administrator report"),
     "receipt": _("Submission receipt"),
+    "family_test": _("Selected-Family test"),
     "production": _("Production"),
     "testing": _("Testing"),
     "queued": _("Queued"),

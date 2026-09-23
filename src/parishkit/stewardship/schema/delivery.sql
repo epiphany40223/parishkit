@@ -120,19 +120,15 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     ) recipients
 $$;
 
-CREATE FUNCTION public.stewardship_family_mail_render_admitted_v1(
-    proposed jsonb, family uuid, configuration uuid, revision uuid, mode text
+-- Template-keyed core shared by scheduled mail (template from the occurrence's
+-- schedule revision) and chosen-Family tests (template from the Admin ticket).
+CREATE FUNCTION public.stewardship_family_mail_render_core_v1(
+    proposed jsonb, family uuid, configuration uuid, template uuid, mode text
 ) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE expected jsonb; email jsonb; template uuid; test_recipient text;
+DECLARE expected jsonb; email jsonb; test_recipient text;
 BEGIN
     SELECT settings INTO email FROM public.stewardship_applied_integration
         WHERE configuration_id=configuration AND kind='email';
-    SELECT content.id INTO template FROM public.stewardship_content_version content
-        JOIN public.stewardship_schedule_revision schedule
-          ON content.record_id=(schedule.values->>'template_version')::uuid
-            AND content.campaign_id=schedule.campaign_id
-        WHERE schedule.id=revision AND content.configuration_id=configuration
-          AND content.kind='email';
     SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
     expected:=public.stewardship_family_mail_recipients_v1(family);
     RETURN template IS NOT NULL AND email IS NOT NULL
@@ -142,6 +138,20 @@ BEGIN
        AND jsonb_array_length(expected)>0 AND proposed->'intended_recipients'=expected
        AND proposed->'routed_recipients'=CASE mode WHEN 'testing'
            THEN jsonb_build_array(test_recipient) ELSE expected END;
+END $$;
+
+CREATE FUNCTION public.stewardship_family_mail_render_admitted_v1(
+    proposed jsonb, family uuid, configuration uuid, revision uuid, mode text
+) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE template uuid;
+BEGIN
+    SELECT content.id INTO template FROM public.stewardship_content_version content
+        JOIN public.stewardship_schedule_revision schedule
+          ON content.record_id=(schedule.values->>'template_version')::uuid
+            AND content.campaign_id=schedule.campaign_id
+        WHERE schedule.id=revision AND content.configuration_id=configuration
+          AND content.kind='email';
+    RETURN public.stewardship_family_mail_render_core_v1(proposed,family,configuration,template,mode);
 END $$;
 
 CREATE FUNCTION public.stewardship_family_mail_write_admitted_v1(
@@ -284,6 +294,7 @@ LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF current_user='pk_stewardship_worker' AND
        public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
+       AND public.stewardship_family_test_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
        AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
@@ -332,11 +343,13 @@ BEGIN
     -- Reservations deliberately have no retained Family/epoch/actor binding.
     -- The compiled credential owner computes the domain-separated MAC; SQL has
     -- no MAC/decryption key. Require its active task and an actually used key.
+    -- Scheduled preparation and chosen-Family tests are the two credential
+    -- owners; each proves the credential against its own live task and ticket.
     IF current_user='pk_stewardship_worker' AND NOT EXISTS (
         SELECT 1 FROM public.stewardship_rehearsal_credential credential
         JOIN public.stewardship_rehearsal_epoch epoch ON epoch.id=credential.epoch_id
         JOIN public.stewardship_task_run task ON task.id=credential.correlation_id
-          AND task.state='running' AND task.task_type='family_mail_prepare'
+          AND task.state='running' AND task.task_type IN ('family_mail_prepare','family_mail_test')
           AND task.worker_id=credential.actor_id AND task.lease_expires_at>clock_timestamp()
         WHERE epoch.campaign_id=NEW.campaign_id
           AND EXISTS (SELECT 1 FROM public.stewardship_task_event claim
@@ -344,10 +357,14 @@ BEGIN
                 AND claim.action='claim' AND credential.created_at>=claim.created_at)
           AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_code_mac fingerprint
               WHERE fingerprint.credential_id=credential.id AND fingerprint.key_id=NEW.key_id)
-          AND public.stewardship_family_mail_write_admitted_v1(
+          AND ((task.task_type='family_mail_prepare' AND public.stewardship_family_mail_write_admitted_v1(
               'stewardship_rehearsal_credential',jsonb_build_object(
                   'family_id',credential.family_id,'epoch_id',credential.epoch_id,
-                  'actor_id',credential.actor_id,'correlation_id',credential.correlation_id),NULL) IS TRUE
+                  'actor_id',credential.actor_id,'correlation_id',credential.correlation_id),NULL) IS TRUE)
+            OR (task.task_type='family_mail_test' AND public.stewardship_family_test_write_admitted_v1(
+              'stewardship_rehearsal_credential',jsonb_build_object(
+                  'family_id',credential.family_id,'epoch_id',credential.epoch_id,
+                  'actor_id',credential.actor_id,'correlation_id',credential.correlation_id)) IS TRUE))
     ) THEN
         RAISE EXCEPTION 'Rehearsal reservations require current preparation ownership'
             USING ERRCODE='23514';
@@ -840,7 +857,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest','operational','security_event') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','operational','security_event') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

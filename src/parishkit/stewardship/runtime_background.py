@@ -104,6 +104,8 @@ def scheduler_handlers():
     from .jobs.dispatch import Handler
     from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
     from .jobs.family_mail_tasks import preparation_handler
+    from .jobs.family_mail_test_tasks import TASK_TYPE as FAMILY_MAIL_TEST
+    from .jobs.family_mail_test_tasks import family_test_handler
     from .jobs.queues import WorkQueue
     from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
     from .reports.digest_finalization import WEEKLY_TASK_TYPE as WEEKLY_FINALIZE
@@ -140,6 +142,7 @@ def scheduler_handlers():
         WEEKLY_PREPARE: weekly_handler(scheduler=True),
         WEEKLY_FINALIZE: finalization_handler(scheduler=True),
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
+        FAMILY_MAIL_TEST: family_test_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
         REPORT_FACTS: fact_handler(scheduler=True),
         VERIFY_FACTS: verification_handler(scheduler=True),
@@ -289,6 +292,8 @@ def configure_background(configuration, *, stop, heartbeat):
         )
         from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
         from .jobs.family_mail_tasks import preparation_handler
+        from .jobs.family_mail_test_tasks import TASK_TYPE as FAMILY_MAIL_TEST
+        from .jobs.family_mail_test_tasks import family_test_handler
         from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
         from .reports.digest_finalization import WEEKLY_TASK_TYPE as WEEKLY_FINALIZE
         from .reports.digest_finalization import finalization_handler
@@ -320,6 +325,12 @@ def configure_background(configuration, *, stop, heartbeat):
             WEEKLY_PREPARE: weekly_handler(public_origin=configuration.public_origin),
             WEEKLY_FINALIZE: finalization_handler(),
             FAMILY_MAIL_PREPARE: preparation_handler(
+                general=rings["general_encryption"],
+                mac=rings["family_code_mac"],
+                public=rings["token_public"],
+                public_origin=configuration.public_origin,
+            ),
+            FAMILY_MAIL_TEST: family_test_handler(
                 general=rings["general_encryption"],
                 mac=rings["family_code_mac"],
                 public=rings["token_public"],

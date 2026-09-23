@@ -34,6 +34,8 @@ class MailPreview:
     row: CampaignMailTest
     sample: ReadinessMail
     digest: str
+    # Where chosen-Family tests of this template are offered, if anywhere.
+    families_url: str | None = None
 
     def binding(self):
         """A changed configuration, recipient or key invalidates an unsent preview."""
@@ -130,8 +132,31 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
         # Structural configuration may be unchanged after withdrawal, but that
         # must not revive an earlier signed test preview for a new go-live cycle.
         return MailPreview(
-            row, sample, f"{version.digest}:{campaign.readiness_revision}"
+            row,
+            sample,
+            f"{version.digest}:{campaign.readiness_revision}",
+            _families_link(runtime, campaign, revision_id),
         )
+
+
+def _families_link(runtime, campaign, revision_id):
+    """Offer chosen-Family tests within the same snapshot; never fail the sample.
+
+    The link is a convenience read inside the sample's work transaction. Its
+    own savepoint keeps a failed query from aborting the caller's transaction,
+    and only database/configuration failures are absorbed.
+    """
+    from django.db import DatabaseError, transaction
+
+    from parishkit.config import ConfigError
+
+    from .campaign_family_test import families_link
+
+    try:
+        with transaction.atomic():
+            return families_link(runtime, campaign, revision_id)
+    except (DatabaseError, ConfigError):
+        return None
 
 
 def request_sample(

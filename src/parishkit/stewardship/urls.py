@@ -9,6 +9,7 @@ from .accounts import (
     assignment_views,
     authentication,
     branding_views,
+    campaign_family_test_views,
     campaign_mail_views,
     campaign_views,
     chair_review_views,
@@ -371,6 +372,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>",
         campaign_mail_views.campaign_mail,
         name="campaign_mail",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>/families",
+        campaign_family_test_views.campaign_mail_families,
+        name="campaign_mail_families",
     ),
     path(
         "campaign/<uuid:campaign_id>/content/<str:kind>/<str:slot>",

@@ -24,6 +24,7 @@ def schema_sql():
                 "guards",
                 "delivery",
                 "mail_health",
+                "family_mail_tests",
                 "family_dispatch",
                 "production",
                 "cleanup",
