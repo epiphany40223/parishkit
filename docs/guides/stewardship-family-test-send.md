@@ -1,16 +1,17 @@
 # Stewardship chosen-Family test sends
 
-The [Admin portal specification](../specs/stewardship/admin-portal/spec.md#production-transition)
+The [Admin portal
+specification](../specs/stewardship/admin-portal/spec.md#production-transition)
 describes a readiness test send that could render a selected Family, but only
 the fictional sample existed, and the only way for staff to hold a Testing
 code or link was the scheduled Testing invitation run, which mails every
 Family with a deliverable address to the one Testing mailbox. This increment
 adds the page **Send this email to chosen Families**, linked from the
 fictional sample's test page as **Send this email to chosen real Families
-(Testing recipient only)**, so staff can validate the Family
-form as up to ten real Families at a time. The
-[deployment runbook](stewardship-deployment-runbook.md#staff-validation-checklist)
-says how staff use it.
+(Testing recipient only)**, so staff can validate the Family form as up to ten
+real Families at a time. The [deployment
+runbook](stewardship-deployment-runbook.md#staff-validation-checklist) says
+how staff use it.
 
 ## Design
 
@@ -20,34 +21,32 @@ says how staff use it.
   `reminder` purposes, and the occurrence guard ties a sender to its
   occurrence by semantic key, so a test message can never create, move or
   satisfy an occurrence or a fulfillment; the SQL additionally stops a
-  `family_test` sender from writing occurrence or fulfillment rows.
-- **A ticket per Family.** The web request records one ticket per chosen
-  Family (`stewardship_family_mail_test`) and queues a `family_mail_test`
-  task. SQL admits the ticket only for an Administrator whose sign-in is at
-  most five minutes old, in Testing mode on the current draft campaign with a live Workspace
-  integration and an active Testing credential set, for a Family that is
-  active, eligible, deliverable and current, with at most ten tickets or
-  messages in progress per campaign. Once a ticket leaves `queued` its Family
-  is erased from it; only the outbox message, which Testing cleanup deletes,
-  keeps the link.
-- **The general worker prepares it.** Under its claim, the worker issues or
-  reuses the Family's Testing credential (not date-gated, so it can run
-  before the invitation is due; scheduled Testing mail later reuses the same
-  credential), renders the chosen template for that Family, seals the
-  credential substitutions and creates the outbox message, in one
-  transaction. Preparation rechecks that the requesting Administrator is
-  still enabled, the configuration still active and the template still in
-  use. The mail-dispatch worker then sends it like any Family message.
-- **Temporary gates hold; lasting loss ends it.** A restore review, a
-  campaign work gate or a dirty or stale source population holds the ticket
-  or message without spending its retry budget. A lasting loss of scope (mode,
-  campaign, configuration, credential set, Administrator or template)
-  cancels it, a Family that stays ineligible after a clean reconciliation
-  cancels its message, and a message whose preparation keeps failing is
-  cancelled rather than left pending. The scheduler settles tickets whose
-  task ended.
-- **Resolution.** An unknown outcome can be confirmed delivered or recorded
-  as not sent. With the cancellations above, no test message can be left
+  `family_test` sender from writing occurrence or fulfillment rows. - **A
+  ticket per Family.** The web request records one ticket per chosen Family
+  (`stewardship_family_mail_test`) and queues a `family_mail_test` task. SQL
+  admits the ticket only for an Administrator whose sign-in is at most five
+  minutes old, in Testing mode on the current draft campaign with a live
+  Workspace integration and an active Testing credential set, for a Family
+  that is active, eligible, deliverable and current, with at most ten tickets
+  or messages in progress per campaign. Once a ticket leaves `queued` its
+  Family is erased from it; only the outbox message, which Testing cleanup
+  deletes, keeps the link. - **The general worker prepares it.** Under its
+  claim, the worker issues or reuses the Family's Testing credential (not
+  date-gated, so it can run before the invitation is due; scheduled Testing
+  mail later reuses the same credential), renders the chosen template for that
+  Family, seals the credential substitutions and creates the outbox message,
+  in one transaction. Preparation rechecks that the requesting Administrator
+  is still enabled, the configuration still active and the template still in
+  use. The mail-dispatch worker then sends it like any Family message. -
+  **Temporary gates hold; lasting loss ends it.** A restore review, a campaign
+  work gate or a dirty or stale source population holds the ticket or message
+  without spending its retry budget. A lasting loss of scope (mode, campaign,
+  configuration, credential set, Administrator or template) cancels it, a
+  Family that stays ineligible after a clean reconciliation cancels its
+  message, and a message whose preparation keeps failing is cancelled rather
+  than left pending. The scheduler settles tickets whose task ended. -
+  **Resolution.** An unknown outcome can be confirmed delivered or recorded as
+  not sent. With the cancellations above, no test message can be left
   unfinished to block Production readiness. Resend and retry are refused.
 
 It does not open the portal outside the campaign dates, does not satisfy the
@@ -113,5 +112,25 @@ taken:
   cancelled rather than retried; the Family link cannot abort the sample
   send's transaction; and the specifications describe the new worker
   behavior and wrap consistently.
+
+A correction check follows.
+
+### Round 3
+
+Claude answered with two shards; Codex did not answer this round. Seven raw
+findings; one validated and corrected, with the Lows below the cutoff taken:
+
+- Medium: the round 2 recovery cancel was admitted only for a message never
+  submitted, so a test waiting to retry after a temporary provider error
+  would still have been stranded. Recovery now cancels a pending message or
+  one waiting after a definite non-acceptance, never an uncertain one, and
+  the Python and SQL sides agree exactly; a test covers the temporary-error
+  case.
+- Lows: the SQL retry budget and the Python one are cross-referenced and a
+  test pins them equal; negative tests show the mail role refused the
+  recovery cancel outside its exact conditions; the recovery decision is
+  side-effect free again, so the scheduler's hint admission writes nothing,
+  with the cancel moved into the recovery step; a test already cancelled
+  when its budget runs out settles cleanly; and this guide is rewrapped.
 
 A correction check follows.
