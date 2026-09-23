@@ -56,6 +56,13 @@ class FamilyTestForm(forms.Form):
         label=_("Family DUIDs, one per line (at most ten)"),
     )
 
+    def clean_families(self):
+        """Report malformed, repeated or too many DUIDs as a field error."""
+        try:
+            return parse_family_duids(self.cleaned_data["families"])
+        except ValueError as error:
+            raise forms.ValidationError(str(error)) from None
+
 
 class FamilyTestConfirmForm(forms.Form):
     """Confirmation carries the signed review and an explicit acknowledgement."""
@@ -105,6 +112,7 @@ def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
             "subject": preview.template.subject,
             "testing_recipient": preview.testing_recipient,
             "epoch_ready": preview.epoch_id is not None,
+            "held": preview.held,
             "available": preview.available,
             "form": form or FamilyTestForm(),
             "families": [
@@ -118,7 +126,8 @@ def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
             "confirm": confirm,
             # The signed review is issued for any reviewed list; confirmation
             # rechecks eligibility and the allowance, so only the button hides.
-            "sendable": all(choice.eligible for choice in preview.families)
+            "sendable": not preview.held
+            and all(choice.eligible for choice in preview.families)
             and len(preview.families) <= preview.available,
             "items": [
                 item | {"label": _label(item)} for item in recent_tickets(campaign_id)
@@ -142,11 +151,7 @@ def campaign_mail_families(request, campaign_id, revision_id):
             return _page(request, service, campaign_id, revision_id)
         if _action(request) == "preview":
             form = FamilyTestForm(request.POST)
-            duids = (
-                parse_family_duids(form.cleaned_data["families"])
-                if form.is_valid()
-                else ()
-            )
+            duids = form.cleaned_data["families"] if form.is_valid() else ()
             return _page(
                 request, service, campaign_id, revision_id, duids=duids, form=form
             )

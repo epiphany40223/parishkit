@@ -18,7 +18,11 @@ from parishkit.stewardship.campaigns.credential_models import (
     FamilyCampaign,
     RehearsalEpoch,
 )
-from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
+from parishkit.stewardship.campaigns.models import (
+    Campaign,
+    CampaignWorkGate,
+    ScheduleDefinition,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.delivery_metadata import family_duid
 from parishkit.stewardship.jobs.family_mail_models import (
@@ -68,6 +72,9 @@ class FamilyTestPreview:
     families: tuple[FamilyChoice, ...]
     in_progress: int
     testing_recipient: str
+    # A temporary gate (restore review, unreleased campaign work) refuses
+    # confirmation for now without invalidating the review itself.
+    held: bool = False
 
     @property
     def available(self):
@@ -189,6 +196,12 @@ def prepare(request, service, campaign_id, revision_id, duids=(), *, request_key
                 pk=population.rehearsal_epoch_id, campaign=campaign, state="active"
             ).first()
         current = SourceCurrent.objects.filter(singleton=True).first()
+        held = (
+            runtime.restore_review_required
+            or CampaignWorkGate.objects.filter(campaign=campaign)
+            .exclude(state="released")
+            .exists()
+        )
         rows = {
             row.family_duid: row
             for row in FamilyCampaign.objects.filter(
@@ -207,6 +220,7 @@ def prepare(request, service, campaign_id, revision_id, duids=(), *, request_key
             ),
             in_progress=in_progress_count(campaign_id),
             testing_recipient=runtime.testing_recipient,
+            held=held,
         )
 
 
@@ -294,6 +308,8 @@ def request_tests(
             raise StaleRecordError("Review a fresh Family test preview.")
         if preview.epoch_id is None:
             raise StaleRecordError("Testing credentials are not ready yet.")
+        if preview.held:
+            raise StaleRecordError("Campaign work is in progress; try again later.")
         if any(not choice.eligible for choice in preview.families):
             raise StaleRecordError("A chosen Family can no longer be tested.")
         if len(preview.families) > preview.available:

@@ -140,12 +140,22 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
 
 
 def _families_link(runtime, campaign, revision_id):
-    """Offer chosen-Family tests within the same snapshot; never fail the sample."""
+    """Offer chosen-Family tests within the same snapshot; never fail the sample.
+
+    The link is a convenience read inside the sample's work transaction. Its
+    own savepoint keeps a failed query from aborting the caller's transaction,
+    and only database/configuration failures are absorbed.
+    """
+    from django.db import DatabaseError, transaction
+
+    from parishkit.config import ConfigError
+
     from .campaign_family_test import families_link
 
     try:
-        return families_link(runtime, campaign, revision_id)
-    except Exception:
+        with transaction.atomic():
+            return families_link(runtime, campaign, revision_id)
+    except (DatabaseError, ConfigError):
         return None
 
 
