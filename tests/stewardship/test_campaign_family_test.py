@@ -76,6 +76,18 @@ def test_acknowledgement_is_required_before_any_lookup():
         )
 
 
+def test_form_reports_bad_duid_lists_as_field_errors():
+    """The page re-renders with the typed list and a message, not a generic error."""
+    from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
+
+    valid = FamilyTestForm({"families": "1\n2,345"})
+    assert valid.is_valid() and valid.cleaned_data["families"] == (1, 2345)
+    for value in ("1 1", "Smith", " ".join(str(n) for n in range(1, 12))):
+        form = FamilyTestForm({"families": value})
+        assert not form.is_valid() and form.errors["families"]
+        assert form["families"].value() == value
+
+
 def test_scheduler_cannot_execute_and_worker_needs_every_dependency():
     """Only the general worker, with its keyrings and origin, may prepare a test."""
     with pytest.raises(TypeError):

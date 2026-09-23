@@ -872,3 +872,111 @@ def test_lost_template_and_lasting_ineligibility_cancel_the_test(family_test):
     assert deliver(harness, second) is None
     assert second.state == "cancelled" and second.reason == "scope_replaced"
     assert FamilyMailTest.objects.filter(state="prepared").count() == 2
+
+
+def test_abandoned_dispatch_recovery_cancels_the_unsent_test(family_test, monkeypatch):
+    """Lost leases, not in-process exceptions: recovery cancels after the budget.
+
+    Each round claims the dispatch, lets its one-second lease expire and runs
+    the real recovery owner. Until the budget is spent the message stays
+    pending; the last round cancels it and settles the task, so the test can
+    never block Testing cleanup with no live task left to settle it.
+    """
+    from pathlib import Path
+    from threading import Event
+
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        MAX_ATTEMPTS,
+        delivery_handler,
+    )
+    from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE as DISPATCH
+
+    from .test_taskrun_postgresql import act, expire
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.RECOVERY_RETRY_SECONDS",
+        1,
+    )
+    owner = delivery_handler(None, credential_path=Path("/unused"))
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        if attempt > 1:
+            Event().wait(1.1)  # The recovery retry delay must have elapsed.
+        status = act(_status(TaskRun.objects.get(pk=message.task_id)), "claim")
+        status = act(status, "heartbeat", lease_seconds=1)
+        expire(status)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            assert recover_hint(
+                message.task_id,
+                queue=WorkQueue.MAIL,
+                worker_id=uuid4(),
+                handlers={DISPATCH: owner},
+            )
+        message.refresh_from_db()
+        task = TaskRun.objects.get(pk=message.task_id)
+        if attempt < MAX_ATTEMPTS:
+            assert message.state == "pending" and task.state == "retry_wait"
+        else:
+            assert message.state == "cancelled" and task.state == "cancelled"
+    assert message.reason == "preparation_failed" and message.attempt == 0
+    assert message.sealed_substitutions is None
+    from parishkit.stewardship.campaigns.cleanup_preview import cleanup_preview
+
+    with work_transaction():
+        assert not cleanup_preview(harness.campaign.pk).unresolved
+
+
+def test_queued_ticket_for_a_lastingly_ineligible_family_is_cancelled(family_test):
+    """The worker cancels its task; the sweep records a cancellation, not a failure."""
+    from .response_builders import response_source
+    from .test_recipient_suppressions_postgresql import refresh
+
+    harness, browser, path, _ = family_test
+    (ticket,), _ = request_tickets(browser, path, [1])
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    refresh(harness, data)
+    owner = family_test_handler(
+        general=harness.rings.general,
+        mac=harness.rings.mac,
+        public=harness.rings.public,
+        public_origin=ORIGIN,
+    )
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            ticket.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: owner},
+        )
+        with maintain_execution(execution):
+            owner.execute(execution)
+    assert TaskRun.objects.get(pk=ticket.task_id).state == "cancelled"
+    assert not OutboxMessage.objects.filter(purpose="family_test").exists()
+    with task_login(ServiceRole.SCHEDULER, exact=True):
+        assert recover_pending() == 1
+    ticket.refresh_from_db()
+    assert ticket.state == "cancelled" and ticket.family_id is None
+
+
+def test_sample_page_survives_a_failing_family_link_query(family_test, monkeypatch):
+    """The link runs in its own savepoint; the fictional sample still sends."""
+    from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
+
+    def broken(*args, **kwargs):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1/0")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.campaign_family_test.families_link", broken
+    )
+    _, browser, _, sample = family_test
+    with web_login():
+        page = browser.get(sample)
+        assert page.status_code == 200 and page.context["families_url"] is None
+        token = page.context["form"]["preview_token"].value()
+        assert post(browser, sample, {"preview_token": token}).status_code == 302
+    assert CampaignMailTest.objects.count() == 1
