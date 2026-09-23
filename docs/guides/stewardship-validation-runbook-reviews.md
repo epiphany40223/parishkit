@@ -31,6 +31,9 @@ validation instructions exposed gaps the runbooks left to the operator:
   in the credential file.
 - The [v1 launch scope](../plans/stewardship/v1-launch.md#schedule) names the
   Slack bot token and channel.
+- The [pre-launch gate record](stewardship-prelaunch-gate.md#exit) lists staff
+  validation, including the load check and browser checks, among what the
+  human completes before approving, and indexes this ledger.
 
 It follows the
 [v1 launch scope](../plans/stewardship/v1-launch.md#v1-process-changes):
