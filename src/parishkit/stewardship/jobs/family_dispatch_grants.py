@@ -93,6 +93,7 @@ def add_dispatch_grants(tables, columns):
             "family_duid",
             "source_generation",
             "active",
+            "portal_eligible",
             "email_eligible",
             "email_deliverable",
             "effective_submission_id",

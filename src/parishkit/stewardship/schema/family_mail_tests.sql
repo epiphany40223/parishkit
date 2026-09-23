@@ -41,27 +41,53 @@ BEGIN
     RETURN NEW;
 END $$;
 
--- The Admin, configuration, template, draft/Testing and work-gate checks are
--- the readiness-test ones; a chosen-Family test additionally needs Testing
--- mode (never paused Production) and the campaign's active rehearsal epoch,
--- because the Family's Testing credential belongs to that epoch.
+-- Durable scope of a ticket: the active configuration, current Testing draft,
+-- a template a current invitation/reminder schedule uses, the requesting
+-- Administrator's live authority, a public Workspace identity and the active
+-- rehearsal epoch. None of these returns once lost, so losing any of them
+-- cancels the ticket. Temporary gates are deliberately not part of it.
+CREATE FUNCTION public.stewardship_family_test_scope_v1(
+    configuration uuid, campaign uuid, template uuid, requested_by uuid, epoch uuid
+) RETURNS boolean LANGUAGE sql SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_system_configuration runtime
+        JOIN public.stewardship_campaign c ON c.id=runtime.current_campaign_id
+        JOIN public.stewardship_campaign_credentials credentials ON credentials.campaign_id=c.id
+        JOIN public.stewardship_rehearsal_epoch e ON e.id=credentials.rehearsal_epoch_id
+        JOIN public.stewardship_content_version content ON content.id=$3
+            AND content.configuration_id=runtime.active_configuration_id
+            AND content.campaign_id=c.id AND content.kind='email'
+        JOIN public.stewardship_schedule_revision revision
+            ON revision.values->>'template_version'=content.record_id::text
+            AND revision.campaign_id=c.id
+        JOIN public.stewardship_schedule_definition definition
+            ON definition.current_revision_id=revision.id AND definition.kind IN ('initial','reminder')
+        JOIN public.stewardship_applied_integration workspace
+            ON workspace.configuration_id=runtime.active_configuration_id
+            AND workspace.kind='google_workspace'
+        JOIN public.stewardship_portal_user owner ON owner.id=$4 AND NOT owner.disabled
+        JOIN public.stewardship_address_rule rule ON rule.configuration_id=runtime.active_configuration_id
+            AND rule.email=owner.email AND rule.roles @> '["administrator"]'::jsonb
+        WHERE runtime.active_configuration_id=$1 AND c.id=$2 AND runtime.mode='testing'
+          AND c.state='draft' AND NOT credentials.go_live_gate
+          AND e.id=$5 AND e.campaign_id=c.id AND e.state='active')
+$$;
+
+-- Liveness adds the temporary gates: a restore under review or campaign work
+-- being prepared/run. Intake refuses while they hold; a queued ticket waits.
 CREATE FUNCTION public.stewardship_family_test_live_v1(
     configuration uuid, campaign uuid, template uuid, requested_by uuid, epoch uuid
 ) RETURNS boolean LANGUAGE sql SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT public.stewardship_campaign_mail_live_v1($1,$2,$3,
-            (SELECT workspace.credential_fingerprint FROM public.stewardship_applied_integration workspace
-             WHERE workspace.configuration_id=$1 AND workspace.kind='google_workspace'),$4)
-       AND EXISTS (
-        SELECT 1 FROM public.stewardship_system_configuration runtime
-        JOIN public.stewardship_campaign_credentials credentials ON credentials.campaign_id=$2
-        JOIN public.stewardship_rehearsal_epoch epoch ON epoch.id=credentials.rehearsal_epoch_id
-        WHERE runtime.mode='testing' AND NOT credentials.go_live_gate
-          AND epoch.id=$5 AND epoch.campaign_id=$2 AND epoch.state='active')
+    SELECT public.stewardship_family_test_scope_v1($1,$2,$3,$4,$5)
+       AND NOT EXISTS (SELECT 1 FROM public.stewardship_system_configuration
+           WHERE restore_review_required)
+       AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate gate
+           WHERE gate.state IN ('preparing','running'))
 $$;
 
 CREATE FUNCTION public.stewardship_family_mail_test_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE live boolean; stamp timestamptz:=clock_timestamp();
+DECLARE stamp timestamptz:=clock_timestamp();
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Family test tickets are retained' USING ERRCODE='23514';
@@ -71,10 +97,10 @@ BEGIN
         AND mode='ExclusiveLock' AND granted) THEN
         RAISE EXCEPTION 'Family test requires ordered ownership' USING ERRCODE='23514';
     END IF;
-    live:=public.stewardship_family_test_live_v1(NEW.configuration_id,NEW.campaign_id,
-        NEW.template_id,NEW.requested_by_id,NEW.rehearsal_epoch_id);
     IF TG_OP='INSERT' THEN
-        IF current_user<>'pk_stewardship_web' OR NOT live
+        IF current_user<>'pk_stewardship_web'
+           OR NOT public.stewardship_family_test_live_v1(NEW.configuration_id,NEW.campaign_id,
+                NEW.template_id,NEW.requested_by_id,NEW.rehearsal_epoch_id)
            OR NEW.actor_id IS DISTINCT FROM NEW.requested_by_id
            OR NEW.state<>'queued' OR NEW.version<>1
            OR NEW.family_id IS NULL OR NEW.outbox_id IS NOT NULL
@@ -82,6 +108,7 @@ BEGIN
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session
                 WHERE principal_id=NEW.requested_by_id AND revoked_at IS NULL
                     AND authenticated_at=NEW.reauthenticated_at AND expires_at>stamp
+                    AND authenticated_at BETWEEN stamp-interval '5 minutes' AND stamp
                     AND last_activity_at>stamp-interval '30 minutes')
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=NEW.task_id AND task.root_id=task.id
@@ -145,12 +172,15 @@ BEGIN
         RETURN NEW;
     END IF;
     -- The scheduler settles stale tickets: failed when the task ended without
-    -- a message, cancelled when the Admin/Testing scope is no longer live.
+    -- a message, cancelled when the durable scope is gone. Temporary gates
+    -- (restore review, running campaign work) leave a queued ticket waiting.
     IF current_user<>'pk_stewardship_scheduler' OR NEW.actor_id IS NOT NULL
        OR NEW.family_id IS NOT NULL OR NEW.outbox_id IS NOT NULL
        OR NOT ((NEW.state='failed' AND EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=OLD.task_id AND task.state IN ('failed','cancelled')))
-           OR (NEW.state='cancelled' AND NOT live)) THEN
+           OR (NEW.state='cancelled' AND NOT public.stewardship_family_test_scope_v1(
+                OLD.configuration_id,OLD.campaign_id,OLD.template_id,OLD.requested_by_id,
+                OLD.rehearsal_epoch_id))) THEN
         RAISE EXCEPTION 'Only stale unsent Family tests can be settled' USING ERRCODE='23514';
     END IF;
     RETURN NEW;
@@ -240,12 +270,13 @@ BEGIN
     SELECT * INTO c FROM public.stewardship_campaign WHERE id=q.campaign_id;
     SELECT * INTO r FROM public.stewardship_system_configuration;
     SELECT * INTO k FROM public.stewardship_campaign_credentials WHERE campaign_id=c.id;
+    -- The durable scope repeats the requesting Administrator's live authority
+    -- and the active-configuration binding; a revoked Admin's ticket is not
+    -- prepared even before the scheduler sweep has cancelled it.
     IF q.id IS NULL OR q.state<>'queued' OR c.id IS DISTINCT FROM r.current_campaign_id
-       OR r.mode<>'testing' OR c.state<>'draft' OR r.restore_review_required
-       OR k.go_live_gate OR k.population_dirty
-       OR k.rehearsal_epoch_id IS DISTINCT FROM q.rehearsal_epoch_id
-       OR NOT EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch e
-           WHERE e.id=q.rehearsal_epoch_id AND e.campaign_id=c.id AND e.state='active')
+       OR public.stewardship_family_test_scope_v1(q.configuration_id,q.campaign_id,
+            q.template_id,q.requested_by_id,q.rehearsal_epoch_id) IS NOT TRUE
+       OR r.restore_review_required OR k.population_dirty
        OR EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate
            WHERE campaign_id=c.id AND state<>'released')
        OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_current s
@@ -273,7 +304,7 @@ BEGIN
            AND EXISTS (SELECT 1 FROM public.stewardship_family_campaign f
                JOIN public.stewardship_source_current s ON s.snapshot_id=k.source_snapshot_id
                WHERE f.id=q.family_id AND f.campaign_id=c.id
-                 AND f.active AND f.email_eligible AND f.email_deliverable
+                 AND f.active AND f.portal_eligible AND f.email_eligible AND f.email_deliverable
                  AND f.source_generation=s.generation);
     END IF;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=(proposed->>'message_id')::uuid;
@@ -306,7 +337,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch e
               WHERE e.id=m.rehearsal_epoch_id AND e.campaign_id=c.id AND e.state='active')
           AND NOT r.restore_review_required AND NOT k.go_live_gate AND NOT k.population_dirty
-          AND f.source_generation=source.generation AND f.active AND f.email_eligible AND f.email_deliverable
+          AND f.source_generation=source.generation
+          AND f.active AND f.portal_eligible AND f.email_eligible AND f.email_deliverable
           AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate gate
               WHERE gate.campaign_id=c.id AND gate.state<>'released')
           AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_message unresolved
