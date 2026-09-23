@@ -82,3 +82,23 @@ taken: the reinstall waits for a running backup before `down`, names the
 fixed `backend` and `proxy` subnets and the `runtime_network` setting, and
 no longer offers moving the old root aside, since its rendered files hold
 absolute paths under it.
+
+## Protected delivery
+
+PR #111 delivered candidate `846eddab`, two logical commits plus the
+receipt of PR #110, whose content is the retained review history on
+`pr/stewardship-validation-runbooks-reviewed` (`d6fc5076`), squashed with
+identical content, plus exactly that receipt; Markdown lint passed on that
+tree, and the candidate tree `09cd265b` is the landed tree. The three
+rounds above were single-source under the exemption; rounds 1 and 2
+validated two Mediums and a High, all corrected, and round 3 validated
+none. The pull request was marked ready before the candidate was pushed.
+Exact-head ready-candidate CI `35815332091` and DCO passed all 25 checks,
+from 03:41:35 to 04:01:17 UTC on September 23, 2026 (19 minutes 42
+seconds). Earlier runs on superseded draft heads are not counted as
+acceptance. `origin/main` had no intervening commits since the candidate's
+base `9b40b81e`. Protected auto-merge landed as `19b2a3f0` at 04:01:33 UTC
+and was verified on freshly fetched `origin/main`, whose second parent's
+tree is the candidate's, before the next increment was committed. This used
+the standing delivery authority, without deployment or release; no real
+provider was contacted.
