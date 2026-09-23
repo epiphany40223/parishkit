@@ -564,7 +564,12 @@ Submission receipts remain distinct and are all released. Failure leaves every
 message held; stable fulfillment keys prevent duplicate delivery.
 
 If the campaign closes while paused, invitation/reminder work is terminally
-skipped and its pending outbox cancelled under the ordinary close policy.
+skipped and its pending outbox cancelled under the ordinary close policy. A
+held invitation or reminder with no delivery task left (usually because its
+preparation failed) has no worker to apply that policy and cannot be retried
+after close, so every resolution below cancels it the same way and counts it
+toward clearing the pause; an uncertain provider outcome is never cancelled
+this way and still blocks the clear.
 Accepted receipts and completed-day Admin digests remain held. Before archive,
 an Admin must use a freshly authenticated **Resolve held messages** workflow to
 release selected non-Family-access message types after a provider check or
