@@ -259,11 +259,13 @@ but a phase that measures fewer than half its samples fails.
 - Exit `0`, `"result": "pass"`: passed; keep the JSON with the gate evidence.
 - Exit `1`, `"result": "fail"`: a target was missed or reads failed; report
   it as a launch blocker.
-- Exit `2`: it did not produce a verdict. The one-line error says why: it was
-  refused (not the web container, not Testing mode, the Testing portal not
-  open, no spare web connections, or offline work in progress), the Testing
-  portal closed or the parish data was refreshed during the check (run it
-  again), or an unexpected error stopped it (see the process log).
+- Exit `2`: it did not produce a verdict, and the one-line error says why.
+  It was refused (invalid options, no portal-eligible Families, no spare web
+  database connections, offline work in progress, or otherwise not the web
+  container of an open Testing campaign with promoted data); the Testing
+  portal closed, the campaign became unavailable or the parish data was
+  refreshed during the check (run it again); or an unexpected error stopped
+  it (see the process log).
 
 If a Testing invitation run exists for the current Testing credentials, the
 output also times it under `invitation_run`, for information only. Run the

@@ -109,3 +109,13 @@ corrected, with both Lows below the cutoff taken:
   unexpected error.
 
 A correction check follows.
+
+### Round 3
+
+Claude and Codex both answered. Correction check: eight raw findings, none
+validated; the review rounds are closed. The Lows were taken: each refusal
+names its cause (invalid options, no spare web connections, no
+portal-eligible Families), a database error in the admission step is a
+refusal and one after timing asks for a rerun, a population with no
+portal-eligible Family is refused rather than failed, and a comment about
+the fixed status words is corrected.
