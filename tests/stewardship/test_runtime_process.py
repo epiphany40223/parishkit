@@ -352,6 +352,7 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         "mail",
         "slack",
         "campaign",
+        "family_tests",
         "boundary",
         "schedules",
         "digests",
@@ -544,6 +545,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         "parishkit.stewardship.accounts.campaign_mail_delivery.recover_pending",
         campaign_recovery,
     )
+    family_recovery = Mock(return_value=0)
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_test_tasks.recover_pending",
+        family_recovery,
+    )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_mail.recover_pending", mail_recovery
     )
@@ -568,6 +574,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "mail": mail_recovery,
             "slack": slack_recovery,
             "campaign": campaign_recovery,
+            "family_tests": family_recovery,
             "boundary": boundary,
             "schedules": schedules,
             "digests": digests,
@@ -631,6 +638,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 verification,
                 mail_recovery,
                 campaign_recovery,
+                family_recovery,
                 slack_recovery,
             ):
                 operation.assert_not_called()
@@ -658,9 +666,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
+        family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        # Twenty-two independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 44
+        # Twenty-three independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 46
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()

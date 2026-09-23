@@ -31,6 +31,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
+from .test_family_mail_test_postgresql import family_test  # noqa: F401
 from .test_policy_postgresql import user
 from .test_taskrun_postgresql import act
 
@@ -647,3 +648,51 @@ def test_confirm_unsent_requires_evidence_and_web_cannot_fail_mail_itself(family
         message.refresh_from_db()
         assert message.state == "delivery_unknown"
         assert not DeliveryResolution.objects.exists()
+
+
+@pytest.mark.parametrize("action", ["accept", "confirm_unsent", "note"])
+def test_unknown_family_test_is_settled_from_evidence_but_never_resent(
+    family_test,  # noqa: F811
+    action,
+):
+    """A chosen-Family test has no occurrence to fulfill and no resend path.
+
+    Settling it clears the cleanup blocker; resend and retry are refused by the
+    Web service and by the compiled command trigger alike.
+    """
+    from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
+
+    from .test_family_mail_test_postgresql import (
+        deliver,
+        prepare_tests,
+        request_tickets,
+    )
+
+    harness, browser, path, _ = family_test
+    principal = user("admin@example.org")
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    deliver(harness, message, FamilyDeliveryStatus.UNKNOWN)
+    act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+    message.refresh_from_db()
+    assert message.state == "delivery_unknown"
+    for refused in ("resend", "retry_unsent", "retry_failed"):
+        with pytest.raises((PermissionError, StaleRecordError, DatabaseError)):
+            resolve(harness, principal, message, refused)
+    assert not DeliveryResolution.objects.exists()
+    assert TaskRun.objects.filter(root_id=message.task_id).count() == 1
+    command = resolve(harness, principal, message, action)
+    message.refresh_from_db()
+    assert (
+        message.state
+        == {
+            "accept": "delivered",
+            "confirm_unsent": "permanent_failure",
+            "note": "delivery_unknown",
+        }[action]
+    )
+    assert command.retry_task_id is None and command.preparation is None
+    assert not ScheduleFulfillment.objects.exists()
+    assert not ScheduleOccurrence.objects.exists()
+    ticket = FamilyMailTest.objects.get()
+    assert ticket.state == "prepared" and ticket.family_id is None

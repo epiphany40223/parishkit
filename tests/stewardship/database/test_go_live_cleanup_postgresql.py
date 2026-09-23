@@ -591,3 +591,96 @@ def test_cancel_control_survives_committed_worker_progress(ready_cleanup):
         ProductionTransitionRequest.objects.get(pk=status.request_id).processed_count
         == advanced.processed_count
     )  # Cancellation cannot rewind the committed deletion checkpoint.
+
+
+def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
+    ready_cleanup, monkeypatch
+):
+    """A real Family test is Testing mail: unresolved it blocks, settled it is cleaned.
+
+    The ticket outlives cleanup with no Family link; the message and the
+    Family's Testing credential do not.
+    """
+    from uuid import uuid4
+
+    from django.core import signing
+
+    from parishkit.stewardship.accounts import campaign_family_test as intake
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.credential_keys import (
+        initialize_key_inventories,
+    )
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+    from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+    from parishkit.stewardship.jobs.family_mail_dispatch import (
+        begin_submission,
+        finish_submission,
+    )
+    from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
+    from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+    from .test_background_grants_postgresql import task_login
+    from .test_cleanup_tasks_postgresql import run
+    from .test_family_mail_dispatch_postgresql import claim
+    from .test_family_mail_test_postgresql import ORIGIN, prepare_tests
+
+    request, service, campaign = ready_cleanup
+    template = ContentVersion.objects.get(slot="initial")
+    family = FamilyCampaign.objects.filter(
+        campaign=campaign, portal_eligible=True, email_deliverable=True
+    ).order_by("family_duid")[0]
+    # The fixture's login is older than the five-minute window; bind the
+    # ticket to that session's actual Google timestamp, which SQL verifies.
+    monkeypatch.setattr(
+        intake, "require_fresh", lambda request: request.portal_session.authenticated_at
+    )
+    with web_login():
+        preview = intake.prepare(
+            request, service, campaign.pk, template.record_id, (family.family_duid,)
+        )
+        assert preview.epoch_id is not None
+        tickets = intake.request_tests(
+            request,
+            service,
+            campaign.pk,
+            template.record_id,
+            preview_token=signing.dumps(preview.binding(), salt=intake.SALT),
+            acknowledge=True,
+        )
+    assert len(tickets) == 1
+    rings = keys()
+    initialize_key_inventories(rings.private)
+    harness = type("Harness", (), {"rings": rings})()
+    (message,) = prepare_tests(harness)
+    credential = RehearsalCredential.objects.get(family=family)
+    with web_login():
+        inputs, verified, token = go_live_commands.verify_preview(
+            request, service, campaign.pk
+        )
+    assert "testing_delivery_unresolved" in inputs.problems and not token
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        mail, *_ = begin_submission(
+            message.pk, execution.claim, private=rings.private, public_origin=ORIGIN
+        )
+        assert mail.recipients == (SystemConfiguration.objects.get().testing_recipient,)
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    with web_login():
+        inputs, verified, token = go_live_commands.verify_preview(
+            request, service, campaign.pk
+        )
+        assert not inputs.problems, inputs.problems
+        status = go_live_commands.start_cleanup(
+            request, service, campaign.pk, preview_token=token, acknowledge=True
+        )
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert run(status)
+    assert not OutboxMessage.objects.filter(pk=message.pk).exists()
+    assert not RehearsalCredential.objects.filter(pk=credential.pk).exists()
+    ticket = FamilyMailTest.objects.get(pk=tickets[0].pk)
+    assert ticket.state == "prepared" and ticket.family_id is None
+    assert ticket.outbox_id == message.pk
+    assert uuid4() != ticket.pk
