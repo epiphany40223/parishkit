@@ -144,3 +144,13 @@ closed. The Lows were taken: the in-process settlement uses the same
 guard's own refusal, an unused test parameter is gone, a test covers
 recovering a test message that was already cancelled, and this guide's
 Design list is split back into its bullets.
+
+### Candidate CI correction
+
+Exact-head CI on the first candidate failed two checks the local suites had
+not run: the storage contract test requires every mutable guard to name
+each immutable column in the quoted form the generated guards use, and the
+container check requires the host and the image to collect identical test
+ids, which a test parametrized with freshly signed tokens broke. The guard
+now quotes its columns (the schema baseline is regenerated) and the test has
+fixed ids; a focused review follows.
