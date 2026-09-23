@@ -115,3 +115,56 @@ def test_closed_testing_portal_is_refused_before_any_timing(response_service):
             RuntimeBudget(), harness.service.store, samples=1, concurrency=1
         )
     assert not FamilyFormBaseline.objects.exists()
+
+
+def test_portal_closing_mid_run_refuses_instead_of_skipping(
+    response_service, monkeypatch
+):
+    """Once the scope recheck fails inside a guard, no verdict is published."""
+    harness = response_service
+    financial_source(
+        harness,
+        extra_families={3: dict(familyDUID=3, registeredOrganizationID=5)},
+        extra_members={30: head(30, 3)},
+    )
+    real, answers = load_check.portal_open, []
+
+    def closing(store, campaign_id):
+        """The portal answers open once, then closed, through the real query."""
+        answers.append(real(store, campaign_id))
+        return answers[-1] and len(answers) == 1
+
+    monkeypatch.setattr(load_check, "portal_open", closing)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(load_check.PortalClosed),
+    ):
+        load_check.measure(
+            RuntimeBudget(), harness.service.store, samples=2, concurrency=2
+        )
+    assert answers == [True, True]
+    assert not FamilyFormBaseline.objects.exists()
+
+
+def test_one_family_losing_eligibility_is_skipped_under_the_half_rule(
+    response_service, monkeypatch
+):
+    """Losing one of two Families is a skip; the run still measures and passes."""
+    harness = response_service
+    financial_source(
+        harness,
+        extra_families={3: dict(familyDUID=3, registeredOrganizationID=5)},
+        extra_members={30: head(30, 3)},
+    )
+    real = load_check.family_admitted
+    monkeypatch.setattr(
+        load_check,
+        "family_admitted",
+        lambda campaign_id, duid: duid != 3 and real(campaign_id, duid),
+    )
+    document = measured(harness, samples=2, concurrency=2)
+    form = document["family_form_inputs"]
+    for section in (form["serial"], form["concurrent"]):
+        assert (section["runs"], section["skipped"], section["failures"]) == (2, 1, 0)
+        assert section["pass"]
+    assert document["result"] == "pass", json.dumps(document, sort_keys=True)
