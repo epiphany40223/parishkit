@@ -7,7 +7,7 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .delivery_states import DeliveryAction
-from .family_mail_dispatch import bound_dispatch
+from .family_mail_dispatch import UNSCHEDULED_PURPOSES, bound_dispatch
 from .outbox_storage import change_message
 from .outbox_validation import DeliveryEvidence
 from .ownership import database_now
@@ -43,7 +43,7 @@ def record_abandoned_submission(status, *, actor_id):
         evidence=DeliveryEvidence(reason="recovery_unknown"),
         admit=admit,
     )
-    if row.purpose in {"receipt", "daily_digest", "weekly_digest"}:
+    if row.purpose in UNSCHEDULED_PURPOSES:
         return result
     occurrence = ScheduleOccurrence.objects.get(pk=row.semantic_key)
     updated = ScheduleOccurrence.objects.filter(

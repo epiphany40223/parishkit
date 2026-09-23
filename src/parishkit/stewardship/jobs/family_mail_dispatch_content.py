@@ -38,12 +38,14 @@ def retained_render(message):
     )
 
 
-def current_content(message, occurrence, scope, *, private, public_origin):
+def current_content(message, template_record_id, scope, *, private, public_origin):
     """Refresh unsent content without general-key mounts or cross-epoch fallback.
 
     Source, settings, template and routed recipients are pinned before returning.
     The caller journals this rendering and commits submission under the same work
-    lock. A generation change remains held for its restore/reopen owner.
+    lock. A generation change remains held for its restore/reopen owner. The
+    template record comes from the occurrence's schedule revision, or from the
+    Admin ticket for a chosen-Family test.
     """
     require_work_order()
     identity = _status(message).identity
@@ -107,7 +109,7 @@ def current_content(message, occurrence, scope, *, private, public_origin):
         source = load_family_mail_source(family)
         render = current_render(
             identity,
-            occurrence,
+            template_record_id,
             scope,
             source,
             public_origin=public_origin,

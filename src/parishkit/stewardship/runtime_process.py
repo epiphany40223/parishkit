@@ -456,8 +456,12 @@ def serve_background(configuration, lease):
             independent_producer(guard, recover_setup_mail)
             independent_producer(guard, recover_setup_slack)
             from .accounts.campaign_mail_delivery import recover_pending
+            from .jobs.family_mail_test_tasks import (
+                recover_pending as recover_family_tests,
+            )
 
             independent_producer(guard, recover_pending)
+            independent_producer(guard, recover_family_tests)
             return (
                 *operational,
                 *finalization,

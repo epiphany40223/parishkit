@@ -10,19 +10,24 @@ from .family_mail_content import FamilyMailTemplate, render_family_mail
 from .family_mail_inputs import public_values
 
 
-def current_render(identity, occurrence, scope, source, *, public_origin):
+def current_render(identity, template_record_id, scope, source, *, public_origin):
     """Use the caller's locked source and the currently selected public settings.
 
+    ``template_record_id`` names the stable email template record; scheduled
+    mail takes it from the occurrence's schedule revision and a chosen-Family
+    test from its Admin ticket. The copy in the active configuration is used.
     This helper knows no credential keys and grants no sending authority. Each
     owning service separately validates lifecycle and its claim/Admin command.
     """
     require_work_order()
+    if not isinstance(template_record_id, UUID):
+        raise TypeError("Rendering requires a canonical template record identity.")
     version = scope.runtime.active_configuration
     template = ContentVersion.objects.get(
         configuration=version,
         campaign_id=identity.campaign_id,
         kind="email",
-        record_id=UUID(occurrence.revision.values["template_version"]),
+        record_id=template_record_id,
     )
     email = AppliedIntegration.objects.get(configuration=version, kind="email")
     return render_family_mail(

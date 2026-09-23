@@ -187,6 +187,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "report_exact_export",
         "report_fact_verification",
         "family_mail_prepare",
+        "family_mail_test",
         "daily_digest_prepare",
         "daily_digest_finalize",
         "weekly_digest_finalize",
