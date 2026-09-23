@@ -91,3 +91,23 @@ Claude only (Codex was out of credits). Correction check: one raw finding,
 none validated; the review rounds are closed. The Low (a paragraph left
 unwrapped after the round 2 edit) was taken, and the schema summary above
 now names both new views.
+
+## Protected delivery
+
+PR #109 delivered candidate `50e2431c`, two logical commits plus the
+receipt of PR #108, whose content is the retained review history on
+`pr/stewardship-closed-held-family-reviewed` (`e187f030`), squashed with
+identical content, plus exactly that receipt; the closed-resolution and
+schema-baseline suites passed on that tree, and the candidate tree
+`f71e7292` is the landed tree. The three rounds above were single-source
+under the exemption; rounds 1 and 2 each validated one Medium, both
+corrected, and round 3 validated none. The pull request was marked ready
+before the candidate was pushed. Exact-head ready-candidate CI
+`35810068360` and DCO passed all 25 checks, from 02:22:09 to 02:42:32 UTC
+on September 23, 2026 (20 minutes 23 seconds). Earlier runs on superseded
+draft heads are not counted as acceptance. `origin/main` had no
+intervening commits since the candidate's base `1fce35dc`. Protected
+auto-merge landed as `f79376f7` at 02:42:38 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's,
+before the next increment was committed. This used the standing delivery
+authority, without deployment or release; no real provider was contacted.
