@@ -153,4 +153,5 @@ each immutable column in the quoted form the generated guards use, and the
 container check requires the host and the image to collect identical test
 ids, which a test parametrized with freshly signed tokens broke. The guard
 now quotes its columns (the schema baseline is regenerated) and the test has
-fixed ids; a focused review follows.
+fixed ids. A focused review of the correction (two Claude shards; Codex
+did not answer) found nothing.
