@@ -198,8 +198,11 @@ minutes, 4093 on `95ddef08` in 1 hour 33 minutes, and 4105 on `3d5cbe6d`
 in 1 hour 37 minutes. Each correction pull request passed its own focused
 suites and full exact-head CI, including its PostgreSQL shards, before it
 merged; the corrections after `3d5cbe6d` (PR #105 to #107) changed no
-database path. PR #109 changed the closed-campaign resolution, so the full
-suite ran again on its merge: REGRESS7.
+database path. PR #109 changed the closed-campaign resolution; the full
+PostgreSQL suite ran again, sharded, in its exact-head CI (`35810068360`,
+all 25 checks passed), whose tree is the merged `f79376f7`. By the human's
+direction, that CI run is the regression evidence for it, rather than a
+repeated single-server run.
 
 The schema freeze audit installed `2c16c49e` fresh and compared its catalog
 with the committed fresh-install baseline
