@@ -1,3 +1,19 @@
+-- A held invitation or reminder on a closed campaign whose task has ended (its
+-- preparation failed) is stranded: no worker will claim it to apply the close
+-- policy, and an unsent retry is refused after close. The closed resolution
+-- cancels exactly these, so they count toward clearing the pause.
+CREATE VIEW public.stewardship_delivery_stranded AS
+    SELECT m.id AS message_id,m.campaign_id FROM public.stewardship_outbox_message m
+    JOIN public.stewardship_campaign c ON c.id=m.campaign_id
+    WHERE c.state='closed' AND c.delivery_paused
+        AND m.mode='production' AND m.routing='production'
+        AND m.purpose IN ('initial','reminder')
+        AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL
+        AND NOT EXISTS(SELECT 1 FROM public.stewardship_task_run t
+            WHERE t.root_id=m.task_id
+                AND t.state IN ('queued','running','retry_wait','abandoned'));
+REVOKE ALL ON public.stewardship_delivery_stranded FROM PUBLIC;
+
 -- Admin delivery commands expose only aggregate mail metadata. Immutable
 -- routing, not a browser exemption flag, distinguishes live campaign messages.
 CREATE VIEW public.stewardship_delivery_control_inventory AS
@@ -8,7 +24,8 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
             state='delivery_unknown' OR (state='retry_wait' AND (
                 SELECT action FROM public.stewardship_outbox_event e WHERE e.message_id=m.id
                     AND e.action IN ('retry_idempotent','retry_unaccepted','fail_unaccepted','accept','authorize_resend')
-                ORDER BY e.version DESC LIMIT 1)='retry_idempotent') AS uncertain
+                ORDER BY e.version DESC LIMIT 1)='retry_idempotent') AS uncertain,
+            EXISTS(SELECT 1 FROM public.stewardship_delivery_stranded s WHERE s.message_id=m.id) AS stranded
         FROM public.stewardship_outbox_message m
         WHERE campaign_id=(SELECT campaign_id FROM scope)
           AND mode='production' AND routing='production'
@@ -25,6 +42,7 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
         'held',(SELECT count(*) FROM messages WHERE pause_hold_id IS NOT NULL),
         'submitting',(SELECT count(*) FROM messages WHERE state='submitting'),
         'unknown',(SELECT count(*) FROM messages WHERE uncertain),
+        'stranded',(SELECT count(*) FROM messages WHERE stranded),
         'types',(SELECT coalesce(jsonb_object_agg(purpose,to_jsonb(types)-'purpose'),'{}') FROM types),
         'fingerprint',encode(sha256(convert_to((SELECT coalesce(
             jsonb_agg(jsonb_build_array(id,version) ORDER BY id),'[]') FROM messages)::text,'UTF8')),'hex')
@@ -162,7 +180,8 @@ BEGIN
             FROM public.stewardship_delivery_closed_coverage_summary s WHERE campaign_id=campaign.id;
         SELECT coalesce(jsonb_object_agg(key,value),'{}') INTO current_coverage
             FROM jsonb_each(current_coverage) WHERE selected_types ? key;
-        clears_pause:=(current_inventory->>'held')::bigint=selected_count
+        clears_pause:=(current_inventory->>'held')::bigint
+                =selected_count+(current_inventory->>'stranded')::bigint
             AND (current_inventory->>'submitting')::bigint=0 AND (current_inventory->>'unknown')::bigint=0;
         current_health:='null'::jsonb;
         IF NEW.selection->>'decision'='release' THEN

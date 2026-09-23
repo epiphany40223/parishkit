@@ -317,6 +317,35 @@ BEGIN
             WHERE decision.command_id=intent.id);
         PERFORM public.stewardship_delivery_closed_settle_v1(intent.id);
     END IF;
+    -- A stranded invitation or reminder (stewardship_delivery_stranded) has no
+    -- task left to apply the close policy, so apply it here exactly as the
+    -- worker would: cancel the unsent message as campaign_closed and skip its
+    -- occurrence if still pending or running. A failed occurrence keeps its
+    -- truthful failure. The preview counted these toward clearing the pause.
+    WITH cancelled AS (
+        UPDATE public.stewardship_outbox_message m SET
+            state='cancelled',action='cancel_unsent',version=m.version+1,pause_hold_id=NULL,
+            actor_id=intent.actor_id,correlation_id=intent.correlation_id,command_id=gen_random_uuid(),
+            command_digest=encode(sha256(convert_to(jsonb_build_array(
+                'postclose_stranded',intent.id,m.id,m.version)::text,'UTF8')),'hex'),
+            reason='campaign_closed',finished_at=statement_timestamp(),
+            sealed_substitutions=NULL,sealed_key_id=NULL
+        FROM public.stewardship_delivery_stranded stranded
+        WHERE stranded.message_id=m.id AND stranded.campaign_id=campaign.id
+        RETURNING m.id
+    ) INSERT INTO public.stewardship_schedule_effect
+        SELECT pg_current_xact_id(),pg_backend_pid(),o.id,o.version,
+            intent.actor_id,intent.correlation_id,'campaign_closed'
+        FROM cancelled JOIN public.stewardship_schedule_occurrence o ON o.outbox_id=cancelled.id
+        WHERE o.state IN ('pending','running');
+    UPDATE public.stewardship_schedule_occurrence o SET
+        state='skipped',reason='campaign_closed',version=o.version+1,lease_expires_at=NULL,
+        actor_id=intent.actor_id,correlation_id=intent.correlation_id
+    FROM public.stewardship_schedule_effect proof
+    WHERE proof.transaction_id=pg_current_xact_id() AND proof.backend=pg_backend_pid()
+        AND proof.reason='campaign_closed' AND o.id=proof.occurrence_id;
+    DELETE FROM public.stewardship_schedule_effect WHERE transaction_id=pg_current_xact_id()
+        AND backend=pg_backend_pid() AND reason='campaign_closed';
     -- Clear only when every held/submitting/unknown row is gone. Releasing a
     -- selected type does not grant any other held type permission to dispatch.
     IF EXISTS(SELECT 1 FROM public.stewardship_delivery_control_inventory current

@@ -122,10 +122,14 @@ def _action_available(campaign, action):
 
 
 def _clears_pause(current, types):
-    """Selected held rows are released/cancelled; uncertainty cannot be cleared."""
+    """Selected held rows are released/cancelled; uncertainty cannot be cleared.
+
+    Stranded Family rows (held on the closed campaign with no task left) are
+    cancelled by every closed resolution, so they never block the clear.
+    """
     selected = sum(current["types"].get(kind, {}).get("held", 0) for kind in types)
     return (
-        current["held"] == selected
+        current["held"] == selected + current["stranded"]
         and not current["submitting"]
         and not current["unknown"]
     )
