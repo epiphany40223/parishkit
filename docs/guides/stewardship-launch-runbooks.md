@@ -383,9 +383,10 @@ preparation failed) has no worker to do that, so the page counts it and
 every resolution cancels it the same way
 ([review ledger](stewardship-closed-stranded-family-reviews.md)). A
 resolution clears the pause only when it leaves nothing else held,
-submitting or unknown; if the last unknown delivery is reconciled
-afterwards, choose **Clear an empty, fully resolved pause (select no
-types)** to clear it.
+submitting or unknown. When such invitations and reminders are all that is
+held, or the last unknown delivery is reconciled afterwards, choose
+**Clear a fully resolved pause (select no types)**: release and cancel
+need a selected type with held messages.
 
 The [delivery pause guide](stewardship-delivery-pause.md) is the design; the
 [delivery journal](stewardship-delivery-journal.md) explains what the

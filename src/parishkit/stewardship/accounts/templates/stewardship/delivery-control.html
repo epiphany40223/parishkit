@@ -54,13 +54,13 @@
 {% endif %}
 {% if resolve_available %}<section class="panel"><h2>{% translate "Resolve held messages" %}</h2>
 <p>{% translate "The campaign is closed. Invitations and reminders follow the ordinary close policy and cannot be released here. Select held receipts or Admin reports to release after a sender check, or cancel with a reason. This does not reopen Family access." %}</p>
-{% if inventory.stranded %}<p>{% translate "Invitations and reminders with no remaining delivery task" %}: {{ inventory.stranded|number }}. {% translate "No mail worker will return to them, so any resolution cancels them under the close policy." %}</p>{% endif %}
+{% if inventory.stranded %}<p>{% translate "Invitations and reminders with no remaining delivery task" %}: {{ inventory.stranded|number }}. {% translate "No mail worker will return to them, so any resolution cancels them under the close policy. When nothing else is held, choose Clear with no types to cancel them and clear the pause." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resolve">
 <fieldset><legend>{% translate "Message types" %}</legend>
 <label><input type="checkbox" name="receipt" value="yes"> {% translate "Submission receipts" %} ({{ inventory.types.receipt.held|default:0|number }})</label>
 <label><input type="checkbox" name="daily_digest" value="yes"> {% translate "Daily Admin reports" %} ({{ inventory.types.daily_digest.held|default:0|number }})</label>
 <label><input type="checkbox" name="weekly_digest" value="yes"> {% translate "Weekly Admin reports" %} ({{ inventory.types.weekly_digest.held|default:0|number }})</label></fieldset>
-<label for="resolution-decision">{% translate "Resolution" %}</label><select id="resolution-decision" name="decision"><option value="release">{% translate "Release selected held messages" %}</option><option value="cancel">{% translate "Cancel selected held messages" %}</option><option value="clear">{% translate "Clear an empty, fully resolved pause (select no types)" %}</option></select>
+<label for="resolution-decision">{% translate "Resolution" %}</label><select id="resolution-decision" name="decision"><option value="release">{% translate "Release selected held messages" %}</option><option value="cancel">{% translate "Cancel selected held messages" %}</option><option value="clear">{% translate "Clear a fully resolved pause (select no types)" %}</option></select>
 <label for="resolution-reason">{% translate "Reason" %}</label><textarea id="resolution-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea>
 <button type="submit">{% translate "Preview held-message resolution" %}</button></form>
 {% if preview.action == 'resolve' %}<section class="panel"><h3>{% translate "Exact held-message resolution" %}</h3><p>{{ preview.reason }}</p>
