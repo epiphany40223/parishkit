@@ -26,6 +26,7 @@ _COMMAND_OPTIONS = {
     "healthcheck": set(),
     "installer-healthcheck": set(),
     "health": {"config"},
+    "load-check": {"config", "samples", "concurrency"},
     "runtime": {"config"},
     "acknowledge-credential": {"config", "request_id"},
     "collect-static": {"destination"},
@@ -117,6 +118,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "delegated-email",
         "send-to",
         "channel-id",
+        "samples",
+        "concurrency",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -176,6 +179,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .runtime_diagnostics import execute_health
 
         return execute_health(args)
+    if args.command == "load-check":
+        from .load_check import execute_load_check
+
+        return execute_load_check(args)
     if args.command in {"backup", "backup-keygen", "backup-open"}:
         from .backup_commands import execute_backup_command
 
