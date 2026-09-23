@@ -178,7 +178,7 @@ live database must be upgraded in place instead of reinstalled.
 
 | Date | Implementation | Human |
 | --- | --- | --- |
-| Mon 9/21–Tue 9/22 | PR #89 lands; this plan lands; ADM-08.01 | Provision the production host, DNS and TLS; create the Google OAuth client, ParishSoft API key, mail-provider account and optional Slack webhook |
+| Mon 9/21–Tue 9/22 | PR #89 lands; this plan lands; ADM-08.01 | Provision the production host, DNS and TLS; create the Google OAuth client, ParishSoft API key, mail-provider account and optional Slack bot token and channel |
 | Wed 9/23–Thu 9/24 | Production image and service commands, deployment runbook, smoke tools, reduced backup | Install on the production host in Testing mode; run smoke tests; run the setup wizard with real ParishSoft data |
 | Fri 9/25–Tue 9/29 | Validation bug fixes first; pre-launch gate reviews start Sat 9/26; remaining launch runbooks; load check | Staff validate the Family form, content, templates, schedules, reports and Testing-routed mail; finalize campaign content |
 | Tue 9/29 | **Code freeze**: only launch-blocking fixes after this point | Report any launch blockers |
