@@ -366,7 +366,7 @@ released, and the page instead offers to resolve the held receipts and Admin
 reports by type: release the ones that should still go, after the same
 sender check, and cancel the rest with a reason. A type cannot be cancelled
 while any of its messages is still submitting or unknown, and no resolution
-at all (release, cancel or clearing an empty pause) is accepted while a
+at all (release, cancel or clear) is accepted while a
 daily or weekly report is still being prepared: wait for it to finish, and
 if its preparation has failed, retry it from the Background work page as in
 step 4.1 above. Every resolution (release, cancel or clear) needs a Google
@@ -383,9 +383,10 @@ preparation failed) has no worker to do that, so the page counts it and
 every resolution cancels it the same way
 ([review ledger](stewardship-closed-stranded-family-reviews.md)). A
 resolution clears the pause only when it leaves nothing else held,
-submitting or unknown; if the last unknown delivery is reconciled
-afterwards, choose **Clear an empty, fully resolved pause (select no
-types)** to clear it.
+submitting or unknown. When such invitations and reminders are all that is
+held, or the last unknown delivery is reconciled afterwards, choose
+**Clear a fully resolved pause (select no types)**: release and cancel
+need a selected type with held messages.
 
 The [delivery pause guide](stewardship-delivery-pause.md) is the design; the
 [delivery journal](stewardship-delivery-journal.md) explains what the
