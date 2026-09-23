@@ -215,6 +215,9 @@ support-artifact owners must extend the privacy scan. See
 Scope and dependencies: [ARC-08 work package](../../plans/stewardship/architecture.md#arc-08-performance-accessibility-and-compatibility-baseline).
 
 - [ ] ARC-08.01 — Set and enforce interactive query and latency budgets.
+  The v1 launch's single load check is delivered as `pk-stewardship load-check`
+  ([load check guide](../../guides/stewardship-load-check.md)); this item and
+  ARC-08.05 remain open.
 - [ ] ARC-08.02 — Create representative scale fixtures.
 - [ ] ARC-08.03 — Configure asset versioning and browser matrices.
 - [ ] ARC-08.04 — Integrate automated accessibility and focus helpers.

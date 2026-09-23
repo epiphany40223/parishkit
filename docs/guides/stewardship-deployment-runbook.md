@@ -231,8 +231,30 @@ sign-out, and the main staff pages: home, campaign and schedules,
 reports and exports, deliveries, and background work.
 
 **Load.** The launch scope's single load check at the parish's real Family
-count runs against this deployment; its tool is development work scheduled
-for September 25–29 and is not yet available.
+count runs against this deployment, inside its web container, once the
+setup wizard has imported the parish's data:
+
+```text
+docker compose ... exec -T web pk-stewardship load-check --config WEB_CONFIG > load-check.json
+```
+
+It only reads: in read-only transactions it times loading the Family form's
+inputs for a sample of Families (`--samples`, default 200, largest
+households first), serially and with a few concurrent threads
+(`--concurrency`, default 4, at most the web service's threads), and the
+first pages of the statistics, financial and information reports, 20 times
+each. It sends no mail, signs no one in, writes nothing, never touches
+Valkey and prints only counts and seconds. The verdict compares each p95
+with the architecture specification's targets: 2 seconds for the Family
+form's inputs and the statistics page, 3 seconds for the first page of a
+filtered report. Exit `0` with `"result": "pass"` passes, exit `1` with
+`"result": "fail"` fails (a launch blocker to report), and exit `2` means it
+refused to run (not the web container, not Testing mode, or offline work in
+progress). If a full Testing invitation run has happened, the output also
+times it under `invitation_run`, for information only. Run it outside an
+upgrade, since it borrows the web login's spare connections, and keep the
+JSON with the gate evidence. The
+[load check guide](stewardship-load-check.md) records its design.
 
 **Not testable before activation.** Delivery pause and resume exist only for
 the Production campaign.
