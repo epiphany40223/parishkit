@@ -231,30 +231,43 @@ sign-out, and the main staff pages: home, campaign and schedules,
 reports and exports, deliveries, and background work.
 
 **Load.** The launch scope's single load check at the parish's real Family
-count runs against this deployment, inside its web container, once the
-setup wizard has imported the parish's data:
+count runs against this deployment, inside its web container, while the
+Testing Family portal is open (the draft campaign's dates include today and
+its Testing credentials exist, as for the Family-form test above):
 
 ```text
 docker compose ... exec -T web pk-stewardship load-check --config WEB_CONFIG > load-check.json
 ```
 
-It only reads: in read-only transactions it times loading the Family form's
-inputs for a sample of Families (`--samples`, default 200, largest
-households first), serially and with a few concurrent threads
-(`--concurrency`, default 4, at most the web service's threads), and the
-first pages of the statistics, financial and information reports, 20 times
-each. It sends no mail, signs no one in, writes nothing, never touches
-Valkey and prints only counts and seconds. The verdict compares each p95
-with the architecture specification's targets: 2 seconds for the Family
-form's inputs and the statistics page, 3 seconds for the first page of a
-filtered report. Exit `0` with `"result": "pass"` passes, exit `1` with
-`"result": "fail"` fails (a launch blocker to report), and exit `2` means it
-refused to run (not the web container, not Testing mode, or offline work in
-progress). If a full Testing invitation run has happened, the output also
-times it under `invitation_run`, for information only. Run it outside an
-upgrade, since it borrows the web login's spare connections, and keep the
-JSON with the gate evidence. The
-[load check guide](stewardship-load-check.md) records its design.
+It only reads, in read-only transactions with statement and lock time
+limits. It times loading the Family form's source inputs for a sample of
+eligible Families (`--samples`, default 200: half the largest households,
+half spread across the rest), serially and with a few concurrent readers
+(`--concurrency`, default 4, never more than the web service's threads or
+the web database login's spare connections), and the first pages of the
+statistics, financial and information reports, 20 times each, one at a
+time. It sends no mail, signs no one in, writes nothing, never touches Valkey
+and prints only counts and seconds. The verdict compares each p95 with the
+architecture specification's targets: 2 seconds for the Family form's inputs
+and the statistics page, 3 seconds for a report's first page. The form timing
+covers the per-Family source read, not the whole page, so it is a lower bound
+for opening the form. A phase stops after five failed reads, and the whole
+check after 15 minutes; anything not reached counts as not run and fails
+the check.
+
+- Exit `0`, `"result": "pass"`: passed; keep the JSON with the gate evidence.
+- Exit `1`, `"result": "fail"`: a target was missed or reads failed; report
+  it as a launch blocker.
+- Exit `2`: it did not produce a verdict. The one-line error says why: it was
+  refused (not the web container, not Testing mode, the Testing portal not
+  open, no spare web connections, or offline work in progress), the parish
+  data was refreshed during the check (run it again), or an unexpected error
+  stopped it (see the process log).
+
+If a Testing invitation run exists for the current Testing credentials, the
+output also times it under `invitation_run`, for information only. Run the
+check outside an upgrade. The [load check guide](stewardship-load-check.md)
+records its design.
 
 **Not testable before activation.** Delivery pause and resume exist only for
 the Production campaign.
