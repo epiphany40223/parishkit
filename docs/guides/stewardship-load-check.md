@@ -24,8 +24,10 @@ under 3 seconds for a filtered report's first page, at a reference size of
   form performs (a lower bound for the page, which also records a baseline),
   for a sample of Families the form would admit (half the largest households,
   half spread across the rest), serially and with bounded concurrency. Each
-  read rechecks that the Testing portal is open and the Family still
-  admitted; a Family no longer admitted is skipped, not failed.
+  read rechecks that the Testing portal is open, stopping the check without
+  a verdict if it has closed, and that the Family is still admitted; a
+  Family no longer admitted is skipped, but a phase that measures fewer than
+  half its samples fails.
 - **Report first pages:** the statistics aggregate (2 s), and the financial
   (skipped when that section is off) and information first pages (3 s),
   unfiltered, 20 serial runs each, admitted exactly as the pages admit them.
@@ -87,5 +89,23 @@ corrected, with every Low below the cutoff taken:
   run is limited to the current Testing credentials; and the documents say
   how Families are sampled, that report pages are timed serially against a
   p95, and that the form timing is a lower bound for the page.
+
+A correction check follows.
+
+### Round 2
+
+Claude and Codex both answered. Six raw findings; one validated and
+corrected, with both Lows below the cutoff taken:
+
+- Medium (both sources): a Testing portal that closed during the run made
+  every remaining sample skipped, and skipped samples did not count, so a
+  run could pass on a few early reads. A closed portal now stops the check
+  without a verdict, only a single Family losing its own eligibility is
+  skipped, and a phase that measures fewer than half its samples fails.
+- Lows: the per-read Family check now matches what the Family form itself
+  requires (the campaign and portal eligibility), so a promotion awaiting
+  reconciliation no longer skips every Family; and a read failure in the
+  admission step before any timing is reported as a refusal, not as an
+  unexpected error.
 
 A correction check follows.

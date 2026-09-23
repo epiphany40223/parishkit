@@ -253,16 +253,17 @@ and the statistics page, 3 seconds for a report's first page. The form timing
 covers the per-Family source read, not the whole page, so it is a lower bound
 for opening the form. A phase stops after five failed reads, and the whole
 check after 15 minutes; anything not reached counts as not run and fails
-the check.
+the check. A Family that stops being eligible during the check is skipped,
+but a phase that measures fewer than half its samples fails.
 
 - Exit `0`, `"result": "pass"`: passed; keep the JSON with the gate evidence.
 - Exit `1`, `"result": "fail"`: a target was missed or reads failed; report
   it as a launch blocker.
 - Exit `2`: it did not produce a verdict. The one-line error says why: it was
   refused (not the web container, not Testing mode, the Testing portal not
-  open, no spare web connections, or offline work in progress), the parish
-  data was refreshed during the check (run it again), or an unexpected error
-  stopped it (see the process log).
+  open, no spare web connections, or offline work in progress), the Testing
+  portal closed or the parish data was refreshed during the check (run it
+  again), or an unexpected error stopped it (see the process log).
 
 If a Testing invitation run exists for the current Testing credentials, the
 output also times it under `invitation_run`, for information only. Run the
