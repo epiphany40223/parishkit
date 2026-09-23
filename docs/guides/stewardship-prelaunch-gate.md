@@ -560,3 +560,10 @@ tree. The Lows were taken: PR #113's row states its sources and the
 correction review, a long line was rewrapped, and PR #113's receipt counts
 its failed checks consistently and explains its round 1 tally. A correction
 check follows.
+
+### Record update review round 2
+
+Claude only (Codex did not answer). Correction check: two raw findings, none
+validated; the review rounds are closed. Both Lows were taken: PR #113's
+receipt paragraph is reflowed, and its correction section says the first
+candidate failed two tests rather than two checks.

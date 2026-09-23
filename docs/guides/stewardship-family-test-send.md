@@ -149,7 +149,7 @@ Design list is split back into its bullets.
 
 ### Candidate CI correction
 
-Exact-head CI on the first candidate failed two checks the local suites had
+Exact-head CI on the first candidate failed two tests the local suites had
 not run: the storage contract test requires every mutable guard to name
 each immutable column in the quoted form the generated guards use, and the
 container check requires the host and the image to collect identical test
@@ -160,8 +160,8 @@ did not answer) found nothing.
 
 ## Protected delivery
 
-PR #113 delivered candidate `b9ac3900`, two logical commits plus the
-receipt of PR #112, whose content is the retained review history on
+PR #113 delivered candidate `b9ac3900`, two logical commits plus the receipt
+of PR #112, whose content is the retained review history on
 `pr/stewardship-family-test-send-reviewed` (`42a1a6fa`), applied to `main`
 after PR #112 with identical content, plus exactly that receipt; on that
 combined tree the full pure suite, ruff, `makemigrations --check` and 184
@@ -170,12 +170,12 @@ PostgreSQL tests across the affected suites passed, and the candidate tree
 each and Codex in round 1; rounds 1 to 3 validated three Highs and seven
 Mediums, all corrected, and round 4 validated none. The first candidate's
 exact-head CI (`35824483608`) failed in two jobs (four checks with their
-aggregate jobs), corrected as recorded
-above and not counted as acceptance. Exact-head ready-candidate CI
-`35827926031` and DCO passed all 25 checks, from 06:41:21 to 07:01:25 UTC on
-September 23, 2026 (20 minutes 4 seconds). `origin/main` had no intervening
-commits since the candidate's base `fae00f93`. Protected auto-merge landed
-as `f9b68cab` at 07:01:27 UTC and was verified on freshly fetched
-`origin/main`, whose second parent's tree is the candidate's, before the
-next increment was committed. This used the standing delivery authority,
-without deployment or release; no real provider was contacted.
+aggregate jobs), corrected as recorded above and not counted as acceptance.
+Exact-head ready-candidate CI `35827926031` and DCO passed all 25 checks,
+from 06:41:21 to 07:01:25 UTC on September 23, 2026 (20 minutes 4 seconds).
+`origin/main` had no intervening commits since the candidate's base
+`fae00f93`. Protected auto-merge landed as `f9b68cab` at 07:01:27 UTC and
+was verified on freshly fetched `origin/main`, whose second parent's tree is
+the candidate's, before the next increment was committed. This used the
+standing delivery authority, without deployment or release; no real provider
+was contacted.
