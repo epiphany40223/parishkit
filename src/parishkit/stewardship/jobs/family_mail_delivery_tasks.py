@@ -45,6 +45,8 @@ from .queues import WorkQueue
 from .storage import _status
 
 LOG = logging.getLogger(__name__)
+# How soon an abandoned, still-unsent delivery may be claimed again.
+RECOVERY_RETRY_SECONDS = 30
 
 
 class DeliveryCircuit:
@@ -140,8 +142,14 @@ def recovery_plan(status):
     }[row.state]
     if action == "recovery_retry" and preparation_attempts(status) >= MAX_ATTEMPTS:
         action = "recovery_fail"
+        if row.purpose == "family_test":
+            # A test nothing else can settle is cancelled, not left pending.
+            from .family_mail_dispatch_recovery import cancel_abandoned_family_test
+
+            cancel_abandoned_family_test(status, actor_id=uuid4())
+            action = "recovery_cancel"
     return (
-        RecoveryPlan(action, retry_seconds=30)
+        RecoveryPlan(action, retry_seconds=RECOVERY_RETRY_SECONDS)
         if action == "recovery_retry"
         else RecoveryPlan(action)
     )

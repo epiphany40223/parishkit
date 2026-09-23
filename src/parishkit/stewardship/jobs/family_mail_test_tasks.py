@@ -120,7 +120,7 @@ def disposition(ticket, *, source_check=False):
         raise FamilyTestHeld("Family test awaits source reconciliation.")
     # After a clean, current reconciliation the Family's ineligibility is not
     # a wait; its real mail would not be sent either, so the test is cancelled.
-    if not FamilyCampaign.objects.filter(
+    family = FamilyCampaign.objects.filter(
         pk=ticket.family_id,
         campaign_id=ticket.campaign_id,
         source_generation=population.source_generation,
@@ -128,7 +128,19 @@ def disposition(ticket, *, source_check=False):
         portal_eligible=True,
         email_eligible=True,
         email_deliverable=True,
-    ).exists():
+    ).first()
+    if family is None:
+        return "safe_cancel"
+    # The recipient projection reads the same promoted snapshot and unresolved
+    # refusals that maintain email_deliverable, so a disagreement cannot be
+    # waited out; treat it as the same lasting ineligibility.
+    from .family_mail_inputs import load_family_mail_source
+
+    try:
+        source = load_family_mail_source(family)
+    except PermissionError:
+        raise FamilyTestHeld("Family test awaits source reconciliation.") from None
+    if not source.recipients.status.email_deliverable:
         return "safe_cancel"
     return None
 
@@ -161,12 +173,8 @@ def prepare_family_test(ticket, claim, *, general, mac, public, public_origin):
     campaign = scope.campaign
     CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
     family = FamilyCampaign.objects.get(pk=ticket.family_id, campaign=campaign)
-    try:
-        source = load_family_mail_source(family)
-    except PermissionError:
-        raise FamilyTestHeld("Family test awaits source reconciliation.") from None
-    if not source.recipients.status.email_deliverable:
-        raise FamilyTestHeld("Family recipients require current reconciliation.")
+    # The disposition above has just admitted this exact source projection.
+    source = load_family_mail_source(family)
 
     def admit_credentials(candidate, purpose):
         """Issue a credential only for this campaign under this exact live claim."""
@@ -337,12 +345,13 @@ def family_test_handler(
                         public=public,
                         public_origin=public_origin,
                     )
+            # Admission repeats the disposition; a gate appearing between the
+            # effect and this transition is the same hold.
+            execution.transition(terminal)
         except FamilyTestHeld:
             # A temporary gate is an ordinary held retry, not a failed attempt.
             execution.progress(0, 0, phase=TaskPhase.RECONCILING)
             execution.transition("retryable_failure", retry_seconds=HELD_RETRY_SECONDS)
-            return
-        execution.transition(terminal)
 
     return Handler(
         WorkQueue.GENERAL,
@@ -357,28 +366,32 @@ def recover_pending():
     """Scheduler sweep: settle queued tickets whose task ended or scope was lost.
 
     A ticket whose durable scope (Admin authority, configuration, Testing
-    draft, template, epoch) is gone is cancelled; one whose task failed without
-    a message is marked failed. Temporary gates leave a queued ticket waiting.
-    The Family link is scrubbed either way. Prepared tickets belong to the outbox.
+    draft, template, epoch) is gone, or whose worker safely cancelled its task
+    (a lastingly ineligible Family), is cancelled; one whose task failed
+    without a message is marked failed. Temporary gates leave a queued ticket
+    waiting. The Family link is scrubbed either way. Prepared tickets belong
+    to the outbox.
     """
+    from parishkit.stewardship.accounts.credential_database import _identity
+
+    _identity("pk_stewardship_scheduler")
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT q.id,public.stewardship_family_test_scope_v1("
+                "SELECT q.id,live.in_scope,task.state "
+                "FROM public.stewardship_family_mail_test q "
+                "JOIN public.stewardship_task_run task ON task.id=q.task_id "
+                "JOIN LATERAL (SELECT public.stewardship_family_test_scope_v1("
                 "q.configuration_id,q.campaign_id,q.template_id,q.requested_by_id,"
-                "q.rehearsal_epoch_id) FROM public.stewardship_family_mail_test q "
-                "WHERE q.state='queued' AND (NOT "
-                "public.stewardship_family_test_scope_v1(q.configuration_id,"
-                "q.campaign_id,q.template_id,q.requested_by_id,q.rehearsal_epoch_id) "
-                "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
-                "WHERE original.id=q.task_id "
-                "AND original.state IN ('failed','cancelled'))) "
+                "q.rehearsal_epoch_id) AS in_scope) live ON true "
+                "WHERE q.state='queued' AND (NOT live.in_scope "
+                "OR task.state IN ('failed','cancelled')) "
                 "ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q"
             )
             found = cursor.fetchall()
-        for identifier, in_scope in found:
+        for identifier, in_scope, task_state in found:
             FamilyMailTest.objects.filter(pk=identifier, state="queued").update(
-                state="failed" if in_scope else "cancelled",
+                state="failed" if in_scope and task_state == "failed" else "cancelled",
                 family_id=None,
                 actor_id=None,
                 correlation_id=current_correlation(),
