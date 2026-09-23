@@ -35,10 +35,13 @@ docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
   IMAGE backup-keygen --destination /keys/stewardship-backup.key
 ```
 
-On the host, install the public key as the `backup_data` credential: write
-the printed line to `credentials/backup_data/credential` under the runtime
-root, owned by UID/GID `10001:10001` in a `0700` directory with mode `0600`,
-as every credential file is. Nothing else reads it.
+The command prints one JSON line, `{"public_key": "..."}`. On the host,
+install the public key as the `backup_data` credential: write only the
+`public_key` value, the bare base64 string on one line (for example the
+output of `jq -r .public_key`), to `credentials/backup_data/credential`
+under the runtime root, owned by UID/GID `10001:10001` in a `0700` directory
+with mode `0600`, as every credential file is. A file holding the whole JSON
+line is refused by every backup. Nothing else reads it.
 
 ## The nightly backup
 

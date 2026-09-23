@@ -26,6 +26,9 @@ validation instructions exposed gaps the runbooks left to the operator:
   `web` on the off-DNS replacement host, and keeps background services
   stopped during the Testing-mode drill's review, since Testing has no
   delivery pause.
+- The backup runbook also corrects how the public key is installed:
+  `backup-keygen` prints a JSON line, and only its `public_key` value belongs
+  in the credential file.
 - The [v1 launch scope](../plans/stewardship/v1-launch.md#schedule) names the
   Slack bot token and channel.
 
@@ -33,3 +36,21 @@ It follows the
 [v1 launch scope](../plans/stewardship/v1-launch.md#v1-process-changes):
 two rounds for documentation, with a correction check after any round that
 validates a finding, each recorded by which sources answered.
+
+## Round 1
+
+Claude only (Codex was out of credits). Five raw findings, two validated
+and corrected:
+
+- Medium: the backup runbook said to write the printed line to the key
+  file, but `backup-keygen` prints a JSON object and the sealer accepts only
+  the bare base64 key, so every backup would refuse. It now says to write
+  only the `public_key` value.
+- Medium: the reinstall procedure left the old deployment's backup cron
+  jobs running and the new one without backups. It now disables the old
+  jobs and sets up the key, cron jobs and first backup for the new one.
+
+The three findings below the cutoff were taken: overridden paths outside
+the runtime root need their own mounts, an unknown Testing delivery must be
+resolved rather than waited for, and this ledger is indexed from the gate
+record. A correction check follows.

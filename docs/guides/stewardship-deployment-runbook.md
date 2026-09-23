@@ -119,7 +119,9 @@ docker run --rm --init --network none --user 10001:10001 --read-only \
   IMAGE collect-static --destination RUNTIME_ROOT/cache/static
 ```
 
-When the runtime root lives in a Docker named volume instead of a host
+A store or credential path that the deployment YAML overrides to a place
+outside the runtime root needs its own read-write bind mount at the same
+path. When the runtime root lives in a Docker named volume instead of a host
 directory, add `--bind-source-root DAEMON_RUNTIME_ROOT` to
 `provision-runtime`, as
 [Initial preparation](stewardship-runtime.md#initial-preparation) says.
@@ -215,7 +217,11 @@ validate the form before the real start date:
 5. Before Production readiness, move the invitation and reminders back to
    their real dates first, then the start date, and wait until every Testing
    message has finished (delivered, failed or cancelled): readiness requires
-   it, and cleanup at activation deletes all Testing data.
+   it, and cleanup at activation deletes all Testing data. A Testing message
+   whose outcome is unknown does not finish by waiting; an Administrator
+   resolves it as the launch runbooks'
+   [unknown-delivery procedure](stewardship-launch-runbooks.md#messages-in-delivery_unknown)
+   describes.
 
 **Browsers.** On a phone and on a desktop browser, check the Family portal's
 code entry, link sign-in, every form step, the review and submit, and
@@ -235,7 +241,8 @@ Provisioning needs a new, empty runtime root and never adopts existing data,
 so a reinstall builds a second deployment beside the old one rather than
 resetting it. Nothing in it deletes data:
 
-1. Stop every service of the old deployment, `postgres` and `valkey`
+1. Disable the old deployment's backup and off-host copy cron jobs, then
+   stop every service of the old deployment, `postgres` and `valkey`
    included, with `stop` on its Compose file and project name. `caddy` must
    be stopped because it holds ports 80 and 443.
 2. Leave the old runtime root, database files and credentials where they
@@ -245,7 +252,12 @@ resetting it. Nothing in it deletes data:
    into a different, empty runtime root, with a new deployment UUID and a
    different project name. Its `caddy` obtains a new certificate on first
    start; Let's Encrypt allows a handful of certificates for one name per
-   week, so avoid reinstalling repeatedly in a short span.
+   week, so avoid reinstalling repeatedly in a short span. Then set up
+   backups for it as the
+   [backup runbook](stewardship-backup-runbook.md#the-key) says: install the
+   same public key as its `backup_data` credential, point the cron jobs at
+   its Compose file, project name and `backups/` directory, and run the first
+   backup, which upgrades and grants require within 24 hours.
 4. Deleting the old runtime root, containers or database is a separate
    decision for the human, never part of the reinstall. The launch scope
    forbids deleting the validation deployment's database without explicit
