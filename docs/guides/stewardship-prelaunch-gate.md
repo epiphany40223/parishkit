@@ -205,8 +205,8 @@ The schema freeze audit installed `2c16c49e` fresh and compared its catalog
 with the committed fresh-install baseline
 (`tests/stewardship/database/schema-baseline.json`): every category
 matched exactly, and PR #106 and #107 changed no schema. PR #109 then
-added two views and changed the inventory view and the closed resolution
-function, before validation had started; its baseline was regenerated from
+added two views and changed the inventory view, the delivery-control guard
+and the closed resolution function, before validation had started; its baseline was regenerated from
 a fresh install of that tree and matches `f79376f7`, the current baseline:
 
 | Category | Count | Digest prefix |
@@ -475,3 +475,11 @@ fetched `origin/main`, whose second parent's tree is the candidate's,
 before the next increment was committed. Merging it recorded evidence only;
 the gate stayed open. This used the standing delivery authority, without
 deployment or release; no real provider was contacted.
+
+### Close-out review round 1
+
+Claude only (Codex was out of credits). Two raw findings, none validated.
+Both Lows were taken: the page's stranded guidance now says Clear applies
+when nothing else is held, submitting or unknown, as the preview guard
+requires; and the freeze paragraph names the delivery-control guard among
+PR #109's schema changes.
