@@ -73,3 +73,12 @@ and corrected:
 The Low below the cutoff was taken: the named-volume case now says to mount
 the volume in place of the runtime root's bind mount. A correction check
 follows.
+
+## Round 3
+
+Claude only (Codex was out of credits). Correction check: three raw
+findings, none validated; the review rounds are closed. The three Lows were
+taken: the reinstall waits for a running backup before `down`, names the
+fixed `backend` and `proxy` subnets and the `runtime_network` setting, and
+no longer offers moving the old root aside, since its rendered files hold
+absolute paths under it.

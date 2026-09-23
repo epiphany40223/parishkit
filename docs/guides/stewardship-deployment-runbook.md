@@ -243,16 +243,21 @@ Provisioning needs a new, empty runtime root and never adopts existing data,
 so a reinstall builds a second deployment beside the old one rather than
 resetting it. Nothing in it deletes data:
 
-1. Disable the old deployment's backup and off-host copy cron jobs, then
-   take the old deployment down with `down` (never `down -v`) on its Compose
-   file and project name. That removes its containers and networks and
-   frees ports 80 and 443 and its fixed internal subnets
-   (`runtime_network`), which a second project could not otherwise create.
+1. Disable the old deployment's backup and off-host copy cron jobs and wait
+   for any run already in progress to finish (`docker ps` shows no
+   `backup-worker` container). Then take the old deployment down with
+   `down` (never `down -v`) on its Compose file and project name. That
+   removes its containers and networks and frees ports 80 and 443 and the
+   fixed subnets of its internal `backend` and `proxy` networks
+   (`172.29.240.0/24` and `172.29.241.0/24` unless the deployment YAML's
+   `runtime_network` sets others), which a second project could not
+   otherwise create.
    Every byte of its data lives in bind mounts under its runtime root, and
    `down` leaves those untouched.
 2. Leave the old runtime root, database files and credentials where they
-   are, or move the root aside under a new name. Never delete its markers
-   to make it look empty.
+   are: its rendered files hold absolute paths under that root, so it can be
+   started or restored again only at that path. Never delete its markers to
+   make it look empty.
 3. Install the new deployment from [First installation](#first-installation)
    into a different, empty runtime root, with a new deployment UUID and a
    different project name. Its `caddy` obtains a new certificate on first
