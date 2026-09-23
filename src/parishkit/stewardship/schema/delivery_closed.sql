@@ -318,20 +318,28 @@ BEGIN
         PERFORM public.stewardship_delivery_closed_settle_v1(intent.id);
     END IF;
     -- A stranded invitation or reminder (stewardship_delivery_stranded) has no
-    -- task left to apply the close policy, so apply it here exactly as the
-    -- worker would: cancel the unsent message as campaign_closed and skip its
-    -- occurrence if still pending or running. A failed occurrence keeps its
-    -- truthful failure. The preview counted these toward clearing the pause.
+    -- task left to apply the close policy, so apply it here: cancel the unsent
+    -- message as campaign_closed, as the mail worker would. Unlike the worker,
+    -- which skips only a pending occurrence, also skip one left running by an
+    -- ended attempt, since no worker will return to it; a failed occurrence
+    -- keeps its truthful failure. The command ID is derived from this command
+    -- and message, so the command identifies every message it cancelled. The
+    -- target row is rechecked, so a row that changed since the view read it is
+    -- left alone rather than failing the command. The preview counted these
+    -- toward clearing the pause.
     WITH cancelled AS (
         UPDATE public.stewardship_outbox_message m SET
             state='cancelled',action='cancel_unsent',version=m.version+1,pause_hold_id=NULL,
-            actor_id=intent.actor_id,correlation_id=intent.correlation_id,command_id=gen_random_uuid(),
+            actor_id=intent.actor_id,correlation_id=intent.correlation_id,
+            command_id=md5('postclose_stranded:'||intent.id::text||':'||m.id::text)::uuid,
             command_digest=encode(sha256(convert_to(jsonb_build_array(
                 'postclose_stranded',intent.id,m.id,m.version)::text,'UTF8')),'hex'),
             reason='campaign_closed',finished_at=statement_timestamp(),
             sealed_substitutions=NULL,sealed_key_id=NULL
         FROM public.stewardship_delivery_stranded stranded
         WHERE stranded.message_id=m.id AND stranded.campaign_id=campaign.id
+            AND m.version=stranded.version AND m.state IN ('pending','retry_wait')
+            AND m.pause_hold_id IS NOT NULL
         RETURNING m.id
     ) INSERT INTO public.stewardship_schedule_effect
         SELECT pg_current_xact_id(),pg_backend_pid(),o.id,o.version,

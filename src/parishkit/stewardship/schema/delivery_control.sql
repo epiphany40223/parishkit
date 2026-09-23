@@ -1,14 +1,28 @@
--- A held invitation or reminder on a closed campaign whose task has ended (its
--- preparation failed) is stranded: no worker will claim it to apply the close
--- policy, and an unsent retry is refused after close. The closed resolution
--- cancels exactly these, so they count toward clearing the pause.
+-- A provider outcome is uncertain while unknown, or while its latest decisive
+-- event is an idempotent retry: the outbox guard keeps that payload and forbids
+-- cancelling it. One owner-only definition serves the inventory and the
+-- stranded rows below, so an uncertain row can never be counted as stranded.
+CREATE VIEW public.stewardship_delivery_uncertain AS
+    SELECT m.id AS message_id FROM public.stewardship_outbox_message m
+    WHERE m.state='delivery_unknown' OR (m.state='retry_wait' AND (
+        SELECT action FROM public.stewardship_outbox_event e WHERE e.message_id=m.id
+            AND e.action IN ('retry_idempotent','retry_unaccepted','fail_unaccepted','accept','authorize_resend')
+        ORDER BY e.version DESC LIMIT 1)='retry_idempotent');
+REVOKE ALL ON public.stewardship_delivery_uncertain FROM PUBLIC;
+
+-- A held invitation or reminder on a closed campaign with no delivery task left
+-- (its preparation failed, or its task otherwise ended) is stranded: no worker
+-- will claim it to apply the close policy, and an unsent retry is refused after
+-- close. The closed resolution cancels exactly these, so they count toward
+-- clearing the pause. Uncertain rows stay unknown and keep blocking the clear.
 CREATE VIEW public.stewardship_delivery_stranded AS
-    SELECT m.id AS message_id,m.campaign_id FROM public.stewardship_outbox_message m
+    SELECT m.id AS message_id,m.campaign_id,m.version FROM public.stewardship_outbox_message m
     JOIN public.stewardship_campaign c ON c.id=m.campaign_id
     WHERE c.state='closed' AND c.delivery_paused
         AND m.mode='production' AND m.routing='production'
         AND m.purpose IN ('initial','reminder')
         AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL
+        AND NOT EXISTS(SELECT 1 FROM public.stewardship_delivery_uncertain u WHERE u.message_id=m.id)
         AND NOT EXISTS(SELECT 1 FROM public.stewardship_task_run t
             WHERE t.root_id=m.task_id
                 AND t.state IN ('queued','running','retry_wait','abandoned'));
@@ -21,10 +35,7 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
         SELECT current_campaign_id AS campaign_id FROM public.stewardship_system_configuration
     ), messages AS (
         SELECT id,version,purpose,state,pause_hold_id,
-            state='delivery_unknown' OR (state='retry_wait' AND (
-                SELECT action FROM public.stewardship_outbox_event e WHERE e.message_id=m.id
-                    AND e.action IN ('retry_idempotent','retry_unaccepted','fail_unaccepted','accept','authorize_resend')
-                ORDER BY e.version DESC LIMIT 1)='retry_idempotent') AS uncertain,
+            EXISTS(SELECT 1 FROM public.stewardship_delivery_uncertain u WHERE u.message_id=m.id) AS uncertain,
             EXISTS(SELECT 1 FROM public.stewardship_delivery_stranded s WHERE s.message_id=m.id) AS stranded
         FROM public.stewardship_outbox_message m
         WHERE campaign_id=(SELECT campaign_id FROM scope)

@@ -2,10 +2,11 @@
 
 # ruff: noqa: F811 -- pytest resolves the imported setup fixture dependencies.
 
+import hashlib
 import json
 from datetime import timedelta
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import DatabaseError, connection
@@ -841,15 +842,17 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
         ).exists()
 
 
-def test_closed_resolution_cancels_a_family_message_whose_preparation_failed(
-    scheduled,
+@pytest.mark.parametrize("decision", ["clear", "cancel"])
+def test_closed_resolution_cancels_a_family_message_with_no_task_left(
+    scheduled, decision
 ):
     """A held invitation with no task left cannot keep a closed pause forever.
 
-    While its task lives, the worker applies the close policy and clearing
-    waits for it. Once preparation has failed, no worker will claim it and an
-    unsent retry is refused after close, so the closed resolution cancels it
-    as campaign_closed, as the worker would, and the pause clears.
+    Preparation can exhaust its attempts while delivery is paused, leaving the
+    held message unsent with no task. Once the campaign closes, no worker will
+    claim it to apply the close policy and an unsent retry is refused, so any
+    closed resolution (an empty clear, or cancelling held reports) cancels it
+    as campaign_closed and the pause clears.
     """
     from parishkit.stewardship.jobs.models import TaskRun
     from parishkit.stewardship.jobs.storage import _status
@@ -859,35 +862,38 @@ def test_closed_resolution_cancels_a_family_message_whose_preparation_failed(
     item = scheduled
     _, family = future_message(item)
     message = OutboxMessage.objects.get(pk=family.message_id)
+    harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
     due = item.campaign.active_configuration.starts_at + timedelta(days=2, hours=12)
     with campaign_clock(due):
+        if decision == "cancel":
+            allocated(harness)
         with web_login():
             _, token = commands.preview_pause(
                 *item.arguments, reason="Hold campaign mail"
             )
             commands.confirm(*item.arguments, token=token)
-        close_campaign(item.campaign, uuid4())
-    closed_at = item.campaign.active_configuration.ends_at + timedelta(hours=1)
-    with campaign_clock(closed_at):
-        inventory = commands.inventory(item.campaign.pk)
-        assert inventory["held"] == 1 and inventory["stranded"] == 0
-        with web_login(), pytest.raises(StaleRecordError):
-            commands.preview_resolution(
-                *item.arguments, reason="Clear", decision="clear", types=[]
-            )
-        # Exhausted preparation: the task fails and the message stays unsent.
+        # Exhausted preparation while paused: the task fails, the message
+        # stays unsent and held. The campaign is open, so nothing is stranded.
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             claim(message)
             act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
         message.refresh_from_db()
         assert message.state == "pending" and message.pause_hold_id is not None
-        assert commands.inventory(item.campaign.pk)["stranded"] == 1
+        assert commands.inventory(item.campaign.pk)["stranded"] == 0
+        close_campaign(item.campaign, uuid4())
+    closed_at = item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    with campaign_clock(closed_at):
+        inventory = commands.inventory(item.campaign.pk)
+        assert inventory["stranded"] == 1 and inventory["unknown"] == 0
         with web_login():
             page = item.browser.get(f"/admin/campaign/{item.campaign.pk}/delivery")
             assert page.status_code == 200
-            assert "whose preparation failed" in page.content.decode()
+            assert "no remaining delivery task" in page.content.decode()
             _, token = commands.preview_resolution(
-                *item.arguments, reason="Clear", decision="clear", types=[]
+                *item.arguments,
+                reason="Resolve closed mail",
+                decision=decision,
+                types=[] if decision == "clear" else ["daily_digest"],
             )
             receipt = commands.confirm(*item.arguments, token=token)
         assert receipt.control_id is not None
@@ -896,9 +902,19 @@ def test_closed_resolution_cancels_a_family_message_whose_preparation_failed(
     message.refresh_from_db()
     assert message.state == "cancelled" and message.reason == "campaign_closed"
     assert message.pause_hold_id is None
+    # The cancellation's command ID names the resolution that made it.
+    assert message.command_id == UUID(
+        hashlib.md5(
+            f"postclose_stranded:{receipt.pk}:{message.pk}".encode()
+        ).hexdigest()
+    )
     occurrence = ScheduleOccurrence.objects.get(pk=message.semantic_key)
     assert occurrence.state == "skipped" and occurrence.reason == "campaign_closed"
     assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+    if decision == "cancel":
+        assert not OutboxMessage.objects.filter(
+            purpose="daily_digest", state="pending"
+        ).exists()
 
 
 def test_closed_paused_receipt_resend_follows_the_held_resolution(
