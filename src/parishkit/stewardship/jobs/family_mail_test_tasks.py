@@ -15,7 +15,6 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
     FamilyCampaign,
-    RehearsalEpoch,
 )
 from parishkit.stewardship.campaigns.models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import (
@@ -23,17 +22,26 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .admission import _scope
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_models import FamilyMailTest
 from .models import TaskRun
+from .phases import TaskPhase
 from .queues import WorkQueue
 from .storage import TaskStatus, _status
 
 TASK_TYPE = "family_mail_test"
 MAX_ATTEMPTS = 5
+# A held ticket is retried without charging its failure budget, like held
+# Family dispatch; the delay only bounds how soon the gate is looked at again.
+HELD_RETRY_SECONDS = 30
+
+
+class FamilyTestHeld(PermissionError):
+    """A temporary gate (restore review, campaign work, stale source) holds work."""
 
 
 def owned_test(status):
@@ -57,30 +65,70 @@ def owned_test(status):
     )
 
 
-def disposition(ticket):
-    """Return completion/cancellation proof, or None while the ticket is still live.
+def scope_live(ticket):
+    """The SQL durable-scope check the web guard, worker guard and sweep share.
 
-    Mode, campaign, configuration and epoch are bound at intake and cannot
-    change back; any of them moving cancels the task. Temporary gates (restore,
-    go-live cleanup, purge) are checked by preparation itself, which refuses
-    and leaves the task claimed for ordinary lease expiry and retry.
+    It covers the active configuration, current Testing draft, the template's
+    schedule use, the requesting Administrator's live authority and the epoch.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_family_test_scope_v1(%s,%s,%s,%s,%s)",
+            [
+                ticket.configuration_id,
+                ticket.campaign_id,
+                ticket.template_id,
+                ticket.requested_by_id,
+                ticket.rehearsal_epoch_id,
+            ],
+        )
+        return cursor.fetchone() == (True,)
+
+
+def disposition(ticket, *, source_check=False):
+    """Return completion/cancellation proof, None while live, or raise a hold.
+
+    Durable losses (mode, campaign, configuration, epoch, template, Admin
+    authority, lasting Family ineligibility) cancel. Temporary gates (restore
+    review, campaign work, dirty or stale source) raise FamilyTestHeld so the
+    worker defers without charging its budget. Source checks reload the Family
+    row and belong to claim, recovery and the preparation itself.
     """
     require_work_order()
     if ticket.state == "prepared":
         return "complete"
-    if ticket.state != "queued":
+    if ticket.state != "queued" or not scope_live(ticket):
         return "safe_cancel"
     runtime = SystemConfiguration.objects.get()
-    population = CampaignCredentialState.objects.filter(
-        campaign_id=ticket.campaign_id
-    ).first()
     if (
-        runtime.mode != "testing"
-        or runtime.current_campaign_id != ticket.campaign_id
-        or runtime.active_configuration_id != ticket.configuration_id
-        or population is None
-        or population.rehearsal_epoch_id != ticket.rehearsal_epoch_id
+        runtime.restore_review_required
+        or CampaignWorkGate.objects.filter(campaign_id=ticket.campaign_id)
+        .exclude(state="released")
+        .exists()
     ):
+        raise FamilyTestHeld("Family test awaits current campaign authority.")
+    if not source_check:
+        return None
+    population = CampaignCredentialState.objects.get(campaign_id=ticket.campaign_id)
+    if (
+        population.population_dirty
+        or not SourceCurrent.objects.filter(
+            snapshot_id=population.source_snapshot_id,
+            generation=population.source_generation,
+        ).exists()
+    ):
+        raise FamilyTestHeld("Family test awaits source reconciliation.")
+    # After a clean, current reconciliation the Family's ineligibility is not
+    # a wait; its real mail would not be sent either, so the test is cancelled.
+    if not FamilyCampaign.objects.filter(
+        pk=ticket.family_id,
+        campaign_id=ticket.campaign_id,
+        source_generation=population.source_generation,
+        active=True,
+        portal_eligible=True,
+        email_eligible=True,
+        email_deliverable=True,
+    ).exists():
         return "safe_cancel"
     return None
 
@@ -104,29 +152,21 @@ def prepare_family_test(ticket, claim, *, general, mac, public, public_origin):
 
     require_work_order()
     task = lock_task_claim(claim)
-    if owned_test(_status(task)).pk != ticket.pk or disposition(ticket) is not None:
+    if (
+        owned_test(_status(task)).pk != ticket.pk
+        or disposition(ticket, source_check=True) is not None
+    ):
         raise PermissionError("Family test preparation is not currently admitted.")
     scope = _scope(ticket.campaign_id)
-    campaign, runtime = scope.campaign, scope.runtime
-    population = CampaignCredentialState.objects.select_for_update().get(
-        campaign=campaign
-    )
-    if (
-        campaign.state != "draft"
-        or runtime.restore_review_required
-        or population.go_live_gate
-        or CampaignWorkGate.objects.filter(campaign=campaign)
-        .exclude(state="released")
-        .exists()
-        or not RehearsalEpoch.objects.filter(
-            pk=ticket.rehearsal_epoch_id, campaign=campaign, state="active"
-        ).exists()
-    ):
-        raise PermissionError("Family test preparation is held.")
+    campaign = scope.campaign
+    CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
     family = FamilyCampaign.objects.get(pk=ticket.family_id, campaign=campaign)
-    source = load_family_mail_source(family)
+    try:
+        source = load_family_mail_source(family)
+    except PermissionError:
+        raise FamilyTestHeld("Family test awaits source reconciliation.") from None
     if not source.recipients.status.email_deliverable:
-        raise PermissionError("Family recipients require current reconciliation.")
+        raise FamilyTestHeld("Family recipients require current reconciliation.")
 
     def admit_credentials(candidate, purpose):
         """Issue a credential only for this campaign under this exact live claim."""
@@ -215,7 +255,21 @@ def admit_test(action, status):
     ticket = owned_test(status)
     if action in {"lease_expired", "recovery_hint"}:
         return True
-    terminal = disposition(ticket)
+    # A held deferral and its bookkeeping must succeed while the gate holds;
+    # the fenced claim, not the scope, protects these transitions.
+    if action in {"heartbeat", "progress", "retryable_failure"}:
+        return True
+    try:
+        terminal = disposition(
+            ticket,
+            source_check=action not in {"complete", "recovery_complete", "effect"},
+        )
+    except FamilyTestHeld:
+        # A held ticket is neither claimed nor settled; the hint is rescanned
+        # later. A hold appearing mid-execution reaches execute as a deferral.
+        if action in {"hint", "claim"}:
+            return False
+        raise
     if action in {"complete", "recovery_complete"}:
         return terminal == "complete"
     if action in {"safe_cancel", "recovery_cancel"}:
@@ -223,24 +277,33 @@ def admit_test(action, status):
     if action in {"recovery_retry", "recovery_fail"}:
         plan = recover_test(status)
         return plan is not None and plan.action == action
-    return action in {"hint", "claim", "effect", "heartbeat", "progress"}
+    return action in {"hint", "claim", "effect"}
+
+
+def _attempts(status):
+    """Exclude journaled holds from the bounded budget, as Family dispatch does."""
+    from .family_mail_delivery_tasks import preparation_attempts
+
+    return preparation_attempts(status)
 
 
 def recover_test(status):
     """Only a committed receipt completes abandoned work; no provider is involved."""
     if status.state != "abandoned":
         raise PermissionError("Family test recovery requires abandoned work.")
-    terminal = disposition(owned_test(status))
+    try:
+        terminal = disposition(owned_test(status), source_check=True)
+    except FamilyTestHeld:
+        return None
     if terminal is not None:
         return RecoveryPlan(
             "recovery_complete" if terminal == "complete" else "recovery_cancel"
         )
+    attempts = _attempts(status)
     return (
         RecoveryPlan("recovery_fail")
-        if status.attempt >= MAX_ATTEMPTS
-        else RecoveryPlan(
-            "recovery_retry", min(30 * 2 ** max(status.attempt - 1, 0), 600)
-        )
+        if attempts >= MAX_ATTEMPTS
+        else RecoveryPlan("recovery_retry", min(30 * 2 ** max(attempts - 1, 0), 600))
     )
 
 
@@ -261,18 +324,24 @@ def family_test_handler(
             raise PermissionError("The scheduler cannot prepare Family tests.")
         from .ownership import lock_task_claim
 
-        with execution.effect():
-            ticket = owned_test(_status(lock_task_claim(execution.claim)))
-            terminal = disposition(ticket)
-            if terminal is None:
-                terminal = prepare_family_test(
-                    ticket,
-                    execution.claim,
-                    general=general,
-                    mac=mac,
-                    public=public,
-                    public_origin=public_origin,
-                )
+        try:
+            with execution.effect():
+                ticket = owned_test(_status(lock_task_claim(execution.claim)))
+                terminal = disposition(ticket, source_check=True)
+                if terminal is None:
+                    terminal = prepare_family_test(
+                        ticket,
+                        execution.claim,
+                        general=general,
+                        mac=mac,
+                        public=public,
+                        public_origin=public_origin,
+                    )
+        except FamilyTestHeld:
+            # A temporary gate is an ordinary held retry, not a failed attempt.
+            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+            execution.transition("retryable_failure", retry_seconds=HELD_RETRY_SECONDS)
+            return
         execution.transition(terminal)
 
     return Handler(
@@ -285,20 +354,21 @@ def family_test_handler(
 
 
 def recover_pending():
-    """Scheduler sweep: settle queued tickets whose task ended or scope went stale.
+    """Scheduler sweep: settle queued tickets whose task ended or scope was lost.
 
-    A ticket whose Admin, configuration, Testing mode or epoch is no longer live
-    is cancelled; one whose task failed without a message is marked failed. The
-    Family link is scrubbed either way. Prepared tickets belong to the outbox.
+    A ticket whose durable scope (Admin authority, configuration, Testing
+    draft, template, epoch) is gone is cancelled; one whose task failed without
+    a message is marked failed. Temporary gates leave a queued ticket waiting.
+    The Family link is scrubbed either way. Prepared tickets belong to the outbox.
     """
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT q.id,public.stewardship_family_test_live_v1(q.configuration_id,"
-                "q.campaign_id,q.template_id,q.requested_by_id,q.rehearsal_epoch_id) "
-                "FROM public.stewardship_family_mail_test q "
+                "SELECT q.id,public.stewardship_family_test_scope_v1("
+                "q.configuration_id,q.campaign_id,q.template_id,q.requested_by_id,"
+                "q.rehearsal_epoch_id) FROM public.stewardship_family_mail_test q "
                 "WHERE q.state='queued' AND (NOT "
-                "public.stewardship_family_test_live_v1(q.configuration_id,"
+                "public.stewardship_family_test_scope_v1(q.configuration_id,"
                 "q.campaign_id,q.template_id,q.requested_by_id,q.rehearsal_epoch_id) "
                 "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
                 "WHERE original.id=q.task_id "
@@ -306,9 +376,9 @@ def recover_pending():
                 "ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q"
             )
             found = cursor.fetchall()
-        for identifier, live in found:
+        for identifier, in_scope in found:
             FamilyMailTest.objects.filter(pk=identifier, state="queued").update(
-                state="failed" if live else "cancelled",
+                state="failed" if in_scope else "cancelled",
                 family_id=None,
                 actor_id=None,
                 correlation_id=current_correlation(),

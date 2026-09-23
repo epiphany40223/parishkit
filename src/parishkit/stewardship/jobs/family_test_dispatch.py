@@ -6,8 +6,6 @@ not checked: the Family's Testing credential exists only while the rehearsal
 epoch is active, and the Family portal keeps its own date gates.
 """
 
-from uuid import UUID
-
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
@@ -59,15 +57,29 @@ def bound_family_test(message):
     return ticket
 
 
+def family_test_template(message):
+    """The stable template record the Admin ticket named; dispatch re-renders it."""
+    ticket = bound_family_test(message)
+    return ContentVersion.objects.values_list("record_id", flat=True).get(
+        pk=ticket.template_id
+    )
+
+
 def family_test_disposition(message):
-    """Cancel a test whose Testing scope is gone; hold on temporary gates only."""
+    """Cancel a test whose scope is gone for good; hold only on temporary gates.
+
+    An unsent test that nothing will ever settle would block Testing cleanup,
+    so every durable loss (mode, campaign, epoch, template record, lasting
+    Family ineligibility after a clean reconciliation) is a cancellation.
+    """
     from .family_mail_dispatch import FamilyDeliveryHeld
 
     ticket = bound_family_test(message)
     scope = _scope(message.campaign_id)
     runtime, campaign = scope.runtime, scope.campaign
     population = CampaignCredentialState.objects.filter(campaign=campaign).first()
-    # Mode, campaign, draft state and epoch are irreversible for this message.
+    # Mode, campaign, draft state and epoch are irreversible for this message,
+    # as is a configuration that no longer carries the ticket's template record.
     if (
         runtime.mode != "testing"
         or runtime.current_campaign_id != campaign.pk
@@ -76,6 +88,12 @@ def family_test_disposition(message):
         or population.rehearsal_epoch_id != ticket.rehearsal_epoch_id
         or not RehearsalEpoch.objects.filter(
             pk=ticket.rehearsal_epoch_id, campaign=campaign, state="active"
+        ).exists()
+        or not ContentVersion.objects.filter(
+            configuration_id=runtime.active_configuration_id,
+            campaign_id=campaign.pk,
+            kind="email",
+            record_id=family_test_template(message),
         ).exists()
     ):
         return "scope_replaced"
@@ -95,15 +113,18 @@ def family_test_disposition(message):
         ).exists()
     ):
         raise FamilyDeliveryHeld("Family test awaits source reconciliation.")
+    # The population is clean and current, so ineligibility is not a wait for
+    # reconciliation: the Family's real mail would not be sent either.
     if not FamilyCampaign.objects.filter(
         pk=message.family_id,
         campaign=campaign,
         source_generation=population.source_generation,
         active=True,
+        portal_eligible=True,
         email_eligible=True,
         email_deliverable=True,
     ).exists():
-        raise FamilyDeliveryHeld("Family test awaits deliverable source recipients.")
+        return "family_ineligible"
     if (
         OutboxMessage.objects.filter(
             family_id=message.family_id,
@@ -118,15 +139,3 @@ def family_test_disposition(message):
     if message.not_before > database_now():
         raise FamilyDeliveryHeld("Family test retry is not due.")
     return None
-
-
-def family_test_template(message):
-    """The stable template record the Admin ticket named; dispatch re-renders it."""
-    ticket = bound_family_test(message)
-    return UUID(
-        str(
-            ContentVersion.objects.values_list("record_id", flat=True).get(
-                pk=ticket.template_id
-            )
-        )
-    )

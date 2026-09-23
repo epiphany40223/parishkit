@@ -33,6 +33,7 @@ from .family_mail_dispatch import (
     FamilyDeliveryHeld,
     begin_submission,
     bound_dispatch,
+    cancel_unsent,
     disposition,
     finish_submission,
     retry_delay,
@@ -346,7 +347,10 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
                 )
             if attempt >= MAX_ATTEMPTS:
                 LOG.error("Family mail preparation failed after bounded retries.")
-                execution.transition("permanent_failure")
+                if _settle_failed_family_test(execution):
+                    execution.transition("safe_cancel")
+                else:
+                    execution.transition("permanent_failure")
             else:
                 execution.transition(
                     "retryable_failure", retry_seconds=retry_delay(attempt)
@@ -368,6 +372,25 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
         execution.transition(
             "complete" if status.state.value == "delivered" else "permanent_failure"
         )
+
+
+def _settle_failed_family_test(execution):
+    """A chosen-Family test that cannot be prepared is cancelled, never left unsent.
+
+    Its key is an Admin ticket, not a schedule occurrence: no planner, retry or
+    Admin resolution would ever settle a pending test, and an unsent Testing
+    message blocks Testing cleanup for good. Scheduled mail keeps its ordinary
+    failed task, which planning and Admin retry still own.
+    """
+    with execution.control.lock, work_transaction():
+        message = bound_dispatch(_status(lock_task_claim(execution.claim)))
+        if message.purpose != "family_test" or message.state not in {
+            "pending",
+            "retry_wait",
+        }:
+            return False
+        cancel_unsent(message.pk, execution.claim, reason="preparation_failed")
+    return True
 
 
 def _finish_no_send(execution):
