@@ -46,6 +46,18 @@ def binding(**changes):
         signing.dumps("private", salt=intake.SALT),
         binding() + "changed",
     ],
+    # Signed tokens embed random UUIDs and a timestamp; fixed ids keep test
+    # collection identical between the host and the image (test_compose).
+    ids=[
+        "missing",
+        "oversized",
+        "no-families",
+        "integer-family",
+        "extra-field",
+        "missing-keys",
+        "not-a-mapping",
+        "bad-signature",
+    ],
 )
 def test_malformed_or_forged_preview_never_reaches_the_database(token):
     """Shape and signature are checked before any session or campaign read."""

@@ -21,20 +21,24 @@ CREATE INDEX "stewardship_family_mail_test_template_id_6b771ae2" ON "stewardship
 CREATE FUNCTION public.stewardship_family_mail_test_mutable_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
-    IF NEW.id IS DISTINCT FROM OLD.id OR NEW.created_at IS DISTINCT FROM OLD.created_at
-       OR NEW.campaign_id IS DISTINCT FROM OLD.campaign_id
-       OR NEW.configuration_id IS DISTINCT FROM OLD.configuration_id
-       OR NEW.template_id IS DISTINCT FROM OLD.template_id
-       OR NEW.requested_by_id IS DISTINCT FROM OLD.requested_by_id
-       OR NEW.request_key IS DISTINCT FROM OLD.request_key
-       OR NEW.sequence IS DISTINCT FROM OLD.sequence
-       OR NEW.reauthenticated_at IS DISTINCT FROM OLD.reauthenticated_at
-       OR NEW.rehearsal_epoch_id IS DISTINCT FROM OLD.rehearsal_epoch_id
-       OR NEW.task_id IS DISTINCT FROM OLD.task_id
-       OR (OLD.outbox_id IS NOT NULL AND NEW.outbox_id IS DISTINCT FROM OLD.outbox_id) THEN
+    -- Written in the quoted per-column form every generated mutable guard
+    -- uses, which test_all_concrete_mutable_records_have_enabled_guard checks
+    -- against the model's immutable and write-once fields.
+    IF NEW."id" IS DISTINCT FROM OLD."id"
+       OR NEW."created_at" IS DISTINCT FROM OLD."created_at"
+       OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id"
+       OR NEW."configuration_id" IS DISTINCT FROM OLD."configuration_id"
+       OR NEW."template_id" IS DISTINCT FROM OLD."template_id"
+       OR NEW."requested_by_id" IS DISTINCT FROM OLD."requested_by_id"
+       OR NEW."request_key" IS DISTINCT FROM OLD."request_key"
+       OR NEW."sequence" IS DISTINCT FROM OLD."sequence"
+       OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at"
+       OR NEW."rehearsal_epoch_id" IS DISTINCT FROM OLD."rehearsal_epoch_id"
+       OR NEW."task_id" IS DISTINCT FROM OLD."task_id"
+       OR (OLD."outbox_id" IS NOT NULL AND NEW."outbox_id" IS DISTINCT FROM OLD."outbox_id") THEN
         RAISE EXCEPTION 'Record identity and bindings are immutable' USING ERRCODE='23514';
     END IF;
-    IF NEW.version IS DISTINCT FROM OLD.version+1 THEN
+    IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
         RAISE EXCEPTION 'Every update must advance the record version' USING ERRCODE='23514';
     END IF;
     NEW.updated_at:=statement_timestamp();
