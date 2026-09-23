@@ -414,6 +414,7 @@ def test_cli_refuses_missing_config_without_touching_the_deployment(
         (load_check.LoadCheckRefused("private portal detail"), "load check refused"),
         (PermissionError("private admission detail"), "load check refused"),
         (load_check.SourceChanged("private generation"), "source changed during"),
+        (load_check.PortalClosed("private portal"), "portal closed during"),
         (StartupBusy("private path"), "offline maintenance"),
     ],
 )
@@ -443,6 +444,7 @@ def test_cli_classifies_each_outcome_with_its_own_generic_line(
         "stopped by an unexpected error": [load_check.Event.TASK_FAILED],
         "load check refused": [load_check.Event.STARTUP_REJECTED],
         "source changed during": [load_check.Event.FACT_DRIFT],
+        "portal closed during": [load_check.Event.STARTUP_REJECTED],
         "offline maintenance": [],
     }
     assert events == expected[line]
@@ -577,3 +579,77 @@ def test_source_drift_is_refused_not_published(monkeypatch):
     monkeypatch.setattr(load_check, "current_source", compacted)
     with pytest.raises(load_check.SourceChanged):
         load_check.require_same_source(source)
+
+
+def test_summary_half_rule_tolerates_skips_only_while_half_is_measured():
+    """Skipped Families never fail a phase by themselves, unless too few remain."""
+    skipped = load_check.SKIPPED
+    assert load_check.summarize([0.1, skipped], target=2.0)["pass"]
+    assert load_check.summarize([0.1, 0.1, skipped], target=2.0)["pass"]
+    assert not load_check.summarize([0.1, skipped, skipped], target=2.0)["pass"]
+    mostly = load_check.summarize([0.1] + [skipped] * 3, target=2.0)
+    assert mostly["skipped"] == 3 and mostly["runs"] == 4 and not mostly["pass"]
+    assert not load_check.summarize([skipped, skipped], target=2.0)["pass"]
+
+
+def test_form_read_distinguishes_a_closed_portal_from_one_lost_family(monkeypatch):
+    """A closed portal ends the run; one ineligible Family is only skipped."""
+    from contextlib import nullcontext
+
+    from parishkit.stewardship.responses import source_inputs
+
+    reads = []
+    monkeypatch.setattr(load_check, "_guard", lambda campaign_id: nullcontext())
+    monkeypatch.setattr(
+        source_inputs, "load_census_inputs", lambda *args, **kwargs: reads.append(args)
+    )
+    scope = SimpleNamespace(campaign=SimpleNamespace(pk="campaign"))
+    source = load_check.Source("snapshot", 1)
+    monkeypatch.setattr(load_check, "portal_open", lambda store, campaign_id: True)
+    monkeypatch.setattr(load_check, "family_admitted", lambda campaign_id, duid: True)
+    assert load_check.time_form_inputs("store", scope, source, {}, 7) >= 0
+    assert reads == [("snapshot", 7)]
+    monkeypatch.setattr(load_check, "family_admitted", lambda campaign_id, duid: False)
+    assert (
+        load_check.time_form_inputs("store", scope, source, {}, 7) is load_check.SKIPPED
+    )
+    monkeypatch.setattr(load_check, "portal_open", lambda store, campaign_id: False)
+    with pytest.raises(load_check.PortalClosed):
+        load_check.time_form_inputs("store", scope, source, {}, 7)
+    # The closure propagates through both phases rather than becoming a skip.
+    with pytest.raises(load_check.PortalClosed):
+        load_check.phase(
+            [7],
+            lambda duid: load_check.time_form_inputs("store", scope, source, {}, duid),
+            load_check.Stopper(FAR),
+        )
+    with pytest.raises(load_check.PortalClosed):
+        load_check.run_threads(
+            [7, 8],
+            2,
+            lambda duid: load_check.time_form_inputs("store", scope, source, {}, duid),
+            release=lambda: None,
+            stop=load_check.Stopper(FAR),
+        )
+    assert len(reads) == 1
+
+
+def test_unavailable_admission_guard_is_a_refusal_not_an_error(monkeypatch):
+    """A purging campaign or purge-lock timeout refuses the check before timing."""
+    from contextlib import nullcontext
+
+    from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+
+    class Unavailable:
+        def __enter__(self):
+            raise ReadUnavailable("private campaign detail")
+
+        def __exit__(self, *error):
+            return False
+
+    monkeypatch.setattr(load_check, "bounded_read", nullcontext)
+    monkeypatch.setattr(load_check, "current_campaign_id", lambda: "campaign")
+    monkeypatch.setattr(load_check, "background_counts", dict)
+    monkeypatch.setattr(load_check, "_guard", lambda campaign_id: Unavailable())
+    with pytest.raises(load_check.LoadCheckRefused):
+        load_check.measure(RuntimeBudget(), "store", samples=1, concurrency=1)

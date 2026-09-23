@@ -151,6 +151,10 @@ class SourceChanged(RuntimeError):
     """The promoted source moved during the run, so the samples mix populations."""
 
 
+class PortalClosed(RuntimeError):
+    """The Testing Family portal closed mid-run; later samples measure nothing."""
+
+
 # Pure helpers: option admission, sampling, summaries and output safety. None
 # of these touch Django, so the unit tests exercise them with plain values.
 
@@ -232,13 +236,17 @@ def nearest_rank(values, quantile):
 def summarize(timings, *, target):
     """Describe one measured operation: p50/p95/max seconds, outcomes and verdict.
 
-    A ``None`` timing is a read that was unavailable; ``SKIPPED`` a sample the
-    portal no longer admitted; ``NOT_RUN`` a sample the bounded stop never
-    reached. Any unavailable or unreached sample fails the operation: a
-    refused or unmeasured page is worse than a slow one.
+    A ``None`` timing is a read that was unavailable; ``SKIPPED`` a sample
+    whose Family alone lost its eligibility; ``NOT_RUN`` a sample the bounded
+    stop never reached. Any unavailable or unreached sample fails the
+    operation: a refused or unmeasured page is worse than a slow one. Skips
+    are tolerated only while at least half of the chosen samples were still
+    measured (the half rule); fewer measured samples cannot describe the
+    population, so the operation fails.
     """
     measured = sorted(value for value in timings if type(value) in {int, float})
     not_run = timings.count(NOT_RUN)
+    half_measured = 2 * len(measured) >= len(timings)
     result = {
         "runs": len(timings) - not_run,
         "failures": timings.count(None),
@@ -251,6 +259,7 @@ def summarize(timings, *, target):
     }
     result["pass"] = (
         bool(measured)
+        and half_measured
         and result["failures"] == 0
         and not_run == 0
         and result["p95"] < target
@@ -623,16 +632,18 @@ def portal_open(store, campaign_id):
     return True
 
 
-def family_admitted(campaign_id, family_duid, generation):
-    """A sampled Family is still one the form would serve from this population."""
+def family_admitted(campaign_id, family_duid):
+    """A sampled Family is still one the form would serve.
+
+    This is exactly the Family predicate of the login and form admission
+    (``campaign`` and ``portal_eligible``); the source generation is not
+    compared there either, so a promotion awaiting reconciliation does not
+    skip every Family. Whole-run source coherence is checked separately.
+    """
     from .campaigns.credential_models import FamilyCampaign
 
     return FamilyCampaign.objects.filter(
-        campaign_id=campaign_id,
-        family_duid=family_duid,
-        active=True,
-        portal_eligible=True,
-        source_generation=generation,
+        campaign_id=campaign_id, family_duid=family_duid, portal_eligible=True
     ).exists()
 
 
@@ -711,8 +722,9 @@ def time_form_inputs(store, scope, source, arguments, family_duid):
     """Time one Family's form inputs read inside its own read guard.
 
     Inside the guard the portal and the Family are re-admitted first, as the
-    form does before it reads; a Family no longer admitted is skipped, not
-    counted as a slow or failed page.
+    form does before it reads. A closed portal ends the whole run: nothing
+    after it could be measured, so no verdict may be published. A single
+    Family no longer admitted is skipped, not counted as a slow or failed page.
     """
     from .responses.source_inputs import load_census_inputs
 
@@ -720,9 +732,9 @@ def time_form_inputs(store, scope, source, arguments, family_duid):
 
     def read():
         with _guard(campaign_id):
-            if not portal_open(store, campaign_id) or not family_admitted(
-                campaign_id, family_duid, source.generation
-            ):
+            if not portal_open(store, campaign_id):
+                raise PortalClosed("The Testing Family portal closed mid-run.")
+            if not family_admitted(campaign_id, family_duid):
                 return SKIPPED
             load_census_inputs(source.snapshot_id, family_duid, **arguments)
 
@@ -863,6 +875,8 @@ def background_counts():
 
 def measure(budget, store, *, samples, concurrency):
     """Run every measurement against the open Testing campaign, bounded in time."""
+    from .campaigns.read_guards import ReadUnavailable
+
     headroom = web_headroom(budget)
     if headroom < 1:
         raise LoadCheckRefused("The web login has no spare connection for a reader.")
@@ -871,11 +885,16 @@ def measure(budget, store, *, samples, concurrency):
     with bounded_read():
         campaign_id = current_campaign_id()
         start = background_counts()
-    with _guard(campaign_id):
-        scope = open_scope(store, campaign_id)
-        source = current_source()
-        rows = family_campaign_rows(campaign_id)
-        households = household_sizes(campaign_id, source.snapshot_id)
+    try:
+        with _guard(campaign_id):
+            scope = open_scope(store, campaign_id)
+            source = current_source()
+            rows = family_campaign_rows(campaign_id)
+            households = household_sizes(campaign_id, source.snapshot_id)
+    except ReadUnavailable:
+        # Admission, not measurement: a purging campaign or a lock timeout on
+        # the purge barrier means the check cannot start, so it is refused.
+        raise LoadCheckRefused("Campaign reads are unavailable.") from None
     chosen = choose_samples(households, samples)
     read = partial(time_form_inputs, store, scope, source, form_input_arguments(scope))
     serial = phase(chosen, read, Stopper(deadline))
@@ -971,6 +990,13 @@ def execute_load_check(args):
     except SourceChanged:
         emit(Event.FACT_DRIFT, level=logging.WARNING)
         print("ERROR: source changed during the check; run it again", file=sys.stderr)
+        return 2
+    except PortalClosed:
+        emit(Event.STARTUP_REJECTED, level=logging.WARNING)
+        print(
+            "ERROR: the Testing Family portal closed during the check; run it again",
+            file=sys.stderr,
+        )
         return 2
     except (ConfigError, PermissionError) as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
