@@ -57,3 +57,19 @@ The three findings below the cutoff were taken: overridden paths outside
 the runtime root need their own mounts, an unknown Testing delivery must be
 resolved rather than waited for, and this ledger is indexed from the gate
 record. A correction check follows.
+
+## Round 2
+
+Claude only (Codex was out of credits). Two raw findings, one validated
+and corrected:
+
+- High: the reinstall only stopped the old project, which keeps its
+  networks, and the rendered topology gives the internal networks fixed
+  subnets, so the new project's first start would have failed with an
+  overlapping address pool. The old project is now taken `down` (never
+  `down -v`), which removes only containers and networks; its data stays in
+  the runtime root's bind mounts.
+
+The Low below the cutoff was taken: the named-volume case now says to mount
+the volume in place of the runtime root's bind mount. A correction check
+follows.

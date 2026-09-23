@@ -122,7 +122,9 @@ docker run --rm --init --network none --user 10001:10001 --read-only \
 A store or credential path that the deployment YAML overrides to a place
 outside the runtime root needs its own read-write bind mount at the same
 path. When the runtime root lives in a Docker named volume instead of a host
-directory, add `--bind-source-root DAEMON_RUNTIME_ROOT` to
+directory, mount that volume in place of the runtime root's bind mount
+(`--mount type=volume,source=VOLUME,target=` a parent of the configured
+root, in both forms) and add `--bind-source-root DAEMON_RUNTIME_ROOT` to
 `provision-runtime`, as
 [Initial preparation](stewardship-runtime.md#initial-preparation) says.
 
@@ -242,9 +244,12 @@ so a reinstall builds a second deployment beside the old one rather than
 resetting it. Nothing in it deletes data:
 
 1. Disable the old deployment's backup and off-host copy cron jobs, then
-   stop every service of the old deployment, `postgres` and `valkey`
-   included, with `stop` on its Compose file and project name. `caddy` must
-   be stopped because it holds ports 80 and 443.
+   take the old deployment down with `down` (never `down -v`) on its Compose
+   file and project name. That removes its containers and networks and
+   frees ports 80 and 443 and its fixed internal subnets
+   (`runtime_network`), which a second project could not otherwise create.
+   Every byte of its data lives in bind mounts under its runtime root, and
+   `down` leaves those untouched.
 2. Leave the old runtime root, database files and credentials where they
    are, or move the root aside under a new name. Never delete its markers
    to make it look empty.
@@ -258,8 +263,8 @@ resetting it. Nothing in it deletes data:
    same public key as its `backup_data` credential, point the cron jobs at
    its Compose file, project name and `backups/` directory, and run the first
    backup, which upgrades and grants require within 24 hours.
-4. Deleting the old runtime root, containers or database is a separate
-   decision for the human, never part of the reinstall. The launch scope
+4. Deleting the old runtime root or database is a separate decision for
+   the human, never part of the reinstall. The launch scope
    forbids deleting the validation deployment's database without explicit
    authorization.
 
