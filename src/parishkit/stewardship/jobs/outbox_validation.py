@@ -77,15 +77,27 @@ class DeliveryIdentity:
             "initial",
             "reminder",
             "receipt",
+            "family_test",
             "daily_digest",
             "weekly_digest",
             "operational",
             "security_event",
         ):
             raise ValueError("Invalid delivery identity.")
-        family_purpose = self.purpose in ("initial", "reminder", "receipt")
+        family_purpose = self.purpose in (
+            "initial",
+            "reminder",
+            "receipt",
+            "family_test",
+        )
         if (self.family_id is not None) != family_purpose:
             raise ValueError("Invalid delivery Family binding.")
+        # A chosen-Family test send exists only in Testing: it carries that
+        # Family's rehearsal credential and can never be a Production delivery.
+        if self.purpose == "family_test" and (
+            self.mode != "testing" or self.credential_namespace != "rehearsal"
+        ):
+            raise ValueError("Invalid delivery identity.")
         if self.purpose in ("operational", "security_event"):
             valid = self.routing == "operational"
         else:

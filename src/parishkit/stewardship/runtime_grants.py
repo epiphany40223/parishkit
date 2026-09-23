@@ -111,6 +111,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_postclose_resolution",
         "stewardship_task_run",
         "stewardship_family_mail_preparation",
+        "stewardship_family_mail_test",
         "stewardship_task_event",
         "stewardship_audit_event",
         "stewardship_audit_context",
@@ -404,6 +405,7 @@ def runtime_grants(role, *, target=None):
         add_setup_mail_cleanup_grants(tables, columns, read_payload=True)
         tables["stewardship_setup_mail_delivery"].add("INSERT")
         tables["stewardship_campaign_mail_test"].add("INSERT")
+        tables["stewardship_family_mail_test"].add("INSERT")
         tables["stewardship_setup_slack_delivery"].add("INSERT")
         tables["stewardship_setup_config_intent"].add("INSERT")
         tables["stewardship_setup_readiness_binding"] = {"SELECT", "INSERT"}

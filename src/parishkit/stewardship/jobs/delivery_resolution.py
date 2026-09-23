@@ -43,6 +43,11 @@ def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
     if message is not None and message.purpose == "receipt":
         return _prepare_receipt(message)
+    if message is not None and message.purpose == "family_test":
+        # A chosen-Family test is Testing-only evidence; it is never resent.
+        # Cleanup at go-live deletes it, so leaving it unsettled has no cost
+        # beyond blocking cleanup until an Admin records the outcome.
+        raise PermissionError("Family tests cannot be resent or retried.")
     if message is not None and message.purpose in {"daily_digest", "weekly_digest"}:
         return _prepare_digest(message)
     if (
@@ -82,7 +87,7 @@ def _prepare(message, *, general, public, public_origin):
     identity = _identity(message)
     render = current_render(
         identity,
-        occurrence,
+        UUID(occurrence.revision.values["template_version"]),
         scope,
         source,
         public_origin=public_origin,

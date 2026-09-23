@@ -119,3 +119,23 @@ portal-eligible Families), a database error in the admission step is a
 refusal and one after timing asks for a rerun, a population with no
 portal-eligible Family is refused rather than failed, and a comment about
 the fixed status words is corrected.
+
+## Protected delivery
+
+PR #112 delivered candidate `86d41e20`, two logical commits plus the
+receipt of PR #111, whose content is the retained review history on
+`pr/stewardship-load-check-reviewed` (`6b2b8375`), squashed with identical
+content, plus exactly that receipt; the load check's pure and PostgreSQL
+tests and lint passed on that tree, and the candidate tree `8a24dfa8` is
+the landed tree. Claude and Codex both answered each of the three rounds
+above; rounds 1 and 2 validated six Mediums and one Medium, all corrected,
+and round 3 validated none. The pull request was marked ready before the
+candidate was pushed. Exact-head ready-candidate CI `35820501999` and DCO
+passed all 25 checks, from 04:58:35 to 05:19:01 UTC on September 23, 2026
+(20 minutes 26 seconds). Earlier runs on superseded draft heads are not
+counted as acceptance. `origin/main` had no intervening commits since the
+candidate's base `19b2a3f0`. Protected auto-merge landed as `fae00f93` at
+05:19:50 UTC and was verified on freshly fetched `origin/main`, whose second
+parent's tree is the candidate's, before the next increment was committed.
+This used the standing delivery authority, without deployment or release;
+no real provider was contacted.

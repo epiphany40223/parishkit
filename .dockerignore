@@ -23,6 +23,7 @@
 !src/parishkit/stewardship/schema/backup.sql
 !src/parishkit/stewardship/schema/delivery.sql
 !src/parishkit/stewardship/schema/mail_health.sql
+!src/parishkit/stewardship/schema/family_mail_tests.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

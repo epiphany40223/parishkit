@@ -47,6 +47,19 @@ pytestmark = pytest.mark.django_db(transaction=True)
             "UPDATE stewardship_recipient_refusal SET address='forged@example.org'",
         ),
         (ServiceRole.MAIL_DISPATCH, "DELETE FROM stewardship_outbox_event"),
+        (
+            ServiceRole.MAIL_DISPATCH,
+            "UPDATE stewardship_family_mail_test SET state='prepared'",
+        ),
+        (
+            ServiceRole.MAIL_DISPATCH,
+            "INSERT INTO stewardship_family_mail_test DEFAULT VALUES",
+        ),
+        (
+            ServiceRole.SCHEDULER,
+            "INSERT INTO stewardship_family_mail_test DEFAULT VALUES",
+        ),
+        (ServiceRole.SCHEDULER, "DELETE FROM stewardship_family_mail_test"),
     ],
 )
 def test_dispatch_permission_denials(service, statement):

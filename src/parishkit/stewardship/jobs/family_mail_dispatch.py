@@ -1,6 +1,6 @@
 """Commit-before-send Family outbox transactions and truthful outcome settlement."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import connection
 
@@ -45,6 +45,11 @@ from .ownership import database_now, lock_task_claim
 from .storage import TaskStatus, _status
 
 TASK_TYPE = "outbox_delivery"
+# Purposes with no schedule occurrence: they never write occurrence state or a
+# fulfillment, whatever their provider outcome.
+UNSCHEDULED_PURPOSES = frozenset(
+    {"receipt", "family_test", "daily_digest", "weekly_digest"}
+)
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
@@ -80,7 +85,14 @@ def bound_dispatch(status):
     row = OutboxMessage.objects.only(*METADATA_FIELDS).get(
         pk=status.domain_request_id,
         task_id=status.root_id,
-        purpose__in=("initial", "reminder", "receipt", "daily_digest", "weekly_digest"),
+        purpose__in=(
+            "initial",
+            "reminder",
+            "receipt",
+            "family_test",
+            "daily_digest",
+            "weekly_digest",
+        ),
     )
     if row.purpose == "weekly_digest":
         from .weekly_dispatch import bound_weekly
@@ -96,6 +108,11 @@ def bound_dispatch(status):
         from .receipt_dispatch import bound_receipt
 
         bound_receipt(row)
+        return row
+    if row.purpose == "family_test":
+        from .family_test_dispatch import bound_family_test
+
+        bound_family_test(row)
         return row
     if not ScheduleOccurrence.objects.filter(
         pk=row.semantic_key,
@@ -124,6 +141,10 @@ def disposition(message, *, check_recipient=False):
         from .receipt_dispatch import receipt_disposition
 
         return receipt_disposition(message)
+    if message.purpose == "family_test":
+        from .family_test_dispatch import family_test_disposition
+
+        return family_test_disposition(message)
     runtime = SystemConfiguration.objects.get()
     population = CampaignCredentialState.objects.filter(
         campaign_id=message.campaign_id
@@ -206,6 +227,11 @@ def cancel_unsent(identifier, claim, *, reason):
     row = OutboxMessage.objects.get(pk=identifier)
     if owner.purpose in {"daily_digest", "weekly_digest"} and row.pk != owner.pk:
         raise PermissionError("Digest cancellation cannot affect another Admin.")
+    # A chosen-Family test is not part of the Family's scheduled mail group.
+    if "family_test" in {owner.purpose, row.purpose} and row.pk != owner.pk:
+        raise PermissionError(
+            "Family test cancellation cannot affect another delivery."
+        )
     if (row.family_id, row.campaign_id, row.mode) != (
         owner.family_id,
         owner.campaign_id,
@@ -268,7 +294,7 @@ def begin_submission(
             raise PermissionError("Family delivery is not unsent.")
         row = (
             None
-            if message.purpose in {"receipt", "daily_digest", "weekly_digest"}
+            if message.purpose in UNSCHEDULED_PURPOSES
             else ScheduleOccurrence.objects.select_related(
                 "definition", "revision"
             ).get(pk=message.semantic_key)
@@ -345,15 +371,23 @@ def begin_submission(
             from .digest_dispatch import current_digest_content
 
             render, sealed, mail = current_digest_content(message, scope)
-        elif row is None:
+        elif message.purpose == "receipt":
             from .receipt_dispatch import current_receipt_content
 
             render, sealed, mail = current_receipt_content(
                 message, scope, public_origin=public_origin
             )
         else:
+            # Scheduled mail renders the occurrence revision's template; a test
+            # renders the template record its Admin ticket named.
+            if row is None:
+                from .family_test_dispatch import family_test_template
+
+                template = family_test_template(message)
+            else:
+                template = UUID(row.revision.values["template_version"])
             render, sealed, mail = current_content(
-                message, row, scope, private=private, public_origin=public_origin
+                message, template, scope, private=private, public_origin=public_origin
             )
 
         def admit(action, identity, status, proposal=None):
@@ -426,7 +460,7 @@ def finish_submission(identifier, claim, result):
         }[result.status]
         row = (
             None
-            if message.purpose in {"receipt", "daily_digest", "weekly_digest"}
+            if message.purpose in UNSCHEDULED_PURPOSES
             else ScheduleOccurrence.objects.get(pk=message.semantic_key)
         )
         # Record definitive non-acceptance even when the original scope no longer
@@ -525,6 +559,10 @@ def _report_epoch(message):
         from .digest_dispatch import bound_digest
 
         return bound_digest(message).rehearsal_epoch_id
+    if message.purpose == "family_test":
+        from .family_test_dispatch import bound_family_test
+
+        return bound_family_test(message).rehearsal_epoch_id
     from .receipt_dispatch import bound_receipt
 
     return bound_receipt(message).rehearsal_epoch_id
