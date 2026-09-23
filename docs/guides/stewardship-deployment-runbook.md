@@ -40,16 +40,89 @@ Collect, outside the runtime root and outside the repository:
   `public_origin`, `trusted_proxy_hops: 1`, and the absolute `paths.root`.
   Every field, default and validation rule is in the
   [settings reference](../development/stewardship-deployment.md#schema-version-1).
-  Keep it in an operator-controlled place; it holds no secrets.
+  Keep it in an operator-controlled place; it holds no secrets. The offline
+  commands read it as UID `10001`, so it must be readable by that user (for
+  example mode `0644`). Set `operational_alerts` now: a later change needs a
+  reinstall.
 - The **Google OAuth client** (web application type) whose authorized
   redirect URIs are on the public origin, exported as JSON with only
-  `client_id` and `client_secret`; the initial Administrator's Google address;
-  the ParishSoft API key; the mail-provider account; and, optionally, the
-  Slack webhook. All but the OAuth client are entered through the setup
-  wizard and installed by the credential installers, not copied onto the
-  host by hand.
-- A generated deployment UUID, recorded where the operators keep it. Every
-  offline command that confirms the deployment takes the same UUID.
+  `client_id` and `client_secret`, with the authorized redirect URI
+  `<public origin>/admin/oauth/callback`; the initial Administrator's Google
+  address; the ParishSoft API key and its organization; the Google Workspace
+  mail account; and, optionally, a Slack bot token and channel ID. All but the
+  OAuth client are entered through the setup wizard and installed by the
+  credential installers, not copied onto the host by hand.
+- The **Google Workspace mail account**: a service account with a JSON key,
+  authorized for domain-wide delegation with the scope
+  `https://mail.google.com/`, and the real mailbox it sends as (the
+  delegated address). The
+  [README's Google setup](../../README.md#google-cloud-and-google-workspace)
+  walks through the Cloud project, the service account, the delegation and
+  the delegated user; stewardship needs only the Gmail scope above.
+- A newly generated deployment UUID, recorded where the operators keep it.
+  Every offline command that confirms the deployment takes the same UUID.
+  Each installation, including a reinstall from scratch, gets a new UUID; a
+  restore reuses the UUID of the deployment it restores.
+- A fixed Compose project name for this deployment.
+
+## Commands and generated paths
+
+The runbooks write Compose commands as `docker compose ... ARGS`, where
+`...` is the deployment's one rendered Compose file and its fixed project
+name:
+
+```text
+docker compose -f RUNTIME_ROOT/config/services/compose-initial.json -p PROJECT ARGS
+```
+
+Use `compose-initial.json` until the setup wizard finishes, then
+`compose.json`, or `compose-slack.json` when Slack is configured; always
+exactly one file, never an overlay. `provision-runtime` writes the
+per-service configuration each command's `--config` names as
+`RUNTIME_ROOT/config/services/SERVICE.yaml`: `WEB_CONFIG` is `web.yaml`,
+`PROVISION_CONFIG` is `database-provision.yaml`, `BOOTSTRAP_CONFIG` is
+`bootstrap.yaml`, and a smoke check's `SERVICE_CONFIG` is the configuration
+of the service it runs in. `docker compose ... config` shows the exact
+paths and the credential installer services (named
+`credential-installer-TARGET`). Provisioning also creates the empty
+credential directories; the Google OAuth client goes in
+`RUNTIME_ROOT/credentials/google_oauth/credential` and the backup public key
+in `RUNTIME_ROOT/credentials/backup_data/credential` (both `10001:10001`,
+mode `0600`), unless the deployment YAML overrides those paths.
+
+The offline commands `provision-runtime`, `collect-static` and
+`retarget-image` run in the application image with no network and nothing
+writable but what they need. For `provision-runtime` and `retarget-image`,
+the runtime root is mounted read-write at its own path and the deployment
+YAML read-only:
+
+```text
+docker run --rm --init --network none --user 10001:10001 --read-only \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+  --mount type=bind,source=RUNTIME_ROOT,target=RUNTIME_ROOT \
+  --mount type=bind,source=/path/to/deployment.yaml,target=/run/operator.yaml,readonly \
+  IMAGE provision-runtime --config /run/operator.yaml --image IMAGE
+```
+
+The image's entry point is `pk-stewardship`, so the subcommand follows the
+image. `retarget-image` uses the same line with
+`retarget-image --config /run/operator.yaml --image NEW_DIGEST`, run in the
+new image. `collect-static` needs no YAML; mount only the empty static
+directory read-write:
+
+```text
+docker run --rm --init --network none --user 10001:10001 --read-only \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+  --mount type=bind,source=RUNTIME_ROOT/cache/static,target=RUNTIME_ROOT/cache/static \
+  IMAGE collect-static --destination RUNTIME_ROOT/cache/static
+```
+
+When the runtime root lives in a Docker named volume instead of a host
+directory, add `--bind-source-root DAEMON_RUNTIME_ROOT` to
+`provision-runtime`, as
+[Initial preparation](stewardship-runtime.md#initial-preparation) says.
 
 ## First installation
 
@@ -94,7 +167,8 @@ runtime root in the operators' notes: an upgrade and a restore both need them.
 ## Validation in Testing mode
 
 The deployment is safe to explore in Testing mode: Testing-routed mail goes
-only to staff test addresses and no Family link is live. Before the pre-launch
+only to the one configured Testing recipient (a staff address, set in the
+setup wizard) and no Production Family code or link is live. Before the pre-launch
 gate, the human runs the [smoke checks](stewardship-smoke-tools.md) inside the
 deployed containers (ParishSoft read, Google Workspace mailbox with one test
 message, optional Slack, and the Google OAuth client followed by a real
@@ -107,6 +181,75 @@ cannot create those in an existing deployment, so before the schema freeze the
 validation deployment is reinstalled from scratch to pick such a release up.
 The v1 backup release is one of them: a deployment provisioned before it has
 no backup login, password, directory or record table, and must be reinstalled.
+
+### Staff validation checklist
+
+**The Family form.** No Admin page shows a Testing code or link, and the
+readiness test send is a fixed sample that cannot sign anyone in. A Testing
+code or link exists only in a scheduled invitation or reminder sent in
+Testing mode, which goes to the Testing recipient. The portal opens in
+Testing only while today is inside the draft campaign's dates. So, to
+validate the form before the real start date:
+
+1. In the draft campaign, move the start date to the first validation day
+   and the initial invitation (and any reminders) inside the validation
+   window. Invitation and reminder times must stay inside the campaign
+   dates. Moving the start into the past also makes the scheduler produce
+   catch-up daily reports for the days in between.
+2. Soon after the invitation time passes, the scheduler sends one Testing
+   invitation for **every** Family with a deliverable email address, all to
+   the Testing mailbox (subject `[TEST]`, a banner naming the intended
+   Family). There is no way to limit it to a few Families; for a whole
+   parish this is a large burst to one mailbox, subject to the Workspace
+   account's sending limits. Each carries that Family's Testing code (it
+   starts with `I`) and Testing link (`/access/test.…`).
+3. Sign in by the link, or by the code on the portal's home page `/`, choose
+   **Continue with test**, fill in the form, tick the acknowledgment and
+   choose **Submit test response**. A Testing receipt then arrives at the
+   Testing mailbox. Test answers never count, never appear in reports and are
+   deleted at activation.
+4. Check the daily and weekly Admin reports and a manual weekly report at the
+   Testing mailbox (they show zero participation: they count only live
+   answers), the reports and exports pages (which exclude Testing answers by
+   design), and the Production readiness page's list of Testing submissions.
+5. Before Production readiness, move the invitation and reminders back to
+   their real dates first, then the start date, and wait until every Testing
+   message has finished (delivered, failed or cancelled): readiness requires
+   it, and cleanup at activation deletes all Testing data.
+
+**Browsers.** On a phone and on a desktop browser, check the Family portal's
+code entry, link sign-in, every form step, the review and submit, and
+sign-out, and the main staff pages: home, campaign and schedules,
+reports and exports, deliveries, and background work.
+
+**Load.** The launch scope's single load check at the parish's real Family
+count runs against this deployment; its tool is development work scheduled
+for September 25–29 and is not yet available.
+
+**Not testable before activation.** Delivery pause and resume exist only for
+the Production campaign.
+
+### Reinstalling the validation deployment
+
+Provisioning needs a new, empty runtime root and never adopts existing data,
+so a reinstall builds a second deployment beside the old one rather than
+resetting it. Nothing in it deletes data:
+
+1. Stop every service of the old deployment, `postgres` and `valkey`
+   included, with `stop` on its Compose file and project name. `caddy` must
+   be stopped because it holds ports 80 and 443.
+2. Leave the old runtime root, database files and credentials where they
+   are, or move the root aside under a new name. Never delete its markers
+   to make it look empty.
+3. Install the new deployment from [First installation](#first-installation)
+   into a different, empty runtime root, with a new deployment UUID and a
+   different project name. Its `caddy` obtains a new certificate on first
+   start; Let's Encrypt allows a handful of certificates for one name per
+   week, so avoid reinstalling repeatedly in a short span.
+4. Deleting the old runtime root, containers or database is a separate
+   decision for the human, never part of the reinstall. The launch scope
+   forbids deleting the validation deployment's database without explicit
+   authorization.
 
 ## Production activation
 

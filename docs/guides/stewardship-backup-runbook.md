@@ -21,6 +21,20 @@ in a second place; whoever holds it can read every backup, and without it no
 backup can be read. Record its fingerprint from the first backup's manifest.
 The key is not rotated during v1.
 
+The key machine runs the command from the release image, with Docker and no
+network; `backup-open` in [Restore for real](#restore-for-real) runs the same
+way. The image is `linux/amd64` (Docker Desktop runs it on other machines by
+emulation), its entry point is `pk-stewardship`, and it runs as your own
+user so the key file stays yours. `KEY_DIRECTORY` is an existing directory
+you own, not under any runtime root:
+
+```text
+docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --mount type=bind,source=KEY_DIRECTORY,target=/keys \
+  IMAGE backup-keygen --destination /keys/stewardship-backup.key
+```
+
 On the host, install the public key as the `backup_data` credential: write
 the printed line to `credentials/backup_data/credential` under the runtime
 root, owned by UID/GID `10001:10001` in a `0700` directory with mode `0600`,
@@ -110,8 +124,13 @@ and whenever the restore procedure changes:
   step, including starting the background services, is safe. Then rehearse
   the replacement-host steps too: restore the same set onto a second,
   disposable host that is not on the public DNS, through web's health check
-  in step 8, and destroy that host afterwards. The same-host run skips steps
-  3 and 5, and a real replacement is when they matter.
+  in step 8, starting `web` alone there (`caddy` cannot obtain a certificate
+  for a host that is not on the public DNS), and destroy that host
+  afterwards. The same-host run skips steps 3 and 5, and a real replacement
+  is when they matter. Testing mode has no delivery pause (the controls exist
+  only for the Production campaign), so in the same-host run's step 8 keep
+  the scheduler, worker, mail-dispatch and installers stopped until the
+  comparison is done, then start them.
 - **After activation**, never start a second live copy of Production. Use a
   disposable host that is not on the public origin's DNS, run the procedure
   only up to starting web and checking its health in step 8, and never start
@@ -119,9 +138,14 @@ and whenever the restore procedure changes:
   carries every Production credential and every Family's data. Destroy the
   host and its disks afterwards.
 
-The gate approves the evidence of both pre-activation runs. Record the date, the
-set name, the manifest digests, the image digest and the outcome in the
-parish's operations notes, then delete the decrypted files.
+The drill returns the validation deployment to the backup's moment, so run
+it when staff have no unsaved work in progress, taking the backup
+immediately before it. Run both pre-activation drills on the deployment
+that goes live: if a schema change forces a reinstall before the gate, run
+them again afterwards. The gate approves the evidence of both
+pre-activation runs. Record the date, the set name, the manifest digests,
+the image digest and the outcome in the parish's operations notes, then
+delete the decrypted files.
 
 ## Restore for real
 
@@ -146,8 +170,22 @@ layout; where the deployment YAML overrides a path, use that path instead.
    files with
    `pk-stewardship backup-open --key PRIVATE_KEY_FILE --input database.pgdump.sealed --destination database.pgdump`
    and the same for `files.tar.sealed`. Each prints the kind, size and
-   digest, which must match the manifest. Copy `database.pgdump` and
-   `files.tar` to the host over a private channel.
+   digest, which must match the manifest. From the release image, as for
+   [the key](#the-key), mount the key directory and the set's directory
+   read-only and an empty private output directory writable:
+
+   ```text
+   docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
+     --cap-drop ALL --security-opt no-new-privileges:true \
+     --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly \
+     --mount type=bind,source=SET_DIRECTORY,target=/set,readonly \
+     --mount type=bind,source=OUTPUT_DIRECTORY,target=/out \
+     IMAGE backup-open --key /keys/stewardship-backup.key \
+       --input /set/database.pgdump.sealed --destination /out/database.pgdump
+   ```
+
+   Copy `database.pgdump` and `files.tar` to the host over a private
+   channel.
 3. **Replacement host only: prepare it.** Never run `provision-runtime`
    here: it would generate new passwords that the restored roles and files
    do not have. Bring the operator's deployment YAML and the deployment UUID,
