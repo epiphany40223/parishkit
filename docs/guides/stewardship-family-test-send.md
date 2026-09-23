@@ -90,3 +90,28 @@ taken:
   the documents name the link and the page consistently.
 
 A correction check follows.
+
+### Round 2
+
+Claude answered with two shards; Codex did not answer this round. Twelve raw
+findings; one validated and corrected, with the Lows below the cutoff
+taken:
+
+- Medium (both shards): round 1's settlement covered preparation failing
+  inside the worker but not a worker that crashed or lost its lease, whose
+  recovery failed the task and left the message pending. Recovery now
+  cancels such a message once its preparation budget is spent, and a test
+  abandons a real dispatch five times to prove it. An audit of every other
+  exit found no remaining path that leaves a test message unfinished
+  without a task to settle it.
+- Lows: a ticket for a lastingly ineligible Family now ends cancelled rather
+  than failed; a hold that appears at the final transition defers instead of
+  escaping; the work-gate hold is campaign-scoped everywhere and the page
+  shows a hold before confirmation; the scheduler sweep asserts its login
+  and evaluates the scope once per row; bad Family ID lists re-render as a
+  field error; a recipient projection that disagrees with the database is
+  cancelled rather than retried; the Family link cannot abort the sample
+  send's transaction; and the specifications describe the new worker
+  behavior and wrap consistently.
+
+A correction check follows.

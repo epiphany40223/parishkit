@@ -427,19 +427,20 @@ successful provider delivery satisfies the test-Family-mailing readiness check,
 making the `scheduled` state reachable before the start date.
 
 For staff validation, a Testing-mode draft campaign also offers a link from the
-test send, **Send this email to chosen real Families (Testing recipient
-only)**, to the page **Send this email to chosen Families**: a freshly authenticated Administrator enters up to
-ten Family IDs, reviews each Family's eligibility, and confirms that real Family
-data goes to the Testing recipient. Each eligible Family's real message for a
-template its invitation or reminder schedules use is prepared with that Family's
-own Testing credential (reusing the credential scheduled Testing mail already
-issued for that Family, which later scheduled Testing mail also reuses), carries the Testing banner and goes
-only to the Testing recipient. It needs an active Testing credential set, which
-exists once the campaign dates include today and the source population is
-current; at most ten such sends are in progress per campaign. It creates and
-satisfies no scheduled occurrence or fulfillment, does not satisfy the readiness
-check, cannot be resent, and is deleted by Testing cleanup like all other
-Testing mail. It does not open the portal outside the campaign dates.
+test send, **Send this email to chosen real Families (Testing recipient only)**,
+to the page **Send this email to chosen Families**: a freshly authenticated
+Administrator enters up to ten Family IDs, reviews each Family's eligibility,
+and confirms that real Family data goes to the Testing recipient. Each eligible
+Family's real message for a template its invitation or reminder schedules use is
+prepared with that Family's own Testing credential (reusing the credential
+scheduled Testing mail already issued for that Family, which later scheduled
+Testing mail also reuses), carries the Testing banner and goes only to the
+Testing recipient. It needs an active Testing credential set, which exists once
+the campaign dates include today and the source population is current; at most
+ten such sends are in progress per campaign. It creates and satisfies no
+scheduled occurrence or fulfillment, does not satisfy the readiness check,
+cannot be resent, and is deleted by Testing cleanup like all other Testing mail.
+It does not open the portal outside the campaign dates.
 
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;
