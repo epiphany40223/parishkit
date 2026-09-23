@@ -3,29 +3,34 @@
 The v1 launch requires one load check against the validation deployment at
 the parish's actual population; synthetic scale fixtures and complete latency
 budgets stay deferred. The check runs inside an admitted web container under
-the web's own restricted SQL login, only in Testing mode with a current
-campaign, and times the reads the real pages perform: the Family form inputs
-for a sample of households (serially, then concurrently) and the first page of
-each Admin report. Every measured read runs in its own read-only campaign
-guard, so nothing is written, no mail is sent, no session or baseline is
-created and Valkey is never contacted. The output is one JSON document of
-fixed keys, counts, seconds and timestamps; a refusal is one generic line.
+the web's own restricted SQL login, only while the Testing Family portal is
+open for the current campaign, and times the reads the real pages perform:
+the Family form inputs for a sample of portal-eligible households (serially,
+then on a bounded number of threads) and the first page of each Admin report.
+Every measured read runs in its own read-only campaign guard and every other
+read in a bounded READ ONLY transaction, so nothing is written, no mail is
+sent, no session or baseline is created and Valkey is never contacted. The
+output is one JSON document of fixed keys, counts, seconds and timestamps; a
+refusal is one generic line.
 """
 
 import json
+import logging
+import math
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
-from threading import Thread
-from time import perf_counter
+from threading import Lock, Thread
+from time import monotonic, perf_counter
 from uuid import uuid4
 
 from parishkit.config import ConfigError
 
 from .deployment import ServiceRole, load_deployment
-from .jobs.delivery_states import TERMINAL_DELIVERY_STATES
-from .observability import Event, configure_logging, emit_failure
+from .jobs.delivery_states import TERMINAL_DELIVERY_STATES, DeliveryState
+from .observability import Event, configure_logging, emit, emit_failure
 from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupBusy, StartupLease
 
@@ -34,6 +39,10 @@ SAMPLE_BOUNDS = (1, 1000)
 DEFAULT_CONCURRENCY = 4
 CONCURRENCY_CAP = 8
 REPORT_RUNS = 20
+# Bounded stopping: a phase ends after this many unavailable reads and the
+# whole run at the wall-clock cap; whatever is left is reported as not run.
+MAX_PHASE_FAILURES = 5
+RUN_SECONDS_CAP = 15 * 60
 # Architecture reference targets: ordinary cached pages under 2 s at p95,
 # filtered report first pages under 3 s, measured next to the 5,000-Family
 # reference population.
@@ -42,21 +51,28 @@ STATISTICS_TARGET_SECONDS = 2.0
 REPORT_TARGET_SECONDS = 3.0
 REFERENCE_FAMILIES = 5000
 REFERENCE_MEMBERS = 10000
-# Occurrence outcomes that no longer change; mirrors the schedule model's
-# vocabulary without importing Django into the pure aggregation.
+# Per-sample outcomes other than a timing: an unavailable read is None; a
+# Family the portal no longer admits is skipped; a sample the bounded stop
+# never reached is not run. Neither word is ever printed as a value.
+SKIPPED = "skipped"
+NOT_RUN = "not_run"
+# Occurrence outcomes that no longer change. The schedule model owns this
+# vocabulary; it is repeated here so the pure aggregation stays free of Django
+# and pinned equal by a unit test.
+OCCURRENCE_STATES = frozenset(
+    {
+        "pending",
+        "running",
+        "delivery_unknown",
+        "succeeded",
+        "skipped",
+        "coalesced",
+        "failed",
+    }
+)
 TERMINAL_OCCURRENCE_STATES = frozenset({"succeeded", "skipped", "coalesced", "failed"})
+MESSAGE_STATES = frozenset(state.value for state in DeliveryState)
 TERMINAL_MESSAGE_STATES = frozenset(state.value for state in TERMINAL_DELIVERY_STATES)
-OCCURRENCE_STATES = TERMINAL_OCCURRENCE_STATES | {
-    "pending",
-    "running",
-    "delivery_unknown",
-}
-MESSAGE_STATES = TERMINAL_MESSAGE_STATES | {
-    "pending",
-    "submitting",
-    "retry_wait",
-    "delivery_unknown",
-}
 # The complete output vocabulary. Anything else in the document is a bug that
 # must stop the print, because a stray value could be a DUID, name or address.
 FIXED_WORDS = frozenset(
@@ -78,15 +94,19 @@ ALLOWED_KEYS = (
             "runtime_budget",
             "web_processes",
             "web_threads",
+            "web_connection_headroom",
             "database_connections",
             "background_connections",
             "family_form_inputs",
             "samples",
             "concurrency",
+            "threads",
             "serial",
             "concurrent",
             "runs",
             "failures",
+            "skipped",
+            "not_run",
             "target_seconds",
             "p50",
             "p95",
@@ -123,6 +143,14 @@ ALLOWED_KEYS = (
 )
 
 
+class LoadCheckRefused(ConfigError):
+    """Admission failed before or during the run; no verdict may be published."""
+
+
+class SourceChanged(RuntimeError):
+    """The promoted source moved during the run, so the samples mix populations."""
+
+
 # Pure helpers: option admission, sampling, summaries and output safety. None
 # of these touch Django, so the unit tests exercise them with plain values.
 
@@ -142,15 +170,36 @@ def bounded_option(value, *, default, bounds):
     return int(value)
 
 
-def effective_concurrency(requested, web_threads):
-    """Never run more readers than the web's own thread budget or the fixed cap."""
-    return max(1, min(requested, web_threads, CONCURRENCY_CAP))
+@dataclass(frozen=True)
+class _Budgeted:
+    """The one attribute database provisioning reads from a deployment."""
+
+    runtime_budget: object
+
+
+def web_headroom(budget):
+    """Spare web-login connections while the web service itself is running.
+
+    Provisioning bounds the web login for ``rollout_overlap`` simultaneous
+    service generations; one generation is serving and holds its whole share,
+    so only the remaining generations' share is free for the check's readers.
+    The same function computes the limit, so the two cannot drift apart.
+    """
+    from .database_provisioning import role_limit
+
+    limit = role_limit(_Budgeted(budget), ServiceRole.WEB)
+    return limit - limit // budget.rollout_overlap
+
+
+def effective_concurrency(requested, web_threads, headroom):
+    """Never run more readers than web threads, spare connections or the cap."""
+    return max(1, min(requested, web_threads, headroom, CONCURRENCY_CAP))
 
 
 def admit_runtime_state(mode, current_campaign_id):
     """The v1 check is a Testing-mode rehearsal against the current campaign only."""
     if mode != "testing" or current_campaign_id is None:
-        raise ConfigError(
+        raise LoadCheckRefused(
             "The load check requires Testing mode and a current campaign."
         )
 
@@ -175,37 +224,48 @@ def choose_samples(households, count):
 
 
 def nearest_rank(values, quantile):
-    """The nearest-rank percentile of ascending values, as the CI budgets use."""
-    return values[max(0, int(len(values) * quantile) - 1)]
+    """The nearest-rank percentile of ascending values: the ceil(n*q)-th value."""
+    index = math.ceil(len(values) * quantile) - 1
+    return values[min(len(values) - 1, max(0, index))]
 
 
 def summarize(timings, *, target):
-    """Describe one measured operation: p50/p95/max seconds, failures and verdict.
+    """Describe one measured operation: p50/p95/max seconds, outcomes and verdict.
 
-    A ``None`` timing is a sample that was refused or timed out. Any failure
-    fails the operation: a refused page is worse than a slow one.
+    A ``None`` timing is a read that was unavailable; ``SKIPPED`` a sample the
+    portal no longer admitted; ``NOT_RUN`` a sample the bounded stop never
+    reached. Any unavailable or unreached sample fails the operation: a
+    refused or unmeasured page is worse than a slow one.
     """
-    measured = sorted(value for value in timings if value is not None)
-    failures = len(timings) - len(measured)
+    measured = sorted(value for value in timings if type(value) in {int, float})
+    not_run = timings.count(NOT_RUN)
     result = {
-        "runs": len(timings),
-        "failures": failures,
+        "runs": len(timings) - not_run,
+        "failures": timings.count(None),
+        "skipped": timings.count(SKIPPED),
+        "not_run": not_run,
         "target_seconds": target,
         "p50": round(nearest_rank(measured, 0.5), 4) if measured else None,
         "p95": round(nearest_rank(measured, 0.95), 4) if measured else None,
         "max": round(measured[-1], 4) if measured else None,
     }
-    result["pass"] = bool(measured) and failures == 0 and result["p95"] < target
+    result["pass"] = (
+        bool(measured)
+        and result["failures"] == 0
+        and not_run == 0
+        and result["p95"] < target
+    )
     return result
 
 
-def form_section(serial, concurrent, *, samples, concurrency):
+def form_section(serial, concurrent, *, samples, concurrency, threads):
     """Combine the serial and concurrent Family form input measurements."""
     first = summarize(serial, target=FORM_TARGET_SECONDS)
     second = summarize(concurrent, target=FORM_TARGET_SECONDS)
     return {
         "samples": samples,
         "concurrency": concurrency,
+        "threads": threads,
         "serial": first,
         "concurrent": second,
         "failures": first["failures"] + second["failures"],
@@ -242,7 +302,7 @@ def state_counts(rows):
 
 
 def invitation_timeline(occurrences, messages):
-    """Aggregate a Testing initial-invitation run from its durable rows.
+    """Aggregate one Testing initial-invitation run from its durable rows.
 
     Occurrences carry ``target``, ``created_at`` (planning), ``due_at`` and
     ``state``; outbox messages carry ``created_at`` (preparation),
@@ -276,7 +336,9 @@ def invitation_timeline(occurrences, messages):
     }
 
 
-def build_document(*, population, budget, form, reports, invitation_run, background):
+def build_document(
+    *, population, budget, headroom, form, reports, invitation_run, background
+):
     """Assemble the output and decide the verdict from the measured sections."""
     passed = form["pass"] and all(
         section.get("status") == "skipped" or section.get("pass") is True
@@ -289,6 +351,7 @@ def build_document(*, population, budget, form, reports, invitation_run, backgro
         "runtime_budget": {
             "web_processes": budget.web_processes,
             "web_threads": budget.web_threads,
+            "web_connection_headroom": headroom,
             "database_connections": budget.database_connections,
             "background_connections": budget.background_connections,
         },
@@ -330,11 +393,52 @@ def safe_document(document):
         raise ValueError("Unexpected load check value.")
 
 
-def run_threads(items, workers, operation, *, release):
+class Stopper:
+    """Bound one phase: stop after repeated unavailable reads or at the deadline.
+
+    ``deadline`` is a ``monotonic()`` instant shared by every phase of the run,
+    so the whole check ends at the wall-clock cap; the failure count is per
+    phase. Threads share one instance, hence the lock.
+    """
+
+    def __init__(self, deadline):
+        self.deadline = deadline
+        self.failures = 0
+        self._lock = Lock()
+
+    def stopped(self):
+        """True once the phase must stop; unreached samples become NOT_RUN."""
+        return self.failures >= MAX_PHASE_FAILURES or monotonic() >= self.deadline
+
+    def record(self, value):
+        """Count an unavailable read towards the phase's failure stop."""
+        if value is None:
+            with self._lock:
+                self.failures += 1
+
+
+def phase(items, operation, stop):
+    """Apply ``operation`` to ``items`` in order until the stopper says stop."""
+    results = []
+    for item in items:
+        if stop.stopped():
+            results.append(NOT_RUN)
+            continue
+        value = operation(item)
+        stop.record(value)
+        results.append(value)
+    return results
+
+
+def run_threads(items, workers, operation, *, release, stop):
     """Apply ``operation`` to ``items`` on worker threads, keeping item order.
 
-    Each thread owns one database connection for its whole share of the work,
-    like a web thread does, and calls ``release`` when finished. A worker's
+    Each thread takes every ``workers``-th item, like a web thread serving its
+    share of requests; every guarded read closes its connection on exit
+    (``CampaignReadGuard.close``) and the next reconnects, which is exactly
+    web's CONN_MAX_AGE=0 behaviour, so the thread count bounds simultaneous
+    connections. ``release`` closes whatever connection a thread still holds.
+    Returns the results and the number of threads actually started; a worker's
     unexpected error is re-raised here instead of vanishing with the thread.
     """
     results, errors = [None] * len(items), []
@@ -342,7 +446,11 @@ def run_threads(items, workers, operation, *, release):
     def run(offset):
         try:
             for index in range(offset, len(items), workers):
+                if stop.stopped():
+                    results[index] = NOT_RUN
+                    continue
                 results[index] = operation(items[index])
+                stop.record(results[index])
         except BaseException as error:
             errors.append(error)
         finally:
@@ -358,24 +466,33 @@ def run_threads(items, workers, operation, *, release):
         thread.join()
     if errors:
         raise errors[0]
-    return results
+    return results, len(threads)
 
 
 # Django reads. Everything below runs under the admitted web login; every
-# campaign read is inside its own READ ONLY guard transaction.
+# campaign read is inside its own READ ONLY guard transaction and every other
+# read inside a bounded READ ONLY transaction.
 
 
 @dataclass(frozen=True)
 class Scope:
-    """The current campaign, the runtime row and the promoted snapshot identity."""
+    """The open Testing campaign, the coherent runtime row and its rehearsal epoch."""
 
     campaign: object
-    system: object
+    runtime: object
+    epoch_id: object
+
+
+@dataclass(frozen=True)
+class Source:
+    """The promoted snapshot identity and generation the whole run must share."""
+
     snapshot_id: object
+    generation: int
 
 
 def _no_authorization(guard):
-    """Family form reads have no report principal to re-check inside the guard."""
+    """The form guards re-admit the portal and Family themselves, inside the guard."""
 
 
 def _no_abort():
@@ -387,6 +504,30 @@ def _guard(campaign_id, *, authorize=_no_authorization):
     from .campaigns.read_guards import CampaignReadGuard
 
     return CampaignReadGuard([campaign_id], authorize=authorize, abort=_no_abort)
+
+
+@contextmanager
+def bounded_read():
+    """A READ ONLY transaction with the guard's interactive statement/lock limits.
+
+    Reads that are not campaign-scoped (the runtime pointer, background task
+    counts) must still never run unbounded in autocommit.
+    """
+    from django.db import connection, transaction
+
+    from .campaigns.read_guards import DEFAULT_LIMITS
+
+    with transaction.atomic(durable=True):
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            for name, seconds in (
+                ("lock_timeout", DEFAULT_LIMITS.lock_seconds),
+                ("statement_timeout", DEFAULT_LIMITS.interactive_seconds),
+            ):
+                cursor.execute(
+                    "SELECT set_config(%s, %s, true)", [name, str(seconds * 1000)]
+                )
+        yield
 
 
 def _close_connection():
@@ -413,41 +554,120 @@ def _failure_types():
 
 
 def timed(operation):
-    """Seconds for one guarded read, or None when the read was unavailable."""
+    """Seconds for one guarded read, None when unavailable, SKIPPED when declined."""
     started = perf_counter()
     try:
-        operation()
+        if operation() is SKIPPED:
+            return SKIPPED
     except _failure_types():
         return None
     return perf_counter() - started
 
 
-def current_scope():
-    """The runtime row and current campaign, or a refusal outside Testing."""
+def current_campaign_id():
+    """The current campaign pointer, or a refusal outside Testing."""
     from .accounts.runtime_models import SystemConfiguration
 
-    system = SystemConfiguration.objects.select_related(
-        "active_configuration__parish", "current_campaign__active_configuration"
-    ).get()
-    admit_runtime_state(system.mode, system.current_campaign_id)
-    return system, system.current_campaign
+    row = SystemConfiguration.objects.values("mode", "current_campaign_id").get()
+    admit_runtime_state(row["mode"], row["current_campaign_id"])
+    return row["current_campaign_id"]
 
 
-def promoted_snapshot():
+def open_scope(store, campaign_id):
+    """Admit the run only while the Testing Family portal is open, as login does.
+
+    This composes the same non-mutating predicates the Family login's scope
+    check uses (``coherent_configuration``, ``portal_admitted`` on current
+    facts and the domain clock, the campaign credential row's go-live and
+    population gates, an active rehearsal epoch) plus the export admission's
+    work-gate rule, without the login's service object or any row lock.
+    """
+    from .accounts.configuration_installation import coherent_configuration
+    from .campaigns.credential_models import CampaignCredentialState
+    from .campaigns.lifecycle import portal_admitted
+    from .campaigns.runtime import _now, campaign_facts
+    from .campaigns.runtime_models import CampaignWorkGate
+
+    runtime = coherent_configuration(store)
+    admit_runtime_state(runtime.mode, runtime.current_campaign_id)
+    campaign = runtime.current_campaign
+    if campaign.pk != campaign_id or not portal_admitted(
+        campaign_facts(campaign, runtime), _now()
+    ):
+        raise LoadCheckRefused("The Testing Family portal is not open.")
+    scope = (
+        CampaignCredentialState.objects.filter(
+            campaign=campaign, go_live_gate=False, population_dirty=False
+        )
+        .select_related("rehearsal_epoch")
+        .first()
+    )
+    if (
+        scope is None
+        or scope.rehearsal_epoch_id is None
+        or scope.rehearsal_epoch.state != "active"
+        or CampaignWorkGate.objects.filter(campaign=campaign)
+        .exclude(state="released")
+        .exists()
+    ):
+        raise LoadCheckRefused("The Testing Family portal is not open.")
+    return Scope(campaign, runtime, scope.rehearsal_epoch_id)
+
+
+def portal_open(store, campaign_id):
+    """The per-sample recheck: the same admission, answered instead of raised."""
+    try:
+        open_scope(store, campaign_id)
+    except ConfigError:
+        return False
+    return True
+
+
+def family_admitted(campaign_id, family_duid, generation):
+    """A sampled Family is still one the form would serve from this population."""
+    from .campaigns.credential_models import FamilyCampaign
+
+    return FamilyCampaign.objects.filter(
+        campaign_id=campaign_id,
+        family_duid=family_duid,
+        active=True,
+        portal_eligible=True,
+        source_generation=generation,
+    ).exists()
+
+
+def current_source():
     """The promoted, uncompacted current snapshot; a plain read, never FOR UPDATE."""
     from .source.models import SourceCurrent, SourceSnapshot
 
-    snapshot_id = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    current = SourceCurrent.objects.values("snapshot_id", "generation").get()
     snapshot = (
         SourceSnapshot.objects.only("id", "state", "compacted_at")
-        .filter(pk=snapshot_id)
+        .filter(pk=current["snapshot_id"])
         .first()
-        if snapshot_id is not None
+        if current["snapshot_id"] is not None
         else None
     )
     if snapshot is None or snapshot.state != "promoted" or snapshot.compacted_at:
-        raise ConfigError("The load check requires a promoted source snapshot.")
-    return snapshot.pk
+        raise LoadCheckRefused("The load check requires a promoted source snapshot.")
+    return Source(snapshot.pk, current["generation"])
+
+
+def require_same_source(source):
+    """READ COMMITTED guards see a promotion; a moved source voids the samples."""
+    try:
+        unchanged = current_source() == source
+    except LoadCheckRefused:
+        unchanged = False
+    if not unchanged:
+        raise SourceChanged("The promoted source changed during the load check.")
+
+
+def family_campaign_rows(campaign_id):
+    """The set the scheduler traverses: every Family row of the current campaign."""
+    from .campaigns.credential_models import FamilyCampaign
+
+    return FamilyCampaign.objects.filter(campaign_id=campaign_id).count()
 
 
 def household_sizes(campaign_id, snapshot_id):
@@ -478,7 +698,7 @@ def household_sizes(campaign_id, snapshot_id):
 
 def form_input_arguments(scope):
     """The exact keyword arguments the Family form's baseline issuance passes."""
-    applied = scope.system.active_configuration
+    applied = scope.runtime.active_configuration
     return {
         "configuration": scope.campaign.active_configuration.values,
         "document": applied.canonical_document,
@@ -487,18 +707,29 @@ def form_input_arguments(scope):
     }
 
 
-def time_form_inputs(scope, arguments, family_duid):
-    """Time one Family's form inputs read inside its own read guard."""
+def time_form_inputs(store, scope, source, arguments, family_duid):
+    """Time one Family's form inputs read inside its own read guard.
+
+    Inside the guard the portal and the Family are re-admitted first, as the
+    form does before it reads; a Family no longer admitted is skipped, not
+    counted as a slow or failed page.
+    """
     from .responses.source_inputs import load_census_inputs
 
+    campaign_id = scope.campaign.pk
+
     def read():
-        with _guard(scope.campaign.pk):
-            load_census_inputs(scope.snapshot_id, family_duid, **arguments)
+        with _guard(campaign_id):
+            if not portal_open(store, campaign_id) or not family_admitted(
+                campaign_id, family_duid, source.generation
+            ):
+                return SKIPPED
+            load_census_inputs(source.snapshot_id, family_duid, **arguments)
 
     return timed(read)
 
 
-def measure_reports(scope):
+def measure_reports(scope, deadline):
     """Time each Admin report's first page as its view performs it.
 
     The financial and information pages take a synthetic Administrator
@@ -537,7 +768,7 @@ def measure_reports(scope):
                 FinancialQuery.parse({}),
                 principal,
                 proof=giving_proof(campaign),
-                parish_name=scope.system.active_configuration.parish.name,
+                parish_name=scope.runtime.active_configuration.parish.name,
                 configuration=campaign.active_configuration.values,
                 page_size=PAGE_SIZE,
             )
@@ -547,7 +778,10 @@ def measure_reports(scope):
             information_page(campaign.pk, InformationQuery(disposition="all"))
 
     def runs(operation, target):
-        return summarize([timed(operation) for _ in range(REPORT_RUNS)], target=target)
+        timings = phase(
+            range(REPORT_RUNS), lambda _: timed(operation), Stopper(deadline)
+        )
+        return summarize(timings, target=target)
 
     reports = {"statistics": runs(statistics_read, STATISTICS_TARGET_SECONDS)}
     if "financial" in campaign.active_configuration.values.get("modules", ()):
@@ -556,13 +790,6 @@ def measure_reports(scope):
         reports["financial_first_page"] = {"status": "skipped"}
     reports["information_first_page"] = runs(information_read, REPORT_TARGET_SECONDS)
     return reports, statistics[-1] if statistics else None
-
-
-def family_campaign_rows(campaign_id):
-    """The set the scheduler traverses: every Family row of the current campaign."""
-    from .campaigns.credential_models import FamilyCampaign
-
-    return FamilyCampaign.objects.filter(campaign_id=campaign_id).count()
 
 
 def population_counts(statistics, rows, eligible):
@@ -579,20 +806,43 @@ def population_counts(statistics, rows, eligible):
     }
 
 
-def invitation_rows(campaign_id):
-    """Planning, preparation and dispatch rows of a Testing initial-invitation run."""
+def invitation_rows(campaign_id, epoch_id):
+    """Planning, preparation and dispatch rows of the current Testing run only.
+
+    The active rehearsal epoch is the Testing run's identity: every outbox row
+    carries it, so messages are selected by it directly. Occurrences do not
+    record an epoch; they are attributed through their outbox binding, plus
+    any occurrence still unbound and unfinished, which can only belong to the
+    run in progress. Earlier rehearsals' rows are left out.
+    """
+    from django.db.models import Q
+
     from .campaigns.schedule_models import ScheduleOccurrence
     from .jobs.outbox_models import OutboxMessage
 
-    occurrences = ScheduleOccurrence.objects.filter(
-        definition__campaign_id=campaign_id,
-        definition__kind="initial",
-        mode="testing",
-    ).values("target", "created_at", "due_at", "state")
-    messages = OutboxMessage.objects.filter(
-        campaign_id=campaign_id, purpose="initial", mode="testing"
-    ).values("created_at", "finished_at", "state")
-    return list(occurrences), list(messages)
+    messages = list(
+        OutboxMessage.objects.filter(
+            campaign_id=campaign_id,
+            purpose="initial",
+            mode="testing",
+            rehearsal_epoch_id=epoch_id,
+        ).values("id", "created_at", "finished_at", "state")
+    )
+    occurrences = list(
+        ScheduleOccurrence.objects.filter(
+            definition__campaign_id=campaign_id,
+            definition__kind="initial",
+            mode="testing",
+        )
+        .filter(
+            Q(outbox_id__in=[row["id"] for row in messages])
+            | Q(outbox_id__isnull=True, state__in=("pending", "running"))
+        )
+        .values("target", "created_at", "due_at", "state")
+    )
+    for row in messages:
+        del row["id"]
+    return occurrences, messages
 
 
 def background_counts():
@@ -611,30 +861,49 @@ def background_counts():
     return result
 
 
-def measure(budget, *, samples, concurrency):
-    """Run every measurement against the current Testing campaign."""
-    system, campaign = current_scope()
-    start = background_counts()
-    with _guard(campaign.pk):
-        snapshot_id = promoted_snapshot()
-        rows = family_campaign_rows(campaign.pk)
-        households = household_sizes(campaign.pk, snapshot_id)
-    scope = Scope(campaign, system, snapshot_id)
+def measure(budget, store, *, samples, concurrency):
+    """Run every measurement against the open Testing campaign, bounded in time."""
+    headroom = web_headroom(budget)
+    if headroom < 1:
+        raise LoadCheckRefused("The web login has no spare connection for a reader.")
+    workers = effective_concurrency(concurrency, budget.web_threads, headroom)
+    deadline = monotonic() + RUN_SECONDS_CAP
+    with bounded_read():
+        campaign_id = current_campaign_id()
+        start = background_counts()
+    with _guard(campaign_id):
+        scope = open_scope(store, campaign_id)
+        source = current_source()
+        rows = family_campaign_rows(campaign_id)
+        households = household_sizes(campaign_id, source.snapshot_id)
     chosen = choose_samples(households, samples)
-    workers = effective_concurrency(concurrency, budget.web_threads)
-    read = partial(time_form_inputs, scope, form_input_arguments(scope))
-    serial = [read(duid) for duid in chosen]
-    concurrent = run_threads(chosen, workers, read, release=_close_connection)
-    reports, statistics = measure_reports(scope)
-    with _guard(campaign.pk):
-        timeline = invitation_timeline(*invitation_rows(campaign.pk))
+    read = partial(time_form_inputs, store, scope, source, form_input_arguments(scope))
+    serial = phase(chosen, read, Stopper(deadline))
+    concurrent, threads = run_threads(
+        chosen, workers, read, release=_close_connection, stop=Stopper(deadline)
+    )
+    with _guard(campaign_id):
+        require_same_source(source)
+    reports, statistics = measure_reports(scope, deadline)
+    with _guard(campaign_id):
+        timeline = invitation_timeline(*invitation_rows(campaign_id, scope.epoch_id))
+        require_same_source(source)
+    with bounded_read():
+        end = background_counts()
     return build_document(
         population=population_counts(statistics, rows, len(households)),
         budget=budget,
-        form=form_section(serial, concurrent, samples=len(chosen), concurrency=workers),
+        headroom=headroom,
+        form=form_section(
+            serial,
+            concurrent,
+            samples=len(chosen),
+            concurrency=workers,
+            threads=threads,
+        ),
         reports=reports,
         invitation_run=timeline,
-        background={"start": start, "end": background_counts()},
+        background={"start": start, "end": end},
     )
 
 
@@ -647,6 +916,8 @@ def load_check_command(configuration, *, samples, concurrency):
     """
     from django.db import connections
 
+    from .accounts.authority import AuthorityStore
+    from .accounts.configuration_schema import validate_sections
     from .operator_commands import configure_operator_database
     from .runtime_grants import admit_runtime_database
     from .runtime_web import admit_lifecycle_mounts
@@ -660,14 +931,23 @@ def load_check_command(configuration, *, samples, concurrency):
         try:
             admit_runtime_database(configuration)
             return measure(
-                configuration.runtime_budget, samples=samples, concurrency=concurrency
+                configuration.runtime_budget,
+                AuthorityStore(configuration.paths["authority"], validate_sections),
+                samples=samples,
+                concurrency=concurrency,
             )
         finally:
             connections.close_all()
 
 
 def execute_load_check(args):
-    """Console entry: one fixed JSON document, or one generic refusal."""
+    """Console entry: one fixed JSON document, or one generic line per outcome.
+
+    Refusals (configuration, admission, a closed portal) and a source that
+    moved mid-run are classified apart from an unexpected error, so the
+    operator knows whether to fix the deployment, simply rerun, or read the
+    process log.
+    """
     configure_logging()
     try:
         if args.config is None:
@@ -688,11 +968,22 @@ def execute_load_check(args):
             file=sys.stderr,
         )
         return 2
-    except Exception as error:
+    except SourceChanged:
+        emit(Event.FACT_DRIFT, level=logging.WARNING)
+        print("ERROR: source changed during the check; run it again", file=sys.stderr)
+        return 2
+    except (ConfigError, PermissionError) as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
         print(
-            "ERROR: load check refused or failed; verify the web profile, Testing "
-            "mode, a current campaign and a promoted source",
+            "ERROR: load check refused; verify the web profile, Testing mode, an "
+            "open current campaign and a promoted source",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception as error:
+        emit_failure(error, event=Event.TASK_FAILED)
+        print(
+            "ERROR: load check stopped by an unexpected error; see the process log",
             file=sys.stderr,
         )
         return 2

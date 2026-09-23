@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship import load_check
 from parishkit.stewardship.cli import main
+from parishkit.stewardship.database_provisioning import role_limit
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_budget import RuntimeBudget
 from parishkit.stewardship.runtime_paths import RuntimeLayout
@@ -20,6 +22,7 @@ from .bootstrap_factory import bootstrap_fixture
 SENTINEL_DUID = "884422"
 SENTINEL_EMAIL = "private-person@example.org"
 T0 = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+FAR = monotonic() + 10**6
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +42,10 @@ def passing_document(**overrides):
     document = load_check.build_document(
         population=load_check.population_counts(None, 4, 3),
         budget=RuntimeBudget(),
-        form=load_check.form_section(serial, serial, samples=4, concurrency=2),
+        headroom=22,
+        form=load_check.form_section(
+            serial, serial, samples=4, concurrency=2, threads=2
+        ),
         reports=reports,
         invitation_run={"status": "not_run"},
         background={"start": {"queued": 0, "running": 0}, "end": {"queued": 1}},
@@ -63,20 +69,43 @@ def test_bounded_option_refuses_out_of_range_and_non_decimal_input(value):
 
 
 @pytest.mark.parametrize(
-    "requested,web_threads,expected",
-    [(4, 8, 4), (8, 4, 4), (100, 100, 8), (1, 1, 1), (0, 8, 1)],
+    "budget",
+    [
+        RuntimeBudget(),
+        RuntimeBudget(rollout_overlap=1),
+        RuntimeBudget(web_processes=1, web_threads=8, rollout_overlap=1),
+        RuntimeBudget(
+            rollout_overlap=3, auxiliary_connections=18, database_connections=200
+        ),
+    ],
 )
-def test_concurrency_never_exceeds_web_threads_or_the_fixed_cap(
-    requested, web_threads, expected
+def test_headroom_is_the_web_role_limit_minus_the_serving_generation(budget):
+    """The same provisioning formula bounds the login and the check's readers."""
+    limit = role_limit(SimpleNamespace(runtime_budget=budget), ServiceRole.WEB)
+    serving = budget.web_processes * budget.replicas * (budget.web_threads + 3)
+    assert limit == serving * budget.rollout_overlap
+    assert load_check.web_headroom(budget) == limit - serving
+    assert load_check.web_headroom(RuntimeBudget(rollout_overlap=1)) == 0
+    assert load_check.web_headroom(RuntimeBudget()) == 22
+
+
+@pytest.mark.parametrize(
+    "requested,web_threads,headroom,expected",
+    [(4, 8, 22, 4), (8, 4, 22, 4), (100, 100, 100, 8), (8, 8, 3, 3), (0, 8, 22, 1)],
+)
+def test_concurrency_never_exceeds_threads_headroom_or_the_fixed_cap(
+    requested, web_threads, headroom, expected
 ):
-    assert load_check.effective_concurrency(requested, web_threads) == expected
+    assert (
+        load_check.effective_concurrency(requested, web_threads, headroom) == expected
+    )
 
 
 @pytest.mark.parametrize(
     "mode,campaign", [("production", "campaign"), ("testing", None)]
 )
 def test_runtime_state_refuses_production_and_missing_campaign(mode, campaign):
-    with pytest.raises(ConfigError):
+    with pytest.raises(load_check.LoadCheckRefused):
         load_check.admit_runtime_state(mode, campaign)
     load_check.admit_runtime_state("testing", "campaign")
 
@@ -95,23 +124,58 @@ def test_samples_take_largest_households_then_an_even_spread():
     assert load_check.choose_samples([], 10) == []
 
 
-def test_summary_uses_nearest_rank_and_fails_on_any_refused_sample():
+@pytest.mark.parametrize(
+    "values,quantile,expected",
+    [
+        ([0.1, 2.5], 0.95, 2.5),
+        ([0.1, 2.5], 0.5, 0.1),
+        ([0.1, 0.1, 0.1, 2.2], 0.95, 2.2),
+        ([0.1, 0.1, 2.2, 2.3], 0.5, 0.1),
+        (list(range(1, 21)), 0.95, 19),
+        (list(range(1, 8)), 0.95, 7),
+        (list(range(1, 8)), 0.5, 4),
+        ([3.0], 0.95, 3.0),
+    ],
+)
+def test_nearest_rank_is_the_ceiling_rank_clamped_to_the_sample(
+    values, quantile, expected
+):
+    assert load_check.nearest_rank(values, quantile) == expected
+
+
+def test_summary_uses_nearest_rank_and_fails_on_unavailable_or_unreached_reads():
     timings = [index / 100 for index in range(1, 21)]
     result = load_check.summarize(timings, target=2.0)
     assert result == {
         "runs": 20,
         "failures": 0,
+        "skipped": 0,
+        "not_run": 0,
         "target_seconds": 2.0,
         "p50": 0.1,
         "p95": 0.19,
         "max": 0.2,
         "pass": True,
     }
+    # Two samples: the slow one is the p95, so it fails.
+    two = load_check.summarize([0.1, 2.5], target=2.0)
+    assert two["p95"] == 2.5 and not two["pass"]
+    # Four samples with exactly one slow read: the fourth value is the p95.
+    four = load_check.summarize([0.1, 0.1, 0.1, 2.2], target=2.0)
+    assert four["p95"] == 2.2 and not four["pass"]
+    # Twenty samples tolerate one slow read at p95 but not two.
     slow = load_check.summarize([0.1] * 19 + [2.5], target=2.0)
     assert slow["p95"] == 0.1 and slow["max"] == 2.5 and slow["pass"]
     assert not load_check.summarize([0.1] * 18 + [2.5, 2.6], target=2.0)["pass"]
+    # A sample count that is not a multiple of twenty still ranks correctly.
+    seven = load_check.summarize([0.1] * 6 + [1.9], target=2.0)
+    assert seven["p95"] == 1.9 and seven["pass"]
     refused = load_check.summarize([0.1, None], target=2.0)
     assert refused["failures"] == 1 and not refused["pass"]
+    skipped = load_check.summarize([0.1, load_check.SKIPPED], target=2.0)
+    assert skipped["skipped"] == 1 and skipped["runs"] == 2 and skipped["pass"]
+    unreached = load_check.summarize([0.1, load_check.NOT_RUN], target=2.0)
+    assert unreached == unreached | {"runs": 1, "not_run": 1, "pass": False}
     empty = load_check.summarize([], target=2.0)
     assert empty["p95"] is None and not empty["pass"]
 
@@ -120,6 +184,8 @@ def test_verdict_requires_every_measured_section_and_ignores_the_timeline():
     document = passing_document()
     assert document["result"] == "pass"
     assert document["family_form_inputs"]["failures"] == 0
+    assert document["family_form_inputs"]["threads"] == 2
+    assert document["runtime_budget"]["web_connection_headroom"] == 22
     failing = passing_document(
         invitation_run={"status": "in_progress"},
         reports={
@@ -132,6 +198,7 @@ def test_verdict_requires_every_measured_section_and_ignores_the_timeline():
         load_check.build_document(
             population=failing["population"],
             budget=RuntimeBudget(),
+            headroom=22,
             form=failing["family_form_inputs"],
             reports=failing["reports"],
             invitation_run=failing["invitation_run"],
@@ -139,10 +206,10 @@ def test_verdict_requires_every_measured_section_and_ignores_the_timeline():
         )["result"]
         == "fail"
     )
-    # Nearest rank at four samples is the third value, so two slow concurrent
-    # reads move p95 past the target while the serial pass stays intact.
+    # One slow concurrent read out of four is the p95 at four samples, so the
+    # concurrent phase fails while the serial phase still passes.
     slow_form = load_check.form_section(
-        [0.1] * 4, [0.1, 0.1, 2.2, 2.3], samples=4, concurrency=2
+        [0.1] * 4, [0.1, 0.1, 0.1, 2.2], samples=4, concurrency=2, threads=2
     )
     assert not slow_form["pass"] and slow_form["serial"]["pass"]
 
@@ -210,20 +277,69 @@ def test_timeline_marks_unfinished_runs_and_leaves_single_rates_undefined():
     }
 
 
-def test_threads_keep_item_order_release_each_connection_and_surface_errors():
+def test_state_vocabularies_match_the_owning_models():
+    """A new schedule or delivery state must reach the output allow-list."""
+    from parishkit.stewardship.campaigns.schedule_models import OCCURRENCE_STATES
+    from parishkit.stewardship.jobs.delivery_states import DeliveryState
+
+    assert frozenset(OCCURRENCE_STATES) == load_check.OCCURRENCE_STATES
+    assert {state.value for state in DeliveryState} == load_check.MESSAGE_STATES
+    assert load_check.TERMINAL_OCCURRENCE_STATES < load_check.OCCURRENCE_STATES
+    assert load_check.TERMINAL_MESSAGE_STATES < load_check.MESSAGE_STATES
+    assert load_check.OCCURRENCE_STATES | load_check.MESSAGE_STATES <= (
+        load_check.ALLOWED_KEYS
+    )
+
+
+def test_threads_keep_item_order_count_starts_release_connections_and_raise():
     released = []
-    results = load_check.run_threads(
-        list(range(10)), 3, lambda item: item * 2, release=lambda: released.append(1)
+    results, threads = load_check.run_threads(
+        list(range(10)),
+        3,
+        lambda item: item * 2,
+        release=lambda: released.append(1),
+        stop=load_check.Stopper(FAR),
     )
     assert results == [item * 2 for item in range(10)]
-    assert len(released) == 3
-    assert load_check.run_threads([], 3, lambda item: item, release=released.pop) == []
+    assert threads == 3 and len(released) == 3
+    # Fewer items than workers: only as many threads as items start.
+    results, threads = load_check.run_threads(
+        [1], 4, lambda item: item, release=released.pop, stop=load_check.Stopper(FAR)
+    )
+    assert (results, threads) == ([1], 1)
+    assert load_check.run_threads(
+        [], 3, lambda item: item, release=released.pop, stop=load_check.Stopper(FAR)
+    ) == ([], 0)
 
     def fail(item):
         raise KeyError(item)
 
     with pytest.raises(KeyError):
-        load_check.run_threads([1, 2], 4, fail, release=lambda: None)
+        load_check.run_threads(
+            [1, 2], 4, fail, release=lambda: None, stop=load_check.Stopper(FAR)
+        )
+
+
+def test_phases_stop_after_repeated_failures_or_at_the_deadline():
+    """Unreached samples are reported as not run, never silently dropped."""
+    outcomes = iter([None, 0.1, None, None, None, None, 0.2, 0.3])
+    results = load_check.phase(
+        range(8), lambda _: next(outcomes), load_check.Stopper(FAR)
+    )
+    assert results == [None, 0.1, None, None, None, None, "not_run", "not_run"]
+    expired = load_check.Stopper(monotonic() - 1)
+    assert load_check.phase([1, 2], lambda _: 0.1, expired) == ["not_run"] * 2
+    results, threads = load_check.run_threads(
+        [1, 2, 3], 2, lambda _: 0.1, release=lambda: None, stop=expired
+    )
+    assert results == ["not_run"] * 3 and threads == 2
+    failing = load_check.Stopper(FAR)
+    results, _ = load_check.run_threads(
+        list(range(12)), 2, lambda _: None, release=lambda: None, stop=failing
+    )
+    assert results.count(None) >= 5 and "not_run" in results
+    summary = load_check.summarize(results, target=2.0)
+    assert summary["not_run"] >= 1 and not summary["pass"]
 
 
 def test_safe_document_admits_only_the_fixed_vocabulary():
@@ -291,15 +407,48 @@ def test_cli_refuses_missing_config_without_touching_the_deployment(
     assert "ERROR: load check refused" in output.err
 
 
-def test_cli_never_prints_private_failure_text_or_sentinel_values(monkeypatch, capsys):
-    def fail(path):
-        raise ValueError("private-error-value " + SENTINEL_EMAIL)
+@pytest.mark.parametrize(
+    "error,line",
+    [
+        (ValueError("private-error-value"), "stopped by an unexpected error"),
+        (load_check.LoadCheckRefused("private portal detail"), "load check refused"),
+        (PermissionError("private admission detail"), "load check refused"),
+        (load_check.SourceChanged("private generation"), "source changed during"),
+        (StartupBusy("private path"), "offline maintenance"),
+    ],
+)
+def test_cli_classifies_each_outcome_with_its_own_generic_line(
+    monkeypatch, capsys, error, line
+):
+    """Refusal, drift, maintenance and a real error each get one fixed line."""
+    events = []
+    monkeypatch.setattr(load_check, "load_deployment", lambda path: object())
+    monkeypatch.setattr(
+        load_check, "emit_failure", lambda err, *, event: events.append(event)
+    )
+    monkeypatch.setattr(
+        load_check, "emit", lambda event, **kwargs: events.append(event)
+    )
 
-    monkeypatch.setattr(load_check, "load_deployment", fail)
+    def fail(config, **options):
+        raise error
+
+    monkeypatch.setattr(load_check, "load_check_command", fail)
     assert main(["load-check", "--config", "private-input"]) == 2
     output = capsys.readouterr()
-    assert "private" not in output.out + output.err
-    # A document carrying anything outside the vocabulary is never printed.
+    assert output.out == "" and line in output.err
+    assert output.err.count("ERROR:") == 1
+    assert "private" not in output.err
+    expected = {
+        "stopped by an unexpected error": [load_check.Event.TASK_FAILED],
+        "load check refused": [load_check.Event.STARTUP_REJECTED],
+        "source changed during": [load_check.Event.FACT_DRIFT],
+        "offline maintenance": [],
+    }
+    assert events == expected[line]
+
+
+def test_cli_never_prints_a_document_outside_the_vocabulary(monkeypatch, capsys):
     monkeypatch.setattr(load_check, "load_deployment", lambda path: object())
     leaked = passing_document()
     leaked["population"]["families"] = SENTINEL_DUID
@@ -309,16 +458,7 @@ def test_cli_never_prints_private_failure_text_or_sentinel_values(monkeypatch, c
     assert main(["load-check", "--config", "private-input"]) == 2
     output = capsys.readouterr()
     assert output.out == "" and SENTINEL_DUID not in output.err
-
-
-def test_cli_reports_offline_maintenance_generically(monkeypatch, capsys):
-    def busy(path):
-        raise StartupBusy("private path")
-
-    monkeypatch.setattr(load_check, "load_deployment", busy)
-    assert main(["load-check", "--config", "private-input"]) == 2
-    output = capsys.readouterr()
-    assert "offline maintenance" in output.err and "private" not in output.err
+    assert "unexpected error" in output.err
 
 
 def test_command_admits_web_only_under_the_shared_lease_and_closes_sql(
@@ -348,14 +488,14 @@ def test_command_admits_web_only_under_the_shared_lease_and_closes_sql(
         "django.db.connections.close_all", lambda: events.append("sql_closed")
     )
 
-    def measure(budget, *, samples, concurrency):
+    def measure(budget, store, *, samples, concurrency):
         """The lease is held while measuring, exactly like the health check."""
         with (
             pytest.raises(StartupBusy),
             StartupLease(RuntimeLayout(config).interlock, offline=True),
         ):
             pass
-        events.append(("measure", budget, samples, concurrency))
+        events.append(("measure", budget, store.root, samples, concurrency))
         return {"result": "pass"}
 
     monkeypatch.setattr(load_check, "measure", measure)
@@ -375,14 +515,14 @@ def test_command_admits_web_only_under_the_shared_lease_and_closes_sql(
     assert events[2:] == [
         "database",
         "authority",
-        ("measure", config.runtime_budget, 5, 2),
+        ("measure", config.runtime_budget, config.paths["authority"], 5, 2),
         "sql_closed",
     ]
     with StartupLease(RuntimeLayout(config).interlock, offline=True):
         pass
 
 
-def test_timed_counts_unavailable_reads_as_failures_only(monkeypatch):
+def test_timed_counts_unavailable_reads_and_skips_declined_ones(monkeypatch):
     """Refused or timed-out reads are counted; anything else is a real error."""
 
     class Unavailable(Exception):
@@ -395,6 +535,7 @@ def test_timed_counts_unavailable_reads_as_failures_only(monkeypatch):
 
     assert load_check.timed(refuse) is None
     assert load_check.timed(lambda: None) >= 0
+    assert load_check.timed(lambda: load_check.SKIPPED) is load_check.SKIPPED
 
     def crash():
         raise KeyError("bug")
@@ -417,3 +558,22 @@ def test_population_reports_reference_figures_and_tolerates_no_statistics():
     }
     empty = load_check.population_counts(SimpleNamespace(active=None), 0, 0)
     assert empty["active_families"] is None and empty["family_campaign_rows"] == 0
+
+
+def test_source_drift_is_refused_not_published(monkeypatch):
+    """A promotion between capture and re-read voids the run."""
+    source = load_check.Source("snapshot", 3)
+    monkeypatch.setattr(load_check, "current_source", lambda: source)
+    load_check.require_same_source(source)
+    monkeypatch.setattr(
+        load_check, "current_source", lambda: load_check.Source("snapshot", 4)
+    )
+    with pytest.raises(load_check.SourceChanged):
+        load_check.require_same_source(source)
+
+    def compacted():
+        raise load_check.LoadCheckRefused("compacted")
+
+    monkeypatch.setattr(load_check, "current_source", compacted)
+    with pytest.raises(load_check.SourceChanged):
+        load_check.require_same_source(source)
