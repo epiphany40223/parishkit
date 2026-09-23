@@ -25,15 +25,15 @@ and the [launch runbooks](stewardship-launch-runbooks.md#pausing-and-resuming-de
   pause, so a clear with no types is admitted when they are all that is
   held.
 - Every closed resolution cancels them as `campaign_closed`, as the mail
-  worker applies the close policy, under a command ID derived (by SHA-256)
-  from the resolution and the message. Unlike the worker, which skips only a pending
-  occurrence, it also skips one left running by an ended attempt (with the
-  same transaction-local proof the resume's recovery uses); a failed
-  occurrence keeps its truthful failure.
+  worker applies the close policy, under a command ID derived (by
+  SHA-256) from the resolution and the message. Unlike the worker, which
+  skips only a pending occurrence, it also skips one left running by an
+  ended attempt (with the same transaction-local proof the resume's
+  recovery uses); a failed occurrence keeps its truthful failure.
 - The delivery page shows the count and says any resolution cancels them.
 
-This changes the fresh-install schema (one view, a changed inventory view
-and a changed resolution function); the committed
+This changes the fresh-install schema (two new views, a changed inventory
+view and a changed resolution function); the committed
 [schema baseline](../../tests/stewardship/database/schema-baseline.json) is
 updated, and the human reinstalls the validation deployment, which had not
 started. It follows the
@@ -84,3 +84,10 @@ stranded count, so both new page paragraphs render in the layout and
 accessibility checks; and the derived command ID uses SHA-256, like every
 other schema digest, since PostgreSQL's `md5()` fails on a FIPS host. A
 correction check follows.
+
+## Round 3
+
+Claude only (Codex was out of credits). Correction check: one raw finding,
+none validated; the review rounds are closed. The Low (a paragraph left
+unwrapped after the round 2 edit) was taken, and the schema summary above
+now names both new views.
