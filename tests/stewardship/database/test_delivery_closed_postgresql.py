@@ -904,9 +904,9 @@ def test_closed_resolution_cancels_a_family_message_with_no_task_left(
     assert message.pause_hold_id is None
     # The cancellation's command ID names the resolution that made it.
     assert message.command_id == UUID(
-        hashlib.md5(
+        hashlib.sha256(
             f"postclose_stranded:{receipt.pk}:{message.pk}".encode()
-        ).hexdigest()
+        ).hexdigest()[:32]
     )
     occurrence = ScheduleOccurrence.objects.get(pk=message.semantic_key)
     assert occurrence.state == "skipped" and occurrence.reason == "campaign_closed"
@@ -915,6 +915,74 @@ def test_closed_resolution_cancels_a_family_message_with_no_task_left(
         assert not OutboxMessage.objects.filter(
             purpose="daily_digest", state="pending"
         ).exists()
+
+
+def test_closed_resolution_never_strands_an_uncertain_family_message(scheduled):
+    """An uncertain idempotent retry with no task left stays unknown.
+
+    The outbox guard keeps its payload and forbids cancelling it, so it must
+    never count as stranded: clearing stays refused, and a report resolution
+    still succeeds, leaves it untouched and does not clear the pause.
+    """
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_outbox_postgresql import submit
+    from .test_taskrun_postgresql import act
+
+    item = scheduled
+    _, family = future_message(item)
+    message = OutboxMessage.objects.get(pk=family.message_id)
+    harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
+    due = item.campaign.active_configuration.starts_at + timedelta(days=2, hours=12)
+    with campaign_clock(due):
+        allocated(harness)
+        # Storage-only provider boundary, as the in-flight test uses: the
+        # attempt ends in an idempotent retry whose outcome stays uncertain.
+        status = submit(
+            SimpleNamespace(
+                message_id=message.pk,
+                version=message.version,
+                worker_id=None,
+                task_id=message.task_id,
+            )
+        )
+        change_delivery(
+            status,
+            DeliveryAction.RETRY_IDEMPOTENT,
+            retry_seconds=30,
+            evidence=provider_evidence(),
+        )
+        act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Hold campaign mail"
+            )
+            commands.confirm(*item.arguments, token=token)
+        close_campaign(item.campaign, uuid4())
+    message.refresh_from_db()
+    assert message.state == "retry_wait" and message.pause_hold_id is not None
+    version = message.version
+    closed_at = item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    with campaign_clock(closed_at), web_login():
+        inventory = commands.inventory(item.campaign.pk)
+        assert inventory["unknown"] == 1 and inventory["stranded"] == 0
+        with pytest.raises(StaleRecordError):
+            commands.preview_resolution(
+                *item.arguments, reason="Clear", decision="clear", types=[]
+            )
+        _, token = commands.preview_resolution(
+            *item.arguments,
+            reason="Cancel reports",
+            decision="cancel",
+            types=["daily_digest"],
+        )
+        receipt = commands.confirm(*item.arguments, token=token)
+    assert receipt.control_id is None
+    item.campaign.refresh_from_db()
+    assert item.campaign.delivery_paused
+    message.refresh_from_db()
+    assert message.state == "retry_wait" and message.version == version
 
 
 def test_closed_paused_receipt_resend_follows_the_held_resolution(

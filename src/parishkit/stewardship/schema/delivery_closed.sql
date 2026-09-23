@@ -331,7 +331,8 @@ BEGIN
         UPDATE public.stewardship_outbox_message m SET
             state='cancelled',action='cancel_unsent',version=m.version+1,pause_hold_id=NULL,
             actor_id=intent.actor_id,correlation_id=intent.correlation_id,
-            command_id=md5('postclose_stranded:'||intent.id::text||':'||m.id::text)::uuid,
+            command_id=substr(encode(sha256(convert_to(
+                'postclose_stranded:'||intent.id::text||':'||m.id::text,'UTF8')),'hex'),1,32)::uuid,
             command_digest=encode(sha256(convert_to(jsonb_build_array(
                 'postclose_stranded',intent.id,m.id,m.version)::text,'UTF8')),'hex'),
             reason='campaign_closed',finished_at=statement_timestamp(),

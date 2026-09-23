@@ -25,8 +25,8 @@ and the [launch runbooks](stewardship-launch-runbooks.md#pausing-and-resuming-de
   pause, so a clear with no types is admitted when they are all that is
   held.
 - Every closed resolution cancels them as `campaign_closed`, as the mail
-  worker applies the close policy, under a command ID derived from the
-  resolution and the message. Unlike the worker, which skips only a pending
+  worker applies the close policy, under a command ID derived (by SHA-256)
+  from the resolution and the message. Unlike the worker, which skips only a pending
   occurrence, it also skips one left running by an ended attempt (with the
   same transaction-local proof the resume's recovery uses); a failed
   occurrence keeps its truthful failure.
@@ -52,8 +52,8 @@ and corrected:
   as unknown and the outbox guard forbids cancelling, so one such row would
   have made every closed resolution fail. Uncertainty is now one owner-only
   view shared by the inventory and the stranded view, so an uncertain row
-  is never stranded and still blocks the clear; the existing in-flight
-  uncertainty test exercises the shared definition.
+  is never stranded and still blocks the clear (the round 2 regression test
+  covers it).
 
 The seven findings below the validation cutoff were taken: the cancellation
 rechecks the target row's state, hold and version; its command ID is
@@ -64,3 +64,23 @@ stranded until the close, and covers a digest cancel as well as an empty
 clear; the page and documents say "no remaining delivery task" rather than
 "preparation failed"; and the runbook links this ledger. A correction
 check follows.
+
+## Round 2
+
+Claude only (Codex was out of credits). Four raw findings, one validated
+and corrected:
+
+- Medium: nothing tested the round 1 correction, because the in-flight
+  uncertainty test holds only reports and the stranded view covers only
+  invitations and reminders. A new regression test drives a held
+  invitation to an uncertain idempotent retry with its task ended on a
+  closed paused campaign: it counts as unknown, not stranded, clearing is
+  refused, and a report cancellation succeeds without touching it or
+  clearing the pause. Removing the exclusion makes the test fail.
+
+The three findings below the validation cutoff were taken: the ledger no
+longer overstates the in-flight test; the browser layout fixture carries a
+stranded count, so both new page paragraphs render in the layout and
+accessibility checks; and the derived command ID uses SHA-256, like every
+other schema digest, since PostgreSQL's `md5()` fails on a FIPS host. A
+correction check follows.
