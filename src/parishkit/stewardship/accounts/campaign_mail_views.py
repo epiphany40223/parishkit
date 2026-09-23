@@ -9,7 +9,9 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from .admin_editing import editable_configuration
 from .authentication import runtime
+from .campaign_family_test import families_link
 from .campaign_mail import SALT, prepare, request_sample
 from .campaign_mail_models import CampaignMailTest
 from .integration_views import ERRORS, _checked
@@ -75,6 +77,11 @@ def campaign_mail(request, campaign_id, revision_id):
                     "text": preview.sample.text,
                 },
                 "testing_recipient": preview.sample.recipient,
+                # Real chosen-Family sends exist only for a Testing draft whose
+                # schedules use this template.
+                "families_url": families_link(
+                    editable_configuration(service), preview.row.campaign, revision_id
+                ),
                 "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
                 "unknown": rows.filter(state="delivery_unknown").exists(),
                 "items": items,

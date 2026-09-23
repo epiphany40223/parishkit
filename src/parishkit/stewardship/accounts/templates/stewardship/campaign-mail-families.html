@@ -1,0 +1,17 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Send this email to chosen Families" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Send this email to chosen Families" %}</h1><p>{{ campaign.active_configuration.name }} — {{ subject }}</p>
+<p class="notice">{% translate "TEST — each chosen Family's real message is rendered with that Family's own Testing code and link, carries a prominent TEST banner, and is sent only to" %} {{ testing_recipient }}. {% translate "It does not create or satisfy scheduled Family mail and does not open the Family portal outside the campaign dates." %}</p>
+{% if not epoch_ready %}<p role="alert">{% translate "Testing credentials are not ready for this campaign yet. The scheduler creates them once the campaign dates include today and the source population is current; until then no Family test can be requested." %}</p>{% endif %}
+<p>{% translate "Family tests that may still be requested now:" %} {{ available|number }}</p>
+<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="preview">{{ form.families.errors }}<label for="{{ form.families.id_for_label }}">{{ form.families.label }}</label>{{ form.families }}<button type="submit">{% translate "Check these Families" %}</button></form>
+{% if families %}<section class="panel"><h2>{% translate "Reviewed Families" %}</h2><table><thead><tr><th scope="col">{% translate "Family DUID" %}</th><th scope="col">{% translate "Status" %}</th></tr></thead><tbody>
+{% for row in families %}<tr><td>{{ row.duid|number }}</td><td>{{ row.label }}</td></tr>{% endfor %}
+</tbody></table>
+{% if confirm and sendable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm">{{ confirm.preview }}<p>{{ confirm.acknowledge }}<label for="{{ confirm.acknowledge.id_for_label }}">{{ confirm.acknowledge.label }}</label></p><button type="submit">{% translate "Send these Family tests" %}</button></form>
+{% else %}<p role="status">{% translate "Every chosen Family must be eligible, within the remaining allowance, and Testing credentials must be ready before sending." %}</p>{% endif %}</section>{% endif %}
+<section class="panel"><h2>{% translate "Recent Family tests" %}</h2><ul>{% for item in items %}<li>{% if item.duid %}{% translate "Family DUID" %} {{ item.duid|number }} — {% endif %}{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time><br>{% translate "Test reference" %}: <code>{{ item.id }}</code></li>{% empty %}<li>{% translate "No Family tests have been requested." %}</li>{% endfor %}</ul></section>
+<p><a href="">{% translate "Refresh status" %}</a></p>
+<p><a href="{{ sample_url }}">{% translate "Return to the fictional sample test" %}</a></p>
+{% endblock %}
