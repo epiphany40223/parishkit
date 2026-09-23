@@ -121,7 +121,7 @@ the affected scope before the gate exits.
 | PR #88 login-rule autosave | [Seven single-source rounds](stewardship-rule-autosave-reviews.md), [protected delivery](stewardship-rule-autosave.md) | PL-I1, PL-I3 |
 | PR #89 autosave races/exact-once tests | [Six single-source rounds](stewardship-autosave-races-reviews.md), [protected delivery](stewardship-autosave-races.md) | PL-I1, PL-I3 |
 
-### V1 launch items and gate corrections (PR #91-#107)
+### V1 launch items and gate corrections (PR #91-#109)
 
 | Merged increment | Review evidence reused | PL scopes |
 | --- | --- | --- |
@@ -142,6 +142,7 @@ the affected scope before the gate exits.
 | PR #105 gate round 3 corrections | [Three single-source rounds and protected delivery](stewardship-gate-round3-fixes-reviews.md) | PL-I2, PL-I4, PL-I5 |
 | PR #106 operator diagnostics (gate round 4) | [Four single-source rounds and protected delivery](stewardship-operator-diagnostics-reviews.md) | PL-I2, PL-I5 |
 | PR #107 upgrade recovery and paused report resend (gate round 5) | [Six dual-source rounds and protected delivery](stewardship-gate-round5-fixes-reviews.md) | PL-I2, PL-I5 |
+| PR #109 stranded Family mail on a closed campaign (gate round 3) | [Three single-source rounds and protected delivery](stewardship-closed-stranded-family-reviews.md) | PL-I2, PL-I4 |
 
 Not reused as shipping-code evidence:
 
@@ -197,21 +198,24 @@ minutes, 4093 on `95ddef08` in 1 hour 33 minutes, and 4105 on `3d5cbe6d`
 in 1 hour 37 minutes. Each correction pull request passed its own focused
 suites and full exact-head CI, including its PostgreSQL shards, before it
 merged; the corrections after `3d5cbe6d` (PR #105 to #107) changed no
-database path.
+database path. PR #109 changed the closed-campaign resolution, so the full
+suite ran again on its merge: REGRESS7.
 
 The schema freeze audit installed `2c16c49e` fresh and compared its catalog
 with the committed fresh-install baseline
 (`tests/stewardship/database/schema-baseline.json`): every category
-matched exactly, so no schema change landed after the baseline was
-recorded, and PR #106 and #107 changed no schema.
+matched exactly, and PR #106 and #107 changed no schema. PR #109 then
+added two views and changed the inventory view and the closed resolution
+function, before validation had started; its baseline was regenerated from
+a fresh install of that tree and matches `f79376f7`, the current baseline:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
-| Relations | 217 | `d1af8677` |
-| Columns | 2417 | `74f8b12b` |
+| Relations | 219 | `bcabfa40` |
+| Columns | 2421 | `a71204c6` |
 | Constraints | 3342 | `dd448165` |
 | Indexes | 992 | `e0ebd55b` |
-| Functions | 586 | `77fabd05` |
+| Functions | 586 | `a397aef1` |
 | Triggers | 546 | `6d4e884f` |
 | Policies | 28 | `1c9c3b2d` |
 
@@ -255,17 +259,6 @@ requires.
   [activation procedure](stewardship-launch-runbooks.md#production-activation)
   must be followed in one sitting, with a full refresh timed on the
   validation deployment beforehand.
-- Round 3's one uncorrected Medium (PL-I2): if a campaign is paused while
-  an invitation or reminder whose preparation failed is waiting for
-  **Retry unsent**, and the campaign then closes while still paused, no
-  action can resolve that message, so the pause on the closed campaign is
-  never cleared. Clearing it matters only for reopening or archiving a
-  closed campaign, neither of which v1 ships; held receipts and digests on
-  the closed campaign still resolve through the closed resolution. Avoid
-  it by resolving failed preparations before pausing near the close, or by
-  resuming before the close. The exit rule admits no unresolved validated
-  Medium, so this one blocks exit unless it is corrected first or the human
-  explicitly grants a recorded exception to that rule for v1.
 - The Family code path does not add the progressive delay in elevated mode
   that the architecture specification describes; the Administrator path
   does. During a distributed guessing burst the per-IP limit is halved and
@@ -343,7 +336,7 @@ again found nothing.
 | PL-I2 | Medium: the mail-provider outage runbook said sending resumes by itself, but the campaign-mail circuit stops sending until `mail-dispatch` restarts | PR #105 |
 | PL-I4 | Low: resume is hidden while an activation catch-up is incomplete, undocumented | PR #105 |
 | PL-I5 | Low: the backup refusal log records only a category; Low: a single nightly backup would raise the 24-hour overdue alert on any late night | PR #105 |
-| PL-I2 | Medium: an invitation or reminder whose preparation failed, held by a pause on a campaign that then closes, can never be resolved, so the pause is never cleared | Not corrected; listed under [known limitations](#known-limitations-for-the-humans-approval) for the human's decision |
+| PL-I2 | Medium: an invitation or reminder whose preparation failed, held by a pause on a campaign that then closes, can never be resolved, so the pause is never cleared | Left open by round 3, then corrected at the human's direction by [PR #109](stewardship-closed-stranded-family-reviews.md) and rechecked in round 7 |
 | PL-I1 | Low (open since round 2): no progressive delay on the Family code path in elevated mode | Not corrected; listed under known limitations |
 
 ### Round 4
@@ -388,30 +381,26 @@ message resent on a paused active campaign is sent on resume, but the
 resume's recovery plan decides it like any held message, so a later
 reminder can replace a resent reminder and a submission, lost eligibility
 or no deliverable address cancels it. No Critical, High or Medium finding
-from rounds 4 to 6 remains unresolved; round 3's uncorrected Medium awaits
-the human's decision, as the exit section says.
+from rounds 4 to 6 remains unresolved; round 3's uncorrected Medium was
+later corrected by PR #109 (round 7).
 
 ## Exit
 
 Open, awaiting the human. Every Critical, High and Medium finding that the
-six rounds validated is corrected, except round 3's PL-I2 Medium listed
-under known limitations, which blocks exit until it is corrected or the
-human explicitly grants a recorded exception for it. The gate exits only when
+seven rounds validated is corrected (EXITCHECK). The gate exits only when
 the human gives explicit product, security and operations approval of the
 launch and of the known limitations above; nothing here infers it. Before
 that approval, the human also:
 
 - reinstalls the validation deployment from the current release, since the
-  backup release, PR #97 and PR #100 changed the fresh-install schema and
-  PR #105 added the rendered `operational_alerts` policy;
+  backup release, PR #97, PR #100 and PR #109 changed the fresh-install
+  schema and PR #105 added the rendered `operational_alerts` policy;
 - runs the provider smoke checks and the restore drills (the full drill on
   the validation deployment, and the replacement-host steps on a
   disposable host), as the
   [backup runbook](stewardship-backup-runbook.md#restore-drill) describes;
 - times a full ParishSoft refresh on the validation deployment for the
-  [activation procedure](stewardship-launch-runbooks.md#production-activation);
-- decides whether round 3's closed-while-paused Medium is corrected
-  before exit or accepted for v1 as a recorded exception to the exit rule.
+  [activation procedure](stewardship-launch-runbooks.md#production-activation).
 
 ## Reviews of this record
 
