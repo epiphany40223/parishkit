@@ -121,7 +121,7 @@ the affected scope before the gate exits.
 | PR #88 login-rule autosave | [Seven single-source rounds](stewardship-rule-autosave-reviews.md), [protected delivery](stewardship-rule-autosave.md) | PL-I1, PL-I3 |
 | PR #89 autosave races/exact-once tests | [Six single-source rounds](stewardship-autosave-races-reviews.md), [protected delivery](stewardship-autosave-races.md) | PL-I1, PL-I3 |
 
-### V1 launch items and gate corrections (PR #91-#111)
+### V1 launch items and gate corrections (PR #91-#113)
 
 | Merged increment | Review evidence reused | PL scopes |
 | --- | --- | --- |
@@ -144,6 +144,8 @@ the affected scope before the gate exits.
 | PR #107 upgrade recovery and paused report resend (gate round 5) | [Six dual-source rounds and protected delivery](stewardship-gate-round5-fixes-reviews.md) | PL-I2, PL-I5 |
 | PR #109 stranded Family mail on a closed campaign (gate round 3) | [Three single-source rounds and protected delivery](stewardship-closed-stranded-family-reviews.md) | PL-I2, PL-I4 |
 | PR #111 validation runbook corrections | [Review rounds and protected delivery](stewardship-validation-runbook-reviews.md) | PL-I5 |
+| PR #112 load check | [Three dual-source rounds and protected delivery](stewardship-load-check.md) | PL-I5 |
+| PR #113 chosen-Family test sends | [Four rounds (round 1 dual-source, rounds 2-4 single-source) plus candidate-CI correction review, and protected delivery](stewardship-family-test-send.md) | PL-I1, PL-I2, PL-I4 |
 
 Not reused as shipping-code evidence:
 
@@ -203,7 +205,11 @@ database path. PR #109 changed the closed-campaign resolution; the full
 PostgreSQL suite ran again, sharded, in its exact-head CI (`35810068360`,
 all 25 checks passed), whose tree is the merged `f79376f7`. By the human's
 direction, that CI run is the regression evidence for it, rather than a
-repeated single-server run.
+repeated single-server run. PR #112 added a read-only command and changed no
+database path; PR #113 added a migration, a table, an outbox purpose, SQL
+guards and mail-dispatch changes, and the full PostgreSQL suite ran again,
+sharded, in its exact-head CI (`35827926031`, all 25 checks passed), whose
+tree is the merged `f9b68cab`, the current regression evidence.
 
 The schema freeze audit installed `2c16c49e` fresh and compared its catalog
 with the committed fresh-install baseline
@@ -213,16 +219,21 @@ added two views and changed the inventory view, the delivery-control guard
 and the closed resolution function. The human directed that correction
 after confirming staff validation had not started, so the reinstall the
 exit already requires covers it. Its baseline was regenerated from a fresh
-install of that tree and matches `f79376f7`, the current baseline:
+install of that tree. PR #113 then added the chosen-Family test sends (a
+ticket table, the `family_test` outbox purpose and their guards), which the
+human requested for staff validation and held the install for, so the same
+reinstall covers it too; PR #112 changed no schema. The baseline was
+regenerated again from a fresh install and matches `f9b68cab`, the current
+baseline:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
-| Relations | 219 | `bcabfa40` |
-| Columns | 2421 | `a71204c6` |
-| Constraints | 3342 | `dd448165` |
-| Indexes | 992 | `e0ebd55b` |
-| Functions | 586 | `a397aef1` |
-| Triggers | 546 | `6d4e884f` |
+| Relations | 220 | `d14ef15b` |
+| Columns | 2439 | `5dce65e9` |
+| Constraints | 3371 | `2dd9be0a` |
+| Indexes | 999 | `9f55af14` |
+| Functions | 595 | `84ac4aae` |
+| Triggers | 549 | `c2e50957` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A
@@ -415,8 +426,9 @@ launch and of the known limitations above; nothing here infers it. Before
 that approval, the human also:
 
 - reinstalls the validation deployment from the current release, since the
-  backup release, PR #97, PR #100 and PR #109 changed the fresh-install
-  schema and PR #105 added the rendered `operational_alerts` policy;
+  backup release, PR #97, PR #100, PR #109 and PR #113 changed the
+  fresh-install schema and PR #105 added the rendered `operational_alerts`
+  policy;
 - runs the provider smoke checks and the restore drills (the full drill on
   the validation deployment, and the replacement-host steps on a
   disposable host), as the
@@ -529,3 +541,29 @@ tree is the candidate's, before the next increment was committed. Merging
 it recorded evidence only; the gate stayed open. This used the standing
 delivery authority, without deployment or release; no real provider was
 contacted.
+
+## Record update after PR #113
+
+PR #112 (the load check) and PR #113 (chosen-Family test sends) landed after
+the close-out, each through its own review rounds; this update lists them,
+records the schema baseline regenerated for PR #113, and adds it to the
+schema changes the validation reinstall covers. Its reviews are recorded
+below.
+
+### Record update review round 1
+
+Claude only (Codex did not answer). Five raw findings, one validated and
+corrected: the regression paragraph stopped at PR #109, so the record had no
+stated full-suite evidence for PR #113's database changes; it now cites
+PR #113's exact-head CI, which ran the full PostgreSQL suite on the current
+tree. The Lows were taken: PR #113's row states its sources and the
+correction review, a long line was rewrapped, and PR #113's receipt counts
+its failed checks consistently and explains its round 1 tally. A correction
+check follows.
+
+### Record update review round 2
+
+Claude only (Codex did not answer). Correction check: two raw findings, none
+validated; the review rounds are closed. Both Lows were taken: PR #113's
+receipt paragraph is reflowed, and its correction section says the first
+candidate failed two tests rather than two checks.
