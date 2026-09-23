@@ -121,7 +121,7 @@ the affected scope before the gate exits.
 | PR #88 login-rule autosave | [Seven single-source rounds](stewardship-rule-autosave-reviews.md), [protected delivery](stewardship-rule-autosave.md) | PL-I1, PL-I3 |
 | PR #89 autosave races/exact-once tests | [Six single-source rounds](stewardship-autosave-races-reviews.md), [protected delivery](stewardship-autosave-races.md) | PL-I1, PL-I3 |
 
-### V1 launch items and gate corrections (PR #91-#109)
+### V1 launch items and gate corrections (PR #91-#111)
 
 | Merged increment | Review evidence reused | PL scopes |
 | --- | --- | --- |
@@ -143,6 +143,7 @@ the affected scope before the gate exits.
 | PR #106 operator diagnostics (gate round 4) | [Four single-source rounds and protected delivery](stewardship-operator-diagnostics-reviews.md) | PL-I2, PL-I5 |
 | PR #107 upgrade recovery and paused report resend (gate round 5) | [Six dual-source rounds and protected delivery](stewardship-gate-round5-fixes-reviews.md) | PL-I2, PL-I5 |
 | PR #109 stranded Family mail on a closed campaign (gate round 3) | [Three single-source rounds and protected delivery](stewardship-closed-stranded-family-reviews.md) | PL-I2, PL-I4 |
+| PR #111 validation runbook corrections | [Review rounds and protected delivery](stewardship-validation-runbook-reviews.md) | PL-I5 |
 
 Not reused as shipping-code evidence:
 
@@ -421,7 +422,12 @@ that approval, the human also:
   disposable host), as the
   [backup runbook](stewardship-backup-runbook.md#restore-drill) describes;
 - times a full ParishSoft refresh on the validation deployment for the
-  [activation procedure](stewardship-launch-runbooks.md#production-activation).
+  [activation procedure](stewardship-launch-runbooks.md#production-activation);
+- completes staff validation as the deployment runbook's
+  [staff validation checklist](stewardship-deployment-runbook.md#staff-validation-checklist)
+  describes, including the launch scope's load check at the parish's real
+  Family count and the mobile and desktop browser checks, and reports any
+  launch blocker.
 
 ## Reviews of this record
 
@@ -503,3 +509,23 @@ the close-out rounds have their own section, and the freeze paragraph says
 the human directed PR #109 after confirming staff validation had not
 started, and the limitations say the validation deployment may use real
 data.
+
+### Close-out protected delivery
+
+PR #110 delivered candidate `e1421e9b`, two logical commits plus the
+receipt of PR #109, whose content is the retained review history on
+`pr/stewardship-gate-closeout-reviewed` (`52c5ef41`), squashed with
+identical content, plus exactly that receipt; Markdown lint passed on that
+tree, and the candidate tree `9c492281` is the landed tree. The two
+close-out rounds above were single-source under the exemption, validating
+nothing. The pull request was marked ready before the candidate was pushed.
+Exact-head ready-candidate CI `35813037363` and DCO passed all 25 checks,
+from 03:06:44 to 03:27:12 UTC on September 23, 2026 (20 minutes 28
+seconds). Earlier runs on superseded draft heads are not counted as
+acceptance. `origin/main` had no intervening commits since the candidate's
+base `f79376f7`. Protected auto-merge landed as `9b40b81e` at 03:27:23 UTC
+and was verified on freshly fetched `origin/main`, whose second parent's
+tree is the candidate's, before the next increment was committed. Merging
+it recorded evidence only; the gate stayed open. This used the standing
+delivery authority, without deployment or release; no real provider was
+contacted.
