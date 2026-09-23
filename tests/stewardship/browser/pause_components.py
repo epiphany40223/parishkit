@@ -13,6 +13,7 @@ def components(context, admin):
         "held": 1234,
         "submitting": 1,
         "unknown": 2,
+        "stranded": 3,
         "types": {
             kind: {"queued": 1234, "held": 1234, "submitting": 1, "unknown": 2}
             for kind in ("receipt", "daily_digest", "weekly_digest")
