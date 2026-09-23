@@ -73,8 +73,8 @@ CREATE FUNCTION public.stewardship_family_test_scope_v1(
           AND e.id=$5 AND e.campaign_id=c.id AND e.state='active')
 $$;
 
--- Liveness adds the temporary gates: a restore under review or campaign work
--- being prepared/run. Intake refuses while they hold; a queued ticket waits.
+-- Liveness adds the temporary gates: a restore under review or unreleased
+-- work on this campaign. Intake refuses while they hold; a queued ticket waits.
 CREATE FUNCTION public.stewardship_family_test_live_v1(
     configuration uuid, campaign uuid, template uuid, requested_by uuid, epoch uuid
 ) RETURNS boolean LANGUAGE sql SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -82,7 +82,7 @@ CREATE FUNCTION public.stewardship_family_test_live_v1(
        AND NOT EXISTS (SELECT 1 FROM public.stewardship_system_configuration
            WHERE restore_review_required)
        AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate gate
-           WHERE gate.state IN ('preparing','running'))
+           WHERE gate.campaign_id=$2 AND gate.state<>'released')
 $$;
 
 CREATE FUNCTION public.stewardship_family_mail_test_guard_v1() RETURNS trigger
@@ -171,16 +171,19 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
-    -- The scheduler settles stale tickets: failed when the task ended without
-    -- a message, cancelled when the durable scope is gone. Temporary gates
-    -- (restore review, running campaign work) leave a queued ticket waiting.
+    -- The scheduler settles stale tickets: failed when the task failed without
+    -- a message, cancelled when the durable scope is gone or the worker safely
+    -- cancelled the task (a lastingly ineligible Family). Temporary gates
+    -- (restore review, campaign work) leave a queued ticket waiting.
     IF current_user<>'pk_stewardship_scheduler' OR NEW.actor_id IS NOT NULL
        OR NEW.family_id IS NOT NULL OR NEW.outbox_id IS NOT NULL
        OR NOT ((NEW.state='failed' AND EXISTS (SELECT 1 FROM public.stewardship_task_run task
-                WHERE task.id=OLD.task_id AND task.state IN ('failed','cancelled')))
-           OR (NEW.state='cancelled' AND NOT public.stewardship_family_test_scope_v1(
+                WHERE task.id=OLD.task_id AND task.state='failed'))
+           OR (NEW.state='cancelled' AND (EXISTS (SELECT 1 FROM public.stewardship_task_run task
+                WHERE task.id=OLD.task_id AND task.state='cancelled')
+             OR NOT public.stewardship_family_test_scope_v1(
                 OLD.configuration_id,OLD.campaign_id,OLD.template_id,OLD.requested_by_id,
-                OLD.rehearsal_epoch_id))) THEN
+                OLD.rehearsal_epoch_id)))) THEN
         RAISE EXCEPTION 'Only stale unsent Family tests can be settled' USING ERRCODE='23514';
     END IF;
     RETURN NEW;

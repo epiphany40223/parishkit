@@ -122,6 +122,16 @@ BEGIN
                 AND proposed->>'action'='mark_unknown' AND own.state='delivery_unknown')
             OR (TG_TABLE_NAME='stewardship_schedule_occurrence' AND proposed->>'id'=own.semantic_key::text
                 AND proposed->>'state'='delivery_unknown' AND own.state='delivery_unknown'));
+    -- A chosen-Family test whose abandoned dispatch exhausted its preparation
+    -- budget is cancelled by recovery: nothing else would ever settle it, and
+    -- an unsent Testing message blocks Testing cleanup for good.
+    recovering:=recovering OR (t.state='abandoned' AND t.attempt>=5 AND own.purpose='family_test'
+        AND own.attempt=0 AND NEW.actor_id IS NOT NULL AND proposed->>'reason'='preparation_failed'
+        AND proposed->>'action'='cancel_unsent'
+        AND ((TG_TABLE_NAME='stewardship_outbox_message' AND proposed->>'id'=own.id::text
+                AND own.state IN ('pending','retry_wait'))
+            OR (TG_TABLE_NAME='stewardship_outbox_event' AND proposed->>'message_id'=own.id::text
+                AND own.state='cancelled')));
     IF recovering THEN RETURN NEW; END IF;
     IF t.id IS NULL OR t.task_type<>'outbox_delivery' OR t.state<>'running'
        OR t.worker_id IS DISTINCT FROM NEW.actor_id OR t.lease_expires_at<=clock_timestamp()
