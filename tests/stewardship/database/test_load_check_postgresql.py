@@ -7,6 +7,7 @@ import pytest
 from parishkit.stewardship import load_check
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.rehearsals import invalidate_rehearsal
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.responses.models import FamilyFormBaseline
@@ -19,38 +20,69 @@ from .test_financial_source_postgresql import financial_source
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_measurements_use_web_grants_and_write_nothing(response_service):
-    """A tiny promoted population is measured completely with the web's authority.
+def head(member, family):
+    """One active head makes a synthetic household eligible for the campaign."""
+    return dict(
+        memberDUID=member,
+        familyDUID=family,
+        firstName="Head",
+        lastName=f"Of{family}",
+        memberType="Head",
+        memberStatus="Active",
+        emailAddress=f"head{family}@example.org",
+    )
 
-    The fixture's second Family is inactive, so it proves the sample covers only
-    Families the form can serve while the population still counts every row.
+
+def measured(harness, **options):
+    """Run the measurement under the exact web role and vet its vocabulary."""
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        document = load_check.measure(RuntimeBudget(), harness.service.store, **options)
+    load_check.safe_document(document)
+    return document
+
+
+def test_measurements_use_web_grants_and_write_nothing(response_service):
+    """Two eligible households are measured concurrently with the web's authority.
+
+    The fixture's inactive second Family proves the sample covers only Families
+    the form can serve while the population still counts every row; the added
+    third household gives the concurrent phase two overlapping guarded reads.
     """
     harness = response_service
+    financial_source(
+        harness,
+        extra_families={3: dict(familyDUID=3, registeredOrganizationID=5)},
+        extra_members={30: head(30, 3)},
+    )
     rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
     families, eligible = rows.count(), rows.filter(portal_eligible=True).count()
-    assert families > eligible >= 1
+    assert families == 3 and eligible == 2
     audits, pins = AuditEvent.objects.count(), SourceSnapshotPin.objects.count()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        document = load_check.measure(RuntimeBudget(), samples=3, concurrency=2)
-    load_check.safe_document(document)
+    document = measured(harness, samples=3, concurrency=2)
     # The document passed the vocabulary check above, so it is safe evidence.
     evidence = json.dumps(document, sort_keys=True)
     assert document["check"] == "load" and document["result"] == "pass", evidence
     population = document["population"]
-    assert population["family_campaign_rows"] == families
-    assert population["portal_eligible_families"] == eligible
-    assert population["active_families"] == 1
+    assert population["family_campaign_rows"] == 3
+    assert population["portal_eligible_families"] == 2
+    assert population["active_families"] == 2
     assert population["reference_families"] == 5000
     form = document["family_form_inputs"]
-    assert form["samples"] == min(3, eligible) and form["concurrency"] == 2
-    assert form["failures"] == 0 and form["serial"]["runs"] == form["samples"]
-    assert form["concurrent"]["runs"] == form["samples"]
+    assert form["samples"] == 2 and form["concurrency"] == 2 and form["threads"] == 2
+    for section in (form["serial"], form["concurrent"]):
+        assert section["runs"] == 2 and section["pass"], evidence
+        assert (section["failures"], section["skipped"], section["not_run"]) == (
+            0,
+            0,
+            0,
+        )
     reports = document["reports"]
-    assert reports["statistics"]["runs"] == 20 and reports["statistics"]["pass"]
-    assert reports["information_first_page"]["pass"]
-    assert reports["financial_first_page"] == {"status": "skipped"}
+    for name in ("statistics", "financial_first_page", "information_first_page"):
+        assert reports[name]["runs"] == 20 and reports[name]["pass"], evidence
     assert document["invitation_run"] == {"status": "not_run"}
-    assert document["runtime_budget"]["web_threads"] == RuntimeBudget().web_threads
+    budget = document["runtime_budget"]
+    assert budget["web_threads"] == RuntimeBudget().web_threads
+    assert budget["web_connection_headroom"] == load_check.web_headroom(RuntimeBudget())
     assert set(document["background"]) == {"start", "end"}
     # Read-only guards: no baseline, pin, outbox row or audit event was created.
     assert not FamilyFormBaseline.objects.exists()
@@ -61,21 +93,25 @@ def test_measurements_use_web_grants_and_write_nothing(response_service):
     )
 
 
-def test_financial_first_page_is_measured_with_a_synthetic_administrator(
-    response_service,
-):
-    """With the financial module enabled, the money page is timed, not skipped.
+def test_without_the_financial_module_the_money_page_is_skipped(response_service):
+    """A campaign without financial detail skips that page; one Family, one thread."""
+    document = measured(response_service, samples=3, concurrency=2)
+    assert document["result"] == "pass", json.dumps(document, sort_keys=True)
+    assert document["reports"]["financial_first_page"] == {"status": "skipped"}
+    form = document["family_form_inputs"]
+    assert form["samples"] == 1 and form["concurrency"] == 2 and form["threads"] == 1
+    assert document["population"]["portal_eligible_families"] == 1
 
-    The SQL projection binds only the campaign, filters, proof and page, so a
-    synthetic Administrator principal is enough; no session is involved.
-    """
+
+def test_closed_testing_portal_is_refused_before_any_timing(response_service):
+    """Once go-live invalidates the rehearsal, the portal and the check are closed."""
     harness = response_service
-    financial_source(harness)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        document = load_check.measure(RuntimeBudget(), samples=1, concurrency=1)
-    load_check.safe_document(document)
-    evidence = json.dumps(document, sort_keys=True)
-    financial = document["reports"]["financial_first_page"]
-    assert financial["runs"] == 20 and financial["failures"] == 0, evidence
-    assert financial["pass"] and document["result"] == "pass", evidence
+    invalidate_rehearsal(campaign_id=harness.campaign.pk, admit=lambda campaign: True)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(load_check.LoadCheckRefused),
+    ):
+        load_check.measure(
+            RuntimeBudget(), harness.service.store, samples=1, concurrency=1
+        )
     assert not FamilyFormBaseline.objects.exists()
