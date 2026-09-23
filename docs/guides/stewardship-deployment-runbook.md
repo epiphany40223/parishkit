@@ -188,42 +188,51 @@ no backup login, password, directory or record table, and must be reinstalled.
 
 ### Staff validation checklist
 
-**The Family form.** No Admin page shows a Testing code or link, and the
-readiness test send is a fixed sample that cannot sign anyone in. A Testing
-code or link exists only in a scheduled invitation or reminder sent in
-Testing mode, which goes to the Testing recipient. The portal opens in
-Testing only while today is inside the draft campaign's dates. So, to
-validate the form before the real start date:
+**The Family form.** The portal opens in Testing only while today is inside
+the draft campaign's dates, and a Family signs in only with a Testing code or
+link, which only Testing mail carries. To test chosen Families without
+mailing the whole parish:
 
-1. In the draft campaign, move the start date to the first validation day
-   and the initial invitation (and any reminders) inside the validation
-   window. Invitation and reminder times must stay inside the campaign
-   dates. Moving the start into the past also makes the scheduler produce
-   catch-up daily reports for the days in between.
-2. Soon after the invitation time passes, the scheduler sends one Testing
-   invitation for **every** Family with a deliverable email address, all to
-   the Testing mailbox (subject `[TEST]`, a banner naming the intended
-   Family). There is no way to limit it to a few Families; for a whole
-   parish this is a large burst to one mailbox, subject to the Workspace
-   account's sending limits. Each carries that Family's Testing code (it
-   starts with `I`) and Testing link (`/access/test.…`).
-3. Sign in by the link, or by the code on the portal's home page `/`, choose
-   **Continue with test**, fill in the form, tick the acknowledgment and
-   choose **Submit test response**. A Testing receipt then arrives at the
-   Testing mailbox. Test answers never count, never appear in reports and are
+1. In the draft campaign, set the start date to today (not earlier: a past
+   start makes the scheduler produce catch-up daily reports for the days in
+   between) and leave the initial invitation and reminders at their real
+   dates, so no scheduled invitation is due yet. On its next pass the
+   scheduler creates the campaign's Testing credentials; daily and weekly
+   Admin reports to the Testing recipient start too.
+2. On the campaign's content page, open the Family email's test page and
+   choose **Send this email to chosen real Families (Testing recipient
+   only)**. Enter up to ten Family IDs (ParishSoft Family DUIDs), choose
+   **Check these Families**, review each Family's status, tick the
+   acknowledgment and choose **Send these Family tests**. If the page says
+   Testing credentials are not ready, wait for the scheduler's next pass.
+   At most ten such tests are in progress per campaign.
+3. Each chosen Family's real message arrives at the Testing mailbox (subject
+   `[TEST]`, a banner naming the intended Family) with that Family's Testing
+   code (it starts with `I`) and Testing link (`/access/test.…`). Sign in by
+   the link, or by the code on the portal's home page `/`, choose **Continue
+   with test**, fill in the form, tick the acknowledgment and choose
+   **Submit test response**. A Testing receipt then arrives at the Testing
+   mailbox. Test answers never count, never appear in reports and are
    deleted at activation.
 4. Check the daily and weekly Admin reports and a manual weekly report at the
    Testing mailbox (they show zero participation: they count only live
    answers), the reports and exports pages (which exclude Testing answers by
    design), and the Production readiness page's list of Testing submissions.
-5. Before Production readiness, move the invitation and reminders back to
-   their real dates first, then the start date, and wait until every Testing
-   message has finished (delivered, failed or cancelled): readiness requires
-   it, and cleanup at activation deletes all Testing data. A Testing message
-   whose outcome is unknown does not finish by waiting; an Administrator
-   resolves it as the launch runbooks'
+5. Before Production readiness, move the start date back to its real date,
+   send the fictional sample test again (any configuration change voids the
+   earlier one as readiness evidence), and wait until every Testing message
+   has finished (delivered, failed or cancelled): readiness requires it, and
+   cleanup at activation deletes all Testing data. A Testing message whose
+   outcome is unknown does not finish by waiting; an Administrator resolves
+   it as the launch runbooks'
    [unknown-delivery procedure](stewardship-launch-runbooks.md#messages-in-delivery_unknown)
    describes.
+
+Moving the invitation itself into the validation window instead would send a
+Testing invitation for every Family with a deliverable email address to the
+one Testing mailbox; the chosen-Family send makes that unnecessary. The
+[chosen-Family test guide](stewardship-family-test-send.md) records the
+design.
 
 **Browsers.** On a phone and on a desktop browser, check the Family portal's
 code entry, link sign-in, every form step, the review and submit, and

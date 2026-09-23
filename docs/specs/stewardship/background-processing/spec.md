@@ -416,7 +416,9 @@ live-delivery-pause semantics.
 ### Mode routing
 
 Testing routing is global for campaign communication: Family mail, submission
-receipts, Admin campaign digests, manual report mail, previews, and test sends.
+receipts, Admin campaign digests, manual report mail, previews, and test sends,
+including the chosen-Family test sends (outbox purpose `family_test`, Testing
+mode only), which never create or satisfy a scheduled occurrence.
 Those messages have routing class `testing_override`; the envelope has only the
 single configured Testing address, and the subject and both body alternatives
 prominently identify Testing and safely name the intended recipients. Production
