@@ -121,7 +121,7 @@ the affected scope before the gate exits.
 | PR #88 login-rule autosave | [Seven single-source rounds](stewardship-rule-autosave-reviews.md), [protected delivery](stewardship-rule-autosave.md) | PL-I1, PL-I3 |
 | PR #89 autosave races/exact-once tests | [Six single-source rounds](stewardship-autosave-races-reviews.md), [protected delivery](stewardship-autosave-races.md) | PL-I1, PL-I3 |
 
-### V1 launch items and gate corrections (PR #91-#109)
+### V1 launch items and gate corrections (PR #91-#111)
 
 | Merged increment | Review evidence reused | PL scopes |
 | --- | --- | --- |
@@ -143,6 +143,7 @@ the affected scope before the gate exits.
 | PR #106 operator diagnostics (gate round 4) | [Four single-source rounds and protected delivery](stewardship-operator-diagnostics-reviews.md) | PL-I2, PL-I5 |
 | PR #107 upgrade recovery and paused report resend (gate round 5) | [Six dual-source rounds and protected delivery](stewardship-gate-round5-fixes-reviews.md) | PL-I2, PL-I5 |
 | PR #109 stranded Family mail on a closed campaign (gate round 3) | [Three single-source rounds and protected delivery](stewardship-closed-stranded-family-reviews.md) | PL-I2, PL-I4 |
+| PR #111 validation runbook corrections | [Review rounds and protected delivery](stewardship-validation-runbook-reviews.md) | PL-I5 |
 
 Not reused as shipping-code evidence:
 
@@ -421,7 +422,12 @@ that approval, the human also:
   disposable host), as the
   [backup runbook](stewardship-backup-runbook.md#restore-drill) describes;
 - times a full ParishSoft refresh on the validation deployment for the
-  [activation procedure](stewardship-launch-runbooks.md#production-activation).
+  [activation procedure](stewardship-launch-runbooks.md#production-activation);
+- completes staff validation as the deployment runbook's
+  [staff validation checklist](stewardship-deployment-runbook.md#staff-validation-checklist)
+  describes, including the launch scope's load check at the parish's real
+  Family count and the mobile and desktop browser checks, and reports any
+  launch blocker.
 
 ## Reviews of this record
 
