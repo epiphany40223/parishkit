@@ -209,8 +209,10 @@ with the committed fresh-install baseline
 (`tests/stewardship/database/schema-baseline.json`): every category
 matched exactly, and PR #106 and #107 changed no schema. PR #109 then
 added two views and changed the inventory view, the delivery-control guard
-and the closed resolution function, before validation had started; its baseline was regenerated from
-a fresh install of that tree and matches `f79376f7`, the current baseline:
+and the closed resolution function. The human directed that correction
+after confirming staff validation had not started, so the reinstall the
+exit already requires covers it. Its baseline was regenerated from a fresh
+install of that tree and matches `f79376f7`, the current baseline:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -247,9 +249,9 @@ requires.
   fake-backed.
 - Retention and compaction jobs, exceptional purge and ParishSoft write-back
   are not in v1; write-back is the first post-launch work.
-- The validation deployment used real read-only ParishSoft data, real Google
-  login and Testing-routed real mail before the gate, as the launch scope
-  authorizes.
+- The validation deployment may use real read-only ParishSoft data, real
+  Google login and Testing-routed real mail before the gate, as the launch
+  scope authorizes.
 - A restore returns the deployment to the backup's moment with no
   restore-review workflow: Family access stays open during the
   Administrator's review, work after the backup is lost, and mail the
@@ -479,6 +481,11 @@ before the next increment was committed. Merging it recorded evidence only;
 the gate stayed open. This used the standing delivery authority, without
 deployment or release; no real provider was contacted.
 
+## Close-out reviews
+
+The close-out after PR #109 (this record's round 7 entries, its known
+limitations and exit, and the Clear guidance) followed the same process.
+
 ### Close-out review round 1
 
 Claude only (Codex was out of credits). Two raw findings, none validated.
@@ -486,3 +493,13 @@ Both Lows were taken: the page's stranded guidance now says Clear applies
 when nothing else is held, submitting or unknown, as the preview guard
 requires; and the freeze paragraph names the delivery-control guard among
 PR #109's schema changes.
+
+### Close-out review round 2
+
+Claude only (Codex was out of credits). Four raw findings, none validated,
+so the close-out review rounds are closed. The four Lows were taken: the
+runbook no longer calls clearing an empty pause, a long line was rewrapped,
+the close-out rounds have their own section, and the freeze paragraph says
+the human directed PR #109 after confirming staff validation had not
+started, and the limitations say the validation deployment may use real
+data.

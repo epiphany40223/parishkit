@@ -366,7 +366,7 @@ released, and the page instead offers to resolve the held receipts and Admin
 reports by type: release the ones that should still go, after the same
 sender check, and cancel the rest with a reason. A type cannot be cancelled
 while any of its messages is still submitting or unknown, and no resolution
-at all (release, cancel or clearing an empty pause) is accepted while a
+at all (release, cancel or clear) is accepted while a
 daily or weekly report is still being prepared: wait for it to finish, and
 if its preparation has failed, retry it from the Background work page as in
 step 4.1 above. Every resolution (release, cancel or clear) needs a Google
