@@ -142,10 +142,10 @@ BEGIN
     SELECT * INTO o FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key FOR UPDATE;
     IF session_user<>'pk_stewardship_web'
        OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,true)
-       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest')
+       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest')
        OR NEW.expected_version<>m.version OR NEW.correlation_id<>NEW.id
        OR btrim(NEW.evidence_note)=''
-       OR (m.purpose NOT IN ('receipt','daily_digest','weekly_digest') AND o.outbox_id IS DISTINCT FROM m.id)
+       OR (m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest') AND o.outbox_id IS DISTINCT FROM m.id)
        OR (m.purpose='daily_digest' AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_daily_digest_recipient recipient
            JOIN public.stewardship_daily_digest_ready ready ON ready.id=recipient.ready_id
@@ -166,6 +166,13 @@ BEGIN
            JOIN public.stewardship_submission s ON s.id=receipt.submission_id
            WHERE receipt.outbox_id=m.id AND s.id=m.semantic_key
              AND s.family_id=m.family_id AND s.campaign_id=m.campaign_id))
+       OR (m.purpose='family_test' AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_family_mail_test ticket
+           WHERE ticket.outbox_id=m.id AND ticket.id=m.semantic_key
+             AND ticket.campaign_id=m.campaign_id AND ticket.state='prepared'))
+       -- A chosen-Family test is settled from evidence only; it is never resent
+       -- or retried, so an unknown test cannot block Testing cleanup forever.
+       OR (m.purpose='family_test' AND NEW.action NOT IN ('note','accept','confirm_unsent'))
        OR NOT public.stewardship_export_admitted_v1(m.campaign_id,true)
        OR EXISTS(SELECT 1 FROM public.stewardship_campaign WHERE id=m.campaign_id AND state='archived')
        OR NEW.duplicate_acknowledged IS DISTINCT FROM (NEW.action='resend')
@@ -206,7 +213,7 @@ BEGIN
                 finished_at=statement_timestamp(),
                 sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL,
                 actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=m.id;
-            IF m.purpose NOT IN ('receipt','daily_digest','weekly_digest') THEN
+            IF m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest') THEN
                 IF NEW.action='accept' THEN
                     UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
                         actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;

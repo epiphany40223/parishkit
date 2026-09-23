@@ -2,7 +2,8 @@
 -- authorize edits; each send/write also requires an exact live Task and scope.
 CREATE FUNCTION public.stewardship_family_dispatch_live_v1(message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT public.stewardship_receipt_dispatch_live_v1(message) OR EXISTS (
+    SELECT public.stewardship_receipt_dispatch_live_v1(message)
+        OR public.stewardship_family_test_dispatch_live_v1(message) OR EXISTS (
         SELECT 1 FROM public.stewardship_outbox_message m
         JOIN public.stewardship_schedule_occurrence o ON o.id=m.semantic_key AND o.outbox_id=m.id
         JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
@@ -61,6 +62,7 @@ CREATE FUNCTION public.stewardship_family_dispatch_render_v1(proposed jsonb,mess
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT CASE m.purpose WHEN 'receipt' THEN
         public.stewardship_receipt_render_admitted_v1(proposed,m.family_id,m.campaign_id,r.active_configuration_id,m.mode)
+    WHEN 'family_test' THEN public.stewardship_family_test_render_admitted_v1(proposed,m.id)
     ELSE public.stewardship_family_mail_render_admitted_v1(proposed,m.family_id,r.active_configuration_id,
         (SELECT revision_id FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key),m.mode) END
     FROM public.stewardship_outbox_message m CROSS JOIN public.stewardship_system_configuration r
@@ -82,7 +84,7 @@ BEGIN
     proposed:=to_jsonb(NEW);
     SELECT * INTO t FROM public.stewardship_task_run WHERE id=NEW.correlation_id;
     SELECT * INTO own FROM public.stewardship_outbox_message
-        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest','operational','security_event');
+        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','operational','security_event');
     IF own.purpose='operational' THEN
         IF public.stewardship_ops_dispatch_write_v1(TG_TABLE_NAME,proposed,
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
@@ -128,8 +130,10 @@ BEGIN
     IF TG_TABLE_NAME='stewardship_outbox_message' THEN
         IF TG_OP<>'UPDATE' THEN RAISE EXCEPTION 'Mail cannot allocate Family messages' USING ERRCODE='23514'; END IF;
         m:=NEW;
+        -- Only scheduled invitations/reminders cancel each other as a Family
+        -- group; receipts and chosen-Family tests touch nothing but themselves.
         IF m.id<>own.id AND (m.action<>'cancel_unsent' OR m.family_id<>own.family_id
-            OR m.purpose='receipt' OR own.purpose='receipt'
+            OR m.purpose NOT IN ('initial','reminder') OR own.purpose NOT IN ('initial','reminder')
             OR m.campaign_id<>own.campaign_id OR m.mode<>own.mode) THEN
             RAISE EXCEPTION 'Family dispatch cannot mutate another delivery' USING ERRCODE='23514'; END IF;
         IF m.action NOT IN ('prepared','submit','accept','retry_unaccepted','fail_unaccepted','mark_unknown',
@@ -160,12 +164,14 @@ BEGIN
               AND sibling.state='cancelled' AND NEW.action='cancel_unsent'
         ) THEN RAISE EXCEPTION 'Family event scope differs' USING ERRCODE='23514'; END IF;
     ELSIF TG_TABLE_NAME='stewardship_schedule_occurrence' THEN
-        IF own.purpose='receipt' OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
+        -- Only a scheduled sender owns occurrences: a receipt or test sender
+        -- must never move schedule state or fulfill the Family's real mail.
+        IF own.purpose NOT IN ('initial','reminder') OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_schedule_definition d
             WHERE d.id=NEW.definition_id AND d.campaign_id=own.campaign_id AND d.kind IN ('initial','reminder')
         ) THEN RAISE EXCEPTION 'Family occurrence scope differs' USING ERRCODE='23514'; END IF;
     ELSIF TG_TABLE_NAME='stewardship_schedule_fulfillment' THEN
-        IF own.purpose='receipt' OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
+        IF own.purpose NOT IN ('initial','reminder') OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_schedule_definition d
             WHERE d.id=NEW.definition_id AND d.campaign_id=own.campaign_id AND d.kind IN ('initial','reminder')
         ) THEN RAISE EXCEPTION 'Family fulfillment scope differs' USING ERRCODE='23514'; END IF;

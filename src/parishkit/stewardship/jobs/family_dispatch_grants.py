@@ -59,6 +59,7 @@ def add_dispatch_grants(tables, columns):
         "stewardship_restore_delivery_hold",
         "stewardship_recipient_resolution",
         "stewardship_family_mail_preparation",
+        "stewardship_family_mail_test",
         "stewardship_family_eligibility",
     ):
         tables.setdefault(table, set()).add("SELECT")

@@ -195,7 +195,10 @@ class TaskRunEvent(ImmutableRecord):
 from .backup_models import BackupRun  # noqa: E402,F401
 from .delivery_resolution_models import DeliveryResolution  # noqa: E402,F401
 from .due_work_models import DueWorkHealth  # noqa: E402,F401
-from .family_mail_models import FamilyMailPreparation  # noqa: E402,F401
+from .family_mail_models import (  # noqa: E402,F401
+    FamilyMailPreparation,
+    FamilyMailTest,
+)
 from .operational_models import (  # noqa: E402,F401
     OperationalCohort,
     OperationalIncident,

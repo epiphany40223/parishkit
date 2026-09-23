@@ -31,6 +31,7 @@ def route_family_mail(
         "initial",
         "reminder",
         "receipt",
+        "family_test",
     }:
         raise TypeError("An exact Family delivery identity is required.")
     bounded_text(family_name)
