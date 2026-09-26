@@ -72,7 +72,10 @@ def test_release_publication_carries_the_digest_the_runtime_admits():
         if step.get("uses", "").startswith("actions/download-artifact@")
     }
     assert "image-digest" in downloaded
-    notes = steps_of(publish)["Publish GitHub release"]["run"]
+    step = steps_of(publish)["Publish GitHub release"]
+    # No checkout in this job: gh needs the repository named explicitly.
+    assert step["env"]["GH_REPO"] == "${{ github.repository }}"
+    notes = step["run"]
     assert "cat image-digest.txt >> release-notes.md" in notes
     assert notes.index("image-digest.txt") < notes.index("gh release")
     # The reference the workflow prints is the one the production renderer admits.
