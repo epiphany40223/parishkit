@@ -50,6 +50,11 @@ jobs:
 
       - name: Validate release tag
         run: |
+          # actions/checkout re-fetches the tag as "<commit sha>:refs/tags/<tag>",
+          # which replaces the annotated tag with a lightweight one
+          # (actions/checkout#290). Fetch the real tag object again so the
+          # annotated-tag check sees what was pushed.
+          git fetch --no-tags --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           test "$(git cat-file -t "${GITHUB_REF_NAME}")" = tag
           release_commit="$(git rev-list -n 1 "${GITHUB_REF_NAME}")"
           git merge-base --is-ancestor "${release_commit}" origin/main
