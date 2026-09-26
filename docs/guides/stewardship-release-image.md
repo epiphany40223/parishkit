@@ -37,11 +37,20 @@ deployment runbook is the next slice.
 The release workflow refuses a tag that is not on `main` or whose version
 does not match `pyproject.toml`, then requires the tagged commit's successful
 `main` CI run, which is that commit's full validation, before publishing
-distributions; it does not repeat the suite. The image job runs after that validation on the
-same tagged commit, with the workflow's own registry permission and the
-repository's package scope; no long-lived registry credential is stored. The
-digest, not a tag, is what the runtime admits: the release notes carry it, so
-the value the operator deploys is the value the workflow pushed.
+distributions; it does not repeat the suite. The image job runs after that
+validation on the same tagged commit, with the workflow's own registry
+permission and the repository's package scope; no long-lived registry
+credential is stored. The digest, not a tag, is what the runtime admits: the
+release notes carry it, so the value the operator deploys is the value the
+workflow pushed.
+
+GitHub creates the container package private on its first publication, even
+for a public repository. The deployment hosts and the backup key machine pull
+without a registry credential, so once, after the first release, a repository
+administrator makes the package public: on the repository's **Packages** entry
+for `parishkit/parishkit`, open **Package settings**, choose **Change
+visibility**, then **Public**. The image holds only the repository's public
+code; no secret is built into it. Later releases keep that visibility.
 
 ### Retargeting re-renders the generated documents
 

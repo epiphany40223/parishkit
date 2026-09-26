@@ -35,7 +35,10 @@ Collect, outside the runtime root and outside the repository:
   Release's notes as the complete
   `ghcr.io/<owner>/<repository>/parishkit@sha256:<64 hex>` reference. The
   release workflow writes that line when the human pushes a `vX.Y.Z` tag; a
-  tag such as `:1.2.3` is never deployed, only the digest.
+  tag such as `:1.2.3` is never deployed, only the digest. The host pulls it
+  without a registry credential, so the package must be public, a one-time
+  step after the first release (see the
+  [release image guide](stewardship-release-image.md#the-image-is-published-by-the-release-tag-and-only-then)).
 - The **deployment YAML**: schema version 1, `profile: production`, the HTTPS
   `public_origin`, `trusted_proxy_hops: 1`, and the absolute `paths.root`.
   Every field, default and validation rule is in the
