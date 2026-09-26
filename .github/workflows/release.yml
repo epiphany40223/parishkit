@@ -6,29 +6,17 @@ on:
       - "v*"
 
 jobs:
+  # Every commit on main already passed CI's full, sharded validation (lint,
+  # every PostgreSQL shard with combined coverage floors, migration drift, the
+  # container, runtime and browser scenarios). Rerunning that suite serially
+  # here took over two hours, so the release instead requires that commit's
+  # successful main CI run, then packages exactly that commit.
   validate-build:
     runs-on: ubuntu-latest
-    services:
-      valkey:
-        image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-        ports: ["56379:6379"]
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 2s --health-timeout 5s --health-retries 30
-      postgres:
-        image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
-        env:
-          POSTGRES_USER: stewardship_tests
-          POSTGRES_DB: stewardship_tests
-          POSTGRES_PASSWORD: disposable-test-only
-          # Keep errors/details, not multi-megabyte rejected payload statements.
-          POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
-        ports: ["55432:5432"]
-        options: >-
-          --tmpfs /var/lib/postgresql:rw,size=2g
-          --health-cmd "pg_isready -U stewardship_tests"
-          --health-interval 2s --health-timeout 5s --health-retries 30
+    # Covers waiting for a just-merged commit's CI run to finish.
+    timeout-minutes: 90
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Check out repository
@@ -49,6 +37,7 @@ jobs:
           python -m pip install --no-build-isolation -r requirements.txt
 
       - name: Validate release tag
+        id: tag
         run: |
           # actions/checkout re-fetches the tag as "<commit sha>:refs/tags/<tag>",
           # which replaces the annotated tag with a lightweight one
@@ -60,53 +49,45 @@ jobs:
           git merge-base --is-ancestor "${release_commit}" origin/main
           version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "v${version}" = "${GITHUB_REF_NAME}"
+          echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"
 
-      - name: Ruff check
-        run: python -m ruff check .
-
-      - name: Ruff format check
-        run: python -m ruff format --check .
-
-      - name: Markdown lint
-        run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
-
-      - name: Scoped line and branch coverage
-        run: python -m parishkit.stewardship.quality --postgresql --report "$RUNNER_TEMP/stewardship-coverage.json"
-
-      - name: Migration drift
+      - name: Require the release commit's successful main CI run
         env:
-          DJANGO_SETTINGS_MODULE: parishkit.stewardship.settings.test
-        run: python -m django makemigrations --check --dry-run
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
+        run: |
+          # Only a push to main runs CI's full suite on exactly this commit; a
+          # pull request run tested a different (pre-merge) commit. Poll while
+          # that run is queued or in progress. Refuse a failed run, and a
+          # commit main CI never ran on (for example one inside a merged
+          # branch): tag the merge commit on main instead.
+          for attempt in $(seq 1 80); do
+            state="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
+              --event push --branch main --commit "${RELEASE_COMMIT}" --limit 1 \
+              --json status,conclusion --jq '.[] | "\(.status) \(.conclusion)"')"
+            case "${state}" in
+              "completed success")
+                echo "Main CI passed for ${RELEASE_COMMIT}."
+                exit 0 ;;
+              completed*)
+                echo "::error::Main CI for ${RELEASE_COMMIT} did not pass (${state}); fix main and tag a passing commit."
+                exit 1 ;;
+              "")
+                # A just-merged commit's run can take a moment to appear.
+                if test "${attempt}" -ge 5; then
+                  echo "::error::No main CI run exists for ${RELEASE_COMMIT}; tag a commit that main CI ran on."
+                  exit 1
+                fi ;;
+              *)
+                echo "Main CI for ${RELEASE_COMMIT}: ${state}; waiting." ;;
+            esac
+            sleep 60
+          done
+          echo "::error::Timed out waiting for main CI on ${RELEASE_COMMIT}."
+          exit 1
 
       - name: Build artifacts
         run: python -m build --no-isolation
-
-      - name: Verify application image mount isolation
-        env:
-          PARISHKIT_RUN_ISOLATION_TESTS: "1"
-        run: |
-          docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
-          python -m pytest tests/stewardship/test_container_isolation.py --require-no-skips -q
-
-      - name: Validate operational runtime and provisioning
-        env:
-          PARISHKIT_RUN_RUNTIME_TESTS: "1"
-        run: python -m pytest tests/stewardship/test_operational_compose.py tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py --require-no-skips -q
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: tests/stewardship/browser/package-lock.json
-
-      - name: Browser component release validation
-        env:
-          PARISHKIT_RUN_BROWSER_TESTS: "1"
-        run: |
-          python -m pip install -r requirements/stewardship-browser.txt
-          npm ci --ignore-scripts --prefix tests/stewardship/browser
-          python -m playwright install --with-deps chromium firefox webkit
-          python -m pytest tests/stewardship/browser --require-no-skips -q
 
       - name: Generate release notes
         run: |

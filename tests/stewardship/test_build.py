@@ -197,40 +197,40 @@ def test_release_build_uses_installed_locked_tools():
     assert "build" in locked_requirements("stewardship.txt")
 
 
-@pytest.mark.parametrize(
-    "step_name", ["Scoped line and branch coverage", "Migration drift"]
-)
-def test_release_requires_ci_quality_gates_before_build(step_name):
-    """Require unmodified CI quality checks before building release artifacts."""
+def test_release_requires_main_ci_of_the_tagged_commit_before_build():
+    """Releases reuse main CI's full validation of the exact tagged commit."""
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    expected = next(
-        step
-        for job in ci["jobs"].values()
-        for step in job["steps"]
-        if step.get("name") == step_name
-    )
-    steps = release["jobs"]["validate-build"]["steps"]
-    matches = [step for step in steps if step.get("name") == step_name]
-    # Release retains the serial complete-suite equivalent; PR CI combines
-    # isolated shards through the same manifest and independent coverage floors.
-    if step_name == "Scoped line and branch coverage":
-        assert len(matches) == 1
-        assert matches[0] == {
-            "name": step_name,
-            "run": (
-                "python -m parishkit.stewardship.quality --postgresql "
-                '--report "$RUNNER_TEMP/stewardship-coverage.json"'
-            ),
-        }
-        count = len(
-            ci["jobs"]["stewardship-postgresql-shard"]["strategy"]["matrix"]["shard"]
+    # PyYAML reads the bare `on:` key as the boolean true. Every push to main
+    # must run every job, or a tagged commit could lack complete evidence.
+    assert ci[True]["push"] == {"branches": ["main"]}
+    for job in ci["jobs"].values():
+        condition = job.get("if", "${{ always() }}")
+        assert "github.event_name == 'push' ||" in condition or condition == (
+            "${{ always() }}"
         )
-        assert f"quality_ci combine --count {count} " in expected["run"]
-    else:
-        assert matches == [expected]
-    build = next(step for step in steps if step.get("name") == "Build artifacts")
-    assert steps.index(matches[0]) < steps.index(build)
+    job = release["jobs"]["validate-build"]
+    assert "services" not in job
+    assert job["permissions"] == {"actions": "read", "contents": "read"}
+    steps = job["steps"]
+    names = [step.get("name") for step in steps]
+    tag = steps[names.index("Validate release tag")]
+    assert tag["id"] == "tag"
+    assert 'echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"' in tag["run"]
+    gate = steps[names.index("Require the release commit's successful main CI run")]
+    assert gate["env"]["RELEASE_COMMIT"] == "${{ steps.tag.outputs.commit }}"
+    for fragment in (
+        "--workflow ci.yml",
+        "--event push --branch main",
+        '--commit "${RELEASE_COMMIT}"',
+        '"completed success")',
+    ):
+        assert fragment in gate["run"]
+    assert (
+        names.index("Validate release tag")
+        < names.index("Require the release commit's successful main CI run")
+        < names.index("Build artifacts")
+    )
 
 
 def test_build_lock_is_pinned_and_compatible_with_runtime_lock():
@@ -295,16 +295,19 @@ def test_checkout_instructions_match_ci_installation(document):
 def test_readme_documents_ci_validation_commands(step_name):
     """Local validation includes CI's coverage gates and test-settings drift check."""
     definition = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    if step_name == "Scoped line and branch coverage":
-        definition = yaml.safe_load(
-            (ROOT / ".github/workflows/release.yml").read_text()
-        )
     step = next(
         step
         for job in definition["jobs"].values()
         for step in job["steps"]
         if step.get("name") == step_name
     )
+    if step_name == "Scoped line and branch coverage":
+        # CI shards and combines; locally the serial runner is the equivalent
+        # full run through the same manifest and coverage floors.
+        step = {
+            "run": "python -m parishkit.stewardship.quality --postgresql "
+            '--report "$RUNNER_TEMP/stewardship-coverage.json"'
+        }
     command = step["run"].replace(
         '"$RUNNER_TEMP/stewardship-coverage.json"',
         "/absolute/temporary/path/coverage.json",
