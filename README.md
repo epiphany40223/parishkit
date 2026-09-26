@@ -872,7 +872,9 @@ The tag command requires a clean worktree and verifies that the version in
 `HEAD:pyproject.toml` matches the tag. It never pushes tags. A human must
 explicitly authorize and run any `git push origin vVERSION`. When a `v*` tag is
 pushed, the release GitHub Actions workflow requires an annotated tag reachable
-from `origin/main`, validates it against `pyproject.toml`, runs the normal
-checks, builds source and wheel distributions, uses the committed
-`RELEASE_NOTES.md` when present, and creates or updates the GitHub Release with
-the built artifacts.
+from `origin/main`, validates it against `pyproject.toml`, and requires the
+successful `main` CI run of the tagged commit instead of repeating the full
+suite. It waits while that run is still in progress, and refuses a commit that
+`main` CI never ran on (tag the merge commit on `main`). It then builds source
+and wheel distributions, uses the committed `RELEASE_NOTES.md` when present,
+and creates or updates the GitHub Release with the built artifacts.

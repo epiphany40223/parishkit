@@ -102,8 +102,6 @@ def test_ci_explicitly_requires_postgresql_verification():
         in step.get("run", "")
         for step in shards["steps"]
     )
-    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    assert release["jobs"]["validate-build"]["services"] == shards["services"]
     assert shards["services"]["postgres"]["env"]["POSTGRES_INITDB_ARGS"] == (
         "--set=log_min_error_statement=panic"
     )
@@ -130,16 +128,12 @@ def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():
     assert "tests/stewardship/test_database_gate.py" in paths
 
 
-@pytest.mark.parametrize(
-    "filename,job",
-    [("ci.yml", "stewardship-compose-core"), ("release.yml", "validate-build")],
-)
-def test_ci_requires_every_operational_container_module(filename, job):
-    """Runtime coverage cannot silently disappear from either required pipeline."""
-    workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
+def test_ci_requires_every_operational_container_module():
+    """Runtime coverage cannot silently disappear from the required pipeline."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     step = next(
         item
-        for item in workflow["jobs"][job]["steps"]
+        for item in workflow["jobs"]["stewardship-compose-core"]["steps"]
         if item.get("name") == "Validate operational runtime and provisioning"
     )
     assert step["env"]["PARISHKIT_RUN_RUNTIME_TESTS"] == "1"
@@ -150,8 +144,6 @@ def test_ci_requires_every_operational_container_module(filename, job):
         "test_runtime_ingress_container",
     ):
         assert f"tests/stewardship/{module}.py" in step["run"]
-    if filename == "release.yml":
-        assert "tests/stewardship/test_operational_compose.py" in step["run"]
 
 
 def test_compose_matrix_and_required_gate_cover_all_scenarios():
@@ -240,7 +232,6 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
     ]
 
 
-@pytest.mark.parametrize("filename", ["ci.yml", "release.yml"])
 @pytest.mark.parametrize(
     "path,flag",
     [
@@ -251,10 +242,11 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         ),
     ],
 )
-def test_ci_browser_and_isolation_cannot_pass_by_skipping(filename, path, flag):
-    """Both required pipelines retain explicit opt-in and no-skip enforcement."""
-    workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
-    wrapped = filename == "ci.yml" and path == "tests/stewardship/browser"
+def test_ci_browser_and_isolation_cannot_pass_by_skipping(path, flag):
+    """The required pipeline retains explicit opt-in and no-skip enforcement."""
+    # Releases reuse main CI's run of the tagged commit, so CI is the one place.
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    wrapped = path == "tests/stewardship/browser"
     needle = "parishkit.stewardship.quality_browser" if wrapped else f"pytest {path}"
     steps = [
         step

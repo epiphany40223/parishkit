@@ -524,7 +524,8 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   tag, verifies `HEAD:pyproject.toml` matches the tag, and **never pushes**.
 - **Release workflow** (`.github/workflows/release.yml`) triggers on a pushed
   `v*` tag: it validates the tag is annotated and reachable from `origin/main`
-  and matches `pyproject.toml`, re-runs lint/format/tests, builds sdist+wheel,
+  and matches `pyproject.toml`, requires the tagged commit's successful `main`
+  CI run (rather than re-running lint/format/tests), builds sdist+wheel,
   produces release notes, and creates/updates the GitHub Release with artifacts.
 - **A human must explicitly authorize any `git push origin vVERSION`.** Tags are
   never auto-pushed.

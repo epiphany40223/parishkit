@@ -34,9 +34,10 @@ deployment runbook is the next slice.
 
 ### The image is published by the release tag, and only then
 
-The release workflow already refuses a tag that is not on `main` or whose
-version does not match `pyproject.toml`, then runs the full validation before
-publishing distributions. The image job runs after that validation on the
+The release workflow refuses a tag that is not on `main` or whose version
+does not match `pyproject.toml`, then requires the tagged commit's successful
+`main` CI run, which is that commit's full validation, before publishing
+distributions; it does not repeat the suite. The image job runs after that validation on the
 same tagged commit, with the workflow's own registry permission and the
 repository's package scope; no long-lived registry credential is stored. The
 digest, not a tag, is what the runtime admits: the release notes carry it, so
