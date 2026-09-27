@@ -142,10 +142,11 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         assert post(browser, url, data | {"unrecognized": "value"}).status_code == 400
         saved = post(browser, url, data)
         assert saved.status_code == 302, saved.content
+        assert saved["Location"] == "/admin/setup/content"
         assert post(browser, url, data).status_code == 409
         preview = browser.get(url)
         assert b"Hello Sample Family" in preview.content
-        assert b"Save temporary content" in preview.content
+        assert b"Save and return to the content list" in preview.content
         assert (
             post(
                 browser, url, {"version": str(attempt.version + 1), "clear": "on"}

@@ -10,7 +10,7 @@ from django.views.decorators.http import require_http_methods
 from .authentication import runtime
 from .setup_confirmation import freeze_setup, ready_inputs
 from .setup_preview import PREVIEW_SALT, prepare_preview
-from .setup_views import ERRORS, _checked, _closed, _context, error_response
+from .setup_views import ERRORS, _checked, _closed, _context, page_error
 
 
 class SetupConfirmationForm(forms.Form):
@@ -60,7 +60,7 @@ def setup_confirmation(request):
         response = render(
             request,
             "stewardship/setup-confirmation.html",
-            _context(preview.draft)
+            _context(preview.draft, "finish")
             | {
                 "form": form,
                 "readiness_problem": problem,
@@ -70,6 +70,7 @@ def setup_confirmation(request):
         )
         return _checked(request, service, response, preview.draft)
     except signing.BadSignature:
-        return error_response(ValueError("The setup preview has expired or changed."))
+        error = ValueError("The setup preview has expired or changed.")
+        return page_error(request, error, "finish")
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "finish")

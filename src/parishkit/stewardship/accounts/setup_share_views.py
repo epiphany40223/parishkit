@@ -1,6 +1,5 @@
 """The first campaign's share choices use ordinary stable option identities."""
 
-from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
@@ -11,7 +10,8 @@ from .authentication import runtime
 from .setup_content_views import _draft
 from .setup_drafts import save_section
 from .setup_formsets import closed_formset
-from .setup_views import ERRORS, _checked, _context, error_response
+from .setup_views import ERRORS, _checked, _context, page_error
+from .setup_wizard import continue_after
 from .share_forms import ShareOptionForm, ShareOptions
 
 
@@ -49,15 +49,16 @@ def setup_shares(request):
                     expected_version=version,
                 )
                 return _checked(
-                    request, service, HttpResponseRedirect("/admin/setup/shares")
+                    request, service, continue_after(request, service, "shares")
                 )
             status = 400
         response = render(
             request,
             "stewardship/setup-shares.html",
-            _context(draft) | {"formset": formset, "campaign_name": campaign["name"]},
+            _context(draft, "shares")
+            | {"formset": formset, "campaign_name": campaign["name"]},
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "shares")

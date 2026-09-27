@@ -85,6 +85,23 @@ campaign configuration before making the system configured:
    recipient.
 7. Exact preview/readiness summary and final confirmation.
 
+The wizard presents these as one ordered sequence of pages, defined once in
+code. Credential pages come first because, like
+[secret replacement](#parish-and-integration-configuration), they require fresh
+Google authentication (a sign-in less than five minutes old), each immediately
+after the public settings its staging depends on (outgoing
+mail and Testing recipient for Google Workspace, Slack settings for the Slack
+token). The Parish profile and the source load follow, then the pages that
+need the loaded catalog, then review, the email and Slack tests and the final
+confirmation. Every page shows a progress stepper: an ordered list naming each
+applicable step as completed, current, not done, optional or not yet available
+with the reason, where only available steps are links. Each page has Back and
+Save-and-continue controls (Save and continue validates, saves and opens the
+next applicable page, or redisplays the page with its errors). A page whose
+prerequisites are unmet explains what is missing and links the step that fixes
+it, keeping the HTTP status of the underlying refusal; closed JSON errors
+remain for polling and command endpoints.
+
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
 source catalog and first campaign retain the same civil-date interpretation.

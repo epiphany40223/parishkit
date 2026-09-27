@@ -1,7 +1,8 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Setup email test" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:setup_preview' %}">{% translate "Return to exact setup preview" %}</a></p>
+{% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup email test" %}</h1>
 <p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
@@ -26,4 +27,5 @@
 </li>{% empty %}<li>{% translate "No test has been requested yet." %}</li>{% endfor %}</ul>
 <p><a href="{% url 'admin:setup_mail' %}">{% translate "Reload test status" %}</a></p>
 </section>
+{% include 'stewardship/setup-navigation.html' %}
 {% endblock %}
