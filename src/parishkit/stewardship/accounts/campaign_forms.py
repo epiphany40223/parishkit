@@ -110,6 +110,13 @@ class CampaignForm(forms.Form):
         self.fields["ministry_duids"].choices = ministries
         for name in ("fund_duids", "comparison_fund_duids"):
             self.fields[name].choices = funds
+        # Entering a period start fills an empty end (ui-v1.js); the server
+        # still checks that each period spans exactly one year.
+        for start, end in (
+            ("financial_start", "financial_end"),
+            ("comparison_start", "comparison_end"),
+        ):
+            self.fields[start].widget.attrs["data-fills-end"] = self.add_prefix(end)
 
     def clean(self):
         """Reject module-dependent stray data and require complete financial periods."""

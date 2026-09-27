@@ -353,6 +353,49 @@
     });
   });
 
+  // A financial period is one year: entering its start fills an empty end
+  // with the day before the first anniversary (Feb 29 anniversaries fall on
+  // Feb 28, as the server's rule does). Dates stay YYYY-MM-DD text and the
+  // arithmetic uses UTC, so no browser time zone can shift the day. An end the
+  // person typed is never replaced; one filled here follows later start edits
+  // (typing a year passes through values like 0002-01-01). The server still
+  // checks every period.
+  const periodEnd = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [year, month, day] = match.slice(1).map(Number);
+    const end = new Date(0);
+    end.setUTCFullYear(year + 1, month - 1, month === 2 && day === 29 ? 28 : day);
+    end.setUTCDate(end.getUTCDate() - 1);
+    if (!Number.isFinite(end.getTime()) || end.getUTCFullYear() > 9999) return null;
+    return [String(end.getUTCFullYear()).padStart(4, "0"),
+      String(end.getUTCMonth() + 1).padStart(2, "0"),
+      String(end.getUTCDate()).padStart(2, "0")].join("-");
+  };
+  document.querySelectorAll("input[data-fills-end]").forEach((start) => {
+    const end = start.form?.elements[start.dataset.fillsEnd];
+    if (!(end instanceof HTMLInputElement)) return;
+    const note = document.createElement("span");
+    note.className = "help";
+    note.setAttribute("role", "status");
+    end.after(note);
+    const fill = () => {
+      const value = periodEnd(start.value);
+      if (!value || (end.value && end.value !== end.dataset.autofilled)) return;
+      if (end.value === value) return;
+      end.value = value;
+      end.dataset.autofilled = value;
+      note.textContent = "End date filled in; change it if needed.";
+      // Let dependent checks (the overlap confirmation) see the new end.
+      end.dispatchEvent(new Event("input", {bubbles: true}));
+    };
+    start.addEventListener("input", fill);
+    start.addEventListener("change", fill);
+    end.addEventListener("input", (event) => {
+      if (event.isTrusted) note.textContent = "";
+    });
+  });
+
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.
   document.querySelectorAll("select[multiple]").forEach((select) => {
