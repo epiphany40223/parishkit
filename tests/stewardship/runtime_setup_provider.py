@@ -44,7 +44,7 @@ def main():
     pages = json.loads(sys.argv.pop(1))
     responses = iter(())
 
-    def exchange(payload, *, seconds, check):
+    def exchange(payload, *, seconds, check, helper):
         """Restart the finite fixture for each independently validated full load."""
         nonlocal responses
         check()
