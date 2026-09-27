@@ -152,9 +152,15 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
             b"Thank You page",
             b"Initial invitation",
             b"no private credential values",
-            b"Check readiness and finish setup",
         ):
             assert expected in response.content
+        # Review is an ordinary step: no links jump ahead to the tests or
+        # Finish; the shared action row continues to the email test.
+        content = response.content.decode().split("<h1>", 1)[1]
+        assert "Check readiness and finish setup" not in content
+        assert 'href="/admin/setup/slack-test"' not in content
+        assert 'href="/admin/setup/confirm"' not in content
+        assert '<a class="setup-continue" href="/admin/setup/mail-test">' in content
         assert b"synthetic-private" not in response.content
         # Opening the review completes that step for this draft version only.
         attempt = SetupAttempt.objects.get()

@@ -12,7 +12,7 @@ from django.views.decorators.http import require_http_methods
 
 from .authentication import runtime
 from .setup_drafts import view_draft
-from .setup_mail_views import LABELS, _status_data
+from .setup_mail_views import LABELS, _status_data, tested
 from .setup_notification_models import SetupSlackDelivery
 from .setup_notifications import request_notification
 from .setup_preview import PREVIEW_SALT, prepare_preview
@@ -63,13 +63,15 @@ def setup_notification(request):
                     HttpResponseRedirect(reverse("admin:setup_notification")),
                 )
             status = 400
+        data = _data(preview.draft)
         response = render(
             request,
             "stewardship/setup-notification.html",
             _context(preview.draft, "slack_test")
-            | _data(preview.draft)
+            | data
             | {
                 "form": form,
+                "tested": tested(data["items"]),
                 "channel_id": preview.draft.sections["slack"]["channel_id"],
             },
             status=status,

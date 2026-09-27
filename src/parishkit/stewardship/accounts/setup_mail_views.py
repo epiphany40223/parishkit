@@ -72,6 +72,15 @@ def _status_data(draft, *, model=SetupMailDelivery, labels=LABELS):
     }
 
 
+def tested(items):
+    """Whether a test of the current draft revision was accepted (step done).
+
+    The test page then offers Continue as its primary action instead of
+    sending; tests are listed newest first, so a current one is among them.
+    """
+    return any(item["current"] and item["state"] == "accepted" for item in items)
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def setup_mail(request):
     """Explicit POST queues mail; rendering and status never call the provider."""
@@ -103,6 +112,7 @@ def setup_mail(request):
             | {
                 "form": form,
                 **data,
+                "tested": tested(data["items"]),
                 "testing_recipient": preview.draft.sections["testing"][
                     "testing_recipient"
                 ],

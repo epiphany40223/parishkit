@@ -1,9 +1,12 @@
 """Bounded logical mail schedules and combined draft-date reconciliation."""
 
+import json
+from datetime import date
 from uuid import uuid4
 
 from django import forms
 from django.forms import BaseFormSet, formset_factory
+from django.utils.dateformat import format as date_format
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -17,6 +20,15 @@ from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 
 KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
+# The fields each mail type uses besides the type itself, as
+# configuration.schedule_values requires them. The page script reads this (as
+# ScheduleForm.field_rules) to show only these fields.
+FIELDS = {
+    "initial": ("date", "time", "template_version"),
+    "reminder": ("date", "time", "template_version"),
+    "daily_digest": ("time", "template_version"),
+    "weekly_digest": ("weekday", "time", "template_version"),
+}
 WEEKDAYS = (
     "Monday",
     "Tuesday",
@@ -150,8 +162,27 @@ class ScheduleWindow(forms.Form):
         return values
 
 
+class TemplateSelect(forms.Select):
+    """An email list whose options say their mail type, for the page to filter."""
+
+    kinds = {}
+
+    def create_option(self, name, value, *args, **kwargs):
+        """Tag an email option with ``data-kind`` when its mail type is known."""
+        option = super().create_option(name, value, *args, **kwargs)
+        kind = self.kinds.get(str(value))
+        if kind:
+            option["attrs"]["data-kind"] = kind
+        return option
+
+
 class ScheduleForm(forms.Form):
-    """Stable schedule identity, local civil time, and an existing email revision."""
+    """Stable schedule identity, local civil time, and an existing email revision.
+
+    Every field except the mail type is optional here: which of them a row needs
+    depends on its mail type (FIELDS), so ScheduleSet.clean reports a missing or
+    inapplicable value on that field in words that say what to do.
+    """
 
     id = forms.UUIDField(required=False, widget=forms.HiddenInput)
     kind = forms.ChoiceField(
@@ -160,18 +191,34 @@ class ScheduleForm(forms.Form):
             ("", _("Choose a mail type")),
             *((kind, EMAIL_LABELS[kind]) for kind in KINDS),
         ],
+        error_messages={"required": _("Choose a mail type.")},
+        help_text=_(
+            "Which email this schedule sends; see the list above for what each "
+            "one is. A saved schedule's mail type cannot change."
+        ),
     )
     date = forms.DateField(
-        label=_("Local date (initial/reminder only)"),
+        label=_("Send date"),
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
+        help_text=_(
+            "Initial invitations and reminders only: the day it is sent. It must "
+            "fall within the campaign dates."
+        ),
     )
     time = forms.TimeField(
-        label=_("Local time"),
+        label=_("Send time"),
         widget=forms.TimeInput(format="%H:%M:%S", attrs={"type": "time", "step": "1"}),
+        error_messages={
+            "required": _("Enter the time of day it is sent, for example 9:00 AM.")
+        },
+        help_text=_(
+            "The time of day it is sent, in the campaign's time zone rather than "
+            "your computer's, for example 9:00 AM."
+        ),
     )
     weekday = forms.TypedChoiceField(
-        label=_("Day of week (weekly digest only)"),
+        label=_("Day of week"),
         required=False,
         coerce=int,
         empty_value=None,
@@ -179,8 +226,18 @@ class ScheduleForm(forms.Form):
             ("", _("Not weekly")),
             *((index, _(day)) for index, day in enumerate(WEEKDAYS)),
         ],
+        help_text=_("Weekly Admin digests only: the day of the week it is sent."),
     )
-    template_version = forms.ChoiceField(label=_("Email template and subject"))
+    template_version = forms.ChoiceField(
+        label=_("Email to send"),
+        widget=TemplateSelect,
+        error_messages={"required": _("Choose the email to send.")},
+        help_text=_(
+            "The saved email, with its subject, that this schedule sends. Only "
+            "emails of the chosen mail type fit. Emails are written with the page "
+            "and email templates."
+        ),
+    )
 
     def clean_time(self):
         """Civil schedules have whole seconds, never an offset or truncated fraction."""
@@ -190,27 +247,50 @@ class ScheduleForm(forms.Form):
         return value
 
     def __init__(self, *args, templates, **kwargs):
-        """Offer email revisions and only this row's unresolved legacy value."""
+        """Offer email revisions and only this row's unresolved legacy value.
+
+        A saved schedule's mail type is fixed (the configuration refuses to
+        retype one), so it is shown but not editable, and only emails of that
+        type are offered. A disabled field keeps its saved value whatever the
+        browser posts.
+        """
         self.templates = templates
         super().__init__(*args, **kwargs)
+        fixed = self.initial.get("kind") if self.initial.get("id") else None
+        if fixed:
+            self.fields["kind"].disabled = True
+        emails = [
+            row
+            for row in templates
+            if row["values"]["kind"] == "email"
+            and row["values"]["slot"] in KINDS
+            and fixed in {None, row["values"]["slot"]}
+        ]
         choices = [
             (
                 row["id"],
                 f"{EMAIL_LABELS[row['values']['slot']]} — {row['values']['subject']} "
                 f"({row['id'][:8]})",
             )
-            for row in templates
-            if row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
+            for row in emails
         ]
-        if not choices:
+        kinds = {row["id"]: row["values"]["slot"] for row in emails}
+        if not schedulable(templates):
             self.fields["template_version"].help_text = NO_TEMPLATES
         selected = self.initial.get("template_version")
-        if selected and selected not in {key for key, _ in choices}:
+        if selected and selected not in kinds:
             choices.append((selected, _("Existing unresolved template (not ready)")))
+            kinds[selected] = self.initial.get("kind")
         self.fields["template_version"].choices = [
             ("", _("Choose a template")),
             *choices,
         ]
+        self.fields["template_version"].widget.kinds = kinds
+
+    @property
+    def field_rules(self):
+        """FIELDS as JSON, for the page script that shows only applicable fields."""
+        return json.dumps(FIELDS)
 
 
 class ScheduleSet(BaseFormSet):
@@ -232,14 +312,44 @@ class ScheduleSet(BaseFormSet):
         """Whether any email is saved that a schedule could send."""
         return schedulable(self.templates)
 
+    @property
+    def window(self):
+        """The campaign's first and last local days.
+
+        Views may replace ``campaign`` (with proposed dates) after construction,
+        so this is read when needed, never cached.
+        """
+        return tuple(
+            date.fromisoformat(self.campaign[name])
+            for name in ("start_date", "end_date")
+        )
+
+    @property
+    def window_text(self):
+        """The campaign dates in words, for instructions and date errors."""
+        start, end = self.window
+        return f"{date_format(start, 'F j, Y')} – {date_format(end, 'F j, Y')}"
+
+    @property
+    def timezone(self):
+        """The campaign time zone that every schedule time is in."""
+        return self.campaign["timezone"]
+
     def clean(self):
-        """Reject forged identities/kinds and validate campaign-local scheduling."""
+        """Check each row's fields, then the rows together.
+
+        A problem with one row's values is attached to the offending field, so
+        the page says exactly what to change; only problems between rows are
+        non-field errors. configuration.schedule_values and
+        validate_campaign_sections remain the authority: they are applied here
+        and again when the whole configuration is saved.
+        """
         if any(self.errors):
             return
         if self.management_form.cleaned_data.get("INITIAL_FORMS") != len(self.previous):
             raise forms.ValidationError(_("Reload schedules before saving."))
         old = {row["id"]: row["values"] for row in self.previous}
-        seen = set()
+        seen, rows, field_errors = set(), [], False
         for form in self.forms:
             identifier = form.cleaned_data.get("id")
             identifier = str(identifier) if identifier else None
@@ -255,29 +365,144 @@ class ScheduleSet(BaseFormSet):
                 and not identifier
             ):
                 continue
-            values = self._values(form, old.get(identifier))
-            if identifier and values["kind"] != old[identifier]["kind"]:
+            if identifier and form.cleaned_data["kind"] != old[identifier]["kind"]:
                 raise forms.ValidationError(
                     _("A saved schedule's mail type cannot change.")
                 )
+            if self._field_errors(form, old.get(identifier)):
+                field_errors = True
+                continue
+            values = self._values(form, old.get(identifier))
             try:
-                schedule_values(values, self.campaign)
+                due = schedule_values(values, self.campaign)
             except ConfigError:
+                # The field checks above mirror schedule_values, so this is
+                # only a safety net should the two ever disagree.
                 raise forms.ValidationError(
-                    _(
-                        "Every schedule must fit the campaign dates. Only weekly "
-                        "digests take a weekday; only initial/reminder mail "
-                        "takes a date."
-                    )
+                    _("Check each schedule's date and time against the campaign.")
                 ) from None
+            rows.append((values["kind"], due))
         if seen != old.keys():
             raise forms.ValidationError(
                 _("Every saved schedule must be retained or explicitly deleted.")
             )
+        if not field_errors:
+            self._check_collection(rows)
 
-    def _values(self, form, previous):
-        """Subjects come from immutable templates, never from browser fields."""
+    def _field_errors(self, form, previous):
+        """Attach each rule this row breaks to its field; return whether any did.
+
+        The rules are those of configuration.schedule_values: initial and
+        reminder mail needs a date within the campaign's (inclusive) dates and
+        no weekday; a weekly digest needs a weekday and no date; a daily digest
+        needs neither. Every schedule sends a saved email of its own mail type.
+        """
         data = form.cleaned_data
+        kind = data["kind"]
+        start, end = self.window
+        problems = []
+        if "date" not in FIELDS[kind]:
+            if data["date"] is not None:
+                problems.append(
+                    (
+                        "date",
+                        _(
+                            "A date applies only to initial invitations and "
+                            "reminders — leave it empty. Digests are sent "
+                            "throughout the campaign."
+                        ),
+                    )
+                )
+        elif data["date"] is None:
+            problems.append(
+                (
+                    "date",
+                    _("Choose the date it is sent, within the campaign (%(window)s)."),
+                )
+            )
+        elif not start <= data["date"] <= end:
+            problems.append(
+                ("date", _("Choose a date within the campaign (%(window)s)."))
+            )
+        if "weekday" not in FIELDS[kind]:
+            if data["weekday"] is not None:
+                problems.append(
+                    (
+                        "weekday",
+                        _(
+                            "A weekday applies only to weekly digests — leave it "
+                            "at Not weekly."
+                        ),
+                    )
+                )
+        elif data["weekday"] is None:
+            problems.append(
+                ("weekday", _("Choose the day of the week the digest is sent."))
+            )
+        if self._subject(data, previous) is None:
+            problems.append(
+                (
+                    "template_version",
+                    _("Choose an email of this mail type (%(kind)s)."),
+                )
+            )
+        params = {"window": self.window_text, "kind": EMAIL_LABELS[kind]}
+        for field, message in problems:
+            form.add_error(field, forms.ValidationError(message, params=params))
+        return bool(problems)
+
+    def _check_collection(self, rows):
+        """Rules between schedules, as validate_campaign_sections applies them.
+
+        ``rows`` holds (kind, due) for every retained schedule; ``due`` is the
+        UTC send time of initial/reminder mail and None for digests.
+        """
+        mail = [(due, kind) for kind, due in rows if due is not None]
+        initial = [due for due, kind in mail if kind == "initial"]
+        digests = [kind for kind, due in rows if due is None]
+        errors = []
+        if mail and not initial:
+            errors.append(
+                _(
+                    "Reminders need an initial invitation. Add one Initial "
+                    "invitation schedule."
+                )
+            )
+        elif len(initial) > 1:
+            errors.append(
+                _("Only one Initial invitation is allowed. Delete the extra one.")
+            )
+        elif any(due <= initial[0] for due, kind in mail if kind == "reminder"):
+            errors.append(
+                _(
+                    "Every reminder must be sent after the initial invitation. "
+                    "Choose a later date or time."
+                )
+            )
+        if len({due for due, kind in mail}) != len(mail):
+            errors.append(
+                _(
+                    "Two emails to Families cannot be sent at the same date and "
+                    "time. Change one of them."
+                )
+            )
+        if len(set(digests)) != len(digests):
+            errors.append(
+                _(
+                    "Only one Daily Admin digest and one Weekly Admin digest are "
+                    "allowed. Delete the extra one."
+                )
+            )
+        if errors:
+            raise forms.ValidationError(errors)
+
+    def _subject(self, data, previous):
+        """The chosen email's subject, or None when this row may not send it.
+
+        Subjects come from immutable templates, never from browser fields. An
+        unresolved legacy template stays acceptable only on the saved row that
+        already uses it.
+        """
         template = next(
             (
                 row["values"]
@@ -292,13 +517,17 @@ class ScheduleSet(BaseFormSet):
                 "email",
                 data["kind"],
             ):
-                raise forms.ValidationError(
-                    _("Choose a template for this campaign and mail type.")
-                )
-            subject = template["subject"]
-        elif previous and previous["template_version"] == data["template_version"]:
-            subject = previous["subject"]
-        else:
+                return None
+            return template["subject"]
+        if previous and previous["template_version"] == data["template_version"]:
+            return previous["subject"]
+        return None
+
+    def _values(self, form, previous):
+        """The configuration record for one valid row."""
+        data = form.cleaned_data
+        subject = self._subject(data, previous)
+        if subject is None:
             raise forms.ValidationError(_("Choose a configured email template."))
         return {
             "campaign_id": self.campaign_id,
@@ -349,6 +578,8 @@ Schedules = formset_factory(
     formset=ScheduleSet,
     extra=1,
     can_delete=True,
+    # A blank new row has nothing to delete; only saved rows offer Delete.
+    can_delete_extra=False,
     max_num=100,
     validate_max=True,
     absolute_max=101,

@@ -246,27 +246,6 @@ WINDOW = {
     "overlap_confirmed": CAMPAIGN["overlap_confirmed"],
 }
 
-SCHEDULE = {
-    "kind": _(
-        "Initial invitation: the first email to each Family, with their personal "
-        "link and code. Reminder: a later email to Families. Daily and weekly "
-        "Admin digests: summary emails for administrators."
-    ),
-    "date": _(
-        "The day an initial invitation or reminder is sent, in the campaign's "
-        "time zone. Leave empty for digests."
-    ),
-    "time": _(
-        "The time of day it is sent, in the campaign's time zone rather than "
-        "your computer's, for example 09:00:00."
-    ),
-    "weekday": _("For a weekly digest only: the day of the week it is sent."),
-    "template_version": _(
-        "The saved email template and subject to use. Save templates on the "
-        "Pages and email templates step first."
-    ),
-}
-
 SHARE = {
     "label": _(
         "The text of one choice Families see for how they will give, for "
