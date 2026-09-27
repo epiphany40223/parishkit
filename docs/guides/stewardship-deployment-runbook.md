@@ -323,6 +323,25 @@ resetting it. Nothing in it deletes data:
    forbids deleting the validation deployment's database without explicit
    authorization.
 
+## Pre-launch fast deploys
+
+Before launch, while the validation deployment holds only disposable data,
+[`tools/stewardship-dev-deploy.sh`](../../tools/stewardship-dev-deploy.sh)
+moves it onto the current checkout in a few minutes, without CI or a release.
+It sends the tracked files (including uncommitted edits) to the host, builds
+the image there, pushes it to GHCR to obtain the digest production admits,
+and then follows this runbook's [upgrade](#upgrade) steps: a best-effort
+backup, stop, `retarget-image`, migration and grants, a fresh static tree,
+start and health. The host must be logged in to GHCR with a token that can
+write packages (`docker login ghcr.io`). Run it from the checkout:
+
+```sh
+STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
+```
+
+Its images skip CI, so they are never deployed to a campaign serving real
+Families: go-live runs a digest from a real release.
+
 ## Production activation
 
 Activation is an Administrator's workflow in the portal, bracketed by the
