@@ -54,3 +54,21 @@ def test_mail_and_testing_help_states_the_operational_facts():
         SetupCredentialForm("google_workspace").fields["candidate"].help_text
     )
     assert "service_account" in workspace and "oauth2.googleapis.com" in workspace
+
+
+@pytest.mark.parametrize("target", ["parishsoft", "slack"])
+def test_single_line_secrets_use_a_password_input_that_never_echoes(target):
+    """API keys and bot tokens are one line; the value is never re-rendered."""
+    form = SetupCredentialForm(target, {"candidate": "synthetic-secret"})
+    html = str(form["candidate"])
+    assert html.startswith("<input") and 'type="password"' in html
+    assert 'autocomplete="off"' in html and 'spellcheck="false"' in html
+    assert "maxlength=" in html and "required" in html
+    assert "synthetic-secret" not in html
+
+
+def test_service_account_json_stays_a_write_only_text_area():
+    """The multi-line Google key keeps its text area and never echoes."""
+    form = SetupCredentialForm("google_workspace", {"candidate": '{"private": 1}'})
+    html = str(form["candidate"])
+    assert html.startswith("<textarea") and "private" not in html

@@ -78,7 +78,12 @@ class SetupCredentialForm(CredentialForm):
     intent = None
 
     def __init__(self, target, *args, **kwargs):
-        """Only ParishSoft accepts an explicit organization; other scope is staged."""
+        """Only ParishSoft accepts an explicit organization; other scope is staged.
+
+        API keys and bot tokens are single-line secrets, so they use a password
+        input that never redisplays its value; the Google service-account key
+        is multi-line JSON and keeps the write-only text area.
+        """
         super().__init__(*args, **kwargs)
         if target == "parishsoft":
             self.fields["organization_id"] = forms.IntegerField(
@@ -86,7 +91,19 @@ class SetupCredentialForm(CredentialForm):
                 min_value=1,
                 max_value=2**31 - 1,
             )
-        self.fields["candidate"].label = FIELD_LABELS[target]
+        candidate = self.fields["candidate"]
+        if target in {"parishsoft", "slack"}:
+            candidate.widget = forms.PasswordInput(
+                render_value=False,
+                attrs={
+                    "autocomplete": "off",
+                    "spellcheck": "false",
+                    "autocapitalize": "off",
+                },
+            )
+            # PasswordInput is built after the field, so restore maxlength.
+            candidate.widget.attrs.update(candidate.widget_attrs(candidate.widget))
+        candidate.label = FIELD_LABELS[target]
         setup_help.apply(self, setup_help.CREDENTIALS[target], replace=True)
 
 
