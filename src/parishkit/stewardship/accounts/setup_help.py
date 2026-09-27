@@ -8,7 +8,10 @@ templates mark help text safe, so these strings must never contain markup or
 anything derived from input.
 """
 
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
+
+from .campaign_forms import MULTI_SELECT_HELP
 
 PARISH = {
     "name": _(
@@ -221,6 +224,12 @@ CAMPAIGN = {
         "parish. Each new answer creates a follow-up item for Staff."
     ),
 }
+
+# The shared campaign form's own help for its multi-select lists says how to
+# choose several items. Setup replaces that help with the text above, so the
+# instructions are repeated after it.
+for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
+    CAMPAIGN[name] = format_lazy("{} {}", CAMPAIGN[name], MULTI_SELECT_HELP)
 
 WINDOW = {
     "timezone": CAMPAIGN["timezone"],

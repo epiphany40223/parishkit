@@ -75,3 +75,12 @@ def test_service_account_json_stays_a_write_only_text_area():
     form = SetupCredentialForm("google_workspace", {"candidate": '{"private": 1}'})
     html = str(form["candidate"])
     assert html.startswith("<textarea") and "private" not in html
+
+
+def test_multi_select_help_says_how_to_choose_several():
+    """Setup's own text keeps the shared multi-select instructions."""
+    form = SetupCampaignForm()
+    for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
+        text = str(form.fields[name].help_text)
+        assert "Ctrl" in text and "Shift" in text, name
+    assert "ParishSoft funds" in str(form.fields["fund_duids"].help_text)

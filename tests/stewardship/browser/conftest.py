@@ -772,7 +772,19 @@ def component_origin():
                 "draft": setup_draft,
                 "form": SetupCampaignForm(
                     initial={"timezone": "America/New_York"},
-                    ministries=[("1", "Music ministry")],
+                    # A real parish has hundreds of Ministries, some long-named.
+                    ministries=[
+                        ("1", "Music ministry"),
+                        (
+                            "2",
+                            "Parish Pastoral Council and Finance Council Joint "
+                            "Subcommittee on Buildings, Grounds and Parking",
+                        ),
+                        *(
+                            (str(number), f"Ministry {number}")
+                            for number in range(3, 214)
+                        ),
+                    ],
                     funds=[("9", "Offertory")],
                 ),
             },

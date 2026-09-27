@@ -16,6 +16,12 @@ from parishkit.stewardship.schema_primitives import timezone_names
 
 from .share_forms import default_share_options
 
+# How to use a plain multi-select list, shown with every one of them.
+MULTI_SELECT_HELP = _(
+    "To choose several, hold Ctrl (Cmd on a Mac) while clicking; to choose a "
+    "range, click the first item and hold Shift while clicking the last."
+)
+
 
 class SourceChoices(forms.MultipleChoiceField):
     """Accept only distinct catalog IDs, with deterministic integer serialization."""
@@ -47,7 +53,9 @@ class CampaignForm(forms.Form):
     financial_enabled = forms.BooleanField(
         label=_("Financial stewardship"), required=False
     )
-    ministry_duids = SourceChoices(label=_("Included Ministries"), required=False)
+    ministry_duids = SourceChoices(
+        label=_("Included Ministries"), required=False, help_text=MULTI_SELECT_HELP
+    )
     financial_start = forms.DateField(
         label=_("Upcoming financial period start"),
         required=False,
@@ -69,10 +77,14 @@ class CampaignForm(forms.Form):
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     fund_duids = SourceChoices(
-        label=_("Upcoming financial period funds"), required=False
+        label=_("Upcoming financial period funds"),
+        required=False,
+        help_text=MULTI_SELECT_HELP,
     )
     comparison_fund_duids = SourceChoices(
-        label=_("Comparison financial period funds"), required=False
+        label=_("Comparison financial period funds"),
+        required=False,
+        help_text=MULTI_SELECT_HELP,
     )
     overlap_confirmed = forms.BooleanField(
         label=_("I confirm that the upcoming financial period overlaps this campaign"),

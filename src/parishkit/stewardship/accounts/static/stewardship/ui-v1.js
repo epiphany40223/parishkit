@@ -353,6 +353,24 @@
     });
   });
 
+  // Plain multi-select lists: say how many items are chosen, since a long list
+  // (a parish may have hundreds of Ministries) hides most of its selection.
+  document.querySelectorAll("select[multiple]").forEach((select) => {
+    const count = document.createElement("p");
+    count.className = "help";
+    count.setAttribute("aria-live", "polite");
+    select.after(count);
+    const show = () => {
+      const chosen = select.selectedOptions.length;
+      count.textContent = `${chosen.toLocaleString("en-US")} of ${
+        select.options.length.toLocaleString("en-US")} selected`;
+    };
+    // Also on any form change: turning on a module preselects its options
+    // without a change event on the list itself.
+    (select.form || select).addEventListener("change", show);
+    show();
+  });
+
   // The visual editor starts with server-sanitized markup only. Raw source
   // edits never go through innerHTML: they must round-trip through the preview
   // sanitizer before returning to visual editing. Paste/drop are plain text.
