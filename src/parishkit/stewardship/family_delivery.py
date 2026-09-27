@@ -24,6 +24,7 @@ from .jobs.outbox_validation import mailbox, recipients
 from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
+from .sender_name import apply_sender_name, clean_sender_name
 from .web.content import prepare_content
 
 
@@ -231,14 +232,20 @@ class FamilyDeliveryMail:
 
 
 def delivery_settings(value):
-    """Workspace identity is closed; routed recipients come only from the mail."""
-    if type(value) is not dict or set(value) != {
-        "delegated_email",
-        "sender",
-        "reply_to",
-    }:
+    """Workspace identity is closed; routed recipients come only from the mail.
+
+    ``sender_name`` is the optional From display name (see sender_name.py);
+    every other value is a normalized address.
+    """
+    addresses = {"delegated_email", "sender", "reply_to"}
+    if type(value) is not dict or set(value) - {"sender_name"} != addresses:
         raise ValueError("Invalid Family delivery settings.")
-    if any(normalized_email(item) != item for item in value.values()):
+    if any(normalized_email(value[key]) != value[key] for key in addresses):
+        raise ValueError("Invalid Family delivery settings.")
+    if "sender_name" in value and (
+        type(value["sender_name"]) is not str
+        or clean_sender_name(value["sender_name"]) != value["sender_name"]
+    ):
         raise ValueError("Invalid Family delivery settings.")
     return dict(value)
 
@@ -250,7 +257,7 @@ def _reply(value):
     return value[0]
 
 
-def _submit(smtp, mail):
+def _submit(smtp, mail, sender_name=""):
     """Preserve per-address refusals across DATA failure without resending a Family.
 
     Explicit MAIL/RCPT staging distinguishes pre-DATA connection loss (definitely
@@ -278,7 +285,7 @@ def _submit(smtp, mail):
                 if not mail.sender.isascii() or not mail.reply_to.isascii()
                 else FamilyDeliveryStatus.PERMANENT
             )
-        message = mail.message().as_bytes(
+        message = apply_sender_name(mail.message(), sender_name, mail.sender).as_bytes(
             policy=(policy.SMTPUTF8 if international else policy.SMTP).clone(
                 cte_type="7bit"
             )
@@ -410,7 +417,7 @@ def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
                     _handshake_failure(code), len(mail.recipients)
                 )
                 return result
-            result = _submit(smtp, mail)
+            result = _submit(smtp, mail, settings.get("sender_name", ""))
     except Exception as error:
         # Once _submit has returned, even a QUIT failure cannot erase its
         # definitive DATA/refusal evidence. Earlier failures are shared faults.

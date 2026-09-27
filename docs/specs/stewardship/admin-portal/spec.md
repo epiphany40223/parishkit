@@ -79,7 +79,7 @@ campaign configuration before making the system configured:
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
 4. Google Workspace email service-account/delegated mailbox, sender/reply
-   address, and test delivery.
+   address, optional From name, and test delivery.
 5. Optional Slack token/channel and test notification.
 6. First campaign name, modules, dates, Ministry/fund selection, financial
    period, share options, content, mail schedules, digest schedules, and test
@@ -307,6 +307,15 @@ shows **Applying**, **Applied**, or a safe validation/error result; it never say
 Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
+
+Outgoing email settings (the setup mail step and the post-setup outgoing
+email integration) include an optional From name: a single line of at most 100
+characters without control characters, `<`, `>`, `@`, quotes or backslashes.
+Every outgoing message's From header shows it with the From address, quoted
+and RFC 2047-encoded as needed; when it is blank the Parish profile name is
+used. It is presentation only: routing, test scope and outbox checks keep
+comparing the bare address, and changing it never voids a staged credential
+test.
 
 The Parish IANA timezone is the default for non-campaign presentation and newly
 created campaign drafts. Editing it does not mutate an existing Campaign's

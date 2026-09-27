@@ -900,7 +900,7 @@ BEGIN
         SELECT array_agg(key ORDER BY key) INTO keys
             FROM jsonb_object_keys(NEW.mail) key;
         IF keys IS DISTINCT FROM ARRAY['delivery_id','html','recipient','reply_to',
-                                      'sender','subject','text']
+                                      'sender','sender_name','subject','text']
            OR EXISTS (SELECT 1 FROM jsonb_each(NEW.mail) pair
                 WHERE jsonb_typeof(pair.value)<>'string')
            OR NEW.mail->>'delivery_id' IS DISTINCT FROM NEW.id::text
@@ -6722,7 +6722,7 @@ BEGIN
         WHEN 'branding' THEN ARRAY['bundle_id']
         WHEN 'access' THEN ARRAY['admin_addresses','ministry_addresses',
             'ministry_domains','staff_addresses','staff_domains']
-        WHEN 'mail' THEN ARRAY['delegated_email','reply_to','sender']
+        WHEN 'mail' THEN ARRAY['delegated_email','reply_to','sender','sender_name']
         WHEN 'slack' THEN ARRAY['channel_id','enabled']
         WHEN 'campaign' THEN ARRAY['campaign','source_result']
         WHEN 'testing' THEN ARRAY['testing_recipient']
@@ -7374,7 +7374,7 @@ BEGIN
         SELECT array_agg(key ORDER BY key) INTO keys
             FROM jsonb_object_keys(NEW.mail) key;
         IF keys IS DISTINCT FROM ARRAY['delivery_id','html','recipient','reply_to',
-                                      'sender','subject','text']
+                                      'sender','sender_name','subject','text']
            OR EXISTS (SELECT 1 FROM jsonb_each(NEW.mail) pair
                 WHERE jsonb_typeof(pair.value)<>'string')
            OR NEW.mail->>'delivery_id' IS DISTINCT FROM NEW.id::text

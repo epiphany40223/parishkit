@@ -29,6 +29,7 @@ VALUES = {
     "mail": {
         "delegated_email": "mail@example.org",
         "sender": "mail@example.org",
+        "sender_name": "St. Example Stewardship",
         "reply_to": "office@example.org",
     },
     "slack": {"enabled": False, "channel_id": ""},

@@ -236,16 +236,22 @@ The source refresh fix then added one owner-run trigger and its function that
 refresh the snapshot membership statistics when a staged snapshot becomes
 ready, so promotion under the work-order lock never plans a new snapshot from
 statistics that predate it. The ParishSoft refresh-frequency work also changed
-the refresh tick guard's function body. Regenerated from a fresh install, the current
-baseline is:
+the refresh tick guard's function body, and the timezone-catalog fix (PR #124)
+changed several function bodies (the submission and exact-request guards and
+the Ministry, financial and information report functions). The owner-approved
+optional outgoing-mail From name then changed the setup draft's generated
+scope digest to leave out the presentation-only `sender_name` key, and the key
+lists of the setup-draft guard's mail step and of the setup and campaign
+test-mail guards (Columns and Functions digests).
+Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 220 | `d14ef15b` |
-| Columns | 2440 | `e0c6b643` |
+| Columns | 2440 | `a87bd7ed` |
 | Constraints | 3372 | `5c14425f` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 596 | `9d0b7f79` |
+| Functions | 596 | `eb10a95b` |
 | Triggers | 550 | `d0c71f08` |
 | Policies | 28 | `1c9c3b2d` |
 

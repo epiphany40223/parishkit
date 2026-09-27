@@ -20,6 +20,17 @@ FIELDS = {
 }
 
 
+def workspace_scope(mail, recipient):
+    """The Workspace credential scope of the setup mail step and Testing recipient.
+
+    The mail step's optional From name is presentation only; it is never part
+    of the scope a credential test proves.
+    """
+    return {key: mail[key] for key in ("delegated_email", "sender", "reply_to")} | {
+        "recipient": recipient
+    }
+
+
 def validated_context(target, values):
     """Reject unknown keys, coercions and noncanonical settings before staging."""
     if (

@@ -12,6 +12,7 @@ from parishkit.email.base import Email, build_message
 
 from .accounts.policy_schema import normalized_email
 from .mail_layout import email_document
+from .sender_name import apply_sender_name, clean_sender_name
 from .web.content import prepare_content, validate_template
 
 
@@ -26,6 +27,8 @@ class ReadinessMail:
     subject: str
     html: str
     text: str
+    # The From display name (sender_name.py), resolved when the test is queued.
+    sender_name: str = ""
 
     def __post_init__(self):
         """Restored queue payloads receive the same checks as initial rendering."""
@@ -36,6 +39,8 @@ class ReadinessMail:
             for value in (self.sender, self.reply_to, self.recipient)
         ):
             raise ValueError("Readiness delivery addresses must be normalized.")
+        if clean_sender_name(self.sender_name) != self.sender_name:
+            raise ValueError("Readiness mail requires a clean From name.")
         if type(self.subject) is not str or not self.subject.strip():
             raise ValueError("Readiness mail requires a subject.")
         validate_template(self.subject, subject=True)
@@ -53,6 +58,7 @@ class ReadinessMail:
             "subject": self.subject,
             "html": self.html,
             "text": self.text,
+            "sender_name": self.sender_name,
         }
 
     @classmethod
@@ -67,9 +73,10 @@ class ReadinessMail:
             "html",
             "text",
         }
+        # A test queued before the optional From name existed has no key.
         if (
             type(value) is not dict
-            or set(value) != fields
+            or set(value) - {"sender_name"} != fields
             or any(type(item) is not str for item in value.values())
         ):
             raise ValueError("Invalid readiness mail payload.")
@@ -104,6 +111,7 @@ class ReadinessMail:
                 text=banner + "\n\n" + self.text,
             )
         )
+        apply_sender_name(result, self.sender_name, self.sender)
         result["Reply-To"] = self.reply_to
         result["Message-ID"] = (
             f"<stewardship-readiness-{self.delivery_id.hex}@parishkit.invalid>"

@@ -39,7 +39,11 @@ def compilation():
             CandidateCredential(
                 "google_workspace",
                 "b" * 64,
-                sections["mail"]
+                # The staged scope excludes the presentation-only From name.
+                {
+                    key: sections["mail"][key]
+                    for key in ("delegated_email", "sender", "reply_to")
+                }
                 | {"recipient": sections["testing"]["testing_recipient"]},
             ),
         ],
@@ -118,6 +122,29 @@ def test_changed_mail_scope_invalidates_old_sealed_context(changed):
     )
     with pytest.raises(ConfigError, match="Mail settings changed"):
         compile_candidate(base, **args)
+
+
+def test_from_name_is_compiled_but_is_not_credential_scope():
+    """Changing the From name keeps the staged test; blank is omitted."""
+    base, args = compilation()
+    args["sections"]["mail"]["sender_name"] = "Renamed Stewardship"
+    email = next(
+        row["values"]["settings"]
+        for row in compile_candidate(base, **args).candidate.document()["sections"][
+            "integrations"
+        ]
+        if row["values"]["kind"] == "email"
+    )
+    assert email["sender_name"] == "Renamed Stewardship"
+    args["sections"]["mail"]["sender_name"] = ""
+    email = next(
+        row["values"]["settings"]
+        for row in compile_candidate(base, **args).candidate.document()["sections"][
+            "integrations"
+        ]
+        if row["values"]["kind"] == "email"
+    )
+    assert "sender_name" not in email
 
 
 def test_optional_slack_can_be_inert_or_exactly_selected():

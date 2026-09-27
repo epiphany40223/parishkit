@@ -3,6 +3,8 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.sender_name_field import SenderNameField
+
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 
@@ -72,6 +74,12 @@ class IntegrationForm(forms.Form):
             self.fields["sender"] = forms.EmailField(
                 label=_("From address"), max_length=254
             )
+            self.fields["sender_name"] = SenderNameField(
+                help_text=_(
+                    "Shown next to the From address. Leave empty to use the "
+                    "Parish name."
+                )
+            )
             self.fields["reply_to"] = forms.EmailField(
                 label=_("Reply-to address"), max_length=254
             )
@@ -89,6 +97,8 @@ class IntegrationForm(forms.Form):
         """Normalize exact YAML types after validation; never include the base field."""
         if not self.is_valid():
             raise ValueError("Valid integration settings are required.")
+        # An empty From name is omitted: the applied settings then use the
+        # Parish name, and the setting stays absent as in older documents.
         return {
             name: str(value)
             if name == "organization_id"
@@ -98,7 +108,7 @@ class IntegrationForm(forms.Form):
                 else value
             )
             for name, value in self.cleaned_data.items()
-            if name != "base_digest"
+            if name != "base_digest" and not (name == "sender_name" and not value)
         }
 
     def clean_nightly_time(self):

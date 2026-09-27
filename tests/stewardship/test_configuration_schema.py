@@ -34,6 +34,38 @@ def test_supported_integration_shapes(kind, fields):
 
 
 @pytest.mark.parametrize(
+    "name,valid",
+    [
+        ("St. Example Stewardship", True),
+        ("Parroquia Señora, Corresponsabilidad", True),
+        ("", False),
+        (" padded ", False),
+        ("Evil <a@example.org>", False),
+        ("two\nlines", False),
+        ("x" * 101, False),
+        (7, False),
+    ],
+)
+def test_email_integration_accepts_only_a_clean_optional_from_name(name, valid):
+    """The From name is optional, canonical and never an address in disguise."""
+    document = configuration_document()
+    document["sections"]["integrations"][0]["values"] = {
+        "kind": "email",
+        "settings": {
+            "sender": "staff@example.org",
+            "reply_to": "office@example.org",
+            "sender_name": name,
+        },
+        "credential_fingerprint": None,
+    }
+    if valid:
+        assert configuration_version(document).document() == document
+    else:
+        with pytest.raises(ConfigError):
+            configuration_version(document)
+
+
+@pytest.mark.parametrize(
     "field,value",
     [
         ("name", ""),

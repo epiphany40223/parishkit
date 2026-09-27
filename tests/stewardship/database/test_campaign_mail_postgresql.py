@@ -355,6 +355,8 @@ def test_web_cannot_forge_provider_result_or_retarget_queued_mail(campaign_test)
                 )
     row.refresh_from_db()
     assert row.state == "queued" and row.mail["recipient"] == "test@example.org"
+    # No From name is configured, so the queued test uses the Parish name.
+    assert row.mail["sender_name"] == "Example Parish"
 
 
 @pytest.mark.parametrize("mutation", ["signature", "recipient", "duplicate", "expired"])

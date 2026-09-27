@@ -24,6 +24,7 @@ from parishkit.stewardship.operational_delivery_process import (  # noqa: F401
 )
 from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
 from parishkit.stewardship.runtime_background import mail_authority
+from parishkit.stewardship.sender_name import configured_sender_name
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
@@ -213,6 +214,8 @@ def _execute(execution, *, store, credential_path, circuit, owner):
                 workspace = AppliedIntegration.objects.get(
                     configuration_id=configuration_id, kind="google_workspace"
                 )
+                # Display only: the From name is not part of any admission check.
+                sender_name = configured_sender_name(configuration_id)
         if terminal is not None:
             execution.transition(terminal)
             return
@@ -235,6 +238,7 @@ def _execute(execution, *, store, credential_path, circuit, owner):
         settings = workspace.settings | {
             "sender": mail.sender,
             "reply_to": mail.reply_to,
+            "sender_name": sender_name,
         }
         with work_transaction():
             remaining = (deadline - database_now()).total_seconds()

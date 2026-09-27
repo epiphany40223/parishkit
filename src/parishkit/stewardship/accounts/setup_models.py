@@ -92,12 +92,14 @@ class SetupDraftSection(MutableRecord):
     values = models.JSONField()
     # Invoker-only delivery guards compare settings without exposing draft JSON
     # to cleanup or unrelated credential identities. PostgreSQL owns the value.
+    # The mail step's From name is presentation only, not delivery scope, so
+    # it is left out: changing it never invalidates a staged credential test.
     scope_digest = models.GeneratedField(
         expression=models.Func(
             models.F("values"),
             template=(
                 "pg_catalog.encode(pg_catalog.sha256("
-                "pg_catalog.jsonb_send(%(expressions)s)), 'hex')"
+                "pg_catalog.jsonb_send((%(expressions)s - 'sender_name'))), 'hex')"
             ),
         ),
         output_field=models.CharField(max_length=64),

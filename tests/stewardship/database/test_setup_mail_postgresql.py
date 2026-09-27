@@ -85,6 +85,8 @@ def test_exact_intake_is_idempotent_and_never_contacts_provider(
             )
     row = SetupMailDelivery.objects.get()
     assert row.mail["recipient"] == VALUES["testing"]["testing_recipient"]
+    # The mail step's From name reaches the queued test (and its SQL guard).
+    assert row.mail["sender_name"] == VALUES["mail"]["sender_name"]
     assert "synthetic-private" not in str(row.mail)
     assert row.state == "queued" and row.submitted_at is None
     assert TaskRun.objects.filter(task_type="setup_mail_test").count() == 1

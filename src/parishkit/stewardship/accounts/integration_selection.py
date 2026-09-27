@@ -55,6 +55,8 @@ def authentication_scope(target, records, *, recipient=None):
         if email is None:
             raise ConfigError("Outgoing email settings are unavailable.")
         selected.update(email["values"]["settings"])
+        # The From name is presentation only, never credential scope.
+        selected.pop("sender_name", None)
         selected["recipient"] = recipient
     return validated_context(target, selected)
 

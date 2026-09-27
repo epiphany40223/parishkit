@@ -86,6 +86,10 @@ MAIL = {
         "or a “Send mail as” alias already verified in that mailbox's Gmail "
         "settings, for example stewardship@yourparish.org."
     ),
+    "sender_name": _(
+        "The name mail programs show next to the From address, for example "
+        "St. Example Stewardship. Leave empty to use the Parish name."
+    ),
     "reply_to": _(
         "Where Families' replies go. Use an address someone reads regularly, "
         "such as the parish office, for example office@yourparish.org."

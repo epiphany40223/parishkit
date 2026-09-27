@@ -16,6 +16,7 @@ from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.readiness_mail import ReadinessMail
+from parishkit.stewardship.sender_name import resolved_sender_name
 from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import editable_configuration, principal
@@ -119,6 +120,10 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             sender=email.settings["sender"],
             reply_to=email.settings["reply_to"],
             recipient=runtime.testing_recipient,
+            sender_name=resolved_sender_name(
+                email.settings.get("sender_name"),
+                document_parish(version.canonical_document)["name"],
+            ),
             **sample_render(
                 {key: getattr(template, key) for key in ("subject", "html", "text")},
                 parish=document_parish(version.canonical_document),

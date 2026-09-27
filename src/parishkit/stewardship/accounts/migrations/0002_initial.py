@@ -1564,8 +1564,8 @@ class Migration(migrations.Migration):
                                     models.F("values"),
                                     template=(
                                         "pg_catalog.encode(pg_catalog.sha256("
-                                        "pg_catalog.jsonb_send(%(expressions)s)), "
-                                        "'hex')"
+                                        "pg_catalog.jsonb_send((%(expressions)s "
+                                        "- 'sender_name'))), 'hex')"
                                     ),
                                 ),
                                 output_field=models.CharField(max_length=64),

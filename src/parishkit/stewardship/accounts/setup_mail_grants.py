@@ -36,7 +36,8 @@ def mail_runtime_grants():
     tables["stewardship_credential_consumer_ack"] = {"SELECT", "INSERT"}
     columns = {
         "stewardship_secret_request": {"UPDATE": {"id"}},
-        "stewardship_parish": {"SELECT": {"id", "configuration_id"}},
+        # The parish name is the default From display name (sender_name.py).
+        "stewardship_parish": {"SELECT": {"id", "configuration_id", "name"}},
         "stewardship_setup_sealed_credential": {"SELECT": set(CANDIDATE_METADATA)},
         "stewardship_portal_session": {"SELECT": set(SESSION_COLUMNS)},
         "stewardship_portal_user": {"SELECT": {"id", "disabled", "email"}},

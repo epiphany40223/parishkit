@@ -314,6 +314,7 @@ def observed(draft):
     Only non-secret receipt columns are read, exactly those the preview and
     test status pages already read for the same admitted original attempt.
     """
+    from .provider_context import workspace_scope
     from .setup_delivery_models import SetupMailDelivery
     from .setup_notification_models import SetupSlackDelivery
     from .setup_secret_models import SetupSealedCredential
@@ -323,7 +324,7 @@ def observed(draft):
         "parishsoft": None,
         "google_workspace": "mail" in sections
         and "testing" in sections
-        and sections["mail"] | {"recipient": sections["testing"]["testing_recipient"]},
+        and workspace_scope(sections["mail"], sections["testing"]["testing_recipient"]),
         "slack": "slack" in sections
         and {"channel_id": sections["slack"]["channel_id"]},
     }
