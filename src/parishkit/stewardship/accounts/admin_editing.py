@@ -6,6 +6,7 @@ scope inside the request owner's transaction. The web process never installs
 YAML or claims that an accepted request has already applied.
 """
 
+import logging
 from uuid import UUID, uuid4
 
 from django.core import signing
@@ -14,7 +15,10 @@ from django.http import HttpResponseRedirect
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.observability import (
+    current_correlation,
+    debug_logging_enabled,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -179,6 +183,11 @@ def error_response(error):
     an HTML page by the browser-error middleware, which, for a missing fresh
     authentication, offers the step-up "Confirm with Google" instead.
     """
+    if debug_logging_enabled():
+        # The response names only a closed category; say what actually failed.
+        logging.getLogger("parishkit.stewardship.debug").debug(
+            "admin request refused", exc_info=error
+        )
     if isinstance(error, FreshAuthenticationRequired):
         response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
         response.stewardship_reauthenticate = True
