@@ -344,6 +344,23 @@ as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes.
 
+Fresh authentication is a step-up of the current session, not a new login.
+When a privileged action finds the session's verified Google instant too old,
+the Admin page offers **Confirm with Google**, which posts to the ordinary
+sign-in with the current page as its return path. That return path is
+accepted only as a same-origin `/admin/` page path; anything else returns to
+the Admin home page. If the browser still holds a live, authorized session
+for the same Google account, the callback advances that session's verified
+instant in place (never backwards and never past the database clock),
+records activity and a step-up audit event, rotates the CSRF secret, and
+returns to that page. The session key, lifetime and session-bound work, such
+as the initial setup wizard, are unchanged. A different Google account, or a
+revoked, idle or expired session, gets a new session as at first login. Keeping
+the key does not create session fixation: every initial login already
+replaced any pre-login key with a new server-issued one, and step-up changes
+neither the principal nor its authority, which is re-derived from current
+policy on every request.
+
 Passive presence heartbeat and ordinary background polling never refresh idle
 expiry. The sole setup exception is the first-Admin wizard's correlated staged-
 source-load progress page: while that exact TaskRun remains nonterminal, its
@@ -623,6 +640,18 @@ operation, visible focus, sufficient contrast, error summaries with field
 links, non-color-only change indicators, reduced-motion support, and accessible
 table/chart alternatives. Generated PDFs use tagged structure where the chosen
 renderer supports it; every chart has an equivalent data table.
+
+A person never sees raw JSON. Request errors use closed, server-owned
+messages. Scripts that ask for JSON (`Accept: application/json`, or any
+non-navigation fetch) receive the machine-readable error codes. A browser
+navigation or HTML form submission (`Sec-Fetch-Mode: navigate`, or an
+explicit `text/html` Accept) instead receives an ordinary page in the site
+layout with the same status code. That page shows the message, the next step
+(correct and resubmit, reload, sign in again, or try later), a link back to
+the same-origin Admin page the person came from, and the home link. A missing
+fresh authentication offers **Confirm with Google** as described under
+[identity and session security](#identity-and-session-security). Forms that
+can re-render with inline field errors still do so.
 
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the

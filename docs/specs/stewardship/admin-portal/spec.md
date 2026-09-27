@@ -112,6 +112,9 @@ to staging, so it cannot repopulate expired setup. At the watchdog deadline the
 server refuses further renewal, requests cancellation, and cleanup proceeds at
 the worker's next safe point; lease expiry handles an unresponsive worker.
 Wizard staging is not resumable under a new login in the first release.
+Confirming with Google for a fresh-authentication step is a
+[step-up of the same session](../architecture/spec.md#identity-and-session-security),
+not a new login, so it keeps the wizard's staging.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
 configuration installer, and then commits the promoted source snapshot, Family
