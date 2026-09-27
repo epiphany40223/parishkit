@@ -217,7 +217,13 @@ class SecurityBoundaryMiddleware:
         response["Content-Security-Policy"] = CSP
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
-        response["Referrer-Policy"] = "no-referrer"
+        # Same-origin never sends a Referer to another site, and lets browsers
+        # send our real Origin with form POSTs; under no-referrer they send
+        # "Origin: null", which fails every CSRF check. Access-token URLs keep
+        # no-referrer so the token itself is never a Referer, even to us.
+        response["Referrer-Policy"] = (
+            "no-referrer" if request.path_info.startswith("/access/") else "same-origin"
+        )
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if request.is_secure() and settings.SECURE_HSTS_SECONDS:
             response["Strict-Transport-Security"] = (

@@ -476,6 +476,10 @@ create distinct credentials.
 
 Access-token routes never log token path segments. Successful exchange rotates
 the session, redirects to a clean URL, and emits `Referrer-Policy: no-referrer`.
+Every other response uses `Referrer-Policy: same-origin`: nothing is sent to
+another site, and browsers keep sending the real `Origin` with same-site form
+POSTs, which the CSRF check requires (under `no-referrer` they send
+`Origin: null`).
 Family pages and responses use `Cache-Control: no-store`.
 Every administration report response containing Family PII, Family codes,
 financial data, or census data uses the same no-store policy.

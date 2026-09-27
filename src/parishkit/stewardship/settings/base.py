@@ -61,7 +61,9 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "no-referrer"
+# Not no-referrer: under it browsers send "Origin: null" with form POSTs, which
+# Django's CSRF check refuses. The security middleware keeps /access/ strict.
+SECURE_REFERRER_POLICY = "same-origin"
 EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
 LOGGING_CONFIG = "parishkit.stewardship.observability.configure_logging"
 LOGGING = {"version": 1}
