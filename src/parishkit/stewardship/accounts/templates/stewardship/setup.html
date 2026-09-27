@@ -11,7 +11,7 @@
 {% elif draft %}
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if wizard %}
-<p class="setup-intro">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}You have completed {{ done }} of {{ total }} setup steps. Use Continue to go to the next step that still needs work, or choose any available step above.{% endblocktranslate %}</p>
+<p class="setup-intro">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}You have completed {{ done }} of {{ total }} setup steps. Use Continue to go to the next step that still needs work, or return to any completed step from the list above.{% endblocktranslate %}</p>
 {% if wizard.resume %}<div class="setup-actions"><a class="setup-continue" href="{{ wizard.resume.href }}">{% translate "Continue setup" %}<span class="setup-sr-only">: {{ wizard.resume.label }}</span></a></div>{% endif %}
 {% if draft.source_task_id %}<p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "Source-load progress" %}</a></p>{% endif %}
 <p>{% translate "The original bootstrap Administrator is preserved. Additional access rules do not take effect until setup completes." %}</p>

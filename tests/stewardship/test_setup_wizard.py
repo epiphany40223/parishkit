@@ -53,7 +53,12 @@ def test_prerequisites_block_later_pages_until_saved():
         assert shown[key] == "blocked", key
         assert wizard.step(key).url is None
         assert wizard.step(key).fix_url.startswith("/admin/setup")
-    assert shown["parishsoft"] == "todo" and shown["parish"] == "todo"
+    assert shown["parishsoft"] == "todo"
+    assert wizard.step("parishsoft").url is not None
+    # Later steps wait for the first unfinished one instead of being skipped to.
+    assert shown["parish"] == "locked" and shown["mail"] == "locked"
+    assert wizard.step("mail").url is None
+    assert wizard.step("mail").fix_url == "/admin/setup/credentials/parishsoft"
     assert wizard.step("source").fix_url == "/admin/setup/credentials/parishsoft"
     assert wizard.previous is None
     assert wizard.next.key == "mail"
@@ -76,7 +81,12 @@ def test_done_state_next_and_previous_follow_saved_choices():
     for key in ("parishsoft", "mail", "testing", "google_workspace", "parish"):
         assert shown[key] == "done", key
     assert shown["source"] == "done" and shown["campaign"] == "done"
-    assert shown["schedules"] == "todo" and shown["preview"] == "blocked"
+    # The stale Slack key is the first unfinished step: completed steps after
+    # it stay open, unfinished ones wait for it.
+    assert wizard.step("campaign").url is not None
+    assert shown["schedules"] == "locked" and wizard.step("schedules").url is None
+    assert shown["content"] == "locked"
+    assert shown["preview"] == "blocked"
     assert wizard.previous.key == "google_workspace"
     assert wizard.next.key == "slack_credential"
     assert wizard.resume.key == "slack_credential"
@@ -107,18 +117,43 @@ def test_review_opens_when_required_pages_are_complete():
     assert wizard.resume.key == "finish"
 
 
-def test_loading_blocks_everything_but_the_load():
-    """While the load runs, other pages redirect, so the stepper does not link them."""
-    sections = {"parish": VALUES["parish"]}
+def test_loading_keeps_completed_steps_but_links_only_the_load():
+    """While the load runs other pages redirect, yet finished work still counts."""
+    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
     wizard = build(
         draft(sections, state=SetupState.LOADING, source=uuid4()),
         "source",
-        credentials={"parishsoft": True},
+        credentials={"parishsoft": True, "google_workspace": True},
     )
+    shown = states(wizard)
     assert wizard.step("source").state == "todo"
+    assert wizard.step("source").status == "In progress"
     assert wizard.step("source").url == "/admin/setup/source"
-    assert {step.state for step in wizard.steps if step.key != "source"} == {"blocked"}
+    for key in ("parishsoft", "mail", "testing", "google_workspace", "slack"):
+        assert shown[key] == "done", key
+        assert wizard.step(key).status == "Completed"
+    assert wizard.completed == 6
+    assert {shown[key] for key in ("branding", "access", "campaign")} == {"blocked"}
+    assert all(step.url is None for step in wizard.steps if step.key != "source")
     assert wizard.next.url is None
+
+
+def test_optional_steps_never_hold_later_steps_back():
+    """Skipping the optional content step leaves the steps after it open."""
+    sections = VALUES | {
+        "branding": {"bundle_id": str(uuid4())},
+        "campaign": {**CAMPAIGN, "campaign": {"modules": ["census"]}},
+    }
+    wizard = build(
+        draft(sections, source=uuid4()),
+        "campaign",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    shown = states(wizard)
+    assert shown["content"] == "todo" and wizard.step("content").status == "Optional"
+    assert shown["schedules"] == "todo" and wizard.step("schedules").url is not None
+    assert wizard.resume.key == "schedules"
+    assert shown["preview"] == "blocked"
 
 
 def test_stepper_marks_current_step_with_text_not_color_alone():

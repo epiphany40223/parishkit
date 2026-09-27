@@ -168,7 +168,11 @@ def _done(key, draft, credentials, tests):
 
 
 def _blocker(key, draft, done):
-    """Return (reason, page key that fixes it) when a page cannot open yet."""
+    """Return (reason, page key that fixes it) when a page cannot open yet.
+
+    These mirror the prerequisites each page's own view enforces. The ordering
+    rule (no jumping past unfinished steps) is applied separately in build().
+    """
     if draft.status.state == SetupState.LOADING and key != "source":
         return _("Available after the parish data load finishes."), "source"
     requirements = {
@@ -205,24 +209,43 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
 
     This is a pure function of already-admitted draft data so the ordering,
     done-state and availability rules are unit-testable without a database.
+
+    Navigation is conventional: completed steps and the first unfinished
+    required step link to their pages; later unfinished steps are listed but
+    not linked until every earlier required step is done (optional steps
+    never hold anything back). A completed step still reads "Completed"
+    while the data load runs, but is not linked because its page cannot
+    accept changes then.
     """
     if draft is None or draft.status.state not in ACTIVE:
         return None
     credentials = credentials or {}
     pages = [page for page in PAGES if applicable(page.key, draft.sections)]
     done = {page.key: _done(page.key, draft, credentials, tests) for page in pages}
+    # The first unfinished required step; everything unfinished after it waits.
+    frontier = next(
+        (page.key for page in pages if page.required and not done[page.key]), None
+    )
+    reached = True
     steps = []
     for number, page in enumerate(pages, start=1):
         blocked = _blocker(page.key, draft, done)
+        # "locked" is ordering only: the page's view has no such prerequisite,
+        # so callers checking real prerequisites look for "blocked" alone.
+        locked = False
+        if page.key == frontier:
+            reached = False
+        elif not reached and not done[page.key] and not blocked:
+            blocked, locked = (_("Finish the earlier steps first."), frontier), True
         if page.key == "source" and draft.status.state == SetupState.LOADING:
             state, status = "todo", _("In progress")
-        elif blocked:
-            state, status = (
-                "blocked",
-                _("Not available yet: %(reason)s") % {"reason": blocked[0]},
-            )
         elif done[page.key]:
             state, status = "done", _("Completed")
+        elif blocked:
+            state, status = (
+                "locked" if locked else "blocked",
+                _("Not available yet: %(reason)s") % {"reason": blocked[0]},
+            )
         elif not page.required:
             state, status = "todo", _("Optional")
         else:

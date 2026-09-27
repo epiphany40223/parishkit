@@ -186,3 +186,23 @@ def test_credential_prerequisites_and_format_are_inline_form_errors(setup_http, 
         assert b"does not look like a ParishSoft API key" in malformed.content
         assert b"not a key" not in malformed.content
         assert not SetupSealedCredential.objects.exists()
+
+
+def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google):
+    """No jumping ahead in the stepper; finished work still counts while loading."""
+    with web_login():
+        browser = started()
+        body = browser.get("/admin/setup").content
+        assert b'href="/admin/setup/credentials/parishsoft"' in body
+        assert b'href="/admin/setup/parish"' not in body
+        save(browser, "mail", VALUES["mail"])
+        body = browser.get("/admin/setup").content
+        assert b'href="/admin/setup/mail"' in body  # completed stays reachable
+        assert b'href="/admin/setup/testing"' not in body
+        # The stepper grants and removes nothing: the page itself still opens.
+        assert browser.get("/admin/setup/testing").status_code == 200
+    bind_load(SetupAttempt.objects.get().pk)
+    with web_login():
+        body = browser.get("/admin/setup/source").content
+        assert b"1 of 15 steps completed" in body
+        assert b"Completed" in body and b'href="/admin/setup/mail"' not in body
