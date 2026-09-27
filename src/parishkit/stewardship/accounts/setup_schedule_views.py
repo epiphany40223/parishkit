@@ -71,8 +71,6 @@ def setup_schedules(request):
             campaign_id=draft.status.attempt_id,
             campaign=selected,
         )
-        for form in schedules.forms:
-            setup_help.apply(form, setup_help.SCHEDULE)
         status, collection_error = 200, False
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))

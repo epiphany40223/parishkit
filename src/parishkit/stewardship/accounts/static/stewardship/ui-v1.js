@@ -422,6 +422,42 @@
     update();
   });
 
+  // Mail schedule rows: show only the fields the chosen mail type uses (the
+  // row's data-schedule-fields is schedule_forms.FIELDS), and offer only
+  // emails of that type. A field hidden here is also cleared, so a stale date
+  // or weekday is never submitted. When the page first loads, a field the
+  // server reported an error on stays visible with its value, so the message
+  // can be read and acted on. Without this script every field shows and the
+  // server still explains any value that does not apply.
+  document.querySelectorAll("[data-schedule-row]").forEach((row) => {
+    let rules;
+    try { rules = JSON.parse(row.dataset.scheduleFields); } catch { return; }
+    const kind = row.querySelector('[data-schedule-field="kind"] select');
+    const template = row.querySelector('[data-schedule-field="template_version"] select');
+    if (!kind || !template || !rules) return;
+    const governed = new Set(Object.values(rules).flat());
+    const emails = [...template.options];
+    const update = (firstLoad) => {
+      const wanted = rules[kind.value] || [];
+      row.querySelectorAll("[data-schedule-field]").forEach((group) => {
+        if (!governed.has(group.dataset.scheduleField)) return;
+        const show = wanted.includes(group.dataset.scheduleField)
+          || (firstLoad && group.querySelector(".errorlist") !== null);
+        group.hidden = !show;
+        if (!show) group.querySelectorAll("input, select").forEach((control) => {
+          control.value = "";
+        });
+      });
+      const selected = template.value;
+      template.replaceChildren(...emails.filter((option) =>
+        !option.value || !option.dataset.kind || option.dataset.kind === kind.value));
+      template.value = [...template.options].some((option) => option.value === selected)
+        ? selected : "";
+    };
+    kind.addEventListener("change", () => update(false));
+    update(true);
+  });
+
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.
   document.querySelectorAll("select[multiple]").forEach((select) => {

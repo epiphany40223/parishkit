@@ -301,6 +301,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/setup-content-edit",
         "/setup-shares",
         "/setup-schedules",
+        "/setup-schedules-mail",
+        "/setup-schedules-error",
         "/setup-preview",
         "/setup-confirmation",
         "/setup-confirmation-unready",

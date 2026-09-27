@@ -6,7 +6,7 @@
 <h1>{% translate "First-campaign mail schedules" %}</h1><p>{{ campaign_name }}</p>
 <p class="setup-intro">{% translate "When the system sends each email: one initial invitation, any reminders, and optional daily or weekly summary emails for administrators. You can also adjust the campaign dates here together with the schedules." %}</p>
 <p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft. No email is sent or queued." %}</p>
-<p>{% translate "Dates and times use the campaign timezone, not your browser timezone. Initial and reminder mail must fit the campaign window, and every reminder must follow its initial invitation. Daily and weekly digests have no one-time date." %}</p>
+{% include 'stewardship/schedule-guide.html' %}
 <p><a href="{% url 'admin:setup_content' %}">{% translate "Prepare email templates and subjects" %}</a></p>
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if collection_error %}<p class="error" role="alert">{% translate "Check the complete schedule collection: one initial invitation before all reminders, distinct mailing times, at most one digest of each kind, and saved templates matching each mail type. Nothing was saved." %}</p>{% endif %}

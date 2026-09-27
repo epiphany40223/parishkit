@@ -48,6 +48,7 @@ from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.security import CSP
 
 from ..campaign_factory import campaign, financial, schedule
+from ..content_factory import content
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -135,12 +136,40 @@ def progress_page(progress, wizard):
     }
 
 
+def invalid_schedules(owner, emails):
+    """A validated formset whose only row reports a weekday on an invitation."""
+    schedules = Schedules(
+        {
+            "schedules-TOTAL_FORMS": "1",
+            "schedules-INITIAL_FORMS": "0",
+            "schedules-0-kind": "initial",
+            "schedules-0-date": "2026-10-01",
+            "schedules-0-time": "09:00:00",
+            "schedules-0-weekday": "0",
+            "schedules-0-template_version": emails[0]["id"],
+        },
+        prefix="schedules",
+        previous=[],
+        templates=emails,
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert not schedules.is_valid()
+    return schedules
+
+
 @pytest.fixture(scope="module")
 def component_origin():
     """An exact response allowlist avoids exposing source files through the server."""
     mail_campaign = campaign()
     mail = schedule(mail_campaign["id"])
     financial_campaign = campaign(modules=["financial"], financial=financial())
+    # One saved email of every schedulable type, so each mail type's row can
+    # offer (only) its own emails.
+    mail_emails = [
+        content(mail_campaign["id"], kind="email", slot=kind, subject=f"{kind} mail")
+        for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
+    ]
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -685,6 +714,46 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                 ),
+            },
+        ),
+        (
+            # Saved emails of every mail type: the blank row shows only the
+            # fields and emails of the mail type chosen in it.
+            "/setup-schedules-mail",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=mail_campaign["values"]
+                ),
+                "schedules": Schedules(
+                    prefix="schedules",
+                    previous=[
+                        schedule(
+                            mail_campaign["id"],
+                            template_version=mail_emails[0]["id"],
+                            subject="initial mail",
+                        )
+                    ],
+                    templates=mail_emails,
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                ),
+            },
+        ),
+        (
+            # The owner's mistake posted without the page script: a new
+            # initial invitation with a weekday. The error stays visible.
+            "/setup-schedules-error",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=mail_campaign["values"]
+                ),
+                "schedules": invalid_schedules(mail_campaign, mail_emails),
             },
         ),
         (

@@ -263,9 +263,12 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
             post(browser, url, data | {"schedules-0-subject": "Unowned"}).status_code
             == 400
         )
+        outside = post(browser, url, data | {"schedules-0-date": "2026-09-01"})
+        # The problem is named on the date field, with the campaign's dates.
+        assert outside.status_code == 400
         assert (
-            post(browser, url, data | {"schedules-0-date": "2026-09-01"}).status_code
-            == 400
+            "Choose a date within the campaign (October 1, 2026 – October 31, 2026)."
+            in outside.content.decode()
         )
         duplicate = data | {
             "schedules-1-kind": "initial",
@@ -274,7 +277,8 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
             "schedules-1-template_version": row["values"]["template_version"],
         }
         rejected = post(browser, url, duplicate)
-        assert rejected.status_code == 400 and b"Nothing was saved" in rejected.content
+        assert rejected.status_code == 400
+        assert b"Only one Initial invitation is allowed." in rejected.content
         saved = post(browser, url, data)
         assert saved.status_code == 302, saved.content
         assert post(browser, url, data).status_code == 409

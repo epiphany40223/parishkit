@@ -7,7 +7,7 @@
 <form method="post" data-campaign-form data-new-campaign>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="clone_seed" value="{{ clone_seed }}">
 <div class="panel">{% include 'stewardship/campaign-fields.html' %}</div>
 <h2>{% translate "New mail schedules" %}</h2>{{ schedules.management_form }}{{ schedules.non_form_errors }}
-{% for schedule in schedules %}<fieldset class="panel"><legend>{% translate "Schedule" %} {{ forloop.counter|number }}</legend>{{ schedule.as_div }}</fieldset>{% endfor %}
+{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}
 <button type="submit">{% translate "Preview new campaign" %}</button></form>
 <p><a href="{% url 'admin:campaign_new' %}">{% translate "Start empty instead" %}</a></p>
 {% endblock %}

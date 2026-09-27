@@ -1,0 +1,8 @@
+{% load i18n stewardship %}{% comment %}
+One mail schedule row. Each visible field is wrapped in data-schedule-field so
+ui-v1.js can show only the fields the chosen mail type uses (field_rules, from
+schedule_forms.FIELDS). Without the script every field shows and the server
+still reports any value that does not apply.
+{% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"><legend>{% translate "Schedule" %} {{ number|number }}</legend>
+{{ form.non_field_errors }}{% for field in form.hidden_fields %}{{ field.errors }}{{ field }}{% endfor %}
+{% for field in form.visible_fields %}<div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %} data-schedule-field="{{ field.name }}">{{ field.as_field_group }}</div>{% endfor %}</fieldset>
