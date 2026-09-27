@@ -95,7 +95,14 @@ online services either mount its active manifest/versions read-only for startup
 verification or consume the matching PostgreSQL materialization. Each
 `credential-installer-*` instance mounts a separate target subdirectory read-
 write plus only its own handoff private key and queue. Consumers mount the
-resulting individual credential file read-only. Neither installer class receives
+resulting individual credential file read-only, with one exception: `worker` and
+`mail-dispatch` mount the ParishSoft, Google Workspace and Slack target
+subdirectories read-only, so a running consumer sees a replacement the
+installer renames into place. That subdirectory holds only the target's working
+credential and its sealed replacement journal, which the consumer cannot
+decrypt. See
+[replacing an integration key](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
+Neither installer class receives
 the whole credentials directory, broad host paths, Docker socket, campaign
 answers, or unrelated secrets. Compose and runtime tests inspect these mounts
 and service identities.

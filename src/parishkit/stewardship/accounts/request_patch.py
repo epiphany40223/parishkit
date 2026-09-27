@@ -198,10 +198,15 @@ def _credential_schema_v6(document):
 
 
 def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
-    """A separate explicit format changes one fingerprint, never public settings.
+    """A separate explicit format changes one integration's fingerprint.
+
+    The same update may also carry that integration's public settings, so an
+    Administrator can save a new key together with the settings it was checked
+    against (such as a new ParishSoft organization ID) in one request.
 
     Parsing binds immutable intent, not installed-credential authority. The
-    selection owner and installer verify target receipts/ACKs independently.
+    selection owner and installer verify target receipts/ACKs independently,
+    including that the key was checked against exactly these settings.
     Default and retained v1-v5 parsers continue to reject fingerprint edits.
     """
     if not isinstance(base, ConfigurationVersion):
@@ -213,7 +218,8 @@ def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
         or patch[0].get("operation") != "update"
         or patch[0].get("section") != "integrations"
         or type(patch[0].get("values")) is not dict
-        or set(patch[0]["values"]) != {"credential_fingerprint"}
+        or set(patch[0]["values"])
+        not in ({"credential_fingerprint"}, {"credential_fingerprint", "settings"})
         or patch[0]["values"]["credential_fingerprint"] is None
     ):
         _invalid()

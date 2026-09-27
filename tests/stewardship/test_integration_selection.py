@@ -80,12 +80,13 @@ def test_receipt_replay_does_not_select_the_future_emitted_schema(monkeypatch):
         {},
         {"credential_fingerprint": None},
         {"credential_fingerprint": "private"},
-        {"credential_fingerprint": "b" * 64, "settings": {"organization_id": "3"}},
         {"settings": {"organization_id": "3"}},
+        {"credential_fingerprint": "b" * 64, "kind": "slack"},
+        {"credential_fingerprint": "b" * 64, "settings": {"token": "private"}},
     ],
 )
 def test_reference_format_rejects_unrelated_or_private_values(values):
-    """The format cannot be repurposed as a public-settings or raw-secret editor."""
+    """The format cannot be a settings-only, identity or raw-secret editor."""
     base = configuration_version()
     change = patch(base, credential_fingerprint="b" * 64)
     change[0]["values"] = values
@@ -93,6 +94,20 @@ def test_reference_format_rejects_unrelated_or_private_values(values):
         build_candidate(
             base, change, candidate_id=uuid4(), request_schema=CREDENTIAL_REQUEST_SCHEMA
         )
+
+
+def test_reference_format_carries_the_settings_the_key_was_checked_against():
+    """A new key and its organization ID are saved in one request."""
+    base = configuration_version()
+    change = patch(
+        base, credential_fingerprint="b" * 64, settings={"organization_id": "3"}
+    )
+    candidate = build_candidate(
+        base, change, candidate_id=uuid4(), request_schema=CREDENTIAL_REQUEST_SCHEMA
+    )
+    values = candidate.candidate.document()["sections"]["integrations"][0]["values"]
+    assert values["credential_fingerprint"] == "b" * 64
+    assert values["settings"] == {"organization_id": "3"}
 
 
 @pytest.mark.parametrize("kind", ["count", "add", "remove", "section"])

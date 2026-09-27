@@ -1,6 +1,7 @@
 """Closed process options and cleanup, without real services or deployment files."""
 
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -82,3 +83,44 @@ def test_controller_start_failure_restores_app_and_signal_state(monkeypatch):
     assert getattr(_state._tls, "current_app", None) is previous_current
     assert _state.default_app is previous_default
     assert signal.getsignal(signal.SIGTERM) is handler and stop.is_set()
+
+
+def test_idle_callback_runs_on_timer_and_its_failure_keeps_consuming(monkeypatch):
+    """A failed acknowledgement pass is logged, not a reason to stop the worker."""
+    from celery.worker import worker
+
+    from parishkit.stewardship.jobs import processes
+
+    from .test_broker import broker
+
+    stop, runtime = Event(), broker(ServiceRole.WORKER)
+    runtime = BrokerRuntime(runtime.app, runtime.service, stop)
+    scheduled, failures = {}, Mock()
+    idle = Mock(side_effect=[RuntimeError("synthetic"), None])
+
+    def controller(*, app, ready_callback, **options):
+        """Drive the ready callback with a timer that records its schedule."""
+        consumer = SimpleNamespace(
+            timer=SimpleNamespace(
+                call_repeatedly=lambda seconds, function: scheduled.setdefault(
+                    seconds, function
+                )
+            )
+        )
+        ready_callback(consumer)
+        return SimpleNamespace(start=Mock(), exitcode=0)
+
+    monkeypatch.setattr(worker, "WorkController", controller)
+    monkeypatch.setattr(processes, "emit_failure", failures)
+    closes = Mock()
+    monkeypatch.setattr(processes.connections, "close_all", closes)
+    assert (
+        serve_consumer(runtime, lease=Mock(), stop=stop, heartbeat=Mock(), idle=idle)
+        == 0
+    )
+    maintain = scheduled[processes.IDLE_SECONDS]
+    maintain()
+    maintain()
+    assert idle.call_count == 2
+    failures.assert_called_once()
+    assert closes.call_count >= 2

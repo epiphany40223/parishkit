@@ -108,3 +108,70 @@ class CredentialForm(forms.Form):
         ),
     )
     intent = forms.CharField(max_length=4096, widget=forms.HiddenInput)
+
+
+# Label and help for each integration's inline "replace the key" field.
+KEY_FIELDS = {
+    "parishsoft": (
+        _("New ParishSoft API key"),
+        _(
+            "Paste a new key only to replace the current one, for example after "
+            "creating a new key in ParishSoft. It is checked against the "
+            "organization ID above. Leave this blank to keep the current key, "
+            "which is never shown."
+        ),
+    ),
+    "google_workspace": (
+        _("New service-account key (JSON)"),
+        _(
+            "Paste the whole JSON key file you downloaded from Google Cloud for "
+            "the service account, only to replace the current key. It is checked "
+            "by sending as the delegated mailbox above. Leave this blank to keep "
+            "the current key, which is never shown."
+        ),
+    ),
+    "slack": (
+        _("New Slack bot token"),
+        _(
+            "Paste the app's bot token (it starts with xoxb-) only to replace the "
+            "current one. Leave this blank to keep the current token, which is "
+            "never shown."
+        ),
+    ),
+}
+
+
+class WriteOnlyPasswordInput(forms.PasswordInput):
+    """A single-line secret field that never redisplays a submitted value."""
+
+    def __init__(self):
+        super().__init__(
+            render_value=False,
+            attrs={"autocomplete": "off", "spellcheck": "false"},
+        )
+
+
+class InlineCredentialForm(forms.Form):
+    """The optional replacement key shown on an integration's settings page."""
+
+    intent = forms.CharField(max_length=4096, widget=forms.HiddenInput)
+
+    def __init__(self, target, *args, **kwargs):
+        """Use the target's own label, help text and one- or multi-line field."""
+        super().__init__(*args, **kwargs)
+        label, help_text = KEY_FIELDS[target]
+        self.fields["candidate"] = forms.CharField(
+            label=label,
+            help_text=help_text,
+            required=False,
+            max_length=MAX_FILE_BYTES,
+            strip=target != "google_workspace",
+            widget=(
+                WriteOnlyTextarea(
+                    attrs={"autocomplete": "off", "spellcheck": "false", "rows": 5}
+                )
+                if target == "google_workspace"
+                else WriteOnlyPasswordInput()
+            ),
+        )
+        self.order_fields(["candidate", "intent"])

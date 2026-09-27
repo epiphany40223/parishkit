@@ -606,6 +606,15 @@
   }
   if (backgroundIndicator) window.setInterval(refreshBackground, 30000);
 
+  // A page showing work in progress (an integration key being installed)
+  // reloads itself every few seconds while visible, until the server renders
+  // it without the marker. Its forms are disabled meanwhile, so no typing is lost.
+  if (document.querySelector("[data-reload-while-pending]")) {
+    window.setInterval(() => {
+      if (!document.hidden) window.location.reload();
+    }, 5000);
+  }
+
   const session = document.querySelector("[data-family-session], [data-admin-session]");
   if (!session) return;
   const warning = document.getElementById("session-warning");

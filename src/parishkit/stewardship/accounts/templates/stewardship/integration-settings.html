@@ -1,16 +1,34 @@
 {% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  One form holds the integration's settings and, for integrations with a key,
+  an optional write-only field for a replacement key. Saving a key installs it
+  without any server step; the one status line below replaces the old request
+  states and fingerprints, which stay in the audit log and the details page.
+{% endcomment %}
 {% block title %}{{ label }}{% endblock %}
 {% block content %}
 <p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
-<section class="panel"><h2>{% translate "Credential status" %}</h2>
-<p>{% translate "Applied fingerprint:" %} <code>{{ fingerprint|default:'—' }}</code></p>
-{% if latest %}<p>{% translate "Latest replacement:" %} {{ latest.state }} · <time datetime="{{ latest.updated_at|date:'c' }}" data-local-instant>{{ latest.updated_at|date:'c' }}</time></p>
-{% if latest.state == 'applied' and replacement_allowed %}<p><a href="{% url 'admin:select_credential' latest.pk %}">{% translate "Review installed credential selection" %}</a></p>{% endif %}
-{% else %}<p>{% translate "No credential replacement check has been recorded." %}</p>{% endif %}
-{% if replacement_allowed %}<a href="{% url 'admin:replace_credential' target %}">{% translate "Replace and check credential" %}</a>{% endif %}
-</section>
-<p class="notice">{% translate "Public settings and credential installation are separate operations. Changing these settings does not test connectivity or delivery. An organization change requires a new matching source refresh." %}</p>
-<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="preview">
-{{ form.as_div }}<button type="submit">{% translate "Preview changes" %}</button></form>
+{% if summary %}
+<p class="notice{% if summary.kind == 'failed' %} notice-error{% endif %}" role="status"{% if pending %} data-reload-while-pending{% endif %}>
+  {{ summary.message }}
+  {% if summary.kind != 'pending' %}<time datetime="{{ summary.at|date:'c' }}" data-local-instant>{{ summary.at|date:'c' }}</time>{% endif %}
+  {% if summary.kind == 'failed' %}{% translate "The previous key is still in use." %}{% endif %}
+  {% if summary.kind == 'unselected' %}<a href="{% url 'admin:select_credential' summary.request_id %}">{% translate "Finish switching to the new key" %}</a>{% endif %}
+  <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Details" %}</a>
+</p>
+{% endif %}
+{% if pending %}
+<p>{% translate "This page updates by itself. You can leave it; the change finishes in the background." %}</p>
+{% else %}
+<form method="post" class="panel" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="preview">
+{{ form.as_div }}
+{% if credential %}
+{% if not fresh %}<p class="help">{% translate "For security, saving a new key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}</p>{% endif %}
+{{ credential.as_div }}
+{% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable because its installer service is not running. You can still change the other settings." %}</p>{% endif %}
+<button type="submit">{% translate "Save" %}</button>
+</form>
+<p class="help">{% translate "Saving settings without a new key shows you the changes to confirm first. Saving a new key checks it with the provider, then switches to it automatically; if the check fails, the current key stays in use." %}</p>
+{% endif %}
 {% endblock %}

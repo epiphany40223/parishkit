@@ -439,6 +439,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                     if owner not in failing
                 )
             )
+        else:
+            # Consumers acknowledge rotated credentials from their idle timer.
+            kwargs["idle"]()
+            rotations.assert_called_once_with(configuration, assembled.receipts)
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
         assert stop.is_set()
         if fail:
@@ -592,6 +596,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "operational_fanout": operational_fanout,
             "operational_slack": operational_slack,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
+    rotations = Mock(return_value=[])
+    monkeypatch.setattr(
+        "parishkit.stewardship.credential_runtime.acknowledge_rotations", rotations
+    )
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
     monkeypatch.setattr(

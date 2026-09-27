@@ -493,7 +493,7 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
     response = post(browser, value.url, {"action": "confirm", "preview": own_preview})
     assert response.status_code == 302, response.content
     assert (
-        b"Review installed credential selection"
+        b"Finish switching to the new key"
         in browser.get("/admin/configuration/integrations/parishsoft").content
     )
     row = ConfigurationChangeRequest.objects.get(

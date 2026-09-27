@@ -176,6 +176,44 @@ read sealed staging or change credential-installation state. Mail-dispatch
 acknowledges its own Workspace consumer, never a different service. These
 commands do not enable live campaign mail delivery.
 
+## Replacing an integration key from the web
+
+An Administrator replaces the ParishSoft API key, the Google Workspace
+service-account key or the Slack bot token on that integration's settings page,
+in the same form as its settings. No server step is needed:
+
+1. Saving requires a Google sign-in within the last five minutes; otherwise the
+   Admin is sent through the step-up confirmation first and pastes the key
+   again. The key is sealed for the target's installer immediately and is never
+   shown again.
+2. The same web request records the configuration request that will select the
+   new fingerprint, together with any changed settings the key was checked
+   against, such as a new organization ID. If that request cannot be recorded,
+   the staged key is cancelled.
+3. The target's installer checks the key with the provider, using exactly those
+   settings, and renames it into place (`awaiting_ack`). A rejected key fails
+   the request; the previous key stays in use.
+4. `worker` and `mail-dispatch` mount these three targets' credential
+   subdirectories read-only, not the single file, and every task rereads the
+   file. Each consumer checks every 30 seconds for an installed request it
+   must acknowledge. When the file it reads matches the installed fingerprint,
+   it records its acknowledgement through its own database login, exactly as
+   the operator command below would, and republishes its loaded receipts.
+5. The installer finishes the replacement, and the configuration installer,
+   which held the selection request as retryable while the replacement was in
+   progress, applies the new fingerprint and settings.
+
+The settings page shows one plain-language line about the latest change:
+checking, updated, not accepted (the previous key is still in use), or
+installed but not yet in use, with a link to finish the selection by hand.
+Request states and fingerprints are on the linked details page and in the
+audit log. A compose file generated before this change still mounts the single
+file; regenerate the compose files and recreate `worker` and `mail-dispatch`
+once to gain the directory mounts. Until then the operator command below still
+works. Only the default `credentials/<target>/credential` layout gets a
+directory mount; an individually overridden credential path keeps its
+single-file mount and the operator command.
+
 ## Verification
 
 The [file protocol tests](../../tests/stewardship/test_credential_files.py)

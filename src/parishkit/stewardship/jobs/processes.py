@@ -45,13 +45,19 @@ def worker_options(runtime):
     }
 
 
-def serve_consumer(runtime, *, lease, stop, heartbeat):
+IDLE_SECONDS = 30
+
+
+def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
     """Use Celery's controller without its CLI banners or ambient signal handlers.
 
     Celery's ordinary warm-stop flag is set together with our execution event.
     The solo handler finishes its finite current unit and checks the event before
     starting another. Docker's admitted finite grace period bounds final exit;
     forced termination never records a made-up cancellation or external outcome.
+    An optional ``idle`` callback, such as credential acknowledgement, runs on
+    Celery's timer every ``IDLE_SECONDS``; its failures are logged and retried
+    on the next run rather than stopping the consumer.
     """
     from celery import _state as app_state
     from celery.worker import state
@@ -86,10 +92,23 @@ def serve_consumer(runtime, *, lease, stop, heartbeat):
             stop.set()
             state.should_stop = 1
 
+    def maintain():
+        """Run the idle callback on its own connection, never failing the consumer."""
+        try:
+            idle()
+        except Exception as error:
+            emit_failure(error)
+        finally:
+            # Celery's timer runs outside the task thread; release its
+            # thread-local database connection between runs.
+            connections.close_all()
+
     def ready(consumer):
         """Publish liveness only after the real isolated queues are connected."""
         tick()
         consumer.timer.call_repeatedly(20, tick)
+        if idle is not None:
+            consumer.timer.call_repeatedly(IDLE_SECONDS, maintain)
 
     previous = {
         sig: signal.signal(sig, stopping) for sig in (signal.SIGTERM, signal.SIGINT)
