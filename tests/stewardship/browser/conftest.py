@@ -1099,6 +1099,7 @@ def component_origin():
         ("users-v1.js", "application/javascript"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
+        ("select-arrow-v1.svg", "image/svg+xml"),
     ):
         asset = f"stewardship/{filename}"
         located = finders.find(asset)
