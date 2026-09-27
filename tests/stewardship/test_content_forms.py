@@ -161,7 +161,8 @@ def test_explicit_clear_and_safe_samples():
         parish={"name": "<script>unsafe()</script>"},
         campaign=campaign()["values"],
     )
-    assert "SAMPLE" in rendered["html"] and "example.invalid" in rendered["html"]
+    assert "ABCDEFGH" in rendered["html"]
+    assert "https://stewardship.example.invalid/access/" in rendered["html"]
     assert "<script>" not in rendered["html"] and "&lt;script&gt;" in rendered["html"]
     assert sample_render(None, parish={}, campaign={}) is None
     value["text"] = "{{ financial_period }}"
@@ -193,9 +194,10 @@ def test_receipt_preview_includes_fixed_facts_and_optional_block(configured):
         receipt_block=SafeContent("<p>Optional follow-up.</p>", "Optional follow-up."),
     )
     for body in (rendered["html"], rendered["text"]):
-        assert "Sample Family" in body and "Submitted:" in body and "Questions:" in body
+        assert "Family: Sample" in body and "Submitted:" in body
+        assert "Questions:" in body
         assert "Optional follow-up." in body
-        assert "SAMPLE" not in body and "sample-family" not in body
+        assert "ABCDEFGH" not in body and "/access/" not in body
 
 
 @pytest.mark.parametrize("sections", [{}, {"content": []}])
@@ -258,3 +260,33 @@ def test_parish_and_civil_date_placeholders_use_campaign_values():
         "https://example.org/ +12125550100 October 1, 2026 October 31, 2026 "
         "America/New_York 2027 January 1, 2027 December 31, 2027"
     )
+
+
+def test_every_placeholder_has_a_realistic_fictional_sample():
+    """Samples read like real mail, but no sample link or code can be live."""
+    from parishkit.stewardship.accounts.cryptography import ALPHABET, canonical_code
+    from parishkit.stewardship.web.content import PLACEHOLDERS
+
+    value = {
+        "subject": None,
+        "html": "".join(f"<p>{name}={{{{ {name} }}}}</p>" for name in PLACEHOLDERS),
+        "text": "x",
+    }
+    rendered = sample_render(
+        value,
+        parish={"name": "Example Parish"},
+        campaign=campaign(modules=["financial"], financial=financial())["values"],
+    )["html"]
+    samples = dict(
+        part.split("=", 1) for part in rendered[3:-4].split("</p><p>") if "=" in part
+    )
+    assert samples.keys() == PLACEHOLDERS
+    assert all(value.strip() for value in samples.values()), samples
+    assert samples["family_member_names"] == "Alex and Sam Sample"
+    assert samples["family_name"] == "Sample"
+    code = samples["family_code"]
+    assert canonical_code(code) == code and set(code) <= set(ALPHABET)
+    for name in ("family_url", "generic_family_url", "parish_website"):
+        assert ".example.invalid/" in samples[name]
+    assert samples["parish_email"].endswith(".invalid")
+    assert samples["online_giving_url"] == samples["parish_website"]

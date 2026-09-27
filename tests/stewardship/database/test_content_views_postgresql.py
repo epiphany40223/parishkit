@@ -52,7 +52,7 @@ def test_page_content_apply_sanitizes_samples_and_replays(auth_service, google):
             "<script>steal()</script>",
         ),
     )
-    assert b"Sample Family" in response.content and b"steal()" not in response.content
+    assert b"Hi Sample<" in response.content and b"steal()" not in response.content
     proposal = token(response)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)

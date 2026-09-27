@@ -237,8 +237,31 @@ def default_content(campaign_id, campaign):
     return records, versions
 
 
+# Realistic but plainly fictional values for previews and setup email tests.
+# Every link uses the reserved, never-resolving .invalid domain, so a sample
+# can never send anyone to a real page. The code has a live code's format
+# (eight letters without I, L or O) but is an obviously made-up sequence.
+SAMPLE_ORIGIN = "https://stewardship.example.invalid"
+SAMPLE_FAMILY = {
+    "family_name": "Sample",
+    "family_member_names": "Alex and Sam Sample",
+    "family_code": "ABCDEFGH",
+    "family_url": SAMPLE_ORIGIN + "/access/sample-household-link",
+    "generic_family_url": SAMPLE_ORIGIN + "/",
+}
+SAMPLE_PARISH = {
+    "website": "https://parish.example.invalid/",
+    "phone": "(202) 555-0100",
+    "email": "office@parish.example.invalid",
+}
+
+
 def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=None):
-    """Never look up a real Family or generate a live code/link for a sample preview."""
+    """Never look up a real Family or generate a live code/link for a sample preview.
+
+    Parish and campaign values are the configured ones; parish contact fields
+    that are not configured, and every Family value, are fictional samples.
+    """
     confirmation = confirmation or (
         value is not None and value.get("slot") == "confirmation"
     )
@@ -246,11 +269,12 @@ def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=
         return None
     substitutions = {
         "parish_name": parish["name"],
-        "parish_website": parish.get("website", "https://example.invalid/"),
-        "parish_phone": parish.get("phone", "+12025550100"),
-        "parish_email": parish.get("email") or "parish@example.invalid",
+        "parish_website": parish.get("website") or SAMPLE_PARISH["website"],
+        "parish_phone": parish.get("phone") or SAMPLE_PARISH["phone"],
+        "parish_email": parish.get("email") or SAMPLE_PARISH["email"],
         "online_giving_url": parish.get("online_giving_url")
-        or parish.get("website", "https://example.invalid/"),
+        or parish.get("website")
+        or SAMPLE_PARISH["website"],
         "campaign_name": campaign["name"],
         "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
         "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),
@@ -264,11 +288,7 @@ def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=
         "financial_end": parish_date(date.fromisoformat(campaign["financial"]["end"]))
         if campaign["financial"]
         else "",
-        "family_name": "Sample Family",
-        "family_member_names": "Alex and Sam Sample",
-        "family_code": "SAMPLE",
-        "family_url": "https://example.invalid/sample-family",
-        "generic_family_url": "https://example.invalid/",
+        **SAMPLE_FAMILY,
         "pronoun": "We",
         "financial_period": (
             parish_date(date.fromisoformat(campaign["financial"]["start"]))
