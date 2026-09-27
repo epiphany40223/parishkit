@@ -82,7 +82,8 @@ def suggestion_row(body, email):
     """
     section = body[body.index('id="chair-suggestions"') :]
     found = re.findall(
-        rf'<tr>\s*<td><input[^>]*></td>\s*<th scope="row">{re.escape(email)}[<\s]'
+        rf'<tr>\s*<td class="select-col"><input[^>]*></td>\s*'
+        rf'<th scope="row">{re.escape(email)}[<\s]'
         r".*?</tr>",
         section,
         flags=re.S,

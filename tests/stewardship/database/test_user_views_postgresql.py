@@ -337,3 +337,18 @@ def test_strangers_who_only_attempted_a_sign_in_cost_and_show_nothing(
     # Identities are selected by the addresses and domains the policy names, on
     # the column as stored, so the rows loaded are bounded by policy.
     assert any('"email" IN (' in sql and "LOWER(" not in sql.upper() for sql in loaded)
+
+
+def test_long_tables_page_independently(auth_service, google):
+    """Each long table has its own navigator and keeps the other table's place."""
+    add_rules(
+        auth_service.store,
+        *(address(f"person{index:02}@example.org") for index in range(30)),
+    )
+    browser, _ = signed_in()
+    body = browser.get(URL + "?addresses_size=25&addresses_page=2").content.decode()
+    assert "Showing 26–31 of 31" in body
+    # The address navigator keeps the suggestion table's place.
+    assert 'type="hidden" name="suggestions_page" value="1"' in body
+    assert "person29@example.org" in body and "person00@example.org" not in body
+    assert browser.get(URL + "?addresses_size=7").status_code == 400
