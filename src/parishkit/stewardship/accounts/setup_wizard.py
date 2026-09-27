@@ -158,11 +158,20 @@ def _done(key, draft, credentials, tests):
     if key == "content":
         return any(sections.get(step, {}).get("values") for step in CONTENT_STEPS)
     if key == "shares":
-        return "campaign" in sections
+        # The campaign page seeds default options, so their presence proves
+        # nothing; only a save on the shares page (of these exact options) does.
+        options = sections.get("campaign", {}).get("campaign", {}).get("share_options")
+        reviewed = getattr(draft, "reviewed", {}).get("shares")
+        return options is not None and reviewed == [row["id"] for row in options]
     if key in {"mail_test", "slack_test"}:
         return key in tests
     if key == "preview":
-        return all(
+        # Review is done once the admin has opened it for the current draft
+        # version with every required page complete, not merely when it could
+        # be opened; any later edit bumps the version and asks for it again.
+        return getattr(draft, "reviewed", {}).get(
+            "preview"
+        ) == draft.status.version and all(
             _done(page.key, draft, credentials, tests)
             for page in PAGES
             if page.required

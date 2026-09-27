@@ -28,7 +28,10 @@ from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import publish
 from .test_setup_preparation_postgresql import with_schedules
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
-from .test_setup_views_postgresql import setup_http  # noqa: F401
+from .test_setup_views_postgresql import (
+    reviewed,
+    setup_http,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -153,6 +156,12 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
         ):
             assert expected in response.content
         assert b"synthetic-private" not in response.content
+        # Opening the review completes that step for this draft version only.
+        attempt = SetupAttempt.objects.get()
+        assert reviewed(browser) == {
+            "attempt": str(attempt.pk),
+            "preview": attempt.version,
+        }
         # Invitation access placeholders render fictional values only.
         assert b"https://example.invalid/sample-family" in response.content
         assert b"SAMPLE" in response.content

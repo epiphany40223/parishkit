@@ -45,6 +45,25 @@ def post(browser, path, values):
     )
 
 
+def admin_session(browser):
+    """The server-side session behind this browser's admin cookie.
+
+    The admin cookie is not Django's default session cookie name, so the test
+    client's own ``session`` property cannot see it.
+    """
+    from importlib import import_module
+
+    from django.conf import settings
+
+    store = import_module(settings.SESSION_ENGINE).SessionStore
+    return store(session_key=browser.cookies["pk_admin"].value)
+
+
+def reviewed(browser):
+    """The setup review marks recorded in this browser's admin session."""
+    return admin_session(browser)["setup_reviewed"]
+
+
 def started():
     """Only an explicit POST starts temporary work; callback and GET do not."""
     browser, response = signed_in()

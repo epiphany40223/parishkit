@@ -16,12 +16,13 @@ CAMPAIGN = {
 }
 
 
-def draft(sections=None, *, state=SetupState.COLLECTING, source=None):
+def draft(sections=None, *, state=SetupState.COLLECTING, source=None, reviewed=None):
     """A detached stand-in carrying only what the stepper reads."""
     return SimpleNamespace(
         status=SimpleNamespace(state=state, attempt_id=uuid4(), version=3),
         sections=sections or {},
         source_task_id=source,
+        reviewed=reviewed or {},
     )
 
 
@@ -74,7 +75,11 @@ def test_done_state_next_and_previous_follow_saved_choices():
         "campaign": CAMPAIGN,
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": False}
-    wizard = build(draft(sections, source=uuid4()), "slack", credentials=credentials)
+    wizard = build(
+        draft(sections, source=uuid4(), reviewed={"shares": []}),
+        "slack",
+        credentials=credentials,
+    )
     shown = states(wizard)
     assert shown["slack_credential"] == "todo"  # staged settings are stale
     assert shown["shares"] == "done"
@@ -102,19 +107,64 @@ def test_review_opens_when_required_pages_are_complete():
         "campaign": CAMPAIGN,
         "schedules": {"records": []},
     }
+    options = {
+        "credentials": {"parishsoft": True, "google_workspace": True},
+        "tests": frozenset({"mail_test"}),
+    }
+    shared = {"shares": []}  # the (empty) share options were reviewed
     wizard = build(
-        draft(sections, source=uuid4()),
-        "schedules",
-        credentials={"parishsoft": True, "google_workspace": True},
-        tests=frozenset({"mail_test"}),
+        draft(sections, source=uuid4(), reviewed=shared), "schedules", **options
     )
     shown = states(wizard)
     assert shown["content"] == "todo"
     assert wizard.step("content").url is not None
-    assert shown["preview"] == "done" and shown["mail_test"] == "done"
-    assert shown["finish"] == "todo"
+    # Review is open but not completed until the admin has actually opened it.
+    assert shown["preview"] == "todo" and wizard.step("preview").url is not None
+    assert shown["mail_test"] == "done"
+    assert shown["finish"] == "locked"
     assert wizard.next.key == "preview"
-    assert wizard.resume.key == "finish"
+    assert wizard.resume.key == "preview"
+    reviewed = build(
+        draft(sections, source=uuid4(), reviewed=shared | {"preview": 3}),
+        "preview",
+        **options,
+    )
+    assert states(reviewed)["preview"] == "done"
+    assert states(reviewed)["finish"] == "todo"
+    assert reviewed.resume.key == "finish"
+    # A review of an older draft version does not count.
+    stale = build(
+        draft(sections, source=uuid4(), reviewed=shared | {"preview": 2}),
+        "preview",
+        **options,
+    )
+    assert states(stale)["preview"] == "todo"
+
+
+def test_share_options_count_only_after_they_are_reviewed():
+    """Default options seeded by the campaign page do not complete the step."""
+    options = [{"id": str(uuid4()), "label": "Weekly", "free_text": False}]
+    campaign = {
+        **CAMPAIGN,
+        "campaign": {**CAMPAIGN["campaign"], "share_options": options},
+    }
+    sections = VALUES | {"branding": {"bundle_id": str(uuid4())}, "campaign": campaign}
+    credentials = {"parishsoft": True, "google_workspace": True}
+
+    def shares(reviewed):
+        """The shares step's state for the given review marks."""
+        built = build(
+            draft(sections, source=uuid4(), reviewed=reviewed),
+            "campaign",
+            credentials=credentials,
+        )
+        return built.step("shares").state, built
+
+    state, wizard = shares({})
+    assert state == "todo" and wizard.resume.key == "shares"
+    assert shares({"shares": [options[0]["id"]]})[0] == "done"
+    # Options replaced since (financial turned off and on again) need a review.
+    assert shares({"shares": [str(uuid4())]})[0] == "todo"
 
 
 def test_loading_keeps_completed_steps_but_links_only_the_load():

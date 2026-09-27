@@ -1,7 +1,7 @@
 """Original-login public draft ownership, distinct from active YAML and secrets."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -29,6 +29,36 @@ class DraftView:
     absolute_at: datetime
     watchdog_at: datetime | None
     source_task_id: UUID | None = None
+    # Wizard pages the admin has explicitly reviewed (see mark_reviewed).
+    reviewed: dict = field(default_factory=dict)
+
+
+# Pages that save nothing of their own record an explicit review here. It is
+# wizard progress in the attempt's own login session (which the admin-portal
+# spec allows), not staged configuration: the setup draft's steps and keys are
+# fixed by SQL, and an attempt never outlives the session it is bound to.
+REVIEWED = "setup_reviewed"
+
+
+def mark_reviewed(request, attempt_id, page, value):
+    """Remember that this attempt's ``page`` was reviewed as ``value``.
+
+    ``value`` names what was reviewed (the saved share-option identities, the
+    draft version shown on the review page), so a later change to that data
+    makes the page count as not done again.
+    """
+    reviewed = request.session.get(REVIEWED, {})
+    if reviewed.get("attempt") != str(attempt_id):
+        reviewed = {"attempt": str(attempt_id)}
+    request.session[REVIEWED] = reviewed | {page: value}
+
+
+def _reviewed(request, attempt_id):
+    """This attempt's review marks from the session; another attempt's are ignored."""
+    reviewed = request.session.get(REVIEWED, {})
+    if reviewed.get("attempt") != str(attempt_id):
+        return {}
+    return {key: value for key, value in reviewed.items() if key != "attempt"}
 
 
 def _owned(request, service, attempt_id=None):
@@ -73,6 +103,7 @@ def view_draft(request, service, attempt_id=None):
             window.absolute_at,
             window.watchdog_at,
             row.source_task_id,
+            _reviewed(request, row.pk),
         )
 
 
