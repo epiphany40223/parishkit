@@ -10,6 +10,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
@@ -124,7 +125,7 @@ def request_sample(
         )
         rendered = sample_render(
             selected,
-            parish=sections["parish"][0]["values"],
+            parish=document_parish({"sections": sections}),
             campaign=sections["campaigns"][0]["values"],
         )
         identifier = uuid5(attempt_id, "setup-mail:" + str(request_key))

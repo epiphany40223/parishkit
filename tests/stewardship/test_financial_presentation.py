@@ -175,6 +175,7 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     preview = sample_render(
         {"html": html, "text": text, "subject": None}, parish=parish, campaign=values
     )
+    monkeypatch.setattr(page_content, "reply_to", lambda configuration_id: "")
     monkeypatch.setattr(
         page_content.ContentVersion.objects,
         "filter",
@@ -182,7 +183,9 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     )
     page = presentation._page_content(
         SimpleNamespace(
-            configuration=SimpleNamespace(parish=SimpleNamespace(**parish)),
+            configuration=SimpleNamespace(
+                parish=SimpleNamespace(**parish, configuration_id=CHECK)
+            ),
             configuration_id=CHECK,
         ),
         SimpleNamespace(values=values, timezone=values["timezone"], record_id=CAMPAIGN),

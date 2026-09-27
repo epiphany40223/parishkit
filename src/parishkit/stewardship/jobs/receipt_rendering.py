@@ -5,6 +5,7 @@ from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web.content import SafeContent
 
+from .campaign_mail_values import document_parish
 from .family_mail_inputs import public_values
 from .receipt_content import ReceiptTemplate, render_receipt
 
@@ -42,7 +43,7 @@ def current_receipt_render(
         block=SafeContent(block.html, block.text) if block else SafeContent("", ""),
         values=public_values(
             source,
-            parish=version.canonical_document["sections"]["parish"][0]["values"],
+            parish=document_parish(version.canonical_document),
             campaign=campaign.active_configuration.values,
             public_origin=public_origin,
         ),

@@ -4,8 +4,10 @@ from datetime import date
 
 from django.db.models import Q
 
+from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_forms import LEGACY_PAGE_REFERENCES
 from parishkit.stewardship.accounts.content_models import ContentVersion
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     render_template,
@@ -14,10 +16,23 @@ from parishkit.stewardship.web.content import (
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
 
 
+def reply_to(configuration_id):
+    """The applied outgoing-mail Reply-to address that ``parish_email`` shows."""
+    row = AppliedIntegration.objects.filter(
+        configuration_id=configuration_id, kind="email"
+    ).first()
+    return row.settings["reply_to"] if row else ""
+
+
 def public_substitutions(parish, campaign):
     """Never look up a Family or credential when rendering a public campaign page."""
     return public_values(
-        {"name": parish.name, "website": parish.website, "phone": parish.phone},
+        {
+            "name": parish.name,
+            "website": parish.website,
+            "phone": parish.phone,
+            "email": reply_to(parish.configuration_id),
+        },
         campaign.values,
     )
 
@@ -29,6 +44,7 @@ def public_values(parish, campaign):
         parish_name=parish["name"],
         parish_website=parish["website"],
         parish_phone=parish["phone"],
+        parish_email=parish.get("email", ""),
         campaign_name=campaign["name"],
         campaign_start=parish_date(date.fromisoformat(campaign["start_date"])),
         campaign_end=parish_date(date.fromisoformat(campaign["end_date"])),
@@ -70,7 +86,7 @@ def public_content_dependencies(document, configuration, campaign_id):
             names.update(validate_template(value["html"]))
     if not names:
         return {}
-    values = public_values(sections["parish"][0]["values"], configuration)
+    values = public_values(document_parish(document), configuration)
     return {name: values[name] for name in names}
 
 

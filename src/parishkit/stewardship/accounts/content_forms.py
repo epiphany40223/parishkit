@@ -180,6 +180,7 @@ def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=
         "parish_name": parish["name"],
         "parish_website": parish.get("website", "https://example.invalid/"),
         "parish_phone": parish.get("phone", "+12025550100"),
+        "parish_email": parish.get("email") or "parish@example.invalid",
         "campaign_name": campaign["name"],
         "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
         "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),

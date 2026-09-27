@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -82,7 +83,7 @@ def content_history(request, campaign_id, revision_id=None):
                 raise LookupError("Retained content revision is unavailable.")
             sample = sample_render(
                 selected["values"] if selected else None,
-                parish=sections["parish"][0]["values"],
+                parish=document_parish({"sections": sections}),
                 campaign=campaign.active_configuration.values,
             )
             response = render(

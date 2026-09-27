@@ -10,6 +10,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
 from parishkit.stewardship.web.contracts import filters
@@ -139,7 +140,7 @@ def _preview(
             form.add_error(None, "No content has changed.")
             return _page(request, form, campaign, label, status=400)
         build_candidate(base, patch, candidate_id=uuid4())
-        parish = base.document()["sections"]["parish"][0]["values"]
+        parish = document_parish(base.document())
         from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 
         receipt = dict(
