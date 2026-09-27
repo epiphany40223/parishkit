@@ -539,6 +539,80 @@
     show();
   });
 
+  // Editable regions write one <div> per line in Chrome/WebKit (and a bare
+  // first line), <b>/<i> for bold/italic, and trailing <br> placeholders.
+  // The server allowlist has no <div>, so without this the lines would reach
+  // the sanitizer as one run-on paragraph. Normalize a detached copy (never
+  // the live editor, whose caret would jump) into <p> paragraphs: loose
+  // top-level text becomes a paragraph, two or more <br> in a row start a new
+  // paragraph, and blank lines are dropped (paragraph spacing replaces them).
+  // The server applies the same div-to-paragraph rule to pasted or older
+  // markup; this only makes the stored source match what the editor showed.
+  const inlineContent = (node) => node.nodeType === Node.TEXT_NODE
+    || (node.nodeType === Node.ELEMENT_NODE
+      && !["P", "H2", "H3", "UL", "OL", "BLOCKQUOTE", "DIV"].includes(node.nodeName));
+  const blank = (nodes) => nodes.every((node) => node.nodeName === "BR"
+    || (node.nodeType === Node.TEXT_NODE && !node.data.replace(/ /g, " ").trim()));
+  const retag = (node, tag) => {
+    const replacement = document.createElement(tag);
+    replacement.append(...node.childNodes);
+    node.replaceWith(replacement);
+    return replacement;
+  };
+  const paragraphs = (nodes) => {
+    // Split one line run at each group of 2+ <br>, trimming edge breaks.
+    const result = [];
+    let current = [];
+    let breaks = [];
+    const close = () => {
+      if (!blank(current)) {
+        const paragraph = document.createElement("p");
+        paragraph.append(...current);
+        result.push(paragraph);
+      }
+      current = [];
+    };
+    for (const node of nodes) {
+      if (node.nodeName === "BR") { breaks.push(node); continue; }
+      if (node.nodeType === Node.TEXT_NODE && !node.data.trim() && breaks.length) continue;
+      if (breaks.length >= 2) close();
+      else if (breaks.length && current.length) current.push(...breaks);
+      breaks = [];
+      current.push(node);
+    }
+    close();
+    return result;
+  };
+  const normalizedSource = (editor) => {
+    const copy = editor.cloneNode(true);
+    copy.querySelectorAll("b").forEach((node) => retag(node, "strong"));
+    copy.querySelectorAll("i").forEach((node) => retag(node, "em"));
+    // Innermost first, so a line <div> inside a wrapper <div> is seen first.
+    [...copy.querySelectorAll("div")].reverse().forEach((node) => {
+      if ([...node.children].some((child) => !inlineContent(child))) {
+        node.replaceWith(...node.childNodes);
+      } else {
+        retag(node, "p");
+      }
+    });
+    // A <p> holding a block (a list inserted mid-paragraph) is split around it.
+    const flow = (nodes) => {
+      const blocks = [];
+      let run = [];
+      for (const node of nodes) {
+        if (inlineContent(node)) { run.push(node); continue; }
+        blocks.push(...paragraphs(run));
+        run = [];
+        if (node.nodeName === "P") blocks.push(...flow([...node.childNodes]));
+        else blocks.push(node);
+      }
+      blocks.push(...paragraphs(run));
+      return blocks;
+    };
+    copy.replaceChildren(...flow([...copy.childNodes]));
+    return copy.innerHTML;
+  };
+
   // The visual editor starts with server-sanitized markup only. Raw source
   // edits never go through innerHTML: they must round-trip through the preview
   // sanitizer before returning to visual editing. Paste/drop are plain text.
@@ -549,7 +623,9 @@
     if (!visual || !editor || !source) return;
     visual.hidden = false;
     form.querySelector("[data-html-source]").open = false;
-    const sync = () => { source.value = editor.innerHTML; };
+    // Enter starts a <p> rather than a <div> where the browser supports it.
+    try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch { /* optional */ }
+    const sync = () => { source.value = normalizedSource(editor); };
     editor.addEventListener("input", sync);
     source.addEventListener("input", () => { visual.hidden = true; });
     const selectedRange = () => {
@@ -575,6 +651,17 @@
         target.appendChild(range.extractContents());
         if (!target.hasChildNodes()) target.appendChild(document.createElement("br"));
         range.insertNode(node);
+        // A new block never nests inside the paragraph or heading it was made
+        // in: split that line around it and drop any half left empty.
+        const host = node.parentElement;
+        if (tag !== "strong" && tag !== "em" && host !== editor
+            && host.parentElement === editor && /^(P|H2|H3|DIV)$/.test(host.nodeName)) {
+          const tail = host.cloneNode(false);
+          while (node.nextSibling) tail.append(node.nextSibling);
+          host.after(node);
+          node.after(tail);
+          [host, tail].forEach((part) => { if (blank([...part.childNodes])) part.remove(); });
+        }
         const selection = window.getSelection();
         range.selectNodeContents(target);
         selection.removeAllRanges();
@@ -588,10 +675,23 @@
       const range = selectedRange();
       if (!range || !event.clipboardData) return;
       range.deleteContents();
-      const text = document.createTextNode(event.clipboardData.getData("text/plain"));
-      range.insertNode(text);
-      range.setStartAfter(text);
+      // Keep the pasted text's lines: each line break becomes a <br> (a blank
+      // line, two of them, becomes a paragraph break when the source is
+      // normalized). Only text nodes and <br> are created, never parsed markup.
+      const fragment = document.createDocumentFragment();
+      event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").split("\n")
+        .forEach((line, index) => {
+          if (index) fragment.append(document.createElement("br"));
+          if (line) fragment.append(document.createTextNode(line));
+        });
+      const last = fragment.lastChild;
+      if (!last) return;
+      range.insertNode(fragment);
+      range.setStartAfter(last);
       range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
       sync();
     });
     editor.addEventListener("drop", (event) => { event.preventDefault(); });
