@@ -2,7 +2,7 @@
 {% block title %}{% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-{% include 'stewardship/setup-wizard.html' %}
+{% include 'stewardship/setup-wizard.html' with stepper_open=True %}
 <h1>{% translate "Initial setup" %}</h1>
 <p class="notice">{% translate "Testing mode. Settings saved here are temporary and are not active configuration. No campaign is open to parishioners." %}</p>
 {% if expired %}

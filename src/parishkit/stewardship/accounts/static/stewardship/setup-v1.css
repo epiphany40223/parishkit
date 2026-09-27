@@ -5,54 +5,74 @@
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-.setup-stepper { margin-block: .5rem 1.5rem; }
-.setup-stepper-heading { font-size: 1rem; margin: 0 0 .25rem; }
-.setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; }
-.setup-progress progress { flex: 1 1 12rem; height: .8rem; accent-color: var(--accent, #165b50); }
-.setup-steps {
-  list-style: none; margin: .75rem 0 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: .5rem;
+/* Compact stepper: one summary line, a slim decorative track and the full
+   ordered list in a collapsed disclosure. Text carries every state. */
+/* The shared theme styles every "main nav" as a row of bordered buttons;
+   the stepper is a card with its own layout and plain links instead. */
+.setup-stepper {
+  display: block; color: var(--ink, #1b2a31);
+  margin-block: 0 1.25rem; padding: .75rem 1rem .25rem; background: var(--paper, #fff);
+  border: 1px solid var(--border, #dfe3e2); border-radius: .75rem;
 }
-.setup-steps li { margin: 0; }
+.setup-stepper-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; }
+.setup-stepper-summary p { margin: 0; }
+.setup-stepper-current { flex: 1 1 14rem; }
+.setup-stepper-count, .setup-overview-link { color: var(--muted, #4f5e66); font-size: .925rem; }
+.setup-stepper .setup-overview-link a {
+  display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
+  color: var(--link, #155a8a); font-weight: 500; text-decoration: underline;
+}
+.setup-track { display: flex; gap: 3px; margin-block: .6rem .15rem; }
+.setup-track span { flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: #d3dbd9; }
+.setup-track .setup-track-done { background: var(--accent, #115e56); }
+.setup-track .setup-track-current { background: var(--gold, #b5862e); }
+.setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }
+.setup-stepper-list[open] { padding-bottom: .5rem; }
+.setup-steps { list-style: none; margin: 0; padding: 0; columns: 2 19rem; column-gap: 1.5rem; }
+.setup-steps li { margin: 0 0 2px; break-inside: avoid; }
 .setup-steps a, .setup-step-box {
-  box-sizing: border-box; height: 100%; min-height: 44px;
-  display: grid; grid-template-columns: 2rem 1fr; column-gap: .5rem; align-items: start;
-  padding: .5rem .6rem; border: 2px solid var(--border, #9aabb1); border-radius: .3rem;
-  background: var(--paper, #fff); color: var(--ink, #172d38); text-decoration: none;
+  border: 0; background: none; font-weight: inherit;
+  display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); column-gap: .6rem; align-items: center;
+  min-height: 44px; padding: .3rem .5rem; border-radius: .5rem;
+  color: var(--ink, #1b2a31); text-decoration: none;
 }
+.setup-steps a:hover { background: var(--accent-soft, #e4f0ee); }
 .setup-steps a:hover .setup-step-label { text-decoration: underline; }
-.setup-steps a:focus-visible { outline: 3px solid #aa4b00; outline-offset: 2px; }
 .setup-step-number {
   grid-row: span 2; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.75rem; height: 1.75rem; border: 2px solid currentColor; border-radius: 50%;
-  font-weight: 700; font-size: .875rem;
+  width: 1.6rem; height: 1.6rem; border: 2px solid currentColor; border-radius: 50%;
+  font-weight: 700; font-size: .8rem;
 }
-.setup-step-label { font-weight: 650; }
-.setup-step-status { grid-column: 2; font-size: .875rem; color: var(--muted, #465e68); }
-.setup-step-done a { border-color: var(--accent, #165b50); }
+.setup-step-label { font-weight: 600; line-height: 1.3; }
+.setup-step-status { font-size: .8125rem; line-height: 1.3; color: var(--muted, #4f5e66); }
 .setup-step-done .setup-step-number {
-  background: var(--accent, #165b50); border-color: var(--accent, #165b50); color: var(--paper, #fff);
+  background: var(--accent, #115e56); border-color: var(--accent, #115e56); color: var(--paper, #fff);
 }
-.setup-step-blocked .setup-step-box, .setup-step-locked .setup-step-box { border-style: dashed; color: var(--muted, #465e68); }
+.setup-step-blocked .setup-step-box, .setup-step-locked .setup-step-box { color: var(--muted, #4f5e66); }
+.setup-step-blocked .setup-step-number, .setup-step-locked .setup-step-number { border-style: dashed; }
 .setup-steps [aria-current="step"] {
-  border-color: var(--ink, #172d38); box-shadow: inset 0 0 0 2px var(--ink, #172d38);
-  background: #eef5f3;
+  background: var(--accent-soft, #e4f0ee); box-shadow: inset 4px 0 0 var(--accent, #115e56);
 }
-.setup-overview-link { margin: .5rem 0 0; }
 .setup-intro { max-width: 70ch; font-size: 1.05rem; }
+/* Back/Continue: identical on every wizard page. Back is secondary and first;
+   the primary action (button or link) is last and right-aligned. They never
+   wrap onto separate rows; a long primary label wraps inside its button. */
 .setup-actions {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-  gap: .75rem; margin-block: 1.5rem 1rem;
+  display: flex; flex-wrap: nowrap; align-items: stretch; gap: .75rem; margin-block: 1.5rem 1rem;
 }
-.setup-actions button { margin: 0 0 0 auto; }
-.setup-back, .setup-continue {
-  display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box;
-  padding: .6rem 1.1rem; border: 2px solid var(--accent, #165b50); border-radius: .3rem;
-  font-weight: 650; text-decoration: none;
+.setup-actions > * { margin: 0; }
+.setup-back, .setup-continue, .setup-actions > button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+  box-sizing: border-box; padding: .6rem 1.1rem; border: 2px solid var(--accent, #115e56);
+  border-radius: .5rem; font-weight: 650; line-height: 1.3; text-align: center;
+  text-decoration: none; box-shadow: none;
 }
-.setup-back { background: var(--paper, #fff); color: var(--accent, #165b50); }
-.setup-continue { margin-left: auto; background: var(--accent, #165b50); color: var(--paper, #fff); }
-.setup-back:hover, .setup-continue:hover { text-decoration: underline; }
+.setup-back { flex: 0 0 auto; background: var(--paper, #fff); color: var(--accent, #115e56); }
+.setup-continue, .setup-actions > button {
+  flex: 0 1 auto; margin-inline-start: auto; background: var(--accent, #115e56); color: var(--paper, #fff);
+}
+.setup-back:hover { background: var(--accent-soft, #e4f0ee); color: var(--accent-strong, #0c4a44); }
+.setup-continue:hover { background: var(--accent-strong, #0c4a44); border-color: var(--accent-strong, #0c4a44); color: var(--paper, #fff); }
 /* Source-load progress: parts of the load and each downloaded collection.
    The status word always carries the meaning; the mark only reinforces it. */
 .setup-load-phases, .setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
@@ -78,6 +98,9 @@
 }
 .setup-load-result h2 { margin-top: 0; }
 .setup-load-result .setup-actions { margin-block: .75rem 0; }
+.setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin-block: 0 1rem; }
+.setup-progress label { margin: 0; }
+.setup-progress progress { flex: 1 1 12rem; }
 .setup-deadlines dd > p { margin-block: 0 .5rem; }
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #465e68); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }

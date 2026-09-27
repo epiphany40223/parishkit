@@ -114,6 +114,11 @@ class Wizard:
         return next((step for step in self.steps if step.key == key), None)
 
     @property
+    def current(self):
+        """The entry for the page being shown, or None off the ordered list."""
+        return next((step for step in self.steps if step.current), None)
+
+    @property
     def resume(self):
         """The first open page still needing work, else the review page."""
         for step in self.steps:

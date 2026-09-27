@@ -167,6 +167,17 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Current step" in html and "Completed" in html
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
+    # Compact summary: the current step by number and name, and the count.
+    assert "Step 3 of 15:" in html and "<strong>Testing recipient</strong>" in html
+    assert "1 of 15 steps completed" in html
+    # The full list is collapsed by default; the decorative track is hidden.
+    assert '<details class="setup-stepper-list">' in html
+    assert html.count('<span class="setup-track-') == len(wizard.steps)
+    assert 'class="setup-track" aria-hidden="true"' in html
+    opened = render_to_string(
+        "stewardship/setup-wizard.html", {"wizard": wizard, "stepper_open": True}
+    )
+    assert '<details class="setup-stepper-list" open>' in opened
     buttons = render_to_string(
         "stewardship/setup-navigation.html",
         {"wizard": wizard, "submit": "Save and continue"},

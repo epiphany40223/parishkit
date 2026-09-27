@@ -698,3 +698,46 @@ def test_admin_presence_poll_is_passive_and_shows_service_failure(
         "() => !document.querySelector('[data-presence-unavailable]').hidden"
     )
     assert page.locator("[data-presence-count]").inner_text() == "1,234"
+
+
+def axe_violations(page, axe_source):
+    """Run the pinned axe scanner against the page's current state."""
+    page.evaluate(axe_source)
+    return page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']}
+    })).violations.map(({id, impact, nodes}) => ({
+        id, impact, targets: nodes.map(n => n.target)
+    }))""")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
+    page, component_origin, axe_source, width
+):
+    """A short summary by default; the ordered list opens from the keyboard."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/setup-testing")
+    stepper = page.locator(".setup-stepper")
+    assert "Step 3 of 15: Testing recipient" in stepper.inner_text()
+    assert "1 of 15 steps completed" in stepper.inner_text()
+    # Far shorter than fifteen stacked cards, even at phone width.
+    assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)
+    assert page.locator(".setup-steps").is_hidden()
+    page.locator(".setup-stepper-list summary").focus()
+    page.keyboard.press("Enter")
+    assert page.locator(".setup-steps").is_visible()
+    current = page.locator('.setup-steps [aria-current="step"]')
+    assert "Current step" in current.inner_text()
+    assert "Completed" in page.locator(".setup-step-done").first.inner_text()
+    links = page.locator(".setup-steps a")
+    assert links.count() >= 2
+    assert all(
+        box["height"] >= 44
+        for box in links.evaluate_all(
+            "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
+        )
+    )
+    page.keyboard.press("Tab")
+    assert page.evaluate("document.activeElement.closest('.setup-steps') !== null")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
