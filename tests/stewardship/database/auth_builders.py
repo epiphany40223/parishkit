@@ -87,6 +87,10 @@ def auth_service(tmp_path, settings, real_limiter):
     return auth_runtime(tmp_path, settings, real_limiter)
 
 
+# A claims value that leaves the claim out of the signed token entirely.
+OMIT = object()
+
+
 @pytest.fixture
 def google(monkeypatch):
     """Keep JWT verification; replace only external certificate and exchange I/O."""
@@ -117,6 +121,7 @@ def google(monkeypatch):
             "nonce": request.stewardship_oauth_state["data"]["nonce"],
             **claims,
         }
+        data = {key: value for key, value in data.items() if value is not OMIT}
         return {
             "access_token": "synthetic-access-only",
             "id_token": jwt.encode(data, private, algorithm="RS256"),
