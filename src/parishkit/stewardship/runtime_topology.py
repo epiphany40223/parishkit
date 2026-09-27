@@ -52,6 +52,8 @@ def bind(path, *, target=None, read_only=True):
 # start_period Docker checks every start_interval instead, so `up --wait`
 # still sees a started service healthy within seconds. The timeout allows for
 # a loaded host; a slow import is not a failed service.
+# Standard-library-only probes: see parishkit.stewardship.probe.
+PROBE = ["CMD", "python", "-m", "parishkit.stewardship.probe"]
 PYTHON_HEALTHCHECK = {
     "interval": "60s",
     "timeout": "15s",
@@ -323,7 +325,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             ]
             service["volumes"] = _online_mounts(selected)
             service["healthcheck"] = {
-                "test": ["CMD", "pk-stewardship", "installer-healthcheck"],
+                "test": PROBE + ["installer"],
                 **PYTHON_HEALTHCHECK,
                 "retries": 3,
             }
@@ -338,7 +340,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 service["networks"]["application-egress"] = {}
             if role is ServiceRole.WEB:
                 service["healthcheck"] = {
-                    "test": ["CMD", "pk-stewardship", "healthcheck"],
+                    "test": PROBE + ["web"],
                     **PYTHON_HEALTHCHECK,
                     "retries": 3,
                 }

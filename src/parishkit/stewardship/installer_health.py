@@ -2,16 +2,14 @@
 
 import json
 import os
-from pathlib import Path
 from time import monotonic
 
 from .accounts.key_files import read_private, write_private
 from .consumer_runtime import process_identity
-from .runtime_paths import private_directory
 
-DIRECTORY = Path("/tmp/stewardship-installer")
-HEARTBEAT = DIRECTORY / "heartbeat.json"
-MAX_AGE_SECONDS = 90
+# The container health probe reads this heartbeat without importing the app.
+from .probe import DIRECTORY, HEARTBEAT, MAX_AGE_SECONDS
+from .runtime_paths import private_directory
 
 
 def publish_heartbeat():
