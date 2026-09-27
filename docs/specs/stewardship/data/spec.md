@@ -779,7 +779,10 @@ accepts access-code or secure-link placeholders. Scheduled email templates retai
 their explicit per-schedule revision selection.
 Family templates support only documented placeholders, including
 eligible names, code, secure link, generic URL, parish fields, dates, and
-campaign fields. Unknown placeholders are validation failures, not empty text.
+campaign fields. `parish_email` is the configured outgoing-mail Reply-to
+address, and `online_giving_url` is the Parish profile's optional HTTPS online
+giving page, falling back to the parish website when none is configured.
+Unknown placeholders are validation failures, not empty text.
 Initial invitations and reminders require the code and secure-link placeholders
 in each body alternative, including generated plaintext. Those credential
 placeholders are not allowed in subjects. Authoring, configuration validation

@@ -104,6 +104,11 @@ prerequisites are unmet explains what is missing and links the step that fixes
 it, keeping the HTTP status of the underlying refusal; closed JSON errors
 remain for polling and command endpoints.
 
+The first-campaign content page can fill every empty applicable page and email
+slot with the same default text in one versioned save; it never replaces a slot
+the Admin already saved, and each default passes the normal content validation
+described under [content and email templates](../data/spec.md#content-and-email-templates).
+
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
 source catalog and first campaign retain the same civil-date interpretation.
@@ -308,7 +313,8 @@ The campaign editor includes:
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
-- named content slots with WYSIWYG/plain-text views;
+- named content slots with WYSIWYG/plain-text views, each of which can start
+  an empty slot from built-in, parish-neutral default text;
 - page/email preview using safe sample data or an explicitly selected Family;
   and
 - Testing/Production controls.
