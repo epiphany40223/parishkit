@@ -16,7 +16,7 @@ from parishkit.stewardship.runtime_ingress import render_caddy
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import CADDY_IMAGE, render_runtime
 
-IMAGE = "ghcr.io/example/parishkit/parishkit@sha256:" + "a" * 64
+IMAGE = "ghcr.io/example/parishkit/stewardship@sha256:" + "a" * 64
 
 
 def configuration_at(path, *, production=False):
@@ -269,7 +269,7 @@ def test_runtime_refuses_unbounded_or_ambiguous_configuration(tmp_path):
     """A valid deployment parser value may still be unsuitable for concrete Compose."""
     configuration = configuration_at(tmp_path, production=True)
     for kwargs in (
-        {"image": "ghcr.io/example/parishkit/parishkit:latest"},
+        {"image": "ghcr.io/example/parishkit/stewardship:latest"},
         {"image": IMAGE, "checkout": tmp_path},
     ):
         with pytest.raises(ConfigError):

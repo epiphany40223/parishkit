@@ -37,7 +37,7 @@ def test_image_job_runs_after_validation_with_only_package_scope():
     steps = steps_of(job)
     naming = steps["Name the image"]["run"]
     assert "tr '[:upper:]' '[:lower:]'" in naming
-    assert "image=ghcr.io/${repository}/parishkit" in naming
+    assert "image=ghcr.io/${repository}/stewardship" in naming
     assert "version=${GITHUB_REF_NAME#v}" in naming
     # An annotated tag's GITHUB_SHA may be the tag object: the commit tag is
     # the commit the tag points to, resolved as the validation job does.
@@ -79,5 +79,5 @@ def test_release_publication_carries_the_digest_the_runtime_admits():
     assert "cat image-digest.txt >> release-notes.md" in notes
     assert notes.index("image-digest.txt") < notes.index("gh release")
     # The reference the workflow prints is the one the production renderer admits.
-    example = "ghcr.io/epiphany40223/parishkit/parishkit@sha256:" + "a" * 64
+    example = "ghcr.io/epiphany40223/parishkit/stewardship@sha256:" + "a" * 64
     assert _image(example, DeploymentProfile.PRODUCTION) == example

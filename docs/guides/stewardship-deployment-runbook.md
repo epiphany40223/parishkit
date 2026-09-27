@@ -33,7 +33,7 @@ Collect, outside the runtime root and outside the repository:
 
 - The **image digest** of the release to install, copied from the GitHub
   Release's notes as the complete
-  `ghcr.io/<owner>/<repository>/parishkit@sha256:<64 hex>` reference. The
+  `ghcr.io/<owner>/<repository>/stewardship@sha256:<64 hex>` reference. The
   release workflow writes that line when the human pushes a `vX.Y.Z` tag; a
   tag such as `:1.2.3` is never deployed, only the digest. The host pulls it
   without a registry credential, so the package must be public, a one-time

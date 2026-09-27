@@ -52,7 +52,7 @@ def _image(value, profile):
         or (
             profile is DeploymentProfile.PRODUCTION
             and re.fullmatch(
-                r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/parishkit@sha256:[0-9a-f]{64}",
+                r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/stewardship@sha256:[0-9a-f]{64}",
                 value,
             )
             is None
