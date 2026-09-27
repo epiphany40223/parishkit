@@ -12,7 +12,7 @@ from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import cleanup_admin_sessions
 from parishkit.stewardship.audit.models import AuditEvent
 
-from .auth_builders import signed_in, start
+from .auth_builders import OMIT, signed_in, start
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -122,6 +122,21 @@ def test_existing_google_session_allows_login_without_privileged_freshness(
     request.portal_session = row
     with pytest.raises(PermissionError):
         require_fresh(request)
+
+
+def test_missing_auth_time_uses_the_nonce_bound_issue_time(auth_service, google):
+    """Google never sends auth_time; this sign-in's issued token is the fresh trip."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts.sessions import require_fresh
+
+    google[0]["auth_time"] = OMIT
+    _, response = signed_in()
+    assert response.status_code == 302
+    row = PortalSession.objects.get()
+    request = RequestFactory().get("/admin/")
+    request.portal_session = row
+    assert require_fresh(request) == row.authenticated_at
 
 
 def test_future_google_authentication_is_denied(auth_service, google):

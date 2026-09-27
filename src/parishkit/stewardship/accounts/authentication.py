@@ -243,9 +243,15 @@ def verified_authentication_time(claims, state):
     An existing Google session may establish ordinary identity without granting
     the five-minute privileged window. The one-use nonce binds this exchange;
     auth_time records the provider's authentication, which may predate it.
+
+    Google ignores max_age and the claims request and never sends auth_time
+    (its discovery document lists no such claim). Then the token's issue time
+    stands in: the one-use nonce binds this token to a sign-in started here
+    within 15 minutes, so it records the fresh Google round trip that
+    require_fresh admits. An auth_time that is present is still validated.
     """
     now = database_now()
-    authenticated = claims.get("auth_time")
+    authenticated = claims["auth_time"] if "auth_time" in claims else claims["iat"]
     initiated = state.get("data", {}).get("initiated_at")
     if (
         type(authenticated) is not int
