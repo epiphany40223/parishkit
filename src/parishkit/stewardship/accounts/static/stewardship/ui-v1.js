@@ -396,6 +396,32 @@
     });
   });
 
+  // The overlap confirmation is needed only while the financial period and
+  // the campaign share at least one day (campaign_forms.overlaps). Hidden, it
+  // is also unchecked so a stale confirmation is never submitted. The server
+  // renders it visible whenever it is needed, so this is only a convenience.
+  document.querySelectorAll("[data-overlap-confirmation]").forEach((group) => {
+    const form = group.closest("form");
+    const box = group.querySelector('input[type="checkbox"]');
+    if (!form || !box) return;
+    const read = (key) => {
+      const name = group.dataset[`${key}Name`];
+      const value = name ? form.elements[name]?.value : group.dataset[`${key}Value`];
+      return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null;
+    };
+    const update = () => {
+      const [start, end, periodStart, periodEnd] =
+        ["campaignStart", "campaignEnd", "periodStart", "periodEnd"].map(read);
+      const needed = Boolean(start && end && periodStart && periodEnd
+        && periodStart <= end && periodEnd >= start);
+      group.hidden = !needed;
+      if (!needed) box.checked = false;
+    };
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    update();
+  });
+
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.
   document.querySelectorAll("select[multiple]").forEach((select) => {

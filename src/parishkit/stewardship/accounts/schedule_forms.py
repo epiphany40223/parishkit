@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 
+from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 
 KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
@@ -62,13 +63,52 @@ class ScheduleWindow(forms.Form):
         ]
         if previous["financial"] is None:
             del self.fields["overlap_confirmed"]
+        else:
+            self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         for field in self.fields.values():
             field.disabled = not editable
+
+    @property
+    def overlap_needed(self):
+        """Whether these campaign dates overlap the (fixed) financial period."""
+        financial = self.previous["financial"]
+        return financial is not None and overlaps(
+            self["start_date"].value(),
+            self["end_date"].value(),
+            financial["start"],
+            financial["end"],
+        )
+
+    @property
+    def overlap_attributes(self):
+        """Editable campaign dates by input name; the period's dates as values."""
+        financial = self.previous["financial"] or {}
+        return overlap_attributes(
+            {
+                "campaign-start": ("name", self.add_prefix("start_date")),
+                "campaign-end": ("name", self.add_prefix("end_date")),
+                "period-start": ("value", financial.get("start", "")),
+                "period-end": ("value", financial.get("end", "")),
+            }
+        )
 
     def clean(self):
         """Validate the whole resulting campaign, not dates in isolation."""
         values = super().clean()
         if self.errors:
+            return values
+        if (
+            "overlap_confirmed" in self.fields
+            and self.overlap_needed
+            and not values["overlap_confirmed"]
+        ):
+            self.add_error(
+                "overlap_confirmed",
+                _(
+                    "These campaign dates overlap the upcoming financial period. "
+                    "Check this box to confirm that is intended."
+                ),
+            )
             return values
         try:
             campaign_values(self.values())

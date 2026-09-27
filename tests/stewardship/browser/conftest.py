@@ -47,7 +47,7 @@ from parishkit.stewardship.accounts.share_forms import (
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.security import CSP
 
-from ..campaign_factory import campaign, schedule
+from ..campaign_factory import campaign, financial, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -140,6 +140,7 @@ def component_origin():
     """An exact response allowlist avoids exposing source files through the server."""
     mail_campaign = campaign()
     mail = schedule(mail_campaign["id"])
+    financial_campaign = campaign(modules=["financial"], financial=financial())
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -684,6 +685,27 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                 ),
+            },
+        ),
+        (
+            # A financial campaign: its window shows the overlap confirmation
+            # only while the dates overlap the fixed financial period.
+            "/setup-schedules-financial",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=financial_campaign["values"]
+                ),
+                "schedules": Schedules(
+                    prefix="schedules",
+                    previous=[],
+                    templates=[],
+                    campaign_id=financial_campaign["id"],
+                    campaign=financial_campaign["values"],
+                ),
+                "templates_url": "/admin/setup/content",
             },
         ),
         (
