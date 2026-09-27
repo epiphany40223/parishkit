@@ -129,10 +129,18 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
-The first-campaign content page can fill every empty applicable page and email
-slot with the same default text in one versioned save; it never replaces a slot
-the Admin already saved, and each default passes the normal content validation
-described under [content and email templates](../data/spec.md#content-and-email-templates).
+Pages and emails start with built-in default text. Saving the first campaign
+fills every applicable page and email slot the draft has never set, in the same
+versioned save as the campaign, and a later campaign save fills only slots that
+became applicable (for example, a newly enabled module). It never replaces text
+the Admin saved, and it keeps a slot the Admin explicitly cleared empty. The
+content page can also fill every empty applicable slot, including cleared ones,
+and, after an explicit confirmation, reset every applicable slot to its default
+in one versioned save; schedules that send a replaced email follow its new
+revision. A fill result names each slot it kept because it holds the Admin's
+own text, and the content list marks every slot as default, customized or
+empty. Each default passes the normal content validation described under
+[content and email templates](../data/spec.md#content-and-email-templates).
 
 The mail schedule pages (the first-campaign step and the regular schedule
 settings) start with a short guide: what each mail type is, that exactly one
@@ -363,7 +371,12 @@ The campaign editor includes:
 - daily/weekly digest local schedules;
 - additional-information toggle;
 - named content slots with WYSIWYG/plain-text views, each of which can start
-  an empty slot from built-in, parish-neutral default text;
+  an empty slot from built-in, parish-neutral default text or reset a saved
+  slot to it (the editor is only pre-filled; nothing changes until the normal
+  save or preview and apply), with the content list marking each slot as
+  default, customized or empty. A new campaign that is not a clone starts
+  with the default text for every applicable slot, added in its creation
+  request; a clone copies its source's content instead;
 - page/email preview using safe sample data or an explicitly selected Family;
   and
 - Testing/Production controls.
