@@ -223,8 +223,12 @@ install of that tree. PR #113 then added the chosen-Family test sends (a
 ticket table, the `family_test` outbox purpose and their guards), which the
 human requested for staff validation and held the install for, so the same
 reinstall covers it too; PR #112 changed no schema. The baseline was
-regenerated again from a fresh install and matches `f9b68cab`, the current
-baseline:
+regenerated again from a fresh install and matched `f9b68cab`. The
+validation fix for step-up reauthentication then changed two function
+bodies: the Admin session guard, so a live session's verified Google
+instant may advance, and the initial-credential install check that
+compares against it. Only the Functions digest changed; regenerated from a
+fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -232,7 +236,7 @@ baseline:
 | Columns | 2439 | `5dce65e9` |
 | Constraints | 3371 | `2dd9be0a` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 595 | `84ac4aae` |
+| Functions | 595 | `ecdd0c3f` |
 | Triggers | 549 | `c2e50957` |
 | Policies | 28 | `1c9c3b2d` |
 

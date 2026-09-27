@@ -846,7 +846,10 @@ def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
 
 @pytest.mark.parametrize("field", ["principal_id", "session_id", "authenticated_at"])
 def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field):
-    """The same attribution UUID cannot be rebound to a new login identity."""
+    """The same attribution UUID cannot be rebound to a new login identity.
+
+    Step-up may advance ``authenticated_at``, but never move it backwards.
+    """
     value = {
         "principal_id": uuid4(),
         "session_id": "synthetic-new-session",
@@ -861,10 +864,54 @@ def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field
             correlation_id=uuid4(),
             change=lambda record: setattr(record, field, value),
         )
-    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+    message = "only advance" if field == "authenticated_at" else "immutable"
+    with pytest.raises(IntegrityError, match=message), transaction.atomic():
         PortalSession.objects.filter(pk=portal_session.pk).update(
             **{field: value, "version": F("version") + 1}
         )
+
+
+def test_session_authentication_advances_only_to_a_past_instant(portal_session):
+    """Step-up moves the verified instant forward in place, never into the future."""
+    later = portal_session.authenticated_at + timedelta(minutes=10)
+
+    def step_up(record):
+        """Advance both instants, as the chronology CHECK requires."""
+        record.authenticated_at = record.last_activity_at = later
+
+    changed = mutate_record(
+        PortalSession,
+        portal_session.pk,
+        expected_version=1,
+        actor_id=None,
+        correlation_id=uuid4(),
+        change=step_up,
+    )
+    assert changed.authenticated_at == later
+    future = datetime(2100, 1, 1, tzinfo=UTC)
+    with (
+        pytest.raises(IntegrityError, match="only advance"),
+        transaction.atomic(),
+    ):
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            authenticated_at=future,
+            last_activity_at=future,
+            expires_at=future + timedelta(hours=1),
+            version=F("version") + 1,
+        )
+    revoked = later + timedelta(minutes=1)
+    PortalSession.objects.filter(pk=portal_session.pk).update(
+        revoked_at=revoked, version=F("version") + 1
+    )
+    with (
+        pytest.raises(IntegrityError, match="only advance"),
+        transaction.atomic(),
+    ):
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            authenticated_at=revoked, version=F("version") + 1
+        )
+    portal_session.refresh_from_db()
+    assert portal_session.authenticated_at == later
 
 
 @pytest.mark.parametrize("fail", [False, True])

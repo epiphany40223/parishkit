@@ -4106,8 +4106,18 @@ CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
+                        USING ERRCODE = '23514';
+                END IF;
+                -- Step-up reauthentication advances a live session's verified
+                -- Google instant in place. It never moves backwards, never past
+                -- this statement's clock, and never changes on a revoked row.
+                IF NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at"
+                   AND (OLD."revoked_at" IS NOT NULL
+                        OR NEW."authenticated_at" < OLD."authenticated_at"
+                        OR NEW."authenticated_at" > statement_timestamp()) THEN
+                    RAISE EXCEPTION 'Session authentication may only advance to a verified past instant'
                         USING ERRCODE = '23514';
                 END IF;
                 IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
@@ -6989,7 +6999,9 @@ BEGIN
         OR request.requested_by_id IS DISTINCT FROM attempt.owner_id
         OR request.actor_id IS DISTINCT FROM attempt.owner_id
         OR request.state IS DISTINCT FROM 'staged' OR request.version<>1
-        OR request.reauthenticated_at IS DISTINCT FROM login.authenticated_at
+        -- The installer copies the login's instant, but a concurrent step-up
+        -- may advance that session before this check; never a later claim.
+        OR login.id IS NULL OR request.reauthenticated_at>login.authenticated_at
         OR request.expires_at>login.expires_at OR request.expires_at<=clock_timestamp()
         OR request.required_consumers IS DISTINCT FROM stewardship_credential_consumers_v1(NEW.target)
         THEN
