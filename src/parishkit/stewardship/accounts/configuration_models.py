@@ -124,6 +124,8 @@ class Parish(ImmutableRecord):
     menu_logo_id = models.UUIDField()
     icon_logo_id = models.UUIDField()
     favicon_id = models.UUIDField()
+    # Optional: a canonical document omits the key when no URL is configured.
+    online_giving_url = models.URLField(max_length=2048, null=True, blank=True)
 
     class Meta:
         db_table = "stewardship_parish"
@@ -142,6 +144,11 @@ class Parish(ImmutableRecord):
             models.CheckConstraint(
                 condition=models.Q(website__iregex=r"^https?://"),
                 name="parish_website_scheme",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(online_giving_url__isnull=True)
+                | models.Q(online_giving_url__iregex=r"^https://"),
+                name="parish_online_giving_https",
             ),
         ]
 

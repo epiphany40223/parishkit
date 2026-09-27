@@ -73,7 +73,8 @@ the first complete version.
 On the first Admin login, the wizard collects all required base and first-
 campaign configuration before making the system configured:
 
-1. Parish name, website URL, IANA timezone, US main phone, and logo.
+1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
+   US main phone, and logo.
 2. Domain/address login rules while preserving the bootstrap Admin.
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
@@ -118,6 +119,11 @@ can be replaced until setup finishes and afterwards from Integrations. A page
 whose prerequisites are unmet explains what is missing and links the step
 that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
 errors remain for polling and command endpoints.
+
+The first-campaign content page can fill every empty applicable page and email
+slot with the same default text in one versioned save; it never replaces a slot
+the Admin already saved, and each default passes the normal content validation
+described under [content and email templates](../data/spec.md#content-and-email-templates).
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
@@ -331,7 +337,8 @@ The campaign editor includes:
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
-- named content slots with WYSIWYG/plain-text views;
+- named content slots with WYSIWYG/plain-text views, each of which can start
+  an empty slot from built-in, parish-neutral default text;
 - page/email preview using safe sample data or an explicitly selected Family;
   and
 - Testing/Production controls.

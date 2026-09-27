@@ -303,6 +303,10 @@ def _build_records(
                 records.append({"id": identifier, "values": values})
             else:
                 existing["values"].update(values)
+                # Clearing the optional giving URL removes its key, which is
+                # the canonical "not configured" form the schema accepts.
+                if section == "parish" and values.get("online_giving_url", "") is None:
+                    del existing["values"]["online_giving_url"]
             item["values"] = values
         normalized.append(item)
     candidate = parse_version(document, validate_sections=validate_sections)

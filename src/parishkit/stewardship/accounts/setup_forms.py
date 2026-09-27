@@ -213,6 +213,10 @@ def validate_values(step, values):
         return deepcopy(values)
     if step not in FORMS or type(values) is not dict:
         raise ValueError("Invalid public setup values.")
+    if step == "parish" and "online_giving_url" not in values:
+        # A parish step saved before the optional giving URL existed means
+        # "not configured"; it is rewritten with the key on its next save.
+        values = values | {"online_giving_url": ""}
     form_type = FORMS[step]
     if set(values) != set(form_type.base_fields):
         raise ValueError("Invalid public setup fields.")

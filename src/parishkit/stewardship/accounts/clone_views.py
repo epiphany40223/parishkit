@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -78,9 +79,7 @@ def _preview(
     values = form.values()
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload the clone before editing it.")
-    parish = configuration.active_configuration.canonical_document["sections"][
-        "parish"
-    ][0]["values"]
+    parish = document_parish(configuration.active_configuration.canonical_document)
     if values["timezone"] != parish["timezone"]:
         form.add_error("timezone", "A new campaign must start in the Parish timezone.")
         return _page(request, source, form, schedules, seed, status=400)

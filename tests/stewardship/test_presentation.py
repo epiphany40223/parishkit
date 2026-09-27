@@ -134,3 +134,20 @@ def test_progress_component_handles_missing_count_without_render_failure(count):
     assert ("<progress " in html) == (type(count) is int and count in (0, 1000))
     if count == 1000:
         assert ">1,000</progress>" in html
+
+
+@pytest.mark.parametrize(
+    "label,financial,expected",
+    [
+        ("Custom year", {"start": "2027-01-01"}, "Custom year"),
+        (None, {"start": "2027-07-01"}, "2027"),
+        ("", {"start": "2027-01-01"}, "2027"),
+        (None, None, "2026"),
+    ],
+)
+def test_campaign_year_prefers_label_then_financial_period(label, financial, expected):
+    """A blank label names the upcoming pledge year, else the campaign start year."""
+    from parishkit.stewardship.web.presentation import campaign_year
+
+    values = {"year_label": label, "financial": financial, "start_date": "2026-09-01"}
+    assert campaign_year(values) == expected

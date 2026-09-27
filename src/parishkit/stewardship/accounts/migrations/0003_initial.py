@@ -1565,6 +1565,17 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 migrations.AddConstraint(
+                    model_name="parish",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("online_giving_url__isnull", True),
+                            ("online_giving_url__iregex", "^https://"),
+                            _connector="OR",
+                        ),
+                        name="parish_online_giving_https",
+                    ),
+                ),
+                migrations.AddConstraint(
                     model_name="policysecurityevent",
                     constraint=models.UniqueConstraint(
                         fields=("activation", "rule_record_id"),

@@ -9,8 +9,19 @@ from parishkit.stewardship.campaigns.domain import Money, Percentage
 
 
 def campaign_year(values):
-    """One campaign-year meaning for Admin previews, page blocks and share labels."""
-    return values.get("year_label") or values["start_date"][:4]
+    """One campaign-year meaning for Admin previews, page blocks and share labels.
+
+    An explicit label always wins. Otherwise a renewal campaign usually runs in
+    the autumn before the stewardship year it asks about, so the upcoming
+    financial period's start year is the year Families expect to read. Only a
+    campaign without a financial period falls back to its own start year.
+    """
+    if values.get("year_label"):
+        return values["year_label"]
+    financial = values.get("financial")
+    if financial and financial.get("start"):
+        return financial["start"][:4]
+    return values["start_date"][:4]
 
 
 def number(value):

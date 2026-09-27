@@ -20,6 +20,8 @@ PLACEHOLDERS = frozenset(
         "parish_name",
         "parish_website",
         "parish_phone",
+        "parish_email",
+        "online_giving_url",
         "family_name",
         "family_member_names",
         "family_code",

@@ -135,11 +135,11 @@ def test_share_labels_use_the_neutral_household_wording():
         # The Family form's own validated upcoming period, not a second rule.
         OTHER: f"Another way in 2027, {PERIOD}",
     }
-    # No year label falls back to the campaign start year.
+    # No year label falls back to the upcoming financial period's year.
     unlabeled = CONFIGURATION | {"year_label": None}
     assert (
         share_labels(unlabeled, campaign_id=CAMPAIGN, parish_name="Sample")[OTHER]
-        == f"Another way in 2026, {PERIOD}"
+        == f"Another way in 2027, {PERIOD}"
     )
     # An unusable retained configuration words nothing rather than guessing.
     assert share_labels({}, campaign_id=CAMPAIGN, parish_name="Sample") == {}

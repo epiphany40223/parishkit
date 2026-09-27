@@ -11,6 +11,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
@@ -120,7 +121,7 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             recipient=runtime.testing_recipient,
             **sample_render(
                 {key: getattr(template, key) for key in ("subject", "html", "text")},
-                parish=version.canonical_document["sections"]["parish"][0]["values"],
+                parish=document_parish(version.canonical_document),
                 campaign=campaign.active_configuration.values,
                 confirmation=template.slot == "confirmation",
                 receipt_block=confirmation_block(

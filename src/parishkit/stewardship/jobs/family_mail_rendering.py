@@ -6,6 +6,7 @@ from parishkit.stewardship.accounts.configuration_models import AppliedIntegrati
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
+from .campaign_mail_values import document_parish
 from .family_mail_content import FamilyMailTemplate, render_family_mail
 from .family_mail_inputs import public_values
 
@@ -37,7 +38,7 @@ def current_render(identity, template_record_id, scope, source, *, public_origin
         template=FamilyMailTemplate(template.subject, template.html, template.text),
         values=public_values(
             source,
-            parish=version.canonical_document["sections"]["parish"][0]["values"],
+            parish=document_parish(version.canonical_document),
             campaign=scope.campaign.active_configuration.values,
             public_origin=public_origin,
         ),

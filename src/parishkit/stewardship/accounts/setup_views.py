@@ -34,9 +34,12 @@ ERRORS = (
 )
 
 
-def _closed(request, fields):
-    """Reject extra/repeated fields before any form can echo an unowned value."""
-    filters(request.GET, allowed=set())
+def _closed(request, fields, query=frozenset()):
+    """Reject extra/repeated fields before any form can echo an unowned value.
+
+    ``query`` names the few single-valued GET parameters a page accepts.
+    """
+    filters(request.GET, allowed=query)
     if (
         request.FILES
         or set(request.POST) - {*fields, "csrfmiddlewaretoken"}

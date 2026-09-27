@@ -10,7 +10,7 @@ from django.test import Client
 
 from parishkit.stewardship.accounts.setup_campaign import campaign_catalog
 from parishkit.stewardship.accounts.setup_drafts import save_section
-from parishkit.stewardship.accounts.setup_models import SetupDraftSection
+from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -159,3 +159,117 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         }
         assert browser.get("/admin/setup/content/page/financial").status_code == 404
     assert not setup_http.configured()
+
+
+def content_browser(service, monkeypatch):
+    """A CSRF-enforcing browser signed in as the original setup Admin."""
+    request, attempt = first_campaign(service, monkeypatch)
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    return request, attempt, browser
+
+
+def content_rows():
+    """Current staged content values by step, excluding other wizard steps."""
+    return {
+        row.step: row.values
+        for row in SetupDraftSection.objects.filter(scrubbed_at=None)
+        if row.step.startswith(("page_", "email_"))
+    }
+
+
+def test_fill_defaults_fills_only_empty_slots_in_one_version(setup_http, monkeypatch):
+    """One POST saves every empty applicable slot; saved text is never replaced."""
+    from parishkit.stewardship.accounts.content_defaults import EMAILS
+    from parishkit.stewardship.accounts.content_forms import page_slots
+
+    request, attempt, browser = content_browser(setup_http, monkeypatch)
+    url = "/admin/setup/content"
+    with web_login():
+        page = browser.get(url)
+        assert b"Fill in the default text for all pages and emails" in page.content
+        mine = {"version": str(attempt.version), "html": "<p>Mine</p>"}
+        assert post(browser, url + "/page/welcome", mine).status_code == 302
+        kept = content_rows()["page_welcome"]
+        data = {"version": str(attempt.version + 1)}
+        assert browser.post(url, data).status_code == 403
+        filled = post(browser, url, data)
+        assert filled.status_code == 302, filled.content
+        slots = page_slots(
+            SetupDraftSection.objects.get(step="campaign").values["campaign"]
+        )
+        assert filled["Location"] == (
+            f"{url}?filled_pages={len(slots) - 1}&filled_emails={len(EMAILS)}"
+        )
+        rows = content_rows()
+        assert rows["page_welcome"] == kept
+        assert set(rows) == {f"page_{slot}" for slot in slots} | {
+            f"email_{slot}" for slot in EMAILS
+        }
+        assert "page_financial" not in rows  # Disabled modules stay empty.
+        initial = rows["email_initial"]["values"]
+        assert "{{ family_url }}" in initial["html"] and initial["text"]
+        assert SetupAttempt.objects.get().version == attempt.version + 2
+        report = browser.get(filled["Location"])
+        assert b"Filled in the default text for" in report.content
+        assert b"Fill in the default text for all" not in report.content
+        # Nothing left to fill: a repeated POST saves nothing.
+        again = post(browser, url, {"version": str(attempt.version + 2)})
+        assert again["Location"].endswith("filled_pages=0&filled_emails=0")
+        assert SetupAttempt.objects.get().version == attempt.version + 2
+        assert browser.get(url + "?filled_pages=x").status_code == 400
+    assert not setup_http.configured()
+
+
+def test_fill_defaults_is_stale_after_another_edit(setup_http, monkeypatch):
+    """An older page version cannot fill slots after a concurrent change."""
+    request, attempt, browser = content_browser(setup_http, monkeypatch)
+    with web_login():
+        assert browser.get("/admin/setup/content").status_code == 200
+        data = {"version": str(attempt.version), "html": "<p>Other tab</p>"}
+        assert (
+            post(browser, "/admin/setup/content/page/review", data).status_code == 302
+        )
+        stale = post(browser, "/admin/setup/content", {"version": str(attempt.version)})
+        assert stale.status_code == 409
+        assert set(content_rows()) == {"page_review"}
+
+
+def test_fill_defaults_refuses_when_setup_is_not_collecting(setup_http, monkeypatch):
+    """A cancelled attempt cannot be refilled with temporary content."""
+    request, attempt, browser = content_browser(setup_http, monkeypatch)
+    with web_login():
+        assert browser.get("/admin/setup/content").status_code == 200
+        cancel_setup(request, setup_http, attempt.attempt_id)
+        refused = post(
+            browser, "/admin/setup/content", {"version": str(attempt.version + 1)}
+        )
+        assert refused.status_code >= 400
+        assert not any(values for values in content_rows().values())
+
+
+def test_start_from_default_prefills_without_saving(setup_http, monkeypatch):
+    """An empty editor can start from its default; nothing is staged until saved."""
+    request, attempt, browser = content_browser(setup_http, monkeypatch)
+    url = "/admin/setup/content/email/initial"
+    with web_login():
+        empty = browser.get(url)
+        assert b"Start from the default text" in empty.content
+        started = browser.get(url + "?start=default")
+        assert started.status_code == 200, started.content
+        assert b"not saved yet" in started.content
+        assert b"Begin your household" in started.content
+        assert b"Start from the default text" not in started.content
+        assert not content_rows()
+        assert browser.get(url + "?start=other").status_code == 400
+        assert browser.get(url + "?start=default&x=1").status_code == 400
+        data = {
+            "version": str(attempt.version),
+            "subject": "Invitation",
+            "html": '<p><a href="{{ family_url }}">Go</a> {{ family_code }}</p>',
+            "text": "{{ family_url }} {{ family_code }}",
+        }
+        assert post(browser, url, data).status_code == 302
+        saved = browser.get(url + "?start=default")
+        assert b"Begin your household" not in saved.content
+        assert b"Start from the default text" not in saved.content

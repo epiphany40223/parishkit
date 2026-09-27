@@ -19,7 +19,14 @@ from .family_mail_routing import route_family_mail
 from .outbox_validation import DeliveryIdentity
 
 REQUIRED_VALUES = frozenset(
-    {"parish_name", "parish_website", "parish_phone", "campaign_name", "family_name"}
+    {
+        "parish_name",
+        "parish_website",
+        "parish_phone",
+        "parish_email",
+        "campaign_name",
+        "family_name",
+    }
 )
 
 

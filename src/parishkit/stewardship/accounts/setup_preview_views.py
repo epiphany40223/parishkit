@@ -7,6 +7,8 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
+
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS, page_slots, sample_render
 from .setup_drafts import mark_reviewed
@@ -24,7 +26,7 @@ def setup_preview(request):
         document = preview.compiled.candidate.document()
         sections = document["sections"]
         parish, campaign = (
-            sections["parish"][0]["values"],
+            document_parish(document),
             sections["campaigns"][0]["values"],
         )
         content = {

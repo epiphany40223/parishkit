@@ -17,6 +17,7 @@ VALUES = {
         "website": "https://parish.example.org/",
         "timezone": "America/New_York",
         "phone": "+12125551234",
+        "online_giving_url": "",
     },
     "access": {
         "staff_domains": ["example.org"],

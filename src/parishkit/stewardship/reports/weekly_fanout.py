@@ -11,7 +11,10 @@ from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.catchup_ownership import claim_event
 from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.jobs.campaign_mail_values import campaign_values
+from parishkit.stewardship.jobs.campaign_mail_values import (
+    campaign_values,
+    document_parish,
+)
 from parishkit.stewardship.jobs.digest_content import (
     DigestTemplate,
     render_digest_envelope,
@@ -159,7 +162,7 @@ def retained_render(identity, content, scope, revision, address):
         template=DigestTemplate(template.subject, template.html, template.text),
         content=content,
         values=campaign_values(
-            parish=version.canonical_document["sections"]["parish"][0]["values"],
+            parish=document_parish(version.canonical_document),
             campaign=scope.campaign.active_configuration.values,
         ),
         sender=email.settings["sender"],

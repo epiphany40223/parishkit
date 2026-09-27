@@ -1,0 +1,204 @@
+"""Approved default page and email text passes every real content validator."""
+
+from uuid import uuid4
+
+import pytest
+
+from parishkit.stewardship.accounts.content_defaults import (
+    EMAILS,
+    PAGES,
+    default_data,
+    default_initial,
+    email_text,
+)
+from parishkit.stewardship.accounts.content_forms import ContentForm, sample_render
+from parishkit.stewardship.accounts.content_schema import (
+    EMAIL_SLOTS,
+    PAGE_SLOTS,
+    validate_content_records,
+)
+from parishkit.stewardship.jobs.digest_content import DigestTemplate
+from parishkit.stewardship.jobs.family_mail_content import (
+    FamilyMailTemplate,
+    render_family_mail,
+)
+from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
+from parishkit.stewardship.web.content import (
+    PLACEHOLDER,
+    sanitize_html,
+    validate_admin_digest_content,
+    validate_family_email,
+    validate_receipt_content,
+    validate_template,
+)
+
+from .campaign_factory import campaign, financial
+
+SLOTS = [("page", slot) for slot in sorted(PAGE_SLOTS)] + [
+    ("email", slot) for slot in sorted(EMAIL_SLOTS)
+]
+PARISH = {
+    "name": "Sample Parish",
+    "website": "https://parish.example.org/",
+    "phone": "+12125551234",
+    "email": "office@parish.example.org",
+    "online_giving_url": "https://give.example.org/parish",
+}
+CAMPAIGN = campaign(
+    modules=["census", "ministry", "financial"],
+    ministry_duids=[1],
+    financial=financial(),
+    year_label=None,
+)["values"]
+
+
+def saved(kind, slot):
+    """Save one default through the editor form exactly as a manual save does."""
+    form = ContentForm(
+        default_data(kind, slot) | {"base_digest": "a" * 64}, kind=kind, slot=slot
+    )
+    assert form.is_valid(), form.errors
+    return form.values(campaign_id=str(uuid4()), slot=slot)
+
+
+def test_every_slot_has_a_default():
+    """No named slot is left without approved text."""
+    assert set(PAGES) == PAGE_SLOTS and set(EMAILS) == EMAIL_SLOTS
+
+
+@pytest.mark.parametrize("kind,slot", SLOTS)
+def test_default_passes_every_content_validator(kind, slot):
+    """Form, sanitizer, placeholder, credential, receipt and digest rules all pass."""
+    value = saved(kind, slot)
+    assert value["html"] == sanitize_html(value["html"])
+    for part in (value["html"], value["text"]):
+        validate_template(part)
+    validate_content_records(
+        {
+            "sections": {
+                "campaigns": [
+                    {"id": value["campaign_id"], "values": {"content_versions": {}}}
+                ],
+                "content": [{"id": str(uuid4()), "values": value}],
+            }
+        }
+    )
+    if kind == "email":
+        validate_template(value["subject"], subject=True)
+    if slot in {"initial", "reminder"}:
+        validate_family_email(value["subject"], value["html"], value["text"])
+        FamilyMailTemplate(value["subject"], value["html"], value["text"])
+    if slot in {"confirmation", "submission_confirmation"}:
+        validate_receipt_content(value["subject"] or "", value["html"], value["text"])
+    if slot in {"daily_digest", "weekly_digest", "critical_alert"}:
+        # Critical alerts have no dedicated validator; they must still use only
+        # public campaign facts, like the digests.
+        validate_admin_digest_content(value["subject"], value["html"], value["text"])
+    if slot in {"daily_digest", "weekly_digest"}:
+        DigestTemplate(value["subject"], value["html"], value["text"])
+
+
+@pytest.mark.parametrize("kind,slot", SLOTS)
+def test_default_renders_every_placeholder_with_sample_values(kind, slot):
+    """The fictional preview fills every placeholder and keeps the HTML safe."""
+    rendered = sample_render(saved(kind, slot), parish=PARISH, campaign=CAMPAIGN)
+    for part in rendered.values():
+        assert part is None or not PLACEHOLDER.search(part)
+    assert rendered["html"] == sanitize_html(rendered["html"])
+    assert "Sample Parish" in rendered["html"] or slot in {
+        "census",
+        "member_census",
+        "ministry",
+    }
+
+
+def test_emails_are_html_with_link_preserving_plain_text():
+    """Plain text writes each link target out, so the Family link survives."""
+    for slot in EMAILS:
+        value = saved("email", slot)
+        assert value["html"].startswith("<p>") and value["text"]
+    initial = saved("email", "initial")
+    assert "Begin your household’s renewal: {{ family_url }}" in initial["text"]
+    assert "{{ family_code }}" in initial["text"]
+    assert email_text('<p><a href="https://example.org/">Go</a></p>') == (
+        "Go: https://example.org/"
+    )
+
+
+def test_receipt_links_to_online_giving_and_names_the_pledge_year():
+    """The real receipt renderer fills the giving link and upcoming pledge year."""
+    rendered = sample_render(
+        saved("email", "confirmation"), parish=PARISH, campaign=CAMPAIGN
+    )
+    assert 'href="https://give.example.org/parish"' in rendered["html"]
+    assert "your 2027 pledge" in rendered["html"]
+    assert "please click here: https://give.example.org/parish" in rendered["text"]
+    fallback = sample_render(
+        saved("email", "confirmation"),
+        parish={
+            key: value for key, value in PARISH.items() if key != "online_giving_url"
+        },
+        campaign=CAMPAIGN,
+    )
+    assert 'href="https://parish.example.org/"' in fallback["html"]
+
+
+def test_invitation_renders_through_the_family_mail_renderer():
+    """The credential-redacting Family renderer accepts the default invitation."""
+    value = saved("email", "initial")
+    scope = uuid4()
+    rendered = render_family_mail(
+        identity=DeliveryIdentity(
+            scope_id=scope,
+            campaign_id=scope,
+            family_id=uuid4(),
+            semantic_key=uuid4(),
+            mode="production",
+            routing="production",
+            purpose="initial",
+            credential_namespace="production",
+        ),
+        configuration_id=uuid4(),
+        template_id=uuid4(),
+        template=FamilyMailTemplate(value["subject"], value["html"], value["text"]),
+        values={
+            "parish_name": "Sample Parish",
+            "parish_phone": "+12125551234",
+            "parish_email": "office@parish.example.org",
+            "campaign_year": "2027",
+            "financial_start": "January 1, 2027",
+            "family_member_names": "Alex and Sam Sample",
+            "generic_family_url": "https://parish.example.org/",
+        },
+        sender="parish@example.org",
+        intended_recipients=("family@example.org",),
+    )
+    assert rendered.subject == "Sample Parish 2027 Stewardship Renewal"
+    assert "office@parish.example.org" in rendered.text
+
+
+def test_ministry_instructions_match_the_family_form_controls():
+    """The default names the exact on-page Ministry controls from family-v1.js."""
+    from pathlib import Path
+
+    import parishkit.stewardship.accounts as accounts
+
+    script = (
+        Path(accounts.__file__).parent / "static/stewardship/family-v1.js"
+    ).read_text()
+    for label in (
+        "Current Ministries",
+        "wishes to stop participating",
+        "Join another Ministry",
+        "interested in joining",
+    ):
+        assert label in script and f"<strong>{label}</strong>" in PAGES["ministry"]
+
+
+@pytest.mark.parametrize("kind,slot", SLOTS)
+def test_initial_values_start_an_unsaved_editor(kind, slot):
+    """Pages start with generated text; emails with the explicit alternative."""
+    initial = default_initial(kind, slot)
+    assert initial["html"] == default_data(kind, slot)["html"]
+    assert initial["generate_text"] is (kind == "page")
+    assert ("subject" in initial) is (kind == "email")

@@ -107,7 +107,13 @@ def _stored_projections(snapshot):
                         "icon": str(parish.icon_logo_id),
                         "favicon": str(parish.favicon_id),
                     },
-                },
+                }
+                # The canonical document omits an unset optional URL.
+                | (
+                    {"online_giving_url": parish.online_giving_url}
+                    if parish.online_giving_url is not None
+                    else {}
+                ),
             }
         ],
         "integrations": [
@@ -466,6 +472,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
                 menu_logo_id=values["branding"]["menu"],
                 icon_logo_id=values["branding"]["icon"],
                 favicon_id=values["branding"]["favicon"],
+                online_giving_url=values.get("online_giving_url"),
                 **attribution,
             )
         for record in document["sections"].get("integrations", []):
