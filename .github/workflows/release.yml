@@ -203,6 +203,9 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so gh cannot infer the repository from
+          # a git remote; name it explicitly.
+          GH_REPO: ${{ github.repository }}
         run: |
           # The release names the exact immutable reference the deployment
           # configuration must carry; operators copy it, never a tag.
