@@ -294,3 +294,22 @@ def test_campaign_window_change_replaces_cadence_even_when_mail_fields_are_uncha
     else:
         assert definition.current_revision_id == previous.pk
         assert work.state == "pending"
+
+
+def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
+    """Campaign settings hands dates over in the query; the forms must drop it.
+
+    A POST that still carries the query string is refused, so both the editor
+    and its preview post to the bare path and carry the dates as fields.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    page = browser.get(f"{path}?start_date=2026-09-30")
+    assert page.status_code == 200
+    assert f'action="{path}"'.encode() in page.content
+    data, _ = fields(store, campaign)
+    data["window-start_date"] = "2026-09-30"
+    preview = post(browser, path, data)
+    assert f'action="{path}"'.encode() in preview.content
+    token(preview)

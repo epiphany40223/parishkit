@@ -64,6 +64,10 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             "base_digest": digest,
             "editable": editable,
             "templates_url": reverse("admin:content_catalog", args=[campaign.pk]),
+            # Proposed dates arrive in the query string from campaign
+            # settings, but POSTs with a query string are refused, so the
+            # form posts to the clean path and carries the dates as fields.
+            "post_url": request.path,
         },
         status=status,
     )
@@ -154,6 +158,7 @@ def _preview(
         "stewardship/schedule-preview.html",
         {
             "campaign": campaign,
+            "post_url": request.path,
             "changes": changes,
             "window_changes": changed,
             "before_window": campaign.active_configuration.values,
