@@ -8,7 +8,7 @@
 <p class="setup-intro">{% translate "Write this text once; placeholders in double braces are filled in for each Family. The preview below uses a fictional Family." %}</p>
 <p class="notice">{% translate "Testing mode. Saving here changes only this temporary wizard draft. No email is sent." %}</p>
 <p>{% translate "Use a placeholder name inside double braces. Supported names:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
-{% include 'stewardship/setup-deadlines.html' %}
+{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <form method="post" data-content-form>{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/content-fields.html' %}
 <div class="setup-actions"><a class="setup-back" href="{% url 'admin:setup_content' %}">{% translate "Back to the content list" %}</a>

@@ -8,7 +8,7 @@
 <p class="notice">{% translate "Testing mode. This campaign remains temporary until final setup completes. Ministry and fund choices come from this setup's validated source load." %}</p>
 <p>{% translate "The first campaign uses the parish timezone. Content, share options and delivery schedules can be reviewed separately before final confirmation." %}</p>
 <p><a href="{% url 'admin:setup_schedules' %}">{% translate "Change campaign dates together with saved mail schedules" %}</a></p>
-{% include 'stewardship/setup-deadlines.html' %}
+{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <form method="post" class="panel" data-campaign-form>
 {% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/campaign-fields.html' %}

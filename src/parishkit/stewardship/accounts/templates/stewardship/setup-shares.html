@@ -6,7 +6,7 @@
 <h1>{% translate "How Families will share" %}</h1><p>{{ campaign_name }}</p>
 <p class="setup-intro">{% translate "The choices Families pick from to say how they will give, for example online, by envelope or through a bank. Default options are provided; edit, reorder or remove them to match your parish." %}</p>
 <p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft." %}</p>
-{% include 'stewardship/setup-deadlines.html' %}
+{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <form method="post">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/share-fields.html' %}
 {% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' %}</form>

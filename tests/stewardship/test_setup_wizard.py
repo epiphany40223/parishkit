@@ -153,3 +153,29 @@ def test_every_setup_template_compiles():
     assert "setup-source.html" in names and "setup-unavailable.html" in names
     for name in names:
         get_template(f"stewardship/{name}")
+
+
+def test_time_limit_explanations_match_the_enforced_policy():
+    """The plain-language limits state the same durations the server enforces."""
+    from datetime import UTC, datetime, timedelta
+
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.session_policy import ADMIN_ABSOLUTE
+    from parishkit.stewardship.accounts.setup_policy import IDLE_LIMIT, SOURCE_WATCHDOG
+
+    assert timedelta(minutes=30) == IDLE_LIMIT
+    assert timedelta(hours=12) == ADMIN_ABSOLUTE
+    assert timedelta(hours=2) == SOURCE_WATCHDOG
+    now = datetime(2026, 9, 10, 12, tzinfo=UTC)
+    limits = SimpleNamespace(
+        idle_at=now + IDLE_LIMIT,
+        absolute_at=now + ADMIN_ABSOLUTE,
+        watchdog_at=now + SOURCE_WATCHDOG,
+    )
+    html = render_to_string("stewardship/setup-deadlines.html", {"limits": limits})
+    assert "30 minutes" in html and "12 hours" in html and "2 hours" in html
+    assert "Idle deadline" not in html and "Absolute session deadline" not in html
+    assert '<details class="setup-deadlines">' in html
+    assert 'datetime="2026-09-10T12:30:00+00:00"' in html
+    assert "data-progress-deadline" not in html

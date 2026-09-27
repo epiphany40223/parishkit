@@ -6,7 +6,7 @@
 <h1>{% translate "Parish logo" %}</h1>
 <p class="setup-intro">{% translate "Upload the parish logo. It gives Family pages a familiar look so Families trust the site." %}</p>
 <p class="notice">{% translate "Testing mode. This logo is private to this setup login until final activation." %}</p>
-{% include 'stewardship/setup-deadlines.html' %}
+{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if assets %}<section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
 <div class="branding-preview">{% for asset in assets %}<figure><img src="{% url 'admin:setup_branding_asset' asset.pk %}" alt="{{ asset.label|capfirst }}"><figcaption>{{ asset.label|capfirst }} — {{ asset.width }} × {{ asset.height }}</figcaption></figure>{% endfor %}</div>
 </section>{% endif %}

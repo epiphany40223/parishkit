@@ -53,6 +53,7 @@
 .setup-back { background: var(--paper, #fff); color: var(--accent, #165b50); }
 .setup-continue { margin-left: auto; background: var(--accent, #165b50); color: var(--paper, #fff); }
 .setup-back:hover, .setup-continue:hover { text-decoration: underline; }
+.setup-deadlines dd > p { margin-block: 0 .5rem; }
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #465e68); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }
 @media (forced-colors: active) {
