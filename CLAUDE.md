@@ -57,6 +57,13 @@ ParishKit contains reusable Python automation for Catholic parishes.
   including smaller coherent PRs, correction-focused review rounds, and the
   human's standing merge/continue authority. Preserve full integrated gate
   reviews and explicit production-readiness, deployment and release boundaries.
+- Stewardship follow-up work is tracked in GitHub issues labeled
+  `stewardship` plus one `timing: …` label, indexed by the
+  [backlog and roadmap issue](https://github.com/epiphany40223/parishkit/issues/146).
+  Link PRs to their issue (`Closes #N`). Record each new deferred idea as an
+  issue with full context, analysis and rejected approaches, and add it to the
+  roadmap. Keep host addresses, deployment identifiers and credentials out of
+  issues; this repository is public.
 - Prefer shorter, simpler code when it remains clear, especially when that
   makes behavior easier to unit test. This code does not require ultra-high
   performance, but avoid gratuitously careless inefficiency.
