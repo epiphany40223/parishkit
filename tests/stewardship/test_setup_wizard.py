@@ -16,6 +16,13 @@ CAMPAIGN = {
 }
 
 
+# A saved invitation email, which schedules need before they can be set up.
+INVITATION = {
+    "id": str(uuid4()),
+    "values": {"kind": "email", "slot": "initial", "subject": "Welcome"},
+}
+
+
 def draft(sections=None, *, state=SetupState.COLLECTING, source=None, reviewed=None):
     """A detached stand-in carrying only what the stepper reads."""
     return SimpleNamespace(
@@ -89,7 +96,7 @@ def test_done_state_next_and_previous_follow_saved_choices():
     # The stale Slack key is the first unfinished step: completed steps after
     # it stay open, unfinished ones wait for it.
     assert wizard.step("campaign").url is not None
-    assert shown["schedules"] == "locked" and wizard.step("schedules").url is None
+    assert shown["schedules"] == "blocked" and wizard.step("schedules").url is None
     assert shown["content"] == "locked"
     assert shown["preview"] == "blocked"
     assert wizard.previous.key == "google_workspace"
@@ -193,6 +200,7 @@ def test_optional_steps_never_hold_later_steps_back():
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
         "campaign": {**CAMPAIGN, "campaign": {"modules": ["census"]}},
+        "email_initial": INVITATION,
     }
     wizard = build(
         draft(sections, source=uuid4()),
@@ -200,7 +208,7 @@ def test_optional_steps_never_hold_later_steps_back():
         credentials={"parishsoft": True, "google_workspace": True},
     )
     shown = states(wizard)
-    assert shown["content"] == "todo" and wizard.step("content").status == "Optional"
+    assert shown["content"] == "done"  # an email is saved, the rest optional
     assert shown["schedules"] == "todo" and wizard.step("schedules").url is not None
     assert wizard.resume.key == "schedules"
     assert shown["preview"] == "blocked"
@@ -275,3 +283,31 @@ def test_time_limit_explanations_match_the_enforced_policy():
     assert '<details class="setup-deadlines">' in html
     assert 'datetime="2026-09-10T12:30:00+00:00"' in html
     assert "data-progress-deadline" not in html
+
+
+def test_schedules_wait_for_an_email_they_can_send():
+    """With no saved invitation or reminder there is nothing to schedule."""
+    sections = VALUES | {
+        "branding": {"bundle_id": str(uuid4())},
+        "campaign": {**CAMPAIGN, "campaign": {"modules": ["census"]}},
+    }
+    credentials = {"parishsoft": True, "google_workspace": True}
+    wizard = build(draft(sections, source=uuid4()), "campaign", credentials=credentials)
+    step = wizard.step("schedules")
+    assert step.state == "blocked" and step.url is None
+    assert step.fix_url == "/admin/setup/content"
+    assert "invitation or reminder email" in str(step.status)
+    ready = build(
+        draft(sections | {"email_initial": INVITATION}, source=uuid4()),
+        "campaign",
+        credentials=credentials,
+    )
+    assert ready.step("schedules").state == "todo"
+    # A page email is not something a schedule can send.
+    page = {"id": str(uuid4()), "values": {"kind": "page", "slot": "welcome"}}
+    other = build(
+        draft(sections | {"page_welcome": page}, source=uuid4()),
+        "campaign",
+        credentials=credentials,
+    )
+    assert other.step("schedules").state == "blocked"

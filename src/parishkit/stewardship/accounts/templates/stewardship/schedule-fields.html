@@ -1,4 +1,6 @@
 {% load i18n stewardship %}
 {{ schedules.management_form }}{{ schedules.non_form_errors }}
+{% if not schedules.has_templates %}<div class="notice"><p><strong>{% translate "No invitation or reminder emails are saved yet." %}</strong> {% translate "Every schedule sends a saved email, so there is nothing to schedule until one exists." %}</p>
+{% if templates_url %}<p><a href="{{ templates_url }}">{% translate "Create the emails with the page and email templates first" %}</a></p>{% endif %}</div>{% endif %}
 <p>{% translate "The blank last row adds a schedule. Saving makes another blank row available. Every saved row must remain present or be explicitly marked for deletion; its mail type cannot change." %}</p>
 {% for form in schedules %}<fieldset class="panel"><legend>{% translate "Schedule" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

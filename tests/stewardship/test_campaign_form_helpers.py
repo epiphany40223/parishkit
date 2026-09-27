@@ -105,3 +105,31 @@ def test_schedule_window_asks_for_confirmation_only_when_dates_overlap():
     )
     assert " hidden>" not in str(unconfirmed["overlap_confirmed"].as_field_group())
     assert window(**dates, overlap_confirmed="on").is_valid()
+
+
+def test_schedules_without_a_saved_email_explain_what_to_do_first():
+    """An empty template list is explained instead of offered."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.schedule_forms import Schedules
+
+    from .campaign_factory import campaign
+
+    owner = campaign()
+    schedules = Schedules(
+        prefix="schedules",
+        previous=[],
+        templates=[],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert not schedules.has_templates
+    assert "No invitation" in str(
+        schedules.forms[0].fields["template_version"].help_text
+    )
+    html = render_to_string(
+        "stewardship/schedule-fields.html",
+        {"schedules": schedules, "templates_url": "/admin/setup/content"},
+    )
+    assert "No invitation or reminder emails are saved yet." in html
+    assert 'href="/admin/setup/content"' in html

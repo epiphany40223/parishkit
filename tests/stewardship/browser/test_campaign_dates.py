@@ -67,6 +67,13 @@ def test_schedule_window_overlap_follows_the_campaign_dates(page, component_orig
     page.locator('[name="window-end_date"]').fill("2026-12-31")
     assert group.is_hidden()
     assert not group.locator('input[type="checkbox"]').is_checked()
+    # No emails are saved yet: say so instead of offering an empty list.
+    assert page.get_by_text(
+        "No invitation or reminder emails are saved yet"
+    ).is_visible()
+    assert page.get_by_role("link", name="Create the emails").get_attribute("href") == (
+        "/admin/setup/content"
+    )
 
 
 @pytest.mark.parametrize("width", [320, 1280])

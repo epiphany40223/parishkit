@@ -12,6 +12,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from .schedule_forms import schedulable
 from .setup_content_values import CONTENT_STEPS
 from .setup_policy import SetupState
 
@@ -205,6 +206,22 @@ def _blocker(key, draft, done):
         "shares": (("campaign",), _("Save the first campaign first.")),
         "schedules": (("campaign",), _("Save the first campaign first.")),
     }
+    if key == "schedules" and done.get("campaign") and not done["schedules"]:
+        # Every schedule sends a saved email, so an empty template list would
+        # offer nothing to choose. (Saving no schedules at all stays allowed.)
+        saved = [
+            draft.sections[step]
+            for step in CONTENT_STEPS
+            if draft.sections.get(step, {}).get("values")
+        ]
+        if not schedulable(saved):
+            return (
+                _(
+                    "Save an invitation or reminder email under Pages and "
+                    "email templates first."
+                ),
+                "content",
+            )
     if key in FINAL:
         needed = tuple(
             page.key

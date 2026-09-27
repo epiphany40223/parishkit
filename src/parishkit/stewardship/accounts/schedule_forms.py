@@ -28,6 +28,20 @@ WEEKDAYS = (
 )
 
 
+NO_TEMPLATES = _(
+    "No invitation, reminder or digest email is saved yet, so there is nothing "
+    "to choose. Save those emails with the page and email templates first."
+)
+
+
+def schedulable(templates):
+    """Whether any saved template is an email a schedule can send."""
+    return any(
+        row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
+        for row in templates
+    )
+
+
 class ScheduleWindow(forms.Form):
     """Draft dates may change together with mail; locked structural inputs are inert."""
 
@@ -188,6 +202,8 @@ class ScheduleForm(forms.Form):
             for row in templates
             if row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
         ]
+        if not choices:
+            self.fields["template_version"].help_text = NO_TEMPLATES
         selected = self.initial.get("template_version")
         if selected and selected not in {key for key, _ in choices}:
             choices.append((selected, _("Existing unresolved template (not ready)")))
@@ -210,6 +226,11 @@ class ScheduleSet(BaseFormSet):
     def get_form_kwargs(self, index):
         """Template choices are server-provided for initial and new forms alike."""
         return super().get_form_kwargs(index) | {"templates": self.templates}
+
+    @property
+    def has_templates(self):
+        """Whether any email is saved that a schedule could send."""
+        return schedulable(self.templates)
 
     def clean(self):
         """Reject forged identities/kinds and validate campaign-local scheduling."""
