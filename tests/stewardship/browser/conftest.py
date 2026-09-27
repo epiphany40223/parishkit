@@ -49,6 +49,7 @@ from parishkit.stewardship.web.security import CSP
 
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
+from ..test_setup_final_steps import wizard as final_wizard
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -516,6 +517,62 @@ def component_origin():
                 "draft": setup_draft,
                 "testing_recipient": "testing@example.org",
                 "pending": True,
+                "unknown": False,
+                "form": SetupMailForm(
+                    initial={
+                        "preview_token": "synthetic-preview",
+                        "request_key": uuid4(),
+                        "slot": "initial",
+                    }
+                ),
+                "items": [
+                    {
+                        "id": "synthetic-delivery",
+                        "state": "queued",
+                        "label": "Awaiting mail worker",
+                        "created_at": NOW.isoformat(),
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/setup-mail-test-step",
+            "setup-mail",
+            {
+                "draft": setup_draft,
+                "wizard": final_wizard("mail_test"),
+                "tested": False,
+                "testing_recipient": "testing@example.org",
+                "pending": True,
+                "unknown": False,
+                "form": SetupMailForm(
+                    initial={
+                        "preview_token": "synthetic-preview",
+                        "request_key": uuid4(),
+                        "slot": "initial",
+                    }
+                ),
+                "items": [
+                    {
+                        "id": "synthetic-delivery",
+                        "state": "queued",
+                        "label": "Awaiting mail worker",
+                        "created_at": NOW.isoformat(),
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/setup-mail-test-done",
+            "setup-mail",
+            {
+                "draft": setup_draft,
+                "wizard": final_wizard("mail_test", tests=frozenset({"mail_test"})),
+                "tested": True,
+                "testing_recipient": "testing@example.org",
+                "pending": False,
                 "unknown": False,
                 "form": SetupMailForm(
                     initial={

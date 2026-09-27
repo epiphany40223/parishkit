@@ -309,6 +309,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/setup-finalization",
         "/setup-installation",
         "/setup-mail-test",
+        "/setup-mail-test-step",
+        "/setup-mail-test-done",
         "/setup-slack-test",
         "/setup-access",
         "/setup-mail",
@@ -377,7 +379,9 @@ def test_setup_confirmation_requires_acknowledgement_and_stores_no_draft(
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0
     page.goto(component_origin + "/setup-confirmation-unready")
     page.get_by_role("checkbox").check()
-    assert page.get_by_role("button", name="Confirm and finish setup").is_disabled()
+    assert page.get_by_role(
+        "button", name="Check readiness and finish setup"
+    ).is_disabled()
 
 
 def test_campaign_mail_preview_is_passive_and_shows_uncertainty(page, component_origin):

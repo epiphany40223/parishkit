@@ -91,3 +91,46 @@ def test_unavailable_status_requires_reload_not_a_blind_send(
     assert page.locator("[data-mail-send]").is_disabled()
     page.clock.fast_forward(60000)
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_email_test_is_an_ordinary_step_that_continues_once_accepted(
+    page, component_origin, axe_source, width
+):
+    """Back and Send share the standard row; acceptance swaps Send for Continue."""
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.clock.install(time=NOW)
+    page.route(
+        "**/admin/setup/mail-test/status",
+        lambda route: route.fulfill(json=status(pending=True) | {"items": []}),
+    )
+    page.goto(component_origin + "/setup-mail-test-step")
+    row = page.locator(".setup-actions")
+    send = row.get_by_role("button", name="Send test email")
+    onward = row.locator("[data-mail-continue]")
+    assert row.locator(".setup-back").is_visible() and send.is_visible()
+    assert onward.is_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    # The worker accepts the test of this revision; the next poll sees it.
+    page.unroute("**/admin/setup/mail-test/status")
+    page.route(
+        "**/admin/setup/mail-test/status", lambda route: route.fulfill(json=status())
+    )
+    page.clock.fast_forward(5000)
+    onward.wait_for(state="visible")
+    assert send.is_hidden()
+    assert onward.get_attribute("href") == "/admin/setup/confirm"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+
+
+def test_accepted_email_test_offers_continue_and_another_send(page, component_origin):
+    """After acceptance the primary action is Continue; sending again is secondary."""
+    page.goto(component_origin + "/setup-mail-test-done")
+    row = page.locator(".setup-actions")
+    assert row.get_by_role("link", name="Continue").is_visible()
+    assert row.locator("button").count() == 0
+    assert page.get_by_role("button", name="Send another test").is_visible()

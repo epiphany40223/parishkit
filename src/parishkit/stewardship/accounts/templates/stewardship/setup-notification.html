@@ -4,18 +4,18 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup Slack test" %}</h1>
-<p class="setup-intro">{% translate "Post one fixed test message to the Slack channel to prove the Slack connection works. A successful test of the current settings is required before setup can finish." %}</p>
+<p class="setup-intro">{% translate "Post one fixed test message to the Slack channel to prove the Slack connection works. A successful test of the current settings is required before setup can finish. Once it succeeds, Continue takes you to the next step." %}</p>
 <p class="notice">{% translate "Testing mode. This sends a fixed fictional notification to the configured Slack channel. It contains no parishioner data and does not activate the campaign." %}</p>
 <p>{% translate "Slack channel" %}: {{ channel_id }}</p>
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
-<section class="panel" data-setup-mail data-mail-status-url="{% url 'admin:setup_notification_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
-<h2>{% translate "Send an explicit test" %}</h2>
-<form method="post">{% csrf_token %}
+<div data-setup-mail data-mail-status-url="{% url 'admin:setup_notification_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
+<section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
+<form method="post" id="setup-test">{% csrf_token %}
 {{ form.preview_token }}{{ form.request_key }}
 {{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}
 <p data-mail-uncertain {% if not unknown %}hidden{% endif %}>
 {{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>
-<button data-mail-send type="submit" {% if pending %}disabled{% endif %}>{% translate "Send Slack test" %}</button>
+{% if tested %}<p><button class="button-secondary" data-mail-send type="submit" {% if pending %}disabled{% endif %}>{% translate "Send another test" %}</button></p>{% endif %}
 </form>
 <p data-mail-status-error hidden role="status">{% translate "Status is unavailable or setup changed. Reload this page to check the current test before sending another." %}</p>
 <p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>
@@ -26,5 +26,6 @@
 </li>{% empty %}<li>{% translate "No test has been requested yet." %}</li>{% endfor %}</ul>
 <p><a href="{% url 'admin:setup_notification' %}">{% translate "Reload test status" %}</a></p>
 </section>
-{% include 'stewardship/setup-navigation.html' %}
+{% include 'stewardship/setup-test-actions.html' with send=_("Send Slack test") %}
+</div>
 {% endblock %}

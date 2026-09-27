@@ -79,6 +79,9 @@
     const warning = panel.querySelector("[data-mail-status-error]");
     const uncertain = panel.querySelector("[data-mail-uncertain]");
     const acknowledgement = uncertain?.querySelector("input");
+    // Until this revision's test is accepted the send button is the page's
+    // primary action and Continue waits hidden (setup-test-actions.html).
+    const onward = panel.querySelector("[data-mail-continue]");
     const states = new Set([
       "queued", "submitting", "accepted", "not_sent", "delivery_unknown", "cancelled"
     ]);
@@ -116,6 +119,11 @@
           }
         }
         for (const item of data.items) nodes.get(item.id).textContent = item.label;
+        if (onward?.hidden && data.items.some((item) =>
+          item.current === true && item.state === "accepted")) {
+          onward.hidden = false;
+          button.hidden = true;
+        }
         pending = data.pending;
         button.disabled = pending;
         uncertain.hidden = !data.unknown;
