@@ -73,7 +73,8 @@ the first complete version.
 On the first Admin login, the wizard collects all required base and first-
 campaign configuration before making the system configured:
 
-1. Parish name, website URL, IANA timezone, US main phone, and logo.
+1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
+   US main phone, and logo.
 2. Domain/address login rules while preserving the bootstrap Admin.
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.

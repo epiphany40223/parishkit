@@ -109,7 +109,13 @@ def compile_candidate(
         "parish": [
             {
                 "id": str(uuid5(attempt_id, "parish")),
-                "values": values["parish"] | {"branding": dict(branding)},
+                # A blank optional giving URL is omitted, not stored empty.
+                "values": {
+                    name: value
+                    for name, value in values["parish"].items()
+                    if name != "online_giving_url" or value
+                }
+                | {"branding": dict(branding)},
             }
         ],
         "integrations": integrations,

@@ -30,6 +30,12 @@ PARISH = {
         "help. Use +1 followed by the ten-digit US number, for example "
         "+12125551234."
     ),
+    "online_giving_url": _(
+        "Optional. The web page where Families can give online, for example "
+        "https://www.yourparish.org/give. It must start with https://. Pages "
+        "and emails, such as the submission receipt, can link to it. Leave "
+        "empty if the parish has no online giving page."
+    ),
 }
 
 ACCESS = {

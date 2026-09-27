@@ -7,7 +7,10 @@ from django.db.models import Q
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_forms import LEGACY_PAGE_REFERENCES
 from parishkit.stewardship.accounts.content_models import ContentVersion
-from parishkit.stewardship.jobs.campaign_mail_values import document_parish
+from parishkit.stewardship.jobs.campaign_mail_values import (
+    document_parish,
+    giving_url,
+)
 from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     render_template,
@@ -32,6 +35,7 @@ def public_substitutions(parish, campaign):
             "website": parish.website,
             "phone": parish.phone,
             "email": reply_to(parish.configuration_id),
+            "online_giving_url": parish.online_giving_url,
         },
         campaign.values,
     )
@@ -45,6 +49,7 @@ def public_values(parish, campaign):
         parish_website=parish["website"],
         parish_phone=parish["phone"],
         parish_email=parish.get("email", ""),
+        online_giving_url=giving_url(parish),
         campaign_name=campaign["name"],
         campaign_start=parish_date(date.fromisoformat(campaign["start_date"])),
         campaign_end=parish_date(date.fromisoformat(campaign["end_date"])),

@@ -816,6 +816,10 @@ class Migration(migrations.Migration):
                         ("menu_logo_id", models.UUIDField()),
                         ("icon_logo_id", models.UUIDField()),
                         ("favicon_id", models.UUIDField()),
+                        (
+                            "online_giving_url",
+                            models.URLField(blank=True, max_length=2048, null=True),
+                        ),
                     ],
                     options={
                         "db_table": "stewardship_parish",

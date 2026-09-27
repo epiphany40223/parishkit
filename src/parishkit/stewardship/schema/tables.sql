@@ -1232,9 +1232,11 @@ CREATE TABLE public.stewardship_parish (
     icon_logo_id uuid NOT NULL,
     favicon_id uuid NOT NULL,
     configuration_id uuid NOT NULL,
+    online_giving_url character varying(2048),
     CONSTRAINT parish_nonempty_identity CHECK (((NOT ((name)::text = ''::text)) AND (NOT ((timezone)::text = ''::text)))),
     CONSTRAINT parish_us_phone CHECK (((phone)::text ~ '^\+1[2-9][0-9]{2}[2-9][0-9]{6}$'::text)),
-    CONSTRAINT parish_website_scheme CHECK (((website)::text ~* '^https?://'::text))
+    CONSTRAINT parish_website_scheme CHECK (((website)::text ~* '^https?://'::text)),
+    CONSTRAINT parish_online_giving_https CHECK (((online_giving_url IS NULL) OR ((online_giving_url)::text ~* '^https://'::text)))
 );
 
 -- TABLE: stewardship_policy_epoch

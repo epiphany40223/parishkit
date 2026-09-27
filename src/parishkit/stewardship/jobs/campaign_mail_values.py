@@ -25,6 +25,16 @@ def document_parish(document):
     return sections["parish"][0]["values"] | {"email": email}
 
 
+def giving_url(parish):
+    """The optional online giving page, falling back to the parish website.
+
+    Templates such as the default receipt link to ``online_giving_url``; an
+    empty href would silently point at the email or page itself, so a parish
+    without a giving page sends Families to its website instead.
+    """
+    return parish.get("online_giving_url") or parish["website"]
+
+
 def campaign_values(*, parish, campaign):
     """Format civil dates without consulting a worker timezone or private Family."""
     financial = campaign["financial"]
@@ -35,6 +45,7 @@ def campaign_values(*, parish, campaign):
         "parish_website": parish["website"],
         "parish_phone": parish["phone"],
         "parish_email": parish.get("email", ""),
+        "online_giving_url": giving_url(parish),
         "campaign_name": campaign["name"],
         "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
         "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),

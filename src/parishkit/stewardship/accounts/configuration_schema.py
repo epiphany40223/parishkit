@@ -58,10 +58,16 @@ def _validate_v1_sections(document):
     if len(parishes) != 1:
         invalid()
     parish = parishes[0]["values"]
-    if set(parish) != {"name", "website", "timezone", "phone", "branding"}:
+    required = {"name", "website", "timezone", "phone", "branding"}
+    if set(parish) - {"online_giving_url"} != required:
         invalid()
     text(parish["name"])
     typed(parish["website"], "url")
+    # Optional and absent when unset; Families are only ever sent to HTTPS.
+    if "online_giving_url" in parish:
+        typed(parish["online_giving_url"], "url")
+        if not parish["online_giving_url"].lower().startswith("https://"):
+            invalid()
     text(parish["timezone"])
     if parish["timezone"] not in timezone_names():
         invalid()

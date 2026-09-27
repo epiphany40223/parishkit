@@ -184,7 +184,9 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     page = presentation._page_content(
         SimpleNamespace(
             configuration=SimpleNamespace(
-                parish=SimpleNamespace(**parish, configuration_id=CHECK)
+                parish=SimpleNamespace(
+                    **parish, configuration_id=CHECK, online_giving_url=None
+                )
             ),
             configuration_id=CHECK,
         ),

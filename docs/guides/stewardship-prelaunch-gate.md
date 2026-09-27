@@ -229,16 +229,18 @@ bodies: the Admin session guard, so a live session's verified Google
 instant may advance, and the initial-credential install check that
 compares against it. Only the Functions digest changed. The default
 content work then made Ministry packets capture the financial period for the
-shared campaign-year rule, which changed one function body; regenerated from
-a fresh install, the current baseline is:
+shared campaign-year rule, which changed one function body, and added the
+optional Parish online giving URL: a nullable `stewardship_parish` column, its
+HTTPS check constraint and the setup-draft guard's Parish-step key list.
+Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 220 | `d14ef15b` |
-| Columns | 2439 | `5dce65e9` |
-| Constraints | 3371 | `2dd9be0a` |
+| Columns | 2440 | `e0c6b643` |
+| Constraints | 3372 | `5c14425f` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 595 | `ed998ae1` |
+| Functions | 595 | `443281f3` |
 | Triggers | 549 | `c2e50957` |
 | Policies | 28 | `1c9c3b2d` |
 

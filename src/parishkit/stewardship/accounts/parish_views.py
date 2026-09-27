@@ -10,7 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.schema_primitives import timezone_names, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -29,7 +29,7 @@ from .request_patch import build_candidate
 from .sessions import authenticated_admin
 
 SALT = "stewardship-parish-profile-preview-v1"
-PROFILE_FIELDS = ("name", "website", "timezone", "phone")
+PROFILE_FIELDS = ("name", "website", "timezone", "phone", "online_giving_url")
 
 
 class ParishForm(forms.Form):
@@ -49,6 +49,16 @@ class ParishForm(forms.Form):
         ),
         widget=forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"}),
     )
+    online_giving_url = forms.URLField(
+        label=_("Online giving URL"),
+        max_length=2048,
+        required=False,
+        assume_scheme="https",
+        help_text=_(
+            "Optional. The page where Families can give online. Emails and pages "
+            "can link to it with the online_giving_url placeholder."
+        ),
+    )
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
@@ -59,6 +69,24 @@ class ParishForm(forms.Form):
         self.fields["timezone"].choices = [
             (name, name) for name in sorted(timezone_names())
         ]
+
+    def clean_online_giving_url(self):
+        """Accept only the HTTPS, credential-free URLs the configuration stores."""
+        value = self.cleaned_data["online_giving_url"]
+        if not value:
+            return ""
+        try:
+            typed(value, "url")
+            if not value.lower().startswith("https://"):
+                raise ConfigError("Online giving requires HTTPS.")
+        except ConfigError:
+            raise forms.ValidationError(
+                _(
+                    "Use an https:// address without credentials, a “?” part or "
+                    "a “#” part."
+                )
+            ) from None
+        return value
 
 
 def _scope(service):
@@ -102,8 +130,11 @@ def _preview(request, service, actor):
     values = {
         name: form.cleaned_data[name]
         for name in PROFILE_FIELDS
-        if form.cleaned_data[name] != record["values"][name]
+        if form.cleaned_data[name] != record["values"].get(name, "")
     }
+    if "online_giving_url" in values:
+        # None removes the optional key; see request_patch's parish update.
+        values["online_giving_url"] = values["online_giving_url"] or None
     if not values:
         form.add_error(None, _("No settings have changed."))
         return _form_page(request, configuration, form, status=400)
@@ -137,8 +168,8 @@ def _preview(request, service, actor):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    "before": record["values"][name],
-                    "after": value,
+                    "before": record["values"].get(name, ""),
+                    "after": value or "",
                 }
                 for name, value in values.items()
             ],
@@ -169,7 +200,8 @@ def parish_settings(request):
             filters(request.GET, allowed=set())
             configuration = editable_configuration(service)
             initial = {
-                name: _profile(configuration)["values"][name] for name in PROFILE_FIELDS
+                name: _profile(configuration)["values"].get(name, "")
+                for name in PROFILE_FIELDS
             }
             initial["base_digest"] = configuration.active_configuration.digest
             response = _form_page(request, configuration, ParishForm(initial=initial))

@@ -6708,7 +6708,7 @@ BEGIN
         RAISE EXCEPTION 'Invalid public setup shape' USING ERRCODE='23514';
     END IF;
     expected=CASE NEW.step
-        WHEN 'parish' THEN ARRAY['name','phone','timezone','website']
+        WHEN 'parish' THEN ARRAY['name','online_giving_url','phone','timezone','website']
         WHEN 'branding' THEN ARRAY['bundle_id']
         WHEN 'access' THEN ARRAY['admin_addresses','ministry_addresses',
             'ministry_domains','staff_addresses','staff_domains']
