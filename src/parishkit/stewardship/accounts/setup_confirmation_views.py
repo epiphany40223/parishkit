@@ -7,6 +7,8 @@ from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+
 from .authentication import runtime
 from .setup_confirmation import freeze_setup, ready_inputs
 from .setup_preview import PREVIEW_SALT, prepare_preview
@@ -18,10 +20,11 @@ class SetupConfirmationForm(forms.Form):
 
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     confirmed = forms.BooleanField(
+        widget=ACKNOWLEDGMENT,
         label=_(
             "I reviewed the parish and first-campaign settings "
             "and want to finish setup."
-        )
+        ),
     )
 
 

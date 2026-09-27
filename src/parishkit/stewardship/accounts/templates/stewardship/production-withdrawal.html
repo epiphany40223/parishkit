@@ -13,7 +13,7 @@
 {% if not fresh %}<div class="notice"><p>{% translate "For your security, confirm it's you with Google before withdrawing. Confirmation requires Google authentication within the last five minutes. You will return here; then prepare a new preview." %}</p>{% url 'admin:production_withdrawal' campaign.pk as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
 <label for="withdrawal-reason">{% translate "Reason for withdrawal" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
-<label><input type="checkbox" name="acknowledged" value="yes" required> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
+<label><input type="checkbox" name="acknowledged" value="yes" required data-acknowledgment> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
 <button type="submit">{% translate "Preview withdrawal" %}</button></form>
 {% if preview %}<section class="panel"><h2>{% translate "Exact withdrawal preview" %}</h2>
 <p>{% translate "Reason" %}: {{ preview.reason }}</p>

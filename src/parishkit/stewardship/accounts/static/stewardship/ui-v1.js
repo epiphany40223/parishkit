@@ -72,6 +72,42 @@
     if (event.persisted) [...submitting.keys()].forEach(release);
   });
 
+  // Required acknowledgments: a form's submit buttons stay disabled (muted by
+  // button:disabled) until every visible [data-acknowledgment] checkbox that
+  // belongs to it is checked. A hidden one (a setup test's "may have arrived"
+  // prompt before any doubt) does not count. This is progressive enhancement
+  // only: without JavaScript the buttons stay enabled and the server refuses a
+  // missing acknowledgment exactly as before. Real disabled is used, unlike
+  // the busy state above, because no submission should start at all; only
+  // buttons disabled here (data-acknowledgment-gated) are ever re-enabled, so
+  // a button the server or another script disabled (a pending test, setup
+  // that is not ready) stays disabled. formnovalidate buttons are never gated.
+  const gateAcknowledgments = (form) => {
+    if (!form) return;
+    const boxes = [...form.elements].filter((node) => node instanceof HTMLInputElement
+      && node.type === "checkbox" && node.hasAttribute("data-acknowledgment"));
+    if (!boxes.length) return;
+    const blocked = boxes.some((box) => !box.checked && !box.closest("[hidden]"));
+    submitControls(form).forEach((node) => {
+      if (node.formNoValidate) return;
+      if (blocked && !node.disabled) {
+        node.disabled = true;
+        node.setAttribute("data-acknowledgment-gated", "");
+      } else if (!blocked && node.hasAttribute("data-acknowledgment-gated")) {
+        node.disabled = false;
+        node.removeAttribute("data-acknowledgment-gated");
+      }
+    });
+  };
+  document.querySelectorAll("form").forEach((form) => {
+    gateAcknowledgments(form);
+    form.addEventListener("change", () => gateAcknowledgments(form));
+  });
+  // Back/forward navigation can restore checkbox state without a change event.
+  window.addEventListener("pageshow", () => {
+    document.querySelectorAll("form").forEach(gateAcknowledgments);
+  });
+
   // Readiness status is a passive GET, never the source-load idle-renewal
   // exception. No message content, key or answer is retained by this poller.
   document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
@@ -125,11 +161,16 @@
           button.hidden = true;
         }
         pending = data.pending;
+        // This poller owns the send button's pending state; take it back from
+        // the acknowledgment gate, then let the gate apply the new prompt.
+        button.removeAttribute("data-acknowledgment-gated");
         button.disabled = pending;
         uncertain.hidden = !data.unknown;
         acknowledgement.required = data.unknown;
+        gateAcknowledgments(acknowledgement.form);
       } catch {
         stopped = true;
+        button.removeAttribute("data-acknowledgment-gated");
         button.disabled = true;
         warning.hidden = false;
       } finally {

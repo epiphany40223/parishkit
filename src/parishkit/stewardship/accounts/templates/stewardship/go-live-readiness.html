@@ -49,7 +49,7 @@
 <section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
 <p>{% translate "Starting cleanup invalidates rehearsal access and prevents new Testing work. Completed deletions cannot be undone. Cancelling later releases the hold but does not restore deleted data. This does not activate Production." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
-<label><input type="checkbox" name="acknowledge" value="yes" required> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
+<label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
 <button type="submit">{% translate "Start Testing cleanup" %}</button></form>
 </section>
 {% endif %}
