@@ -1,5 +1,7 @@
 """Shared setup/maintenance routing; object-specific authorization stays in views."""
 
+import re
+
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.deprecation import MiddlewareMixin
@@ -104,12 +106,27 @@ class AccessGateMiddleware(MiddlewareMixin):
         if admin and "administrator" in principal.roles:
             destination = "/admin/" + kind
             if request.path_info == destination or (
-                kind == "setup" and _setup_path(request.path_info)
+                kind == "setup"
+                and (
+                    _setup_path(request.path_info)
+                    or (
+                        request.method in {"GET", "HEAD"}
+                        and BACKGROUND_READS.fullmatch(request.path_info)
+                    )
+                )
             ):
                 return None
             if request.method in {"GET", "HEAD"}:
                 return HttpResponseRedirect(destination)
         return status_page(request, kind=kind, admin=admin)
+
+
+# Read-only background-work views an Administrator may open during initial
+# setup, to watch the setup's own load. Commands under these paths are POSTs
+# and stay gated; each view still rechecks the Background-work capability.
+BACKGROUND_READS = re.compile(
+    r"/admin/background(?:/counts|/tasks|/tasks?/[0-9a-f-]{36})?"
+)
 
 
 def _setup_path(path):

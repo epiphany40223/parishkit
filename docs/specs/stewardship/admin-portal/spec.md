@@ -29,7 +29,10 @@ All login and callback denial pages preserve the retry path while honoring
 `429`/`Retry-After`; they never reveal which authorization check failed.
 
 If bootstrap exists but setup is incomplete, an Admin is routed only to the
-setup wizard. A non-Admin sees "The system is not configured yet" and can only
+setup wizard, and the Admin navigation offers only the wizard. The read-only
+background-work list, task detail and header counts stay available so the
+Admin can watch the setup's own tasks; their commands stay closed until setup
+completes. A non-Admin sees "The system is not configured yet" and can only
 log out/retry. Family routes behave similarly. Once configured, a successful
 login returns to a validated local destination or the role-appropriate home;
 open redirects are prohibited.

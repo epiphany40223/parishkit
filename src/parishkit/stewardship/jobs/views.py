@@ -8,6 +8,7 @@ from django.db import DatabaseError, transaction
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
@@ -258,6 +259,23 @@ def task_detail(request, task_id):
     return _read(request, task_id)
 
 
+# Plain-language names for task types an Administrator meets first, notably
+# during initial setup; other types still show their stable internal name.
+TASK_NAMES = {
+    "setup_source_load": _("Initial ParishSoft data load"),
+    "setup_source_cleanup": _("Initial setup cleanup"),
+    "setup_finalize": _("Finishing initial setup"),
+    "setup_mail_test": _("Setup test email"),
+    "source_refresh": _("ParishSoft data refresh"),
+}
+
+
+def _named(task):
+    """Add a display name to one task's bounded metadata."""
+    task["name"] = TASK_NAMES.get(task["type"], task["type"])
+    return task
+
+
 @require_safe
 def background_page(request):
     """Render the same authorized bounded metadata as the passive polling API."""
@@ -266,6 +284,7 @@ def background_page(request):
         return result
     work = json.loads(result.content)
     for task in work["tasks"]:
+        _named(task)
         progress = task["progress"]
         progress["display"] = Percentage(progress["current"], progress["total"])
     following = request.GET.copy()
@@ -290,6 +309,7 @@ def task_page(request, task_id):
     if result.status_code != 200:
         return result
     work = json.loads(result.content)
+    _named(work["task"])
     for item in [work["task"], *work["events"]]:
         progress = item["progress"]
         progress["display"] = Percentage(progress["current"], progress["total"])

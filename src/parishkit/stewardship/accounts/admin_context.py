@@ -6,10 +6,13 @@ from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
+from .authentication import runtime
+from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
 from .runtime_models import SystemConfiguration
 from .sessions import ADMIN_IDLE, database_now
@@ -38,6 +41,8 @@ def portal_chrome(request):
         ).first()
     if configuration is None:
         return {}
+    if _setup_pending():
+        return {"admin_chrome": _setup_chrome(actor, configuration, session)}
     admin = allows(actor, Capability.CONFIGURE)
     campaign = configuration.current_campaign
     navigation = [(reverse("admin:index"), _("Home"))]
@@ -94,12 +99,7 @@ def portal_chrome(request):
                 )
             )
     now = database_now()
-    counts = None
-    if allows(actor, Capability.BACKGROUND_WORK):
-        counts = TaskRun.objects.filter(state__in=NONTERMINAL_STATES).aggregate(
-            total=Count("id"),
-            running=Count("id", filter=Q(state="running", lease_expires_at__gt=now)),
-        )
+    counts = _background_counts(actor, now)
     parish = getattr(configuration.active_configuration, "parish", None)
     critical_count, delivery_unknown = (
         alert_counts(now - timedelta(hours=24)) if admin else (0, None)
@@ -154,4 +154,59 @@ def portal_chrome(request):
                 session.expires_at, session.last_activity_at + ADMIN_IDLE
             ),
         }
+    }
+
+
+def _setup_pending():
+    """Whether initial setup is incomplete; an unreadable marker counts as pending.
+
+    The access gate already routes every other Admin page to the wizard until
+    the completion marker exists. This only keeps the chrome from offering
+    links that would bounce back to the wizard.
+    """
+    try:
+        return not runtime().configured()
+    except (ConfigError, LimiterUnavailable):
+        return True
+
+
+def _background_counts(actor, now):
+    """Nonterminal task counts for the header, when the actor may see them."""
+    if not allows(actor, Capability.BACKGROUND_WORK):
+        return None
+    return TaskRun.objects.filter(state__in=NONTERMINAL_STATES).aggregate(
+        total=Count("id"),
+        running=Count("id", filter=Q(state="running", lease_expires_at__gt=now)),
+    )
+
+
+def _setup_chrome(actor, configuration, session):
+    """Offer only the setup wizard until initial setup completes.
+
+    The background-work indicator stays: its read-only pages remain open
+    during setup so an Administrator can watch the setup's own data load.
+    Other operational indicators (delivery and presence counts, critical
+    alerts, the mode-configuration link) point at pages that are unavailable
+    before setup, so ``admin`` is False here: it is a presentation flag only
+    and grants or removes no authority.
+    """
+    now = database_now()
+    return {
+        "admin": False,
+        "setup_pending": True,
+        "parish_name": None,
+        "navigation": [{"url": reverse("admin:setup"), "label": _("Initial setup")}],
+        "testing": configuration.mode == "testing",
+        "testing_recipient": None,
+        "restored": configuration.restore_review_required,
+        "paused": False,
+        "delivery_pause": None,
+        "go_live": False,
+        "critical_count": 0,
+        "background": _background_counts(actor, now),
+        "delivery_unknown": None,
+        "presence_count": None,
+        "server_now": now,
+        "absolute_deadline": session.expires_at,
+        "idle_deadline": min(session.expires_at, session.last_activity_at + ADMIN_IDLE),
     }
