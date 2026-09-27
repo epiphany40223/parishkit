@@ -1,8 +1,10 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Setup Slack test" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:setup_preview' %}">{% translate "Return to exact setup preview" %}</a></p>
+{% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup Slack test" %}</h1>
+<p class="setup-intro">{% translate "Post one fixed test message to the Slack channel to prove the Slack connection works. A successful test of the current settings is required before setup can finish." %}</p>
 <p class="notice">{% translate "Testing mode. This sends a fixed fictional notification to the configured Slack channel. It contains no parishioner data and does not activate the campaign." %}</p>
 <p>{% translate "Slack channel" %}: {{ channel_id }}</p>
 {% include 'stewardship/setup-deadlines.html' %}
@@ -24,4 +26,5 @@
 </li>{% empty %}<li>{% translate "No test has been requested yet." %}</li>{% endfor %}</ul>
 <p><a href="{% url 'admin:setup_notification' %}">{% translate "Reload test status" %}</a></p>
 </section>
+{% include 'stewardship/setup-navigation.html' %}
 {% endblock %}

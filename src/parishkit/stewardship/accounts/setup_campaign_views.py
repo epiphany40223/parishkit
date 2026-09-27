@@ -7,12 +7,14 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
 
+from . import setup_help
 from .authentication import runtime
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_views import MULTIPLE_FIELDS
 from .setup_campaign import campaign_catalog
 from .setup_drafts import save_section, view_draft
-from .setup_views import ERRORS, _checked, _context, error_response
+from .setup_views import ERRORS, _checked, _context, page_error
+from .setup_wizard import continue_after
 
 
 class SetupCampaignForm(CampaignForm):
@@ -24,6 +26,7 @@ class SetupCampaignForm(CampaignForm):
         """The first draft inherits its original setup Parish timezone."""
         super().__init__(*args, **kwargs)
         self.fields["timezone"].disabled = True
+        setup_help.apply(self, setup_help.CAMPAIGN)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -73,14 +76,16 @@ def setup_campaign(request):
                         "campaign": form.values(),
                     },
                 )
-                return _checked(request, service, HttpResponseRedirect("/admin/setup"))
+                return _checked(
+                    request, service, continue_after(request, service, "campaign")
+                )
             status = 400
         response = render(
             request,
             "stewardship/setup-campaign.html",
-            _context(draft) | {"form": form},
+            _context(draft, "campaign") | {"form": form},
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "campaign")

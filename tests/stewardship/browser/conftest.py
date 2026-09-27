@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -36,7 +37,9 @@ from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
+from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES
 from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
+from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
@@ -143,6 +146,21 @@ def component_origin():
         "absolute_at": NOW + timedelta(hours=12),
         "watchdog_at": None,
     }
+    # A stepper with done, current, open and blocked steps for axe/layout checks.
+    wizard = setup_wizard(
+        SimpleNamespace(
+            status=SimpleNamespace(state="collecting", attempt_id=uuid4(), version=2),
+            sections={
+                "mail": {
+                    "delegated_email": "stewardship@example.org",
+                    "sender": "stewardship@example.org",
+                    "reply_to": "office@example.org",
+                }
+            },
+            source_task_id=None,
+        ),
+        "testing",
+    )
     responses = {
         # Admin chrome immediately polls this endpoint, including on report pages.
         # Failure-specific tests can still replace it with an explicit route.
@@ -700,10 +718,7 @@ def component_origin():
             "setup",
             {
                 "draft": setup_draft,
-                "steps": [
-                    {"key": key, "label": label, "saved": False}
-                    for key, label in STEPS.items()
-                ],
+                "wizard": wizard,
             },
         ),
         (
@@ -749,7 +764,9 @@ def component_origin():
                     "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-                }
+                },
+                "summaries": SUMMARIES,
+                "status_key": "fetching",
             },
         ),
         (
@@ -794,6 +811,7 @@ def component_origin():
                 context
                 | {
                     "draft": setup_draft,
+                    "wizard": wizard,
                     "form": form_type(),
                     "step": step,
                     "step_label": STEPS[step],
@@ -1080,6 +1098,7 @@ def component_origin():
         ("information-export-v1.js", "application/javascript"),
         ("users-v1.js", "application/javascript"),
         ("digest-v1.css", "text/css"),
+        ("setup-v1.css", "text/css"),
     ):
         asset = f"stewardship/{filename}"
         located = finders.find(asset)

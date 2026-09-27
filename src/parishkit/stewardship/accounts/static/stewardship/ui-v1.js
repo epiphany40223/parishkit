@@ -115,6 +115,39 @@
     // Anchor server instants to monotonic elapsed time, not the browser's wall
     // clock. Clock skew or a later system-clock correction must not stop renewal.
     let serverAt = Date.parse(panel.dataset.progressNow), observedAt = performance.now();
+    // Liveness display: elapsed time and the worker's last report tick locally
+    // between checks, so a download whose totals are not yet known (0 of 0)
+    // still visibly progresses. These are display-only; nothing is posted.
+    const texts = Object.fromEntries([...panel.querySelectorAll("[data-progress-text]")]
+      .map(node => [node.dataset.progressText, node.textContent]));
+    const summary = panel.querySelector("[data-progress-summary]");
+    const bar = panel.querySelector("[data-progress-bar]");
+    const elapsed = panel.querySelector("[data-progress-elapsed]");
+    const quiet = panel.querySelector("[data-progress-quiet]");
+    const checked = panel.querySelector("[data-progress-checked]");
+    const done = document.querySelector("[data-progress-done]");
+    const failed = document.querySelector("[data-progress-failed]");
+    let startedAt = Date.parse(panel.dataset.progressStarted || "");
+    let heartbeatAt = Date.parse(panel.dataset.progressHeartbeat || "");
+    const duration = (milliseconds) => {
+      const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+      return seconds < 60 ? `${seconds} seconds`
+        : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+    };
+    // Mirrors the server's summary() choice of plain-language status text.
+    const statusKey = (data) => {
+      if (data.setup_state === "expired"
+          || ["failed", "cancelled", "abandoned"].includes(data.task_state)) return "failed";
+      if (data.task_state === "succeeded" || data.setup_state === "collecting") return "done";
+      if (["queued", "retry_wait"].includes(data.task_state)) return data.task_state;
+      return data.phase in texts ? data.phase : "working";
+    };
+    const tick = () => {
+      const now = serverAt + performance.now() - observedAt;
+      if (elapsed && Number.isFinite(startedAt) && active) elapsed.textContent = duration(now - startedAt);
+      if (quiet && Number.isFinite(heartbeatAt) && active) quiet.textContent = `${duration(now - heartbeatAt)} ago`;
+    };
+    const ticker = window.setInterval(tick, 1000);
     const live = () => {
       const until = Math.min(...deadlines.map(node => Date.parse(node.dateTime)));
       const now = serverAt + performance.now() - observedAt;
@@ -158,6 +191,24 @@
         const percentage = data.total ? Math.round(data.current * 100 / data.total) : 0;
         panel.querySelector("[data-task-counts]").textContent =
           `${number.format(data.current)} out of ${number.format(data.total)} (${percentage}%)`;
+        // Unknown totals show an indeterminate bar rather than a stuck 0%.
+        if (bar && data.total) { bar.max = data.total; bar.value = data.current; }
+        else if (bar) bar.removeAttribute("value");
+        if (typeof data.started_at === "string" && Number.isFinite(Date.parse(data.started_at))) {
+          startedAt = Date.parse(data.started_at);
+        }
+        if (typeof data.heartbeat_at === "string" && Number.isFinite(Date.parse(data.heartbeat_at))) {
+          heartbeatAt = Date.parse(data.heartbeat_at);
+        }
+        const key = statusKey(data);
+        if (summary && texts[key] && summary.textContent !== texts[key]) summary.textContent = texts[key];
+        if (done) done.hidden = key !== "done";
+        if (failed) failed.hidden = key !== "failed";
+        if (checked) {
+          checked.dateTime = data.server_now;
+          checked.textContent = localTime.format(new Date(serverAt));
+        }
+        tick();
         deadlines.forEach(node => {
           node.dateTime = data[node.dataset.progressDeadline];
           node.textContent = localTime.format(new Date(node.dateTime));
@@ -179,12 +230,14 @@
     window.addEventListener("pagehide", () => {
       closed = true;
       window.clearTimeout(timer);
+      window.clearInterval(ticker);
       if (controller) controller.abort();
     });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && controller) controller.abort();
       if (!document.hidden) refresh();
     });
+    tick();
     refresh();
   });
 

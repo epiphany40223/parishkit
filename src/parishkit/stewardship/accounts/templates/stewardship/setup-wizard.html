@@ -1,0 +1,13 @@
+{% load i18n %}{% if wizard %}
+<nav class="setup-stepper" aria-labelledby="setup-stepper-heading">
+<h2 id="setup-stepper-heading" class="setup-stepper-heading">{% translate "Setup steps" %}</h2>
+<p class="setup-progress"><label for="setup-progress-bar">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</label>
+<progress id="setup-progress-bar" max="{{ wizard.total }}" value="{{ wizard.completed }}">{{ wizard.completed }} / {{ wizard.total }}</progress></p>
+<ol class="setup-steps">{% for step in wizard.steps %}
+<li class="setup-step setup-step-{{ step.state }}{% if step.current %} setup-step-current{% endif %}">{% if step.url %}<a href="{{ step.url }}"{% if step.current %} aria-current="step"{% endif %}>{% else %}<span class="setup-step-box"{% if step.current %} aria-current="step"{% endif %}>{% endif %}<span class="setup-step-number" aria-hidden="true">{% if step.state == 'done' %}&#10003;{% else %}{{ step.number }}{% endif %}</span>
+<span class="setup-step-label"><span class="setup-sr-only">{% blocktranslate trimmed with number=step.number %}Step {{ number }}:{% endblocktranslate %} </span>{{ step.label }}</span>
+<span class="setup-step-status">{% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}</span>{% if step.url %}</a>{% else %}</span>{% endif %}</li>{% endfor %}
+</ol>
+<p class="setup-overview-link"><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
+</nav>
+{% endif %}

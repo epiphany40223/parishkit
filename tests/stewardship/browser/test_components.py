@@ -122,6 +122,58 @@ def test_setup_progress_terminal_response_stops_automatic_posts(page, component_
     assert submitted.value.method == "POST"
 
 
+def test_setup_progress_shows_liveness_then_offers_continue(page, component_origin):
+    """A 0-of-0 download still shows activity; completion reveals Continue."""
+    page.clock.install(time=NOW)
+    state = {"done": False}
+
+    def respond(route):
+        """First a healthy download with unknown totals, then a finished load."""
+        done = state["done"]
+        route.fulfill(
+            json={
+                "server_now": NOW.isoformat(),
+                "task_id": urlsplit(route.request.url).path.split("/")[-1],
+                "task_state": "succeeded" if done else "running",
+                "setup_state": "collecting" if done else "loading",
+                "phase": "validating" if done else "fetching",
+                "active": not done,
+                "current": 0,
+                "total": 0,
+                "started_at": (NOW - timedelta(seconds=75)).isoformat(),
+                "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
+                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
+                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
+                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
+            }
+        )
+
+    page.route("**/admin/setup/source/*?format=json", respond)
+    page.goto(component_origin + "/setup-source-progress")
+    page.wait_for_function(
+        "() => document.querySelector('[data-progress-elapsed]')"
+        ".textContent.includes('1 min')"
+    )
+    assert (
+        "Downloading Families" in page.locator("[data-progress-summary]").inner_text()
+    )
+    assert "3 seconds ago" in page.locator("[data-progress-quiet]").inner_text()
+    assert page.locator("[data-progress-bar]").evaluate(
+        "bar => !bar.hasAttribute('value')"
+    )
+    assert page.locator("[data-progress-done]").is_hidden()
+    state["done"] = True
+    with page.expect_response("**/admin/setup/source/*?format=json"):
+        page.clock.fast_forward(15000)
+    page.wait_for_function(
+        "() => !document.querySelector('[data-progress-done]').hidden"
+    )
+    assert (
+        "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
+    )
+    assert page.get_by_role("link", name="Continue to the next step").is_visible()
+
+
 def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
     """Check the allowed destination with first-request interception only.
 

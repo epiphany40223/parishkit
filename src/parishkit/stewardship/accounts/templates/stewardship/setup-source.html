@@ -1,0 +1,27 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Load parish data" %} — {% translate "Initial setup" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
+{% block content %}
+{% include 'stewardship/setup-wizard.html' %}
+<h1>{% translate "Load parish data" %}</h1>
+<p class="setup-intro">{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes about two to three minutes; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>
+{% include 'stewardship/setup-deadlines.html' %}
+{% if draft.source_task_id %}
+{% if draft.status.state == 'loading' %}
+<p class="notice" role="status">{% translate "The parish data load is running. Keep its progress page open until it finishes." %}</p>
+{% else %}
+<p class="notice" role="status">{% translate "Parish data is loaded. The first campaign can now use its Ministries and funds." %}</p>
+{% endif %}
+<p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "View the load progress" %}</a></p>
+{% include 'stewardship/setup-navigation.html' %}
+{% elif source_step.state == 'blocked' %}
+<p class="notice" role="status">{{ source_step.status }} <a href="{{ source_step.fix_url }}">{% blocktranslate trimmed with step=source_step.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
+{% include 'stewardship/setup-navigation.html' %}
+{% else %}
+<form method="post" action="{% url 'admin:setup' %}" class="panel">{% csrf_token %}
+<input type="hidden" name="action" value="load"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
+<p>{% translate "Save the parish profile and ParishSoft credential before loading the source data. A normal load takes about two to three minutes. Keep the progress page open until it completes." %}</p>
+{% translate "Load parish data" as submit %}{% include 'stewardship/setup-navigation.html' %}
+</form>
+{% endif %}
+{% endblock %}

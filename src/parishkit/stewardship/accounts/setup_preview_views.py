@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS, page_slots, sample_render
 from .setup_preview import prepare_preview
-from .setup_views import ERRORS, _checked, _closed, _context, error_response
+from .setup_views import ERRORS, _checked, _closed, _context, page_error
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -46,7 +46,7 @@ def setup_preview(request):
         response = render(
             request,
             "stewardship/setup-preview.html",
-            _context(preview.draft)
+            _context(preview.draft, "preview")
             | {
                 "parish": parish,
                 "campaign": campaign,
@@ -67,4 +67,4 @@ def setup_preview(request):
         )
         return _checked(request, service, response, preview.draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "preview")
