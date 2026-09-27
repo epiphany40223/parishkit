@@ -16,7 +16,7 @@
 {% if not total %}<p>{% translate "This captured interval contained no new actionable requests or corrections. Delivery completion is tracked separately." %}</p>{% endif %}
 {% for row in rows %}
 <section class="panel">
-<h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|number }}</h2>
+<h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
 <p>{% translate "Submitted" %}: <time datetime="{{ row.value.submitted_at|date:'c' }}" data-local-instant>{{ row.value.submitted_at|date:'c' }}</time></p>
 <dl><dt>{% translate "Status at capture" %}</dt><dd>{{ row.captured }}</dd>
 <dt>{% translate "Current status" %}</dt><dd>{{ row.current }}</dd></dl>
