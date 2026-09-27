@@ -34,7 +34,7 @@
 <p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports, cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
 {% if status.state == 'ready' %}<form method="post" action="{% url 'admin:report_export_download' job.pk %}">{% csrf_token %}<button type="submit">{% translate "Download export" %}</button></form>{% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
 {% if status.state == 'failed' %}<form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>{% endif %}
 {% if status.state == 'expired' %}
 <p>{% translate "The generated file has expired. Its request metadata remains. Regeneration creates a new request using the same retained inputs, format and timezone, with a new request time and current parish branding. It does not substitute current campaign data." %}</p>
