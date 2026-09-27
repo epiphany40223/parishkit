@@ -1,7 +1,10 @@
 """Exact source-load progress; GET is passive and visible-page POST is bounded."""
 
+from datetime import datetime
+
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.web.contracts import filters
@@ -11,6 +14,53 @@ from .setup_drafts import view_draft
 from .setup_progress import source_progress
 from .setup_views import ERRORS, _checked, error_response, page_error
 from .setup_wizard import wizard_for
+
+# Plain-language status for each observable load situation. The page renders
+# all of them (hidden) so the polling script can switch text without inventing
+# its own wording; ``summary`` picks the same key on the server.
+SUMMARIES = {
+    "queued": _("Waiting for the background loading service to pick up the job."),
+    "retry_wait": _(
+        "ParishSoft did not answer in time. The load waits briefly and then "
+        "retries automatically; nothing needs to be done."
+    ),
+    "fetching": _(
+        "Downloading Families, Members, Ministries and funds from ParishSoft. "
+        "The totals are not known until the download finishes, so the count stays "
+        "at zero for now. This is normal and usually takes one to three minutes."
+    ),
+    "staging": _(
+        "Saving the downloaded records for this setup. The count shows how many "
+        "records have been saved so far."
+    ),
+    "validating": _("Checking that the saved records are complete and consistent."),
+    "working": _("The load is running."),
+    "done": _("Parish data is loaded. Continue to the next setup step."),
+    "failed": _("The load did not finish."),
+}
+
+
+def summary(progress):
+    """Choose the plain-language status key for one progress observation."""
+    if progress["setup_state"] == "expired" or progress["task_state"] in {
+        "failed",
+        "cancelled",
+        "abandoned",
+    }:
+        return "failed"
+    if progress["task_state"] == "succeeded" or progress["setup_state"] == "collecting":
+        return "done"
+    if progress["task_state"] in {"queued", "retry_wait"}:
+        return progress["task_state"]
+    return progress["phase"] if progress["phase"] in SUMMARIES else "working"
+
+
+def _seconds_since(now, instant):
+    """Whole seconds from an ISO instant to the server's observation time."""
+    if not instant:
+        return None
+    delta = datetime.fromisoformat(now) - datetime.fromisoformat(instant)
+    return max(0, int(delta.total_seconds()))
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -39,6 +89,14 @@ def setup_source_progress(request, task_id):
                 {
                     "progress": progress,
                     "wizard": _wizard(request, service),
+                    "status_key": summary(progress),
+                    "summaries": SUMMARIES,
+                    "elapsed": _seconds_since(
+                        progress["server_now"], progress["started_at"]
+                    ),
+                    "quiet": _seconds_since(
+                        progress["server_now"], progress["heartbeat_at"]
+                    ),
                 },
             )
         return _checked(request, service, response)

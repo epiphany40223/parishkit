@@ -88,6 +88,12 @@ def source_progress(request, service, task_id, *, renew=False):
             "server_now": now.isoformat(),
             "task_id": str(task.pk),
             "task_state": task.state,
+            # Liveness hints for the page: when the load began and when its
+            # worker last reported, so a 0-of-0 download visibly progresses.
+            "started_at": task.created_at.isoformat(),
+            "heartbeat_at": (
+                task.heartbeat_at.isoformat() if task.heartbeat_at else None
+            ),
             "setup_state": attempt.state,
             "phase": task.phase,
             "current": task.progress_current,

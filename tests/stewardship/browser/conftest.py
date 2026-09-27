@@ -37,6 +37,7 @@ from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
+from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES
 from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -764,6 +765,8 @@ def component_origin():
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
                 },
+                "summaries": SUMMARIES,
+                "status_key": "fetching",
             },
         ),
         (
