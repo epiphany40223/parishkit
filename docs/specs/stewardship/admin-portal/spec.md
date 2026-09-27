@@ -120,6 +120,15 @@ whose prerequisites are unmet explains what is missing and links the step
 that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
 errors remain for polling and command endpoints.
 
+Review, Test email, Test Slack (only when Slack is on) and Finish setup are
+ordinary steps with the same action row, not a hub: the Review page links no
+later step from its body and its primary action is Continue to the email
+test. On each test page the primary action sends the test until a test of the
+current draft revision is accepted; then it is Continue to the next step,
+with sending another test kept as a secondary button. Finish setup's primary
+action is "Check readiness and finish setup", which still requires accepted
+tests of the exact reviewed revision.
+
 The first-campaign content page can fill every empty applicable page and email
 slot with the same default text in one versioned save; it never replaces a slot
 the Admin already saved, and each default passes the normal content validation
