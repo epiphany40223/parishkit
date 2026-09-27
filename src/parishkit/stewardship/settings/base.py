@@ -37,6 +37,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "parishkit.stewardship.accounts.sessions.NamespacedCsrfMiddleware",
+    # Inside CSRF/sessions so a rendered error page's token and cookies persist.
+    "parishkit.stewardship.web.error_pages.BrowserErrorMiddleware",
     "parishkit.stewardship.accounts.access_gate.AccessGateMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

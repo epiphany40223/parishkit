@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  Browser rendering of a typed error response. Every message is a closed,
+  server-owned string; nothing submitted or raised is ever shown here.
+{% endcomment %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{{ title }}</h1>
+  <div class="notice notice-error" role="alert"><ul>{% for message in error_messages %}<li>{{ message }}</li>{% endfor %}</ul></div>
+  <p>{{ guidance }}</p>
+  {% if sign_in %}<p><a href="{{ sign_in }}">{% translate "Sign in again" %}</a></p>{% endif %}
+  <p class="actions">{% if back %}<a href="{{ back }}">{% translate "Return to the previous page" %}</a>{% endif %}<a href="{{ home }}">{{ home_label }}</a></p>
+</section>{% endblock %}
