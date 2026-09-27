@@ -718,7 +718,7 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
-    assert "Step 3 of 15: Testing recipient" in stepper.inner_text()
+    assert "Step 4 of 15: Testing recipient" in stepper.inner_text()
     assert "1 of 15 steps completed" in stepper.inner_text()
     # Far shorter than fifteen stacked cards, even at phone width.
     assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)

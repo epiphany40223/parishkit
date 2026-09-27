@@ -32,13 +32,16 @@ class Page:
         return reverse(self.route, args=self.args)
 
 
-# Order matters twice over. Credential pages accept input only within five
-# minutes of the Google sign-in (sessions.require_fresh), and signing in again
-# ends this setup attempt, so every credential and the public settings its
-# staging depends on (mail and Testing for Google Workspace, Slack for its
-# token) come first. Then the source load, which needs the Parish profile and
-# the ParishSoft connection, precedes the first campaign that needs its catalog.
+# The Parish profile comes first: it tells the administrator, before anything
+# technical, that they are configuring their own parish. The credential pages
+# follow, each right after the public settings its staging depends on (mail
+# and Testing for Google Workspace, Slack for its token). They no longer have
+# to race the five-minute fresh sign-in window: a stale sign-in is offered
+# "Confirm with Google", which keeps this setup. The source load then needs
+# the Parish profile and ParishSoft connection, and precedes the first
+# campaign that needs its catalog.
 PAGES = (
+    Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page(
         "parishsoft",
         _("ParishSoft connection"),
@@ -57,7 +60,6 @@ PAGES = (
     Page(
         "slack_credential", _("Slack connection"), "admin:setup_credential", ("slack",)
     ),
-    Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("source", _("Load parish data"), "admin:setup_source"),
     Page("branding", _("Parish logo"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
@@ -182,7 +184,7 @@ def _blocker(key, draft, done):
         return _("Available after the parish data load finishes."), "source"
     requirements = {
         "source": (
-            ("parishsoft", "parish"),
+            ("parish", "parishsoft"),
             _("Save the Parish profile and ParishSoft connection first."),
         ),
         "google_workspace": (

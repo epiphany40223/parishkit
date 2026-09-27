@@ -75,9 +75,9 @@ def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
             "/admin/setup/credentials/slack"
         )
         disabled = {"channel_id": ""}
-        assert save(browser, "slack", disabled)["Location"] == "/admin/setup/parish"
+        assert save(browser, "slack", disabled)["Location"] == "/admin/setup/source"
         assert save(browser, "parish", VALUES["parish"])["Location"] == (
-            "/admin/setup/source"
+            "/admin/setup/credentials/parishsoft"
         )
 
 
@@ -193,8 +193,8 @@ def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google)
     with web_login():
         browser = started()
         body = browser.get("/admin/setup").content
-        assert b'href="/admin/setup/credentials/parishsoft"' in body
-        assert b'href="/admin/setup/parish"' not in body
+        assert b'href="/admin/setup/parish"' in body
+        assert b'href="/admin/setup/credentials/parishsoft"' not in body
         save(browser, "mail", VALUES["mail"])
         body = browser.get("/admin/setup").content
         assert b'href="/admin/setup/mail"' in body  # completed stays reachable

@@ -20,10 +20,10 @@ from .test_setup_expiry_postgresql import sweep
 pytestmark = pytest.mark.django_db(transaction=True)
 # Save and continue goes to the next page of the wizard's one ordered list.
 NEXT = {
-    "parish": "/admin/setup/source",
+    "parish": "/admin/setup/credentials/parishsoft",
     "access": "/admin/setup/campaign",
     "mail": "/admin/setup/testing",
-    "slack": "/admin/setup/parish",
+    "slack": "/admin/setup/source",
     "testing": "/admin/setup/credentials/google_workspace",
 }
 

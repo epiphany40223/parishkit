@@ -86,13 +86,15 @@ campaign configuration before making the system configured:
 7. Exact preview/readiness summary and final confirmation.
 
 The wizard presents these as one ordered sequence of pages, defined once in
-code. Credential pages come first because, like
+code. The Parish profile comes first, so the administrator starts by
+describing their own parish. The credential pages follow, each immediately
+after the public settings its staging depends on (outgoing mail and Testing
+recipient for Google Workspace, Slack settings for the Slack token). Like
 [secret replacement](#parish-and-integration-configuration), they require fresh
-Google authentication (a sign-in less than five minutes old), each immediately
-after the public settings its staging depends on (outgoing
-mail and Testing recipient for Google Workspace, Slack settings for the Slack
-token). The Parish profile and the source load follow, then the pages that
-need the loaded catalog, then review, the email and Slack tests and the final
+Google authentication (a sign-in less than five minutes old); an older sign-in
+is offered "Confirm with Google", which keeps the setup, so the order does not
+need to race that window. The source load follows, then the pages that need
+the loaded catalog, then review, the email and Slack tests and the final
 confirmation. Every page shows a progress stepper: an ordered list naming each
 applicable step as completed, current, not done, optional or not yet available
 with the reason, where only available steps are links. Each page has Back and

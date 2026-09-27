@@ -34,7 +34,7 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
     """Templates and redirects can rely on each key naming exactly one page."""
     assert len({page.key for page in PAGES}) == len(PAGES)
     assert all(page.url.startswith("/admin/setup") for page in PAGES)
-    assert PAGES[0].url == "/admin/setup/credentials/parishsoft"
+    assert PAGES[0].url == "/admin/setup/parish"
 
 
 @pytest.mark.parametrize("state", [SetupState.FROZEN, SetupState.EXPIRED])
@@ -46,23 +46,23 @@ def test_no_stepper_outside_editable_or_loading_attempts(state):
 
 def test_prerequisites_block_later_pages_until_saved():
     """Pages needing the catalog, mail settings or campaign are not linked yet."""
-    wizard = build(draft(), "parishsoft")
+    wizard = build(draft(), "parish")
     shown = states(wizard)
     assert "slack_credential" not in shown and "shares" not in shown
     for key in ("source", "google_workspace", "campaign", "schedules", "preview"):
         assert shown[key] == "blocked", key
         assert wizard.step(key).url is None
         assert wizard.step(key).fix_url.startswith("/admin/setup")
-    assert shown["parishsoft"] == "todo"
-    assert wizard.step("parishsoft").url is not None
+    assert shown["parish"] == "todo"
+    assert wizard.step("parish").url is not None
     # Later steps wait for the first unfinished one instead of being skipped to.
-    assert shown["parish"] == "locked" and shown["mail"] == "locked"
+    assert shown["parishsoft"] == "locked" and shown["mail"] == "locked"
     assert wizard.step("mail").url is None
-    assert wizard.step("mail").fix_url == "/admin/setup/credentials/parishsoft"
-    assert wizard.step("source").fix_url == "/admin/setup/credentials/parishsoft"
+    assert wizard.step("mail").fix_url == "/admin/setup/parish"
+    assert wizard.step("source").fix_url == "/admin/setup/parish"
     assert wizard.previous is None
-    assert wizard.next.key == "mail"
-    assert wizard.step("parishsoft").current
+    assert wizard.next.key == "parishsoft"
+    assert wizard.step("parish").current
     assert wizard.completed == 0 and wizard.total == len(wizard.steps)
 
 
@@ -168,7 +168,7 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
     # Compact summary: the current step by number and name, and the count.
-    assert "Step 3 of 15:" in html and "<strong>Testing recipient</strong>" in html
+    assert "Step 4 of 15:" in html and "<strong>Testing recipient</strong>" in html
     assert "1 of 15 steps completed" in html
     # The full list is collapsed by default; the decorative track is hidden.
     assert '<details class="setup-stepper-list">' in html
