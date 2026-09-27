@@ -168,9 +168,9 @@ def test_empty_search_is_clear_and_nonmutating(auth_service, google, query):
 @pytest.mark.parametrize(
     "query",
     [
-        "?page=0",
-        "?page=2",
         "?page=word",
+        "?page=-1",
+        "?size=7",
         "?state=bad",
         "?state=all&state=active",
         "?extra=1",
@@ -194,7 +194,8 @@ def test_invalid_filters_fail_closed(auth_service, google, query):
             "active": "no",
             "actor": "override",
         },
-        {"action": "preview", "ministry_duid": ["4", "5"], "active": "no"},
+        {"action": "preview", "ministry_duid": ["4", "999"], "active": "no"},
+        {"action": "preview", "active": "no"},
         {"action": "preview", "ministry_duid": "4", "active": "maybe"},
         {"action": "preview", "ministry_duid": "0", "active": "no"},
         {"action": "unknown"},
@@ -278,3 +279,62 @@ def test_real_web_role_can_use_catalog_and_intake_without_source_write_grants(
         response = post(browser, {"action": "confirm", "preview": token})
         assert response.status_code == 302
         assert browser.get(response["Location"]).status_code == 200
+
+
+def two_ministries():
+    """The standard source plus a second Ministry without members."""
+    data = source()
+    data.ministry_types[5] = {"id": 5, "name": "Lectors"}
+    data.ministry_type_memberships[5] = {"membership": []}
+    return data
+
+
+def test_ministry_table_pages_and_keeps_filters(auth_service, google):
+    """The shared navigator pages the table and a page past the end shows the last."""
+    publish(two_ministries())
+    browser, _ = signed_in()
+    body = browser.get(URL + "?size=25&page=9").content.decode()
+    assert "Showing 1–2 of 2" in body and 'name="page" value="1"' in body
+    assert "data-select-all" in body and "data-bulk-action" in body
+    body = browser.get(URL + "?q=5&state=active&size=all").content.decode()
+    assert "Lectors" in body and "Choir" not in body
+    assert 'name="q" value="5"' in body
+
+
+def test_bulk_change_is_one_request_and_skips_unchanged_rows(auth_service, google):
+    """Selected Ministries change together through one audited request."""
+    publish(two_ministries())
+    browser, _ = signed_in()
+    response = post(
+        browser, {"action": "preview", "ministry_duid": ["4", "5"], "active": "no"}
+    )
+    assert response.status_code == 200
+    assert b"Inactivate 2 Ministries" in response.content
+    token = unescape(
+        re.search(r'name="preview" value="([^"]+)"', response.content.decode()).group(1)
+    )
+    assert len(signing.loads(token, salt=SALT)["patch"]) == 2
+    confirmed = post(browser, {"action": "confirm", "preview": token})
+    assert confirmed.status_code == 302
+    request = ConfigurationChangeRequest.objects.get()
+    install_request(auth_service.store, request_id=request.pk, correlation_id=uuid4())
+    runtime = SystemConfiguration.objects.get()
+    assert set(
+        MinistryActivity.objects.filter(
+            configuration_id=runtime.active_configuration_id
+        ).values_list("ministry_duid", "active")
+    ) == {(4, False), (5, False)}
+    again = post(
+        browser, {"action": "preview", "ministry_duid": ["4", "5"], "active": "no"}
+    )
+    assert b"Nothing to change" in again.content
+    assert b'name="preview"' not in again.content
+
+
+def test_empty_selection_explains_itself(auth_service, google):
+    """A bulk action without a selection re-shows the table with a plain message."""
+    publish(source())
+    browser, _ = signed_in()
+    response = post(browser, {"action": "preview", "active": "no"})
+    assert response.status_code == 400
+    assert b"Select at least one Ministry" in response.content

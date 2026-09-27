@@ -205,6 +205,36 @@ tbody tr:last-child > * { border-bottom: 0; }
 tbody tr:hover { background: #f8faf9; }
 tbody th { font-weight: 600; }
 td > :last-child { margin-bottom: 0; }
+/* Shared Admin tables (web/tables.py): a compact data grid for desktop use,
+   a selection column, a bulk-action bar and a row navigator above and below. */
+.data-table th, .data-table td { padding: .5rem .85rem; vertical-align: middle; }
+.data-table td > form, .data-table td > button { margin: 0; }
+.data-table button { margin-block: 0; padding: .35rem .85rem; min-height: 36px; }
+.data-table .select-col { width: 2.75rem; }
+.data-table input[type=checkbox] { width: 1.2rem; height: 1.2rem; vertical-align: middle; }
+.data-table .numeric { text-align: end; }
+.data-table tbody tr:has(input[data-select-row]:checked) { background: var(--accent-soft); }
+.status-badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.status-badge-on { background: var(--accent-soft); border-color: #b9d7d2; color: var(--accent-strong); }
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }
+.bulk-bar button { margin: 0; }
+.bulk-count { color: var(--muted); font-weight: 600; }
+main nav.table-nav { justify-content: space-between; margin-block: .75rem; font-size: .925rem; }
+.table-nav .table-count { margin: 0; }
+main nav.table-nav form { gap: .5rem .75rem; }
+.table-nav label { display: inline-flex; align-items: center; gap: .5rem; margin: 0; font-weight: 500; }
+.table-nav select, .table-nav input[type=number] { display: inline-block; width: auto; min-height: 36px; padding-block: .3rem; }
+.table-nav select:not([multiple]):not([size]) { padding-right: 2.25rem; }
+.table-nav input[type=number] { width: 5.5rem; }
+.table-nav button { margin: 0; padding: .35rem .9rem; min-height: 36px; }
+main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 36px; }
+.table-nav-disabled { display: inline-block; border: 1px solid var(--border); border-radius: var(--radius-small); color: var(--muted); }
+/* Compact filter bars: short fields share one row on wider screens. */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
+.filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
+.filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
+.filter-bar > div.short { flex: 0 1 9rem; }
+.filter-bar button { margin: 0; }
 
 /* Progress */
 progress { width: 100%; height: .85rem; appearance: none; border: 0; border-radius: 999px; background: #e3e8e7; color: var(--accent); accent-color: var(--accent); overflow: hidden; }

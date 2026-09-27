@@ -602,6 +602,23 @@ def test_ministry_preview_preserves_operational_indicators(page, component_origi
         assert page.get_by_role("complementary", name="Testing mode").is_visible()
 
 
+def test_shared_table_selection_enables_bulk_actions(page, component_origin):
+    """Select all chooses every row on the page and enables the bulk buttons."""
+    page.goto(component_origin + "/ministries")
+    review = page.get_by_role("button", name="Review inactivation")
+    assert review.is_disabled()
+    page.get_by_role("button", name="Select all").click()
+    rows = page.locator("input[data-select-row]")
+    assert rows.evaluate_all("nodes => nodes.every(node => node.checked)")
+    assert page.get_by_text("2 selected").is_visible() and review.is_enabled()
+    page.get_by_role("button", name="Clear selection").click()
+    assert review.is_disabled()
+    rows.first.check()
+    header = page.get_by_label("Select every Ministry on this page")
+    assert header.evaluate("node => node.indeterminate")
+    assert page.get_by_text("Showing 1–2 of 2").first.is_visible()
+
+
 def test_campaign_modules_hide_and_disable_unselected_fields(page, component_origin):
     """Conditional groups cannot accidentally post data from a disabled module."""
     page.goto(component_origin + "/campaign-settings")

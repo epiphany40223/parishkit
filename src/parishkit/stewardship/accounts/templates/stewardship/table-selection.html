@@ -1,0 +1,11 @@
+{% load i18n %}{% comment %}
+  Shared selection controls for an Admin table with bulk actions. Include it
+  first inside the table's <div class="bulk-bar">, then add the page's own
+  action buttons, each marked data-bulk-action. The whole group (bar and
+  table) sits inside one element marked data-select-table. ui-v1.js reveals
+  the Select all button, wires it with the header checkbox (data-select-all)
+  and the row checkboxes (data-select-row), shows the selected count, and
+  enables the action buttons only while at least one row is selected. Without
+  script every control still submits and the server validates the selection.
+{% endcomment %}<button type="button" class="button-secondary" data-select-all-button hidden>{% translate "Select all" %}</button>
+<span class="bulk-count" data-selected-count role="status" aria-live="polite"></span>
