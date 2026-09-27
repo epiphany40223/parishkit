@@ -5,6 +5,10 @@ from uuid import uuid4
 from parishkit.stewardship.accounts.authority import parse_version
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 
+# The synthetic parish timezone. A regression test swaps in a legacy alias,
+# which Debian's PostgreSQL tzdata no longer ships, to prove SQL normalizes it.
+PARISH_TIMEZONE = "America/New_York"
+
 
 def configuration_document():
     """Create fresh IDs and public synthetic metadata without shared mutation."""
@@ -19,7 +23,7 @@ def configuration_document():
                     "values": {
                         "name": "Example Parish",
                         "website": "https://parish.example.org/",
-                        "timezone": "America/New_York",
+                        "timezone": PARISH_TIMEZONE,
                         "phone": "+12025550123",
                         "branding": {
                             name: str(uuid4())

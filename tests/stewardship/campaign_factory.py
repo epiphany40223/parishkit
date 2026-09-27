@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+from . import configuration_factory
+
 
 def campaign(**overrides):
     """A complete census-only draft in the synthetic parish timezone."""
@@ -10,7 +12,7 @@ def campaign(**overrides):
         "values": {
             "name": "Annual campaign",
             "year_label": "2027",
-            "timezone": "America/New_York",
+            "timezone": configuration_factory.PARISH_TIMEZONE,
             "start_date": "2026-10-01",
             "end_date": "2026-10-31",
             "modules": ["census"],

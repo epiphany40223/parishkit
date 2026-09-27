@@ -11,6 +11,7 @@ from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import MinistryQuery, ministry_page
 
+from .. import configuration_factory
 from ..campaign_factory import campaign as campaign_record
 from ..census_factory import member
 from ..policy_factory import address, assignment
@@ -462,3 +463,17 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
         response, body = read(admin, unowned)
         assert response.status_code == 403 and "Retry-After" not in response
         assert b"Unassigned campaign" not in body
+
+
+def test_legacy_timezone_alias_submits_and_reports(monkeypatch, request):
+    """A catalog alias such as US/Eastern works although PostgreSQL lacks it.
+
+    Debian's PostgreSQL image moved legacy zone links to tzdata-legacy, so SQL
+    must normalize stored names before ``AT TIME ZONE``. Submission (the
+    ``submitted_on`` guard) and the dated report filters both exercise that.
+    """
+    monkeypatch.setattr(configuration_factory, "PARISH_TIMEZONE", "US/Eastern")
+    harness = setup(request.getfixturevalue("response_service"))
+    assert [row["duid"] for row in page(harness)["summaries"]] == [4, 9]
+    rows = page(harness, ministry=9, start="2000-01-01", end="2099-12-31")["rows"]
+    assert rows
