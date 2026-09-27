@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from parishkit.stewardship.observability import (
+    DEBUG_LOGGING_VARIABLE,
     CorrelationMiddleware,
     Event,
     SafeJsonFormatter,
@@ -219,3 +220,39 @@ def test_middleware_restores_context_on_failure(caplog):
     with caplog.at_level(logging.INFO):
         emit(Event.CONFIG_REJECTED)
     assert caplog.records[-1].extra["correlation_id"] is None
+
+
+def _failing_record():
+    """An error record with a formatted message and a live exception."""
+    try:
+        raise RuntimeError("synthetic-detail")
+    except RuntimeError:
+        import sys
+
+        info = sys.exc_info()
+    return logging.LogRecord(
+        "synthetic.logger", logging.ERROR, "path", 1, "load %s", ("failed",), info
+    )
+
+
+def test_debug_details_stay_out_unless_explicitly_enabled(monkeypatch):
+    """Anything but exactly "1" keeps the redacted production output."""
+    for value in (None, "0", "true", "yes"):
+        if value is None:
+            monkeypatch.delenv(DEBUG_LOGGING_VARIABLE, raising=False)
+        else:
+            monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, value)
+        output = SafeJsonFormatter().format(_failing_record())
+        assert "synthetic-detail" not in output
+        assert "debug" not in json.loads(output)["extra"]
+
+
+def test_debug_logging_keeps_message_logger_and_traceback(monkeypatch):
+    """Pre-launch debugging shows what failed, alongside the reviewed event."""
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    output = json.loads(SafeJsonFormatter().format(_failing_record()))
+    assert output["message"] == "unstructured_log_suppressed"
+    debug = output["extra"]["debug"]
+    assert debug["logger"] == "synthetic.logger"
+    assert debug["message"] == "load failed"
+    assert "RuntimeError: synthetic-detail" in debug["exception"]

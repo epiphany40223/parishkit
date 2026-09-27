@@ -56,8 +56,13 @@ class FieldError:
 
 
 def validation_response(errors, *, status=400):
-    """Return safe JSON to enhanced clients; HTML views own their error rendering."""
-    if status not in {400, 403, 409, 422, 503}:
+    """Return safe JSON to enhanced clients; HTML views own their error rendering.
+
+    The typed errors ride on the response so the browser-error middleware can
+    show the same closed messages as a page when a person, not a script,
+    made the request.
+    """
+    if status not in {400, 403, 404, 409, 422, 503}:
         raise ValueError("Unsupported validation status.")
     if (
         type(errors) not in {tuple, list}
@@ -69,6 +74,7 @@ def validation_response(errors, *, status=400):
         {"errors": [item.as_dict() for item in errors]}, status=status
     )
     response.stewardship_safe_error = True
+    response.stewardship_errors = tuple(errors)
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"

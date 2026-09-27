@@ -16,7 +16,7 @@ from .setup_mail_views import LABELS, _status_data
 from .setup_notification_models import SetupSlackDelivery
 from .setup_notifications import request_notification
 from .setup_preview import PREVIEW_SALT, prepare_preview
-from .setup_views import ERRORS, _checked, _closed, _context, error_response
+from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 
 SLACK_LABELS = LABELS | {"queued": _("Awaiting Slack installer")}
 
@@ -66,7 +66,7 @@ def setup_notification(request):
         response = render(
             request,
             "stewardship/setup-notification.html",
-            _context(preview.draft)
+            _context(preview.draft, "slack_test")
             | _data(preview.draft)
             | {
                 "form": form,
@@ -76,9 +76,10 @@ def setup_notification(request):
         )
         return _checked(request, service, response, preview.draft)
     except signing.BadSignature:
-        return error_response(ValueError("The setup preview has expired or changed."))
+        error = ValueError("The setup preview has expired or changed.")
+        return page_error(request, error, "slack_test")
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "slack_test")
 
 
 @require_http_methods(["GET", "HEAD"])

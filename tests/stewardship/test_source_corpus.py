@@ -347,3 +347,19 @@ def test_missing_family_group_lookup_is_not_treated_as_an_active_group():
     data.family_groups.clear()
     with pytest.raises(InvalidSourcePayload, match="group reference"):
         normalize_core(data, as_of=TODAY)
+
+
+def test_negative_parish_family_number_is_retained():
+    """ParishSoft assigns some Families a negative parish-local familyID."""
+    data = source()
+    data.families[1]["familyID"] = -129
+    corpus = normalize_core(data, as_of=TODAY)
+    assert corpus["family"]["1"]["familyID"] == -129
+
+
+@pytest.mark.parametrize("field", ["registeredOrganizationID", "famGroupID"])
+def test_negative_family_references_are_still_invalid(field):
+    data = source()
+    data.families[1][field] = -1
+    with pytest.raises(InvalidSourcePayload, match="reference metadata"):
+        normalize_core(data, as_of=TODAY)

@@ -1038,6 +1038,7 @@ def load_families_and_members(
     include_deceased: bool = False,
     load_contributions: bool | str = False,
     retain_empty_families: bool = False,
+    load_workgroups: bool = True,
 ) -> ParishSoftData:
     """Load, cross-link, and filter a full ParishSoft dataset for one org.
 
@@ -1056,6 +1057,9 @@ def load_families_and_members(
       - ``load_contributions``: when truthy, also load funds, pledges, and
         contributions; a string value is used as the contribution start date,
         otherwise giving from one year ago is loaded.
+      - ``load_workgroups``: when False, skip family and member workgroups and
+        their memberships (one request per workgroup, minutes for a large
+        parish) and return them empty, for callers that never use them.
 
     This is the central ParishSoft aggregation path, so it keeps the
     individual load and link steps explicit for easier operational
@@ -1063,6 +1067,8 @@ def load_families_and_members(
     """
     if type(retain_empty_families) is not bool:
         raise ConfigError("ParishSoft retain_empty_families must be boolean")
+    if type(load_workgroups) is not bool:
+        raise ConfigError("ParishSoft load_workgroups must be boolean")
     LOGGER.info("Loading full ParishSoft family/member dataset")
     org_id = client.validate_organization()
     funds: dict[int, dict[str, Any]] = {}
@@ -1085,15 +1091,21 @@ def load_families_and_members(
     families = load_families(client, org_id)
     family_groups = load_family_groups(client)
     members = load_members(client, org_id)
-    family_workgroups = load_family_workgroups(client)
-    family_workgroup_memberships = load_family_workgroup_memberships(
-        client, family_workgroups
-    )
+    family_workgroups: dict[int, dict[str, Any]] = {}
+    family_workgroup_memberships: dict[int, dict[str, Any]] = {}
+    if load_workgroups:
+        family_workgroups = load_family_workgroups(client)
+        family_workgroup_memberships = load_family_workgroup_memberships(
+            client, family_workgroups
+        )
     member_contactinfos = load_member_contactinfos(client, org_id)
-    member_workgroups = load_member_workgroups(client)
-    member_workgroup_memberships = load_member_workgroup_memberships(
-        client, member_workgroups
-    )
+    member_workgroups: dict[int, dict[str, Any]] = {}
+    member_workgroup_memberships: dict[int, dict[str, Any]] = {}
+    if load_workgroups:
+        member_workgroups = load_member_workgroups(client)
+        member_workgroup_memberships = load_member_workgroup_memberships(
+            client, member_workgroups
+        )
     ministry_types = load_ministry_types(client)
     ministry_type_memberships = load_ministry_type_memberships(client, ministry_types)
     LOGGER.info("Cross-linking ParishSoft family/member dataset")

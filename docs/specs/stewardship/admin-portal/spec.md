@@ -29,7 +29,10 @@ All login and callback denial pages preserve the retry path while honoring
 `429`/`Retry-After`; they never reveal which authorization check failed.
 
 If bootstrap exists but setup is incomplete, an Admin is routed only to the
-setup wizard. A non-Admin sees "The system is not configured yet" and can only
+setup wizard, and the Admin navigation offers only the wizard. The read-only
+background-work list, task detail and header counts stay available so the
+Admin can watch the setup's own tasks; their commands stay closed until setup
+completes. A non-Admin sees "The system is not configured yet" and can only
 log out/retry. Family routes behave similarly. Once configured, a successful
 login returns to a validated local destination or the role-appropriate home;
 open redirects are prohibited.
@@ -82,6 +85,24 @@ campaign configuration before making the system configured:
    recipient.
 7. Exact preview/readiness summary and final confirmation.
 
+The wizard presents these as one ordered sequence of pages, defined once in
+code. Credential pages come first because, like
+[secret replacement](#parish-and-integration-configuration), they require fresh
+Google authentication (a sign-in less than five minutes old), each immediately
+after the public settings its staging depends on (outgoing
+mail and Testing recipient for Google Workspace, Slack settings for the Slack
+token). The Parish profile and the source load follow, then the pages that
+need the loaded catalog, then review, the email and Slack tests and the final
+confirmation. Every page shows a progress stepper: an ordered list naming each
+applicable step as completed, current, not done, optional or not yet available
+with the reason, where only available steps are links. Each page has Back and
+Save-and-continue controls (Save and continue validates, saves and opens the
+next applicable page, or redisplays the page with its errors), a short
+introduction, and plain-language help for every field. A page whose
+prerequisites are unmet explains what is missing and links the step that fixes
+it, keeping the HTTP status of the underlying refusal; closed JSON errors
+remain for polling and command endpoints.
+
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
 source catalog and first campaign retain the same civil-date interpretation.
@@ -96,7 +117,10 @@ progress page, bounded authenticated polling renews only idle expiry under the
 The page warns that closing it stops renewal and that the source-load watchdog
 expires two hours after TaskRun creation even though the Admin session has a
 later 12-hour absolute lifetime. It displays the idle, source-load-watchdog, and
-absolute-session deadlines.
+absolute-session deadlines. It describes the current phase in plain language
+and shows the elapsed time and the loading worker's most recent heartbeat, so a
+healthy load visibly progresses before its totals are known. On success it
+offers Continue to the next wizard page; on failure it says what to do next.
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take approximately two to three minutes;
@@ -112,6 +136,9 @@ to staging, so it cannot repopulate expired setup. At the watchdog deadline the
 server refuses further renewal, requests cancellation, and cleanup proceeds at
 the worker's next safe point; lease expiry handles an unresponsive worker.
 Wizard staging is not resumable under a new login in the first release.
+Confirming with Google for a fresh-authentication step is a
+[step-up of the same session](../architecture/spec.md#identity-and-session-security),
+not a new login, so it keeps the wizard's staging.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
 configuration installer, and then commits the promoted source snapshot, Family

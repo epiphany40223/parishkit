@@ -33,7 +33,7 @@ Collect, outside the runtime root and outside the repository:
 
 - The **image digest** of the release to install, copied from the GitHub
   Release's notes as the complete
-  `ghcr.io/<owner>/<repository>/parishkit@sha256:<64 hex>` reference. The
+  `ghcr.io/<owner>/<repository>/stewardship@sha256:<64 hex>` reference. The
   release workflow writes that line when the human pushes a `vX.Y.Z` tag; a
   tag such as `:1.2.3` is never deployed, only the digest. The host pulls it
   without a registry credential, so the package must be public, a one-time
@@ -322,6 +322,33 @@ resetting it. Nothing in it deletes data:
    the human, never part of the reinstall. The launch scope
    forbids deleting the validation deployment's database without explicit
    authorization.
+
+## Pre-launch fast deploys
+
+Before launch, while the validation deployment holds only disposable data,
+[`tools/stewardship-dev-deploy.sh`](../../tools/stewardship-dev-deploy.sh)
+moves it onto the current checkout in a few minutes, without CI or a release.
+It sends the tracked files (including uncommitted edits) to the host, builds
+the image there, pushes it to GHCR to obtain the digest production admits,
+and then follows this runbook's [upgrade](#upgrade) steps: a best-effort
+backup, stop, `retarget-image`, migration and grants, a fresh static tree,
+start and health. The host must be logged in to GHCR with a token that can
+write packages (`docker login ghcr.io`). Run it from the checkout:
+
+```sh
+STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
+```
+
+Its images skip CI, so they are never deployed to a campaign serving real
+Families: go-live runs a digest from a real release.
+
+By default it also starts the services with debug logging
+(`PARISHKIT_DEBUG_LOGGING=1`, which the generated Compose files pass to every
+application service): log lines then keep the original message, logger and
+traceback that normal logging drops, and DEBUG records appear. Those can hold
+personal data and secrets, so use it only while the data is disposable;
+`STEWARDSHIP_DEBUG_LOGGING=0` turns it off. Running `docker compose up` by hand
+without the variable recreates services with debug logging off.
 
 ## Production activation
 

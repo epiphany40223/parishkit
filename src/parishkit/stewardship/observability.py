@@ -2,6 +2,8 @@
 
 import copy
 import logging
+import os
+import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -149,6 +151,11 @@ def emit_failure(error, *, event=Event.TASK_FAILED):
         FailureKind.UNEXPECTED,
     )
     emit(event, level=logging.ERROR, failure_kind=kind)
+    if debug_logging_enabled():
+        # The reviewed event above carries only the category; say what failed.
+        logging.getLogger("parishkit.stewardship.debug").debug(
+            "failure detail for %s", event.value, exc_info=error
+        )
 
 
 @contextmanager
@@ -174,6 +181,33 @@ def _safe_thresholds(value):
         and 0 < len(value) <= len(names)
         and all(type(item) is str and item in names for item in value)
     )
+
+
+# Pre-launch debugging switch. Deliberately not PARISHKIT_STEWARDSHIP_*: the
+# deployment loader refuses unknown variables with that prefix.
+DEBUG_LOGGING_VARIABLE = "PARISHKIT_DEBUG_LOGGING"
+
+
+def debug_logging_enabled() -> bool:
+    """Whether this process may log messages and tracebacks the formatter drops.
+
+    Debug logs can carry personal data, provider responses and secrets from
+    exception text, so this is for a pre-launch deployment holding disposable
+    data only; it is off unless the variable is exactly "1".
+    """
+    return os.environ.get(DEBUG_LOGGING_VARIABLE) == "1"
+
+
+def _debug_details(record: logging.LogRecord) -> dict:
+    """The original logger, message and traceback, for debug logging only."""
+    try:
+        message = record.getMessage()
+    except Exception:  # A broken format string must not lose the record.
+        message = repr(record.msg)
+    details = {"logger": record.name, "message": message}
+    if record.exc_info:
+        details["exception"] = "".join(traceback.format_exception(*record.exc_info))
+    return details
 
 
 class SafeJsonFormatter(JsonLogFormatter):
@@ -217,12 +251,14 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _safe_thresholds(context.get("authentication_limits"))
         ):
             safe.extra["authentication_limits"] = list(context["authentication_limits"])
+        if debug_logging_enabled():
+            safe.extra["debug"] = _debug_details(record)
         return super().format(safe)
 
 
 def configure_logging(config: dict | None = None) -> None:
     """Install redacted JSONL on stderr via shared logging; no provider handlers."""
-    logger = setup_logging(verbose=True)
+    logger = setup_logging(verbose=True, debug=debug_logging_enabled())
     for handler in logger.handlers:
         handler.setFormatter(SafeJsonFormatter())
     # Django installs its own console/server handlers before calling this hook.

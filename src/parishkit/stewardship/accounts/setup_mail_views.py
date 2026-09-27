@@ -16,7 +16,7 @@ from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import view_draft
 from .setup_mail import request_sample
 from .setup_preview import PREVIEW_SALT, prepare_preview
-from .setup_views import ERRORS, _checked, _closed, _context, error_response
+from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 
 LABELS = {
     "queued": _("Awaiting mail worker"),
@@ -99,7 +99,7 @@ def setup_mail(request):
         response = render(
             request,
             "stewardship/setup-mail.html",
-            _context(preview.draft)
+            _context(preview.draft, "mail_test")
             | {
                 "form": form,
                 **data,
@@ -111,9 +111,10 @@ def setup_mail(request):
         )
         return _checked(request, service, response, preview.draft)
     except signing.BadSignature:
-        return error_response(ValueError("The setup preview has expired or changed."))
+        error = ValueError("The setup preview has expired or changed.")
+        return page_error(request, error, "mail_test")
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "mail_test")
 
 
 @require_http_methods(["GET", "HEAD"])

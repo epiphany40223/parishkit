@@ -1,6 +1,5 @@
 """Original-login mail schedules and atomic temporary campaign-date correction."""
 
-from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
@@ -8,13 +7,15 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
 
+from . import setup_help
 from .authentication import runtime
 from .schedule_forms import ScheduleForm, Schedules, ScheduleWindow
 from .setup_content_values import CONTENT_STEPS
 from .setup_content_views import _draft
 from .setup_drafts import save_sections
 from .setup_formsets import closed_formset
-from .setup_views import ERRORS, _checked, _context, error_response
+from .setup_views import ERRORS, _checked, _context, page_error
+from .setup_wizard import continue_after
 
 
 class SetupScheduleWindow(ScheduleWindow):
@@ -24,6 +25,7 @@ class SetupScheduleWindow(ScheduleWindow):
         """Only the campaign's already-admitted original timezone is displayed."""
         super().__init__(*args, editable=True, **kwargs)
         self.fields["timezone"].disabled = True
+        setup_help.apply(self, setup_help.WINDOW)
 
 
 def revised_schedules(previous, formset):
@@ -68,6 +70,8 @@ def setup_schedules(request):
             campaign_id=draft.status.attempt_id,
             campaign=selected,
         )
+        for form in schedules.forms:
+            setup_help.apply(form, setup_help.SCHEDULE)
         status, collection_error = 200, False
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
@@ -92,13 +96,13 @@ def setup_schedules(request):
                     collection_error = True
                 else:
                     return _checked(
-                        request, service, HttpResponseRedirect("/admin/setup/schedules")
+                        request, service, continue_after(request, service, "schedules")
                     )
             status = 400
         response = render(
             request,
             "stewardship/setup-schedules.html",
-            _context(draft)
+            _context(draft, "schedules")
             | {
                 "window": window,
                 "schedules": schedules,
@@ -109,4 +113,4 @@ def setup_schedules(request):
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "schedules")

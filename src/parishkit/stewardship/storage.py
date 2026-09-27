@@ -70,6 +70,9 @@ class MutableRecord(DurableRecord):
 
     immutable_fields = ("id", "created_at")
     write_once_fields = ()
+    # Instants that may only advance, such as a session's step-up
+    # reauthentication. The concrete SQL guard also bounds them by its clock.
+    forward_only_fields = ()
     updated_at = UTCDateTimeField(db_default=Now(), editable=False)
     version = models.PositiveBigIntegerField(default=1, editable=False)
 
@@ -160,8 +163,12 @@ def mutate_record(
             for name in record.write_once_fields
             if getattr(record, name) is not None
         )
+        forward = {name: getattr(record, name) for name in record.forward_only_fields}
         change(record)
-        if any(getattr(record, name) != value for name, value in frozen.items()):
+        if any(getattr(record, name) != value for name, value in frozen.items()) or any(
+            getattr(record, name) is None or getattr(record, name) < value
+            for name, value in forward.items()
+        ):
             raise StorageInvariantError("Record identity and bindings are immutable.")
         record.version = expected_version + 1
         record.actor_id = actor_id

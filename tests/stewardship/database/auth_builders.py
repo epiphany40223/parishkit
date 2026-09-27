@@ -87,6 +87,10 @@ def auth_service(tmp_path, settings, real_limiter):
     return auth_runtime(tmp_path, settings, real_limiter)
 
 
+# A claims value that leaves the claim out of the signed token entirely.
+OMIT = object()
+
+
 @pytest.fixture
 def google(monkeypatch):
     """Keep JWT verification; replace only external certificate and exchange I/O."""
@@ -117,6 +121,7 @@ def google(monkeypatch):
             "nonce": request.stewardship_oauth_state["data"]["nonce"],
             **claims,
         }
+        data = {key: value for key, value in data.items() if value is not OMIT}
         return {
             "access_token": "synthetic-access-only",
             "id_token": jwt.encode(data, private, algorithm="RS256"),
@@ -126,20 +131,28 @@ def google(monkeypatch):
     return claims, seen
 
 
-def start(client):
-    """Use the browser's CSRF form, not a fabricated authenticated session."""
+def start(client, **fields):
+    """Use the browser's CSRF form, not a fabricated authenticated session.
+
+    Extra ``fields``, such as ``next``, are posted with the sign-in form.
+    """
     assert client.get("/admin/login").status_code == 200
     response = client.post(
-        "/admin/login", {"csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value}
+        "/admin/login",
+        {"csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value, **fields},
     )
     assert response.status_code == 302
     return parse_qs(urlsplit(response["Location"]).query)
 
 
-def signed_in():
-    """Complete ordinary HTTP login against only the synthetic Google boundary."""
-    client = Client(enforce_csrf_checks=True)
-    query = start(client)
+def signed_in(client=None, **fields):
+    """Complete ordinary HTTP login against only the synthetic Google boundary.
+
+    Passing an already signed-in ``client`` signs in again from that browser,
+    which is a step-up when the Google account is the session's own.
+    """
+    client = client or Client(enforce_csrf_checks=True)
+    query = start(client, **fields)
     response = client.get(
         "/admin/oauth/callback", {"code": "synthetic-code", "state": query["state"][0]}
     )

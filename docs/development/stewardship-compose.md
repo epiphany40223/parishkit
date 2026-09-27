@@ -132,11 +132,11 @@ production deployment from its typed YAML configuration, rendering the
 complete topology (online services, offline bootstrap/migration profiles and
 Caddy) into `config/services/compose*.json` under the runtime root, with
 every application role on one immutable image
-`ghcr.io/<owner>/<repository>/parishkit@sha256:<hex>`, as the
+`ghcr.io/<owner>/<repository>/stewardship@sha256:<hex>`, as the
 [release specification](../specs/stewardship/operations/spec.md#compose-files-and-images)
-requires. For repository `example/parishkit`, the `/parishkit/parishkit`
-suffix is intentional: the first component is the GitHub repository and the
-second is its application image. The release workflow publishes that image
+requires. For repository `example/parishkit`, the suffix is
+`/parishkit/stewardship`: the first component is the GitHub repository (the
+whole ParishKit suite) and the second is its stewardship application image. The release workflow publishes that image
 from a tagged commit and records its digest in the GitHub Release; a
 provisioned deployment moves to a newer digest with `retarget-image`, as the
 [release image guide](../guides/stewardship-release-image.md) describes. The

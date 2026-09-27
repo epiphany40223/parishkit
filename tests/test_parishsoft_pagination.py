@@ -121,11 +121,35 @@ def test_changed_envelope_total_rejects_the_entire_scan():
         )
 
 
-@pytest.mark.parametrize("second", [records(2, 3), records(3, 3)])
-def test_duplicate_identity_within_or_across_pages_is_rejected(second):
+@pytest.mark.parametrize(
+    "second",
+    [
+        records(2, 3),  # repeats a row from the previous page
+        [{"id": 3, "value": 1}, {"id": 3, "value": 2}],  # same page, differing
+    ],
+)
+def test_duplicate_identity_across_pages_or_differing_is_rejected(second):
     """A dict-comprehension overwrite cannot hide duplicate provider records."""
     with pytest.raises(IncompleteSourceCollection, match="repeats"):
         load({1: records(1, 2), 2: second})
+
+
+def test_identical_same_page_repeat_is_kept_once():
+    """ParishSoft lists a Family enrolled twice in a workgroup as identical rows."""
+    result, _ = load({1: records(1, 2), 2: records(3, 3), 3: []})
+    assert result == records(1, 2, 3)
+
+
+def test_identical_repeat_still_counts_toward_provider_totals():
+    """The envelope total counts the repeated row; completeness uses rows received."""
+    result, _ = load(
+        {
+            1: envelope(records(1, 1), total=3),
+            2: envelope(records(2), total=3, page=2),
+        },
+        contract=ENVELOPE,
+    )
+    assert result == records(1, 2)
 
 
 def test_embedded_total_and_ordinal_prove_contiguous_array_scan():

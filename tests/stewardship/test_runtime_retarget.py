@@ -83,7 +83,7 @@ def test_only_the_image_changes_and_a_repeat_changes_nothing(deployment):
 
 def test_a_production_deployment_moves_between_digests_only(tmp_path):
     """The real production admission: digests move, the ingress document stays."""
-    digests = ["ghcr.io/example/parishkit/parishkit@sha256:" + c * 64 for c in "ab"]
+    digests = ["ghcr.io/example/parishkit/stewardship@sha256:" + c * 64 for c in "ab"]
     configuration = replace(
         load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path / "rt")}),
         profile=DeploymentProfile.PRODUCTION,
@@ -108,7 +108,9 @@ def test_a_production_deployment_moves_between_digests_only(tmp_path):
     assert compose["services"]["caddy"]["restart"] == "unless-stopped"
     assert compose["services"]["web"]["image"] == digests[1]
     # Only a digest of the repository's own image is admitted in production.
-    for refused in ("ghcr.io/example/parishkit/parishkit:1.2.3", OLD):
+    # The image was renamed from parishkit to stewardship; the old name is refused.
+    old_name = "ghcr.io/example/parishkit/parishkit@sha256:" + "c" * 64
+    for refused in ("ghcr.io/example/parishkit/stewardship:1.2.3", old_name, OLD):
         with pytest.raises(ConfigError):
             retarget.retarget_image(configuration, image=refused)
     assert images(configuration, "ghcr.io/") == {digests[1]}

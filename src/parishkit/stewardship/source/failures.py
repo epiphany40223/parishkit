@@ -5,6 +5,7 @@ reject this claim's unpromoted observation, release its lease and record a
 verified failure/wait. It cannot load, stage, promote or use a new credential.
 """
 
+import logging
 from dataclasses import dataclass
 
 import requests
@@ -22,7 +23,11 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Execution
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status, change_run
-from parishkit.stewardship.observability import Event, correlation
+from parishkit.stewardship.observability import (
+    Event,
+    correlation,
+    debug_logging_enabled,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _bindings
@@ -53,6 +58,11 @@ class ReadFailure:
 
 def classify_read_failure(error, *, has_source_claim):
     """Classify known read errors only; uncertain drainage/lost ownership propagate."""
+    if debug_logging_enabled():
+        # The operational event records only the category; say which check failed.
+        logging.getLogger("parishkit.stewardship.debug").debug(
+            "source read failure", exc_info=(type(error), error, error.__traceback__)
+        )
     seen = set()
     while isinstance(error, RetryError):
         if id(error) in seen:

@@ -2,6 +2,7 @@
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -10,7 +11,11 @@ from django.db.models import F
 
 from parishkit.stewardship.accounts.handoff_discovery import publish_handoff
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
-from parishkit.stewardship.accounts.sessions import end_admin
+from parishkit.stewardship.accounts.sessions import (
+    database_now,
+    end_admin,
+    reauthenticate_admin,
+)
 from parishkit.stewardship.accounts.setup_credentials import (
     credential_status,
     stage_credential,
@@ -235,6 +240,36 @@ def test_new_login_cannot_adopt_or_retrieve_a_staged_credential(setup_service):
                 expected_version=attempt.version,
                 organization_id=1,
             )
+
+
+def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_service):
+    """Confirming with Google again renews the same login instead of replacing it."""
+    publish("parishsoft")
+    with web_login():
+        request = login(
+            setup_service, authenticated_at=database_now() - timedelta(minutes=10)
+        )
+        attempt = begin_setup(request, setup_service)
+        intake = dict(
+            target="parishsoft",
+            candidate=CANDIDATE,
+            expected_version=attempt.version,
+            organization_id=1,
+        )
+        with pytest.raises(PermissionError):
+            stage_credential(request, setup_service, attempt.attempt_id, **intake)
+        assert reauthenticate_admin(
+            request,
+            request.portal_session.principal_id,
+            store=setup_service.store,
+            authenticated_at=database_now(),
+        )
+        attempt, _ = stage_credential(
+            request, setup_service, attempt.attempt_id, **intake
+        )
+    row = SetupSealedCredential.objects.get()
+    assert row.attempt_id == attempt.attempt_id
+    assert SetupAttempt.objects.get().session_id == request.portal_session.pk
 
 
 @pytest.mark.parametrize(

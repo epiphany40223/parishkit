@@ -36,7 +36,7 @@ pinned major/minor lines, and updated to supported security patch releases.
 
 Release-tag workflow builds the application image from the tagged commit
 after that commit's full validation, pushes
-`ghcr.io/<repository>/parishkit:<version>` plus the immutable commit tag, and
+`ghcr.io/<repository>/stewardship:<version>` plus the immutable commit tag, and
 records the pushed digest in the GitHub Release, since the deployment names
 the image by digest. It preserves existing Python sdist/wheel and GitHub
 Release behavior. A human still explicitly authorizes release-tag push. For

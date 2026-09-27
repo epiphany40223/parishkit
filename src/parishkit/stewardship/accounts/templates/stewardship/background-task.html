@@ -2,7 +2,7 @@
 {% block title %}{% translate "Background task details" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Background task details" %}</h1>
-<p>{{ task.type }} — {{ task.id }}</p>
+<p>{{ task.name }}{% if task.name != task.type %} (<code>{{ task.type }}</code>){% endif %} — {{ task.id }}</p>
 <section class="panel"><h2>{% translate "Current status" %}</h2>
 <p>{% translate "State:" %} {{ task.state|capfirst }} · {% translate "Phase:" %} {{ task.progress.phase|capfirst }}</p>
 <p>{% translate "Attempt:" %} {{ task.attempt|number }} · {% translate "Retry sequence:" %} {{ task.retry_sequence|number }}</p>

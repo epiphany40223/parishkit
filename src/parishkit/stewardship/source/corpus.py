@@ -322,9 +322,19 @@ def normalize_core(source, *, as_of):
         )
     for identifier, raw in family_rows:
         values = _fields(raw, FAMILY_FIELDS)
-        for field in ("familyID", "registeredOrganizationID", "famGroupID"):
+        # familyID is the parish-local Family number, retained but never used to
+        # join (giving joins on the DUID). Real ParishSoft data holds negative
+        # ones (163 of one parish's 2,687 Families), so it only needs to be a
+        # 32-bit integer; the two references must still be non-negative.
+        for field, lowest in (
+            ("familyID", -(2**31)),
+            ("registeredOrganizationID", 0),
+            ("famGroupID", 0),
+        ):
             value = values.get(field)
-            if value is not None and (type(value) is not int or not 0 <= value < 2**31):
+            if value is not None and (
+                type(value) is not int or not lowest <= value < 2**31
+            ):
                 raise InvalidSourcePayload(
                     "Source Family reference metadata is invalid."
                 )

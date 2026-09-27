@@ -35,11 +35,13 @@ def test_progress_get_is_passive_and_csrf_post_renews_only_the_bound_load(
     with web_login():
         page = browser.get(path)
         assert page.status_code == 200
-        assert b"two to three minutes" in page.content
-        assert b"two-hour watchdog" in page.content
+        assert b"about eight for a parish of a few thousand Families" in page.content
+        assert b"two-hour load limit" in page.content
+        assert b"Last sign of activity" in page.content
         assert page["Cache-Control"] == "no-store"
         passive = browser.get(path + "?format=json")
         assert passive.status_code == 200 and not passive.json()["renewed"]
+        assert {"started_at", "heartbeat_at"} <= passive.json().keys()
         assert PortalSession.objects.get().last_activity_at == before
         assert browser.post(path + "?format=json").status_code == 403
         renewed = post(browser, path + "?format=json", {})

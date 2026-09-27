@@ -17,6 +17,14 @@ from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_expiry_postgresql import sweep
 
 pytestmark = pytest.mark.django_db(transaction=True)
+# Save and continue goes to the next page of the wizard's one ordered list.
+NEXT = {
+    "parish": "/admin/setup/source",
+    "access": "/admin/setup/campaign",
+    "mail": "/admin/setup/testing",
+    "slack": "/admin/setup/parish",
+    "testing": "/admin/setup/credentials/google_workspace",
+}
 
 
 @pytest.fixture
@@ -76,9 +84,9 @@ def test_original_browser_saves_and_revisits_public_steps(setup_http, google):
                 initial_values(step, values) | {"version": str(version)},
             )
             assert response.status_code == 302, (step, response.content)
-            assert response["Location"] == "/admin/setup"
+            assert response["Location"] == NEXT[step]
             assert SetupDraftSection.objects.get(step=step).values == values
-            assert b"Saved temporarily" in browser.get("/admin/setup").content
+            assert b"Completed" in browser.get("/admin/setup").content
             activity = PortalSession.objects.get().last_activity_at
             assert browser.get("/admin/setup/" + step).status_code == 200
             assert PortalSession.objects.get().last_activity_at == activity

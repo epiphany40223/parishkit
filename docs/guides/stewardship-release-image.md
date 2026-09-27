@@ -15,10 +15,10 @@ and follows the [pre-production development policy](../specs/stewardship/operati
 
 Pushing a release tag now builds the single-architecture `linux/amd64`
 application image from the tagged commit, pushes it to GHCR as
-`ghcr.io/<owner>/<repository>/parishkit:<version>` and `:<commit>` (the
+`ghcr.io/<owner>/<repository>/stewardship:<version>` and `:<commit>` (the
 commit the annotated tag points to), and
 records the pushed digest in the GitHub Release, so the operator copies the
-exact `ghcr.io/…/parishkit@sha256:…` reference into the deployment YAML. The
+exact `ghcr.io/…/stewardship@sha256:…` reference into the deployment YAML. The
 human still pushes every release tag. A new command,
 `pk-stewardship retarget-image --config CONFIG --image IMAGE`, points a
 provisioned deployment at a newer approved image, re-rendering its generated
@@ -48,7 +48,7 @@ GitHub creates the container package private on its first publication, even
 for a public repository. The deployment hosts and the backup key machine pull
 without a registry credential, so once, after the first release, a repository
 administrator makes the package public: on the repository's **Packages** entry
-for `parishkit/parishkit`, open **Package settings**, choose **Change
+for `parishkit/stewardship`, open **Package settings**, choose **Change
 visibility**, then **Public**. The image holds only the repository's public
 code; no secret is built into it. Later releases keep that visibility.
 

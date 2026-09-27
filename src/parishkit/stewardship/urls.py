@@ -568,6 +568,7 @@ admin_patterns = [
         setup_progress_views.setup_source_progress,
         name="setup_source_progress",
     ),
+    path("setup/source", setup_views.setup_source, name="setup_source"),
     path("setup/branding", setup_branding_views.setup_branding, name="setup_branding"),
     path(
         "setup/credentials/<str:target>",

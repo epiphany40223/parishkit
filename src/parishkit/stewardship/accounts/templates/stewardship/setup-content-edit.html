@@ -1,14 +1,18 @@
 {% extends 'stewardship/base.html' %}{% load i18n %}
 {% block title %}{{ label }} — {% translate "Initial setup" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
+{% include 'stewardship/setup-wizard.html' %}
 <p><a href="{% url 'admin:setup_content' %}">{% translate "First-campaign content" %}</a></p>
 <h1>{{ label }}</h1>
+<p class="setup-intro">{% translate "Write this text once; placeholders in double braces are filled in for each Family. The preview below uses a fictional Family." %}</p>
 <p class="notice">{% translate "Testing mode. Saving here changes only this temporary wizard draft. No email is sent." %}</p>
 <p>{% translate "Use a placeholder name inside double braces. Supported names:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
 {% include 'stewardship/setup-deadlines.html' %}
 <form method="post" data-content-form>{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/content-fields.html' %}
-<button type="submit">{% translate "Save temporary content" %}</button></form>
+<div class="setup-actions"><a class="setup-back" href="{% url 'admin:setup_content' %}">{% translate "Back to the content list" %}</a>
+<button type="submit">{% translate "Save and return to the content list" %}</button></div></form>
 {% if sample %}<section class="panel"><h2>{% translate "Saved sample preview" %}</h2>
 {% if sample.subject %}<h3>{{ sample.subject }}</h3>{% endif %}
 <div>{{ sample.html|safe }}</div><details><summary>{% translate "Plain text" %}</summary><pre>{{ sample.text }}</pre></details>

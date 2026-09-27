@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 from django.core import signing
 from django.core.paginator import InvalidPage
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -26,7 +26,7 @@ from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .sessions import authenticated_admin
+from .sessions import FreshAuthenticationRequired, authenticated_admin
 
 
 def principal(
@@ -173,7 +173,16 @@ def confirm(
 
 
 def error_response(error):
-    """Expose only closed, static error messages, never exception or submitted text."""
+    """Expose only closed, static error messages, never exception or submitted text.
+
+    Scripts receive JSON. A browser page request is shown the same messages as
+    an HTML page by the browser-error middleware, which, for a missing fresh
+    authentication, offers the step-up "Confirm with Google" instead.
+    """
+    if isinstance(error, FreshAuthenticationRequired):
+        response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
+        response.stewardship_reauthenticate = True
+        return response
     if isinstance(error, PermissionError):
         return validation_response([FieldError(ErrorCode.DENIED)], status=403)
     if isinstance(error, StaleRecordError):
@@ -183,10 +192,5 @@ def error_response(error):
     if isinstance(error, (ValueError, InvalidPage, signing.BadSignature)):
         return validation_response([FieldError(ErrorCode.INVALID)], status=400)
     if isinstance(error, LookupError):
-        response = JsonResponse(
-            {"errors": [FieldError(ErrorCode.UNAVAILABLE).as_dict()]}, status=404
-        )
-        response.stewardship_safe_error = True
-        response["Cache-Control"] = "no-store"
-        return response
+        return validation_response([FieldError(ErrorCode.UNAVAILABLE)], status=404)
     return validation_response([FieldError(ErrorCode.UNAVAILABLE)], status=503)

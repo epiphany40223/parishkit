@@ -21,7 +21,7 @@
 {% else %}<p>{% translate "Waiting for the exact calculation. No substitute file will be offered." %}</p>{% endif %}
 <p><a href="{% url 'admin:report_exact' job.pk %}">{% translate "Refresh status" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated. Cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_exact_cancel' job.pk %}">{% csrf_token %}<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_exact_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
 {% if status.state == 'failed' %}<form method="post" action="{% url 'admin:report_exact_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>{% endif %}
 <p><a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
 {% endblock %}

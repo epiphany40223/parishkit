@@ -16,6 +16,7 @@ from parishkit.config import ConfigError
 
 from .deployment import SECRET_NAMES, DeploymentProfile, ServiceRole
 from .deployment_documents import deployment_document, service_configuration_file
+from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
 from .service_boundaries import ALLOWED_SECRETS
@@ -45,6 +46,22 @@ def bind(path, *, target=None, read_only=True):
     }
 
 
+# Each check starts a new Python process that imports the application, about
+# a CPU-second. Eighteen services checked every 10 seconds kept roughly three
+# of a 4-vCPU host's cores busy, so steady state checks once a minute. During
+# start_period Docker checks every start_interval instead, so `up --wait`
+# still sees a started service healthy within seconds. The timeout allows for
+# a loaded host; a slow import is not a failed service.
+# Standard-library-only probes: see parishkit.stewardship.probe.
+PROBE = ["CMD", "python", "-m", "parishkit.stewardship.probe"]
+PYTHON_HEALTHCHECK = {
+    "interval": "60s",
+    "timeout": "15s",
+    "start_period": "120s",
+    "start_interval": "2s",
+}
+
+
 def _image(value, profile):
     """Production must select an immutable repository-registry application digest."""
     if (
@@ -52,7 +69,7 @@ def _image(value, profile):
         or (
             profile is DeploymentProfile.PRODUCTION
             and re.fullmatch(
-                r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/parishkit@sha256:[0-9a-f]{64}",
+                r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/stewardship@sha256:[0-9a-f]{64}",
                 value,
             )
             is None
@@ -145,7 +162,13 @@ def _application(image, budget):
         "cap_drop": ["ALL"],
         "security_opt": ["no-new-privileges:true"],
         "tmpfs": ["/tmp:rw,nosuid,nodev,noexec,mode=1777"],
-        "environment": {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"},
+        "environment": {
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONUNBUFFERED": "1",
+            # Off unless the operator's shell exports it when running Compose;
+            # see observability.debug_logging_enabled. Pre-launch debugging only.
+            DEBUG_LOGGING_VARIABLE: "${" + DEBUG_LOGGING_VARIABLE + ":-0}",
+        },
         "networks": {"backend": {}},
         "restart": "no",
         "stop_grace_period": str(budget.drain_seconds) + "s",
@@ -302,9 +325,8 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             ]
             service["volumes"] = _online_mounts(selected)
             service["healthcheck"] = {
-                "test": ["CMD", "pk-stewardship", "installer-healthcheck"],
-                "interval": "10s",
-                "timeout": "4s",
+                "test": PROBE + ["installer"],
+                **PYTHON_HEALTHCHECK,
                 "retries": 3,
             }
             if role in {
@@ -318,10 +340,9 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 service["networks"]["application-egress"] = {}
             if role is ServiceRole.WEB:
                 service["healthcheck"] = {
-                    "test": ["CMD", "pk-stewardship", "healthcheck"],
-                    "interval": "10s",
-                    "timeout": "4s",
-                    "retries": 6,
+                    "test": PROBE + ["web"],
+                    **PYTHON_HEALTHCHECK,
+                    "retries": 3,
                 }
         if checkout is not None:
             service["volumes"].append(bind(Path(checkout) / "src", target="/app/src"))

@@ -55,7 +55,10 @@ def test_security_headers_cover_success_and_errors(client, url):
     """Every response receives the same restrictive browser envelope."""
     response = client.get(url)
     assert response["Cache-Control"] == "no-store"
-    assert response["Referrer-Policy"] == "no-referrer"
+    # no-referrer would make browsers send "Origin: null" with form POSTs,
+    # failing CSRF; only access-token URLs, which hold no form, keep it.
+    expected = "no-referrer" if url.startswith("/access/") else "same-origin"
+    assert response["Referrer-Policy"] == expected
     assert response["X-Frame-Options"] == "DENY"
     assert response["X-Content-Type-Options"] == "nosniff"
     assert "default-src 'none'" in response["Content-Security-Policy"]

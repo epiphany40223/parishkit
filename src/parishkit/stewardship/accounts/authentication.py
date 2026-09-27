@@ -38,6 +38,7 @@ from django.views.decorators.http import (
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.security import login_denial
 
 from .auth_incidents import record_login_rejection
@@ -50,6 +51,7 @@ from .sessions import (
     database_now,
     end_admin,
     issue_admin,
+    reauthenticate_admin,
     revocation_epoch,
 )
 
@@ -243,9 +245,15 @@ def verified_authentication_time(claims, state):
     An existing Google session may establish ordinary identity without granting
     the five-minute privileged window. The one-use nonce binds this exchange;
     auth_time records the provider's authentication, which may predate it.
+
+    Google ignores max_age and the claims request and never sends auth_time
+    (its discovery document lists no such claim). Then the token's issue time
+    stands in: the one-use nonce binds this token to a sign-in started here
+    within 15 minutes, so it records the fresh Google round trip that
+    require_fresh admits. An auth_time that is present is still validated.
     """
     now = database_now()
-    authenticated = claims.get("auth_time")
+    authenticated = claims["auth_time"] if "auth_time" in claims else claims["iat"]
     initiated = state.get("data", {}).get("initiated_at")
     if (
         type(authenticated) is not int
@@ -287,7 +295,14 @@ class GoogleCallback(OAuth2CallbackView):
 
 
 def complete_identity(request, subject, email, hosted, *, authenticated_at):
-    """Only a verified Google identity can be created or refresh its email claims."""
+    """Only a verified Google identity can be created or refresh its email claims.
+
+    When the browser already holds a live session for this same PortalUser,
+    the sign-in is a step-up: that session's Google freshness advances in
+    place (see ``reauthenticate_admin``). Otherwise a new session replaces
+    whatever the browser held. Either way the CSRF secret rotates and the
+    browser returns to the validated ``next`` path carried in OAuth state.
+    """
     service = runtime()
     epoch = (
         PolicyEpoch.objects.order_by("-sequence")
@@ -328,20 +343,41 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
         if principal is not None and principal.roles:
-            issue_admin(
-                request, user.pk, store=service.store, authenticated_at=authenticated_at
-            )
+            if (
+                reauthenticate_admin(
+                    request,
+                    user.pk,
+                    store=service.store,
+                    authenticated_at=authenticated_at,
+                )
+                is None
+            ):
+                issue_admin(
+                    request,
+                    user.pk,
+                    store=service.store,
+                    authenticated_at=authenticated_at,
+                )
             rotate_token(request)
     if principal is None or not principal.roles:
         delay = record_failure(request, identity=fingerprint, counter=counter)
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
-    return HttpResponseRedirect("/admin/")
+    # Revalidate even though login stored only a validated path in its state.
+    return HttpResponseRedirect(
+        admin_return_path(request.stewardship_oauth_state["data"].get("next"))
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def login(request):
-    """Only a CSRF-protected POST initiates authentication; ignore dynamic scopes."""
+    """Only a CSRF-protected POST initiates authentication; ignore dynamic scopes.
+
+    An optional ``next`` field names the same-origin Admin page to return to
+    after sign-in or step-up; anything but a safe /admin/ path means /admin/.
+    A signed-in Admin posts here from a fresh-authentication prompt; the
+    session then keeps its lifetime, since only the callback may refresh it.
+    """
     try:
         service = runtime()
         if request.method != "POST":
@@ -353,17 +389,19 @@ def login(request):
             return denial(status=429, retry=delay)
         limiter.counters([counter], failure=True)
         nonce = secrets.token_urlsafe(32)
+        destination = admin_return_path(request.POST.get("next"))
         if "principal" not in request.session:
             request.session.set_expiry(database_now() + timedelta(minutes=15))
         provider = get_adapter(request).get_provider(request, "google")
         return provider.redirect(
             request,
             process="login",
-            next_url="/admin/",
+            next_url=destination,
             data={
                 "nonce": nonce,
                 "recovery_epoch": revocation_epoch(),
                 "initiated_at": int(database_now().timestamp()),
+                "next": destination,
             },
             scope=["openid", "email"],
             auth_params={

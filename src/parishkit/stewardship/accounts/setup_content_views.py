@@ -11,17 +11,23 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
 from parishkit.stewardship.web.contracts import expected_version, filters
 
+from . import setup_help
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS, ContentForm, page_slots, sample_render
 from .setup_content import content_label, draft_campaign
 from .setup_drafts import save_section, view_draft
-from .setup_views import ERRORS, _checked, _closed, _context, error_response
+from .setup_views import ERRORS, _checked, _closed, _context, page_error
 
 
 class SetupContentForm(ContentForm):
     """The original attempt version replaces the active YAML digest in setup."""
 
     base_digest = None
+
+    def __init__(self, *args, **kwargs):
+        """Explain each content field; slot-specific rules keep their own help."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.CONTENT)
 
 
 def _draft(request, service):
@@ -63,7 +69,7 @@ def setup_content(request):
         response = render(
             request,
             "stewardship/setup-content.html",
-            _context(draft)
+            _context(draft, "content")
             | {
                 "groups": groups,
                 "campaign_name": campaign["name"],
@@ -71,7 +77,7 @@ def setup_content(request):
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "content")
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -119,9 +125,7 @@ def setup_content_edit(request, kind, slot):
                 return _checked(
                     request,
                     service,
-                    HttpResponseRedirect(
-                        reverse("admin:setup_content_edit", args=[kind, slot])
-                    ),
+                    HttpResponseRedirect(reverse("admin:setup_content")),
                 )
             status = 400
         try:
@@ -134,7 +138,7 @@ def setup_content_edit(request, kind, slot):
         response = render(
             request,
             "stewardship/setup-content-edit.html",
-            _context(draft)
+            _context(draft, "content")
             | {
                 "form": form,
                 "label": label,
@@ -146,4 +150,4 @@ def setup_content_edit(request, kind, slot):
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "content")
