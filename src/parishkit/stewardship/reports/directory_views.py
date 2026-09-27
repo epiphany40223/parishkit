@@ -26,7 +26,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.responses import campaign_response
 
-from .directories import PAGE_SIZE, REASONS, DirectoryQuery, directory_page
+from .directories import PAGE_SIZE, REACH, REASONS, DirectoryQuery, directory_page
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -93,9 +93,12 @@ def directory(request, campaign_id, *, postal=False):
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        if request.GET:
+        # Filters are private POST state. The one exception is the closed
+        # reach preset (?reach=neither), which carries no private value and
+        # lets other pages link to "Families no campaign mail can reach".
+        if request.GET and (request.method != "GET" or set(request.GET) != {"reach"}):
             raise ValueError("Directory filters require private POST state.")
-        parameters = request.POST.copy()
+        parameters = (request.GET if request.GET else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
         query = DirectoryQuery.parse(parameters)
         admit_report_read(campaign_id)
@@ -161,6 +164,11 @@ def directory(request, campaign_id, *, postal=False):
                 "query_fields": query.form_values(),
                 "report_url": reverse(route, args=(campaign_id,)),
                 "reasons": REASONS,
+                "reaches": REACH,
+                "unreachable_url": reverse(
+                    "admin:family_directory", args=(campaign_id,)
+                )
+                + "?reach=neither",
                 "mutable": mutable,
                 "request_key": uuid4(),
                 "export_timezones": sorted(timezone_names()),

@@ -1,7 +1,9 @@
 """Read-only campaign overview with role-appropriate aggregates and no credentials."""
 
+import json
 from datetime import timedelta
 
+from django.db import connection
 from django.db.models import Count, Q
 
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -62,6 +64,10 @@ def summary(actor, configuration, now):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+        if campaign.state in {"draft", "scheduled", "active"} and allows(
+            actor, Capability.FAMILY_CODES
+        ):
+            result["unreachable"] = unreachable_families(campaign.pk)
     if "administrator" in actor.roles:
         from .security_events import open_events
 
@@ -77,3 +83,34 @@ def summary(actor, configuration, now):
             .values("id", "task_type", "updated_at")[:5]
         )
     return result
+
+
+def unreachable_families(campaign_id):
+    """Count Families no campaign mail can reach: no email and no mailing address.
+
+    A readiness figure, from the same SQL selection the Family-code
+    directory uses (its "neither" reach filter), so the number matches the list
+    its link opens. None when there is no promoted source to count from.
+    """
+    from parishkit.stewardship.reports.directory_query import DIRECTORY
+
+    parameters = {
+        "filters": {
+            "search": "",
+            "reason": "any",
+            "phone": "any",
+            "response": "any",
+            "sort": "name",
+            "reach": "neither",
+        },
+        "postal": False,
+        "exact": False,
+        "family_id": None,
+    }
+    # One statement; the dashboard's own error handling covers a failure.
+    with connection.cursor() as cursor:
+        cursor.execute(DIRECTORY, (campaign_id, json.dumps(parameters), 1))
+        row = cursor.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return json.loads(row[0])["unreachable_total"]

@@ -32,6 +32,10 @@
     <p>{% translate "All Families with a live response:" %} {{ dashboard.families.responded|number }}</p>
     {% if configuration.mode == 'testing' %}<p>{% translate "Testing rehearsals are not live campaign responses." %}</p>{% endif %}
   </section>{% endif %}
+  {% if dashboard.unreachable is not None %}<section class="panel" aria-labelledby="readiness-heading">
+    <h2 id="readiness-heading">{% translate "Reaching every Family" %}</h2>
+    <p>{% if dashboard.unreachable %}{% blocktranslate count counter=dashboard.unreachable %}{{ counter }} Family has neither a deliverable email nor a usable mailing address, so no campaign mail can reach it.{% plural %}{{ counter }} Families have neither a deliverable email nor a usable mailing address, so no campaign mail can reach them.{% endblocktranslate %} <a href="{% url 'admin:family_directory' dashboard.campaign.pk %}?reach=neither">{% translate "View them" %}</a>{% else %}{% translate "Every active Family can be reached by email or postal mail." %}{% endif %}</p>
+  </section>{% endif %}
   {% if dashboard.recent_failures %}<section class="panel">
     <h2>{% translate "Recent failed background tasks" %}</h2>
     <p>{% translate "Latest five failures recorded in the past 24 hours." %}</p>
