@@ -12,6 +12,7 @@ from .family_delivery import _deliver_validated, delivery_settings
 from .jobs.operational_payload import canonical_id
 from .jobs.outbox_validation import mailbox, recipients
 from .jobs.security_content import KINDS, SecurityAlert, render_security_alert
+from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 
 
@@ -121,7 +122,7 @@ class SecurityMail:
                 subject=content.subject,
                 sender=self.sender,
                 to=self.recipients,
-                html=content.html,
+                html=email_document(content.html),
                 text=content.text,
             )
         )

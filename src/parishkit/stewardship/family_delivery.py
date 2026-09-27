@@ -21,6 +21,7 @@ from parishkit.email.google_workspace import xoauth2_string
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.policy_schema import normalized_email
 from .jobs.outbox_validation import mailbox, recipients
+from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
 from .web.content import prepare_content
@@ -218,7 +219,7 @@ class FamilyDeliveryMail:
                 sender=self.sender,
                 to=self.recipients,
                 subject=self.subject,
-                html=self.html,
+                html=email_document(self.html),
                 text=self.text,
             )
         )

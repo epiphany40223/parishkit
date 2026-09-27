@@ -12,6 +12,7 @@ from uuid import UUID
 from parishkit.email.base import Email, build_message
 
 from .accounts.policy_schema import normalized_email
+from .mail_layout import email_document
 from .web.content import prepare_content, validate_template
 
 
@@ -94,10 +95,12 @@ class ReadinessMail:
                 subject="[TEST] " + self.subject,
                 sender=self.sender,
                 to=[self.recipient],
-                html="<h2>TEST — readiness sample</h2><p>"
-                + escape(banner)
-                + "</p>"
-                + self.html,
+                html=email_document(
+                    "<h2>TEST — readiness sample</h2><p>"
+                    + escape(banner)
+                    + "</p>"
+                    + self.html
+                ),
                 text=banner + "\n\n" + self.text,
             )
         )
