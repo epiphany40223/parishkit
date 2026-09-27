@@ -55,12 +55,14 @@ class FieldError:
         }
 
 
-def validation_response(errors, *, status=400):
+def validation_response(errors, *, status=400, refusal=None):
     """Return safe JSON to enhanced clients; HTML views own their error rendering.
 
     The typed errors ride on the response so the browser-error middleware can
     show the same closed messages as a page when a person, not a script,
-    made the request.
+    made the request. An optional ``refusal`` (``web.refusals.Refusal``) adds
+    its static explanation and fix link, as a ``refusal`` JSON field and for
+    that page.
     """
     if status not in {400, 403, 404, 409, 422, 503}:
         raise ValueError("Unsupported validation status.")
@@ -70,11 +72,13 @@ def validation_response(errors, *, status=400):
         or any(not isinstance(item, FieldError) for item in errors)
     ):
         raise ValueError("Validation errors must be bounded typed records.")
-    response = JsonResponse(
-        {"errors": [item.as_dict() for item in errors]}, status=status
-    )
+    body = {"errors": [item.as_dict() for item in errors]}
+    if refusal is not None:
+        body["refusal"] = refusal.as_dict()
+    response = JsonResponse(body, status=status)
     response.stewardship_safe_error = True
     response.stewardship_errors = tuple(errors)
+    response.stewardship_refusal = refusal
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"

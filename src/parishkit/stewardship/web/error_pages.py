@@ -111,6 +111,13 @@ def error_page(request, response):
     admin = is_admin(request)
     code = errors[0].code
     title, guidance = _NOT_FOUND if response.status_code == 404 else _GUIDANCE[code]
+    # A user-facing refusal replaces the closed message with its own reviewed
+    # explanation, fix and link (see web.refusals); still never raw text.
+    refusal = getattr(response, "stewardship_refusal", None)
+    messages = list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors))
+    if refusal is not None:
+        messages = [str(refusal.message)]
+        guidance = refusal.fix or guidance
     reauthenticate = admin and getattr(response, "stewardship_reauthenticate", False)
     if reauthenticate:
         title = _("Confirm it's you")
@@ -118,7 +125,9 @@ def error_page(request, response):
         "title": title,
         "guidance": guidance,
         # Distinct closed messages only; field errors have no field to link here.
-        "error_messages": list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors)),
+        "error_messages": messages,
+        "fix_link": refusal.link if refusal else None,
+        "fix_label": refusal.link_label if refusal else None,
         "reauthenticate": reauthenticate,
         "next": admin_return_path(request.get_full_path()),
         "submitted": request.method == "POST",

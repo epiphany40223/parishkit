@@ -120,6 +120,16 @@ whose prerequisites are unmet explains what is missing and links the step
 that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
 errors remain for polling and command endpoints.
 
+A refusal an Admin can correct, in the wizard or the campaign, content and
+schedule editors, says what was wrong and how to fix it, with a link to the
+page that fixes it when there is one (for example, a template that a mail
+schedule still sends, a page changed in another tab, or a missing earlier
+step). Where the form can be shown again, the explanation appears beside it and
+keeps what the Admin entered; otherwise the error page shows it. The status
+code is unchanged, scripts receive the same explanation as a `refusal` JSON
+field, and the text is static and reviewed, never exception or submitted text.
+Other refusals keep the closed, generic messages.
+
 Review, Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub: the Review page links no
 later step from its body and its primary action is Continue to the email
