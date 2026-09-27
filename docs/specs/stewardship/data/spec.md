@@ -769,7 +769,21 @@ Family browser uses the separate `thank_you` slot.
 
 Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
 templates have separate subject, sanitized HTML, and generated/edited plain-text
-versions. The direct submission confirmation selects at most one email template
+versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
+that browser editors write become paragraphs, `<b>`/`<i>` become
+`<strong>`/`<em>`, and markup-free text keeps blank-line paragraphs and line
+breaks; already-sanitized content is unchanged. The visual editor starts new
+paragraphs as `<p>` and keeps the line breaks of pasted plain text. Generated
+plain text separates paragraphs with a blank line, starts list items with a
+hyphen (or a number), and writes each link as `label: URL`. Previews and
+setup email tests fill Family placeholders with realistic but plainly
+fictional values (the "Sample" household, "Alex and Sam Sample", a code in the
+live format and links on the reserved `.invalid` domain). Every outgoing
+email's HTML alternative is wrapped, when the message is built, in one shared
+email-client-safe layout (a readable sans-serif font and a centered 600px
+column); test messages show one small notice line instead of a large TEST
+heading. Retained content and the plain-text alternative are unchanged.
+The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member
 of a template list. Without a selected template, use the built-in non-sensitive
 confirmation subject/body. The separately selected `submission_confirmation`
@@ -786,9 +800,10 @@ Unknown placeholders are validation failures, not empty text.
 Initial invitations and reminders require the code and secure-link placeholders
 in each body alternative, including generated plaintext. Those credential
 placeholders are not allowed in subjects. Authoring, configuration validation
-and background preparation enforce the same rule; an author can edit plaintext
-when HTML extraction omits an anchor's link. Testing subject presentation
-reserves its mandatory mode prefix and shortens only non-credential content.
+and background preparation enforce the same rule; generated plaintext keeps the
+secure link as `label: URL`, and an author can still edit it. Testing subject
+presentation reserves its mandatory mode prefix and shortens only
+non-credential content.
 
 ### Job, outbox, audit, and purge records
 

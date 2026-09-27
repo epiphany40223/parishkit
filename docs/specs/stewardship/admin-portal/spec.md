@@ -97,8 +97,9 @@ is offered "Confirm with Google", which keeps the setup, so the order does not
 need to race that window. The source load follows, then the pages that need
 the loaded catalog, then review, the email and Slack tests and the final
 confirmation. Every page shows a compact progress stepper: the current step by
-number and name, the count of completed steps and a slim track, with the full
-ordered list (each applicable step named as completed, current, not done,
+number and name, the count of completed steps and a slim track (each segment
+names its step and status on hover; the track is hidden from assistive
+technology because the list says the same), with the full ordered list (each applicable step named as completed, current, not done,
 optional or not yet available with the reason) in a collapsed disclosure.
 Navigation is conventional: completed steps and the first unfinished required
 step are links; later unfinished steps wait for every earlier required step,
@@ -139,6 +140,13 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
+Wherever a form requires an acknowledgment checkbox (finishing setup, a test
+that may already have arrived, chosen-Family tests, Testing cleanup,
+withdrawal, refusal removal, manual reports, duplicate resends), the page
+script keeps the form's primary button disabled until the box is checked.
+Without the script the button is enabled and the server refuses a missing
+acknowledgment as before.
+
 Pages and emails start with built-in default text. Saving the first campaign
 fills every applicable page and email slot the draft has never set, in the same
 versioned save as the campaign, and a later campaign save fills only slots that
@@ -167,6 +175,10 @@ but cannot change. The server reports a missing or inapplicable value on its
 own field (for example a weekday on an invitation, or a date outside the
 campaign with the campaign's dates); only rules between rows, such as a
 second initial invitation or a reminder before it, are collection errors.
+"Add another schedule" adds blank rows (with the same per-type fields) before
+saving, and a row added this way can be removed again, so several schedules
+save in one submission and are validated together; without the script each
+save offers one blank row.
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
