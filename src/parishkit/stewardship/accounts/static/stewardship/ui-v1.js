@@ -30,6 +30,48 @@
     });
   });
 
+  // Ordinary form submissions: show at once that the click registered, and
+  // ignore repeats (double clicks, Enter pressed twice) until the browser
+  // navigates. The listener is on document, so it runs after each form's own
+  // handlers; a submit that page script already took over (defaultPrevented:
+  // fetch-driven forms, cancelled confirmations) is left alone. Buttons get
+  // aria-disabled, never disabled: a disabled submitter's name/value would be
+  // dropped from the request (action=start, page=2, ...). A download or a new
+  // tab leaves this page in place, so the form is released after a while, and
+  // also when the browser shows this page again from its back/forward cache.
+  const busyStatus = document.createElement("span");
+  busyStatus.className = "visually-hidden";
+  busyStatus.setAttribute("role", "status");
+  (document.querySelector("main") || document.body).append(busyStatus);
+  const submitting = new Map();
+  const submitControls = (form) => [...form.elements].filter((node) =>
+    (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
+    && node.type === "submit");
+  const release = (form) => {
+    window.clearTimeout(submitting.get(form));
+    submitting.delete(form);
+    form.removeAttribute("aria-busy");
+    submitControls(form).forEach((node) => {
+      node.classList.remove("is-busy");
+      node.removeAttribute("aria-disabled");
+    });
+    if (!submitting.size) busyStatus.textContent = "";
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (submitting.has(form)) { event.preventDefault(); return; }
+    if (event.defaultPrevented || form.hasAttribute("data-submit-repeatable")) return;
+    form.setAttribute("aria-busy", "true");
+    submitControls(form).forEach((node) => node.setAttribute("aria-disabled", "true"));
+    event.submitter?.classList.add("is-busy");
+    busyStatus.textContent = "Working…";
+    submitting.set(form, window.setTimeout(() => release(form), 10000));
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) [...submitting.keys()].forEach(release);
+  });
+
   // Readiness status is a passive GET, never the source-load idle-renewal
   // exception. No message content, key or answer is retained by this poller.
   document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
