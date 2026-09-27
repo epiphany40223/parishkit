@@ -86,3 +86,47 @@ def test_default_timezone_is_resolved_once_but_explicit_utc_is_kept(
     page.goto(component_origin + "/participation-auto?timezone=UTC")
     expect(page.locator("select[name=timezone]")).to_have_value("UTC")
     assert page.url.endswith("?timezone=UTC")
+
+
+def test_export_status_updates_itself_and_downloads_once(page, component_origin):
+    """A queued export is re-read in place and its ready file downloads by itself."""
+    ready = page.request.get(component_origin + "/report-export").text()
+    reads, downloads = [], []
+
+    def status(route):
+        """The page's own passive status re-read: queued once, then ready."""
+        reads.append(route.request.method)
+        if len(reads) < 2:
+            route.continue_()
+        else:
+            route.fulfill(body=ready, content_type="text/html")
+
+    page.route("**/report-export-pending", status)
+
+    def download(route):
+        """Record the download POST; 204 keeps the page, as an attachment does.
+
+        (Playwright's WebKit renders a route-fulfilled attachment inline, so
+        the test answers with No Content rather than a file.)
+        """
+        downloads.append(route.request.method)
+        route.fulfill(status=204)
+
+    page.route("**/download", download)
+    page.goto(component_origin + "/report-export-pending")
+    assert page.get_by_text("Preparing your file").is_visible()
+    assert not page.get_by_text("Requester reference").is_visible()
+    page.locator("[data-export-state=ready]").wait_for()
+    page.wait_for_timeout(500)
+    assert downloads == ["POST"]
+    assert page.get_by_role("button", name="Download export").is_visible()
+    assert set(reads) == {"GET"}
+
+
+def test_failed_export_explains_itself_with_retry(page, component_origin):
+    """A failed export says so in plain words and offers Retry, without polling."""
+    page.goto(component_origin + "/report-export-failed")
+    assert (
+        page.get_by_role("alert").filter(has_text="could not be created").is_visible()
+    )
+    assert page.get_by_role("button", name="Retry export").is_visible()

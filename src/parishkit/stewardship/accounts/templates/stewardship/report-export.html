@@ -2,8 +2,40 @@
 {% block title %}{{ report_title|default:"Participation export" }}{% endblock %}
 {% block content %}
 <h1>{{ report_title|default:"Participation export" }}</h1>
-<dl><dt>{% translate "Status" %}</dt><dd><span role="status">{{ status.state }}</span></dd>
-<dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
+{% comment %}
+  The live region is what ui-v1.js refreshes in place while the export is
+  queued or running (it re-reads this passive page, which never extends the
+  login session). When the file becomes ready while the page watches, the
+  download starts once by itself. Without script, Refresh status reloads.
+{% endcomment %}
+<section class="panel export-live" data-export-live data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-export-pending{% endif %}>
+{% if status.state == 'ready' %}
+  <p class="export-state export-state-ready" role="status">{% translate "Your file is ready." %}</p>
+  <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-export-download>{% csrf_token %}<button type="submit" class="button-large">{% translate "Download export" %}</button></form>
+  <p class="help">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
+{% elif status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %}
+  <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
+  <p class="help">{% translate "This usually takes a few seconds. This page updates by itself and the download starts when the file is ready." %}</p>
+{% elif status.state == 'failed' or status.state == 'abandoned' %}
+  <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>
+  <form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>
+{% elif status.state == 'cancelled' %}
+  <p class="export-state" role="status">{% translate "This export was cancelled." %}</p>
+{% elif status.state == 'expired' %}
+  <p class="export-state" role="status">{% translate "The generated file has expired." %}</p>
+  <p>{% translate "Its request metadata remains. Regeneration creates a new request using the same retained inputs, format and timezone, with a new request time and current parish branding. It does not substitute current campaign data." %}</p>
+  <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
+  <form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Regenerate expired file" %}</button></form>
+{% else %}
+  <p class="export-state" role="status">{{ status.state }}</p>
+{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
+</section>
+<p><a href="{% url 'admin:report_export' job.pk %}" data-export-refresh>{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports, cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
+<details><summary>{% translate "Details" %}</summary>
+<dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Requester reference" %}</dt><dd>{{ job.requester_id }}</dd>
 {% if job.report == 'additional_information' %}
 <dt>{% translate "Matching items" %}</dt><dd>{{ job.information_snapshot.row_count|number }}</dd>
@@ -28,18 +60,7 @@
 <dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ job.fact_set.submission_watermark|number }}</dd>
 {% endif %}
 <dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd>
-<dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd>
-{% if status.expires_at %}<dt>{% translate "File expires at" %}</dt><dd><time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time></dd>{% endif %}</dl>
+<dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd></dl>
 <p>{% translate "This export retains its exact inputs and original request time across retries. Refreshing status does not extend your login session." %}</p>
-<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a></p>
-{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports, cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
-{% if status.state == 'ready' %}<form method="post" action="{% url 'admin:report_export_download' job.pk %}">{% csrf_token %}<button type="submit">{% translate "Download export" %}</button></form>{% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
-{% if status.state == 'failed' %}<form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>{% endif %}
-{% if status.state == 'expired' %}
-<p>{% translate "The generated file has expired. Its request metadata remains. Regeneration creates a new request using the same retained inputs, format and timezone, with a new request time and current parish branding. It does not substitute current campaign data." %}</p>
-<p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
-<form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Regenerate expired file" %}</button></form>
-{% endif %}
-<p><a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+</details>
 {% endblock %}

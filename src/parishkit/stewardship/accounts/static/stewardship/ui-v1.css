@@ -229,6 +229,14 @@ main nav.table-nav form { gap: .5rem .75rem; }
 .table-nav button { margin: 0; padding: .35rem .9rem; min-height: 36px; }
 main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 36px; }
 .table-nav-disabled { display: inline-block; border: 1px solid var(--border); border-radius: var(--radius-small); color: var(--muted); }
+/* Report export status (report-export.html, report-exact.html). */
+.export-live > :first-child { margin-top: 0; }
+.export-state { font-size: 1.15rem; font-weight: 650; }
+.export-state-ready { color: var(--accent-strong); }
+.button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
+.spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+/* An export panel collapsed below a report's filters. */
+details.export-panel > form { margin-top: .5rem; }
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }

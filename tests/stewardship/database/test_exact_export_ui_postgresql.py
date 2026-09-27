@@ -64,9 +64,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
             PortalSession.objects.values_list("id", "last_activity_at", "version")
         )
         response, body = read(browser, status_path)
-        assert (
-            response.status_code == 200 and b"Waiting for the exact calculation" in body
-        )
+        assert response.status_code == 200 and b"Calculating the exact figures" in body
         assert b"America/New_York" in body
         assert b"Cancel export" in body
         assert (

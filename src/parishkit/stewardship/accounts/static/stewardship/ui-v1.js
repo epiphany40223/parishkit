@@ -81,6 +81,66 @@
     });
     update();
   });
+  // Report export status pages (report-export.html, report-exact.html). While
+  // the export is queued or running and the page is visible, re-read this
+  // same passive page (which never extends the login session) and swap in
+  // its fresh status region: every 1 s at first, backing off to 5 s. A
+  // ready file seen change from pending starts its download once; a finished
+  // exact calculation moves on to its file page. Any unexpected answer stops
+  // the polling and leaves the manual Refresh status link.
+  const live = document.querySelector("[data-export-live]");
+  if (live && live.hasAttribute("data-export-pending")) {
+    const delays = [1000, 1000, 1500, 2000, 3000, 4000, 5000];
+    let attempt = 0;
+    let timer = 0;
+    let region = live;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      if (document.visibilityState !== "visible") return;
+      timer = window.setTimeout(poll, delays[Math.min(attempt, delays.length - 1)]);
+      attempt += 1;
+    };
+    const poll = async () => {
+      let fresh;
+      try {
+        const response = await fetch(window.location.pathname, {
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { Accept: "text/html" },
+        });
+        if (!response.ok) return;
+        const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+        fresh = parsed.querySelector("[data-export-live]");
+      } catch {
+        return;
+      }
+      if (!fresh) return;
+      const follow = fresh.querySelector("a[data-export-follow]");
+      if (follow) { window.location.assign(follow.href); return; }
+      const adopted = document.importNode(fresh, true);
+      region.replaceWith(adopted);
+      region = adopted;
+      region.querySelectorAll("time[data-local-instant]").forEach((node) => {
+        const date = new Date(node.dateTime);
+        if (!Number.isFinite(date.getTime()) || typeof Intl === "undefined") return;
+        node.textContent = new Intl.DateTimeFormat("en-US", {
+          year: "numeric", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit", timeZoneName: "short"
+        }).format(date);
+      });
+      if (region.hasAttribute("data-export-pending")) { schedule(); return; }
+      const download = region.querySelector("form[data-export-download]");
+      if (download) {
+        download.querySelector("button")?.focus();
+        download.requestSubmit();
+      }
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (region.hasAttribute("data-export-pending")) schedule();
+    });
+    schedule();
+  }
+
   // A new rows-per-page choice applies at once and starts again at page 1.
   document.querySelectorAll("select[data-page-size]").forEach((select) => {
     select.addEventListener("change", () => {
