@@ -214,6 +214,17 @@ works. Only the default `credentials/<target>/credential` layout gets a
 directory mount; an individually overridden credential path keeps its
 single-file mount and the operator command.
 
+### Slack after setup
+
+Slack is optional and can be set up, replaced or removed at any time from its
+settings page. Saving a channel ID with the app's bot token adds the Slack
+integration together with its first key in one configuration request; the key
+is checked and installed as above. The configured `worker` always mounts
+Slack's credential directory, even before Slack is set up, so `compose.json`
+and `compose-slack.json` now render the same mounts and no Compose switch is
+needed. Removing Slack is an ordinary previewed configuration change; new
+Slack alerts stop, and the old key file remains until Slack is set up again.
+
 ## Verification
 
 The [file protocol tests](../../tests/stewardship/test_credential_files.py)

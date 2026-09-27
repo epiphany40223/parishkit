@@ -5,6 +5,7 @@
 <p>{% translate "These are applied settings. A connection check does not prove email or notification delivery." %}</p>
 <ul>{% for integration in integrations %}<li>
 {% if integration.configured %}<a href="{% url 'admin:integration_settings' integration.target %}">{{ integration.label }}</a>
+{% elif integration.target == 'slack' %}{{ integration.label }} — {% translate "Not set up." %} <a href="{% url 'admin:integration_settings' integration.target %}">{% translate "Set up Slack" %}</a>
 {% else %}{{ integration.label }} — {% translate "Not configured" %}{% endif %}
 </li>{% endfor %}</ul>
 {% endblock %}

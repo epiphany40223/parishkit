@@ -29,7 +29,7 @@ from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
 from .privileged_actions import sealed_secret_request
 from .request_models import ConfigurationChangeRequest
-from .request_patch import credential_request_schema
+from .request_patch import OPTIONAL_INTEGRATIONS, credential_request_schema
 from .secret_models import SECRET_PENDING, SecretReplacementRequest
 from .secret_requests import cancel_secret_request
 from .sessions import authenticated_admin, require_fresh
@@ -145,16 +145,28 @@ def save_credential(
     saving, which the selection request then applies with the fingerprint.
     If the selection cannot be recorded, the staged key is cancelled rather
     than left to install without anything selecting it.
+
+    ``record`` is None when adding Slack after setup: the selection request
+    then adds the integration record together with its first key.
     """
     require_fresh(request)
     records = integration_records(configuration.active_configuration.canonical_document)
+    identifier = UUID(intent["request"])
+    adding = record is None
+    if adding:
+        if target not in OPTIONAL_INTEGRATIONS:
+            raise LookupError("Integration is unavailable.")
+        # A retry of the same save derives the same new record identity.
+        record = {
+            "id": str(uuid5(SELECTION_NAMESPACE, f"record:{identifier}")),
+            "values": {"kind": target, "settings": {}, "credential_fingerprint": None},
+        }
     proposed = {**record, "values": {**record["values"], "settings": settings}}
     scope = authentication_scope(
         target,
         records | {target: proposed},
         recipient=configuration.testing_recipient,
     )
-    identifier = UUID(intent["request"])
     from .handoff_discovery import public_handoff
 
     sealed = public_handoff(target).seal(identifier, value)
@@ -176,7 +188,9 @@ def save_credential(
         provider_settings=scope,
     )
     values = {"credential_fingerprint": fingerprint}
-    if settings != record["values"]["settings"]:
+    if adding:
+        values |= {"kind": target, "settings": settings}
+    elif settings != record["values"]["settings"]:
         values["settings"] = settings
 
     def admit():
@@ -198,7 +212,7 @@ def save_credential(
             base_digest=intent["base"],
             patch=[
                 {
-                    "operation": "update",
+                    "operation": "add" if adding else "update",
                     "section": "integrations",
                     "id": record["id"],
                     "values": values,

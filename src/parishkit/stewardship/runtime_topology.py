@@ -102,9 +102,12 @@ def _service_config(configuration, role, *, target=None, provider_mode="configur
     secrets = {key: layout.credential(key) for key in names}
     document_name = name
     if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH}:
-        if provider_mode != "configured-slack":
-            secrets.pop("slack", None)
+        # A configured worker always mounts Slack's read-only credential
+        # directory, even before Slack is set up, so an Administrator can add
+        # or replace Slack later with no compose switch. "configured-slack" is
+        # kept for existing runbooks and renders the same mounts.
         if provider_mode == "initial":
+            secrets.pop("slack", None)
             secrets.pop("parishsoft", None)
             secrets.pop("google_workspace", None)
             document_name += "-initial"

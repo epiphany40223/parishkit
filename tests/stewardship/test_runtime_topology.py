@@ -194,7 +194,7 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
 
 @pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
 def test_provider_modes_keep_service_identity_and_owned_mounts(tmp_path, mode):
-    """Initial startup needs no provider file; recreation selects only owned files."""
+    """Initial startup needs no provider file; configured mounts every owned one."""
     configuration = configuration_at(tmp_path)
     compose, documents = render_runtime(
         configuration, image="parishkit-stewardship:development", provider_mode=mode
@@ -212,9 +212,9 @@ def test_provider_modes_keep_service_identity_and_owned_mounts(tmp_path, mode):
         assert document["postgres"]["user"] == "pk_stewardship_" + name.replace(
             "-", "_"
         )
-        expected = set() if mode == "initial" else providers - {"slack"}
-        if mode == "configured-slack" and name == "worker":
-            expected.add("slack")
+        # A configured worker always mounts Slack's folder, so Slack can be
+        # added after setup without switching compose files.
+        expected = set() if mode == "initial" else providers
         assert (
             set(document["secrets"]) & {"parishsoft", "slack", "google_workspace"}
             == expected

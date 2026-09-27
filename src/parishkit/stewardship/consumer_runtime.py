@@ -16,6 +16,7 @@ from parishkit.config import ConfigError
 from .accounts.key_files import _unique_object, read_private, write_private
 from .deployment import ServiceRole
 from .runtime_paths import private_directory
+from .service_boundaries import OPTIONAL_SECRETS
 
 DIRECTORY = Path("/tmp/stewardship-consumer")
 PIDFILE = DIRECTORY / "supervisor.pid"
@@ -48,10 +49,13 @@ def process_identity(pid):
 
 
 def _receipts(values, names):
-    """The worker report contains only the exact target inventory and safe labels."""
+    """The worker report contains only the exact target inventory and safe labels.
+
+    An optional credential (Slack) that is not installed yet is simply absent.
+    """
     if (
         type(values) is not dict
-        or set(values) != set(names)
+        or not set(names) - OPTIONAL_SECRETS <= set(values) <= set(names)
         or any(
             type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None
             for value in values.values()

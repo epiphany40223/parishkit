@@ -111,8 +111,16 @@ def validate_installation(document):
     )
     before = integration_records(previous.canonical_document)
     after = integration_records(document)
-    for target in TARGETS & before.keys() & after.keys():
-        old = before[target]["values"]["credential_fingerprint"]
+    # Initial setup adds its integrations under the setup readiness owner. After
+    # setup (the predecessor already has ParishSoft), an integration added with
+    # its first key, such as Slack, needs a receipt that expected no key.
+    added = after.keys() - before.keys() if "parishsoft" in before else set()
+    for target in TARGETS & ((before.keys() & after.keys()) | added):
+        old = (
+            before[target]["values"]["credential_fingerprint"]
+            if target in before
+            else None
+        )
         proposed = after[target]["values"]["credential_fingerprint"]
         if old != proposed:
             receipt = current_receipt(target, proposed, after)
