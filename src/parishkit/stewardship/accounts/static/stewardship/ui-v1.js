@@ -533,7 +533,7 @@
   // server reported an error on stays visible with its value, so the message
   // can be read and acted on. Without this script every field shows and the
   // server still explains any value that does not apply.
-  document.querySelectorAll("[data-schedule-row]").forEach((row) => {
+  const scheduleRow = (row) => {
     let rules;
     try { rules = JSON.parse(row.dataset.scheduleFields); } catch { return; }
     const kind = row.querySelector('[data-schedule-field="kind"] select');
@@ -560,6 +560,66 @@
     };
     kind.addEventListener("change", () => update(false));
     update(true);
+  };
+  document.querySelectorAll("[data-schedule-row]").forEach(scheduleRow);
+
+  // "Add another schedule" clones the formset's empty form (rendered in a
+  // <template> with __prefix__ names) as the next index and raises
+  // TOTAL_FORMS, so several new schedules save in one submission and the
+  // server validates them all together as before. Rows added here can be
+  // removed again before saving; later added rows are renumbered so the
+  // indexes stay contiguous. Without this script the button stays hidden and
+  // each save offers one blank row.
+  document.querySelectorAll("[data-schedule-template]").forEach((template) => {
+    const form = template.closest("form");
+    const total = form?.querySelector('input[name="schedules-TOTAL_FORMS"]');
+    const maximum = Number(form?.querySelector('input[name="schedules-MAX_NUM_FORMS"]')?.value);
+    const rows = form?.querySelector("[data-schedule-rows]");
+    const addRow = form?.querySelector("[data-schedule-add-row]");
+    const add = addRow?.querySelector("[data-schedule-add]");
+    const status = form?.querySelector("[data-schedule-status]");
+    if (!total || !rows || !add || !status) return;
+    const first = Number(total.value); // The server's rows keep their indexes.
+    const added = [];
+    const renumber = (row, index) => {
+      row.querySelectorAll("[name], [id], [for], [aria-describedby]").forEach((node) => {
+        ["name", "id", "for", "aria-describedby"].forEach((attribute) => {
+          const value = node.getAttribute(attribute);
+          if (value) node.setAttribute(attribute,
+            value.replace(/schedules-(?:\d+|__prefix__)-/g, `schedules-${index}-`));
+        });
+      });
+      row.querySelector("[data-schedule-number]").textContent =
+        (index + 1).toLocaleString("en-US");
+    };
+    const refresh = () => {
+      added.forEach((row, offset) => renumber(row, first + offset));
+      total.value = String(first + added.length);
+      add.disabled = Number.isFinite(maximum) && first + added.length >= maximum;
+    };
+    add.addEventListener("click", () => {
+      const row = template.content.firstElementChild.cloneNode(true);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button-secondary";
+      remove.textContent = "Remove this new schedule";
+      remove.addEventListener("click", () => {
+        added.splice(added.indexOf(row), 1);
+        row.remove();
+        refresh();
+        status.textContent = "New schedule removed.";
+        add.focus();
+      });
+      row.append(remove);
+      rows.append(row);
+      added.push(row);
+      refresh();
+      scheduleRow(row);
+      status.textContent = `Schedule ${row.querySelector("[data-schedule-number]")
+        .textContent} added. Choose its mail type.`;
+      row.querySelector('[data-schedule-field="kind"] select')?.focus();
+    });
+    addRow.hidden = false;
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list
