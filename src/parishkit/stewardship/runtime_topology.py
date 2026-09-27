@@ -45,6 +45,20 @@ def bind(path, *, target=None, read_only=True):
     }
 
 
+# Each check starts a new Python process that imports the application, about
+# a CPU-second. Eighteen services checked every 10 seconds kept roughly three
+# of a 4-vCPU host's cores busy, so steady state checks once a minute. During
+# start_period Docker checks every start_interval instead, so `up --wait`
+# still sees a started service healthy within seconds. The timeout allows for
+# a loaded host; a slow import is not a failed service.
+PYTHON_HEALTHCHECK = {
+    "interval": "60s",
+    "timeout": "15s",
+    "start_period": "120s",
+    "start_interval": "2s",
+}
+
+
 def _image(value, profile):
     """Production must select an immutable repository-registry application digest."""
     if (
@@ -303,8 +317,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             service["volumes"] = _online_mounts(selected)
             service["healthcheck"] = {
                 "test": ["CMD", "pk-stewardship", "installer-healthcheck"],
-                "interval": "10s",
-                "timeout": "4s",
+                **PYTHON_HEALTHCHECK,
                 "retries": 3,
             }
             if role in {
@@ -319,9 +332,8 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             if role is ServiceRole.WEB:
                 service["healthcheck"] = {
                     "test": ["CMD", "pk-stewardship", "healthcheck"],
-                    "interval": "10s",
-                    "timeout": "4s",
-                    "retries": 6,
+                    **PYTHON_HEALTHCHECK,
+                    "retries": 3,
                 }
         if checkout is not None:
             service["volumes"].append(bind(Path(checkout) / "src", target="/app/src"))
