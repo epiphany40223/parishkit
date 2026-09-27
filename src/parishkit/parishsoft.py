@@ -17,7 +17,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +31,10 @@ from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_
 
 DEFAULT_API_BASE_URL = "https://ps-fs-external-api-prod.azurewebsites.net/api/v2"
 LOGGER = logging.getLogger(__name__)
+# Optional observer of a long load: called as ``progress(collection, count)``
+# after each collection finishes, and once per ministry roster with that
+# roster's row count. Callers that pass nothing see no behavior change.
+ProgressCallback = Callable[[str, int], None]
 
 
 class ParishSoftAPIError(RuntimeError):
@@ -857,6 +861,7 @@ def load_ministry_types(client: ParishSoftClient) -> dict[int, dict[str, Any]]:
 def load_ministry_type_memberships(
     client: ParishSoftClient,
     ministry_types: dict[int, dict[str, Any]],
+    progress: ProgressCallback | None = None,
 ) -> dict[int, dict[str, Any]]:
     """Load each ministry's roster of ministers, keyed by ministry id.
 
@@ -864,7 +869,9 @@ def load_ministry_type_memberships(
     row: copies member/family DUIDs into ``"py member duid"``/``"py family
     duid"`` and parses the start/end dates. Each result entry bundles the
     ministry id/name (tolerating either ``name`` or ``ministryTypeName``) with
-    its membership rows.
+    its membership rows. One request per ministry makes this the slowest
+    collection, so an optional ``progress`` callback hears about each roster
+    as ``("ministry_roster", row count)``.
     """
     LOGGER.info("Loading ParishSoft ministry memberships")
     results: dict[int, dict[str, Any]] = {}
@@ -883,6 +890,7 @@ def load_ministry_type_memberships(
             "name": ministry_type.get("name") or ministry_type.get("ministryTypeName"),
             "membership": elements,
         }
+        _report(progress, "ministry_roster", len(elements))
         LOGGER.debug(
             "Loaded %s ministry memberships for %s",
             len(elements),
@@ -980,6 +988,12 @@ def load_contribution_details(
     return contributions
 
 
+def _report(progress: ProgressCallback | None, collection: str, count: int) -> None:
+    """Tell an optional progress observer that one collection has finished."""
+    if progress is not None:
+        progress(collection, count)
+
+
 def _copy_duid(element: dict[str, Any], source: str, target: str) -> None:
     """Copy ``source`` into ``target`` as an int, only if ``source`` exists."""
     if source in element:
@@ -1039,6 +1053,7 @@ def load_families_and_members(
     load_contributions: bool | str = False,
     retain_empty_families: bool = False,
     load_workgroups: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> ParishSoftData:
     """Load, cross-link, and filter a full ParishSoft dataset for one org.
 
@@ -1060,6 +1075,14 @@ def load_families_and_members(
       - ``load_workgroups``: when False, skip family and member workgroups and
         their memberships (one request per workgroup, minutes for a large
         parish) and return them empty, for callers that never use them.
+      - ``progress``: optional ``progress(collection, count)`` callback, told
+        after each collection finishes (and after each ministry roster), so a
+        long-running caller can show which part of the load is under way.
+        The collection names are ``funds``, ``pledges``, ``contributions``,
+        ``families``, ``family_groups``, ``members``, ``family_workgroups``,
+        ``family_workgroup_memberships``, ``member_contactinfos``,
+        ``member_workgroups``, ``member_workgroup_memberships``,
+        ``ministry_types`` and ``ministry_roster``, reported in load order.
 
     This is the central ParishSoft aggregation path, so it keeps the
     individual load and link steps explicit for easier operational
@@ -1069,6 +1092,8 @@ def load_families_and_members(
         raise ConfigError("ParishSoft retain_empty_families must be boolean")
     if type(load_workgroups) is not bool:
         raise ConfigError("ParishSoft load_workgroups must be boolean")
+    if progress is not None and not callable(progress):
+        raise ConfigError("ParishSoft progress must be callable")
     LOGGER.info("Loading full ParishSoft family/member dataset")
     org_id = client.validate_organization()
     funds: dict[int, dict[str, Any]] = {}
@@ -1081,33 +1106,55 @@ def load_families_and_members(
             else one_year_ago().isoformat()
         )
         funds = load_funds(client, org_id)
+        _report(progress, "funds", len(funds))
         pledges = load_pledges(client, funds)
+        _report(progress, "pledges", len(pledges))
         contributions = load_contribution_details(
             client,
             funds,
             pledges,
             start_date=start_date,
         )
+        _report(progress, "contributions", len(contributions))
     families = load_families(client, org_id)
+    _report(progress, "families", len(families))
     family_groups = load_family_groups(client)
+    _report(progress, "family_groups", len(family_groups))
     members = load_members(client, org_id)
+    _report(progress, "members", len(members))
     family_workgroups: dict[int, dict[str, Any]] = {}
     family_workgroup_memberships: dict[int, dict[str, Any]] = {}
     if load_workgroups:
         family_workgroups = load_family_workgroups(client)
+        _report(progress, "family_workgroups", len(family_workgroups))
         family_workgroup_memberships = load_family_workgroup_memberships(
             client, family_workgroups
         )
+        _report(
+            progress,
+            "family_workgroup_memberships",
+            len(family_workgroup_memberships),
+        )
     member_contactinfos = load_member_contactinfos(client, org_id)
+    _report(progress, "member_contactinfos", len(member_contactinfos))
     member_workgroups: dict[int, dict[str, Any]] = {}
     member_workgroup_memberships: dict[int, dict[str, Any]] = {}
     if load_workgroups:
         member_workgroups = load_member_workgroups(client)
+        _report(progress, "member_workgroups", len(member_workgroups))
         member_workgroup_memberships = load_member_workgroup_memberships(
             client, member_workgroups
         )
+        _report(
+            progress,
+            "member_workgroup_memberships",
+            len(member_workgroup_memberships),
+        )
     ministry_types = load_ministry_types(client)
-    ministry_type_memberships = load_ministry_type_memberships(client, ministry_types)
+    _report(progress, "ministry_types", len(ministry_types))
+    ministry_type_memberships = load_ministry_type_memberships(
+        client, ministry_types, progress
+    )
     LOGGER.info("Cross-linking ParishSoft family/member dataset")
     link_families_and_members(families, members)
     link_family_groups(families, family_groups)

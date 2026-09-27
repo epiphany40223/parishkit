@@ -6,8 +6,10 @@ from uuid import UUID
 from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRunEvent
+from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.source.load_progress import collections
 from parishkit.stewardship.source.models import SourceMutationLease
 
 from .sessions import authenticated_admin, database_now
@@ -15,6 +17,42 @@ from .setup_drafts import _owned
 from .setup_models import SetupAttempt
 from .setup_policy import SetupState
 from .setup_staging import _expire, _expiry, _window
+
+
+def _load_detail(task):
+    """Decode per-collection downloads and saved-record counts for this claim.
+
+    ``source.load_progress`` explains the encoding: the download phase's
+    history gives each collection's count, and saving/checking count from the
+    last download value. Only the current claim's history applies because a
+    retry's claim starts again from zero.
+    """
+    fetched = list(
+        TaskRunEvent.objects.filter(
+            run_id=task.pk,
+            attempt=task.attempt,
+            action="progress",
+            phase=TaskPhase.FETCHING,
+        )
+        .order_by("version")
+        .values_list("progress_current", "progress_total")
+    )
+    base = fetched[-1][1] if fetched else 0
+    saving = task.phase in {TaskPhase.STAGING, TaskPhase.VALIDATING}
+    return {
+        "collections": [
+            {
+                "key": item.key,
+                "count": item.count,
+                "done": item.done or saving,
+                "finished": item.finished,
+                "expected": item.expected,
+            }
+            for item in collections(fetched)
+        ],
+        "current": max(0, task.progress_current - base) if saving else 0,
+        "total": max(0, task.progress_total - base) if saving else 0,
+    }
 
 
 def source_progress(request, service, task_id, *, renew=False):
@@ -96,8 +134,7 @@ def source_progress(request, service, task_id, *, renew=False):
             ),
             "setup_state": attempt.state,
             "phase": task.phase,
-            "current": task.progress_current,
-            "total": task.progress_total,
+            **_load_detail(task),
             "worker_live": bool(worker_live),
             "renewed": renewed,
             "active": (

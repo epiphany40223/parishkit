@@ -4,7 +4,9 @@ import io
 import json
 import subprocess
 import sys
+import threading
 import time
+from contextlib import nullcontext, suppress
 from decimal import Decimal
 from unittest.mock import Mock
 
@@ -129,26 +131,26 @@ class HTTPResponse:
         yield from self.chunks
 
 
-def fake_http(monkeypatch, response):
-    """Replace network at the child boundary, keeping real worker validation."""
+def fake_http(response):
+    """Stand in for the helper's keep-alive Session at the network boundary."""
     instance = Mock(headers={})
     instance.request.return_value = response
-    context = Mock()
-    context.__enter__ = Mock(return_value=instance)
-    context.__exit__ = Mock(return_value=None)
-    monkeypatch.setattr(helper.requests, "Session", lambda: context)
     return instance
 
 
-def test_helper_streams_with_closed_http_options_and_no_environment_authority(
-    monkeypatch,
-):
-    """A fresh Session cannot inherit netrc/proxy settings or follow a redirect."""
+def test_helper_session_has_no_environment_authority():
+    """The one keep-alive Session cannot inherit netrc/proxy settings or cookies."""
+    with helper.new_session("SYNTHETIC-PRIVATE-KEY") as http:
+        assert http.trust_env is False
+        assert http.headers["x-api-key"] == "SYNTHETIC-PRIVATE-KEY"
+        assert not http.cookies and http.hooks == {"response": []}
+
+
+def test_helper_streams_with_closed_http_options():
+    """Each request streams without redirects under its own socket timeout."""
     response = HTTPResponse(chunks=(b"[", b"]"))
-    http = fake_http(monkeypatch, response)
-    assert helper.perform(request()) == (200, b"[]")
-    assert http.trust_env is False
-    assert http.headers == {"x-api-key": "SYNTHETIC-PRIVATE-KEY"}
+    http = fake_http(response)
+    assert helper.perform(http, request()) == (200, b"[]")
     assert http.request.call_args.kwargs == dict(
         timeout=30,
         stream=True,
@@ -159,11 +161,10 @@ def test_helper_streams_with_closed_http_options_and_no_environment_authority(
 
 
 @pytest.mark.parametrize("status", [301, 302, 400, 401, 429, 500, 503])
-def test_helper_never_reads_or_returns_provider_error_body(monkeypatch, status):
+def test_helper_never_reads_or_returns_provider_error_body(status):
     """Non-success status alone is sufficient for the shared retry/error policy."""
     response = HTTPResponse(status, chunks=(b"PRIVATE PROVIDER BODY",))
-    fake_http(monkeypatch, response)
-    assert helper.perform(request()) == (status, b"")
+    assert helper.perform(fake_http(response), request()) == (status, b"")
     assert response.closed and not response.read
 
 
@@ -171,22 +172,23 @@ def test_helper_never_reads_or_returns_provider_error_body(monkeypatch, status):
 def test_helper_rejects_oversized_or_empty_decoded_body(monkeypatch, chunks):
     """Apply the bound after decompression, without trusting length headers."""
     response = HTTPResponse(chunks=chunks)
-    fake_http(monkeypatch, response)
     monkeypatch.setattr(helper, "MAX_RESPONSE_BYTES", 3)
     with pytest.raises(ValueError):
-        helper.perform(request())
+        helper.perform(fake_http(response), request())
     assert response.closed
 
 
 def test_session_fences_before_exchange_and_returns_lossless_json(monkeypatch):
-    """Private material travels only in the bounded pipe payload, not diagnostics."""
+    """The per-request payload carries no key; the helper got it once at start."""
     calls = []
     current = session(before_request=lambda seconds: calls.append(("fence", seconds)))
 
     def exchange(payload, **options):
         """Record the trusted transport boundary without starting any process."""
         calls.append(("exchange", options["seconds"]))
-        assert json.loads(payload)["api_key"] == "SYNTHETIC-PRIVATE-KEY"
+        assert options["helper"].key == "SYNTHETIC-PRIVATE-KEY"
+        assert b"SYNTHETIC-PRIVATE-KEY" not in payload
+        assert set(json.loads(payload)) == helper.REQUEST_FIELDS
         return b'200\n{"amount":123456789.0123456789}'
 
     monkeypatch.setattr(transport, "_exchange", exchange)
@@ -194,9 +196,9 @@ def test_session_fences_before_exchange_and_returns_lossless_json(monkeypatch):
     assert calls == [("fence", 35), ("exchange", 30)]
     assert response.json() == {"amount": Decimal("123456789.0123456789")}
     assert response.request is None and response.cookies.get_dict() == {}
-    assert "PRIVATE" not in repr(current)
+    assert "PRIVATE" not in repr(current) and "PRIVATE" not in repr(current._helper)
     current.close()
-    assert not current.headers
+    assert not current.headers and current._helper.key is None
 
 
 def test_shared_client_uses_bounded_session_without_changing_ordinary_defaults(
@@ -273,33 +275,226 @@ def test_invalid_or_large_request_starts_no_preflight_or_process(monkeypatch):
     exchange.assert_not_called()
 
 
-def test_exchange_uses_private_pipes_and_isolated_installed_python(monkeypatch):
-    """The actual process call has neither secrets in argv/env nor inherited SQL FDs."""
-    process = Mock(stdin=io.BytesIO(), stdout=io.BytesIO(), returncode=0)
-    process.communicate.return_value = (b"200\n[]", None)
-    process.poll.return_value = 0
-    factory = Mock(return_value=process)
-    monkeypatch.setattr(transport.subprocess, "Popen", factory)
-    assert transport._exchange(b"PRIVATE", seconds=30, check=lambda: None) == b"200\n[]"
-    assert factory.call_args.args == (
-        [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"],
-    )
-    assert factory.call_args.kwargs == dict(
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        env={},
-    )
-    assert process.communicate.call_args.kwargs["input"] == b"PRIVATE"
-    assert process.stdin.closed and process.stdout.closed
+# A stand-in helper that speaks the real pipe protocol without any network.
+# Each request's "mode" parameter selects a behavior; success bodies report
+# the serving PID, whether the start frame carried the key, and the process
+# environment/argv so tests can prove the key never travels there.
+FAKE_HELPER = r"""
+import json, os, sys, time
+stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
+key = json.loads(stdin.readline())["api_key"]
+frames = {
+    "garble": b"HELLO\n",
+    "oversize": b"200 99999999\n",
+    "extra": b"200 2\n[]X",
+    "invalid": b"INVALID\n",
+    "error": b"ERROR\n",
+    "header": b"2" * 40,
+    "error-body": b"404 3\nabc",
+    "status": b"404 0\n",
+}
+for line in iter(stdin.readline, b""):
+    mode = json.loads(line)["parameters"].get("mode", "ok")
+    if mode == "sleep":
+        time.sleep(60)
+    if mode == "exit":
+        os._exit(3)
+    if mode == "stray":
+        body = b"[]"
+        stdout.write(b"200 2\n[]")
+        stdout.flush()
+        time.sleep(0.2)
+        stdout.write(b"X")
+        stdout.flush()
+        continue
+    if mode in frames:
+        stdout.write(frames[mode])
+        stdout.flush()
+        continue
+    body = json.dumps(
+        {
+            "pid": os.getpid(),
+            "key": key == "SYNTHETIC-PRIVATE-KEY",
+            "environ": dict(os.environ),
+            "argv": sys.argv,
+        }
+    ).encode()
+    stdout.write(b"200 %d\n" % len(body) + body)
+    stdout.flush()
+"""
+
+
+@pytest.fixture
+def launches(monkeypatch, tmp_path):
+    """Run the fake helper in place of the installed worker, recording each launch.
+
+    The recorded argv/options are exactly what the transport asked Popen for,
+    so tests assert the real isolation contract; only the module is swapped.
+    """
+    script = tmp_path / "fake_helper.py"
+    script.write_text(FAKE_HELPER)
+    original = subprocess.Popen
+    started = []
+
+    def launch(args, **options):
+        """Record the requested command, then start the synthetic helper."""
+        assert args == [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"]
+        assert options == dict(
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            env={},
+        )
+        process = original([sys.executable, "-I", str(script)], **options)
+        started.append(process)
+        return process
+
+    monkeypatch.setattr(transport.subprocess, "Popen", launch)
+    yield started
+    for process in started:
+        with suppress(ProcessLookupError):
+            process.kill()
+        process.wait()
+        process.stdin.close()
+        process.stdout.close()
+
+
+def fetch(current, mode="ok", timeout=30):
+    """Issue one real read through the session and the fake helper process."""
+    return current.get(request()["url"], params={"mode": mode}, timeout=timeout)
+
+
+def test_requests_reuse_one_helper_and_key_travels_only_over_stdin(launches):
+    """Startup and connections are amortized; argv/env never carry the key."""
+    current = session()
+    first, second = fetch(current).json(), fetch(current).json()
+    assert len(launches) == 1
+    assert first["pid"] == second["pid"] == launches[0].pid
+    assert first["key"] is True
+    assert "SYNTHETIC-PRIVATE-KEY" not in json.dumps([first["environ"], first["argv"]])
+    current.close()
+    assert launches[0].poll() is not None
+    assert launches[0].stdin.closed and launches[0].stdout.closed
+    assert not current.headers and current._helper.process is None
+
+
+def test_non_success_status_keeps_the_helper_for_the_next_request(launches):
+    """A provider 4xx/5xx is a valid reply, not a reason to restart the helper."""
+    current = session()
+    assert fetch(current, "status").status_code == 404
+    assert fetch(current).json()["pid"] == launches[0].pid
+    current.close()
+
+
+def test_deadline_kills_and_reaps_the_helper_then_replaces_it(launches):
+    """A stuck read cannot outlive its hard deadline; the next read starts fresh."""
+    current = session()
+    fetch(current)
+    beginning = time.monotonic()
+    with pytest.raises(SourceTransportError, match="deadline"):
+        fetch(current, "sleep", timeout=0.3)
+    assert time.monotonic() - beginning < 5
+    assert launches[0].poll() is not None and launches[0].stdout.closed
+    assert fetch(current).json()["pid"] == launches[1].pid != launches[0].pid
+    current.close()
+
+
+def test_ownership_loss_during_wait_kills_the_helper(launches):
+    """Polling gives lost ownership and shutdown a finite cancellation point."""
+    lost = []
+
+    def check():
+        """Report lost ownership once the test flips the flag."""
+        if lost:
+            raise PermissionError("Lost source ownership")
+
+    current = session(check=check)
+    fetch(current)
+    threading.Timer(0.3, lost.append, args=(True,)).start()
+    with pytest.raises(PermissionError):
+        fetch(current, "sleep")
+    assert launches[0].poll() is not None
+    lost.clear()
+    assert fetch(current).json()["pid"] == launches[1].pid
+    current.close()
+
+
+def test_helper_death_mid_request_fails_and_the_next_request_restarts(launches):
+    """EOF before a complete reply is a retryable outage on a fresh helper."""
+    current = session()
+    with pytest.raises(SourceTransportError, match="valid response"):
+        fetch(current, "exit")
+    assert launches[0].poll() == 3
+    assert fetch(current).json()["pid"] == launches[1].pid
+    current.close()
+
+
+def test_idle_helper_death_is_detected_before_reuse(launches):
+    """A helper that died between requests is reaped and transparently replaced."""
+    current = session()
+    fetch(current)
+    launches[0].kill()
+    launches[0].wait()
+    assert fetch(current).json()["pid"] == launches[1].pid
+    current.close()
+
+
+def test_stray_bytes_after_a_reply_force_a_fresh_helper(launches):
+    """Unsolicited output can never be mistaken for the next request's reply."""
+    current = session()
+    assert fetch(current, "stray").json() == []
+    time.sleep(0.5)
+    assert fetch(current).json()["pid"] == launches[1].pid
+    assert launches[0].poll() is not None
+    current.close()
+
+
+@pytest.mark.parametrize(
+    ("mode", "error", "message"),
+    [
+        ("garble", SourceTransportError, "valid response"),
+        ("error", SourceTransportError, "valid response"),
+        ("header", SourceTransportError, "frame is invalid"),
+        ("extra", SourceTransportError, "frame is invalid"),
+        ("error-body", SourceTransportError, "frame is invalid"),
+        ("oversize", InvalidSourceResponse, "body contract"),
+        ("invalid", InvalidSourceResponse, "body contract"),
+    ],
+)
+def test_bad_or_oversized_frames_fail_closed_and_kill_the_helper(
+    launches, mode, error, message
+):
+    """Every protocol violation stops the helper; nothing is reused or retried."""
+    current = session()
+    with pytest.raises(error, match=message):
+        fetch(current, mode)
+    assert launches[0].poll() is not None and current._helper.process is None
+    current.close()
+
+
+def test_changed_key_starts_a_new_helper(launches):
+    """A helper only ever serves the key it was started with."""
+    current = session()
+    fetch(current)
+    current.headers["x-api-key"] = "OTHER-SYNTHETIC-KEY"
+    assert fetch(current).json()["key"] is False
+    assert len(launches) == 2 and launches[0].poll() is not None
+    current.close()
+
+
+def test_unavailable_process_is_a_retryable_transport_error(monkeypatch):
+    """An OS refusal to start the helper is a connection-class failure."""
+    monkeypatch.setattr(transport.subprocess, "Popen", Mock(side_effect=OSError))
+    with pytest.raises(SourceTransportError, match="unavailable"):
+        fetch(session())
 
 
 def test_real_helper_rejects_invalid_input_without_network_or_traceback():
     """Installed-module startup and constant malformed-input protocol are executable."""
     process = subprocess.run(
         [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"],
-        input=b'{"private":"NEVER-DISCLOSE"}',
+        input=b'{"private":"NEVER-DISCLOSE"}\n',
         capture_output=True,
         timeout=10,
         env={},
@@ -308,47 +503,46 @@ def test_real_helper_rejects_invalid_input_without_network_or_traceback():
     assert process.stdout == b"ERROR\n" and process.stderr == b""
 
 
-def test_real_process_deadline_kills_and_reaps_only_the_read_helper(monkeypatch):
-    """A stuck process cannot outlive the reserved read/drain interval."""
-    original = subprocess.Popen
-    started = []
+@pytest.mark.parametrize(
+    "frame",
+    [
+        request(),  # A per-request key would bypass the start-frame binding.
+        {k: v for k, v in request(method="PUT").items() if k != "api_key"},
+    ],
+)
+def test_real_helper_validates_each_request_before_any_network(frame):
+    """Requests are rejected before any Session I/O, with a constant reply."""
+    key = json.dumps({"api_key": "SYNTHETIC-PRIVATE-KEY"}).encode() + b"\n"
+    process = subprocess.run(
+        [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"],
+        input=key + json.dumps(frame).encode() + b"\n",
+        capture_output=True,
+        timeout=10,
+        env={},
+    )
+    assert process.returncode == 1
+    assert process.stdout == b"ERROR\n" and process.stderr == b""
 
-    def fake_provider(args, **options):
-        """Substitute a local sleeping interpreter, never an external server."""
-        process = original(
-            [sys.executable, "-I", "-c", "import time; time.sleep(20)"], **options
-        )
-        started.append(process)
-        return process
 
-    monkeypatch.setattr(transport.subprocess, "Popen", fake_provider)
-    beginning = time.monotonic()
-    with pytest.raises(SourceTransportError, match="deadline"):
-        transport._exchange(b"PRIVATE", seconds=0.1, check=lambda: None)
-    assert time.monotonic() - beginning < 5
-    assert started[0].poll() is not None
-    assert started[0].stdin.closed and started[0].stdout.closed
+def test_real_helper_exits_quietly_when_stdin_closes():
+    """An idle helper whose parent closed the pipe exits instead of lingering."""
+    process = subprocess.run(
+        [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"],
+        input=json.dumps({"api_key": "SYNTHETIC-PRIVATE-KEY"}).encode() + b"\n",
+        capture_output=True,
+        timeout=10,
+        env={},
+    )
+    assert process.returncode == 0 and process.stdout == b""
 
 
-def test_ownership_loss_during_wait_kills_helper_without_consuming_result(monkeypatch):
-    """Timeout polling gives ownership loss and SIGTERM a finite cancellation point."""
-    process = Mock(stdin=io.BytesIO(), stdout=io.BytesIO(), returncode=None)
-    process.communicate.side_effect = subprocess.TimeoutExpired("safe-command", 0.25)
-    process.poll.return_value = None
-    monkeypatch.setattr(transport.subprocess, "Popen", lambda *args, **kwargs: process)
-    checks = 0
-
-    def check():
-        """Only the first wait remains admitted; the next observes fence loss."""
-        nonlocal checks
-        checks += 1
-        if checks > 1:
-            raise PermissionError("Lost source ownership")
-
-    with pytest.raises(PermissionError):
-        transport._exchange(b"PRIVATE", seconds=30, check=check)
-    process.kill.assert_called_once()
-    process.wait.assert_called_once_with(timeout=5)
+def test_helper_watchdog_exits_when_its_parent_disappears(monkeypatch):
+    """A re-parented helper stops even while blocked in provider I/O."""
+    monkeypatch.setattr(helper.os, "getppid", lambda: 1)
+    monkeypatch.setattr(helper.os, "_exit", Mock(side_effect=SystemExit))
+    with pytest.raises(SystemExit):
+        helper.watch_parent(12345, interval=0)
+    helper.os._exit.assert_called_once_with(1)
 
 
 def test_unknown_process_drain_is_fatal_not_a_retryable_read_failure():
@@ -451,31 +645,53 @@ def test_empty_success_frame_cannot_become_a_valid_empty_collection(monkeypatch)
         session().get(request()["url"], timeout=30)
 
 
-def test_helper_reports_deterministic_body_failure_without_private_text(monkeypatch):
-    """Malformed bodies have a distinct closed IPC outcome, not a network error."""
-    from types import SimpleNamespace
+def serve(monkeypatch, *frames, perform):
+    """Run the real helper loop on in-memory pipes with a fake keep-alive Session."""
+    sessions = []
 
+    def new_session(key):
+        """Record each Session; the loop must create exactly one."""
+        sessions.append(key)
+        return nullcontext(Mock())
+
+    monkeypatch.setattr(helper, "new_session", new_session)
+    monkeypatch.setattr(helper, "perform", perform)
+    lines = [{"api_key": "SYNTHETIC-PRIVATE-KEY"}, *frames]
+    stdin = io.BytesIO(b"".join(json.dumps(line).encode() + b"\n" for line in lines))
     output = io.BytesIO()
-    monkeypatch.setattr(
-        helper.sys,
-        "stdin",
-        SimpleNamespace(buffer=io.BytesIO(json.dumps(request()).encode())),
-    )
-    monkeypatch.setattr(helper.sys, "stdout", SimpleNamespace(buffer=output))
-    monkeypatch.setattr(helper.logging, "disable", Mock())
-    monkeypatch.setattr(
-        helper, "perform", Mock(side_effect=InvalidSourceResponse("PRIVATE"))
-    )
-    assert helper.main() == 2
-    assert output.getvalue() == b"INVALID\n"
+    return helper.serve(stdin, output), output.getvalue(), sessions
 
 
-def test_parent_does_not_retry_deterministic_helper_failure(monkeypatch):
-    """Recognize only the exact nontransient marker and still reap the helper."""
-    process = Mock(stdin=io.BytesIO(), stdout=io.BytesIO(), returncode=2)
-    process.communicate.return_value = (b"INVALID\n", None)
-    process.poll.return_value = 2
-    monkeypatch.setattr(transport.subprocess, "Popen", Mock(return_value=process))
-    with pytest.raises(InvalidSourceResponse):
-        transport._exchange(b"synthetic", seconds=30, check=lambda: None)
-    assert process.stdin.closed and process.stdout.closed
+def wire(**overrides):
+    """A key-free per-request frame as the parent sends it."""
+    return {k: v for k, v in request(**overrides).items() if k != "api_key"}
+
+
+def test_helper_serves_many_requests_on_one_session(monkeypatch):
+    """One Session (and its connections) serves every request until EOF."""
+    replies = iter([(200, b"[1]"), (404, b""), (200, b"[]")])
+    perform = Mock(side_effect=lambda session, value: next(replies))
+    status, output, sessions = serve(
+        monkeypatch, wire(), wire(), wire(), perform=perform
+    )
+    assert status == 0 and sessions == ["SYNTHETIC-PRIVATE-KEY"]
+    assert output == b"200 3\n[1]404 0\n200 2\n[]"
+    assert perform.call_args.args[1]["api_key"] == "SYNTHETIC-PRIVATE-KEY"
+
+
+def test_helper_reports_deterministic_body_failure_without_private_text(monkeypatch):
+    """Malformed bodies have a distinct closed IPC outcome, then the helper exits."""
+    perform = Mock(side_effect=InvalidSourceResponse("PRIVATE"))
+    status, output, _ = serve(monkeypatch, wire(), wire(), perform=perform)
+    assert (status, output) == (2, b"INVALID\n")
+    perform.assert_called_once()
+
+
+def test_helper_rejects_oversized_request_frame(monkeypatch):
+    """A request line longer than the bound is refused, never partially parsed."""
+    perform = Mock()
+    status, output, _ = serve(
+        monkeypatch, wire(parameters={"large": "x" * 70000}), perform=perform
+    )
+    assert (status, output) == (1, b"ERROR\n")
+    perform.assert_not_called()

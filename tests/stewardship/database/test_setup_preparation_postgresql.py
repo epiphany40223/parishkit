@@ -22,7 +22,12 @@ from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_content_postgresql import first_campaign
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
-from .test_setup_views_postgresql import post, setup_http  # noqa: F401
+from .test_setup_views_postgresql import (  # noqa: F401
+    admin_session,
+    post,
+    reviewed,
+    setup_http,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -204,6 +209,8 @@ def test_share_http_preserves_ids_and_has_closed_versioned_fields(
     with web_login():
         response = browser.get(url)
         assert response.status_code == 200, response.content
+        # Seeded defaults are not a review: the step is not done yet.
+        assert "setup_reviewed" not in admin_session(browser)
         assert browser.post(url, data).status_code == 403
         for changed in (
             {"options-99-label": "Unexpected"},
@@ -221,6 +228,11 @@ def test_share_http_preserves_ids_and_has_closed_versioned_fields(
             previous[1]["id"],
             previous[0]["id"],
         ]
+        # Saving the shares page is the explicit review the stepper counts.
+        assert reviewed(browser) == {
+            "attempt": str(status.attempt_id),
+            "shares": [option["id"] for option in options],
+        }
         assert post(browser, url, data).status_code == 409
     assert not setup_http.configured()
 

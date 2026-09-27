@@ -1,6 +1,23 @@
-{% load i18n %}
-<section class="panel" aria-label="{% translate 'Setup deadlines' %}">
-<p>{% translate "Idle deadline:" %} <time data-local-instant datetime="{{ draft.idle_at|date:'c' }}">{{ draft.idle_at|date:'c' }}</time></p>
-<p>{% translate "Absolute session deadline:" %} <time data-local-instant datetime="{{ draft.absolute_at|date:'c' }}">{{ draft.absolute_at|date:'c' }}</time></p>
-{% if draft.watchdog_at %}<p>{% translate "Source-load hard deadline:" %} <time data-local-instant datetime="{{ draft.watchdog_at|date:'c' }}">{{ draft.watchdog_at|date:'c' }}</time></p>{% endif %}
-</section>
+{% load i18n %}{% comment %}
+Setup time limits in plain language, collapsed so they do not crowd each page.
+``limits`` (required) is the draft (or setup window) with idle_at/absolute_at/watchdog_at
+datetimes; ``live`` marks the progress page, whose values are ISO strings the
+polling script refreshes through the data-progress-deadline attributes. The
+durations match setup_policy (IDLE_LIMIT, SOURCE_WATCHDOG) and session_policy
+(ADMIN_ABSOLUTE); test_setup_wizard checks that they still agree.
+{% endcomment %}
+<details class="setup-deadlines">
+<summary>{% translate "Time limits for this setup" %}</summary>
+<dl>
+<dt>{% translate "Inactivity limit" %}</dt>
+<dd><p>{% translate "Setup ends if 30 minutes pass without you saving a step or starting the parish data load. Just opening or reading pages does not count. While the load runs, keeping its progress page open and visible counts as activity." %}</p>
+<p>{% translate "If you do nothing, setup ends at:" %} <time {% if live %}data-progress-deadline="idle_at" {% endif %}data-local-instant datetime="{% if live %}{{ limits.idle_at }}{% else %}{{ limits.idle_at|date:'c' }}{% endif %}">{% if live %}{{ limits.idle_at }}{% else %}{{ limits.idle_at|date:'c' }}{% endif %}</time></p></dd>
+<dt>{% translate "Sign-in limit" %}</dt>
+<dd><p>{% translate "Setup must be finished within 12 hours of when you signed in. Confirming your sign-in with Google again does not extend this." %}</p>
+<p>{% translate "Finish setup before:" %} <time {% if live %}data-progress-deadline="absolute_at" {% endif %}data-local-instant datetime="{% if live %}{{ limits.absolute_at }}{% else %}{{ limits.absolute_at|date:'c' }}{% endif %}">{% if live %}{{ limits.absolute_at }}{% else %}{{ limits.absolute_at|date:'c' }}{% endif %}</time></p></dd>
+{% if limits.watchdog_at %}<dt>{% translate "Parish data load limit" %}</dt>
+<dd><p>{% translate "The parish data load must finish within 2 hours of starting. A load that takes longer is stuck and stops; it cannot be extended." %}</p>
+<p>{% translate "The load must finish by:" %} <time {% if live %}data-progress-deadline="watchdog_at" {% endif %}data-local-instant datetime="{% if live %}{{ limits.watchdog_at }}{% else %}{{ limits.watchdog_at|date:'c' }}{% endif %}">{% if live %}{{ limits.watchdog_at }}{% else %}{{ limits.watchdog_at|date:'c' }}{% endif %}</time></p></dd>{% endif %}
+</dl>
+<p>{% translate "When a limit is reached, this setup attempt ends and its temporary settings are cleared. Sign in again to start over." %}</p>
+</details>

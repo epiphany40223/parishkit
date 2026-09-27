@@ -401,14 +401,33 @@ def test_load_families_and_members_can_skip_workgroups(tmp_path):
         ],
     )
 
-    data = load_families_and_members(ps, load_workgroups=False)
+    reported = []
+    data = load_families_and_members(
+        ps, load_workgroups=False, progress=lambda *event: reported.append(event)
+    )
 
+    # A long-running caller hears about each finished collection in load order.
+    assert reported == [
+        ("families", 1),
+        ("family_groups", 1),
+        ("members", 1),
+        ("member_contactinfos", 1),
+        ("ministry_types", 1),
+        ("ministry_roster", 1),
+    ]
     assert data.family_workgroups == {} and data.member_workgroups == {}
     assert data.family_workgroup_memberships == {}
     assert data.member_workgroup_memberships == {}
     assert data.families[1]["py members"] == [data.members[2]]
     assert data.members[2]["py contactInfo"]["nickName"] == "Annie"
     assert data.members[2]["py ministries"]["Readers"]["id"] == 300
+
+
+def test_load_families_and_members_rejects_a_non_callable_progress(tmp_path):
+    """A misconfigured observer fails before any ParishSoft request is made."""
+    ps = client(tmp_path, [])
+    with pytest.raises(ConfigError, match="progress"):
+        load_families_and_members(ps, progress="not callable")
 
 
 def test_load_families_and_members_aggregate(tmp_path):

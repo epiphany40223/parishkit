@@ -15,10 +15,11 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import Execution, Handler, execute_hint
 from parishkit.stewardship.jobs.lifetime import maintain_execution
-from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
 from parishkit.stewardship.jobs.ownership import TaskClaim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.source.credentials import SourceCredential
+from parishkit.stewardship.source.load_progress import collections
 from parishkit.stewardship.source.models import SourceMutationLease
 from parishkit.stewardship.source.setup_admission import admit_setup_task
 from parishkit.stewardship.source.setup_exchange import (
@@ -119,6 +120,16 @@ def test_worker_loads_ready_corpus_without_publishing_setup(setup_service, monke
     assert SetupSourceResult.objects.get().snapshot_id == snapshot.pk
     assert snapshot.state == "ready" and snapshot.counts["family"] == 1
     assert snapshot.counts["fund"] == 1
+    # Each downloaded collection left one decodable step in the task history.
+    run_row = TaskRun.objects.get()
+    fetched = TaskRunEvent.objects.filter(
+        run_id=run_row.pk, action="progress", phase="fetching"
+    ).order_by("version")
+    downloaded = collections(fetched.values_list("progress_current", "progress_total"))
+    assert all(item.done for item in downloaded)
+    assert {item.key: item.count for item in downloaded}["families"] == 1
+    assert run_row.phase == "validating"
+    assert run_row.progress_total - run_row.progress_current == 0
     assert snapshot.counts["pledge"] == snapshot.counts["contribution"] == 0
     assert SourceCurrent.objects.get().snapshot_id is None
     assert SetupAttempt.objects.get().state == "loading"

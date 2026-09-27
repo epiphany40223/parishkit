@@ -1,6 +1,7 @@
 """Original-login mail schedules and atomic temporary campaign-date correction."""
 
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -108,6 +109,7 @@ def setup_schedules(request):
                 "schedules": schedules,
                 "collection_error": collection_error,
                 "campaign_name": campaign["name"],
+                "templates_url": reverse("admin:setup_content"),
             },
             status=status,
         )

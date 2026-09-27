@@ -233,7 +233,8 @@ services: Admin endpoints, stale-request recovery, durable poll watermarks,
 bounded provider transport and concrete promotion/reconciliation are still open.
 
 The read-transport checkpoint adds an opt-in shared Session adapter with a
-separate, finite one-request helper process. Keys travel only over private stdin;
+separate, finite helper process (now persistent per session; see below).
+Keys travel only over private stdin;
 the helper uses closed read/search endpoints, no redirects, no inherited proxy
 or netrc authority, and an 8 MiB decoded-response ceiling. Error bodies are not
 read or returned. The parent polls ownership during the read, kills/reaps only
@@ -254,6 +255,21 @@ helper startup/timeout/reaping without provider credentials. The full baseline
 passes 2,984 tests, with 1,332 explicitly opt-in cases skipped; lint and formatting
 also pass. Runtime enabling,
 strict collection pagination and full/delta promotion remain in progress.
+
+A later performance change keeps that helper alive for its whole source
+session instead of starting one process per request. Per-request startup and
+TLS handshakes made a real full load of about 450 requests take roughly ten
+minutes; a keep-alive client needs about one. Each `BoundedSourceSession` now
+starts one helper on its first request, sends the key once as the helper's
+first stdin line, and then exchanges one key-free request line and one
+length-prefixed reply frame per read over the same pipes, so a single
+`requests.Session` reuses provider connections. Every request still passes the
+same validation, `before_request` admission and ownership polling, and has its
+own hard deadline and 8 MiB bound. On timeout, lost ownership, a malformed or
+oversized frame, helper death or unsolicited output, the parent kills and reaps
+the helper, and the next request starts a fresh one. Closing the session reaps
+the helper and drops the key. The helper exits when stdin closes or its parent
+disappears, so it cannot outlive its owner.
 
 The collection checkpoint adds strict shared pagination and an opt-in coherent
 client for the existing full Family/Member aggregation path. Published request

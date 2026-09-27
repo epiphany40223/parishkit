@@ -1,6 +1,7 @@
 """Non-mutating whole-wizard public preview and fictional named content samples."""
 
 import json
+from dataclasses import replace
 
 from django.shortcuts import render
 from django.urls import reverse
@@ -10,6 +11,7 @@ from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS, page_slots, sample_render
+from .setup_drafts import mark_reviewed
 from .setup_preview import prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
 
@@ -45,10 +47,19 @@ def setup_preview(request):
             )
             for slot, label in labels.items()
         ]
+        # Showing the whole review is what completes this step, for this exact
+        # draft version. Record it first so this page's own stepper and
+        # Continue already reflect it; a draft that changes meanwhile has a
+        # newer version, so the mark cannot complete the newer draft.
+        draft = preview.draft
+        mark_reviewed(request, draft.status.attempt_id, "preview", draft.status.version)
+        draft = replace(
+            draft, reviewed=draft.reviewed | {"preview": draft.status.version}
+        )
         response = render(
             request,
             "stewardship/setup-preview.html",
-            _context(preview.draft, "preview")
+            _context(draft, "preview")
             | {
                 "parish": parish,
                 "campaign": campaign,

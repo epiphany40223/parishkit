@@ -26,7 +26,9 @@ class SetupCampaignForm(CampaignForm):
         """The first draft inherits its original setup Parish timezone."""
         super().__init__(*args, **kwargs)
         self.fields["timezone"].disabled = True
-        setup_help.apply(self, setup_help.CAMPAIGN)
+        # Replace: the setup text is more specific, and it repeats the
+        # multi-select instructions that are the shared form's own help.
+        setup_help.apply(self, setup_help.CAMPAIGN, replace=True)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

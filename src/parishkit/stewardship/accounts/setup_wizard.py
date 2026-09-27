@@ -12,6 +12,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from .schedule_forms import schedulable
 from .setup_content_values import CONTENT_STEPS
 from .setup_policy import SetupState
 
@@ -32,13 +33,16 @@ class Page:
         return reverse(self.route, args=self.args)
 
 
-# Order matters twice over. Credential pages accept input only within five
-# minutes of the Google sign-in (sessions.require_fresh), and signing in again
-# ends this setup attempt, so every credential and the public settings its
-# staging depends on (mail and Testing for Google Workspace, Slack for its
-# token) come first. Then the source load, which needs the Parish profile and
-# the ParishSoft connection, precedes the first campaign that needs its catalog.
+# The Parish profile comes first: it tells the administrator, before anything
+# technical, that they are configuring their own parish. The credential pages
+# follow, each right after the public settings its staging depends on (mail
+# and Testing for Google Workspace, Slack for its token). They no longer have
+# to race the five-minute fresh sign-in window: a stale sign-in is offered
+# "Confirm with Google", which keeps this setup. The source load then needs
+# the Parish profile and ParishSoft connection, and precedes the first
+# campaign that needs its catalog.
 PAGES = (
+    Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page(
         "parishsoft",
         _("ParishSoft connection"),
@@ -57,7 +61,6 @@ PAGES = (
     Page(
         "slack_credential", _("Slack connection"), "admin:setup_credential", ("slack",)
     ),
-    Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("source", _("Load parish data"), "admin:setup_source"),
     Page("branding", _("Parish logo"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
@@ -114,6 +117,11 @@ class Wizard:
         return next((step for step in self.steps if step.key == key), None)
 
     @property
+    def current(self):
+        """The entry for the page being shown, or None off the ordered list."""
+        return next((step for step in self.steps if step.current), None)
+
+    @property
     def resume(self):
         """The first open page still needing work, else the review page."""
         for step in self.steps:
@@ -151,11 +159,20 @@ def _done(key, draft, credentials, tests):
     if key == "content":
         return any(sections.get(step, {}).get("values") for step in CONTENT_STEPS)
     if key == "shares":
-        return "campaign" in sections
+        # The campaign page seeds default options, so their presence proves
+        # nothing; only a save on the shares page (of these exact options) does.
+        options = sections.get("campaign", {}).get("campaign", {}).get("share_options")
+        reviewed = getattr(draft, "reviewed", {}).get("shares")
+        return options is not None and reviewed == [row["id"] for row in options]
     if key in {"mail_test", "slack_test"}:
         return key in tests
     if key == "preview":
-        return all(
+        # Review is done once the admin has opened it for the current draft
+        # version with every required page complete, not merely when it could
+        # be opened; any later edit bumps the version and asks for it again.
+        return getattr(draft, "reviewed", {}).get(
+            "preview"
+        ) == draft.status.version and all(
             _done(page.key, draft, credentials, tests)
             for page in PAGES
             if page.required
@@ -168,12 +185,16 @@ def _done(key, draft, credentials, tests):
 
 
 def _blocker(key, draft, done):
-    """Return (reason, page key that fixes it) when a page cannot open yet."""
+    """Return (reason, page key that fixes it) when a page cannot open yet.
+
+    These mirror the prerequisites each page's own view enforces. The ordering
+    rule (no jumping past unfinished steps) is applied separately in build().
+    """
     if draft.status.state == SetupState.LOADING and key != "source":
         return _("Available after the parish data load finishes."), "source"
     requirements = {
         "source": (
-            ("parishsoft", "parish"),
+            ("parish", "parishsoft"),
             _("Save the Parish profile and ParishSoft connection first."),
         ),
         "google_workspace": (
@@ -185,6 +206,22 @@ def _blocker(key, draft, done):
         "shares": (("campaign",), _("Save the first campaign first.")),
         "schedules": (("campaign",), _("Save the first campaign first.")),
     }
+    if key == "schedules" and done.get("campaign") and not done["schedules"]:
+        # Every schedule sends a saved email, so an empty template list would
+        # offer nothing to choose. (Saving no schedules at all stays allowed.)
+        saved = [
+            draft.sections[step]
+            for step in CONTENT_STEPS
+            if draft.sections.get(step, {}).get("values")
+        ]
+        if not schedulable(saved):
+            return (
+                _(
+                    "Save an invitation or reminder email under Pages and "
+                    "email templates first."
+                ),
+                "content",
+            )
     if key in FINAL:
         needed = tuple(
             page.key
@@ -205,24 +242,43 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
 
     This is a pure function of already-admitted draft data so the ordering,
     done-state and availability rules are unit-testable without a database.
+
+    Navigation is conventional: completed steps and the first unfinished
+    required step link to their pages; later unfinished steps are listed but
+    not linked until every earlier required step is done (optional steps
+    never hold anything back). A completed step still reads "Completed"
+    while the data load runs, but is not linked because its page cannot
+    accept changes then.
     """
     if draft is None or draft.status.state not in ACTIVE:
         return None
     credentials = credentials or {}
     pages = [page for page in PAGES if applicable(page.key, draft.sections)]
     done = {page.key: _done(page.key, draft, credentials, tests) for page in pages}
+    # The first unfinished required step; everything unfinished after it waits.
+    frontier = next(
+        (page.key for page in pages if page.required and not done[page.key]), None
+    )
+    reached = True
     steps = []
     for number, page in enumerate(pages, start=1):
         blocked = _blocker(page.key, draft, done)
+        # "locked" is ordering only: the page's view has no such prerequisite,
+        # so callers checking real prerequisites look for "blocked" alone.
+        locked = False
+        if page.key == frontier:
+            reached = False
+        elif not reached and not done[page.key] and not blocked:
+            blocked, locked = (_("Finish the earlier steps first."), frontier), True
         if page.key == "source" and draft.status.state == SetupState.LOADING:
             state, status = "todo", _("In progress")
-        elif blocked:
-            state, status = (
-                "blocked",
-                _("Not available yet: %(reason)s") % {"reason": blocked[0]},
-            )
         elif done[page.key]:
             state, status = "done", _("Completed")
+        elif blocked:
+            state, status = (
+                "locked" if locked else "blocked",
+                _("Not available yet: %(reason)s") % {"reason": blocked[0]},
+            )
         elif not page.required:
             state, status = "todo", _("Optional")
         else:

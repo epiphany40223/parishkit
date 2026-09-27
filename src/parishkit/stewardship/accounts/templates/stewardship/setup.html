@@ -2,16 +2,16 @@
 {% block title %}{% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-{% include 'stewardship/setup-wizard.html' %}
+{% include 'stewardship/setup-wizard.html' with stepper_open=True %}
 <h1>{% translate "Initial setup" %}</h1>
 <p class="notice">{% translate "Testing mode. Settings saved here are temporary and are not active configuration. No campaign is open to parishioners." %}</p>
 {% if expired %}
 <h2>{% translate "This setup attempt has ended" %}</h2>
 <p>{% translate "Your temporary settings have been cleared. Sign out and sign in again to start a new setup attempt." %}</p>
 {% elif draft %}
-{% include 'stewardship/setup-deadlines.html' %}
+{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if wizard %}
-<p class="setup-intro">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}You have completed {{ done }} of {{ total }} setup steps. Use Continue to go to the next step that still needs work, or choose any available step above.{% endblocktranslate %}</p>
+<p class="setup-intro">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}You have completed {{ done }} of {{ total }} setup steps. Use Continue to go to the next step that still needs work, or return to any completed step from the list above.{% endblocktranslate %}</p>
 {% if wizard.resume %}<div class="setup-actions"><a class="setup-continue" href="{{ wizard.resume.href }}">{% translate "Continue setup" %}<span class="setup-sr-only">: {{ wizard.resume.label }}</span></a></div>{% endif %}
 {% if draft.source_task_id %}<p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "Source-load progress" %}</a></p>{% endif %}
 <p>{% translate "The original bootstrap Administrator is preserved. Additional access rules do not take effect until setup completes." %}</p>
@@ -36,7 +36,7 @@
 <li>{% translate "A staff mailbox for Testing mode, the parish logo image, and the first campaign's dates." %}</li>
 </ul>
 <p class="notice">{% translate "Saving a credential needs a Google sign-in from the last five minutes. If yours is older, the page asks you to confirm it's you with Google; your setup is kept." %}</p>
-<p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops any source-load renewal; idle and absolute timeouts still apply." %}</p>
+<p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops the data-load progress page from counting as activity; the inactivity and sign-in time limits still apply." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button type="submit">{% translate "Start setup" %}</button></form>
 {% endif %}
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}

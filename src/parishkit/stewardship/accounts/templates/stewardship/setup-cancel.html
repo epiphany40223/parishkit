@@ -27,8 +27,8 @@
 <p><a href="{% url 'admin:setup_cancel' %}">{% translate "Refresh setup progress" %}</a></p>
 <p>{% translate "This page does not renew your original login's idle or absolute deadlines." %}</p>
 <section class="panel" aria-label="{% translate 'Final setup deadlines' %}">
-<p>{% translate "Idle deadline:" %} <time data-local-instant datetime="{{ deadlines.idle_at|date:'c' }}">{{ deadlines.idle_at|date:'c' }}</time></p>
-<p>{% translate "Absolute session deadline:" %} <time data-local-instant datetime="{{ deadlines.absolute_at|date:'c' }}">{{ deadlines.absolute_at|date:'c' }}</time></p>
+<p>{% translate "Inactivity limit (30 minutes after your last saved change; viewing this page does not count):" %} <time data-local-instant datetime="{{ deadlines.idle_at|date:'c' }}">{{ deadlines.idle_at|date:'c' }}</time></p>
+<p>{% translate "Sign-in limit (12 hours after you signed in):" %} <time data-local-instant datetime="{{ deadlines.absolute_at|date:'c' }}">{{ deadlines.absolute_at|date:'c' }}</time></p>
 <p>{% translate "Final setup must complete before these deadlines. Interrupted work can resume only while this original login remains valid. Expiry cancels unfinished setup; after cleanup, sign out and sign in to start again." %}</p>
 </section>
 <p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>

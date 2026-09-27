@@ -27,6 +27,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .cursors import refresh_cursor
 from .errors import SourceCredentialChanged, local_read_admission
 from .leases import reserve_source_request, verify_source
+from .load_progress import DownloadProgress
 from .loading import load_full_source
 from .setup_admission import bound_attempt, require_live_setup
 from .setup_exchange import _live
@@ -117,13 +118,26 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
         )
         execution.progress(0, 0, phase=TaskPhase.FETCHING)
         connections.close_all()
+
+        def downloaded(current, total):
+            """Persist one finished collection between requests, holding no SQL."""
+            execution.progress(current, total, phase=TaskPhase.FETCHING)
+            connections.close_all()
+
+        download = DownloadProgress(downloaded)
         loaded = load_full_source(
-            client, window=window, as_of=snapshot.started_at.astimezone(zone).date()
+            client,
+            window=window,
+            as_of=snapshot.started_at.astimezone(zone).date(),
+            progress=download,
         )
     finally:
         session.close()
+    # Saved-record counts continue from the last download value because task
+    # progress may never decrease; the page subtracts the same base.
+    base = download.base
     total, done = sum(loaded.counts.values()), 0
-    execution.progress(done, total, phase=TaskPhase.STAGING)
+    execution.progress(base, base + total, phase=TaskPhase.STAGING)
     for kind, rows in loaded.corpus.items():
         for batch in batched(rows.items(), 500):
             with execution.effect():
@@ -131,8 +145,8 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
                     snapshot.pk, claim, kind=kind, entities=dict(batch), admit=admitted
                 )
             done += len(batch)
-            execution.progress(done, total, phase=TaskPhase.STAGING)
-    execution.progress(done, total, phase=TaskPhase.VALIDATING)
+            execution.progress(base + done, base + total, phase=TaskPhase.STAGING)
+    execution.progress(base + done, base + total, phase=TaskPhase.VALIDATING)
     with execution.effect():
         snapshot = finish_snapshot(
             snapshot.pk,

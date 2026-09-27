@@ -198,3 +198,60 @@ def test_web_can_observe_but_not_change_source_lease_metadata():
         connection.cursor() as cursor,
     ):
         cursor.execute("UPDATE stewardship_source_lease SET expires_at=now()")
+
+
+def test_progress_reads_back_each_downloaded_collection_and_saved_records(
+    setup_service,
+):
+    """The web login decodes the worker's task history without a schema change."""
+    from parishkit.stewardship.jobs.phases import TaskPhase
+    from parishkit.stewardship.source.load_progress import DownloadProgress
+
+    request, task, _ = loading(setup_service)
+    state = {"task": act(task, "progress", progress=(0, 0), phase=TaskPhase.FETCHING)}
+
+    def persist(current, total):
+        """Record one download step exactly as the worker does."""
+        state["task"] = act(
+            state["task"],
+            "progress",
+            progress=(current, total),
+            phase=TaskPhase.FETCHING,
+        )
+
+    download = DownloadProgress(persist)
+    for event in (
+        ("families", 3),
+        ("family_groups", 1),
+        ("members", 5),
+        ("member_contactinfos", 5),
+        ("ministry_types", 2),
+        ("ministry_roster", 4),
+    ):
+        download(*event)
+    with web_login():
+        partial = source_progress(request, setup_service, task.run_id)
+    rows = {row["key"]: row for row in partial["collections"]}
+    assert rows["families"]["count"] == 3 and rows["families"]["done"]
+    assert (
+        rows["ministry_roster"]["finished"],
+        rows["ministry_roster"]["expected"],
+    ) == (
+        1,
+        2,
+    )
+    assert not rows["ministry_roster"]["done"] and not rows["funds"]["done"]
+    assert partial["current"] == partial["total"] == 0
+    download("ministry_roster", 0)
+    download("funds", 1)
+    base = download.base
+    state["task"] = act(
+        state["task"],
+        "progress",
+        progress=(base + 7, base + 20),
+        phase=TaskPhase.STAGING,
+    )
+    with web_login():
+        saving = source_progress(request, setup_service, task.run_id)
+    assert all(row["done"] for row in saving["collections"])
+    assert (saving["current"], saving["total"]) == (7, 20)

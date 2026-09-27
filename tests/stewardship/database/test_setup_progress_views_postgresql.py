@@ -35,8 +35,12 @@ def test_progress_get_is_passive_and_csrf_post_renews_only_the_bound_load(
     with web_login():
         page = browser.get(path)
         assert page.status_code == 200
-        assert b"about eight for a parish of a few thousand Families" in page.content
-        assert b"two-hour load limit" in page.content
+        assert b"about ten for a parish of a few thousand Families" in page.content
+        assert b"within 2 hours of starting" in page.content
+        assert (
+            b"Inactivity limit" in page.content and b"Idle deadline" not in page.content
+        )
+        assert b'data-collection="ministry_roster"' in page.content
         assert b"Last sign of activity" in page.content
         assert page["Cache-Control"] == "no-store"
         passive = browser.get(path + "?format=json")

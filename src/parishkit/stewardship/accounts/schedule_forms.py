@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 
+from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 
 KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
@@ -25,6 +26,20 @@ WEEKDAYS = (
     "Saturday",
     "Sunday",
 )
+
+
+NO_TEMPLATES = _(
+    "No invitation, reminder or digest email is saved yet, so there is nothing "
+    "to choose. Save those emails with the page and email templates first."
+)
+
+
+def schedulable(templates):
+    """Whether any saved template is an email a schedule can send."""
+    return any(
+        row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
+        for row in templates
+    )
 
 
 class ScheduleWindow(forms.Form):
@@ -62,13 +77,52 @@ class ScheduleWindow(forms.Form):
         ]
         if previous["financial"] is None:
             del self.fields["overlap_confirmed"]
+        else:
+            self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         for field in self.fields.values():
             field.disabled = not editable
+
+    @property
+    def overlap_needed(self):
+        """Whether these campaign dates overlap the (fixed) financial period."""
+        financial = self.previous["financial"]
+        return financial is not None and overlaps(
+            self["start_date"].value(),
+            self["end_date"].value(),
+            financial["start"],
+            financial["end"],
+        )
+
+    @property
+    def overlap_attributes(self):
+        """Editable campaign dates by input name; the period's dates as values."""
+        financial = self.previous["financial"] or {}
+        return overlap_attributes(
+            {
+                "campaign-start": ("name", self.add_prefix("start_date")),
+                "campaign-end": ("name", self.add_prefix("end_date")),
+                "period-start": ("value", financial.get("start", "")),
+                "period-end": ("value", financial.get("end", "")),
+            }
+        )
 
     def clean(self):
         """Validate the whole resulting campaign, not dates in isolation."""
         values = super().clean()
         if self.errors:
+            return values
+        if (
+            "overlap_confirmed" in self.fields
+            and self.overlap_needed
+            and not values["overlap_confirmed"]
+        ):
+            self.add_error(
+                "overlap_confirmed",
+                _(
+                    "These campaign dates overlap the upcoming financial period. "
+                    "Check this box to confirm that is intended."
+                ),
+            )
             return values
         try:
             campaign_values(self.values())
@@ -148,6 +202,8 @@ class ScheduleForm(forms.Form):
             for row in templates
             if row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
         ]
+        if not choices:
+            self.fields["template_version"].help_text = NO_TEMPLATES
         selected = self.initial.get("template_version")
         if selected and selected not in {key for key, _ in choices}:
             choices.append((selected, _("Existing unresolved template (not ready)")))
@@ -170,6 +226,11 @@ class ScheduleSet(BaseFormSet):
     def get_form_kwargs(self, index):
         """Template choices are server-provided for initial and new forms alike."""
         return super().get_form_kwargs(index) | {"templates": self.templates}
+
+    @property
+    def has_templates(self):
+        """Whether any email is saved that a schedule could send."""
+        return schedulable(self.templates)
 
     def clean(self):
         """Reject forged identities/kinds and validate campaign-local scheduling."""
