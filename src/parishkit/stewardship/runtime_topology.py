@@ -16,6 +16,7 @@ from parishkit.config import ConfigError
 
 from .deployment import SECRET_NAMES, DeploymentProfile, ServiceRole
 from .deployment_documents import deployment_document, service_configuration_file
+from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
 from .service_boundaries import ALLOWED_SECRETS
@@ -159,7 +160,13 @@ def _application(image, budget):
         "cap_drop": ["ALL"],
         "security_opt": ["no-new-privileges:true"],
         "tmpfs": ["/tmp:rw,nosuid,nodev,noexec,mode=1777"],
-        "environment": {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"},
+        "environment": {
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONUNBUFFERED": "1",
+            # Off unless the operator's shell exports it when running Compose;
+            # see observability.debug_logging_enabled. Pre-launch debugging only.
+            DEBUG_LOGGING_VARIABLE: "${" + DEBUG_LOGGING_VARIABLE + ":-0}",
+        },
         "networks": {"backend": {}},
         "restart": "no",
         "stop_grace_period": str(budget.drain_seconds) + "s",

@@ -342,6 +342,14 @@ STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
 Its images skip CI, so they are never deployed to a campaign serving real
 Families: go-live runs a digest from a real release.
 
+By default it also starts the services with debug logging
+(`PARISHKIT_DEBUG_LOGGING=1`, which the generated Compose files pass to every
+application service): log lines then keep the original message, logger and
+traceback that normal logging drops, and DEBUG records appear. Those can hold
+personal data and secrets, so use it only while the data is disposable;
+`STEWARDSHIP_DEBUG_LOGGING=0` turns it off. Running `docker compose up` by hand
+without the variable recreates services with debug logging off.
+
 ## Production activation
 
 Activation is an Administrator's workflow in the portal, bracketed by the

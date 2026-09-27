@@ -27,6 +27,9 @@
 #   STEWARDSHIP_UUID        deployment UUID (required, for database-grants)
 #   STEWARDSHIP_IMAGE_REPO  image repository
 #                           (default ghcr.io/epiphany40223/parishkit/stewardship)
+#   STEWARDSHIP_DEBUG_LOGGING  1 (default) starts services with debug logging:
+#                           messages, tracebacks and DEBUG records that normal
+#                           logging drops. Pre-launch data only; 0 turns it off.
 
 set -euo pipefail
 
@@ -36,6 +39,7 @@ root=${STEWARDSHIP_ROOT:-/opt/parishkit}
 project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
+debug=${STEWARDSHIP_DEBUG_LOGGING:-1}
 
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git diff --quiet HEAD -- && echo "" || echo "-dirty")
@@ -54,10 +58,12 @@ done | tar --null -T - -czf - |
 # from there: fed through ssh's stdin, `docker compose run` would read the rest
 # of the script as its own input. ssh joins its command into one string, so
 # the positional values are shell-quoted into it.
-args=$(printf '%q ' "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid")
+args=$(printf '%q ' "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid" "$debug")
 ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <<'REMOTE'
 set -euo pipefail
 build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7
+# The generated Compose files pass this through to every application service.
+export PARISHKIT_DEBUG_LOGGING=$8
 services="$root/config/services"
 isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
