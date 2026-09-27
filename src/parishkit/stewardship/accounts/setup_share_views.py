@@ -6,6 +6,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
 
+from . import setup_help
 from .authentication import runtime
 from .setup_content_views import _draft
 from .setup_drafts import save_section
@@ -33,6 +34,8 @@ def setup_shares(request):
             prefix="options",
             previous=campaign["share_options"],
         )
+        for form in formset.forms:
+            setup_help.apply(form, setup_help.SHARE)
         status = 200
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))

@@ -27,6 +27,15 @@
 </form>
 {% endif %}
 {% else %}
+<p class="setup-intro">{% translate "This wizard collects everything the system needs before it can run: connections to ParishSoft, Google Workspace and (optionally) Slack, the parish profile, who may sign in, and the first campaign. Each step explains its fields." %}</p>
+<h2>{% translate "Have these ready before you start" %}</h2>
+<ul class="setup-checklist">
+<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
+<li>{% translate "A Google Workspace mailbox to send from, and the JSON key of a Google Cloud service account authorized for domain-wide delegation with the scope https://mail.google.com/." %}</li>
+<li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
+<li>{% translate "A staff mailbox for Testing mode, the parish logo image, and the first campaign's dates." %}</li>
+</ul>
+<p class="notice">{% translate "Credential pages accept input only within five minutes of your Google sign-in, so the wizard asks for them first. Have them ready before you select Start setup." %}</p>
 <p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops any source-load renewal; idle and absolute timeouts still apply." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button type="submit">{% translate "Start setup" %}</button></form>
 {% endif %}

@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
 
+from . import setup_help
 from .authentication import runtime
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_views import MULTIPLE_FIELDS
@@ -25,6 +26,7 @@ class SetupCampaignForm(CampaignForm):
         """The first draft inherits its original setup Parish timezone."""
         super().__init__(*args, **kwargs)
         self.fields["timezone"].disabled = True
+        setup_help.apply(self, setup_help.CAMPAIGN)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

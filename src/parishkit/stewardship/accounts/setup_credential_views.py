@@ -11,6 +11,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
 
+from . import setup_help
 from .authentication import runtime
 from .integration_forms import LABELS, CredentialForm
 from .sessions import require_fresh
@@ -63,6 +64,14 @@ def prerequisite(wizard, key):
     return None
 
 
+# What exactly to paste for each service.
+FIELD_LABELS = {
+    "parishsoft": _("ParishSoft API key"),
+    "google_workspace": _("Service-account JSON key file contents"),
+    "slack": _("Slack bot token"),
+}
+
+
 class SetupCredentialForm(CredentialForm):
     """Reuse the write-only widget; this attempt/version replaces a live intent."""
 
@@ -77,7 +86,8 @@ class SetupCredentialForm(CredentialForm):
                 min_value=1,
                 max_value=2**31 - 1,
             )
-        self.fields["candidate"].label = _("Setup credential")
+        self.fields["candidate"].label = FIELD_LABELS[target]
+        setup_help.apply(self, setup_help.CREDENTIALS[target], replace=True)
 
 
 @sensitive_post_parameters("candidate")

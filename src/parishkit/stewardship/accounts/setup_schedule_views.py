@@ -7,6 +7,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
 
+from . import setup_help
 from .authentication import runtime
 from .schedule_forms import ScheduleForm, Schedules, ScheduleWindow
 from .setup_content_values import CONTENT_STEPS
@@ -24,6 +25,7 @@ class SetupScheduleWindow(ScheduleWindow):
         """Only the campaign's already-admitted original timezone is displayed."""
         super().__init__(*args, editable=True, **kwargs)
         self.fields["timezone"].disabled = True
+        setup_help.apply(self, setup_help.WINDOW)
 
 
 def revised_schedules(previous, formset):
@@ -68,6 +70,8 @@ def setup_schedules(request):
             campaign_id=draft.status.attempt_id,
             campaign=selected,
         )
+        for form in schedules.forms:
+            setup_help.apply(form, setup_help.SCHEDULE)
         status, collection_error = 200, False
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
