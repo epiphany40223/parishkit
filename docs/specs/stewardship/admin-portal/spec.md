@@ -116,7 +116,10 @@ progress page, bounded authenticated polling renews only idle expiry under the
 The page warns that closing it stops renewal and that the source-load watchdog
 expires two hours after TaskRun creation even though the Admin session has a
 later 12-hour absolute lifetime. It displays the idle, source-load-watchdog, and
-absolute-session deadlines.
+absolute-session deadlines. It describes the current phase in plain language
+and shows the elapsed time and the loading worker's most recent heartbeat, so a
+healthy load visibly progresses before its totals are known. On success it
+offers Continue to the next wizard page; on failure it says what to do next.
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take approximately two to three minutes;
