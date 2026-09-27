@@ -50,9 +50,12 @@ git ls-files -z | while IFS= read -r -d '' path; do
 done | tar --null -T - -czf - |
     ssh "$host" "rm -rf '$build' && mkdir -p '$build' && tar -xzf - -C '$build'"
 
-# Everything else runs on the host. Values are passed as positional
-# arguments so the remote script needs no quoting of its own.
-ssh "$host" bash -s -- "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid" <<'REMOTE'
+# Everything else runs on the host. The script is uploaded to a file and run
+# from there: fed through ssh's stdin, `docker compose run` would read the rest
+# of the script as its own input. ssh joins its command into one string, so
+# the positional values are shell-quoted into it.
+args=$(printf '%q ' "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid")
+ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <<'REMOTE'
 set -euo pipefail
 build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7
 services="$root/config/services"
@@ -82,7 +85,7 @@ online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey'
 echo "==> Project ${project} runs $(basename "$compose")"
 
 echo "==> Backup (best effort)"
-"${dc[@]}" run --rm backup-worker >/dev/null 2>&1 &&
+"${dc[@]}" run --rm -T backup-worker >/dev/null 2>&1 &&
     echo "    taken" || echo "    refused or unavailable; continuing"
 
 echo "==> Stopping online services"
@@ -95,8 +98,8 @@ echo "==> Retargeting"
     "$image" retarget-image --config /run/operator.yaml --image "$image"
 
 echo "==> Migration and grants"
-"${dc[@]}" run --rm migration 2>&1 | tail -1
-"${dc[@]}" run --rm database-provision database-grants \
+"${dc[@]}" run --rm -T migration 2>&1 | tail -1
+"${dc[@]}" run --rm -T database-provision database-grants \
     --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
 
 echo "==> Static files"
@@ -115,6 +118,15 @@ rest=$(printf '%s\n' $online | grep -vx caddy || true)
 if printf '%s\n' $online | grep -qx caddy; then
     "${dc[@]}" up --detach --wait caddy 2>&1 | grep -vE ' (Creat|Start|Wait|Running|Healthy|Recreat)' || true
 fi
-"${dc[@]}" exec -T web pk-stewardship health --config "$services/web.yaml"
-echo "==> Deployed ${image}"
+# Just-started services can report an incomplete dependency observation for a
+# few seconds; retry before calling the deploy failed.
+for attempt in $(seq 1 12); do
+    if "${dc[@]}" exec -T web pk-stewardship health --config "$services/web.yaml"; then
+        echo "==> Deployed ${image}"
+        exit 0
+    fi
+    [ "$attempt" -eq 12 ] || sleep 5
+done
+echo "==> Deployed ${image}, but health is still failing" >&2
+exit 1
 REMOTE
