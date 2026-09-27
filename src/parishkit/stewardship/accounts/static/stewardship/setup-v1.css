@@ -55,8 +55,9 @@
 }
 .setup-intro { max-width: 70ch; font-size: 1.05rem; }
 /* Back/Continue: identical on every wizard page. Back is secondary and first;
-   the primary action (button or link) is last and right-aligned. They never
-   wrap onto separate rows; a long primary label wraps inside its button. */
+   the primary action (button or link) is last and right-aligned. They share
+   one row, and a long label wraps inside its own button; only on very narrow
+   screens do they stack, primary last and full width, so neither overflows. */
 .setup-actions {
   display: flex; flex-wrap: nowrap; align-items: stretch; gap: .75rem; margin-block: 1.5rem 1rem;
 }
@@ -67,9 +68,14 @@
   border-radius: .5rem; font-weight: 650; line-height: 1.3; text-align: center;
   text-decoration: none; box-shadow: none;
 }
-.setup-back { flex: 0 0 auto; background: var(--paper, #fff); color: var(--accent, #115e56); }
+.setup-back { flex: 0 1 auto; min-width: 0; background: var(--paper, #fff); color: var(--accent, #115e56); }
 .setup-continue, .setup-actions > button {
   flex: 0 1 auto; margin-inline-start: auto; background: var(--accent, #115e56); color: var(--paper, #fff);
+}
+.setup-continue, .setup-actions > button { min-width: 0; }
+@media (max-width: 26rem) {
+  .setup-actions { flex-wrap: wrap; }
+  .setup-continue, .setup-actions > button { flex: 1 1 100%; margin-inline-start: 0; }
 }
 .setup-back:hover { background: var(--accent-soft, #e4f0ee); color: var(--accent-strong, #0c4a44); }
 .setup-continue:hover { background: var(--accent-strong, #0c4a44); border-color: var(--accent-strong, #0c4a44); color: var(--paper, #fff); }
