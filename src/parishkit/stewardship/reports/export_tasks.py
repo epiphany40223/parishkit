@@ -245,13 +245,11 @@ def _execute(execution, *, store, root, general=None):
                 from .ministry_packets import render_packet
 
                 render_packet(document, stream, format=request.format)
-            elif request.report in {
-                "additional_information",
-                "family_directory",
-                "postal_outreach",
-                "ministry",
-                "financial",
-            }:
+            elif request.report in {"family_directory", "postal_outreach"}:
+                from .directory_rendering import render_directory
+
+                render_directory(document, stream, format=request.format)
+            elif request.report in {"additional_information", "ministry", "financial"}:
                 from .information_rendering import render_information
 
                 render_information(document, stream, format=request.format)
