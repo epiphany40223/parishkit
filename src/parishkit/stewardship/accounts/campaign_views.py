@@ -39,6 +39,7 @@ from .admin_editing import (
 from .authentication import runtime
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_preview import describe_changes
+from .content_forms import default_content
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
@@ -277,13 +278,24 @@ def _preview(request, service, actor, state, campaign, form):
             + "?"
             + urlencode({name: values[name] for name in sorted(window_fields)})
         )
+    target = str(campaign.pk if campaign else uuid4())
+    content = []
+    if campaign is None:
+        # A new (non-cloned) campaign starts with the default text for every
+        # page and email its modules use, added in this same configuration
+        # change so it never exists without content. Each default passes the
+        # normal editor validation, and build_candidate below validates the
+        # whole candidate. Cloned campaigns copy their source content instead
+        # (campaign_cloning), and later module changes add no content.
+        content, values["content_versions"] = default_content(target, values)
     patch = [
         {
             "operation": "update" if campaign else "add",
             "section": "campaigns",
-            "id": str(campaign.pk if campaign else uuid4()),
+            "id": target,
             "values": changed if campaign else values,
-        }
+        },
+        *({"operation": "add", "section": "content", **row} for row in content),
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
@@ -304,6 +316,7 @@ def _preview(request, service, actor, state, campaign, form):
         "stewardship/campaign-preview.html",
         {
             "creating": campaign is None,
+            "default_content": bool(content),
             "removes_share_options": bool(previous.get("share_options"))
             and "financial" not in values["modules"],
             "changes": describe_changes(

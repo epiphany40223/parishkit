@@ -4,7 +4,8 @@
 <h1>{{ label }}</h1><p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "Use a placeholder name inside double braces. Only these names are supported:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
 <p>{% translate "Preview uses fictional sample data and nonfunctional sample links. No email is sent by this editor." %}</p>
-{% if default_url %}<p><a href="{{ default_url }}">{% translate "Start from the default text" %}</a></p>{% endif %}
+{% if default_url %}<p><a href="{{ default_url }}">{% if saved %}{% translate "Reset to the default text" %}{% else %}{% translate "Start from the default text" %}{% endif %}</a></p>{% endif %}
+{% if started_from_default %}<p class="notice" role="status">{% if saved %}{% translate "The default text is filled in below but not saved yet. Previewing and applying it will replace the current text; to keep the current text, go back without applying." %}{% else %}{% translate "The default text is filled in below but not saved yet. Edit it as needed, then preview and apply it." %}{% endif %}</p>{% endif %}
 <form method="post" action="{{ post_url }}" data-content-form>{% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/content-fields.html' %}
 <button type="submit">{% translate "Preview changes" %}</button></form>

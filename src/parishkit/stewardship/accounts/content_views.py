@@ -22,6 +22,7 @@ from .content_defaults import default_initial
 from .content_forms import (
     EMAIL_LABELS,
     ContentForm,
+    matches_default,
     page_slots,
     revision_patch,
     sample_render,
@@ -54,19 +55,31 @@ def _records(configuration, campaign_id):
     ]
 
 
+def _content_state(record):
+    """Catalog status of one revision: "empty", "default" (unmodified) or "custom"."""
+    if record is None:
+        return "empty"
+    return "default" if matches_default(record["values"]) else "custom"
+
+
 def _catalog(request, configuration, campaign):
     """List named page slots and independent email revisions for per-mail selection."""
     records = _records(configuration, campaign.pk)
     pages = []
     for slot, label in page_slots(campaign.active_configuration.values).items():
+        record = next(
+            (
+                row
+                for row in records
+                if (row["values"]["kind"], row["values"]["slot"]) == ("page", slot)
+            ),
+            None,
+        )
         pages.append(
             {
                 "label": label,
                 "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
-                "configured": any(
-                    row["values"]["kind"] == "page" and row["values"]["slot"] == slot
-                    for row in records
-                ),
+                "state": _content_state(record),
             }
         )
     emails = []
@@ -79,6 +92,7 @@ def _catalog(request, configuration, campaign):
                 "revisions": [
                     {
                         "subject": row["values"]["subject"],
+                        "state": _content_state(row),
                         "test_url": reverse(
                             "admin:campaign_mail", args=[campaign.pk, row["id"]]
                         ),
@@ -99,10 +113,22 @@ def _catalog(request, configuration, campaign):
     )
 
 
-def _page(request, form, campaign, label, *, status=200, default_url=None):
+def _page(
+    request,
+    form,
+    campaign,
+    label,
+    *,
+    status=200,
+    default_url=None,
+    saved=False,
+    started=False,
+):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
-    ``default_url`` offers to start an empty slot from its default text.
+    ``default_url`` offers to start an empty slot (or, when ``saved``, reset a
+    configured one) from its default text; ``started`` says the form now
+    holds that unsaved default.
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -118,6 +144,8 @@ def _page(request, form, campaign, label, *, status=200, default_url=None):
             "visual": visual,
             "placeholders": sorted(PLACEHOLDERS),
             "default_url": default_url,
+            "saved": saved,
+            "started_from_default": started,
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
@@ -258,9 +286,12 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 )
                 if revision_id and previous is None:
                     raise LookupError("Content revision is unavailable.")
+                # "?start=default" only pre-fills the form: it starts an empty
+                # slot or resets a configured one, and nothing changes until
+                # the Admin previews and applies it like any other edit.
                 initial = (
                     default_initial(kind, slot)
-                    if start and previous is None
+                    if start
                     else (previous["values"] if previous else {})
                     | {"generate_text": previous is None}
                 ) | {"base_digest": configuration.active_configuration.digest}
@@ -289,9 +320,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         form,
                         campaign,
                         labels[slot],
-                        default_url=request.path + "?start=default"
-                        if previous is None and not start
-                        else None,
+                        default_url=None if start else request.path + "?start=default",
+                        saved=previous is not None,
+                        started=start,
                     )
                 )
             if not allows(
