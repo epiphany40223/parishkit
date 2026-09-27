@@ -16,5 +16,5 @@
       <button type="button" id="family-start">{% if testing %}{% translate "Continue with test" %}{% else %}{% translate "Begin reviewing our information" %}{% endif %}</button>
     </div>
   </div>
-  <form method="post" action="{% url 'family:logout' %}" id="family-cancel">{% csrf_token %}<button type="submit">{% translate "Cancel and sign out" %}</button></form>
+  <form method="post" action="{% url 'family:logout' %}" id="family-cancel">{% csrf_token %}<button type="submit" class="button-secondary">{% translate "Cancel and sign out" %}</button></form>
 </section>{% endblock %}
