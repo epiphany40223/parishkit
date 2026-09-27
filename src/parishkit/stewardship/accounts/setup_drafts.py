@@ -154,12 +154,17 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
             from .setup_campaign import admit_campaign_values
 
             admit_campaign_values(request, service, attempt_id, updates["campaign"])
+        # Content saved alongside its campaign is admitted against the new
+        # campaign values, which the draft does not hold until this commits.
+        pending = updates["campaign"]["campaign"] if "campaign" in updates else None
         for step in CONTENT_STEPS:
             if step not in updates:
                 continue
             from .setup_content import admit_content_values
 
-            admit_content_values(request, service, attempt_id, step, updates[step])
+            admit_content_values(
+                request, service, attempt_id, step, updates[step], pending
+            )
         updates = reconcile_preparation(request, service, attempt_id, updates)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
         # The parent goes first when dates and schedules are saved together;

@@ -185,9 +185,9 @@ def main():
     data.update(fields(schedules.context["schedules"].management_form))
     for form in schedules.context["schedules"]:
         data.update(fields(form))
-    template = (
-        schedules.context["schedules"].forms[0].fields["template_version"].choices[1][0]
-    )
+    # Saving the campaign also saved every default email, so choose the
+    # initial invitation saved above rather than the first listed template.
+    template = schedules.context["draft"].sections["email_initial"]["id"]
     data.update(
         {
             "schedules-0-kind": "initial",

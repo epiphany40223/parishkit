@@ -14,9 +14,22 @@ from parishkit.stewardship.web.contracts import expected_version, filters
 
 from . import setup_help
 from .authentication import runtime
-from .content_defaults import default_data, default_initial
-from .content_forms import EMAIL_LABELS, ContentForm, page_slots, sample_render
-from .setup_content import content_label, draft_campaign
+from .content_defaults import default_initial
+from .content_forms import (
+    EMAIL_LABELS,
+    ContentForm,
+    applicable_slots,
+    matches_default,
+    page_slots,
+    sample_render,
+)
+from .setup_content import (
+    FILL_ALL,
+    FILL_EMPTY,
+    content_label,
+    default_updates,
+    draft_campaign,
+)
 from .setup_drafts import save_section, save_sections, view_draft
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
 
@@ -42,18 +55,17 @@ def _draft(request, service):
     return draft_campaign(request, service, draft.status.attempt_id)
 
 
-def _slots(campaign):
-    """Every applicable (kind, slot, label), in the order the content list shows."""
-    return [
-        (kind, slot, label)
-        for kind, labels in (("page", page_slots(campaign)), ("email", EMAIL_LABELS))
-        for slot, label in labels.items()
-    ]
-
-
 def _saved(draft, kind, slot):
     """A slot counts as saved only while it holds content, not a clear marker."""
     return bool(draft.sections.get(f"{kind}_{slot}", {}).get("values"))
+
+
+def _state(draft, kind, slot):
+    """List status of one slot: "empty", "default" (unmodified) or "custom"."""
+    values = draft.sections.get(f"{kind}_{slot}", {}).get("values")
+    if not values:
+        return "empty"
+    return "default" if matches_default(values) else "custom"
 
 
 def _draft_parish(draft):
@@ -63,44 +75,61 @@ def _draft_parish(draft):
     }
 
 
+# The fill-in redirect reports its counts under one of these prefixes.
+RESULTS = ("filled", "reset")
+
+
 def _filled(parameters):
-    """Parse the bounded counts the fill-in redirect reports, if present."""
-    values = filters(parameters, allowed={"filled_pages", "filled_emails"})
+    """Parse the bounded counts the fill-in or reset redirect reports, if present.
+
+    Returns ``None`` or ``{"action": "filled"|"reset", "pages": n, "emails": n}``.
+    """
+    names = {f"{action}_{kind}" for action in RESULTS for kind in ("pages", "emails")}
+    values = filters(parameters, allowed=names)
     if not values:
         return None
-    if set(values) != {"filled_pages", "filled_emails"} or any(
+    action = next(iter(values)).partition("_")[0]
+    if set(values) != {f"{action}_pages", f"{action}_emails"} or any(
         not value.isdigit() or len(value) > 2 for value in values.values()
     ):
         raise ValueError("Invalid fill-in result.")
-    return {name: int(value) for name, value in values.items()}
+    return {
+        "action": action,
+        "pages": int(values[f"{action}_pages"]),
+        "emails": int(values[f"{action}_emails"]),
+    }
 
 
 def _fill_defaults(request, service):
-    """Save the default text into every applicable empty slot in one versioned edit.
+    """Save default text into applicable slots in one versioned edit.
 
-    Each default passes through the same SetupContentForm and values() path a
-    manual save uses, so it is sanitized and validated identically. Slots that
-    already hold saved content are never touched. All new slots are saved
+    Without ``reset`` this fills every empty slot, including ones the Admin
+    cleared (the automatic fill on the campaign save keeps a clear; this
+    button is the explicit way to refill it). With ``reset`` and its
+    required ``confirm`` box it replaces every applicable slot's text with
+    its default; schedules that send a replaced email follow the new
+    revision (see ``reconcile_preparation``). The defaults use the same
+    validation as a manual save (``default_updates``). All slots are saved
     together under the version the Admin's page was rendered with, so a
     concurrent edit in another tab makes the whole fill-in stale rather than
     racing it slot by slot.
     """
-    _closed(request, {"version"})
+    _closed(request, {"version", "reset", "confirm"})
+    reset = request.POST.get("reset") == "on"
+    if set(request.POST) & {"reset", "confirm"} and not (
+        reset and request.POST.get("confirm") == "on"
+    ):
+        raise ValueError("Confirm that every page and email should be replaced.")
     draft, campaign = _draft(request, service)
     version = expected_version(request.POST.get("version"))
     if version != draft.status.version:
         raise StaleRecordError("Reload the first-campaign content.")
-    updates, counts = {}, {"page": 0, "email": 0}
-    for kind, slot, _ in _slots(campaign):
-        if _saved(draft, kind, slot):
-            continue
-        form = SetupContentForm(default_data(kind, slot), kind=kind, slot=slot)
-        if not form.is_valid():
-            # Unit tests validate every default; this is defensive only.
-            raise ValueError("Default content failed validation.")
-        values = form.values(campaign_id=draft.status.attempt_id, slot=slot)
-        updates[f"{kind}_{slot}"] = {"id": str(uuid4()), "values": values}
-        counts[kind] += 1
+    updates = default_updates(
+        draft.sections,
+        campaign,
+        draft.status.attempt_id,
+        which=FILL_ALL if reset else FILL_EMPTY,
+    )
     if updates:
         save_sections(
             request,
@@ -109,21 +138,35 @@ def _fill_defaults(request, service):
             updates=updates,
             expected_version=version,
         )
-    query = urlencode(
-        {"filled_pages": counts["page"], "filled_emails": counts["email"]}
-    )
     return _checked(
         request,
         service,
-        HttpResponseRedirect(reverse("admin:setup_content") + "?" + query),
+        HttpResponseRedirect(
+            result_url("reset" if reset else "filled", updates.keys())
+        ),
     )
+
+
+def result_url(action, steps):
+    """The content list URL that reports how many page/email ``steps`` were filled.
+
+    ``_filled`` parses this back; the list then names the slots kept as-is.
+    """
+    query = urlencode(
+        {
+            f"{action}_{kind}s": sum(step.startswith(kind + "_") for step in steps)
+            for kind in ("page", "email")
+        }
+    )
+    return reverse("admin:setup_content") + "?" + query
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def setup_content(request):
     """Show enabled named pages and independent email slots, including empty slots.
 
-    A POST fills every empty applicable slot with its default text.
+    A POST fills every empty applicable slot with its default text, or resets
+    every slot to it (see ``_fill_defaults``).
     """
     try:
         service = runtime()
@@ -142,12 +185,24 @@ def setup_content(request):
                             "url": reverse(
                                 "admin:setup_content_edit", args=[kind, slot]
                             ),
-                            "saved": _saved(draft, kind, slot),
+                            "state": _state(draft, kind, slot),
                         }
                         for slot, label in labels.items()
                     ],
                 }
             )
+        # After a fill, name every slot it left alone because it holds the
+        # Admin's own text, so "nothing happened" there is never a surprise.
+        kept = (
+            [
+                entry
+                for group in groups
+                for entry in group["entries"]
+                if entry["state"] == "custom"
+            ]
+            if filled and filled["action"] == "filled"
+            else []
+        )
         response = render(
             request,
             "stewardship/setup-content.html",
@@ -156,8 +211,10 @@ def setup_content(request):
                 "groups": groups,
                 "campaign_name": campaign["name"],
                 "filled": filled,
+                "kept": kept,
                 "fillable": any(
-                    not _saved(draft, kind, slot) for kind, slot, _ in _slots(campaign)
+                    not _saved(draft, kind, slot)
+                    for kind, slot in applicable_slots(campaign)
                 ),
             },
         )
@@ -175,8 +232,10 @@ def setup_content_edit(request, kind, slot):
         label = content_label(campaign, kind, slot)
         step = f"{kind}_{slot}"
         previous = draft.sections.get(step, {}).get("values")
-        # "?start=default" pre-fills an empty slot's editor with its default
-        # text without saving anything; saving still needs the normal POST.
+        # "?start=default" pre-fills the editor with the slot's default text
+        # without saving anything: it starts an empty slot, or resets a saved
+        # one. Saving still needs the normal POST, and leaving the page
+        # discards the unsaved default, so nothing is replaced without a save.
         start = request.method != "POST" and request.GET.get("start") == "default"
         initial = {
             name: value
@@ -184,7 +243,7 @@ def setup_content_edit(request, kind, slot):
             if name in SetupContentForm.base_fields
         }
         initial["generate_text"] = previous is None
-        if start and previous is None:
+        if start:
             initial = default_initial(kind, slot)
         form = SetupContentForm(
             request.POST if request.method == "POST" else None,
@@ -241,12 +300,14 @@ def setup_content_edit(request, kind, slot):
                 "placeholders": sorted(PLACEHOLDERS),
                 "sample": sample,
                 "default_url": (
-                    reverse("admin:setup_content_edit", args=[kind, slot])
+                    None
+                    if start
+                    else reverse("admin:setup_content_edit", args=[kind, slot])
                     + "?start=default"
-                    if previous is None and not start
-                    else None
                 ),
-                "started_from_default": start and previous is None,
+                # A saved slot offers "Reset"; an empty one offers "Start".
+                "saved": previous is not None,
+                "started_from_default": start,
                 # Post to the clean path: the "?start=default" GET must not
                 # carry its query into the POST, which accepts none.
                 "post_url": request.path,

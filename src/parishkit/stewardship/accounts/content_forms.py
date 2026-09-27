@@ -18,6 +18,8 @@ from parishkit.stewardship.web.content import (
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
 
+from .content_defaults import default_data
+
 PAGE_LABELS = {
     "welcome": _("Family welcome"),
     "login_help": _("Family login help"),
@@ -167,6 +169,70 @@ class ContentForm(forms.Form):
             "html": prepared.html,
             "text": prepared.text,
         }
+
+
+class _DefaultForm(ContentForm):
+    """Validate built-in defaults without a configuration digest to compare."""
+
+    base_digest = None
+
+
+def applicable_slots(campaign):
+    """Every (kind, slot) a campaign's enabled modules can show or send."""
+    return [
+        (kind, slot)
+        for kind, labels in (("page", page_slots(campaign)), ("email", EMAIL_LABELS))
+        for slot in labels
+    ]
+
+
+def default_values(kind, slot, *, campaign_id):
+    """One slot's default as the canonical revision a manual editor save produces.
+
+    The default passes through the same ``ContentForm`` cleaning and
+    ``values()`` path as text an Admin types, so it is sanitized and validated
+    identically and can never bypass a content rule.
+    """
+    form = _DefaultForm(default_data(kind, slot), kind=kind, slot=slot)
+    if not form.is_valid():
+        # Unit tests validate every default; this is defensive only.
+        raise ValueError("Default content failed validation.")
+    return form.values(campaign_id=campaign_id, slot=slot)
+
+
+def matches_default(values):
+    """Whether saved canonical content is exactly its slot's unmodified default.
+
+    Stored content is already sanitized canonical output, so comparing it to
+    the default's canonical revision (same campaign owner) is exact; any
+    edit, however small, counts as customized.
+    """
+    return values == default_values(
+        values["kind"], values["slot"], campaign_id=values["campaign_id"]
+    )
+
+
+def default_content(campaign_id, campaign):
+    """Default content records for a brand-new campaign, plus its page references.
+
+    Returns ``(records, content_versions)``: one new revision per applicable
+    page and email slot, and the legacy page-reference mapping that selects
+    the new page revisions, as a campaign's ``content_versions`` requires.
+    """
+    records = [
+        {
+            "id": str(uuid4()),
+            "values": default_values(kind, slot, campaign_id=campaign_id),
+        }
+        for kind, slot in applicable_slots(campaign)
+    ]
+    versions = {
+        row["values"]["slot"]: row["id"]
+        for row in records
+        if row["values"]["kind"] == "page"
+        and row["values"]["slot"] in LEGACY_PAGE_REFERENCES
+    }
+    return records, versions
 
 
 def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=None):

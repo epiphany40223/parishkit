@@ -63,3 +63,79 @@ def test_invalid_temporary_content_is_rejected(invalid):
 def test_unknown_content_step_is_rejected():
     with pytest.raises(ValueError):
         validate_content_step("page_unknown", content(str(uuid4())))
+
+
+def test_default_updates_distinguish_never_set_cleared_and_saved():
+    """Automatic fills keep clears; the button refills them; reset replaces all."""
+    from parishkit.stewardship.accounts.content_forms import (
+        applicable_slots,
+        matches_default,
+    )
+    from parishkit.stewardship.accounts.setup_content import (
+        FILL_ALL,
+        FILL_EMPTY,
+        FILL_UNSET,
+        default_updates,
+    )
+
+    from .campaign_factory import campaign
+
+    attempt = uuid4()
+    values = campaign()["values"]
+    steps = {f"{kind}_{slot}" for kind, slot in applicable_slots(values)}
+    everything = default_updates({}, values, attempt, which=FILL_UNSET)
+    assert set(everything) == steps and len(steps) == 11 + 6
+    assert all(
+        matches_default(row["values"])
+        and row["values"]["campaign_id"] == str(attempt)
+        and set(validate_values(step, row)) == {"id", "values"}
+        for step, row in everything.items()
+    )
+    mine = content(str(attempt), slot="welcome")
+    sections = everything | {
+        "page_welcome": mine,
+        "page_review": {"id": None, "values": None},
+    }
+    del sections["email_initial"]
+    assert set(default_updates(sections, values, attempt, which=FILL_UNSET)) == {
+        "email_initial"
+    }
+    assert set(default_updates(sections, values, attempt, which=FILL_EMPTY)) == {
+        "email_initial",
+        "page_review",
+    }
+    # A reset leaves slots that already hold exactly their default alone.
+    assert set(default_updates(sections, values, attempt, which=FILL_ALL)) == {
+        "email_initial",
+        "page_review",
+        "page_welcome",
+    }
+    with pytest.raises(ValueError):
+        default_updates({}, values, attempt, which="other")
+
+
+def test_fill_result_parameters_are_closed():
+    """Only one complete, bounded filled/reset pair is accepted."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.accounts.setup_content_views import _filled, result_url
+
+    assert _filled(QueryDict("")) is None
+    assert _filled(QueryDict("filled_pages=3&filled_emails=0")) == {
+        "action": "filled",
+        "pages": 3,
+        "emails": 0,
+    }
+    assert _filled(QueryDict("reset_pages=1&reset_emails=2"))["action"] == "reset"
+    for query in (
+        "filled_pages=1",
+        "filled_pages=1&reset_emails=1",
+        "filled_pages=x&filled_emails=1",
+        "filled_pages=100&filled_emails=1",
+        "other=1",
+    ):
+        with pytest.raises(ValueError):
+            _filled(QueryDict(query))
+    assert result_url("filled", ["page_welcome", "email_initial", "page_review"]) == (
+        "/admin/setup/content?filled_pages=2&filled_emails=1"
+    )

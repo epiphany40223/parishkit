@@ -286,3 +286,25 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
             "records": [row]
         }
     assert not setup_http.configured()
+
+
+def test_reset_to_default_keeps_a_scheduled_email_attached(setup_http, monkeypatch):
+    """Resetting a scheduled template replaces it; the schedule follows the reset."""
+    from parishkit.stewardship.accounts.content_defaults import EMAILS, default_data
+    from parishkit.stewardship.accounts.content_forms import matches_default
+
+    request, status, template, row = with_schedules(setup_http, monkeypatch)
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    url = "/admin/setup/content/email/initial"
+    with web_login():
+        reset = browser.get(url + "?start=default")
+        assert b"Saving will replace the current text" in reset.content
+        data = default_data("email", "initial") | {"version": str(status.version)}
+        assert post(browser, url, data).status_code == 302
+        saved = SetupDraftSection.objects.get(step="email_initial").values
+        assert matches_default(saved["values"]) and saved["id"] != template["id"]
+        kept = SetupDraftSection.objects.get(step="schedules").values["records"]
+        assert [record["id"] for record in kept] == [row["id"]]
+        assert kept[0]["values"]["template_version"] == saved["id"]
+        assert kept[0]["values"]["subject"] == EMAILS["initial"].subject

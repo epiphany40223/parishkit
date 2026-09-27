@@ -2,6 +2,7 @@
 
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.storage import StaleRecordError
@@ -12,7 +13,9 @@ from .authentication import runtime
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_views import MULTIPLE_FIELDS
 from .setup_campaign import campaign_catalog
-from .setup_drafts import save_section, view_draft
+from .setup_content import FILL_UNSET, default_updates
+from .setup_content_views import result_url
+from .setup_drafts import save_sections, view_draft
 from .setup_views import ERRORS, _checked, _context, page_error
 from .setup_wizard import continue_after
 
@@ -67,20 +70,38 @@ def setup_campaign(request):
             if version != draft.status.version:
                 raise StaleRecordError("Reload the first-campaign form.")
             if form.is_valid():
-                save_section(
+                values = form.values()
+                # Pages and emails start with their default text: every
+                # applicable slot the draft has never set (including page
+                # slots a newly enabled module adds) is filled in the same
+                # versioned save as the campaign, so the draft never shows a
+                # half-applied edit. Saved text and slots the Admin
+                # explicitly cleared are left alone.
+                updates = {
+                    "campaign": {
+                        "source_result": str(catalog.result_id),
+                        "campaign": values,
+                    }
+                } | default_updates(
+                    draft.sections,
+                    values,
+                    draft.status.attempt_id,
+                    which=FILL_UNSET,
+                )
+                save_sections(
                     request,
                     service,
                     draft.status.attempt_id,
-                    step="campaign",
+                    updates=updates,
                     expected_version=version,
-                    values={
-                        "source_result": str(catalog.result_id),
-                        "campaign": form.values(),
-                    },
                 )
-                return _checked(
-                    request, service, continue_after(request, service, "campaign")
-                )
+                response = continue_after(request, service, "campaign")
+                # Report the automatic fill on the content list when that is
+                # the next page, as the fill button's own result does.
+                filled = updates.keys() - {"campaign"}
+                if filled and response["Location"] == reverse("admin:setup_content"):
+                    response["Location"] = result_url("filled", filled)
+                return _checked(request, service, response)
             status = 400
         response = render(
             request,

@@ -49,11 +49,16 @@ def reconcile_preparation(request, service, attempt_id, updates):
 
     draft = view_draft(request, service, attempt_id)
     if "campaign" not in draft.sections:
-        # First structural save has no children; its source admission is owned
-        # by save_sections. Every child edit requires that original saved parent.
-        if set(updates) != {"campaign"}:
+        # The first structural save may carry only its default content with it
+        # (no schedules); its source admission is owned by save_sections.
+        # Every other child edit requires that original saved parent.
+        if "campaign" not in updates or not set(updates) <= {
+            "campaign",
+            *CONTENT_STEPS,
+        }:
             raise LookupError("Save the first campaign before its schedules.")
-        return updates
+        if set(updates) == {"campaign"}:
+            return updates
     if "campaign" not in updates:
         draft_campaign(request, service, attempt_id)
     combined = draft.sections | updates
