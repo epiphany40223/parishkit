@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Load parish data" %}</h1>
-<p class="setup-intro">{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes several minutes, about eight for a parish of a few thousand Families; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>
+<p class="setup-intro">{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes several minutes, about ten for a parish of a few thousand Families; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if draft.source_task_id %}
 {% if draft.status.state == 'loading' %}
@@ -20,7 +20,7 @@
 {% else %}
 <form method="post" action="{% url 'admin:setup' %}" class="panel">{% csrf_token %}
 <input type="hidden" name="action" value="load"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
-<p>{% translate "Save the parish profile and ParishSoft credential before loading the source data. A normal load takes several minutes, about eight for a parish of a few thousand Families. Keep the progress page open until it completes." %}</p>
+<p>{% translate "Save the parish profile and ParishSoft credential before loading the source data. A normal load takes several minutes, about ten for a parish of a few thousand Families. Keep the progress page open until it completes." %}</p>
 {% translate "Load parish data" as submit %}{% include 'stewardship/setup-navigation.html' %}
 </form>
 {% endif %}

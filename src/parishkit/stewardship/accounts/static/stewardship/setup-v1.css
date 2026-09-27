@@ -53,6 +53,31 @@
 .setup-back { background: var(--paper, #fff); color: var(--accent, #165b50); }
 .setup-continue { margin-left: auto; background: var(--accent, #165b50); color: var(--paper, #fff); }
 .setup-back:hover, .setup-continue:hover { text-decoration: underline; }
+/* Source-load progress: parts of the load and each downloaded collection.
+   The status word always carries the meaning; the mark only reinforces it. */
+.setup-load-phases, .setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
+.setup-load-phases { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.setup-load-phases li, .setup-load-collections li {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0 .75rem; padding: .45rem .6rem .45rem 2rem; position: relative;
+  border-bottom: 1px solid var(--border, #dfe3e2);
+}
+.setup-load-phases li { border: 1px solid var(--border, #dfe3e2); border-radius: .5rem; }
+.setup-load-phases li::before, .setup-load-collections li::before {
+  position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
+  font-weight: 700; content: "\2022"; color: var(--muted, #4f5e66);
+}
+.setup-load-done::before { content: "\2713" !important; color: var(--accent, #115e56) !important; }
+.setup-load-active::before { content: "\25B8" !important; color: var(--ink, #1b2a31) !important; }
+.setup-load-active { background: var(--accent-soft, #e4f0ee); font-weight: 600; }
+.setup-load-waiting .setup-load-label { color: var(--muted, #4f5e66); }
+.setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
+.setup-load-result {
+  margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent, #115e56);
+  border-radius: .75rem; background: var(--accent-soft, #e4f0ee);
+}
+.setup-load-result h2 { margin-top: 0; }
+.setup-load-result .setup-actions { margin-block: .75rem 0; }
 .setup-deadlines dd > p { margin-block: 0 .5rem; }
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #465e68); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }

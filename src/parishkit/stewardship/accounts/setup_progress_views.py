@@ -25,21 +25,104 @@ SUMMARIES = {
         "retries automatically; nothing needs to be done."
     ),
     "fetching": _(
-        "Downloading Families, Members, Ministries and funds from ParishSoft. "
-        "The totals are not known until the download finishes, so the count stays "
-        "at zero for now. This is normal. ParishSoft answers one request per "
-        "ministry, so this takes several minutes: about eight for a few thousand "
-        "Families and 200 ministries, and longer for a larger parish."
+        "Step 1 of 3: downloading your parish's records from ParishSoft. Each "
+        "item below is marked done as it finishes. The ministry rosters take "
+        "the longest because ParishSoft answers one request per ministry: "
+        "about ten minutes for a few thousand Families and 200 ministries, and "
+        "longer for a larger parish."
     ),
     "staging": _(
-        "Saving the downloaded records for this setup. The count shows how many "
-        "records have been saved so far."
+        "Step 2 of 3: saving the downloaded records for this setup. The bar "
+        "shows how many have been saved so far."
     ),
-    "validating": _("Checking that the saved records are complete and consistent."),
+    "validating": _(
+        "Step 3 of 3: checking that the saved records are complete and "
+        "consistent. This is the last part of the load."
+    ),
     "working": _("The load is running."),
     "done": _("Parish data is loaded. Continue to the next setup step."),
     "failed": _("The load did not finish."),
 }
+
+# The three parts of a load, in order, as the page names them.
+PHASES = (
+    ("fetching", _("Download from ParishSoft")),
+    ("staging", _("Save the records for this setup")),
+    ("validating", _("Check the saved records")),
+)
+PHASE_STATUS = {
+    "done": _("Done"),
+    "active": _("In progress"),
+    "waiting": _("Not started"),
+}
+
+# What each downloaded collection is, in the order the loader reports them.
+COLLECTIONS = {
+    "families": _("Families"),
+    "family_groups": _("Family group names"),
+    "members": _("Members"),
+    "member_contactinfos": _("Member contact details"),
+    "ministry_types": _("List of Ministries"),
+    "ministry_roster": _("Ministry rosters (one request per Ministry)"),
+    "funds": _("Giving funds"),
+}
+# Status wording with {placeholders}; the polling script fills in the same
+# templates from the page's data attributes, so both stay in one language.
+COLLECTION_TEXT = {
+    "done": _("{count} loaded"),
+    "rosters": _("{finished} of {expected} loaded"),
+    "active": _("Downloading…"),
+    "waiting": _("Waiting"),
+}
+
+
+def phases(progress, status_key):
+    """Name each load phase's state; the polling script mirrors this."""
+    order = [key for key, _label in PHASES]
+    # Before the download starts (queued, starting) no phase has begun.
+    index = order.index(progress["phase"]) if progress["phase"] in order else -1
+    rows = []
+    for position, (key, label) in enumerate(PHASES):
+        if status_key == "done" or position < index:
+            state = "done"
+        elif position == index and progress["active"]:
+            state = "active"
+        else:
+            state = "waiting"
+        rows.append(
+            {"key": key, "label": label, "state": state, "status": PHASE_STATUS[state]}
+        )
+    return rows
+
+
+def collections(progress):
+    """Label each downloaded collection and word its state for the first render.
+
+    Exactly one unfinished collection is "active" while the download runs.
+    The polling script mirrors this so the list updates without a reload.
+    """
+    fetching = progress["phase"] == "fetching" and progress["active"]
+    rows, waiting = [], False
+    for item in progress["collections"]:
+        if item["done"]:
+            state = "done"
+        elif fetching and not waiting:
+            state, waiting = "active", True
+        else:
+            state = "waiting"
+        known = item["key"] == "ministry_roster" and item["expected"] is not None
+        if known and state != "waiting":
+            text = COLLECTION_TEXT["rosters"].format(
+                finished=f"{item['finished']:,}", expected=f"{item['expected']:,}"
+            )
+        elif state == "done":
+            text = COLLECTION_TEXT["done"].format(count=f"{item['count']:,}")
+        else:
+            text = COLLECTION_TEXT[state]
+        rows.append(
+            item | {"label": COLLECTIONS[item["key"]], "state": state, "text": text}
+        )
+    return rows
 
 
 def summary(progress):
@@ -93,6 +176,10 @@ def setup_source_progress(request, task_id):
                     "wizard": _wizard(request, service),
                     "status_key": summary(progress),
                     "summaries": SUMMARIES,
+                    "phases": phases(progress, summary(progress)),
+                    "phase_status": PHASE_STATUS,
+                    "collections": collections(progress),
+                    "collection_text": COLLECTION_TEXT,
                     "elapsed": _seconds_since(
                         progress["server_now"], progress["started_at"]
                     ),

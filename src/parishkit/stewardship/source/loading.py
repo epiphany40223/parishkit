@@ -67,7 +67,13 @@ def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=2
 
 
 def load_full_source(
-    client, *, window, as_of, previous_full_counts=None, maximum_drop_percent=25
+    client,
+    *,
+    window,
+    as_of,
+    previous_full_counts=None,
+    maximum_drop_percent=25,
+    progress=None,
 ):
     """Fetch, normalize and validate without SQL or a mutable source pointer.
 
@@ -75,7 +81,9 @@ def load_full_source(
     watermark describes the start of network observation, never the end. Its
     bounded Session owns admission/fencing before each request. Callers stage
     this result only after validation succeeds and must still check admission
-    and the exact campaign window again at atomic promotion.
+    and the exact campaign window again at atomic promotion. An optional
+    ``progress(collection, count)`` observer hears about each downloaded
+    collection in the order ``load_progress`` expects.
     """
     if (
         not isinstance(client, CoherentParishSoftClient)
@@ -96,10 +104,13 @@ def load_full_source(
             # Stewardship never reads workgroups (the delta load leaves them
             # empty too); fetching them took about seven of fourteen minutes.
             load_workgroups=False,
+            progress=progress,
         )
         # Catalogs are needed by initial campaign preparation even when no
         # giving window exists yet. Shared data is frozen; its collections are not.
         data.funds.update(load_funds(client, data.organization_id))
+        if progress is not None:
+            progress("funds", len(data.funds))
         corpus = normalize_core(data, as_of=as_of)
         giving = load_giving(client, corpus=corpus, window=window, as_of=as_of)
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)

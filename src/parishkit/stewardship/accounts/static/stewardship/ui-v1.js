@@ -127,6 +127,51 @@
     const checked = panel.querySelector("[data-progress-checked]");
     const done = document.querySelector("[data-progress-done]");
     const failed = document.querySelector("[data-progress-failed]");
+    const records = panel.querySelector("[data-load-records]");
+    const phaseList = panel.querySelector(".setup-load-phases");
+    const collectionList = panel.querySelector("[data-load-collections]");
+    const phaseOrder = ["fetching", "staging", "validating"];
+    // Fill a server-rendered wording template such as "{count} loaded".
+    const fill = (template, values) => template.replace(/\{(\w+)\}/g,
+      (match, name) => (name in values ? number.format(values[name]) : match));
+    const mark = (node, state, text) => {
+      node.classList.remove("setup-load-done", "setup-load-active", "setup-load-waiting");
+      node.classList.add(`setup-load-${state}`);
+      const status = node.querySelector("[data-load-status]");
+      if (status && status.textContent !== text) status.textContent = text;
+    };
+    // Mirrors setup_progress_views.phases() and collections().
+    const showLoad = (data, key) => {
+      const index = phaseOrder.indexOf(data.phase);
+      phaseList?.querySelectorAll("[data-load-phase]").forEach((node) => {
+        const position = phaseOrder.indexOf(node.dataset.loadPhase);
+        const state = key === "done" || position < index ? "done"
+          : position === index && data.active ? "active" : "waiting";
+        mark(node, state, phaseList.dataset[`status${state[0].toUpperCase()}${state.slice(1)}`]);
+      });
+      if (collectionList) {
+        const text = collectionList.dataset;
+        const fetching = data.phase === "fetching" && data.active;
+        let waiting = false;
+        data.collections.forEach((item) => {
+          const node = collectionList.querySelector(`[data-collection="${item.key}"]`);
+          let state = "waiting";
+          if (item.done) state = "done";
+          else if (fetching && !waiting) { state = "active"; waiting = true; }
+          const rosters = item.key === "ministry_roster" && item.expected !== null;
+          mark(node, state, rosters && state !== "waiting" ? fill(text.textRosters, item)
+            : state === "done" ? fill(text.textDone, item)
+            : state === "active" ? text.textActive : text.textWaiting);
+        });
+      }
+      if (records) records.hidden = !["staging", "validating"].includes(data.phase);
+    };
+    const validCollections = (items) => Array.isArray(items) && items.length <= 20
+      && items.every((item) => item && typeof item.key === "string" && /^[a-z_]{1,40}$/.test(item.key)
+        && collectionList?.querySelector(`[data-collection="${item.key}"]`)
+        && Number.isSafeInteger(item.count) && item.count >= 0 && typeof item.done === "boolean"
+        && [item.finished, item.expected].every((value) => value === null
+          || (Number.isSafeInteger(value) && value >= 0)));
     let startedAt = Date.parse(panel.dataset.progressStarted || "");
     let heartbeatAt = Date.parse(panel.dataset.progressHeartbeat || "");
     const duration = (milliseconds) => {
@@ -177,7 +222,7 @@
             || data.current < 0 || data.total < data.current
             || !["queued", "running", "retry_wait", "abandoned", "succeeded", "failed", "cancelled"].includes(data.task_state)
             || !["collecting", "loading", "frozen", "completed", "expired"].includes(data.setup_state)
-            || typeof data.phase !== "string"
+            || typeof data.phase !== "string" || !validCollections(data.collections)
             || deadlines.some(node => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
           throw new Error("unavailable");
         }
@@ -190,7 +235,7 @@
         panel.querySelector("[data-task-phase]").textContent = data.phase;
         const percentage = data.total ? Math.round(data.current * 100 / data.total) : 0;
         panel.querySelector("[data-task-counts]").textContent =
-          `${number.format(data.current)} out of ${number.format(data.total)} (${percentage}%)`;
+          `${number.format(data.current)} of ${number.format(data.total)} (${percentage}%)`;
         // Unknown totals show an indeterminate bar rather than a stuck 0%.
         if (bar && data.total) { bar.max = data.total; bar.value = data.current; }
         else if (bar) bar.removeAttribute("value");
@@ -202,6 +247,7 @@
         }
         const key = statusKey(data);
         if (summary && texts[key] && summary.textContent !== texts[key]) summary.textContent = texts[key];
+        showLoad(data, key);
         if (done) done.hidden = key !== "done";
         if (failed) failed.hidden = key !== "failed";
         if (checked) {

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from .conftest import NOW
+from .conftest import NOW, load_collections
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -46,10 +46,11 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
                 "task_id": urlsplit(route.request.url).path.split("/")[-1],
                 "task_state": "running",
                 "setup_state": "loading",
-                "phase": "fetching",
+                "phase": "staging",
                 "active": True,
                 "current": 1234,
                 "total": 5000,
+                "collections": load_collections(7),
                 "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                 "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                 "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
@@ -62,7 +63,10 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
         "() => document.querySelector('[data-task-counts]')"
         ".textContent.includes('1,234')"
     )
-    assert page.locator("[data-task-counts]").inner_text() == "1,234 out of 5,000 (25%)"
+    assert page.locator("[data-task-counts]").inner_text() == "1,234 of 5,000 (25%)"
+    assert page.locator("[data-load-records]").is_visible()
+    assert "Done" in page.locator('[data-load-phase="fetching"]').inner_text()
+    assert "In progress" in page.locator('[data-load-phase="staging"]').inner_text()
     assert len(requests) == 1 and requests[0].method == "POST"
     assert requests[0].post_data.startswith("csrfmiddlewaretoken=")
     assert "&" not in requests[0].post_data
@@ -100,6 +104,7 @@ def test_setup_progress_terminal_response_stops_automatic_posts(page, component_
                 "active": False,
                 "current": 0,
                 "total": 0,
+                "collections": load_collections(2),
                 "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                 "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                 "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
@@ -118,17 +123,19 @@ def test_setup_progress_terminal_response_stops_automatic_posts(page, component_
         lambda route: route.fulfill(content_type="text/html", body="Manual progress"),
     )
     with page.expect_request("**/setup-source-progress") as submitted:
-        page.get_by_role("button", name="Check source progress").click()
+        page.get_by_role("button", name="Check progress now").click()
     assert submitted.value.method == "POST"
 
 
-def test_setup_progress_shows_liveness_then_offers_continue(page, component_origin):
-    """A 0-of-0 download still shows activity; completion reveals Continue."""
+def test_setup_progress_shows_each_collection_then_offers_continue(
+    page, component_origin
+):
+    """The download lists finished collections; completion reveals Continue."""
     page.clock.install(time=NOW)
     state = {"done": False}
 
     def respond(route):
-        """First a healthy download with unknown totals, then a finished load."""
+        """First a download midway through the rosters, then a finished load."""
         done = state["done"]
         route.fulfill(
             json={
@@ -138,8 +145,11 @@ def test_setup_progress_shows_liveness_then_offers_continue(page, component_orig
                 "setup_state": "collecting" if done else "loading",
                 "phase": "validating" if done else "fetching",
                 "active": not done,
-                "current": 0,
-                "total": 0,
+                "current": 9000 if done else 0,
+                "total": 9000 if done else 0,
+                "collections": load_collections(7)
+                if done
+                else load_collections(5, finished=57, expected=213),
                 "started_at": (NOW - timedelta(seconds=75)).isoformat(),
                 "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
                 "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
@@ -154,13 +164,17 @@ def test_setup_progress_shows_liveness_then_offers_continue(page, component_orig
         "() => document.querySelector('[data-progress-elapsed]')"
         ".textContent.includes('1 min')"
     )
-    assert (
-        "Downloading Families" in page.locator("[data-progress-summary]").inner_text()
-    )
+    assert "downloading" in page.locator("[data-progress-summary]").inner_text()
     assert "3 seconds ago" in page.locator("[data-progress-quiet]").inner_text()
-    assert page.locator("[data-progress-bar]").evaluate(
-        "bar => !bar.hasAttribute('value')"
-    )
+    families = page.locator('[data-collection="families"]')
+    assert "1,234 loaded" in families.inner_text()
+    assert "setup-load-done" in families.get_attribute("class")
+    rosters = page.locator('[data-collection="ministry_roster"]')
+    assert "57 of 213 loaded" in rosters.inner_text()
+    assert "setup-load-active" in rosters.get_attribute("class")
+    assert "Waiting" in page.locator('[data-collection="funds"]').inner_text()
+    # No meaningless "0 of 0" count while downloading.
+    assert page.locator("[data-load-records]").is_hidden()
     assert page.locator("[data-progress-done]").is_hidden()
     state["done"] = True
     with page.expect_response("**/admin/setup/source/*?format=json"):
@@ -172,6 +186,8 @@ def test_setup_progress_shows_liveness_then_offers_continue(page, component_orig
         "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
     )
     assert page.get_by_role("link", name="Continue to the next step").is_visible()
+    assert page.locator("[data-task-counts]").inner_text() == "9,000 of 9,000 (100%)"
+    assert "Done" in page.locator('[data-load-phase="validating"]').inner_text()
 
 
 def test_csp_permits_the_fixed_google_form_destination(page, component_origin):

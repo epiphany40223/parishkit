@@ -14,6 +14,7 @@ from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
 from PIL import Image
 
+from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.branding_views import LogoForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
@@ -37,7 +38,6 @@ from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
-from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES
 from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -104,6 +104,35 @@ def page(browser_engine):
     page = context.new_page()
     yield page
     context.close()
+
+
+def load_collections(done=0, *, finished=None, expected=None):
+    """Decoded download collections with the first ``done`` of them finished."""
+    return [
+        {
+            "key": key,
+            "count": 1234 if index < done else 0,
+            "done": index < done,
+            "finished": finished if key == "ministry_roster" else None,
+            "expected": expected if key == "ministry_roster" else None,
+        }
+        for index, key in enumerate(progress_views.COLLECTIONS)
+    ]
+
+
+def progress_page(progress, wizard):
+    """The source-load progress page context, built by the view's own helpers."""
+    status_key = progress_views.summary(progress)
+    return {
+        "progress": progress,
+        "wizard": wizard,
+        "summaries": progress_views.SUMMARIES,
+        "status_key": status_key,
+        "phases": progress_views.phases(progress, status_key),
+        "phase_status": progress_views.PHASE_STATUS,
+        "collections": progress_views.collections(progress),
+        "collection_text": progress_views.COLLECTION_TEXT,
+    }
 
 
 @pytest.fixture(scope="module")
@@ -751,8 +780,8 @@ def component_origin():
         (
             "/setup-source-progress",
             "setup-source-progress",
-            {
-                "progress": {
+            progress_page(
+                {
                     "server_now": NOW.isoformat(),
                     "task_id": uuid4(),
                     "task_state": "running",
@@ -761,13 +790,13 @@ def component_origin():
                     "current": 0,
                     "total": 0,
                     "active": True,
+                    "collections": load_collections(),
                     "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
                 },
-                "summaries": SUMMARIES,
-                "status_key": "fetching",
-            },
+                wizard,
+            ),
         ),
         (
             "/source-refresh",
