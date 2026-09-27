@@ -13,7 +13,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import current_correlation
-from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
+from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -27,19 +27,27 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .handoff_discovery import public_handoff
-from .integration_forms import LABELS, CredentialForm, IntegrationForm
+from .integration_credentials import save_credential, summary
+from .integration_forms import (
+    LABELS,
+    CredentialForm,
+    InlineCredentialForm,
+    IntegrationForm,
+)
 from .integration_selection import authentication_scope
 from .limiting import LimiterUnavailable
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
 from .privileged_actions import sealed_secret_request
 from .request_patch import build_candidate
-from .secret_models import SECRET_PENDING, SecretReplacementRequest
+from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
-from .sessions import authenticated_admin, require_fresh
+from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
+# A settings page may stay open while the Administrator finds the new key.
+INLINE_INTENT_SECONDS = 3600
 
 
 class IntegrationUnavailable(Exception):
@@ -88,14 +96,9 @@ def _checked(request, service, response):
     return response
 
 
-def _page(request, configuration, target, *, form=None, status=200):
-    """Show applied values and honest request progress, not inferred readiness."""
+def _page(request, configuration, target, *, form=None, credential=None, status=200):
+    """Show editable settings, the optional new-key field and one status line."""
     record = _selected(configuration, target)
-    latest = (
-        SecretReplacementRequest.objects.filter(target=target)
-        .order_by("-created_at", "pk")
-        .first()
-    )
     form = (
         form
         if form is not None
@@ -105,16 +108,32 @@ def _page(request, configuration, target, *, form=None, status=200):
             | {"base_digest": configuration.active_configuration.digest},
         )
     )
+    latest = summary(target, record) if target in ROTATING_TARGETS else None
+    pending = latest is not None and latest.kind == "pending"
+    unavailable = False
+    if target in ROTATING_TARGETS and credential is None and not pending:
+        try:
+            credential = _inline_credential_form(configuration, request, target)
+        except IntegrationUnavailable:
+            # Settings stay editable while the key installer is unavailable.
+            unavailable = True
+    try:
+        require_fresh(request)
+        fresh = True
+    except FreshAuthenticationRequired:
+        fresh = False
     response = render(
         request,
         "stewardship/integration-settings.html",
         {
             "form": form,
+            "credential": None if pending else credential,
+            "credential_unavailable": unavailable,
+            "fresh": fresh,
             "target": target,
             "label": LABELS[target],
-            "fingerprint": record["values"]["credential_fingerprint"],
-            "latest": latest,
-            "replacement_allowed": target != "email",
+            "summary": latest,
+            "pending": pending,
             "configuration": configuration,
         },
         status=status,
@@ -122,6 +141,83 @@ def _page(request, configuration, target, *, form=None, status=200):
     if status == 400:
         response.stewardship_safe_error = True
     return response
+
+
+def _inline_credential_form(configuration, request, target):
+    """Sign a fresh request identity for the page's optional new-key field."""
+    _handoff(target)
+    intent = signing.dumps(
+        {
+            "actor": str(request.portal_session.principal_id),
+            "target": target,
+            "base": configuration.active_configuration.digest,
+            "request": str(uuid4()),
+            "staging": str(uuid4()),
+        },
+        salt=CREDENTIAL_SALT,
+    )
+    return InlineCredentialForm(target, initial={"intent": intent})
+
+
+def _save(request, service, configuration, actor, target):
+    """Replace the key (and any changed settings) from the settings page.
+
+    Fresh Google authentication is checked before the key is read, so a
+    stale session gets the step-up page instead of a sealed request.
+    """
+    require_fresh(request)
+    form = IntegrationForm(target, request.POST)
+    credential = InlineCredentialForm(target, request.POST)
+    if not (form.is_valid() and credential.is_valid()):
+        credential = InlineCredentialForm(
+            target, initial={"intent": request.POST.get("intent", "")}
+        )
+        return _page(
+            request,
+            configuration,
+            target,
+            form=form,
+            credential=credential,
+            status=400,
+        )
+    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Reload integration settings.")
+    intent = signing.loads(
+        credential.cleaned_data["intent"],
+        salt=CREDENTIAL_SALT,
+        max_age=INLINE_INTENT_SECONDS,
+    )
+    if intent["actor"] != str(actor.identity) or intent["target"] != target:
+        raise PermissionError("Credential intent does not belong to this session.")
+    if intent["base"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Integration settings changed.")
+    record = _selected(configuration, target)
+    settings = form.public_settings()
+    before = record["values"]["settings"]
+    if target == "parishsoft" and "nightly_time" not in before:
+        # The default refresh time is implied, not stored, in older settings.
+        if settings.get("nightly_time") == "02:00":
+            settings.pop("nightly_time")
+        else:
+            raise ValueError("Save the refresh time separately from a new key.")
+    from .key_files import MAX_FILE_BYTES
+
+    value = credential.cleaned_data.pop("candidate").encode("utf-8")
+    if len(value) > MAX_FILE_BYTES:
+        raise ValueError("Credential exceeds its byte bound.")
+    save_credential(
+        request,
+        service,
+        configuration,
+        actor,
+        target=target,
+        intent=intent,
+        value=value,
+        record=record,
+        settings=settings,
+    )
+    del value
+    return HttpResponseRedirect(request.path)
 
 
 def _preview(request, service, actor, target):
@@ -178,6 +274,7 @@ def _preview(request, service, actor, target):
     )
 
 
+@sensitive_post_parameters("candidate")
 @require_http_methods(["GET", "HEAD", "POST"])
 def integration_settings(request, target=None):
     """List configured integrations or submit an exact non-secret YAML preview."""
@@ -202,23 +299,27 @@ def integration_settings(request, target=None):
             )
         elif request.method == "POST":
             _selected(configuration, target)
-            action = form_action(
-                request.POST, preview_fields=set(IntegrationForm(target).fields)
-            )
-            response = (
-                _preview(request, service, actor, target)
-                if action == "preview"
-                else confirm(
-                    request,
-                    service,
-                    actor,
-                    salt=SALT + target,
-                    current_scope=lambda service: (
-                        editable_configuration(service),
-                        None,
-                    ),
+            fields = set(IntegrationForm(target).fields)
+            if target in ROTATING_TARGETS:
+                fields |= {"candidate", "intent"}
+            action = form_action(request.POST, preview_fields=fields)
+            if action == "preview" and request.POST.get("candidate", "").strip():
+                response = _save(request, service, configuration, actor, target)
+            else:
+                response = (
+                    _preview(request, service, actor, target)
+                    if action == "preview"
+                    else confirm(
+                        request,
+                        service,
+                        actor,
+                        salt=SALT + target,
+                        current_scope=lambda service: (
+                            editable_configuration(service),
+                            None,
+                        ),
+                    )
                 )
-            )
         else:
             filters(request.GET, allowed=set())
             response = _page(request, configuration, target)
