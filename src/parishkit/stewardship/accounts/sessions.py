@@ -257,6 +257,51 @@ def issue_admin(request, user_id, *, store, authenticated_at):
     return principal
 
 
+def reauthenticate_admin(request, user_id, *, store, authenticated_at):
+    """Step-up: refresh the current live session's Google freshness in place.
+
+    This applies only when the request already carries a live, currently
+    authorized Admin session whose principal is the PortalUser that just
+    completed a verified Google sign-in. That row's ``authenticated_at``
+    advances to the verified instant (never backwards), activity renews, and
+    the Django session key and PortalSession row stay the same, so work bound
+    to this login, such as the initial setup draft, survives. Returns the
+    principal, or None when there is no such session; the caller then issues
+    a new session exactly as for a first login.
+
+    Keeping the key is not a session-fixation risk. Every initial login
+    already replaced the pre-login key with a fresh server-issued one bound
+    to this principal, and step-up changes neither the principal nor its
+    authority, which ``authenticated_admin`` re-derives from current policy.
+    It only records that the same person proved presence with Google again.
+    A different Google account never reaches this row: it gets a new session.
+    The caller still rotates the CSRF secret, as it does after any login.
+    """
+    with transaction.atomic():
+        # Admission locks the row and revokes an idle, expired or recovered
+        # session first, so a dead session is replaced rather than revived.
+        principal = authenticated_admin(request, store=store)
+        if principal is None or principal.identity != user_id:
+            return None
+        row = request.portal_session
+        now = database_now()
+        if timezone.is_naive(authenticated_at) or authenticated_at > now:
+            raise PermissionError("Verified Google authentication is required.")
+        # A signed auth_time may predate the session's current instant (an
+        # older Google session); freshness then simply does not advance.
+        fresh = max(row.authenticated_at, authenticated_at)
+        PortalSession.objects.filter(pk=row.pk).update(
+            authenticated_at=fresh,
+            last_activity_at=now,
+            version=F("version") + 1,
+        )
+        row.authenticated_at, row.last_activity_at = fresh, now
+        AuditEvent.objects.create(
+            event_type="admin_step_up", actor_id=user_id, subject_id=row.pk
+        )
+    return principal
+
+
 def authenticated_admin(request, *, store, activity=False, read_only=False):
     """Re-evaluate policy every time; passive status/presence calls never renew idle."""
     if activity and read_only:
@@ -308,6 +353,14 @@ def authenticated_admin(request, *, store, activity=False, read_only=False):
         return principal
 
 
+class FreshAuthenticationRequired(PermissionError):
+    """The session is valid, but this action needs a Google sign-in within 5 min.
+
+    It stays a PermissionError, so every existing denial path still refuses.
+    Admin error handling can instead offer the step-up confirmation page.
+    """
+
+
 def require_fresh(request):
     """A fresh Google round trip, not a browser flag, admits privileged commands."""
     row = getattr(request, "portal_session", None)
@@ -315,7 +368,7 @@ def require_fresh(request):
         row is None
         or not 0 <= (database_now() - row.authenticated_at).total_seconds() <= 300
     ):
-        raise PermissionError("Please authenticate with Google again.")
+        raise FreshAuthenticationRequired("Please authenticate with Google again.")
     return row.authenticated_at
 
 

@@ -34,12 +34,7 @@ from .ownership import database_now
 
 def _error(code, status):
     """Only static error codes/messages cross this metadata boundary."""
-    if status != 404:
-        return validation_response([FieldError(code)], status=status)
-    response = JsonResponse({"errors": [FieldError(code).as_dict()]}, status=404)
-    response.stewardship_safe_error = True
-    response["Cache-Control"] = "no-store"
-    return response
+    return validation_response([FieldError(code)], status=status)
 
 
 def _window(parameters, *, listing):

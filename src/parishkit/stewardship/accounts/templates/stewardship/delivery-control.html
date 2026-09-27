@@ -17,7 +17,7 @@
 {% for kind, counts in inventory.types.items %}<tr><th scope="row">{{ kind }}</th><td>{{ counts.queued|number }}</td><td>{{ counts.held|number }}</td><td>{{ counts.submitting|number }}</td><td>{{ counts.unknown|number }}</td></tr>{% endfor %}
 </tbody></table>{% endif %}</section>
 {% if available %}
-{% if not fresh %}<p>{% translate "Confirmation requires Google authentication within the last five minutes." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again with Google" %}</a></p>{% endif %}
+{% if not fresh %}<div class="notice"><p>{% translate "For your security, confirm it's you with Google before confirming a delivery action. Confirmation requires Google authentication within the last five minutes; you will return to this page." %}</p>{% url 'admin:delivery_control' campaign.pk as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 {% if campaign.delivery_paused %}<section class="panel" role="status"><h2>{% translate "Live delivery is paused" %}</h2><p>{% translate "Reason" %}: {{ campaign.pause_reason }}</p>
 <p>{% translate "Paused at" %}: <time data-local-instant datetime="{{ campaign.paused_at|instant }}">{{ campaign.paused_at|instant }}</time> ({{ campaign.paused_at|timesince }}).</p></section>
 <section class="panel"><h2>{% translate "Provider and sender check" %}</h2>
