@@ -27,7 +27,9 @@ SUMMARIES = {
     "fetching": _(
         "Downloading Families, Members, Ministries and funds from ParishSoft. "
         "The totals are not known until the download finishes, so the count stays "
-        "at zero for now. This is normal and usually takes one to three minutes."
+        "at zero for now. This is normal. ParishSoft answers one request per "
+        "ministry, so this takes several minutes: about eight for a few thousand "
+        "Families and 200 ministries, and longer for a larger parish."
     ),
     "staging": _(
         "Saving the downloaded records for this setup. The count shows how many "
