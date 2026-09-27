@@ -1,0 +1,15 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Setup step not available" %} — {% translate "Initial setup" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
+{% block content %}
+{% include 'stewardship/setup-wizard.html' %}
+<h1>{% if blocked %}{% blocktranslate trimmed with step=blocked.label %}“{{ step }}” is not available yet{% endblocktranslate %}{% else %}{% translate "This setup page is not available" %}{% endif %}</h1>
+<div class="notice" role="status">
+{% if blocked.state == 'blocked' %}<p>{{ blocked.status }}</p>
+<p><a href="{{ blocked.fix_url }}">{% blocktranslate trimmed with step=blocked.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
+{% else %}<p>{{ message }}</p>
+{% if wizard.resume %}<p><a href="{{ wizard.resume.href }}">{% blocktranslate trimmed with step=wizard.resume.label %}Go to the next step that needs work: “{{ step }}”{% endblocktranslate %}</a></p>{% endif %}
+{% endif %}
+</div>
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+{% endblock %}

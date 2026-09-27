@@ -1,0 +1,62 @@
+/* Initial-setup wizard: progress stepper, Back/Continue actions and field help.
+   Loaded only by the setup templates. Colors fall back to the shared palette so
+   this file keeps working if the shared stylesheet renames its tokens. */
+.setup-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.setup-stepper { margin-block: .5rem 1.5rem; }
+.setup-stepper-heading { font-size: 1rem; margin: 0 0 .25rem; }
+.setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; }
+.setup-progress progress { flex: 1 1 12rem; height: .8rem; accent-color: var(--accent, #165b50); }
+.setup-steps {
+  list-style: none; margin: .75rem 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: .5rem;
+}
+.setup-steps li { margin: 0; }
+.setup-steps a, .setup-step-box {
+  box-sizing: border-box; height: 100%; min-height: 44px;
+  display: grid; grid-template-columns: 2rem 1fr; column-gap: .5rem; align-items: start;
+  padding: .5rem .6rem; border: 2px solid var(--border, #9aabb1); border-radius: .3rem;
+  background: var(--paper, #fff); color: var(--ink, #172d38); text-decoration: none;
+}
+.setup-steps a:hover .setup-step-label { text-decoration: underline; }
+.setup-steps a:focus-visible { outline: 3px solid #aa4b00; outline-offset: 2px; }
+.setup-step-number {
+  grid-row: span 2; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem; border: 2px solid currentColor; border-radius: 50%;
+  font-weight: 700; font-size: .875rem;
+}
+.setup-step-label { font-weight: 650; }
+.setup-step-status { grid-column: 2; font-size: .875rem; color: var(--muted, #465e68); }
+.setup-step-done a { border-color: var(--accent, #165b50); }
+.setup-step-done .setup-step-number {
+  background: var(--accent, #165b50); border-color: var(--accent, #165b50); color: var(--paper, #fff);
+}
+.setup-step-blocked .setup-step-box { border-style: dashed; color: var(--muted, #465e68); }
+.setup-steps [aria-current="step"] {
+  border-color: var(--ink, #172d38); box-shadow: inset 0 0 0 2px var(--ink, #172d38);
+  background: #eef5f3;
+}
+.setup-overview-link { margin: .5rem 0 0; }
+.setup-intro { max-width: 70ch; font-size: 1.05rem; }
+.setup-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .75rem; margin-block: 1.5rem 1rem;
+}
+.setup-actions button { margin: 0 0 0 auto; }
+.setup-back, .setup-continue {
+  display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box;
+  padding: .6rem 1.1rem; border: 2px solid var(--accent, #165b50); border-radius: .3rem;
+  font-weight: 650; text-decoration: none;
+}
+.setup-back { background: var(--paper, #fff); color: var(--accent, #165b50); }
+.setup-continue { margin-left: auto; background: var(--accent, #165b50); color: var(--paper, #fff); }
+.setup-back:hover, .setup-continue:hover { text-decoration: underline; }
+.helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #465e68); font-size: .925rem; }
+.setup-checklist li { margin-block: .25rem; }
+@media (forced-colors: active) {
+  .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }
+  .setup-step-done .setup-step-number { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+@media print { .setup-stepper, .setup-actions { display: none; } }

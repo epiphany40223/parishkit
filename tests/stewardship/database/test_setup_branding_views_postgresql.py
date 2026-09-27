@@ -26,7 +26,7 @@ def test_setup_upload_selects_only_temporary_receipt_and_serves_private_png(requ
             browser, "/admin/setup/branding", {"version": "1", "logo": upload()}
         )
         assert result.status_code == 302, result.content
-        assert result["Location"] == "/admin/setup/branding"
+        assert result["Location"] == "/admin/setup/access"
         bundle = BrandingBundle.objects.get()
         assert SetupDraftSection.objects.get().values == {"bundle_id": str(bundle.pk)}
         page = browser.get("/admin/setup/branding")

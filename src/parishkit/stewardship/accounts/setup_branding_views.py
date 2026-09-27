@@ -3,7 +3,7 @@
 from io import BytesIO
 from uuid import UUID
 
-from django.http import FileResponse, HttpResponseRedirect
+from django.http import FileResponse
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_safe
@@ -19,7 +19,8 @@ from .branding_staging import file_receipt, stage_branding, staged_bundle
 from .branding_views import ERRORS, LogoForm, _error, media_root
 from .setup_drafts import save_section, view_draft
 from .setup_policy import SetupState
-from .setup_views import _checked, _context
+from .setup_views import _checked, _context, page_error
+from .setup_wizard import continue_after
 
 
 class SetupLogoForm(LogoForm):
@@ -80,7 +81,7 @@ def setup_branding(request):
                         expected_version=version,
                     )
                     return _checked(
-                        request, service, HttpResponseRedirect("/admin/setup/branding")
+                        request, service, continue_after(request, service, "branding")
                     )
             status = 400
         else:
@@ -96,12 +97,12 @@ def setup_branding(request):
         response = render(
             request,
             "stewardship/setup-branding.html",
-            _context(draft) | {"form": form, "assets": assets},
+            _context(draft, "branding") | {"form": form, "assets": assets},
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return _error(error)
+        return page_error(request, error, "branding", fallback=_error)
 
 
 @require_safe

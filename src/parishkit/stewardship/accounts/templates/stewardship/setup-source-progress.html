@@ -1,7 +1,8 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Initial source load" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+{% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Initial source load" %}</h1>
 <p>{% translate "A normal complete load takes about two to three minutes. The hard two-hour watchdog cannot be extended. If it expires, diagnose the problem before starting a new setup attempt." %}</p>
 <p class="notice">{% translate "Keep this page visible while the load runs. Closing or hiding it stops idle renewal. Only a live, correlated worker can renew this login; its absolute deadline never changes." %}</p>
@@ -18,4 +19,6 @@
 <p data-progress-unavailable hidden role="status">{% translate "Progress is temporarily unavailable. Idle renewal is not confirmed. Reload or sign in again if needed." %}</p>
 <form method="post">{% csrf_token %}<button type="submit">{% translate "Check source progress" %}</button></form>
 </section>
+{% if progress.setup_state == 'collecting' %}<p role="status">{% translate "The load has finished. Continue to the next setup step." %}</p>{% endif %}
+{% include 'stewardship/setup-navigation.html' %}
 {% endblock %}

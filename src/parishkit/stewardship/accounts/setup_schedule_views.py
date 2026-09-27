@@ -1,6 +1,5 @@
 """Original-login mail schedules and atomic temporary campaign-date correction."""
 
-from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
@@ -14,7 +13,8 @@ from .setup_content_values import CONTENT_STEPS
 from .setup_content_views import _draft
 from .setup_drafts import save_sections
 from .setup_formsets import closed_formset
-from .setup_views import ERRORS, _checked, _context, error_response
+from .setup_views import ERRORS, _checked, _context, page_error
+from .setup_wizard import continue_after
 
 
 class SetupScheduleWindow(ScheduleWindow):
@@ -92,13 +92,13 @@ def setup_schedules(request):
                     collection_error = True
                 else:
                     return _checked(
-                        request, service, HttpResponseRedirect("/admin/setup/schedules")
+                        request, service, continue_after(request, service, "schedules")
                     )
             status = 400
         response = render(
             request,
             "stewardship/setup-schedules.html",
-            _context(draft)
+            _context(draft, "schedules")
             | {
                 "window": window,
                 "schedules": schedules,
@@ -109,4 +109,4 @@ def setup_schedules(request):
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, "schedules")

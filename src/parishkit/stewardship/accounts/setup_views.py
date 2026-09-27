@@ -5,6 +5,7 @@ from uuid import UUID
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -20,6 +21,7 @@ from .setup_forms import FORMS, STEPS, form_values, initial_values
 from .setup_policy import SetupState
 from .setup_source import start_source_load
 from .setup_staging import _admit, begin_setup, cancel_setup
+from .setup_wizard import PAGES, continue_after, wizard_for
 
 ERRORS = (
     ConfigError,
@@ -56,18 +58,93 @@ def _checked(request, service, response, draft=None):
     return response
 
 
-def _context(draft):
-    """Render only declared step labels and the current attempt's safe deadlines."""
+def _context(draft, current=None):
+    """Render the stepper, the current attempt's safe deadlines and its state."""
     return {
         "draft": draft,
-        "steps": [
-            {"key": key, "label": label, "saved": key in draft.sections}
-            for key, label in STEPS.items()
-        ]
-        if draft
-        else [],
+        "wizard": wizard_for(draft, current),
         "expired": draft is not None and draft.status.state == SetupState.EXPIRED,
     }
+
+
+# Closed, static explanations for a wizard page that cannot open. They never
+# echo exception text; the stepper names the step that fixes a prerequisite.
+PAGE_ERRORS = (
+    (
+        PermissionError,
+        _(
+            "This setup page is not available to this sign-in. The setup attempt "
+            "may have ended, or it belongs to a different sign-in."
+        ),
+    ),
+    (
+        StaleRecordError,
+        _("Setup changed while this page was loading. Reload the page to continue."),
+    ),
+    # ConfigError is a ValueError: match it (a missing prerequisite) first.
+    ((LookupError, ConfigError), _("Complete the earlier setup steps first.")),
+    (
+        ValueError,
+        _(
+            "This page address is not valid, or this step does not apply to the "
+            "settings you saved."
+        ),
+    ),
+)
+
+
+# Credential pages require a Google sign-in less than five minutes old, and a
+# new sign-in ends this attempt; say so plainly rather than a generic denial.
+CREDENTIAL_PAGES = frozenset({"parishsoft", "google_workspace", "slack_credential"})
+FRESH_SIGN_IN = _(
+    "Credentials can be entered only within five minutes of signing in with "
+    "Google, and only by the sign-in that started this setup. Signing in again "
+    "ends this setup attempt and clears its temporary settings, so a new "
+    "attempt starts from the first step. Have every credential ready before "
+    "you sign in."
+)
+
+
+def page_error(request, error, current=None, *, fallback=error_response):
+    """Explain a wizard page that cannot open instead of returning a JSON body.
+
+    Only a browser GET/HEAD of an HTML wizard page is converted; posts and the
+    JSON status endpoints keep the closed JSON error. The status code is always
+    the one the JSON response would have used, so clients and tests see the
+    same outcome. The stepper is shown only when this sign-in still owns a
+    live draft, and the page is released only after re-admitting the sign-in.
+    """
+    response = fallback(error)
+    if request.method not in {"GET", "HEAD"}:
+        return response
+    message = next(
+        (text for kinds, text in PAGE_ERRORS if isinstance(error, kinds)),
+        _("Setup is temporarily unavailable. Try again in a moment."),
+    )
+    if isinstance(error, PermissionError) and current in CREDENTIAL_PAGES:
+        message = FRESH_SIGN_IN
+    wizard = None
+    try:
+        service = runtime()
+        wizard = wizard_for(view_draft(request, service), current)
+        if wizard is not None:
+            # The stepper reflects this sign-in's draft: re-admit before release.
+            _admit(request, service, activity=False)
+    except ERRORS:
+        wizard = None
+    page = render(
+        request,
+        "stewardship/setup-unavailable.html",
+        {
+            "message": message,
+            "wizard": wizard,
+            "blocked": wizard.step(current) if wizard else None,
+        },
+        status=response.status_code,
+    )
+    page["Cache-Control"] = "no-store"
+    page.stewardship_safe_error = True
+    return page
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -84,7 +161,7 @@ def setup(request):
             if action == "start":
                 attempt = begin_setup(request, service)
                 destination = (
-                    "/admin/setup/parish"
+                    PAGES[0].url
                     if attempt.state == SetupState.COLLECTING
                     else "/admin/setup"
                 )
@@ -113,7 +190,7 @@ def setup(request):
         # restart initial setup. Keep the established fail-closed recovery page.
         return status_page(request, kind="setup", admin=True)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -151,16 +228,39 @@ def setup_step(request, step):
                     values=form_values(form),
                     expected_version=version,
                 )
-                return _checked(request, service, HttpResponseRedirect("/admin/setup"))
+                return _checked(
+                    request, service, continue_after(request, service, step)
+                )
             status = 400
         else:
             status = 200
         response = render(
             request,
             "stewardship/setup-step.html",
-            _context(draft) | {"form": form, "step": step, "step_label": STEPS[step]},
+            _context(draft, step)
+            | {"form": form, "step": step, "step_label": STEPS[step]},
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
-        return error_response(error)
+        return page_error(request, error, step)
+
+
+@require_http_methods(["GET", "HEAD"])
+def setup_source(request):
+    """Explain and offer the one source load; the load itself is a hub POST."""
+    try:
+        _closed(request, set())
+        service = runtime()
+        draft = view_draft(request, service)
+        if draft is None or draft.status.state not in {
+            SetupState.COLLECTING,
+            SetupState.LOADING,
+        }:
+            return _checked(request, service, HttpResponseRedirect("/admin/setup"))
+        context = _context(draft, "source")
+        context["source_step"] = context["wizard"].step("source")
+        response = render(request, "stewardship/setup-source.html", context)
+        return _checked(request, service, response, draft)
+    except ERRORS as error:
+        return page_error(request, error, "source")

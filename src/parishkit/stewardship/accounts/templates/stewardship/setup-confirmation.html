@@ -1,7 +1,8 @@
 {% extends 'stewardship/base.html' %}{% load i18n %}
 {% block title %}{% translate "Finish initial setup" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:setup_preview' %}">{% translate "Review the exact setup preview" %}</a></p>
+{% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Finish initial setup" %}</h1>
 {% include 'stewardship/setup-deadlines.html' %}
 <p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
@@ -15,7 +16,7 @@
 {% endif %}
 <form method="post" class="panel">{% csrf_token %}
 {{ form.as_div }}
-<button type="submit"{% if readiness_problem %} disabled{% endif %}>{% translate "Confirm and finish setup" %}</button>
+{% translate "Confirm and finish setup" as submit %}{% include 'stewardship/setup-navigation.html' with disabled=readiness_problem %}
 </form>
 <details><summary>{% translate "Reviewed configuration identity" %}</summary><code>{{ candidate_digest }}</code></details>
 {% endblock %}
