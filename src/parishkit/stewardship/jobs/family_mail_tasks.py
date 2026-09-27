@@ -239,7 +239,10 @@ def admit_preparation(action, status):
     ticket = owned_preparation(status)
     if action in {"lease_expired", "recovery_hint"}:
         return True
-    terminal = disposition(ticket, source_check=action in {"hint", "claim"})
+    # Only the worker's claim reloads the Family and its source. The scheduler
+    # admits hints without private reads (its role cannot see the full Family
+    # row or snapshots); a claim during source reconciliation is simply held.
+    terminal = disposition(ticket, source_check=action == "claim")
     if action in {"complete", "recovery_complete"}:
         return terminal == "complete"
     if action in {"safe_cancel", "recovery_cancel"}:

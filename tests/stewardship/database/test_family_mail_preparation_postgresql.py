@@ -398,3 +398,27 @@ def test_scheduler_and_worker_create_missing_rehearsal_without_fixture_credentia
                 owner.execute(execution)
     assert RehearsalCredential.objects.get().epoch_id == ticket.rehearsal_epoch_id
     assert OutboxMessage.objects.get().rehearsal_epoch_id == ticket.rehearsal_epoch_id
+
+
+@pytest.mark.parametrize("production", [False, True])
+def test_scheduler_hints_family_preparation_under_its_own_grants(
+    family_mail, production
+):
+    """Scheduled invitations are routed without the scheduler reading PII.
+
+    The scheduler role reads only a few FamilyCampaign columns and no source
+    snapshot. The source check belongs to the worker's claim, recovery and
+    preparation; hint admission must not need it or preparation never starts.
+    """
+    from parishkit.stewardship.jobs.scanning import collect_hints
+
+    if production:
+        family_mail = activate_response_service(family_mail)
+        complete_empty_catchup(family_mail.campaign, uuid4())
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        ticket = allocate()
+        with task_login(ServiceRole.SCHEDULER, exact=True):
+            hints, _ = collect_hints(
+                handlers={TASK_TYPE: preparation_handler(scheduler=True)}
+            )
+    assert [hint.run_id for hint in hints] == [ticket.task_id]

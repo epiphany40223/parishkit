@@ -268,9 +268,13 @@ def admit_test(action, status):
     if action in {"heartbeat", "progress", "retryable_failure"}:
         return True
     try:
+        # The scheduler admits hints with only a few FamilyCampaign columns and
+        # no source snapshot access; the worker repeats the source check when it
+        # claims, recovers and prepares, so a hint never needs it.
         terminal = disposition(
             ticket,
-            source_check=action not in {"complete", "recovery_complete", "effect"},
+            source_check=action
+            not in {"hint", "complete", "recovery_complete", "effect"},
         )
     except FamilyTestHeld:
         # A held ticket is neither claimed nor settled; the hint is rescanned
