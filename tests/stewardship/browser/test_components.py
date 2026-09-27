@@ -747,3 +747,31 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     assert page.evaluate("document.activeElement.closest('.setup-steps') !== null")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_setup_track_segments_name_their_step_on_hover(page, component_origin, width):
+    """Each decorative segment's title names its step and status, as the list does."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/setup-testing")
+    track = page.locator(".setup-track")
+    before = track.bounding_box()
+    titles = track.locator("span").evaluate_all("nodes => nodes.map(n => n.title)")
+    steps = page.locator(".setup-steps li").evaluate_all(
+        "items => items.map(item => ["
+        "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
+        "item.querySelector('.setup-step-status').textContent.trim()])"
+    )
+    assert len(titles) == len(steps) == 15
+    for number, (title, (label, status)) in enumerate(
+        zip(titles, steps, strict=True), 1
+    ):
+        assert title == f"Step {number} of 15: {label} — {status}", title
+    assert any(title.endswith(" — Completed") for title in titles)
+    assert "— Current step — " in titles[3]
+    # The larger hover target is invisible: the track keeps its size.
+    segment = track.locator("span").nth(3)
+    segment.hover()
+    assert page.evaluate("document.querySelector('.setup-track span:hover') !== null")
+    assert track.bounding_box() == before
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
