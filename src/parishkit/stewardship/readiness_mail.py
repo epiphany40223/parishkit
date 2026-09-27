@@ -6,7 +6,6 @@ No real Family lookup, live code, attachment or arbitrary header is supported.
 """
 
 from dataclasses import dataclass
-from html import escape
 from uuid import UUID
 
 from parishkit.email.base import Email, build_message
@@ -90,17 +89,18 @@ class ReadinessMail:
             + f"Sent only to {self.recipient}. "
             + "Family names and access values are fictional."
         )
+        # One small notice line above the sample, not a large heading that
+        # pushes the content being tested out of view.
+        notice = (
+            f"Test message — sent only to {self.recipient}. "
+            "Names, links and codes in this sample are fictional."
+        )
         result = build_message(
             Email(
                 subject="[TEST] " + self.subject,
                 sender=self.sender,
                 to=[self.recipient],
-                html=email_document(
-                    "<h2>TEST — readiness sample</h2><p>"
-                    + escape(banner)
-                    + "</p>"
-                    + self.html
-                ),
+                html=email_document(self.html, notice=notice),
                 text=banner + "\n\n" + self.text,
             )
         )
