@@ -1,4 +1,4 @@
 {% load i18n %}<div class="setup-actions">
-{% if wizard.previous.url and not continue_only %}<a class="setup-back" href="{{ wizard.previous.url }}">{% translate "Back" %}<span class="setup-sr-only">: {{ wizard.previous.label }}</span></a>{% endif %}
+{% if wizard.previous.url %}<a class="setup-back" href="{{ wizard.previous.url }}">{% translate "Back" %}<span class="setup-sr-only">: {{ wizard.previous.label }}</span></a>{% endif %}
 {% if back_only %}{% elif submit %}<button type="submit"{% if disabled %} disabled{% endif %}>{{ submit }}</button>{% elif wizard.next.url %}<a class="setup-continue" href="{{ wizard.next.url }}">{% translate "Continue" %}<span class="setup-sr-only">: {{ wizard.next.label }}</span></a>{% endif %}
 </div>

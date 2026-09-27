@@ -33,12 +33,19 @@ class SetupCredentialReceipt:
     fingerprint: str
     version: int
     scrubbed: bool
+    # The non-secret scope staged with it, e.g. {"organization_id": 1234}.
+    settings: dict
 
 
 def _receipt(row):
     """Copy only public receipt fields selected with the web's column grants."""
     return SetupCredentialReceipt(
-        row.pk, row.target, row.fingerprint, row.version, row.scrubbed_at is not None
+        row.pk,
+        row.target,
+        row.fingerprint,
+        row.version,
+        row.scrubbed_at is not None,
+        dict(row.settings),
     )
 
 
@@ -146,7 +153,9 @@ def stage_credential(
             SetupSealedCredential.objects.filter(pk=row.pk, version=row.version).update(
                 **values, **context, version=F("version") + 1
             )
-            row.refresh_from_db(fields=["fingerprint", "version", "scrubbed_at"])
+            row.refresh_from_db(
+                fields=["fingerprint", "version", "scrubbed_at", "settings"]
+            )
         SetupAttempt.objects.filter(pk=attempt.pk, version=attempt.version).update(
             **context, version=F("version") + 1
         )

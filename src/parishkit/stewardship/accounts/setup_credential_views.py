@@ -19,7 +19,7 @@ from .setup_credentials import TARGETS, credential_status, stage_credential
 from .setup_drafts import view_draft
 from .setup_policy import SetupState
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
-from .setup_wizard import BY_KEY, continue_after, wizard_for
+from .setup_wizard import BY_KEY, continue_after
 
 # The wizard page key of each credential target's page.
 STEP = {
@@ -72,18 +72,31 @@ FIELD_LABELS = {
 }
 
 
+# Messages for keeping (not re-entering) an already saved credential.
+KEEP_ERRORS = {
+    "stale": _(
+        "The saved credential was entered for settings you have since changed. "
+        "Enter it again so it matches the current settings."
+    ),
+    "organization": _(
+        "To change the organization ID, enter the ParishSoft API key again as well."
+    ),
+}
+
+
 class SetupCredentialForm(CredentialForm):
-    """Reuse the write-only widget; this attempt/version replaces a live intent."""
+    """Reuse the write-only widget; this attempt/version replaces a live intent.
+
+    API keys and bot tokens are single-line secrets, so they use a password
+    input that never redisplays its value; the Google service-account key is
+    multi-line JSON and keeps the write-only text area. When a credential is
+    already saved the secret field may be left empty to keep it.
+    """
 
     intent = None
 
-    def __init__(self, target, *args, **kwargs):
-        """Only ParishSoft accepts an explicit organization; other scope is staged.
-
-        API keys and bot tokens are single-line secrets, so they use a password
-        input that never redisplays its value; the Google service-account key
-        is multi-line JSON and keeps the write-only text area.
-        """
+    def __init__(self, target, *args, saved=False, **kwargs):
+        """Only ParishSoft accepts an explicit organization; other scope is staged."""
         super().__init__(*args, **kwargs)
         if target == "parishsoft":
             self.fields["organization_id"] = forms.IntegerField(
@@ -104,7 +117,22 @@ class SetupCredentialForm(CredentialForm):
             # PasswordInput is built after the field, so restore maxlength.
             candidate.widget.attrs.update(candidate.widget_attrs(candidate.widget))
         candidate.label = FIELD_LABELS[target]
+        candidate.required = not saved
         setup_help.apply(self, setup_help.CREDENTIALS[target], replace=True)
+
+
+def _keep_refusal(form, current, organization):
+    """Why an empty key cannot keep the saved credential, or None if it can.
+
+    A key saved for mail or Slack settings changed since is stale, and a
+    ParishSoft organization cannot change without re-entering its key, since
+    the organization is sealed together with that key.
+    """
+    if not current:
+        return KEEP_ERRORS["stale"]
+    if form.cleaned_data.get("organization_id", organization) != organization:
+        return KEEP_ERRORS["organization"]
+    return None
 
 
 @sensitive_post_parameters("candidate")
@@ -121,14 +149,34 @@ def setup_credential(request, target):
         require_fresh(request)
         _closed(request, {*SetupCredentialForm(target).fields, "version"})
         receipts = credential_status(request, service, draft.status.attempt_id)
-        blocked = prerequisite(wizard_for(draft), STEP[target])
+        context = _context(draft, STEP[target])
+        wizard = context["wizard"]
+        blocked = prerequisite(wizard, STEP[target])
+        saved = next((item for item in receipts if item.target == target), None)
+        # Never the secret: only whether one is saved and its public scope.
+        step = wizard.step(STEP[target])
+        current = saved is not None and step is not None and step.state == "done"
+        organization = saved.settings.get("organization_id") if saved else None
+        initial = {"organization_id": organization} if organization else {}
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
                 raise StaleRecordError("Reload this setup form.")
-            form = SetupCredentialForm(target, request.POST)
+            form = SetupCredentialForm(
+                target, request.POST, saved=saved is not None, initial=initial
+            )
             if form.is_valid() and blocked:
                 form.add_error(None, blocked[0])
+            elif form.is_valid() and not form.cleaned_data["candidate"]:
+                # Keep the saved credential: nothing is staged or re-sealed.
+                refusal = _keep_refusal(form, current, organization)
+                if refusal is None:
+                    return _checked(
+                        request,
+                        service,
+                        continue_after(request, service, STEP[target]),
+                    )
+                form.add_error("candidate", refusal)
             elif form.is_valid():
                 candidate = form.cleaned_data.pop("candidate").encode("utf-8")
                 try:
@@ -157,16 +205,19 @@ def setup_credential(request, target):
                     del candidate
             status = 400
         else:
-            form, status = SetupCredentialForm(target), 200
+            form = SetupCredentialForm(target, saved=saved is not None, initial=initial)
+            status = 200
         response = render(
             request,
             "stewardship/setup-credential.html",
-            _context(draft, STEP[target])
+            context
             | {
                 "form": form,
                 "target": target,
                 "label": LABELS[target],
-                "saved": any(receipt.target == target for receipt in receipts),
+                "saved": saved is not None,
+                "current": current,
+                "organization": organization,
                 "prerequisite": blocked,
             },
             status=status,

@@ -119,10 +119,11 @@ LOGO = {
 CREDENTIALS = {
     "parishsoft": {
         "candidate": _(
-            "The API key ParishSoft issued to your parish; ask ParishSoft support "
-            "if you do not have one. Paste it exactly, on one line. It is sealed "
-            "as soon as you save and can never be displayed again. The system "
-            "only reads from ParishSoft."
+            "The API key ParishSoft issued to your parish, usually one line of "
+            "36 letters, digits and dashes; ask ParishSoft support if you do not "
+            "have one. Paste it exactly. It is stored encrypted when you save and "
+            "is never displayed again; enter a new one here at any time before "
+            "setup finishes to replace it. The system only reads from ParishSoft."
         ),
         "organization_id": _(
             "The number ParishSoft uses to identify your parish (its "
@@ -143,7 +144,9 @@ CREDENTIALS = {
             "under Security, Access and data control, API controls, Manage "
             "Domain Wide Delegation, authorize the service account's Client ID "
             "for the scope https://mail.google.com/. The system uses it only to "
-            "send mail as the delegated mailbox you entered."
+            "send mail as the delegated mailbox you entered. It is stored "
+            "encrypted and never displayed again; paste a new key here to "
+            "replace it."
         ),
     },
     "slack": {
@@ -151,7 +154,8 @@ CREDENTIALS = {
             "Your Slack app's Bot User OAuth Token, which starts with xoxb-. Find "
             "it in the app's settings at api.slack.com under OAuth and "
             "Permissions. The app needs the chat:write permission and must be "
-            "invited to the alert channel."
+            "invited to the alert channel. It is stored encrypted and never "
+            "displayed again; enter a new token here to replace it."
         ),
     },
 }

@@ -65,6 +65,9 @@ def test_single_line_secrets_use_a_password_input_that_never_echoes(target):
     assert 'autocomplete="off"' in html and 'spellcheck="false"' in html
     assert "maxlength=" in html and "required" in html
     assert "synthetic-secret" not in html
+    kept = SetupCredentialForm(target, saved=True)
+    assert "required" not in str(kept["candidate"])
+    assert "encrypted" in str(kept.fields["candidate"].help_text)
 
 
 def test_service_account_json_stays_a_write_only_text_area():

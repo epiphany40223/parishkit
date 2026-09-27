@@ -1,5 +1,6 @@
 """HTTP setup admission, private draft isolation, CSRF and exact concurrent edits."""
 
+import html
 from dataclasses import replace
 
 import pytest
@@ -88,8 +89,14 @@ def test_original_browser_saves_and_revisits_public_steps(setup_http, google):
             assert SetupDraftSection.objects.get(step=step).values == values
             assert b"Completed" in browser.get("/admin/setup").content
             activity = PortalSession.objects.get().last_activity_at
-            assert browser.get("/admin/setup/" + step).status_code == 200
+            revisit = browser.get("/admin/setup/" + step)
+            assert revisit.status_code == 200
             assert PortalSession.objects.get().last_activity_at == activity
+            # Going back shows what was saved, not an empty form.
+            for value in values.values():
+                for item in value if isinstance(value, list) else [value]:
+                    if isinstance(item, str) and item:
+                        assert html.escape(item).encode() in revisit.content, item
         assert dict(SetupDraftSection.objects.values_list("step", "values")) == VALUES
     assert not Parish.objects.exists()
 

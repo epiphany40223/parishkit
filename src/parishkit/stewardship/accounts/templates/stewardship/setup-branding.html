@@ -7,7 +7,9 @@
 <p class="setup-intro">{% translate "Upload the parish logo. It gives Family pages a familiar look so Families trust the site." %}</p>
 <p class="notice">{% translate "Testing mode. This logo is private to this setup login until final activation." %}</p>
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
-{% if assets %}<section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
+{% if assets %}<div class="notice setup-saved"><p><strong>{% translate "A logo is saved; its generated sizes are shown below." %}</strong></p>
+<p>{% translate "To keep it, choose no file and select Save and continue. Choose a new image only to replace it." %}</p></div>
+<section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
 <div class="branding-preview">{% for asset in assets %}<figure><img src="{% url 'admin:setup_branding_asset' asset.pk %}" alt="{{ asset.label|capfirst }}"><figcaption>{{ asset.label|capfirst }} — {{ asset.width }} × {{ asset.height }}</figcaption></figure>{% endfor %}</div>
 </section>{% endif %}
 <form method="post" enctype="multipart/form-data" class="panel">
@@ -15,5 +17,4 @@
 {{ form.as_div }}
 {% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' %}
 </form>
-{% if assets %}<p>{% translate "A logo is already saved. Continue to keep it, or choose a new image above to replace it." %}</p>{% include 'stewardship/setup-navigation.html' with submit=None continue_only=True %}{% endif %}
 {% endblock %}
