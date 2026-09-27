@@ -542,7 +542,7 @@ def default_schema(base, patch):
             and item.get("section") == "integrations"
             and type(item.get("values")) is dict
             and type(item["values"].get("settings")) is dict
-            and "nightly_time" in item["values"]["settings"]
+            and set(cadence.CADENCE_SETTINGS) & item["values"]["settings"].keys()
             for item in patch
         )
     ):

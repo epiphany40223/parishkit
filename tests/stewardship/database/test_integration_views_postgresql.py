@@ -93,6 +93,8 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     """The web editor queues settings; the existing installer applies YAML and SQL."""
     browser, _ = signed_in()
     assert browser.get(INDEX).status_code == browser.get(URL).status_code == 200
+    # The ParishSoft page reports when data was last fully reloaded.
+    assert b"Last full ParishSoft refresh:" in browser.get(URL).content
     old = auth_service.store.active()
     preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
@@ -110,7 +112,11 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     record = auth_service.store.active().document()["sections"]["integrations"][0][
         "values"
     ]
-    assert record["settings"] == {"organization_id": "54321", "nightly_time": "02:00"}
+    assert record["settings"] == {
+        "organization_id": "54321",
+        "full_refresh": "daily",
+        "nightly_time": "02:00",
+    }
     assert record["credential_fingerprint"] == "a" * 64
     assert (
         post(browser, URL, {"action": "confirm", "preview": preview})["Location"]

@@ -107,7 +107,8 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         "lookup_1_family": small,
         "lookup_5000_families": large,
         "family_page_100_sessions": _measure(family_page),
-        "admin_shell": _measure(admin_page, query_limit=65),
+        # 66: one query shows the last full ParishSoft refresh on the home page.
+        "admin_shell": _measure(admin_page, query_limit=66),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
 

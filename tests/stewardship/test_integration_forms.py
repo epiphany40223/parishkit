@@ -14,7 +14,11 @@ from parishkit.stewardship.accounts.integration_forms import (
         (
             "parishsoft",
             {"organization_id": "123"},
-            {"organization_id": "123", "nightly_time": "02:00"},
+            {
+                "organization_id": "123",
+                "full_refresh": "daily",
+                "nightly_time": "02:00",
+            },
         ),
         (
             "google_workspace",

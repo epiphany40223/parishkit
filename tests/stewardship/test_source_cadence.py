@@ -71,3 +71,29 @@ def test_naive_now_and_noncanonical_scope_are_rejected():
         slots("2026-09-11T17:23:42")
     with pytest.raises(ValueError):
         slots("2026-09-11T17:23:42+00:00", scope_fingerprint="PRIVATE")
+
+
+def test_hourly_full_refresh_uses_the_latest_utc_hour_and_keeps_deltas():
+    """An hourly full load is due on the hour; quarter-hour deltas continue."""
+    full, delta = slots("2026-09-11T17:23:42+00:00", frequency="hourly")
+    assert full.cause == "nightly" and delta.cause == "delta"
+    assert full.due_at == datetime(2026, 9, 11, 17, tzinfo=UTC)
+    assert delta.due_at == datetime(2026, 9, 11, 17, 15, tzinfo=UTC)
+    assert (
+        full.slot_key
+        != slots("2026-09-11T18:00:00+00:00", frequency="hourly")[0].slot_key
+    )
+
+
+def test_quarter_hour_full_refresh_replaces_the_delta_slot():
+    """A full load every 15 minutes already covers each delta slot."""
+    (full,) = slots("2026-09-11T17:23:42+00:00", frequency="quarter_hour")
+    assert full.cause == "nightly"
+    assert full.due_at == datetime(2026, 9, 11, 17, 15, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("frequency", ["weekly", "", None])
+def test_unknown_frequency_is_refused(frequency):
+    """The slot calculation accepts only the three stored frequencies."""
+    with pytest.raises(ValueError):
+        slots("2026-09-11T17:23:42+00:00", frequency=frequency)

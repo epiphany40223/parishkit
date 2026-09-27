@@ -115,6 +115,7 @@ def produce_refreshes(guard):
             timezone=timezone,
             nightly_time=nightly_time,
             scope_fingerprint=scope_fingerprint(organization, window.digest),
+            frequency=integration.settings.get("full_refresh", "daily"),
         )
         result = []
         for slot in slots:

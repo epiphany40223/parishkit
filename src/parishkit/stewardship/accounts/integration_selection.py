@@ -37,7 +37,9 @@ def authentication_scope(target, records, *, recipient=None):
     """Match authentication inputs without treating an old recipient as readiness."""
     selected = dict(records[target]["values"]["settings"])
     if target == "parishsoft":
+        # Refresh timing is scheduling, not part of what a key is checked against.
         selected.pop("nightly_time", None)
+        selected.pop("full_refresh", None)
         organization = selected.get("organization_id")
         if (
             not isinstance(organization, str)

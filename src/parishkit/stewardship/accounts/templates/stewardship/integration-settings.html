@@ -18,6 +18,7 @@
   <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Details" %}</a>
 </p>
 {% endif %}
+{% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh %}</section>{% endif %}
 {% if pending %}
 <p>{% translate "This page updates by itself. You can leave it; the change finishes in the background." %}</p>
 {% else %}

@@ -11,10 +11,15 @@ CREDENTIAL_SCHEMA = "integration-credential-cadence-v8"
 DEFAULT_TIME = "02:00"
 
 
+# Settings this schema adds to the ParishSoft integration, over v5.
+CADENCE_SETTINGS = ("nightly_time", "full_refresh")
+
+
 def uses_cadence(document):
-    """Detect the explicit new setting only in a validated configuration envelope."""
+    """Detect the explicit new settings only in a validated configuration envelope."""
     return any(
-        "nightly_time" in row["values"]["settings"]
+        name in row["values"]["settings"]
+        for name in CADENCE_SETTINGS
         for row in document["sections"].get("integrations", [])
         if row["values"].get("kind") == "parishsoft"
         and isinstance(row["values"].get("settings"), dict)
@@ -22,7 +27,7 @@ def uses_cadence(document):
 
 
 def validate_sections(document):
-    """Validate one new local-time field, then all retained content/policy rules."""
+    """Validate the refresh time and frequency, then all retained v5 rules."""
     from .configuration_schema import _validate_v5_sections
 
     rows = []
@@ -39,16 +44,22 @@ def validate_sections(document):
                     or re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", time) is None
                 ):
                     invalid()
-                row = row | {
-                    "values": values
-                    | {
-                        "settings": {
-                            name: value
-                            for name, value in settings.items()
-                            if name != "nightly_time"
-                        }
+            if "full_refresh" in settings and settings["full_refresh"] not in (
+                "daily",
+                "hourly",
+                "quarter_hour",
+            ):
+                invalid()
+            row = row | {
+                "values": values
+                | {
+                    "settings": {
+                        name: value
+                        for name, value in settings.items()
+                        if name not in CADENCE_SETTINGS
                     }
                 }
+            }
         rows.append(row)
     _validate_v5_sections(
         document | {"sections": document["sections"] | {"integrations": rows}}

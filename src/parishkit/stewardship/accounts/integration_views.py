@@ -14,6 +14,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
+from parishkit.stewardship.source.refresh_status import full_refresh_status
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -135,6 +136,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "summary": latest,
             "pending": pending,
             "configuration": configuration,
+            "full_refresh": (full_refresh_status() if target == "parishsoft" else None),
         },
         status=status,
     )
@@ -194,12 +196,15 @@ def _save(request, service, configuration, actor, target):
     record = _selected(configuration, target)
     settings = form.public_settings()
     before = record["values"]["settings"]
-    if target == "parishsoft" and "nightly_time" not in before:
-        # The default refresh time is implied, not stored, in older settings.
-        if settings.get("nightly_time") == "02:00":
-            settings.pop("nightly_time")
-        else:
-            raise ValueError("Save the refresh time separately from a new key.")
+    if target == "parishsoft":
+        # Refresh defaults are implied, not stored, in older settings. A key
+        # save never upgrades the settings schema: change the schedule first.
+        for name, default in (("nightly_time", "02:00"), ("full_refresh", "daily")):
+            if name in before:
+                continue
+            if settings.get(name) != default:
+                raise ValueError("Save the refresh schedule separately from a new key.")
+            settings.pop(name)
     from .key_files import MAX_FILE_BYTES
 
     value = credential.cleaned_data.pop("candidate").encode("utf-8")
@@ -232,7 +237,7 @@ def _preview(request, service, actor, target):
     settings = form.public_settings()
     before = record["values"]["settings"]
     if target == "parishsoft":
-        before = {"nightly_time": "02:00"} | before
+        before = {"full_refresh": "daily", "nightly_time": "02:00"} | before
     if settings == before:
         form.add_error(None, _("No settings have changed."))
         return _page(request, configuration, target, form=form, status=400)
@@ -258,8 +263,13 @@ def _preview(request, service, actor, target):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    "before": before[name],
-                    "after": value,
+                    # Show a choice's label ("Once an hour"), not its stored value.
+                    "before": dict(getattr(form.fields[name], "choices", ())).get(
+                        before[name], before[name]
+                    ),
+                    "after": dict(getattr(form.fields[name], "choices", ())).get(
+                        value, value
+                    ),
                 }
                 for name, value in settings.items()
                 if before[name] != value

@@ -473,8 +473,14 @@ delta loader can prove a complete replacement.
 
 ### Full cycle
 
-A full refresh runs nightly at an Admin-configurable local time, default 2:00
-a.m., and on initial setup/manual request. It uses shared
+A scheduled full refresh runs at an Admin-selected frequency: once a day at an
+Admin-configurable local time (the default, at 2:00 a.m.), once an hour on the
+UTC hour, or every 15 minutes on UTC quarter hours, when it replaces the delta
+cycle. It also runs on initial setup and manual request. Scheduled refreshes
+never overlap: the mutation lease serializes execution and a waiting full load
+absorbs later requests. The Admin home page and the ParishSoft settings page
+show the last successful full refresh, a newer failed one, and whether one is
+running. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
 of the sole current campaign while it is `draft`, `scheduled`, `active`, or

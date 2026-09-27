@@ -4643,6 +4643,7 @@ DECLARE runtime stewardship_system_configuration%ROWTYPE;
         request stewardship_source_refresh_request%ROWTYPE;
         zone text;
         nightly text;
+        frequency text;
         scope_digest text;
         expected_key text;
         local_day date;
@@ -4689,7 +4690,8 @@ BEGIN
                 ON cfg.id=c.active_configuration_id
             WHERE c.id=runtime.current_campaign_id;
     END IF;
-    SELECT coalesce(settings->>'nightly_time','02:00') INTO nightly
+    SELECT coalesce(settings->>'nightly_time','02:00'),
+           coalesce(settings->>'full_refresh','daily') INTO nightly, frequency
         FROM stewardship_applied_integration
         WHERE configuration_id=NEW.configuration_id AND kind='parishsoft';
     IF NEW.timezone IS DISTINCT FROM zone OR NEW.nightly_time IS DISTINCT FROM nightly
@@ -4702,6 +4704,14 @@ BEGIN
         IF extract(second FROM NEW.due_at) <> 0
            OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,15) <> 0 THEN
             RAISE EXCEPTION 'Delta tick must be a quarter-hour UTC slot'
+                USING ERRCODE='23514';
+        END IF;
+    ELSIF frequency IN ('hourly','quarter_hour') THEN
+        -- A frequent full refresh uses UTC hour or quarter-hour boundaries.
+        IF extract(second FROM NEW.due_at) <> 0
+           OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,
+                  CASE frequency WHEN 'hourly' THEN 60 ELSE 15 END) <> 0 THEN
+            RAISE EXCEPTION 'Full refresh tick must match its applied frequency'
                 USING ERRCODE='23514';
         END IF;
     ELSE
