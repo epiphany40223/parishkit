@@ -13,7 +13,9 @@
 </form>
 {% for task in work.tasks %}
 <section class="panel">
-  <h2>{{ task.type }}</h2>
+  <h2>{{ task.name }}</h2>
+  {% if task.name != task.type %}<p class="help">{% translate "Task type:" %} <code>{{ task.type }}</code></p>{% endif %}
+  {% if task.type == 'setup_source_load' %}<p><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a></p>{% endif %}
   <p>{% translate "State:" %} {{ task.state }} · {% translate "Phase:" %} {{ task.progress.phase }}</p>
   <p>{% translate "Task:" %} <a href="{% url 'admin:background_task_page' task.id %}">{{ task.id }}</a></p>
   {% if task.progress.total %}
