@@ -1,5 +1,6 @@
 """HTTP setup admission, private draft isolation, CSRF and exact concurrent edits."""
 
+import html
 from dataclasses import replace
 
 import pytest
@@ -19,10 +20,10 @@ from .test_setup_expiry_postgresql import sweep
 pytestmark = pytest.mark.django_db(transaction=True)
 # Save and continue goes to the next page of the wizard's one ordered list.
 NEXT = {
-    "parish": "/admin/setup/source",
+    "parish": "/admin/setup/credentials/parishsoft",
     "access": "/admin/setup/campaign",
     "mail": "/admin/setup/testing",
-    "slack": "/admin/setup/parish",
+    "slack": "/admin/setup/source",
     "testing": "/admin/setup/credentials/google_workspace",
 }
 
@@ -42,6 +43,25 @@ def post(browser, path, values):
     return browser.post(
         path, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     )
+
+
+def admin_session(browser):
+    """The server-side session behind this browser's admin cookie.
+
+    The admin cookie is not Django's default session cookie name, so the test
+    client's own ``session`` property cannot see it.
+    """
+    from importlib import import_module
+
+    from django.conf import settings
+
+    store = import_module(settings.SESSION_ENGINE).SessionStore
+    return store(session_key=browser.cookies["pk_admin"].value)
+
+
+def reviewed(browser):
+    """The setup review marks recorded in this browser's admin session."""
+    return admin_session(browser)["setup_reviewed"]
 
 
 def started():
@@ -88,8 +108,14 @@ def test_original_browser_saves_and_revisits_public_steps(setup_http, google):
             assert SetupDraftSection.objects.get(step=step).values == values
             assert b"Completed" in browser.get("/admin/setup").content
             activity = PortalSession.objects.get().last_activity_at
-            assert browser.get("/admin/setup/" + step).status_code == 200
+            revisit = browser.get("/admin/setup/" + step)
+            assert revisit.status_code == 200
             assert PortalSession.objects.get().last_activity_at == activity
+            # Going back shows what was saved, not an empty form.
+            for value in values.values():
+                for item in value if isinstance(value, list) else [value]:
+                    if isinstance(item, str) and item:
+                        assert html.escape(item).encode() in revisit.content, item
         assert dict(SetupDraftSection.objects.values_list("step", "values")) == VALUES
     assert not Parish.objects.exists()
 

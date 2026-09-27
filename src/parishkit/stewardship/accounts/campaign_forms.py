@@ -6,8 +6,10 @@ campaign. The owning view binds the complete candidate to current runtime state.
 """
 
 from copy import deepcopy
+from datetime import date
 
 from django import forms
+from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -15,6 +17,53 @@ from parishkit.stewardship.campaigns.configuration import campaign_values
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .share_forms import default_share_options
+
+# How to use a plain multi-select list, shown with every one of them.
+MULTI_SELECT_HELP = _(
+    "To choose several, hold Ctrl (Cmd on a Mac) while clicking; to choose a "
+    "range, click the first item and hold Shift while clicking the last."
+)
+# The campaign-overlap confirmation renders through this field template so it
+# can be shown only while the entered dates overlap (see overlap_attributes).
+OVERLAP_TEMPLATE = "stewardship/overlap-field.html"
+
+
+def _as_date(value):
+    """A date from a form value (date or ISO text), or None when not a date."""
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
+
+
+def overlaps(campaign_start, campaign_end, period_start, period_end):
+    """Whether a financial period overlaps the campaign (inclusive days).
+
+    This is the rule campaign_values() enforces: such an overlap needs an
+    explicit confirmation. Incomplete or invalid dates never need one yet.
+    """
+    days = [
+        _as_date(value)
+        for value in (campaign_start, campaign_end, period_start, period_end)
+    ]
+    if None in days:
+        return False
+    return days[2] <= days[1] and days[3] >= days[0]
+
+
+def overlap_attributes(sources):
+    """Data attributes telling ui-v1.js where the four overlap dates come from.
+
+    ``sources`` maps campaign-start, campaign-end, period-start and period-end
+    to ("name", form field name) or ("value", ISO date) pairs.
+    """
+    return format_html_join(
+        " ",
+        'data-{}-{}="{}"',
+        ((key, kind, value) for key, (kind, value) in sources.items()),
+    )
 
 
 class SourceChoices(forms.MultipleChoiceField):
@@ -47,7 +96,9 @@ class CampaignForm(forms.Form):
     financial_enabled = forms.BooleanField(
         label=_("Financial stewardship"), required=False
     )
-    ministry_duids = SourceChoices(label=_("Included Ministries"), required=False)
+    ministry_duids = SourceChoices(
+        label=_("Included Ministries"), required=False, help_text=MULTI_SELECT_HELP
+    )
     financial_start = forms.DateField(
         label=_("Upcoming financial period start"),
         required=False,
@@ -69,10 +120,14 @@ class CampaignForm(forms.Form):
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     fund_duids = SourceChoices(
-        label=_("Upcoming financial period funds"), required=False
+        label=_("Upcoming financial period funds"),
+        required=False,
+        help_text=MULTI_SELECT_HELP,
     )
     comparison_fund_duids = SourceChoices(
-        label=_("Comparison financial period funds"), required=False
+        label=_("Comparison financial period funds"),
+        required=False,
+        help_text=MULTI_SELECT_HELP,
     )
     overlap_confirmed = forms.BooleanField(
         label=_("I confirm that the upcoming financial period overlaps this campaign"),
@@ -98,6 +153,44 @@ class CampaignForm(forms.Form):
         self.fields["ministry_duids"].choices = ministries
         for name in ("fund_duids", "comparison_fund_duids"):
             self.fields[name].choices = funds
+        # Entering a period start fills an empty end (ui-v1.js); the server
+        # still checks that each period spans exactly one year.
+        for start, end in (
+            ("financial_start", "financial_end"),
+            ("comparison_start", "comparison_end"),
+        ):
+            self.fields[start].widget.attrs["data-fills-end"] = self.add_prefix(end)
+        self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
+
+    @property
+    def overlap_needed(self):
+        """Whether the entered (or saved) dates need the overlap confirmation."""
+        return overlaps(
+            *(
+                self[name].value()
+                for name in (
+                    "start_date",
+                    "end_date",
+                    "financial_start",
+                    "financial_end",
+                )
+            )
+        )
+
+    @property
+    def overlap_attributes(self):
+        """Where the page script reads the dates that decide the confirmation."""
+        return overlap_attributes(
+            {
+                key: ("name", self.add_prefix(name))
+                for key, name in (
+                    ("campaign-start", "start_date"),
+                    ("campaign-end", "end_date"),
+                    ("period-start", "financial_start"),
+                    ("period-end", "financial_end"),
+                )
+            }
+        )
 
     def clean(self):
         """Reject module-dependent stray data and require complete financial periods."""
@@ -128,6 +221,23 @@ class CampaignForm(forms.Form):
             for name in financial_fields[:-1]:
                 if not data[name]:
                     self.add_error(name, _("Required for financial stewardship."))
+            if (
+                not self.errors
+                and overlaps(
+                    data["start_date"],
+                    data["end_date"],
+                    data["financial_start"],
+                    data["financial_end"],
+                )
+                and not data["overlap_confirmed"]
+            ):
+                self.add_error(
+                    "overlap_confirmed",
+                    _(
+                        "The upcoming financial period overlaps the campaign "
+                        "dates. Check this box to confirm that is intended."
+                    ),
+                )
         if not self.errors:
             try:
                 campaign_values(self.values())

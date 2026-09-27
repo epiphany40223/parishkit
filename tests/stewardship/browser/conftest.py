@@ -14,6 +14,7 @@ from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
 from PIL import Image
 
+from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.branding_views import LogoForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
@@ -37,7 +38,6 @@ from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
-from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES
 from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -47,7 +47,7 @@ from parishkit.stewardship.accounts.share_forms import (
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.security import CSP
 
-from ..campaign_factory import campaign, schedule
+from ..campaign_factory import campaign, financial, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -106,11 +106,41 @@ def page(browser_engine):
     context.close()
 
 
+def load_collections(done=0, *, finished=None, expected=None):
+    """Decoded download collections with the first ``done`` of them finished."""
+    return [
+        {
+            "key": key,
+            "count": 1234 if index < done else 0,
+            "done": index < done,
+            "finished": finished if key == "ministry_roster" else None,
+            "expected": expected if key == "ministry_roster" else None,
+        }
+        for index, key in enumerate(progress_views.COLLECTIONS)
+    ]
+
+
+def progress_page(progress, wizard):
+    """The source-load progress page context, built by the view's own helpers."""
+    status_key = progress_views.summary(progress)
+    return {
+        "progress": progress,
+        "wizard": wizard,
+        "summaries": progress_views.SUMMARIES,
+        "status_key": status_key,
+        "phases": progress_views.phases(progress, status_key),
+        "phase_status": progress_views.PHASE_STATUS,
+        "collections": progress_views.collections(progress),
+        "collection_text": progress_views.COLLECTION_TEXT,
+    }
+
+
 @pytest.fixture(scope="module")
 def component_origin():
     """An exact response allowlist avoids exposing source files through the server."""
     mail_campaign = campaign()
     mail = schedule(mail_campaign["id"])
+    financial_campaign = campaign(modules=["financial"], financial=financial())
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -658,6 +688,27 @@ def component_origin():
             },
         ),
         (
+            # A financial campaign: its window shows the overlap confirmation
+            # only while the dates overlap the fixed financial period.
+            "/setup-schedules-financial",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=financial_campaign["values"]
+                ),
+                "schedules": Schedules(
+                    prefix="schedules",
+                    previous=[],
+                    templates=[],
+                    campaign_id=financial_campaign["id"],
+                    campaign=financial_campaign["values"],
+                ),
+                "templates_url": "/admin/setup/content",
+            },
+        ),
+        (
             "/content-history",
             "content-history",
             {
@@ -743,7 +794,19 @@ def component_origin():
                 "draft": setup_draft,
                 "form": SetupCampaignForm(
                     initial={"timezone": "America/New_York"},
-                    ministries=[("1", "Music ministry")],
+                    # A real parish has hundreds of Ministries, some long-named.
+                    ministries=[
+                        ("1", "Music ministry"),
+                        (
+                            "2",
+                            "Parish Pastoral Council and Finance Council Joint "
+                            "Subcommittee on Buildings, Grounds and Parking",
+                        ),
+                        *(
+                            (str(number), f"Ministry {number}")
+                            for number in range(3, 214)
+                        ),
+                    ],
                     funds=[("9", "Offertory")],
                 ),
             },
@@ -751,8 +814,8 @@ def component_origin():
         (
             "/setup-source-progress",
             "setup-source-progress",
-            {
-                "progress": {
+            progress_page(
+                {
                     "server_now": NOW.isoformat(),
                     "task_id": uuid4(),
                     "task_state": "running",
@@ -761,13 +824,13 @@ def component_origin():
                     "current": 0,
                     "total": 0,
                     "active": True,
+                    "collections": load_collections(),
                     "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
                 },
-                "summaries": SUMMARIES,
-                "status_key": "fetching",
-            },
+                wizard,
+            ),
         ),
         (
             "/source-refresh",

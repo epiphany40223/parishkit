@@ -9,7 +9,7 @@ from parishkit.stewardship.web.contracts import expected_version
 from . import setup_help
 from .authentication import runtime
 from .setup_content_views import _draft
-from .setup_drafts import save_section
+from .setup_drafts import mark_reviewed, save_section
 from .setup_formsets import closed_formset
 from .setup_views import ERRORS, _checked, _context, page_error
 from .setup_wizard import continue_after
@@ -42,14 +42,23 @@ def setup_shares(request):
             if version != draft.status.version:
                 raise StaleRecordError("Reload the first-campaign share options.")
             if formset.is_valid():
+                # values() gives new rows fresh IDs, so compute it only once.
+                options = formset.values()
                 save_section(
                     request,
                     service,
                     draft.status.attempt_id,
                     step="campaign",
                     values=draft.sections["campaign"]
-                    | {"campaign": campaign | {"share_options": formset.values()}},
+                    | {"campaign": campaign | {"share_options": options}},
                     expected_version=version,
+                )
+                # Accepting the defaults unchanged still counts as reviewed.
+                mark_reviewed(
+                    request,
+                    draft.status.attempt_id,
+                    "shares",
+                    [row["id"] for row in options],
                 )
                 return _checked(
                     request, service, continue_after(request, service, "shares")

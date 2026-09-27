@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -62,6 +63,7 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             "schedules": schedules,
             "base_digest": digest,
             "editable": editable,
+            "templates_url": reverse("admin:content_catalog", args=[campaign.pk]),
         },
         status=status,
     )

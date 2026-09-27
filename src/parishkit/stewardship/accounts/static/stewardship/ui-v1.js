@@ -30,6 +30,48 @@
     });
   });
 
+  // Ordinary form submissions: show at once that the click registered, and
+  // ignore repeats (double clicks, Enter pressed twice) until the browser
+  // navigates. The listener is on document, so it runs after each form's own
+  // handlers; a submit that page script already took over (defaultPrevented:
+  // fetch-driven forms, cancelled confirmations) is left alone. Buttons get
+  // aria-disabled, never disabled: a disabled submitter's name/value would be
+  // dropped from the request (action=start, page=2, ...). A download or a new
+  // tab leaves this page in place, so the form is released after a while, and
+  // also when the browser shows this page again from its back/forward cache.
+  const busyStatus = document.createElement("span");
+  busyStatus.className = "visually-hidden";
+  busyStatus.setAttribute("role", "status");
+  (document.querySelector("main") || document.body).append(busyStatus);
+  const submitting = new Map();
+  const submitControls = (form) => [...form.elements].filter((node) =>
+    (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
+    && node.type === "submit");
+  const release = (form) => {
+    window.clearTimeout(submitting.get(form));
+    submitting.delete(form);
+    form.removeAttribute("aria-busy");
+    submitControls(form).forEach((node) => {
+      node.classList.remove("is-busy");
+      node.removeAttribute("aria-disabled");
+    });
+    if (!submitting.size) busyStatus.textContent = "";
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (submitting.has(form)) { event.preventDefault(); return; }
+    if (event.defaultPrevented || form.hasAttribute("data-submit-repeatable")) return;
+    form.setAttribute("aria-busy", "true");
+    submitControls(form).forEach((node) => node.setAttribute("aria-disabled", "true"));
+    event.submitter?.classList.add("is-busy");
+    busyStatus.textContent = "Working…";
+    submitting.set(form, window.setTimeout(() => release(form), 10000));
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) [...submitting.keys()].forEach(release);
+  });
+
   // Readiness status is a passive GET, never the source-load idle-renewal
   // exception. No message content, key or answer is retained by this poller.
   document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
@@ -127,6 +169,51 @@
     const checked = panel.querySelector("[data-progress-checked]");
     const done = document.querySelector("[data-progress-done]");
     const failed = document.querySelector("[data-progress-failed]");
+    const records = panel.querySelector("[data-load-records]");
+    const phaseList = panel.querySelector(".setup-load-phases");
+    const collectionList = panel.querySelector("[data-load-collections]");
+    const phaseOrder = ["fetching", "staging", "validating"];
+    // Fill a server-rendered wording template such as "{count} loaded".
+    const fill = (template, values) => template.replace(/\{(\w+)\}/g,
+      (match, name) => (name in values ? number.format(values[name]) : match));
+    const mark = (node, state, text) => {
+      node.classList.remove("setup-load-done", "setup-load-active", "setup-load-waiting");
+      node.classList.add(`setup-load-${state}`);
+      const status = node.querySelector("[data-load-status]");
+      if (status && status.textContent !== text) status.textContent = text;
+    };
+    // Mirrors setup_progress_views.phases() and collections().
+    const showLoad = (data, key) => {
+      const index = phaseOrder.indexOf(data.phase);
+      phaseList?.querySelectorAll("[data-load-phase]").forEach((node) => {
+        const position = phaseOrder.indexOf(node.dataset.loadPhase);
+        const state = key === "done" || position < index ? "done"
+          : position === index && data.active ? "active" : "waiting";
+        mark(node, state, phaseList.dataset[`status${state[0].toUpperCase()}${state.slice(1)}`]);
+      });
+      if (collectionList) {
+        const text = collectionList.dataset;
+        const fetching = data.phase === "fetching" && data.active;
+        let waiting = false;
+        data.collections.forEach((item) => {
+          const node = collectionList.querySelector(`[data-collection="${item.key}"]`);
+          let state = "waiting";
+          if (item.done) state = "done";
+          else if (fetching && !waiting) { state = "active"; waiting = true; }
+          const rosters = item.key === "ministry_roster" && item.expected !== null;
+          mark(node, state, rosters && state !== "waiting" ? fill(text.textRosters, item)
+            : state === "done" ? fill(text.textDone, item)
+            : state === "active" ? text.textActive : text.textWaiting);
+        });
+      }
+      if (records) records.hidden = !["staging", "validating"].includes(data.phase);
+    };
+    const validCollections = (items) => Array.isArray(items) && items.length <= 20
+      && items.every((item) => item && typeof item.key === "string" && /^[a-z_]{1,40}$/.test(item.key)
+        && collectionList?.querySelector(`[data-collection="${item.key}"]`)
+        && Number.isSafeInteger(item.count) && item.count >= 0 && typeof item.done === "boolean"
+        && [item.finished, item.expected].every((value) => value === null
+          || (Number.isSafeInteger(value) && value >= 0)));
     let startedAt = Date.parse(panel.dataset.progressStarted || "");
     let heartbeatAt = Date.parse(panel.dataset.progressHeartbeat || "");
     const duration = (milliseconds) => {
@@ -177,7 +264,7 @@
             || data.current < 0 || data.total < data.current
             || !["queued", "running", "retry_wait", "abandoned", "succeeded", "failed", "cancelled"].includes(data.task_state)
             || !["collecting", "loading", "frozen", "completed", "expired"].includes(data.setup_state)
-            || typeof data.phase !== "string"
+            || typeof data.phase !== "string" || !validCollections(data.collections)
             || deadlines.some(node => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
           throw new Error("unavailable");
         }
@@ -190,7 +277,7 @@
         panel.querySelector("[data-task-phase]").textContent = data.phase;
         const percentage = data.total ? Math.round(data.current * 100 / data.total) : 0;
         panel.querySelector("[data-task-counts]").textContent =
-          `${number.format(data.current)} out of ${number.format(data.total)} (${percentage}%)`;
+          `${number.format(data.current)} of ${number.format(data.total)} (${percentage}%)`;
         // Unknown totals show an indeterminate bar rather than a stuck 0%.
         if (bar && data.total) { bar.max = data.total; bar.value = data.current; }
         else if (bar) bar.removeAttribute("value");
@@ -202,6 +289,7 @@
         }
         const key = statusKey(data);
         if (summary && texts[key] && summary.textContent !== texts[key]) summary.textContent = texts[key];
+        showLoad(data, key);
         if (done) done.hidden = key !== "done";
         if (failed) failed.hidden = key !== "failed";
         if (checked) {
@@ -263,6 +351,93 @@
       toggle.addEventListener("change", update);
       update();
     });
+  });
+
+  // A financial period is one year: entering its start fills an empty end
+  // with the day before the first anniversary (Feb 29 anniversaries fall on
+  // Feb 28, as the server's rule does). Dates stay YYYY-MM-DD text and the
+  // arithmetic uses UTC, so no browser time zone can shift the day. An end the
+  // person typed is never replaced; one filled here follows later start edits
+  // (typing a year passes through values like 0002-01-01). The server still
+  // checks every period.
+  const periodEnd = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [year, month, day] = match.slice(1).map(Number);
+    const end = new Date(0);
+    end.setUTCFullYear(year + 1, month - 1, month === 2 && day === 29 ? 28 : day);
+    end.setUTCDate(end.getUTCDate() - 1);
+    if (!Number.isFinite(end.getTime()) || end.getUTCFullYear() > 9999) return null;
+    return [String(end.getUTCFullYear()).padStart(4, "0"),
+      String(end.getUTCMonth() + 1).padStart(2, "0"),
+      String(end.getUTCDate()).padStart(2, "0")].join("-");
+  };
+  document.querySelectorAll("input[data-fills-end]").forEach((start) => {
+    const end = start.form?.elements[start.dataset.fillsEnd];
+    if (!(end instanceof HTMLInputElement)) return;
+    const note = document.createElement("span");
+    note.className = "help";
+    note.setAttribute("role", "status");
+    end.after(note);
+    const fill = () => {
+      const value = periodEnd(start.value);
+      if (!value || (end.value && end.value !== end.dataset.autofilled)) return;
+      if (end.value === value) return;
+      end.value = value;
+      end.dataset.autofilled = value;
+      note.textContent = "End date filled in; change it if needed.";
+      // Let dependent checks (the overlap confirmation) see the new end.
+      end.dispatchEvent(new Event("input", {bubbles: true}));
+    };
+    start.addEventListener("input", fill);
+    start.addEventListener("change", fill);
+    end.addEventListener("input", (event) => {
+      if (event.isTrusted) note.textContent = "";
+    });
+  });
+
+  // The overlap confirmation is needed only while the financial period and
+  // the campaign share at least one day (campaign_forms.overlaps). Hidden, it
+  // is also unchecked so a stale confirmation is never submitted. The server
+  // renders it visible whenever it is needed, so this is only a convenience.
+  document.querySelectorAll("[data-overlap-confirmation]").forEach((group) => {
+    const form = group.closest("form");
+    const box = group.querySelector('input[type="checkbox"]');
+    if (!form || !box) return;
+    const read = (key) => {
+      const name = group.dataset[`${key}Name`];
+      const value = name ? form.elements[name]?.value : group.dataset[`${key}Value`];
+      return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null;
+    };
+    const update = () => {
+      const [start, end, periodStart, periodEnd] =
+        ["campaignStart", "campaignEnd", "periodStart", "periodEnd"].map(read);
+      const needed = Boolean(start && end && periodStart && periodEnd
+        && periodStart <= end && periodEnd >= start);
+      group.hidden = !needed;
+      if (!needed) box.checked = false;
+    };
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    update();
+  });
+
+  // Plain multi-select lists: say how many items are chosen, since a long list
+  // (a parish may have hundreds of Ministries) hides most of its selection.
+  document.querySelectorAll("select[multiple]").forEach((select) => {
+    const count = document.createElement("p");
+    count.className = "help";
+    count.setAttribute("aria-live", "polite");
+    select.after(count);
+    const show = () => {
+      const chosen = select.selectedOptions.length;
+      count.textContent = `${chosen.toLocaleString("en-US")} of ${
+        select.options.length.toLocaleString("en-US")} selected`;
+    };
+    // Also on any form change: turning on a module preselects its options
+    // without a change event on the list itself.
+    (select.form || select).addEventListener("change", show);
+    show();
   });
 
   // The visual editor starts with server-sanitized markup only. Raw source

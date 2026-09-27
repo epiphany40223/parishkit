@@ -9,6 +9,7 @@ from parishkit.stewardship.accounts.secret_models import SecretReplacementReques
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
 
+from ..test_integration_candidates import account
 from ..test_setup_forms import VALUES
 from .auth_builders import signed_in
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -93,8 +94,28 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         assert accepted.status_code == 302, accepted.content
         page = browser.get(URL)
         assert page.status_code == 200
-        assert b"already staged" in page.content and CANDIDATE not in page.content
+        assert CANDIDATE not in page.content
+        # The secret is never shown, but its saved state and scope are.
+        assert b"A ParishSoft API key is saved (organization 1)." in page.content
+        assert b'name="organization_id" value="1"' in page.content
+        assert b'type="password" name="candidate"' in page.content
+        assert b"Save and continue" in page.content
+        assert b"Seal" not in page.content
         assert not SecretReplacementRequest.objects.exists()
+        # An empty key keeps the saved one; nothing is re-sealed.
+        staged = SetupSealedCredential.objects.get().version
+        version = str(SetupAttempt.objects.get().version)
+        kept = post(
+            browser, URL, {"candidate": "", "organization_id": "1", "version": version}
+        )
+        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/mail"
+        assert SetupSealedCredential.objects.get().version == staged
+        moved = post(
+            browser, URL, {"candidate": "", "organization_id": "2", "version": version}
+        )
+        assert moved.status_code == 400
+        assert b"enter the ParishSoft API key again" in moved.content
+        assert SetupSealedCredential.objects.get().settings == {"organization_id": 1}
     row = SetupSealedCredential.objects.get()
     assert private.open(row.pk, row.ciphertext) == CANDIDATE
     with web_login():
@@ -106,6 +127,40 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         assert response.status_code == 302, response.content
     row.refresh_from_db()
     assert row.ciphertext is None and row.scrubbed_at is not None
+
+
+def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
+    """Keeping is refused once the settings the key was saved for have changed."""
+    publish("google_workspace")
+    workspace = "/admin/setup/credentials/google_workspace"
+
+    def version():
+        """The attempt's current optimistic-lock version as a form value."""
+        return str(SetupAttempt.objects.get().version)
+
+    with web_login():
+        browser = started()
+        for step in ("mail", "testing"):
+            post(browser, f"/admin/setup/{step}", VALUES[step] | {"version": version()})
+        empty = post(browser, workspace, {"candidate": "", "version": version()})
+        assert empty.status_code == 400  # nothing saved yet: the key is required
+        assert b"This field is required" in empty.content
+        page = browser.get(workspace)
+        assert b"<textarea" in page.content  # the JSON key stays multi-line
+        staged = post(
+            browser, workspace, {"candidate": account().decode(), "version": version()}
+        )
+        assert staged.status_code == 302, staged.content
+        assert b"A Google Workspace mail credential is saved." in (
+            browser.get(workspace).content
+        )
+        changed = {"testing_recipient": "other@example.org", "version": version()}
+        post(browser, "/admin/setup/testing", changed)
+        stale = browser.get(workspace)
+        assert b"entered for settings you have changed since" in stale.content
+        kept = post(browser, workspace, {"candidate": "", "version": version()})
+        assert kept.status_code == 400
+        assert b"Enter it again so it matches the current settings" in kept.content
 
 
 def test_credential_post_rejects_undeclared_duplicate_and_stale_fields(

@@ -29,10 +29,17 @@ class SetupLogoForm(LogoForm):
 
     base_digest = None
 
-    def __init__(self, *args, **kwargs):
-        """Explain where the logo appears and what images work."""
+    def __init__(self, *args, saved=False, **kwargs):
+        """Explain the logo; once one is saved, choosing no file keeps it."""
         super().__init__(*args, **kwargs)
+        self.fields["logo"].required = not saved
         setup_help.apply(self, setup_help.LOGO, replace=True)
+
+    def clean_logo(self):
+        """An empty optional upload keeps the saved logo; others are checked."""
+        if self.cleaned_data.get("logo") is None:
+            return None
+        return super().clean_logo()
 
 
 def _draft(request, service):
@@ -61,7 +68,14 @@ def setup_branding(request):
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
                 raise StaleRecordError("Reload setup before uploading a logo.")
-            form = SetupLogoForm(request.POST, request.FILES)
+            form = SetupLogoForm(
+                request.POST, request.FILES, saved="branding" in draft.sections
+            )
+            if form.is_valid() and form.cleaned_data["logo"] is None:
+                # Keep the saved logo: nothing is uploaded or re-staged.
+                return _checked(
+                    request, service, continue_after(request, service, "branding")
+                )
             if form.is_valid():
                 try:
                     graphics = prepare_graphics(form.cleaned_data["logo"])
@@ -91,7 +105,7 @@ def setup_branding(request):
                     )
             status = 400
         else:
-            form, status = SetupLogoForm(), 200
+            form, status = SetupLogoForm(saved="branding" in draft.sections), 200
         assets = []
         if "branding" in draft.sections:
             bundle, assets = staged_bundle(
