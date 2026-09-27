@@ -78,6 +78,9 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
     try:
         page = context.new_page()
         page.goto(component_origin + "/family-directory")
+        # The export controls are collapsed until asked for.
+        assert not page.get_by_label("Export format").is_visible()
+        page.get_by_text("Export complete results").click()
         assert page.get_by_label("Export timezone").input_value() == (
             "America/Detroit" if scripts else "UTC"
         )
@@ -103,6 +106,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         )
         assert "?" not in sent.value.url and "Example" not in sent.value.url
         page.goto(component_origin + "/directory-gated")
-        assert page.get_by_role("button", name="Queue complete export").is_disabled()
+        assert page.get_by_role(
+            "button", name="Queue complete export", include_hidden=True
+        ).is_disabled()
     finally:
         context.close()
