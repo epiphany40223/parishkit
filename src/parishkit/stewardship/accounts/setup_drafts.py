@@ -6,11 +6,14 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db.models import F
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import check_version
+from parishkit.stewardship.web.refusals import UserFacingDenied, UserFacingError
 
 from .sessions import authenticated_admin, database_now
 from .setup_forms import validate_values
@@ -82,14 +85,19 @@ def _owned(request, service, attempt_id=None):
 def view_draft(request, service, attempt_id=None):
     """A passive GET cannot extend idle expiry, create staging or resume new logins."""
     with work_transaction():
-        _, row = _owned(request, service, attempt_id)
+        row = _owned(request, service, attempt_id)[1]
         if row is None:
             return None
         window = _window(row, request.portal_session)
         sections = {}
         if row.state not in {SetupState.EXPIRED, SetupState.COMPLETED}:
             if _expiry(row, database_now()) is not None:
-                raise PermissionError("Setup has expired.")
+                raise UserFacingDenied(
+                    _("This setup has expired."),
+                    fix=_("Start a new setup from the setup overview."),
+                    link=reverse("admin:setup"),
+                    link_label=_("Open the setup overview"),
+                )
             sections = {
                 section.step: deepcopy(section.values)
                 for section in SetupDraftSection.objects.filter(
@@ -133,13 +141,21 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
             attempt.state != SetupState.COLLECTING
             or _expiry(attempt, database_now()) is not None
         ):
-            raise PermissionError("Setup cannot accept settings now.")
+            raise UserFacingDenied(
+                _("This setup is no longer accepting changes."),
+                fix=_(
+                    "It may have expired, been cancelled, or be finishing. The "
+                    "setup overview shows its current state."
+                ),
+                link=reverse("admin:setup"),
+                link_label=_("Open the setup overview"),
+            )
         if "parish" in updates and attempt.source_task_id is not None:
             original = SetupDraftSection.objects.get(attempt=attempt, step="parish")
             if updates["parish"]["timezone"] != original.values["timezone"]:
-                raise ValueError(
-                    "The source load fixes this setup's timezone. "
-                    "Cancel and start a new setup to change it."
+                raise UserFacingError(
+                    _("The parish data load fixes this setup's timezone."),
+                    fix=_("Cancel and start a new setup to change it."),
                 )
         if "branding" in updates:
             from .branding_staging import staged_bundle

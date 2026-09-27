@@ -5,8 +5,8 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
 
 from . import setup_help
 from .authentication import runtime
@@ -48,7 +48,7 @@ def setup_campaign(request):
                 for name, values in request.POST.lists()
             )
         ):
-            raise ValueError("Invalid first-campaign fields.")
+            raise unexpected_fields()
         service = runtime()
         draft = view_draft(request, service)
         if draft is None or draft.status.state != "collecting":
@@ -68,7 +68,7 @@ def setup_campaign(request):
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload the first-campaign form.")
+                raise stale_page()
             if form.is_valid():
                 values = form.values()
                 # Pages and emails start with their default text: every

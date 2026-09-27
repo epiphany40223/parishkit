@@ -5,8 +5,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
+from parishkit.stewardship.web.refusals import stale_page
 
 from . import setup_help
 from .authentication import runtime
@@ -75,7 +75,7 @@ def setup_schedules(request):
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload the first-campaign schedules.")
+                raise stale_page()
             if window.is_valid() and schedules.is_valid():
                 try:
                     save_sections(

@@ -6,11 +6,12 @@ from uuid import uuid4
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.refusals import UserFacingError, stale_page
 
 from . import setup_help
 from .authentication import runtime
@@ -29,6 +30,7 @@ from .setup_content import (
     content_label,
     default_updates,
     draft_campaign,
+    first_campaign_missing,
 )
 from .setup_drafts import save_section, save_sections, view_draft
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
@@ -49,9 +51,7 @@ def _draft(request, service):
     """Do not create a wizard or let another login select a content owner."""
     draft = view_draft(request, service)
     if draft is None:
-        raise LookupError(
-            "Start and prepare the first campaign before editing content."
-        )
+        raise first_campaign_missing()
     return draft_campaign(request, service, draft.status.attempt_id)
 
 
@@ -119,11 +119,19 @@ def _fill_defaults(request, service):
     if set(request.POST) & {"reset", "confirm"} and not (
         reset and request.POST.get("confirm") == "on"
     ):
-        raise ValueError("Confirm that every page and email should be replaced.")
+        raise UserFacingError(
+            _("Nothing was reset: the confirmation box was not ticked."),
+            fix=_(
+                "To replace every page and email with its default text, tick "
+                "the confirmation box and submit again."
+            ),
+            link=reverse("admin:setup_content"),
+            link_label=_("Back to the content list"),
+        )
     draft, campaign = _draft(request, service)
     version = expected_version(request.POST.get("version"))
     if version != draft.status.version:
-        raise StaleRecordError("Reload the first-campaign content.")
+        raise stale_page()
     updates = default_updates(
         draft.sections,
         campaign,
@@ -258,11 +266,11 @@ def setup_content_edit(request, kind, slot):
         )
         if request.GET and not start:
             raise ValueError("Invalid content parameters.")
-        status = 200
+        status, refusal = 200, None
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload the first-campaign content.")
+                raise stale_page()
             if form.is_valid():
                 values = form.values(campaign_id=draft.status.attempt_id, slot=slot)
                 record = (
@@ -270,19 +278,26 @@ def setup_content_edit(request, kind, slot):
                     if values
                     else {"id": None, "values": None}
                 )
-                save_section(
-                    request,
-                    service,
-                    draft.status.attempt_id,
-                    step=step,
-                    values=record,
-                    expected_version=version,
-                )
-                return _checked(
-                    request,
-                    service,
-                    HttpResponseRedirect(reverse("admin:setup_content")),
-                )
+                try:
+                    save_section(
+                        request,
+                        service,
+                        draft.status.attempt_id,
+                        step=step,
+                        values=record,
+                        expected_version=version,
+                    )
+                    return _checked(
+                        request,
+                        service,
+                        HttpResponseRedirect(reverse("admin:setup_content")),
+                    )
+                except UserFacingError as error:
+                    # Show a correctable refusal (such as clearing a
+                    # template a schedule still sends) beside the form,
+                    # which keeps what the Admin entered.
+                    form.add_error(None, error.refusal.message)
+                    refusal = error.refusal
             status = 400
         try:
             visual = sanitize_html(form["html"].value() or "")
@@ -308,6 +323,7 @@ def setup_content_edit(request, kind, slot):
                 # A saved slot offers "Reset"; an empty one offers "Start".
                 "saved": previous is not None,
                 "started_from_default": start,
+                "refusal": refusal,
                 # Post to the clean path: the "?start=default" GET must not
                 # carry its query into the POST, which accepts none.
                 "post_url": request.path,

@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import stale_page
 
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
@@ -79,7 +80,7 @@ def _preview(
     configuration = state[0]
     digest = configuration.active_configuration.digest
     if request.POST.get("base_digest") != digest:
-        raise StaleRecordError("Reload campaign schedules before saving.")
+        raise stale_page()
     window_valid = window.is_valid()
     if window_valid:
         schedules.campaign = window.values()

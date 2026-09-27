@@ -345,3 +345,52 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
     )
     assert matches_default(record["values"])
     assert "Family welcome</a> — Default text" in browser.get(catalog).content.decode()
+
+
+def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, google):
+    """The refusal names the schedule problem and links Mail schedules on the form."""
+    store = auth_service.store
+    campaign, catalog, schedule = setup(store)
+    row = content(str(campaign.pk), kind="email", slot="initial")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **row},
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": schedule["id"],
+                    "values": {
+                        "template_version": row["id"],
+                        "subject": row["values"]["subject"],
+                    },
+                },
+            ],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    path = catalog + "/email/initial/" + row["id"]
+    browser.get(path)
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, path, values(store, subject="Invitation", clear="on"))
+    body = refused.content.decode()
+    assert refused.status_code == 400
+    assert "used by a mail schedule, so it can&#x27;t be removed" in body
+    assert f'<a href="/admin/campaign/{campaign.pk}/schedules">' in body
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_stale_content_form_says_to_reload(auth_service, google):
+    """An editor posted against an older configuration explains the reload."""
+    store = auth_service.store
+    _, catalog, _ = setup(store)
+    browser, _ = signed_in()
+    path = catalog + "/page/welcome"
+    browser.get(path)
+    stale = post(browser, path, values(store) | {"base_digest": "0" * 64})
+    assert stale.status_code == 409
+    assert "another tab" in stale.json()["refusal"]["message"]

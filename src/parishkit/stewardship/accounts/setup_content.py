@@ -2,6 +2,11 @@
 
 from uuid import uuid4
 
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+
+from parishkit.stewardship.web.refusals import UserFacingMissing
+
 from .content_forms import EMAIL_LABELS, applicable_slots, default_values, page_slots
 from .setup_campaign import admit_campaign_values
 
@@ -12,8 +17,10 @@ def draft_campaign(request, service, attempt_id):
 
     draft = view_draft(request, service, attempt_id)
     selected = draft.sections.get("campaign")
-    if draft.status.state != "collecting" or selected is None:
-        raise LookupError("Save the first campaign before preparing its content.")
+    if draft.status.state != "collecting":
+        raise LookupError("Setup is not collecting first-campaign content.")
+    if selected is None:
+        raise first_campaign_missing()
     admit_campaign_values(request, service, attempt_id, selected)
     return draft, selected["campaign"]
 
@@ -51,6 +58,15 @@ def default_updates(sections, campaign, attempt_id, *, which):
             continue
         updates[step] = {"id": str(uuid4()), "values": values}
     return updates
+
+
+def first_campaign_missing():
+    """Refusal for a first-campaign child page opened before the campaign is saved."""
+    return UserFacingMissing(
+        _("Save the first campaign before preparing its pages, emails or schedules."),
+        link=reverse("admin:setup_campaign"),
+        link_label=_("Go to “First campaign”"),
+    )
 
 
 def content_label(campaign, kind, slot):

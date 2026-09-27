@@ -6,6 +6,7 @@ from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -14,6 +15,11 @@ from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    UserFacingStale,
+    stale_page,
+)
 
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
 from .authentication import runtime
@@ -40,7 +46,14 @@ def _campaign(state, campaign_id):
     if campaign is None:
         raise LookupError("Campaign is unavailable.")
     if held or configuration.current_campaign_id != campaign.pk:
-        raise StaleRecordError("Content is not currently editable.")
+        raise UserFacingStale(
+            _("This campaign's pages and emails can't be edited right now."),
+            fix=_(
+                "Only the current campaign's content can be edited, and not "
+                "while mail delivery or other background work is running. "
+                "Try again later."
+            ),
+        )
     return campaign
 
 
@@ -123,6 +136,7 @@ def _page(
     default_url=None,
     saved=False,
     started=False,
+    refusal=None,
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
@@ -146,6 +160,7 @@ def _page(
             "default_url": default_url,
             "saved": saved,
             "started_from_default": started,
+            "refusal": refusal,
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
@@ -165,13 +180,23 @@ def _preview(
     if not form.is_valid():
         return _page(request, form, campaign, label, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload content before editing it.")
+        raise stale_page()
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     values = form.values(campaign_id=campaign.pk, slot=slot)
     try:
-        patch, affected = revision_patch(base.document(), campaign, previous, values)
+        try:
+            patch, affected = revision_patch(
+                base.document(), campaign, previous, values
+            )
+        except UserFacingError as error:
+            # A correctable refusal (removing a template that a schedule
+            # still sends) is shown beside the form, which keeps its input.
+            form.add_error(None, error.refusal.message)
+            return _page(
+                request, form, campaign, label, status=400, refusal=error.refusal
+            )
         if not patch:
             form.add_error(None, "No content has changed.")
             return _page(request, form, campaign, label, status=400)

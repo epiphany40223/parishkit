@@ -6,6 +6,7 @@
 <p>{% translate "Preview uses fictional sample data and nonfunctional sample links. No email is sent by this editor." %}</p>
 {% if default_url %}<p><a href="{{ default_url }}">{% if saved %}{% translate "Reset to the default text" %}{% else %}{% translate "Start from the default text" %}{% endif %}</a></p>{% endif %}
 {% if started_from_default %}<p class="notice" role="status">{% if saved %}{% translate "The default text is filled in below but not saved yet. Previewing and applying it will replace the current text; to keep the current text, go back without applying." %}{% else %}{% translate "The default text is filled in below but not saved yet. Edit it as needed, then preview and apply it." %}{% endif %}</p>{% endif %}
+{% if refusal %}<div class="notice notice-error" role="alert"><p>{{ refusal.message }}</p>{% if refusal.fix %}<p>{{ refusal.fix }}</p>{% endif %}{% if refusal.link %}<p><a href="{{ refusal.link }}">{{ refusal.link_label }}</a></p>{% endif %}</div>{% endif %}
 <form method="post" action="{{ post_url }}" data-content-form>{% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/content-fields.html' %}
 <button type="submit">{% translate "Preview changes" %}</button></form>

@@ -8,9 +8,9 @@ from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_safe
 
-from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import prepare_graphics
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
 
 from . import setup_help
 from .authentication import runtime
@@ -64,10 +64,10 @@ def setup_branding(request):
                 or any(len(values) != 1 for _, values in request.POST.lists())
                 or any(len(values) != 1 for _, values in request.FILES.lists())
             ):
-                raise ValueError("Invalid setup logo fields.")
+                raise unexpected_fields()
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload setup before uploading a logo.")
+                raise stale_page()
             form = SetupLogoForm(
                 request.POST, request.FILES, saved="branding" in draft.sections
             )

@@ -141,11 +141,17 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         )
         assert invalid.status_code == 400
         assert b'<p onclick="unsafe()">' not in invalid.content
-        assert post(browser, url, data | {"unrecognized": "value"}).status_code == 400
+        unexpected = post(browser, url, data | {"unrecognized": "value"})
+        assert unexpected.status_code == 400
+        assert unexpected.json()["refusal"]["message"] == (
+            "The form was submitted with unexpected data."
+        )
         saved = post(browser, url, data)
         assert saved.status_code == 302, saved.content
         assert saved["Location"] == "/admin/setup/content"
-        assert post(browser, url, data).status_code == 409
+        stale = post(browser, url, data)
+        assert stale.status_code == 409
+        assert "another tab" in stale.json()["refusal"]["message"]
         preview = browser.get(url)
         assert b"Hello Sample Family" in preview.content
         assert b"Save and return to the content list" in preview.content
@@ -317,7 +323,9 @@ def test_reset_all_replaces_every_slot_only_when_confirmed(setup_http, monkeypat
             {"version": version, "confirm": "on"},
             {"version": version, "reset": "yes", "confirm": "on"},
         ):
-            assert post(browser, url, data).status_code == 400, data
+            refused = post(browser, url, data)
+            assert refused.status_code == 400, data
+        assert "confirmation box" in refused.json()["refusal"]["message"]
         assert set(content_rows()) == {"page_welcome"}
         done = post(browser, url, {"version": version, "reset": "on", "confirm": "on"})
         assert done.status_code == 302, done.content

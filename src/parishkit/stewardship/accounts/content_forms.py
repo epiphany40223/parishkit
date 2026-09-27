@@ -4,6 +4,7 @@ from datetime import date
 from uuid import uuid4
 
 from django import forms
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.content import (
@@ -17,6 +18,7 @@ from parishkit.stewardship.web.content import (
     validate_template,
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
+from parishkit.stewardship.web.refusals import UserFacingError
 
 from .content_defaults import default_data
 
@@ -338,8 +340,16 @@ def revision_patch(document, campaign, previous, values):
             if schedule["values"]["template_version"] != previous["id"]:
                 continue
             if values is None:
-                raise ValueError(
-                    "Select another template for its schedules before removal."
+                raise UserFacingError(
+                    _("This email is used by a mail schedule, so it can't be removed."),
+                    fix=_(
+                        "Choose another email for that schedule, or remove the "
+                        "schedule, under Mail schedules first. Editing the text "
+                        "(for example, resetting it to the default) keeps the "
+                        "schedule."
+                    ),
+                    link=reverse("admin:schedule_settings", args=[campaign.pk]),
+                    link_label=_("Go to Mail schedules"),
                 )
             affected.append(schedule)
             patch.append(

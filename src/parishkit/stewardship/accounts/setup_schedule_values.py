@@ -3,10 +3,20 @@
 from copy import deepcopy
 from uuid import UUID
 
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+
 from parishkit.stewardship.campaigns.configuration import validate_campaign_sections
+from parishkit.stewardship.web.refusals import UserFacingError
 
 from .content_schema import validate_content_records
 from .setup_content_values import CONTENT_STEPS
+
+# Why an email cannot be cleared, by the kind of schedule that sends it.
+SCHEDULE_USES = {
+    "initial": _("This email is used by your Initial invitation schedule."),
+    "reminder": _("This email is used by a Reminder schedule."),
+}
 
 
 def validate_schedule_step(value):
@@ -56,7 +66,9 @@ def reconcile_preparation(request, service, attempt_id, updates):
             "campaign",
             *CONTENT_STEPS,
         }:
-            raise LookupError("Save the first campaign before its schedules.")
+            from .setup_content import first_campaign_missing
+
+            raise first_campaign_missing()
         if set(updates) == {"campaign"}:
             return updates
     if "campaign" not in updates:
@@ -73,8 +85,18 @@ def reconcile_preparation(request, service, attempt_id, updates):
             if old and row["values"]["template_version"] == old["id"]
         ]
         if affected and updates[step]["values"] is None:
-            raise ValueError(
-                "Remove or change this template's schedules before clearing it."
+            raise UserFacingError(
+                SCHEDULE_USES.get(
+                    affected[0]["values"]["kind"],
+                    _("This email is used by a mail schedule."),
+                ),
+                fix=_(
+                    "Change that schedule to another email, or remove it, under "
+                    "Mail schedules first. Replacing the text (for example, "
+                    "resetting it to the default) keeps the schedule."
+                ),
+                link=reverse("admin:setup_schedules"),
+                link_label=_("Go to “Mail schedules”"),
             )
         for row in affected:
             row["values"].update(
@@ -97,7 +119,12 @@ def reconcile_preparation(request, service, attempt_id, updates):
     validate_content_records(document)
     selected = {row["id"] for row in content}
     if any(row["values"]["template_version"] not in selected for row in records):
-        raise ValueError("Choose a saved first-campaign email template.")
+        raise UserFacingError(
+            _("A mail schedule uses an email template that is not saved."),
+            fix=_("Choose an email saved under Pages and email templates."),
+            link=reverse("admin:setup_content"),
+            link_label=_("Go to “Pages and email templates”"),
+        )
     if records != combined.get("schedules", {"records": []})["records"]:
         updates = updates | {"schedules": {"records": records}}
     return updates

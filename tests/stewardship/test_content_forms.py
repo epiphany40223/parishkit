@@ -215,7 +215,7 @@ def test_revision_patch_only_updates_actual_consumers():
     schedules = [row for row in patch if row["section"] == "schedules"]
     assert len(schedules) == 1 and schedules[0]["id"] == first["id"]
     assert schedules[0]["values"]["subject"] == "Changed"
-    with pytest.raises(ValueError, match="another template"):
+    with pytest.raises(ValueError, match="can't be removed"):
         revision_patch(document, campaign_row, previous, None)
     assert revision_patch(document, campaign_row, previous, previous["values"]) == (
         [],

@@ -82,7 +82,7 @@ def test_content_replacement_reconciles_and_clear_requires_explicit_removal(
         assert saved["id"] == row["id"]
         assert saved["values"]["subject"] == "Updated subject"
         assert saved["values"]["template_version"] == replacement["id"]
-        with pytest.raises(ValueError, match="before clearing"):
+        with pytest.raises(ValueError, match="Initial invitation schedule"):
             save_section(
                 request,
                 setup_service,
@@ -308,3 +308,25 @@ def test_reset_to_default_keeps_a_scheduled_email_attached(setup_http, monkeypat
         assert [record["id"] for record in kept] == [row["id"]]
         assert kept[0]["values"]["template_version"] == saved["id"]
         assert kept[0]["values"]["subject"] == EMAILS["initial"].subject
+
+
+def test_clearing_a_scheduled_email_explains_the_fix_inline(setup_http, monkeypatch):
+    """The editor keeps the form and says which schedule to change, with a link."""
+    request, status, template, _ = with_schedules(setup_http, monkeypatch)
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    url = "/admin/setup/content/email/initial"
+    with web_login():
+        browser.get(url)
+        refused = post(
+            browser,
+            url,
+            {"version": str(status.version), "subject": "Invitation", "clear": "on"},
+        )
+        body = refused.content.decode()
+        assert refused.status_code == 400
+        assert "This email is used by your Initial invitation schedule." in body
+        assert '<a href="/admin/setup/schedules">' in body
+        assert "Check your entries" not in body
+        saved = SetupDraftSection.objects.get(step="email_initial").values
+        assert saved == template

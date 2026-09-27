@@ -223,7 +223,11 @@ def test_current_campaign_blocks_second_creation_and_old_preview(auth_service, g
     store = auth_service.store
     proposal = token(post(browser, NEW, fields(store)))
     add_draft(store, store.active(), uuid4())
-    assert post(browser, NEW, fields(store)).status_code == 409
+    refused = post(browser, NEW, fields(store))
+    assert refused.status_code == 409
+    assert refused.json()["refusal"]["message"] == (
+        "A new campaign can't be created right now."
+    )
     assert (
         post(browser, NEW, {"action": "confirm", "preview": proposal}).status_code
         == 409
