@@ -140,9 +140,12 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
         assert (layout.credential("token_private") in mounts) is (
             name == "mail-dispatch"
         )
-        assert (layout.credential("google_workspace") in mounts) is (
+        # Rotatable integration credentials mount their read-only directory so a
+        # running consumer sees an installed replacement without recreation.
+        assert (layout.credential_directory("google_workspace") in mounts) is (
             name == "mail-dispatch"
         )
+        assert layout.credential("google_workspace") not in mounts
         assert layout.credential("token_public") in mounts
         if name == "worker":
             assert mounts[configuration.paths["media"]]["read_only"] is False
@@ -152,7 +155,11 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
         assert set(background["networks"]) == (
             {"backend", "application-egress"} if name != "scheduler" else {"backend"}
         )
-        assert (layout.credential("parishsoft") in mounts) is (name == "worker")
+        assert (layout.credential_directory("parishsoft") in mounts) is (
+            name == "worker"
+        )
+        for directory in map(layout.credential_directory, ("parishsoft", "slack")):
+            assert mounts.get(directory, {"read_only": True})["read_only"] is True
     for target in SECRET_NAMES - {"handoff_private"}:
         name = "credential-installer-" + target.replace("_", "-")
         mounts = services[name]["volumes"]
@@ -185,7 +192,7 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
 
 
 @pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
-def test_provider_modes_keep_service_identity_and_individual_mounts(tmp_path, mode):
+def test_provider_modes_keep_service_identity_and_owned_mounts(tmp_path, mode):
     """Initial startup needs no provider file; recreation selects only owned files."""
     configuration = configuration_at(tmp_path)
     compose, documents = render_runtime(
@@ -213,10 +220,10 @@ def test_provider_modes_keep_service_identity_and_individual_mounts(tmp_path, mo
         )
         for provider in providers:
             path = layout.credential(provider)
-            assert (path in mounted) is (provider in expected)
-            assert path.parent not in mounted
+            assert (path.parent in mounted) is (provider in expected)
+            assert path not in mounted
             if provider in expected:
-                assert mounted[path]["read_only"] is True
+                assert mounted[path.parent]["read_only"] is True
 
 
 @pytest.mark.parametrize("mode", [True, None, "all", "../../worker"])

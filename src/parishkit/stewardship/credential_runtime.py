@@ -1,7 +1,9 @@
-"""Isolated installer processes and operator-driven whole-consumer confirmation.
+"""Isolated installer processes and whole-consumer credential confirmation.
 
-No process controls Docker. Consumer confirmation must run inside the recreated
-service, not a one-off container that only happens to reopen the current files.
+No process controls Docker. Rotatable integration credentials are confirmed by
+the running consumer itself once its directory mount shows the replacement.
+Other credentials still need the operator command, run inside the recreated
+service rather than a one-off container that only reopens the current files.
 Provider and key-retirement owners supply their validators in later phases.
 """
 
@@ -79,6 +81,54 @@ def acknowledge_background(configuration, request_id, *, lease):
         connections.close_all()
         if runtime is not None:
             runtime.broker.app.close()
+
+
+def acknowledge_rotations(configuration, receipts):
+    """Acknowledge replacements this running consumer now reads from its mount.
+
+    Rotatable integration credentials are mounted as their target's read-only
+    directory and every task rereads the file, so once the mounted bytes match
+    an installed request this process is already using them. Recording the
+    acknowledgement here replaces the old recreate-and-run-a-command step. The
+    SQL owner still binds the consumer's own database login and fingerprint.
+    ``receipts`` is this process's published inventory, updated in place so
+    the operator command reports the same loaded credentials.
+    """
+    from .accounts.credential_installation import acknowledge_loaded_credential
+    from .accounts.key_files import read_private
+    from .accounts.metrics_credentials import credential_receipt
+    from .accounts.secret_models import (
+        CredentialConsumerAcknowledgement,
+        SecretReplacementRequest,
+    )
+    from .consumer_runtime import publish_single_process_receipts
+    from .service_boundaries import rotating_directories
+
+    consumer = configuration.service_role.value
+    targets = rotating_directories(configuration).keys()
+    rows = SecretReplacementRequest.objects.filter(
+        target__in=targets,
+        state="awaiting_ack",
+        required_consumers__contains=[consumer],
+    ).exclude(
+        pk__in=CredentialConsumerAcknowledgement.objects.filter(
+            consumer=consumer
+        ).values("request_id")
+    )
+    acknowledged = []
+    for row in rows:
+        value = read_private(configuration.secrets[row.target])
+        fingerprint = credential_receipt(value, row.target)
+        if fingerprint != row.resulting_fingerprint:
+            # The installer has not renamed this candidate into place yet.
+            continue
+        acknowledge_loaded_credential(
+            request_id=row.pk, consumer=consumer, loaded_value=value
+        )
+        receipts[row.target] = fingerprint
+        publish_single_process_receipts(configuration, receipts)
+        acknowledged.append(row.pk)
+    return acknowledged
 
 
 def _confirm_loaded(configuration, request_id):

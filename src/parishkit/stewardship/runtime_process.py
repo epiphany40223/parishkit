@@ -418,8 +418,15 @@ def serve_background(configuration, lease):
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,
         }:
+            from .credential_runtime import acknowledge_rotations
+
+            receipts = dict(assembled.receipts)
             return serve_consumer(
-                assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
+                assembled.broker,
+                lease=lease,
+                stop=stop,
+                heartbeat=heartbeat,
+                idle=lambda: acknowledge_rotations(configuration, receipts),
             )
         producer = SourceProducer(uuid4())
         schedules = FamilyScheduleProducer(uuid4())

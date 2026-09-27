@@ -34,6 +34,33 @@ ALLOWED_SECRETS = {
 }
 
 
+# Integration credentials an Administrator may replace from the web. Their
+# consumers mount the target's whole read-only directory, not the single file,
+# so a running process reads the installer's renamed replacement on its next
+# task and can acknowledge it without the container being recreated.
+ROTATING_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+
+
+def rotating_directories(configuration):
+    """Map each rotatable consumer credential to its own read-only directory.
+
+    Only the default ``credentials/<target>/credential`` layout qualifies: an
+    individually overridden path could sit in a directory holding unrelated
+    files, so it keeps its single-file mount and manual recreation.
+    """
+    if configuration.service_role not in {
+        ServiceRole.WORKER,
+        ServiceRole.MAIL_DISPATCH,
+    }:
+        return {}
+    root = configuration.paths["credentials"]
+    return {
+        name: path.parent
+        for name, path in configuration.secrets.items()
+        if name in ROTATING_TARGETS and path == root / name / "credential"
+    }
+
+
 @dataclass(frozen=True)
 class Mount:
     """Expose mount destination/access, never host source paths in diagnostics."""
@@ -150,11 +177,18 @@ def validate_mounts(configuration, mounts):
     files.update(connection_paths)
     if len(files) != len(configuration.secrets) + len(connection_paths):
         raise ConfigError("Independent service credentials cannot alias one file.")
+    rotating = set(rotating_directories(configuration).values())
     for path in files:
         if (
             installer
             and path.parent == target_directory
             and path == configuration.secrets.get(configuration.credential_target)
+        ):
+            continue
+        if (
+            path.parent in rotating
+            and path.parent in mount_map
+            and mount_map[path.parent].read_only
         ):
             continue
         if path not in mount_map or not mount_map[path].read_only:
@@ -191,6 +225,10 @@ def _check_extra(configuration, mount, files, authority, target_directory, insta
             raise ConfigError("Online application root filesystem must be read-only.")
         return
     if path in files or path == authority or (installer and path == target_directory):
+        return
+    if path in rotating_directories(configuration).values():
+        if not mount.read_only:
+            raise ConfigError("Consumer credential directories must be read-only.")
         return
     if (
         path == credential_root

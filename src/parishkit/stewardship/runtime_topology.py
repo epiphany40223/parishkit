@@ -19,7 +19,7 @@ from .deployment_documents import deployment_document, service_configuration_fil
 from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
-from .service_boundaries import ALLOWED_SECRETS
+from .service_boundaries import ALLOWED_SECRETS, rotating_directories
 
 POSTGRES_IMAGE = (
     "postgres:18.6-trixie@sha256:"
@@ -187,9 +187,14 @@ def _online_mounts(configuration):
         ),
         bind(configuration.postgres.password_file),
     ]
+    rotating = rotating_directories(configuration)
     for name, path in configuration.secrets.items():
         if name == configuration.credential_target:
             result.append(bind(path.parent, read_only=False))
+        elif name in rotating:
+            # The installer renames a replacement into place; a directory
+            # mount lets this running consumer see it without recreation.
+            result.append(bind(rotating[name]))
         else:
             result.append(bind(path))
     if role in {

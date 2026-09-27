@@ -12,6 +12,7 @@ from parishkit.stewardship.service_boundaries import (
     ALLOWED_SECRETS,
     Mount,
     parse_mounts,
+    rotating_directories,
     validate_mounts,
 )
 
@@ -204,6 +205,42 @@ def test_installer_target_isolated_and_handoff_key_is_read_only():
                 for mount in mounts
             ],
         )
+
+
+@pytest.mark.parametrize(
+    "role,target",
+    [
+        (ServiceRole.WORKER, "parishsoft"),
+        (ServiceRole.MAIL_DISPATCH, "google_workspace"),
+    ],
+)
+def test_rotating_consumer_credentials_mount_their_read_only_directory(role, target):
+    """Only the default rotatable file may follow installer renames via its folder."""
+    config, mounts = configured(role)
+    path = config.paths["credentials"] / target / "credential"
+    config = replace(config, secrets={**config.secrets, target: path})
+    mounts = [mount for mount in mounts if mount.target.name != target]
+    directory = Mount(path.parent, True)
+    assert rotating_directories(config) == {target: path.parent}
+    assert validate_mounts(config, mounts + [directory]) is role
+    # The single-file mount remains acceptable, for a not-yet-recreated service.
+    assert validate_mounts(config, mounts + [Mount(path, True)]) is role
+    with pytest.raises(ConfigError):
+        validate_mounts(config, mounts + [replace(directory, read_only=False)])
+    with pytest.raises(ConfigError):
+        validate_mounts(config, mounts)
+    # An individually overridden credential keeps its single-file mount rule.
+    moved = replace(config, secrets={**config.secrets, target: Path("/elsewhere/key")})
+    assert rotating_directories(moved) == {}
+    with pytest.raises(ConfigError):
+        validate_mounts(moved, mounts + [Mount(Path("/elsewhere"), True)])
+
+
+def test_only_worker_and_mail_dispatch_have_rotating_directories():
+    """Web and installers never widen a credential mount to its directory."""
+    config, _ = configured(ServiceRole.WEB)
+    path = config.paths["credentials"] / "parishsoft" / "credential"
+    assert rotating_directories(replace(config, secrets={"parishsoft": path})) == {}
 
 
 def test_config_mount_is_writable_only_for_its_installer():
