@@ -227,8 +227,10 @@ regenerated again from a fresh install and matched `f9b68cab`. The
 validation fix for step-up reauthentication then changed two function
 bodies: the Admin session guard, so a live session's verified Google
 instant may advance, and the initial-credential install check that
-compares against it. Only the Functions digest changed; regenerated from a
-fresh install, the current baseline is:
+compares against it. Only the Functions digest changed. The default
+content work then made Ministry packets capture the financial period for the
+shared campaign-year rule, which changed one function body; regenerated from
+a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -236,7 +238,7 @@ fresh install, the current baseline is:
 | Columns | 2439 | `5dce65e9` |
 | Constraints | 3371 | `2dd9be0a` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 595 | `ecdd0c3f` |
+| Functions | 595 | `ed998ae1` |
 | Triggers | 549 | `c2e50957` |
 | Policies | 28 | `1c9c3b2d` |
 

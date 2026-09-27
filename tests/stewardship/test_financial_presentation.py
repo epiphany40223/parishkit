@@ -154,7 +154,7 @@ def test_unrelated_financial_definition_settings_do_not_invalidate():
 
 @pytest.mark.parametrize("label", [None, "Custom campaign year"])
 def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch, label):
-    """The campaign year is not silently replaced by the upcoming pledge year."""
+    """One campaign year everywhere: the label, else the upcoming pledge year."""
     from parishkit.stewardship.accounts.content_forms import sample_render
     from parishkit.stewardship.responses import page_content, presentation
 
@@ -194,4 +194,4 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     assert page["financial"] == preview["html"]
     labels = option_labels(config.options[0], config, parish_name=parish["name"])
     assert set(labels.values()) == {preview["text"]}
-    assert preview["text"].startswith((label or "2026") + ": January 1, 2027")
+    assert preview["text"].startswith((label or "2027") + ": January 1, 2027")

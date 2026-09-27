@@ -161,8 +161,10 @@ CAMPAIGN = {
         "A name Families and staff will see, for example “2027 Stewardship Renewal”."
     ),
     "year_label": _(
-        "Optional. A short label for the stewardship year, for example 2027. "
-        "Pages and emails can show it where they mention the campaign year."
+        "Optional. Pages and emails show this where they mention the campaign "
+        "year. Leave blank to use the upcoming financial period's year (or the "
+        "campaign start year if there's no financial period); fill in to "
+        "override, for example 2027."
     ),
     "timezone": _("The first campaign always uses the parish time zone."),
     "start_date": _(

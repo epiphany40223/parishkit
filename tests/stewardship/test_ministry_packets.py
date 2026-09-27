@@ -57,6 +57,7 @@ def packet(
     history=False,
     timezone="UTC",
     year_label=None,
+    financial=None,
 ):
     """Build a document from a closed capture payload."""
     if sections is None:
@@ -74,6 +75,7 @@ def packet(
             start_date="2026-09-01",
             end_date="2026-10-31",
             year_label=year_label,
+            financial=financial,
         ),
     )
     return packet_document(
@@ -366,6 +368,9 @@ def test_stewardship_year_is_the_configured_label_not_a_derived_date():
     # as it also must for a blank label or a capture that has no such key.
     assert dict(packet().metadata)["Stewardship year"] == "2026"
     assert dict(packet(year_label="").metadata)["Stewardship year"] == "2026"
+    # A blank label on a financial campaign names the upcoming pledge year.
+    upcoming = packet(financial={"start": "2027-01-01", "end": "2027-12-31"})
+    assert dict(upcoming.metadata)["Stewardship year"] == "2027"
     section = dict(duid=9, name="Choir", chairs=[], rows=[])
     payload = dict(packet_payload(), total=0, sections=[section])
     assert "year_label" not in payload["metadata"]

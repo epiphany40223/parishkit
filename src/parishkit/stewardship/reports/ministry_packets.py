@@ -107,8 +107,9 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
     source = payload["metadata"]
     period = f"{source['start_date']} to {source['end_date']}"
     # The same single meaning of a campaign's year as Admin previews, page
-    # blocks and share labels: the configured label, else the start year. The
-    # captured metadata carries exactly the two keys that rule reads.
+    # blocks and share labels: the configured label, else the financial
+    # period's start year, else the campaign start year. The captured metadata
+    # carries exactly the keys that rule reads.
     year = campaign_year(source)
     sections = tuple(
         PacketSection(

@@ -263,10 +263,11 @@ With a zero pledge, frequency/share methods are optional but allowed to express
 a non-cash intent.
 
 The `campaign_year` placeholder consistently means the configured campaign year
-label, or the campaign start year when no label is supplied, in Admin previews,
-page content and share labels. Use `financial_period`, `financial_start` and
-`financial_end` for the upcoming pledge period; enabling financial stewardship
-does not change the meaning of `campaign_year`. Preserved unresolved census
+label in Admin previews, page content, emails, share labels and Ministry
+packets. When no label is supplied it is the start year of the campaign's
+upcoming financial period, or the campaign start year when the campaign has no
+financial period. Use `financial_period`, `financial_start` and
+`financial_end` for the exact pledge dates. Preserved unresolved census
 intent still contributes to the effective household count if census is later
 disabled; expose the count without exposing disabled census request details.
 
