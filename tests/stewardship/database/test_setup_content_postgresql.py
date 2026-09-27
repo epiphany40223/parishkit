@@ -260,6 +260,8 @@ def test_start_from_default_prefills_without_saving(setup_http, monkeypatch):
         assert b"not saved yet" in started.content
         assert b"Begin your household" in started.content
         assert b"Start from the default text" not in started.content
+        # The form posts to the clean path; a POST accepts no query string.
+        assert f'<form method="post" action="{url}"'.encode() in started.content
         assert not content_rows()
         assert browser.get(url + "?start=other").status_code == 400
         assert browser.get(url + "?start=default&x=1").status_code == 400
