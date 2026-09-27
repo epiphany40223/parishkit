@@ -93,6 +93,9 @@ def load_full_source(
             include_deceased=True,
             retain_empty_families=True,
             load_contributions=False,
+            # Stewardship never reads workgroups (the delta load leaves them
+            # empty too); fetching them took about seven of fourteen minutes.
+            load_workgroups=False,
         )
         # Catalogs are needed by initial campaign preparation even when no
         # giving window exists yet. Shared data is frozen; its collections are not.

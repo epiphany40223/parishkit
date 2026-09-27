@@ -349,6 +349,68 @@ def test_load_contribution_details_passes_optional_filters(tmp_path):
     assert contributions[9]["py pledge"] == {"id": 4}
 
 
+def test_load_families_and_members_can_skip_workgroups(tmp_path):
+    """Callers that never use workgroups skip their per-workgroup requests.
+
+    The queued responses omit all four workgroup calls: any workgroup request
+    would consume a later response and break the assertions below.
+    """
+    page = {"pageNumber": 1, "totalPages": 1}
+    ps = client(
+        tmp_path,
+        [
+            Response([{"organizationID": 7, "organizationReportName": "Parish"}]),
+            Response(
+                {
+                    "data": [
+                        {
+                            "familyDUID": 1,
+                            "registeredOrganizationID": 7,
+                            "famGroupID": 10,
+                        }
+                    ],
+                    "pagingInfo": page,
+                }
+            ),
+            Response([{"famGroupID": 10, "famGroup": "Active"}]),
+            Response(
+                {
+                    "data": [
+                        {
+                            "memberDUID": 2,
+                            "familyDUID": 1,
+                            "memberStatus": "Active",
+                            "memberType": "Head",
+                            "firstName": "Ann",
+                            "lastName": "Smith",
+                        }
+                    ],
+                    "pagingInfo": page,
+                }
+            ),
+            Response(
+                {"data": [{"memberDUID": 2, "nickName": "Annie"}], "pagingInfo": page}
+            ),
+            Response({"data": [{"id": 300, "name": "Readers"}], "pagingInfo": page}),
+            Response(
+                {
+                    "data": [{"memberId": 2, "familyId": 1, "startDate": "2000-01-01"}],
+                    "pagingInfo": page,
+                }
+            ),
+        ],
+    )
+
+    data = load_families_and_members(ps, load_workgroups=False)
+
+    assert data.family_workgroups == {} and data.member_workgroups == {}
+    assert data.family_workgroup_memberships == {}
+    assert data.member_workgroup_memberships == {}
+    assert data.families[1]["py members"] == [data.members[2]]
+    assert data.members[2]["py contactInfo"]["nickName"] == "Annie"
+    assert data.members[2]["py ministries"]["Readers"]["id"] == 300
+
+
 def test_load_families_and_members_aggregate(tmp_path):
     """load_families_and_members stitches every sub-resource into one dataset.
 

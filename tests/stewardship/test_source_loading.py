@@ -46,12 +46,10 @@ def provider_pages(*, family_change=None, member_change=None):
                 **(member_change or {}),
             }
         ],
-        [],
-        [],
-        [],
-        [],
-        page([]),
-        page([]),
+        [],  # end of Members
+        [],  # member contact information: zero-origin probe, page 0
+        [],  # ... and page 1 (family/member workgroups are not requested)
+        page([]),  # ministry types
         [{"fundId": 9, "name": "Offertory", "active": True}],
     ]
 
