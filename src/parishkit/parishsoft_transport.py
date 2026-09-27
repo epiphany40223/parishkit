@@ -2,13 +2,19 @@
 
 Ordinary ParishKit clients keep their existing Session behavior. This adapter
 intentionally supports only the shared v2 corpus/change-feed read endpoints.
-Provider credentials go to a short-lived helper over stdin, never argv, an
-environment variable or a temporary file. The owning preflight must fence
-each attempt and close its SQL connections before returning.
+Each session lazily starts one persistent helper process and reuses it (and
+its keep-alive HTTPS connections) for later requests. Provider credentials go
+to that helper once over stdin, never argv, an environment variable or a
+temporary file. The owning preflight must fence each attempt and close its SQL
+connections before returning; the parent still enforces every request's hard
+deadline and kills the helper on timeout, lost ownership or any failure.
 """
 
 import json
 import math
+import os
+import re
+import selectors
 import subprocess
 import sys
 import time
@@ -20,6 +26,7 @@ import requests
 from parishkit.parishsoft_http_worker import (
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    REQUEST_FIELDS,
     InvalidSourceResponse,
     validate_request,
 )
@@ -82,17 +89,60 @@ def _stop(process):
         raise SourceTransportDrainFailure("Source transport could not drain.") from None
 
 
-def _exchange(payload, *, seconds, check):
-    """Bound the read helper while checking lease/drain state between short waits.
+# A reply header is "<status> <length>\n", "INVALID\n" or "ERROR\n"; anything
+# longer than this without a newline is garbled rather than a slow header.
+_MAX_HEADER_BYTES = 32
+_HEADER = re.compile(rb"([1-9][0-9]{2}) (0|[1-9][0-9]{0,8})\n")
 
-    communicate retries retain pipe state and input; only the first call supplies
-    stdin. The trusted helper limits stdout before writing and stderr is discarded.
-    Closed descriptors and isolated Python prevent inherited SQL sockets or
-    Python environment injection. The package must be installed, including in dev.
+
+class _SourceHelper:
+    """One persistent read helper process owned by one BoundedSourceSession.
+
+    The process starts lazily with the session's key as its first stdin line
+    and then serves one request at a time over the same pipes, so interpreter
+    startup and TLS setup are paid once instead of per request. Any failure,
+    timeout or lost ownership during an exchange stops it; the next request
+    starts a fresh helper. Closed descriptors, an empty environment and
+    isolated Python prevent inherited SQL sockets or environment injection.
+    The package must be installed, including in development.
     """
-    deadline = time.monotonic() + seconds
-    process = None
-    try:
+
+    def __init__(self):
+        """Start with no process and no retained credential."""
+        self.process = None
+        self.key = None
+
+    def __repr__(self):
+        """The retained key never enters diagnostics."""
+        return "_SourceHelper()"
+
+    def bind(self, key):
+        """Replace a helper started under a different key before it is reused."""
+        if key != self.key:
+            self.stop()
+            self.key = key
+
+    def stop(self):
+        """Kill and reap the helper (if any) and close both of its pipes."""
+        process, self.process = self.process, None
+        if process is None:
+            return
+        try:
+            _stop(process)
+        finally:
+            for stream in (process.stdin, process.stdout):
+                with suppress(OSError):
+                    stream.close()
+
+    def close(self):
+        """Stop the helper and drop the key; used when the session closes."""
+        try:
+            self.stop()
+        finally:
+            self.key = None
+
+    def _start(self):
+        """Launch the helper and return its private key frame for stdin."""
         try:
             process = subprocess.Popen(
                 [sys.executable, "-I", "-m", "parishkit.parishsoft_http_worker"],
@@ -106,41 +156,131 @@ def _exchange(payload, *, seconds, check):
             raise SourceTransportError(
                 "Source request process is unavailable."
             ) from None
-        pending_input = payload
-        while True:
-            check()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise SourceTransportError("Source request exceeded its deadline.")
-            try:
-                output, _ = process.communicate(
-                    input=pending_input, timeout=min(remaining, 0.25)
-                )
-                break
-            except subprocess.TimeoutExpired:
-                pending_input = None
-            except OSError:
-                raise SourceTransportError(
-                    "Source request pipe is unavailable."
-                ) from None
-        check()
-        if (process.returncode == 2 and output == b"INVALID\n") or len(
-            output
-        ) > MAX_RESPONSE_BYTES + 4:
-            raise InvalidSourceResponse("Source response violates its body contract.")
-        if process.returncode != 0:
+        self.process = process
+        # Deadline enforcement relies on never blocking on either pipe.
+        os.set_blocking(process.stdin.fileno(), False)
+        os.set_blocking(process.stdout.fileno(), False)
+        return json.dumps({"api_key": self.key}, separators=(",", ":")).encode() + b"\n"
+
+    def _idle_ok(self):
+        """An idle helper must be alive with nothing unsolicited on stdout.
+
+        Readable stdout between requests means EOF (the helper died) or stray
+        bytes that would corrupt the next reply, so either forces a restart.
+        """
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.process.stdout, selectors.EVENT_READ)
+            return self.process.poll() is None and not selector.select(0)
+
+    def exchange(self, payload, *, deadline, check):
+        """Send one request line and read its reply frame before the deadline.
+
+        Both pipes are non-blocking and polled in short waits so ``check`` can
+        observe lost ownership or shutdown while the provider is slow.
+        """
+        pending = b""
+        if self.process is not None and not self._idle_ok():
+            self.stop()
+        if self.process is None:
+            pending = self._start()
+        pending += payload + b"\n"
+        reply = bytearray()
+        length = None
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.process.stdin, selectors.EVENT_WRITE)
+            selector.register(self.process.stdout, selectors.EVENT_READ)
+            while True:
+                check()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SourceTransportError("Source request exceeded its deadline.")
+                for ready, _events in selector.select(min(remaining, 0.25)):
+                    if ready.fileobj is self.process.stdin:
+                        pending = pending[self._write(pending) :]
+                        if not pending:
+                            selector.unregister(self.process.stdin)
+                        continue
+                    # Never read past the current frame: the header is short,
+                    # and a known body length bounds every later read.
+                    want = (
+                        _MAX_HEADER_BYTES - len(reply)
+                        if length is None
+                        else length - len(reply)
+                    )
+                    chunk = self._read(max(want, 1))
+                    reply += chunk
+                    if length is None:
+                        length, reply = _parse_header(reply)
+                    if length is not None and len(reply) > length:
+                        raise SourceTransportError("Source reply frame is invalid.")
+                if length is not None and len(reply) == length and not pending:
+                    check()
+                    return bytes(reply)
+
+    def _write(self, data):
+        """Write what the pipe accepts now; a closed pipe means the helper died."""
+        try:
+            return os.write(self.process.stdin.fileno(), data)
+        except BlockingIOError:
+            return 0
+        except OSError:
+            raise SourceTransportError("Source request pipe is unavailable.") from None
+
+    def _read(self, size):
+        """Read available reply bytes; EOF mid-reply means the helper died."""
+        try:
+            chunk = os.read(self.process.stdout.fileno(), size)
+        except BlockingIOError:
+            return b""
+        except OSError:
+            raise SourceTransportError("Source request pipe is unavailable.") from None
+        if not chunk:
             raise SourceTransportError(
                 "Source request did not return a valid response."
             )
-        return output
-    finally:
-        if process is not None:
-            try:
-                _stop(process)
-            finally:
-                for stream in (process.stdin, process.stdout):
-                    if stream is not None:
-                        stream.close()
+        return chunk
+
+
+def _parse_header(reply):
+    """Split a complete reply header, returning (body length, status + body).
+
+    Returns (None, reply) until the header's newline arrives. The returned
+    bytes use the historical ``b"<status>\\n" + body`` form, and the length
+    counts the status line so callers compare against the whole buffer.
+    """
+    line, separator, rest = bytes(reply).partition(b"\n")
+    if not separator:
+        if len(reply) >= _MAX_HEADER_BYTES:
+            raise SourceTransportError("Source reply frame is invalid.")
+        return None, reply
+    if line == b"INVALID":
+        raise InvalidSourceResponse("Source response violates its body contract.")
+    match = _HEADER.fullmatch(line + b"\n")
+    if match is None:
+        raise SourceTransportError("Source request did not return a valid response.")
+    status, size = match.group(1), int(match.group(2))
+    if size > MAX_RESPONSE_BYTES:
+        raise InvalidSourceResponse("Source response violates its body contract.")
+    if size and not 200 <= int(status) < 300:
+        raise SourceTransportError("Source reply frame is invalid.")
+    return len(status) + 1 + size, bytearray(status + b"\n" + rest)
+
+
+def _exchange(payload, *, seconds, check, helper):
+    """Run one request on the persistent helper under a hard wall-clock deadline.
+
+    Requests' own timeout only bounds socket idleness, so the parent enforces
+    the total deadline. Any exception, including lost ownership from ``check``,
+    kills and reaps the helper so no request outlives its admission; the next
+    request then starts a fresh helper. An unconfirmed reap is fatal.
+    """
+    try:
+        return helper.exchange(
+            payload, deadline=time.monotonic() + seconds, check=check
+        )
+    except BaseException:
+        helper.stop()
+        raise
 
 
 class BoundedSourceSession:
@@ -159,6 +299,7 @@ class BoundedSourceSession:
         self.headers = requests.structures.CaseInsensitiveDict()
         self.before_request = before_request
         self.check = check
+        self._helper = _SourceHelper()
 
     def __repr__(self):
         """Credentials held in Session-compatible headers never enter diagnostics."""
@@ -173,8 +314,11 @@ class BoundedSourceSession:
         return self._request("POST", url, json, timeout)
 
     def close(self):
-        """No persistent socket survives a call; remove the retained key reference."""
-        self.headers.clear()
+        """Kill and reap the helper, closing its sockets, and drop retained keys."""
+        try:
+            self._helper.close()
+        finally:
+            self.headers.clear()
 
     def _request(self, method, url, parameters, timeout):
         """Validate before preflight or process creation, then return safe metadata."""
@@ -188,8 +332,11 @@ class BoundedSourceSession:
                     "timeout": timeout,
                 }
             )
+            # The key reaches the helper only in its start frame, not per request.
             payload = json.dumps(
-                request, allow_nan=False, separators=(",", ":")
+                {field: request[field] for field in sorted(REQUEST_FIELDS)},
+                allow_nan=False,
+                separators=(",", ":"),
             ).encode()
             if len(payload) > MAX_REQUEST_BYTES:
                 raise ValueError("Source request exceeds its byte bound.")
@@ -198,7 +345,10 @@ class BoundedSourceSession:
         self.check()
         self.before_request(math.ceil(timeout) + 5)
         self.check()
-        output = _exchange(payload, seconds=timeout, check=self.check)
+        self._helper.bind(request["api_key"])
+        output = _exchange(
+            payload, seconds=timeout, check=self.check, helper=self._helper
+        )
         status, separator, body = output.partition(b"\n")
         if not separator or not _valid_status(status):
             raise SourceTransportError("Source response status is invalid.")
