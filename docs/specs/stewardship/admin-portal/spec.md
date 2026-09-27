@@ -125,6 +125,22 @@ slot with the same default text in one versioned save; it never replaces a slot
 the Admin already saved, and each default passes the normal content validation
 described under [content and email templates](../data/spec.md#content-and-email-templates).
 
+The mail schedule pages (the first-campaign step and the regular schedule
+settings) start with a short guide: what each mail type is, that exactly one
+initial invitation is required before final confirmation or go-live, that
+reminders and the daily and weekly Admin digests are optional (at most one
+digest of each kind), that submission receipts and critical alerts are sent
+automatically and never scheduled, that times use the campaign time zone, and
+the current campaign dates. Each schedule row shows only the fields its mail
+type uses (initial invitation and reminder: date, time and email; daily
+digest: time and email; weekly digest: weekday, time and email) and offers
+only emails of that type; the page script clears a field it hides, and
+without the script every field shows. A saved schedule's mail type is shown
+but cannot change. The server reports a missing or inapplicable value on its
+own field (for example a weekday on an invitation, or a date outside the
+campaign with the campaign's dates); only rules between rows, such as a
+second initial invitation or a reminder before it, are collection errors.
+
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
 source catalog and first campaign retain the same civil-date interpretation.
