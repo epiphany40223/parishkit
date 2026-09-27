@@ -1,5 +1,6 @@
 """One complete shared-client load, ready for fenced staging but not promotion."""
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 
@@ -9,6 +10,7 @@ from parishkit.parishsoft_source import (
     CoherentParishSoftClient,
     SourceOrganizationMismatch,
 )
+from parishkit.stewardship.observability import debug_logging_enabled
 
 from .canonical import InvalidSourcePayload
 from .corpus import KINDS, normalize_core
@@ -100,9 +102,14 @@ def load_full_source(
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)
     except (InvalidSourcePayload, SourceOrganizationMismatch):
         raise
-    except (ConfigError, KeyError, TypeError, ValueError, OverflowError):
+    except (ConfigError, KeyError, TypeError, ValueError, OverflowError) as error:
         # Ordinary shared tools retain their diagnostics. The app boundary
-        # cannot persist raw upstream values embedded in a parser exception.
+        # cannot persist raw upstream values embedded in a parser exception,
+        # except in explicitly enabled pre-launch debug logging.
+        if debug_logging_enabled():
+            logging.getLogger("parishkit.stewardship.debug").debug(
+                "invalid provider data", exc_info=error
+            )
         raise InvalidSourcePayload(
             "The source load contains invalid provider data."
         ) from None
