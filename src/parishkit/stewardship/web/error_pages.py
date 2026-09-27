@@ -111,18 +111,26 @@ def error_page(request, response):
     admin = is_admin(request)
     code = errors[0].code
     title, guidance = _NOT_FOUND if response.status_code == 404 else _GUIDANCE[code]
+    reauthenticate = admin and getattr(response, "stewardship_reauthenticate", False)
+    if reauthenticate:
+        title = _("Confirm it's you")
     context = {
         "title": title,
         "guidance": guidance,
         # Distinct closed messages only; field errors have no field to link here.
         "error_messages": list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors)),
+        "reauthenticate": reauthenticate,
+        "next": admin_return_path(request.get_full_path()),
+        "submitted": request.method == "POST",
         "sign_in": (
-            ("/admin/login" if admin else "/") if code == ErrorCode.DENIED else None
+            ("/admin/login" if admin else "/")
+            if code == ErrorCode.DENIED and not reauthenticate
+            else None
         ),
         "back": _back_path(request),
         "home": ADMIN_HOME if admin else "/",
         "home_label": _("Administration home") if admin else _("Family portal home"),
-        # Chrome forms, such as sign-out, need this even without request context.
+        # Chrome and step-up forms need this even without request context.
         "csrf_token": get_token(request),
     }
     try:

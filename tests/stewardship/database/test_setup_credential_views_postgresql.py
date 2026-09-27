@@ -150,3 +150,44 @@ def test_other_login_and_missing_handoff_fail_without_persisting(setup_http, goo
         assert response.status_code == 503
         assert CANDIDATE not in response.content
         assert not SetupSealedCredential.objects.exists()
+
+
+def test_lapsed_freshness_offers_step_up_that_keeps_the_same_draft(setup_http, google):
+    """A page shows Confirm with Google; confirming returns to the same setup."""
+    import time
+
+    publish("parishsoft")
+    google[0]["auth_time"] = int(time.time()) - 600
+    with web_login():
+        browser = started()
+        attempt = SetupAttempt.objects.get()
+        page = browser.get(
+            URL, HTTP_ACCEPT="text/html,*/*;q=0.8", HTTP_SEC_FETCH_MODE="navigate"
+        )
+        assert page.status_code == 403
+        assert page["Content-Type"].startswith("text/html")
+        assert page["Cache-Control"] == "no-store"
+        body = page.content.decode()
+        assert "Confirm with Google" in body
+        assert 'action="/admin/login"' in body
+        assert f'name="next" value="{URL}"' in body
+        script = browser.get(URL, HTTP_ACCEPT="application/json")
+        assert script.status_code == 403
+        assert script.json()["errors"][0]["code"] == "denied"
+        del google[0]["auth_time"]
+        _, response = signed_in(browser, next=URL)
+        assert response["Location"] == URL
+        assert browser.get(URL).status_code == 200
+        response = post(
+            browser,
+            URL,
+            {
+                "candidate": CANDIDATE.decode(),
+                "organization_id": "1",
+                "version": str(SetupAttempt.objects.get().version),
+            },
+        )
+        assert response.status_code == 302, response.content
+    assert SetupAttempt.objects.get().pk == attempt.pk
+    assert PortalSession.objects.count() == 1
+    assert SetupSealedCredential.objects.get().attempt_id == attempt.pk

@@ -1,0 +1,8 @@
+{% load i18n %}{% comment %}
+  Step-up for fresh-authentication actions. The ordinary sign-in refreshes the
+  current session in place and returns to `next`, a same-origin Admin path the
+  server revalidates. Include with: next=<current Admin page path>.
+{% endcomment %}<form method="post" action="{% url 'admin:login' %}">
+  {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+  <button type="submit">{% translate "Confirm with Google" %}</button>
+</form>

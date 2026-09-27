@@ -353,6 +353,14 @@ def authenticated_admin(request, *, store, activity=False, read_only=False):
         return principal
 
 
+class FreshAuthenticationRequired(PermissionError):
+    """The session is valid, but this action needs a Google sign-in within 5 min.
+
+    It stays a PermissionError, so every existing denial path still refuses.
+    Admin error handling can instead offer the step-up confirmation page.
+    """
+
+
 def require_fresh(request):
     """A fresh Google round trip, not a browser flag, admits privileged commands."""
     row = getattr(request, "portal_session", None)
@@ -360,7 +368,7 @@ def require_fresh(request):
         row is None
         or not 0 <= (database_now() - row.authenticated_at).total_seconds() <= 300
     ):
-        raise PermissionError("Please authenticate with Google again.")
+        raise FreshAuthenticationRequired("Please authenticate with Google again.")
     return row.authenticated_at
 
 
