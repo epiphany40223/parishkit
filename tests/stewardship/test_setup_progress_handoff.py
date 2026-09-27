@@ -26,6 +26,7 @@ def test_progress_completion_race_rechecks_current_admin(
         "finalization_status",
         completed if boundary == "first" else lambda *args: {"attempt": status},
     )
+    monkeypatch.setattr(views, "finishing", lambda progress: {})
     monkeypatch.setattr(views, "render", lambda *args: object())
     monkeypatch.setattr(views, "cancellation_status", completed)
     principals = []

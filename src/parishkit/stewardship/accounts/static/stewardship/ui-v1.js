@@ -148,6 +148,61 @@
     refresh();
   });
 
+  // "Finishing setup" polls a passive GET status (it never renews the setup
+  // login) every 15 seconds while visible. The server returns only a short
+  // signature of what the page shows: a change reloads the page, and
+  // completion reveals the Continue link instead of leaving the page.
+  document.querySelectorAll("[data-finishing]").forEach((panel) => {
+    const done = document.querySelector("[data-finishing-done]");
+    const warning = panel.querySelector("[data-finishing-unavailable]");
+    let stopped = false;
+    let inFlight = false;
+    let timer = null;
+    async function refresh() {
+      if (stopped || inFlight || document.hidden) return;
+      inFlight = true;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(panel.dataset.finishingUrl, {
+          method: "GET", credentials: "same-origin", cache: "no-store",
+          headers: {"Accept": "application/json"}, signal: controller.signal
+        });
+        if (!response.ok) throw new Error("status unavailable");
+        const data = await response.json();
+        if (typeof data.signature !== "string" || typeof data.overall !== "string") {
+          throw new Error("status changed");
+        }
+        warning.hidden = true;
+        if (data.overall === "completed") {
+          stopped = true;
+          if (done) done.hidden = false;
+          panel.hidden = true;
+        } else if (data.signature !== panel.dataset.finishingSignature) {
+          stopped = true;
+          window.location.reload();
+        }
+      } catch {
+        warning.hidden = false;
+      } finally {
+        window.clearTimeout(timeout);
+        inFlight = false;
+        if (!stopped) timer = window.setTimeout(refresh, 15000);
+      }
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && !inFlight) {
+        window.clearTimeout(timer);
+        refresh();
+      }
+    });
+    window.addEventListener("pagehide", () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    });
+    timer = window.setTimeout(refresh, 15000);
+  });
+
   // Only the exact source-progress page posts this renewal exception. The
   // server checks the original login, task/source leases and five-minute limit;
   // visibility and local deadlines merely stop unnecessary browser requests.

@@ -183,6 +183,12 @@ def setup(request):
             return _checked(request, service, HttpResponseRedirect(destination))
         _closed(request, set())
         draft = view_draft(request, service)
+        if draft is not None and draft.status.state == SetupState.FROZEN:
+            # A confirmed setup finishes in the background; its owner sees
+            # the "Finishing setup" progress page instead of the wizard.
+            return _checked(
+                request, service, HttpResponseRedirect("/admin/setup/cancel")
+            )
         response = render(request, "stewardship/setup.html", _context(draft))
         return _checked(request, service, response, draft)
     except ConfigError:

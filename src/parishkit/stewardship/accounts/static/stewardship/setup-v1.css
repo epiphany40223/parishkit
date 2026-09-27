@@ -98,6 +98,12 @@
 .setup-load-active { background: var(--accent-soft, #e4f0ee); font-weight: 600; }
 .setup-load-waiting .setup-load-label { color: var(--muted, #4f5e66); }
 .setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
+/* Finishing setup: a step waiting on the server operator, or one that failed. */
+.setup-load-operator::before { content: "\23F8" !important; color: var(--ink, #1b2a31) !important; }
+.setup-load-operator { background: var(--warning-bg, #fdf5e1); border-color: var(--warning-border, #a86f00) !important; }
+.setup-load-failed::before { content: "\2715" !important; color: var(--error-ink, #8f1d12) !important; }
+.setup-load-failed { border-color: var(--error-border, #b42318) !important; background: var(--error-bg, #fcebe8); font-weight: 600; }
+.setup-load-phases li p { margin: .25rem 0 0; font-size: .925rem; }
 .setup-load-result {
   margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent, #115e56);
   border-radius: .75rem; background: var(--accent-soft, #e4f0ee);

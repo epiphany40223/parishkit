@@ -221,7 +221,17 @@ and every required consumer acknowledges its secret fingerprint. A crash or
 failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Finalization progress displays both
 deadlines and does not renew them; expiry cancels unfinished setup, and a new
-attempt requires cleanup and a new login. Before the marker,
+attempt requires cleanup and a new login. After confirmation, and whenever the
+frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
+setup" page on the original login's cancellation route. It lists each step in
+plain language (each credential's installation, the server operator's
+acknowledgement with a count of acknowledged services, applying the
+configuration, the final parish data load, and completion) with the time since
+confirmation. It polls a passive status every 15 seconds while visible,
+reloading when a step changes and showing a Continue link to the Admin home once
+setup completes. A failed step explains what to do; when a credential cannot
+start because the original Google sign-in is more than five minutes old, the
+page offers the same-session step-up, which keeps the setup. Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the

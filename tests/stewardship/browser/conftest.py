@@ -68,6 +68,27 @@ from .weekly_components import components as weekly_components
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 
 
+def finishing_context(**status):
+    """The "Finishing setup" page context, built by the real step mapping."""
+    from parishkit.stewardship.accounts.setup_finishing import finishing
+
+    now = datetime.now(UTC)
+    status = {
+        "attempt": SimpleNamespace(state="frozen", attempt_id=uuid4()),
+        "failure_code": "",
+        "confirmed_at": now - timedelta(minutes=4),
+        "authenticated_at": now - timedelta(minutes=1),
+        "server_now": now,
+        "targets": ["parishsoft", "google_workspace"],
+        "source": None,
+    } | status
+    return (
+        status
+        | finishing(status)
+        | {"next": "/admin/setup/cancel", "status_url": "/setup-status.json"}
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def browser_opt_in():
     """Skip before any browser, HTTP-server or npm-asset fixture is evaluated."""
@@ -705,30 +726,31 @@ def component_origin():
         (
             "/setup-finalization",
             "setup-cancel",
-            {
-                "attempt": {"state": "frozen", "attempt_id": uuid4()},
-                "checkpoint": "yaml_activated",
-                "prepared": True,
-                "credentials": [
-                    {"target": "parishsoft", "request__state": "awaiting_ack"}
+            finishing_context(
+                checkpoint="yaml_activated",
+                prepared=True,
+                credentials=[
+                    {
+                        "target": "parishsoft",
+                        "request_id": uuid4(),
+                        "request__state": "awaiting_ack",
+                        "request__cleanup_reason": "",
+                        "consumers": 2,
+                        "acknowledged": 2,
+                    }
                 ],
-                "source": {
+                source={
                     "id": uuid4(),
                     "state": "running",
                     "phase": "loading",
                     "progress": Percentage(1234, 5678),
                 },
-            },
+            ),
         ),
         (
             "/setup-installation",
             "setup-cancel",
-            {
-                "attempt": {"state": "frozen", "attempt_id": uuid4()},
-                "checkpoint": "validating",
-                "prepared": False,
-                "credentials": [],
-            },
+            finishing_context(checkpoint="validating", prepared=False, credentials=[]),
         ),
         (
             "/setup-preview",
