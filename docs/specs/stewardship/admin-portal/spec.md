@@ -95,15 +95,29 @@ Google authentication (a sign-in less than five minutes old); an older sign-in
 is offered "Confirm with Google", which keeps the setup, so the order does not
 need to race that window. The source load follows, then the pages that need
 the loaded catalog, then review, the email and Slack tests and the final
-confirmation. Every page shows a progress stepper: an ordered list naming each
-applicable step as completed, current, not done, optional or not yet available
-with the reason, where only available steps are links. Each page has Back and
-Save-and-continue controls (Save and continue validates, saves and opens the
-next applicable page, or redisplays the page with its errors), a short
-introduction, and plain-language help for every field. A page whose
-prerequisites are unmet explains what is missing and links the step that fixes
-it, keeping the HTTP status of the underlying refusal; closed JSON errors
-remain for polling and command endpoints.
+confirmation. Every page shows a compact progress stepper: the current step by
+number and name, the count of completed steps and a slim track, with the full
+ordered list (each applicable step named as completed, current, not done,
+optional or not yet available with the reason) in a collapsed disclosure.
+Navigation is conventional: completed steps and the first unfinished required
+step are links; later unfinished steps wait for every earlier required step,
+and optional steps never hold later ones back. A step counts as completed
+only after its own explicit save, credential, load, accepted test or, for
+the share options and the review page, an explicit review for the current
+data; defaults seeded by another page never complete a step. While the
+source load runs, completed steps keep their status but are not links. The
+stepper is presentation only; each page still enforces its own
+prerequisites. Each page has one identical row of Back (secondary) and
+Save-and-continue (primary) controls (Save and continue validates, saves and
+opens the next applicable page, or redisplays the page with its errors), a
+short introduction, and plain-language help for every field. Revisiting a
+page shows its saved values; a credential page never shows the secret but
+says that one is saved (with its public scope, such as the ParishSoft
+organization), lets it be kept by leaving the key empty, and explains that it
+can be replaced until setup finishes and afterwards from Integrations. A page
+whose prerequisites are unmet explains what is missing and links the step
+that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
+errors remain for polling and command endpoints.
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
@@ -118,14 +132,22 @@ progress page, bounded authenticated polling renews only idle expiry under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
 The page warns that closing it stops renewal and that the source-load watchdog
 expires two hours after TaskRun creation even though the Admin session has a
-later 12-hour absolute lifetime. It displays the idle, source-load-watchdog, and
-absolute-session deadlines. It describes the current phase in plain language
-and shows the elapsed time and the loading worker's most recent heartbeat, so a
-healthy load visibly progresses before its totals are known. On success it
-offers Continue to the next wizard page; on failure it says what to do next.
+later 12-hour absolute lifetime. Every wizard page explains the inactivity,
+sign-in and source-load time limits in plain language, with their deadlines,
+in a collapsed section. The progress page names the three parts of the load
+(download, save, check) and, during the download, each ParishSoft collection
+as done, in progress (Ministry rosters as "N of M") or waiting, with its
+record count; the saved-record bar appears once saving starts. The worker
+encodes one step per finished collection in the task's two monotonic
+progress counters and the page decodes the task's append-only event history,
+so this needs no schema change. The page also shows the elapsed time and the
+loading worker's most recent heartbeat. On success it shows a prominent
+result with Continue to the next wizard page; on failure it says what to do
+next.
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
-complete ParishSoft load is expected to take approximately two to three minutes;
+complete ParishSoft load is expected to take several minutes (about ten for a
+parish of a few thousand Families and 200 Ministries);
 reaching two hours indicates an unhealthy or stuck import that must be discarded
 and diagnosed rather than resumed. The operator uses the task correlation and
 redacted diagnostics to correct the underlying problem before restarting setup.
