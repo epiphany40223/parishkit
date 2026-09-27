@@ -4325,7 +4325,7 @@ BEGIN
     -- The insertion statement owns the business instant; a Python preflight
     -- timestamp is not equal to the later INSERT's statement timestamp.
     NEW.submitted_at := public.stewardship_campaign_now_v1();
-    NEW.submitted_on := (NEW.submitted_at AT TIME ZONE config_row.timezone)::date;
+    NEW.submitted_on := (NEW.submitted_at AT TIME ZONE public.stewardship_timezone_name_v1(config_row.timezone))::date;
     IF baseline.id IS NULL OR baseline.state <> 'open' OR baseline.expires_at <= clock_timestamp()
         OR session_row.id IS NULL OR session_row.revoked_at IS NOT NULL
         OR session_row.expires_at <= clock_timestamp()
@@ -4345,7 +4345,7 @@ BEGIN
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
         OR config_row.id IS NULL OR campaign_row.id IS NULL
         OR NOT (config_row.values->'modules' <@ '["census","ministry","financial"]'::jsonb)
-        OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE config_row.timezone)::date
+        OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE public.stewardship_timezone_name_v1(config_row.timezone))::date
         OR NEW.submitted_at < config_row.starts_at OR NEW.submitted_at >= config_row.ends_at
         OR (NOT (config_row.values->'modules' ? 'financial') AND NEW.annual_pledge IS NOT NULL)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign

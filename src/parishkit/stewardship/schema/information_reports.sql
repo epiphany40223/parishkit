@@ -67,8 +67,8 @@ BEGIN
             WHERE item_id=i.id ORDER BY expected_version DESC LIMIT 1) r ON true
         LEFT JOIN stewardship_portal_user u ON u.id=r.followed_up_by_id
         WHERE (item_uuid IS NULL OR i.id=item_uuid)
-          AND (f->>'start'='' OR (s.submitted_at AT TIME ZONE x.timezone)::date>=(f->>'start')::date)
-          AND (f->>'end'='' OR (s.submitted_at AT TIME ZONE x.timezone)::date<=(f->>'end')::date)
+          AND (f->>'start'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date>=(f->>'start')::date)
+          AND (f->>'end'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date<=(f->>'end')::date)
     ), filtered AS MATERIALIZED (
         SELECT * FROM rows WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
           AND (f->>'needed'='any' OR follow_up_needed=(f->>'needed'='yes'))

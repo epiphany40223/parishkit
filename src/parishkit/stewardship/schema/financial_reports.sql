@@ -140,13 +140,13 @@ WITH selected AS MATERIALIZED (
         AND (f->>'active'='any' OR (f->>'active'='active' AND r.active IS TRUE)
             OR (f->>'active'='inactive' AND r.active IS FALSE)
             OR (f->>'active'='unavailable' AND r.active IS NULL))
-        AND (f->>'first_start'='' OR (r.first_submitted_at AT TIME ZONE x.timezone)::date
+        AND (f->>'first_start'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             >=nullif(f->>'first_start','')::date)
-        AND (f->>'first_end'='' OR (r.first_submitted_at AT TIME ZONE x.timezone)::date
+        AND (f->>'first_end'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             <=nullif(f->>'first_end','')::date)
-        AND (f->>'latest_start'='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+        AND (f->>'latest_start'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             >=nullif(f->>'latest_start','')::date)
-        AND (f->>'latest_end'='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+        AND (f->>'latest_end'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             <=nullif(f->>'latest_end','')::date)
         AND (f->>'pledge_min'='' OR r.annual_pledge>=nullif(f->>'pledge_min','')::numeric)
         AND (f->>'pledge_max'='' OR r.annual_pledge<=nullif(f->>'pledge_max','')::numeric)

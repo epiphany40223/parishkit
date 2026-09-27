@@ -23,7 +23,7 @@ WITH selected AS MATERIALIZED (
 ), source AS MATERIALIZED (
     SELECT x.*,s.organization_id,s.generation AS source_generation,
         s.promoted_at AS source_as_of,statement_timestamp() AS observed_at,
-        (statement_timestamp() AT TIME ZONE x.timezone)::date AS report_date
+        (statement_timestamp() AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date AS report_date
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
     WHERE s.state='promoted' AND s.compacted_at IS NULL
         AND x.values->'modules' ? 'ministry'
@@ -103,9 +103,9 @@ WITH selected AS MATERIALIZED (
             AND r.state NOT IN ('cancelled','superseded')))
         AND ((filters->>'state')='any' OR r.state=(filters->>'state')
             OR ((filters->>'state')='unresolved' AND r.state IN ('new','assigned','in_progress')))
-        AND ((filters->>'start')='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+        AND ((filters->>'start')='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             >=nullif((filters->>'start'),'')::date)
-        AND ((filters->>'end')='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+        AND ((filters->>'end')='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             <=nullif((filters->>'end'),'')::date)
 ), filtered AS MATERIALIZED (
     SELECT * FROM named WHERE (filters->>'search')=''

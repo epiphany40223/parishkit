@@ -105,7 +105,7 @@ BEGIN
         JOIN stewardship_source_current s ON s.snapshot_id=NEW.source_id
         WHERE c.id=NEW.campaign_id AND p.id=NEW.timezone_configuration_id
           AND NEW.through_date=least(p.end_date,
-            (stewardship_campaign_now_v1() AT TIME ZONE p.timezone)::date))
+            (stewardship_campaign_now_v1() AT TIME ZONE stewardship_timezone_name_v1(p.timezone))::date))
       OR NEW.submission_watermark<>coalesce((SELECT max(campaign_sequence)
         FROM stewardship_submission WHERE campaign_id=NEW.campaign_id AND mode='live'),0)
       OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
