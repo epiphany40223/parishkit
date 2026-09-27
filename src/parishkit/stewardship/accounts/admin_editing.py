@@ -26,7 +26,7 @@ from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .sessions import authenticated_admin
+from .sessions import FreshAuthenticationRequired, authenticated_admin
 
 
 def principal(
@@ -176,8 +176,13 @@ def error_response(error):
     """Expose only closed, static error messages, never exception or submitted text.
 
     Scripts receive JSON. A browser page request is shown the same messages as
-    an HTML page by the browser-error middleware.
+    an HTML page by the browser-error middleware, which, for a missing fresh
+    authentication, offers the step-up "Confirm with Google" instead.
     """
+    if isinstance(error, FreshAuthenticationRequired):
+        response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
+        response.stewardship_reauthenticate = True
+        return response
     if isinstance(error, PermissionError):
         return validation_response([FieldError(ErrorCode.DENIED)], status=403)
     if isinstance(error, StaleRecordError):

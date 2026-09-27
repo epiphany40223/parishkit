@@ -10,7 +10,7 @@
 <p class="notice">{% translate "Testing data deleted during the previous Production transition cannot be restored. Withdrawal does not undo cleanup or erase prior activation and delivery history." %}</p>
 {% if available %}
 <p>{% translate "Withdrawal is available only before" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>.</p>
-{% if not fresh %}<p>{% translate "Confirmation requires Google authentication within the last five minutes. Sign in again, then return here and prepare a new preview." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again with Google" %}</a></p>{% endif %}
+{% if not fresh %}<div class="notice"><p>{% translate "For your security, confirm it's you with Google before withdrawing. Confirmation requires Google authentication within the last five minutes. You will return here; then prepare a new preview." %}</p>{% url 'admin:production_withdrawal' campaign.pk as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
 <label for="withdrawal-reason">{% translate "Reason for withdrawal" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
 <label><input type="checkbox" name="acknowledged" value="yes" required> {% translate "I understand that deleted Testing data cannot be restored." %}</label>

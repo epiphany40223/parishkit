@@ -6,6 +6,7 @@ import pytest
 from django.test import RequestFactory
 
 from parishkit.stewardship.accounts.admin_editing import error_response
+from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -88,6 +89,30 @@ def test_browser_pages_show_closed_messages_and_next_steps(code, status, title):
     assert ('href="/admin/login"' in body) is (code == ErrorCode.DENIED)
 
 
+def test_fresh_authentication_offers_confirm_with_google():
+    """The step-up form posts to sign-in with the current page as next."""
+    request = RequestFactory().get("/admin/setup/credentials/slack", **PAGE)
+    response = through(request, error_response(FreshAuthenticationRequired()))
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "you with Google before this action" in body
+    assert 'action="/admin/login"' in body
+    assert 'name="next" value="/admin/setup/credentials/slack"' in body
+    assert 'name="csrfmiddlewaretoken"' in body
+    assert "Confirm with Google" in body
+
+
+def test_fresh_authentication_for_scripts_stays_a_json_denial():
+    """The step-up marker changes nothing for fetch callers."""
+    response = error_response(FreshAuthenticationRequired())
+    assert response.status_code == 403
+    assert response.stewardship_reauthenticate
+    request = RequestFactory().post("/admin/x", HTTP_ACCEPT="application/json")
+    assert json.loads(through(request, response).content)["errors"][0]["code"] == (
+        "denied"
+    )
+
+
 def test_return_links_are_same_origin_admin_pages_only():
     """POSTs return to their form; GETs to a same-origin Admin Referer only."""
     posted = through(
@@ -119,9 +144,9 @@ def test_lookup_errors_render_not_found_pages():
 
 
 def test_family_pages_link_only_to_the_family_home():
-    """Outside /admin/ only the Family home and sign-in are offered."""
+    """Outside /admin/ no Admin link, sign-in or step-up form is offered."""
     request = RequestFactory().get("/family/section", **PAGE)
-    response = error_response(PermissionError())
+    response = error_response(FreshAuthenticationRequired())
     body = through(request, response).content.decode()
     assert "/admin/" not in body
     assert 'href="/"' in body

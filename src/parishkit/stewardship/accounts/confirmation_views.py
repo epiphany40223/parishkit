@@ -78,6 +78,8 @@ def confirmation(request, campaign_id, request_id, preparation_id):
             "origin_verified": verified,
             "confirmation_token": token,
             "fresh": _fresh_after_cleanup(request, request_id),
+            # Step-up returns here; the sign-in view revalidates the path.
+            "here": request.path,
             "problems": [
                 PROBLEMS[code]
                 for code in (preview.problems if preview else state.problems)
