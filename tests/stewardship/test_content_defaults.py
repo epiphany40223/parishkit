@@ -31,6 +31,7 @@ from parishkit.stewardship.web.content import (
     validate_receipt_content,
     validate_template,
 )
+from parishkit.stewardship.web.presentation import campaign_year
 
 from .campaign_factory import campaign, financial
 
@@ -238,3 +239,22 @@ def test_default_content_selects_new_page_revisions_for_a_new_campaign():
     )
     edited = records[0]["values"] | {"html": "<p>Mine</p>", "text": "Mine"}
     assert not matches_default(edited)
+
+
+@pytest.mark.parametrize("financial_module", [False, True])
+def test_invitation_reads_correctly_with_or_without_a_financial_period(
+    financial_module,
+):
+    """No sentence depends on a placeholder that can be empty (no "as of .")."""
+    values = (
+        campaign(modules=["financial"], financial=financial())
+        if financial_module
+        else campaign()
+    )["values"]
+    for slot in ("initial", "reminder"):
+        rendered = sample_render(saved("email", slot), parish=PARISH, campaign=values)
+        for part in (rendered["html"], rendered["text"]):
+            assert " ." not in part and " as of" not in part
+    rendered = sample_render(saved("email", "initial"), parish=PARISH, campaign=values)
+    year = campaign_year(values)
+    assert f"The commitment you make is for {year}." in rendered["text"]

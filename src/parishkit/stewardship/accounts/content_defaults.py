@@ -186,8 +186,10 @@ EMAILS = {
         "a way of life?</p>"
         "<p><em>Even if you choose to keep everything the same as last year, "
         "please submit your renewal so we can keep our parish records "
-        "accurate.</em> The commitment you make will be effective as of "
-        "{{ financial_start }}.</p>"
+        # Placeholders have no conditionals, and {{ financial_start }} is empty
+        # for a campaign without a financial period, so this names the
+        # campaign year, which always has a value.
+        "accurate.</em> The commitment you make is for {{ campaign_year }}.</p>"
         '<p><strong><a href="{{ family_url }}">Begin your household’s renewal'
         "</a></strong></p>" + _ALTERNATE_ACCESS + _SIGNATURE + _PHONE_TIP,
     ),
