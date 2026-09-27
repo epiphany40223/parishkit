@@ -31,16 +31,28 @@ class _Collection:
         """The owning endpoint supplies its exact immutable identity extractor."""
         self.contract, self.identify, self.maximum = contract, identify, maximum
         self.rows, self.identities = [], set()
+        # Rows the provider sent, counting exact same-page repeats that are not
+        # retained; embedded totals, ordinals and envelope totals count them.
+        self.received = 0
         self.expected_total = None
         self.ordinal_origin = None
 
     def add(self, rows):
-        """Duplicates and changing embedded totals indicate an incoherent scan."""
-        if len(self.rows) + len(rows) > self.maximum:
+        """Duplicates and changing embedded totals indicate an incoherent scan.
+
+        ParishSoft data really can list one record twice: some family workgroups
+        enroll a Family twice, and the list returns two identical, adjacent rows
+        on one page. Such an exact repeat within a page is kept once. A repeat
+        with any differing field, or one spanning pages (the sign of a shifted
+        or overlapping scan), still rejects the whole collection.
+        """
+        if self.received + len(rows) > self.maximum:
             raise IncompleteSourceCollection("Source collection exceeds its row bound.")
+        page = {}
         for row in rows:
             identity = self.identify(row)
-            if identity in self.identities:
+            repeat = identity in page and page[identity] == row
+            if identity in self.identities and not repeat:
                 raise IncompleteSourceCollection(
                     "Source collection repeats an identity."
                 )
@@ -61,16 +73,20 @@ class _Collection:
                     if ordinal not in (0, 1):
                         raise IncompleteSourceCollection("Source first row is missing.")
                     self.ordinal_origin = ordinal
-                if ordinal != len(self.rows) + self.ordinal_origin:
+                if ordinal != self.received + self.ordinal_origin:
                     raise IncompleteSourceCollection(
                         "Source row order is discontinuous."
                     )
+            self.received += 1
+            if repeat:
+                continue
+            page[identity] = row
             self.identities.add(identity)
             self.rows.append(row)
 
     def finish(self):
         """An empty next page is not sufficient if a declared total remains unmet."""
-        if self.expected_total is not None and self.expected_total != len(self.rows):
+        if self.expected_total is not None and self.expected_total != self.received:
             raise IncompleteSourceCollection(
                 "Source collection does not match its total."
             )
