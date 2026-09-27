@@ -18,6 +18,7 @@ from parishkit.stewardship.web.contracts import filters
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
 from .authentication import runtime
 from .campaign_views import _scope, _state
+from .content_defaults import default_initial
 from .content_forms import (
     EMAIL_LABELS,
     ContentForm,
@@ -98,8 +99,11 @@ def _catalog(request, configuration, campaign):
     )
 
 
-def _page(request, form, campaign, label, *, status=200):
-    """Never insert rejected user HTML into the visual editor without sanitizing it."""
+def _page(request, form, campaign, label, *, status=200, default_url=None):
+    """Never insert rejected user HTML into the visual editor without sanitizing it.
+
+    ``default_url`` offers to start an empty slot from its default text.
+    """
     try:
         visual = sanitize_html(form["html"].value() or "")
     except ValueError:
@@ -113,6 +117,7 @@ def _page(request, form, campaign, label, *, status=200):
             "label": label,
             "visual": visual,
             "placeholders": sorted(PLACEHOLDERS),
+            "default_url": default_url,
         },
         status=status,
     )
@@ -199,7 +204,13 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         salt = (
             f"stewardship-content-preview-v1:{campaign_id}:{kind}:{slot}:{revision_id}"
         )
-        if request.GET or request.FILES:
+        # Only an editor GET may ask to start from the default text.
+        start = (
+            request.method != "POST"
+            and kind is not None
+            and filters(request.GET, allowed={"start"}) == {"start": "default"}
+        )
+        if (request.GET and not start) or request.FILES:
             raise ValueError("Invalid content parameters.")
         if request.method == "POST":
             fields = set(ContentForm.base_fields) - (
@@ -210,8 +221,6 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 raise ValueError("The catalog is read-only.")
             if action == "confirm":
                 return confirm(request, service, actor, salt=salt, current_scope=_scope)
-        else:
-            filters(request.GET, allowed=set())
         with work_transaction():
             state = _state(service)
             configuration, campaign = state[0], _campaign(state, campaign_id)
@@ -246,10 +255,12 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 )
                 if revision_id and previous is None:
                     raise LookupError("Content revision is unavailable.")
-                initial = (previous["values"] if previous else {}) | {
-                    "base_digest": configuration.active_configuration.digest,
-                    "generate_text": previous is None,
-                }
+                initial = (
+                    default_initial(kind, slot)
+                    if start and previous is None
+                    else (previous["values"] if previous else {})
+                    | {"generate_text": previous is None}
+                ) | {"base_digest": configuration.active_configuration.digest}
                 form = ContentForm(
                     request.POST if request.method == "POST" else None,
                     kind=kind,
@@ -270,7 +281,15 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         salt,
                     )
                     if request.method == "POST"
-                    else _page(request, form, campaign, labels[slot])
+                    else _page(
+                        request,
+                        form,
+                        campaign,
+                        labels[slot],
+                        default_url=request.path + "?start=default"
+                        if previous is None and not start
+                        else None,
+                    )
                 )
             if not allows(
                 authenticated_admin(request, store=service.store, read_only=True),

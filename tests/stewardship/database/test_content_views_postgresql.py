@@ -282,3 +282,23 @@ def test_staff_cannot_read_or_edit_content(auth_service, google):
     browser, _ = signed_in()
     assert browser.get(catalog).status_code == 403
     assert post(browser, catalog + "/page/welcome", values(store)).status_code == 403
+
+
+def test_empty_content_editor_can_start_from_the_default(auth_service, google):
+    """An empty slot's editor pre-fills its default without creating a request."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    path = catalog + "/page/welcome"
+    browser, _ = signed_in()
+    requests = ConfigurationChangeRequest.objects.count()
+    empty = browser.get(path)
+    assert b"Start from the default text" in empty.content
+    started = browser.get(path + "?start=default")
+    assert started.status_code == 200
+    assert b"Personal prayer" in started.content
+    assert b"Start from the default text" not in started.content
+    assert browser.get(path + "?start=other").status_code == 400
+    assert browser.get(catalog + "?start=default").status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == requests
+    email = browser.get(catalog + "/email/reminder?start=default")
+    assert email.status_code == 200 and b"Continue your household" in email.content
