@@ -363,7 +363,8 @@ def test_native_export_creation_status_cancel_and_restricted_download(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, gated = read(browser, gated_path)
         assert response.status_code == 200 and b"Campaign work is gated" in gated
-        assert b'button type="submit" disabled' in gated
+        # Attribute order follows the template (the theme adds a class).
+        assert re.search(rb'<button type="submit"[^>]* disabled[ >]', gated)
         assert post(browser, gated_path + "cancel").status_code == 403
 
 
