@@ -11,6 +11,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
 from parishkit.stewardship.web.contracts import expected_version, filters
 
+from . import setup_help
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS, ContentForm, page_slots, sample_render
 from .setup_content import content_label, draft_campaign
@@ -22,6 +23,11 @@ class SetupContentForm(ContentForm):
     """The original attempt version replaces the active YAML digest in setup."""
 
     base_digest = None
+
+    def __init__(self, *args, **kwargs):
+        """Explain each content field; slot-specific rules keep their own help."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.CONTENT)
 
 
 def _draft(request, service):

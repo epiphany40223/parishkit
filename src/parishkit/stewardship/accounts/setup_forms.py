@@ -9,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import typed
 
+from . import setup_help
 from .parish_views import ParishForm
 from .policy_schema import normalized_domain, normalized_email
 
@@ -28,6 +29,11 @@ class SetupParishForm(ParishForm):
     """Reuse profile fields without accepting an active-configuration mutation."""
 
     base_digest = None
+
+    def __init__(self, *args, **kwargs):
+        """Explain each profile field in plain language."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.PARISH, replace=True)
 
     def clean_website(self):
         """Reject credential-bearing or parameterized URLs before temporary storage."""
@@ -82,6 +88,11 @@ class SetupAccessForm(forms.Form):
     ministry_addresses = IdentityLines(label=_("Ministry-leader email addresses"))
     admin_addresses = IdentityLines(label=_("Additional Administrator email addresses"))
 
+    def __init__(self, *args, **kwargs):
+        """Replace the generic one-per-line hint with what each rule grants."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.ACCESS, replace=True)
+
 
 class SetupMailForm(forms.Form):
     """Public mail scope does not imply credential installation or test delivery."""
@@ -89,6 +100,11 @@ class SetupMailForm(forms.Form):
     delegated_email = forms.EmailField(label=_("Delegated mailbox"), max_length=254)
     sender = forms.EmailField(label=_("From address"), max_length=254)
     reply_to = forms.EmailField(label=_("Reply-to address"), max_length=254)
+
+    def __init__(self, *args, **kwargs):
+        """Explain the mailbox, From and Reply-to roles."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.MAIL)
 
 
 class SetupSlackForm(forms.Form):
@@ -101,6 +117,11 @@ class SetupSlackForm(forms.Form):
         max_length=64,
         required=False,
     )
+
+    def __init__(self, *args, **kwargs):
+        """Explain what Slack is used for and where to find the channel ID."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.SLACK)
 
     def clean(self):
         """Reject hidden leftover channel data when the option is turned off."""
@@ -121,6 +142,11 @@ class SetupTestingForm(forms.Form):
     testing_recipient = forms.EmailField(
         label=_("Testing email address"), max_length=254
     )
+
+    def __init__(self, *args, **kwargs):
+        """Warn that this address receives all mail, including real Family data."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.TESTING)
 
 
 class SetupBrandingForm(forms.Form):

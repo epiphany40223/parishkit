@@ -12,6 +12,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import prepare_graphics
 from parishkit.stewardship.web.contracts import expected_version, filters
 
+from . import setup_help
 from .authentication import runtime
 from .branding_files import read_variant
 from .branding_models import BrandingAsset
@@ -27,6 +28,11 @@ class SetupLogoForm(LogoForm):
     """The original attempt pins the base; no active-YAML selector is accepted."""
 
     base_digest = None
+
+    def __init__(self, *args, **kwargs):
+        """Explain where the logo appears and what images work."""
+        super().__init__(*args, **kwargs)
+        setup_help.apply(self, setup_help.LOGO, replace=True)
 
 
 def _draft(request, service):

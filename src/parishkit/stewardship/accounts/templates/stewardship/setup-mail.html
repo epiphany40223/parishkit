@@ -4,6 +4,7 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup email test" %}</h1>
+<p class="setup-intro">{% translate "Send one fictional sample email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test." %}</p>
 <p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
 <p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>

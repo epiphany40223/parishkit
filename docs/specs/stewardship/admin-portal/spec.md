@@ -97,7 +97,8 @@ confirmation. Every page shows a progress stepper: an ordered list naming each
 applicable step as completed, current, not done, optional or not yet available
 with the reason, where only available steps are links. Each page has Back and
 Save-and-continue controls (Save and continue validates, saves and opens the
-next applicable page, or redisplays the page with its errors). A page whose
+next applicable page, or redisplays the page with its errors), a short
+introduction, and plain-language help for every field. A page whose
 prerequisites are unmet explains what is missing and links the step that fixes
 it, keeping the HTTP status of the underlying refusal; closed JSON errors
 remain for polling and command endpoints.

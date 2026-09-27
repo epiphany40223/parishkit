@@ -4,6 +4,7 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Load parish data" %}</h1>
+<p class="setup-intro">{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes about two to three minutes; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>
 {% include 'stewardship/setup-deadlines.html' %}
 {% if draft.source_task_id %}
 {% if draft.status.state == 'loading' %}
