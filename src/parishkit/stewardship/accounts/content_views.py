@@ -118,6 +118,9 @@ def _page(request, form, campaign, label, *, status=200, default_url=None):
             "visual": visual,
             "placeholders": sorted(PLACEHOLDERS),
             "default_url": default_url,
+            # Post to the clean path: a "?start=default" GET must not carry its
+            # query into the POST, which accepts no query parameters.
+            "post_url": request.path,
         },
         status=status,
     )

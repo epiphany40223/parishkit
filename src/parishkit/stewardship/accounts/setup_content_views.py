@@ -247,6 +247,9 @@ def setup_content_edit(request, kind, slot):
                     else None
                 ),
                 "started_from_default": start and previous is None,
+                # Post to the clean path: the "?start=default" GET must not
+                # carry its query into the POST, which accepts none.
+                "post_url": request.path,
             },
             status=status,
         )
