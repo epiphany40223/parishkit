@@ -210,7 +210,12 @@ def _online_mounts(configuration):
             ),
         ]
     if role is ServiceRole.WORKER:
-        result.append(bind(configuration.paths["media"], read_only=False))
+        # The worker renders report exports into the reports root, which the
+        # web service then streams back to the requesting Admin.
+        result += [
+            bind(configuration.paths[name], read_only=False)
+            for name in ("reports", "media")
+        ]
     return result
 
 
