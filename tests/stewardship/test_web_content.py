@@ -41,11 +41,88 @@ def test_safe_markup_and_plain_text_roundtrip():
     )
     assert "style" not in result.html and "onclick" not in result.html
     assert "noopener noreferrer" in result.html
-    assert result.text == "Hello\n\nA & B link"
+    assert result.text == "Hello\n\nA & B link: https://example.org"
     assert sanitize_html(result.html) == result.html
     assert (
         prepare_content("<p>A</p>", text="Edited alternative").text
         == "Edited alternative"
+    )
+
+
+# Chrome/WebKit editable regions: a bare first line, one <div> per line,
+# <div><br></div> for a blank line, <b> for bold and styled spans.
+CHROME_EDITOR = (
+    "Dear {{ family_member_names }}:<div><br></div>"
+    '<div>Stewardship is <b>a way</b> of <span style="color:red">life</span>.'
+    "</div><div><br></div><div>In gratitude,<br>The Committee<br></div>"
+)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (
+            CHROME_EDITOR,
+            "<p>Dear {{ family_member_names }}:</p>"
+            "<p>Stewardship is <strong>a way</strong> of life.</p>"
+            "<p>In gratitude,<br>The Committee</p>",
+        ),
+        # Wrappers of blocks unwrap; a line wrapper inside a list item breaks.
+        (
+            "<section><div>One</div><div><ul><li><div>a</div><div>b</div></li>"
+            "</ul></div></section>",
+            "<p>One</p><ul><li>a<br>b</li></ul>",
+        ),
+        (
+            "<blockquote><div>q1</div><div>q2</div></blockquote><i>x</i>",
+            "<blockquote><p>q1</p><p>q2</p></blockquote><em>x</em>",
+        ),
+        ("<h1>Title</h1><h5>Sub</h5>", "<h2>Title</h2><h3>Sub</h3>"),
+        ("<div>loose<p>block</p></div>", "<p>loose</p><p>block</p>"),
+        # Text typed or pasted into the HTML source box keeps its paragraphs.
+        (
+            "Dear Alex,\r\n\r\nLine one\nLine two\n\n\n  Last",
+            "<p>Dear Alex,</p><p>Line one<br>Line two</p><p>Last</p>",
+        ),
+        (
+            '<div onclick="x()"><script>secret()</script>safe</div>',
+            "<p>safe</p>",
+        ),
+    ],
+)
+def test_editor_and_plain_structure_survives_sanitizing(value, expected):
+    """Browser line wrappers become paragraphs instead of one run-on paragraph."""
+    assert sanitize_html(value) == expected
+    assert sanitize_html(expected) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Hello {{ family_code }}",
+        "One line of text",
+        "<p>a</p>\n<p></p><p>b<br></p>",
+        "<h2>TEST</h2><p>banner</p>Inline template {{ family_url }}",
+    ],
+)
+def test_canonical_content_is_left_unchanged(value):
+    """Canonical parts, and their concatenation, stay fixed points."""
+    assert sanitize_html(value) == value
+
+
+def test_plain_text_keeps_paragraphs_lists_and_link_targets():
+    """Blank lines between blocks, bullets and numbers, and "label: URL" links."""
+    result = prepare_content(
+        "<p>Dear Alex,</p><p>First<br>second</p>"
+        '<ul><li>a<ul><li>nested</li></ul></li><li><a href="{{ family_url }}">'
+        "Begin</a></li></ul><ol><li>one</li><li>two</li></ol>"
+        '<p><a href="mailto:office@example.org">office@example.org</a> or '
+        '<a href="https://example.org/">https://example.org/</a></p>'
+    )
+    assert result.text == (
+        "Dear Alex,\n\nFirst\nsecond\n\n- a\n  - nested\n"
+        "- Begin: {{ family_url }}\n\n1. one\n2. two\n\n"
+        "office@example.org or https://example.org/"
     )
 
 

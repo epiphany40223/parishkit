@@ -101,7 +101,7 @@ class ContentForm(forms.Form):
         elif slot in {"initial", "reminder"}:
             self.fields["text"].help_text = _(
                 "Both body versions require {{ family_code }} and {{ family_url }}. "
-                "Edit plain text if the generated version omits a link. "
+                "Generated plain text writes each link as “label: URL”. "
                 "Keep credentials out of the subject."
             )
 

@@ -9,13 +9,11 @@ and sanitization as text an Admin types, so a default can never bypass a
 content rule.
 
 Every email has an HTML body. Its plain-text alternative is derived from that
-HTML, except that each link is written out as "label: URL" first, because
-plain-text extraction otherwise drops an anchor's target. That keeps the
+HTML; the shared extraction writes each link as "label: URL", which keeps the
 required ``{{ family_url }}`` in both alternatives of invitations and
 reminders.
 """
 
-import re
 from dataclasses import dataclass
 
 from parishkit.stewardship.web.content import prepare_content
@@ -244,18 +242,13 @@ EMAILS = {
     ),
 }
 
-# A sanitized anchor whose href is exactly one placeholder or literal URL.
-_ANCHOR = re.compile(r'<a href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
-
 
 def email_text(html):
     """Plain-text alternative that keeps each link's target visible.
 
-    Sanitize first so the anchor shape is canonical, then write every link as
-    "label: target" before the normal HTML-to-text extraction.
+    The shared extraction already writes every link as "label: target".
     """
-    clean = prepare_content(html).html
-    return prepare_content(_ANCHOR.sub(r"\2: \1", clean)).text
+    return prepare_content(html).text
 
 
 def default_data(kind, slot):

@@ -74,9 +74,7 @@ def test_invalid_template_form(kind, changes):
 
 
 @pytest.mark.parametrize("slot", ["initial", "reminder"])
-@pytest.mark.parametrize(
-    "defect", ["html", "text", "generated", "code_subject", "link_subject"]
-)
+@pytest.mark.parametrize("defect", ["html", "text", "code_subject", "link_subject"])
 def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
     """Invalid access alternatives never become signed previews or saved drafts."""
     payload = fields(
@@ -89,11 +87,6 @@ def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
     assert valid.is_valid(), valid.errors
     if defect in {"html", "text"}:
         payload[defect] = "{{ family_code }}"
-    elif defect == "generated":
-        payload.update(
-            html='<p>{{ family_code }}</p><a href="{{ family_url }}">Respond</a>',
-            generate_text="on",
-        )
     else:
         payload["subject"] = (
             "{{ family_code }}" if defect == "code_subject" else "{{ family_url }}"
@@ -102,6 +95,23 @@ def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
     assert not form.is_valid()
     assert "both body versions" in str(form.errors)
     assert form.errors.as_data()["__all__"][0].code == "family_access"
+
+
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+def test_generated_family_text_keeps_the_link_target(slot):
+    """Generated plain text writes the link as "label: URL", keeping the link."""
+    form = ContentForm(
+        fields(
+            subject="Invitation",
+            html='<p>{{ family_code }}</p><a href="{{ family_url }}">Respond</a>',
+            text="",
+            generate_text="on",
+        ),
+        kind="email",
+        slot=slot,
+    )
+    assert form.is_valid(), form.errors
+    assert "Respond: {{ family_url }}" in form.cleaned_data["prepared"].text
 
 
 def test_family_editor_accepts_explicit_text_with_anchor_link():

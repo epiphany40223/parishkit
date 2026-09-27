@@ -79,37 +79,285 @@ def bounded_text(value):
     return value
 
 
-def sanitize_html(value):
-    """No images, styles, forms, event handlers or executable URL schemes."""
-    clean = nh3.clean(
-        bounded_text(value),
-        tags=TAGS,
+# Line and section wrappers that browsers' editable regions and pasted
+# documents use instead of <p>. They are never stored: _normalize turns them
+# into paragraphs so their line and paragraph structure survives sanitizing.
+_WRAPPERS = frozenset({"div", "section", "article", "header", "footer", "main"})
+# Presentational spellings of allowed tags, renamed rather than stripped.
+_RENAMES = {"b": "strong", "i": "em", "h1": "h2", "h4": "h3", "h5": "h3", "h6": "h3"}
+_BLOCKS = frozenset({"p", "h2", "h3", "ul", "ol", "blockquote"})
+# Any tag that _normalize must rewrite, in nh3's canonical serialization.
+_REWRITTEN = re.compile(
+    "<(?:" + "|".join(sorted(_WRAPPERS | _RENAMES.keys())) + r")[\s>]"
+)
+_MARKUP = re.compile(r"<[A-Za-z!/?]")
+_BR = ("br", [], [])
+
+
+def _clean(value, tags):
+    """The one nh3 policy: no images, styles, forms, handlers or unsafe schemes."""
+    return nh3.clean(
+        value,
+        tags=tags,
         attributes={"a": {"href", "title"}},
         url_schemes={"https", "http", "mailto", "tel"},
         clean_content_tags={"script", "style", "iframe", "object", "svg", "math"},
         link_rel="noopener noreferrer",
         strip_comments=True,
     )
-    return bounded_text(clean)
+
+
+def _plain_paragraphs(value):
+    """Markup-free text with line breaks: blank lines separate paragraphs.
+
+    Someone may type or paste ordinary text into the HTML source box. HTML
+    would collapse its line breaks into one run-on paragraph, so blank lines
+    become paragraphs and single line breaks become <br>. Text is not escaped
+    here; the following nh3 pass parses it exactly as it would have anyway.
+    """
+    paragraphs = re.split(r"\n[ \t]*\n\s*", value.replace("\r\n", "\n").strip())
+    return "".join(
+        "<p>" + "<br>".join(paragraph.split("\n")) + "</p>"
+        for paragraph in paragraphs
+        if paragraph.strip()
+    )
+
+
+class _Tree(HTMLParser):
+    """Parse nh3's well-formed output into (tag, attrs, children) and strings."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = ("", [], [])
+        self.stack = [self.root]
+
+    def handle_data(self, data):
+        self.stack[-1][2].append(data)
+
+    def handle_starttag(self, tag, attrs):
+        node = (_RENAMES.get(tag, tag), attrs, [])
+        self.stack[-1][2].append(node)
+        if tag != "br":
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        tag = _RENAMES.get(tag, tag)
+        if tag != "br" and any(node[0] == tag for node in self.stack[1:]):
+            while self.stack.pop()[0] != tag:
+                pass
+
+
+def _serialize(nodes):
+    """Write a normalized tree back as HTML for the final nh3 pass."""
+    parts = []
+    for node in nodes:
+        if isinstance(node, str):
+            parts.append(escape(node, quote=False))
+            continue
+        tag, attrs, children = node
+        parts.append(
+            "<"
+            + tag
+            + "".join(
+                f' {name}="{escape(value or "", quote=True)}"' for name, value in attrs
+            )
+            + ">"
+        )
+        if tag != "br":
+            parts.append(_serialize(children) + f"</{tag}>")
+    return "".join(parts)
+
+
+def _is_block(node):
+    """True for a paragraph-level element or a wrapper standing in for one."""
+    return not isinstance(node, str) and node[0] in _BLOCKS | _WRAPPERS
+
+
+def _meaningful(nodes):
+    """True when inline content has visible text, not only spaces and <br>."""
+    return any(
+        (
+            node.replace("\xa0", " ").strip()
+            if isinstance(node, str)
+            else node[0] != "br"
+        )
+        for node in nodes
+    )
+
+
+def _trim_breaks(nodes):
+    """Drop <br> and blank text at the edges of a line wrapper's content."""
+    nodes = list(nodes)
+    for index in (0, -1):
+        while nodes and (
+            nodes[index] == _BR
+            or (isinstance(nodes[index], str) and not nodes[index].strip())
+        ):
+            nodes.pop(index)
+    return nodes
+
+
+def _inline(nodes):
+    """Normalize inline content; nested wrappers or blocks become line breaks."""
+    result = []
+    for node in nodes:
+        if isinstance(node, str):
+            result.append(node)
+        elif node[0] in {"ul", "ol"}:
+            result.append(_block(node))
+        elif _is_block(node):
+            inner = _trim_breaks(_inline(node[2]))
+            if result and _meaningful(inner) and result[-1] != _BR:
+                result.append(_BR)
+            result.extend(inner)
+        else:
+            result.append((node[0], node[1], _inline(node[2])))
+    return result
+
+
+def _block(node):
+    """Normalize one block element's children according to its content model."""
+    tag, attrs, children = node
+    if tag == "blockquote":
+        return (tag, attrs, _flow(children))
+    if tag in {"ul", "ol"}:
+        return (
+            tag,
+            attrs,
+            [
+                _block(child)
+                if not isinstance(child, str) and child[0] == "li"
+                else child
+                for child in children
+            ],
+        )
+    return (tag, attrs, _inline(children))
+
+
+def _flow(nodes, *, wrapped=False):
+    """Normalize a container (the document, a blockquote or a wrapper) of blocks.
+
+    A container without wrappers (other than a wrapper's own content, which
+    is ``wrapped``) is only normalized below it, so canonical
+    content (and a concatenation of canonical parts, such as a TEST banner
+    and a template) is left exactly as it is. Where a wrapper is present,
+    wrappers of inline content become paragraphs, wrappers of blocks are
+    unwrapped, loose inline runs beside them become paragraphs, and runs of
+    only spaces or <br> (an editor's blank line) are dropped.
+    """
+    if not wrapped and not any(
+        not isinstance(node, str) and node[0] in _WRAPPERS for node in nodes
+    ):
+        return [
+            node
+            if isinstance(node, str)
+            else _block(node)
+            if _is_block(node)
+            else (node[0], node[1], _inline(node[2]))
+            for node in nodes
+        ]
+    result, run = [], []
+
+    def flush():
+        """Close the pending inline run as a paragraph, or keep only its spaces."""
+        if _meaningful(run):
+            result.append(("p", [], _trim_breaks(_inline(run))))
+        else:
+            result.extend(node for node in run if isinstance(node, str))
+        run.clear()
+
+    for node in nodes:
+        if not _is_block(node):
+            run.append(node)
+            continue
+        flush()
+        if node[0] not in _WRAPPERS:
+            result.append(_block(node))
+        elif any(_is_block(child) for child in node[2]):
+            result.extend(_flow(node[2], wrapped=True))
+        else:
+            run.extend(node[2])
+            flush()
+    flush()
+    return result
+
+
+def _normalize(clean):
+    """Rewrite wrappers and presentational tags in nh3 output (see _flow)."""
+    parser = _Tree()
+    parser.feed(clean)
+    parser.close()
+    return _serialize(_flow(parser.root[2]))
+
+
+def sanitize_html(value):
+    """No images, styles, forms, event handlers or executable URL schemes.
+
+    Structure survives: browser line wrappers (<div>) become paragraphs and
+    <b>/<i> become <strong>/<em> before the allowlist would strip them to bare
+    text, and markup-free text keeps its paragraphs. Content that is already
+    canonical passes through unchanged, so stored content stays a fixed point.
+    """
+    value = bounded_text(value)
+    if "\n" in value and not _MARKUP.search(value):
+        value = _plain_paragraphs(value)
+    staged = _clean(value, TAGS | _WRAPPERS | _RENAMES.keys())
+    if _REWRITTEN.search(staged):
+        value = _normalize(staged)
+    return bounded_text(_clean(value, TAGS))
 
 
 class _PlainText(HTMLParser):
-    """Extract readable text only after sanitization, preserving block boundaries."""
+    """Extract readable text only after sanitization, preserving block boundaries.
+
+    Paragraphs are separated by a blank line, list items start with "- " (or
+    "1. " in numbered lists) and each link is written "label: URL" so its
+    target survives in the plain-text alternative.
+    """
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts = []
+        self.lists = []
+        self.link = None
 
     def handle_data(self, data):
         self.parts.append(data)
+        if self.link is not None:
+            self.link[1].append(data)
 
     def handle_starttag(self, tag, attrs):
-        if tag in {"p", "br", "li", "h2", "h3", "blockquote"}:
+        # A nested list continues its item's lines; only the outermost list
+        # is set apart from surrounding paragraphs.
+        if tag in {"p", "br", "h2", "h3", "blockquote"} or (
+            tag in {"ul", "ol"} and not self.lists
+        ):
             self.parts.append("\n")
+        if tag in {"ul", "ol"}:
+            self.lists.append(0 if tag == "ol" else None)
+        elif tag == "li":
+            depth = max(len(self.lists) - 1, 0)
+            number = self.lists[-1] if self.lists else None
+            if number is not None:
+                self.lists[-1] = number = number + 1
+            self.parts.append("\n" + "  " * depth + (f"{number}. " if number else "- "))
+        elif tag == "a":
+            self.link = (dict(attrs).get("href") or "", [])
 
     def handle_endtag(self, tag):
-        if tag in {"p", "li", "h2", "h3", "blockquote"}:
+        if tag in {"ul", "ol"} and self.lists:
+            self.lists.pop()
+        if tag in {"p", "h2", "h3", "blockquote"} or (
+            tag in {"ul", "ol"} and not self.lists
+        ):
             self.parts.append("\n")
+        elif tag == "a" and self.link is not None:
+            href, label = self.link[0], "".join(self.link[1]).strip()
+            self.link = None
+            # A bare "mailto:"/"tel:" target repeats the visible address.
+            target = re.sub(r"^(mailto|tel):", "", href)
+            if href and target != label:
+                self.parts.append(": " + href if label else href)
 
 
 @dataclass(frozen=True)
