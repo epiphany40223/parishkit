@@ -93,18 +93,6 @@ PAGE_ERRORS = (
 )
 
 
-# Credential pages require a Google sign-in less than five minutes old, and a
-# new sign-in ends this attempt; say so plainly rather than a generic denial.
-CREDENTIAL_PAGES = frozenset({"parishsoft", "google_workspace", "slack_credential"})
-FRESH_SIGN_IN = _(
-    "Credentials can be entered only within five minutes of signing in with "
-    "Google, and only by the sign-in that started this setup. Signing in again "
-    "ends this setup attempt and clears its temporary settings, so a new "
-    "attempt starts from the first step. Have every credential ready before "
-    "you sign in."
-)
-
-
 def page_error(request, error, current=None, *, fallback=error_response):
     """Explain a wizard page that cannot open instead of returning a JSON body.
 
@@ -115,14 +103,17 @@ def page_error(request, error, current=None, *, fallback=error_response):
     live draft, and the page is released only after re-admitting the sign-in.
     """
     response = fallback(error)
-    if request.method not in {"GET", "HEAD"}:
+    # A credential page needing a recent Google sign-in is answered by the
+    # browser-error middleware's "Confirm with Google" page, which refreshes
+    # this same session (and so keeps this setup) and returns here.
+    if request.method not in {"GET", "HEAD"} or getattr(
+        response, "stewardship_reauthenticate", False
+    ):
         return response
     message = next(
         (text for kinds, text in PAGE_ERRORS if isinstance(error, kinds)),
         _("Setup is temporarily unavailable. Try again in a moment."),
     )
-    if isinstance(error, PermissionError) and current in CREDENTIAL_PAGES:
-        message = FRESH_SIGN_IN
     wizard = None
     try:
         service = runtime()
