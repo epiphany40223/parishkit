@@ -12,6 +12,15 @@
     }).format(date);
   });
 
+  // A download's timezone choice offers the browser's own zone, chosen by
+  // default; without script the choice stays UTC.
+  document.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
+    const zone = typeof Intl === "undefined"
+      ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!zone || zone === "UTC") return;
+    select.append(new Option(`${zone} (this browser)`, zone, true, true));
+  });
+
   const summary = document.querySelector("[data-error-summary]");
   if (summary) {
     summary.focus();

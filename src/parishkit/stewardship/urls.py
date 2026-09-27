@@ -478,6 +478,7 @@ admin_patterns = [
     ),
     path("background", job_views.background_page, name="background"),
     path("logs", log_views.logs, name="logs"),
+    path("logs/export", log_views.export_logs, name="logs_export"),
     path("deliveries", delivery_views.delivery_list, name="deliveries"),
     path("deliveries/refusals", delivery_views.refusal_list, name="delivery_refusals"),
     path(
