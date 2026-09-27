@@ -38,12 +38,6 @@
 <p>{% translate "Run the documented credential acknowledgement command inside each actual consumer after recreation. A one-off container does not acknowledge the real consumer. The installer retains rollback material until the final setup transaction succeeds." %}</p>
 <p>{% translate "Follow the Initial Setup section of the Stewardship runtime operator guide. The web application cannot recreate containers or access the Docker daemon." %}</p></section>
 {% endif %}
-<p>{% translate "This page does not renew your original login's idle or absolute deadlines." %}</p>
-<section class="panel" aria-label="{% translate 'Final setup deadlines' %}">
-<p>{% translate "Inactivity limit (30 minutes after your last saved change; viewing this page does not count):" %} <time data-local-instant datetime="{{ deadlines.idle_at|date:'c' }}">{{ deadlines.idle_at|date:'c' }}</time></p>
-<p>{% translate "Sign-in limit (12 hours after you signed in):" %} <time data-local-instant datetime="{{ deadlines.absolute_at|date:'c' }}">{{ deadlines.absolute_at|date:'c' }}</time></p>
-<p>{% translate "Final setup must complete before these deadlines. Interrupted work can resume only while this original login remains valid. Expiry cancels unfinished setup; after cleanup, sign out and sign in to start again." %}</p>
-</section>
 <details><summary>{% translate "Technical details" %}</summary>
 <p>{% translate "Configuration checkpoint" %}: {{ checkpoint|default:'—' }}</p>
 <ul>{% for item in credentials %}<li>{{ item.target }}: {{ item.request__state }}</li>{% endfor %}</ul>

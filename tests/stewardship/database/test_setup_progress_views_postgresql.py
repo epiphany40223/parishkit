@@ -29,17 +29,16 @@ def progress_browser(request):
 def test_progress_get_is_passive_and_csrf_post_renews_only_the_bound_load(
     progress_browser,
 ):
-    """The exact page displays all deadlines and the real load-duration expectation."""
+    """The exact page carries its hidden deadlines and the real load expectation."""
     browser, task, path = progress_browser
     before = PortalSession.objects.get().last_activity_at
     with web_login():
         page = browser.get(path)
         assert page.status_code == 200
         assert b"about ten for a parish of a few thousand Families" in page.content
-        assert b"within 2 hours of starting" in page.content
-        assert (
-            b"Inactivity limit" in page.content and b"Idle deadline" not in page.content
-        )
+        # Time limits are no longer listed; the shared inactivity dialog warns.
+        assert b"Inactivity limit" not in page.content
+        assert b'data-progress-deadline="idle_at"' in page.content
         assert b'data-collection="ministry_roster"' in page.content
         assert b"Last sign of activity" in page.content
         assert page["Cache-Control"] == "no-store"

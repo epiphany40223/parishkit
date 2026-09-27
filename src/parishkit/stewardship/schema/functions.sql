@@ -5898,7 +5898,7 @@ BEGIN
             AND rule.email=u.email AND rule.roles @> '["administrator"]'::jsonb
         WHERE s.id=NEW.session_id AND s.principal_id=NEW.owner_id;
     live=login.id IS NOT NULL AND login.revoked_at IS NULL
-        AND login.expires_at>stamp AND login.last_activity_at>stamp-interval '30 minutes';
+        AND login.expires_at>stamp AND login.last_activity_at>stamp-interval '60 minutes';
     IF TG_OP='INSERT' THEN
         IF NEW.state<>'collecting' OR NEW.source_task_id IS NOT NULL
            OR NEW.renewed_at IS NOT NULL OR NEW.version<>1 OR NOT live
@@ -5930,7 +5930,7 @@ BEGIN
         WHEN login.id IS NULL OR login.revoked_at IS NOT NULL THEN 'session'
         WHEN stamp>=login.expires_at THEN 'absolute'
         WHEN OLD.state='loading' AND stamp>=task.created_at+interval '2 hours' THEN 'watchdog'
-        WHEN stamp>=login.last_activity_at+interval '30 minutes' THEN 'idle'
+        WHEN stamp>=login.last_activity_at+interval '60 minutes' THEN 'idle'
         ELSE NULL END;
     IF NEW.state='expired' THEN
         IF reason IS NULL THEN
@@ -6047,7 +6047,7 @@ CREATE FUNCTION public.stewardship_setup_completion_context_v1() RETURNS uuid
     JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
         AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
         AND login.expires_at>clock_timestamp()
-        AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+        AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
     JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id AND NOT owner.disabled
     JOIN public.stewardship_address_rule rule ON rule.configuration_id=attempt.base_id
         AND rule.email=owner.email AND rule.roles @> '["administrator"]'::jsonb
@@ -6550,7 +6550,7 @@ BEGIN
                 AND p.email=u.email AND p.roles @> '["administrator"]'::jsonb
             WHERE s.id=a.session_id AND s.principal_id=a.owner_id AND s.revoked_at IS NULL
                 AND s.expires_at>clock_timestamp()
-                AND s.last_activity_at>clock_timestamp()-interval '30 minutes') THEN
+                AND s.last_activity_at>clock_timestamp()-interval '60 minutes') THEN
         RAISE EXCEPTION 'Setup intent requires its frozen original Admin attempt'
             USING ERRCODE='23514';
     END IF;
@@ -6729,7 +6729,7 @@ BEGIN
         JOIN stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
-            AND login.last_activity_at>stamp-interval '30 minutes'
+            AND login.last_activity_at>stamp-interval '60 minutes'
         JOIN stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN stewardship_address_rule rule ON rule.email=owner.email
@@ -6928,7 +6928,7 @@ CREATE FUNCTION public.stewardship_setup_exchange_live_v1(attempt_id uuid, crede
         JOIN public.stewardship_portal_session login
             ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         JOIN public.stewardship_portal_user owner
             ON owner.id=attempt.owner_id AND NOT owner.disabled
         JOIN public.stewardship_task_run original
@@ -6966,7 +6966,7 @@ BEGIN
         JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         JOIN public.stewardship_task_run task ON task.domain_request_id=prepared.id
             AND task.task_type='setup_finalize' AND task.state='running'
             AND task.initiated_by_id=attempt.owner_id AND task.lease_expires_at>clock_timestamp()
@@ -7148,7 +7148,7 @@ CREATE FUNCTION public.stewardship_setup_install_ready_live_v1(ready_id uuid) RE
         JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.configuration_id=attempt.base_id
@@ -7493,7 +7493,7 @@ CREATE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_v
         JOIN public.stewardship_portal_session login
             ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         JOIN public.stewardship_portal_user owner
             ON owner.id=attempt.owner_id AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule
@@ -7649,7 +7649,7 @@ BEGIN
                 AND rule.roles @> '["administrator"]'::jsonb
             WHERE login.id=attempt.session_id AND login.principal_id=attempt.owner_id
                 AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-                AND login.last_activity_at>clock_timestamp()-interval '30 minutes')
+                AND login.last_activity_at>clock_timestamp()-interval '60 minutes')
         THEN
         RAISE EXCEPTION 'Setup readiness requires a live frozen original request'
             USING ERRCODE='23514';
@@ -7904,7 +7904,7 @@ BEGIN
         JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
-            AND login.last_activity_at>stamp-interval '30 minutes'
+            AND login.last_activity_at>stamp-interval '60 minutes'
             AND login.authenticated_at>stamp-interval '5 minutes'
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
@@ -8097,7 +8097,7 @@ CREATE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_
         JOIN public.stewardship_portal_session login
             ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         JOIN public.stewardship_portal_user owner
             ON owner.id=attempt.owner_id AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule

@@ -198,11 +198,10 @@ tables/files, but no staged configuration is active until installer
 finalization. While the bootstrap Admin remains on the correlated source-load
 progress page, bounded authenticated polling renews only idle expiry under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
-The page warns that closing it stops renewal and that the source-load watchdog
-expires two hours after TaskRun creation even though the Admin session has a
-later 12-hour absolute lifetime. Every wizard page explains the inactivity,
-sign-in and source-load time limits in plain language, with their deadlines,
-in a collapsed section. The progress page names the three parts of the load
+Wizard pages do not list the time limits. The shared
+[inactivity dialog](../architecture/spec.md#identity-and-session-security)
+warns five minutes before sign-out and lets the Admin stay signed in, which
+also keeps the setup attempt. The progress page names the three parts of the load
 (download, save, check) and, during the download, each ParishSoft collection
 as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
@@ -238,8 +237,9 @@ codes, Testing mode, configured marker, and one redacted setup audit event. The
 configured marker is last and cannot become visible until YAML/DB digests match
 and every required consumer acknowledges its secret fingerprint. A crash or
 failure resumes idempotently from installer checkpoints only within the original
-Admin session's idle and absolute lifetime. Finalization progress displays both
-deadlines and does not renew them; expiry cancels unfinished setup, and a new
+Admin session's idle and absolute lifetime. Viewing finalization progress does
+not renew them; the Admin renews idle time only through the inactivity dialog.
+Expiry cancels unfinished setup, and a new
 attempt requires cleanup and a new login. After confirmation, and whenever the
 frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in

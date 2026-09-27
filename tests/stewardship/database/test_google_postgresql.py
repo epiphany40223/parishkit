@@ -300,7 +300,7 @@ def test_admin_idle_and_absolute_boundaries_and_fresh_auth(
             version=F("version") + 1,
         )
     boundary = (
-        row.expires_at if absolute else row.last_activity_at + timedelta(minutes=30)
+        row.expires_at if absolute else row.last_activity_at + sessions.ADMIN_IDLE
     )
     monkeypatch.setattr(sessions, "database_now", lambda: boundary)
     assert browser.get("/admin/").status_code == 302
@@ -474,7 +474,7 @@ def test_idle_session_is_replaced_rather_than_revived(auth_service, google):
     """Step-up cannot resurrect a session that already reached its idle limit."""
     from parishkit.stewardship.accounts.sessions import database_now
 
-    google[0]["auth_time"] = int(database_now().timestamp()) - 3600
+    google[0]["auth_time"] = int(database_now().timestamp()) - 7200
     browser, _ = signed_in()
     original = PortalSession.objects.get()
     PortalSession.objects.filter(pk=original.pk).update(

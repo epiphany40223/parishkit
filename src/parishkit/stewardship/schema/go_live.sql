@@ -35,7 +35,7 @@ BEGIN
             AND rule.email=actor.email AND rule.roles @> '["administrator"]'::jsonb
         JOIN public.stewardship_portal_session login ON login.principal_id=actor.id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-            AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
         WHERE campaign.id=campaign_uuid AND campaign.state='draft'
             AND runtime.mode='testing' AND NOT runtime.restore_review_required
             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate
@@ -49,7 +49,7 @@ BEGIN
             SELECT 1 FROM public.stewardship_portal_session
             WHERE principal_id=NEW.actor_id AND revoked_at IS NULL
                 AND authenticated_at=NEW.reauthenticated_at AND expires_at>clock_timestamp()
-                AND last_activity_at>clock_timestamp()-interval '30 minutes'
+                AND last_activity_at>clock_timestamp()-interval '60 minutes'
         ) OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_system_configuration runtime
             JOIN public.stewardship_campaign_mail_test mail

@@ -547,20 +547,121 @@ def test_failed_keepalive_retains_activity_for_a_bounded_retry(
 
 
 def test_admin_activity_never_uses_family_keepalive(page, component_origin):
-    """The Admin clock warns and expires without renewing through Family endpoints."""
+    """The Admin dialog warns and expires without renewing through Family endpoints."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     attempts = []
     page.route(
         "**/family/keepalive",
         lambda route: (attempts.append(route.request), route.abort()),
     )
+    renewals = []
+    page.route(
+        "**/admin/session/renew",
+        lambda route: (renewals.append(route.request), route.abort()),
+    )
     page.goto(component_origin + "/home")
     page.keyboard.press("Tab")
+    # Typing and passive status reads never renew; only "Stay signed in" does.
     page.clock.fast_forward(56 * 60 * 1000)
-    assert page.locator("#session-warning").is_visible()
+    expect(page.locator("#session-warning")).to_be_visible()
+    expect(page.locator("[data-session-message]")).to_contain_text(
+        "signed out in 4 minutes because of inactivity"
+    )
+    expect(page.locator("[data-session-stay]")).to_be_focused()
     page.clock.fast_forward(5 * 60 * 1000)
-    assert page.locator("#session-expired").is_visible()
-    assert attempts == []
+    expect(page.locator("#session-expired")).to_be_visible()
+    expect(page.locator("#session-warning")).to_be_hidden()
+    assert attempts == [] and renewals == []
+
+
+def test_admin_stay_signed_in_renews_and_closes_the_dialog(page, component_origin):
+    """The explicit renewal posts CSRF and adopts the server's new idle deadline."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    renewals = []
+    later = NOW + timedelta(hours=2)
+
+    def renew(route):
+        """Grant a renewed idle deadline, as the real endpoint would."""
+        renewals.append(route.request)
+        route.fulfill(
+            json={
+                "state": "active",
+                "server_now": (NOW + timedelta(minutes=56)).isoformat(),
+                "idle_deadline": later.isoformat(),
+                "absolute_deadline": (NOW + timedelta(hours=12)).isoformat(),
+            }
+        )
+
+    page.route("**/admin/session/renew", renew)
+    page.goto(component_origin + "/home")
+    page.clock.fast_forward(56 * 60 * 1000)
+    dialog = page.locator("dialog.session-dialog")
+    expect(dialog).to_be_visible()
+    page.keyboard.press("Escape")  # Escape never silently dismisses the warning.
+    expect(dialog).to_be_visible()
+    page.locator("[data-session-stay]").click()
+    expect(dialog).to_be_hidden()
+    assert len(renewals) == 1
+    assert renewals[0].method == "POST"
+    assert renewals[0].headers["x-csrftoken"] == "a" * 64
+    page.clock.fast_forward(10 * 60 * 1000)
+    expect(dialog).to_be_hidden()
+
+
+def test_admin_dialog_defers_to_activity_in_another_tab(page, component_origin):
+    """A passive status read showing a later deadline suppresses the warning."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    statuses = []
+
+    def status(route):
+        """Another tab renewed the session; this read renews nothing itself."""
+        statuses.append(route.request)
+        route.fulfill(
+            json={
+                "state": "active",
+                "server_now": (NOW + timedelta(minutes=55)).isoformat(),
+                "idle_deadline": (NOW + timedelta(hours=1, minutes=50)).isoformat(),
+                "absolute_deadline": (NOW + timedelta(hours=12)).isoformat(),
+            }
+        )
+
+    page.route("**/admin/session/status", status)
+    page.goto(component_origin + "/home")
+    page.clock.fast_forward(56 * 60 * 1000)
+    page.wait_for_function("() => true")
+    expect(page.locator("dialog.session-dialog")).to_be_hidden()
+    assert statuses and all(request.method == "GET" for request in statuses)
+
+
+def test_admin_dialog_near_absolute_limit_offers_sign_in_only(page, component_origin):
+    """Renewal cannot pass the absolute limit, so the dialog does not offer it."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    page.route(
+        "**/admin/session/status",
+        lambda route: route.fulfill(
+            json={
+                "state": "active",
+                "server_now": NOW.isoformat(),
+                "idle_deadline": (NOW + timedelta(minutes=4)).isoformat(),
+                "absolute_deadline": (NOW + timedelta(minutes=4)).isoformat(),
+            }
+        ),
+    )
+    page.goto(component_origin + "/home")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.clock.fast_forward(2000)
+    expect(page.locator("#session-warning")).to_be_visible()
+    expect(page.locator("[data-session-message]")).to_contain_text("time limit")
+    expect(page.locator("[data-session-stay]")).to_be_hidden()
+    expect(page.locator("[data-session-signin]")).to_be_visible()
 
 
 def test_javascript_disabled_retains_admin_form_and_family_explanation(

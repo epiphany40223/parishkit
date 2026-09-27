@@ -9,7 +9,6 @@
 <h2>{% translate "This setup attempt has ended" %}</h2>
 <p>{% translate "Your temporary settings have been cleared. Sign out and sign in again to start a new setup attempt." %}</p>
 {% elif draft %}
-{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 {% if wizard %}
 <p class="setup-intro">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}You have completed {{ done }} of {{ total }} setup steps. Use Continue to go to the next step that still needs work, or return to any completed step from the list above.{% endblocktranslate %}</p>
 {% if wizard.resume %}<div class="setup-actions"><a class="setup-continue" href="{{ wizard.resume.href }}">{% translate "Continue setup" %}<span class="setup-sr-only">: {{ wizard.resume.label }}</span></a></div>{% endif %}

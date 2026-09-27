@@ -8,7 +8,6 @@
 <p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
 <p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>
-{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <div data-setup-mail data-mail-status-url="{% url 'admin:setup_mail_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
 <form method="post" id="setup-test">{% csrf_token %}

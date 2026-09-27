@@ -1,4 +1,4 @@
-{% load i18n stewardship %}
+{% load i18n static stewardship %}
 {% if admin_chrome.testing %}
 <aside class="{% if admin_chrome.admin %}notice{% else %}testing-indicator{% endif %}" aria-label="{% translate 'Testing mode' %}">
   <strong>{% translate "Testing mode" %}</strong>
@@ -14,8 +14,37 @@
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
 {% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error" role="alert">{% translate "Critical events recorded in the past 24 hours:" %} {{ admin_chrome.critical_count|number }}. {% translate "Review the operator logs and urgent notifications." %}</aside>{% endif %}
 {% if not suppress_admin_session_chrome %}
-<div data-admin-session data-server-now="{{ admin_chrome.server_now|instant }}" data-idle-deadline="{{ admin_chrome.idle_deadline|instant }}" data-absolute-deadline="{{ admin_chrome.absolute_deadline|instant }}">
-  <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Finish your current action or sign in again." %}</p>
-  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></p>
+{% comment %}
+  One shared inactivity warning for every Admin page, setup wizard included.
+  session-v1.js opens this dialog five minutes before the session's deadline;
+  "Stay signed in" posts to admin:session_renew, which counts as activity and
+  renews only the idle deadline, never the absolute sign-in lifetime.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'stewardship/session-v1.css' %}">
+<script src="{% static 'stewardship/session-v1.js' %}" defer></script>
+<div data-admin-session data-server-now="{{ admin_chrome.server_now|instant }}" data-idle-deadline="{{ admin_chrome.idle_deadline|instant }}" data-absolute-deadline="{{ admin_chrome.absolute_deadline|instant }}" data-status-url="{% url 'admin:session_status' %}">
+  <dialog class="session-dialog" aria-labelledby="session-dialog-title" aria-describedby="session-dialog-message">
+    <form method="post" action="{% url 'admin:session_renew' %}" data-session-renew>
+      {% csrf_token %}
+      <div id="session-warning" hidden>
+        <h2 id="session-dialog-title" data-session-title>{% translate "Are you still there?" %}</h2>
+        <p id="session-dialog-message" data-session-message
+           data-idle-text="{% translate "You'll be signed out in {time} because of inactivity." %}"
+           data-absolute-text="{% translate "Your sign-in reaches its time limit in {time}. Save your work, then sign in again to continue." %}"></p>
+        <p class="session-dialog-countdown" aria-hidden="true" data-session-countdown></p>
+        <p class="session-dialog-error" role="alert" data-session-error hidden>{% translate "The server could not be reached. Check your connection and try again." %}</p>
+        <div class="session-dialog-actions">
+          <button type="button" data-session-stay>{% translate "Stay signed in" %}</button>
+          <a class="button button-secondary" href="{% url 'admin:login' %}" data-session-signin hidden>{% translate "Sign in again" %}</a>
+        </div>
+      </div>
+      <div id="session-expired" hidden>
+        <h2 id="session-expired-title">{% translate "You've been signed out" %}</h2>
+        <p>{% translate "For security, you were signed out after a period of inactivity. Any change you had not saved was not kept." %}</p>
+        <div class="session-dialog-actions"><a class="button" href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></div>
+      </div>
+    </form>
+  </dialog>
+  <p class="visually-hidden" aria-live="polite" data-session-announce></p>
 </div>
 {% endif %}

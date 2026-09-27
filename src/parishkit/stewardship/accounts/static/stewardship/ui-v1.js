@@ -948,7 +948,8 @@
     }, 5000);
   }
 
-  const session = document.querySelector("[data-family-session], [data-admin-session]");
+  // Admin pages use the shared inactivity dialog in session-v1.js instead.
+  const session = document.querySelector("[data-family-session]");
   if (!session) return;
   const warning = document.getElementById("session-warning");
   const expired = document.getElementById("session-expired");

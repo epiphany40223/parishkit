@@ -5,7 +5,6 @@
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Finish initial setup" %}</h1>
 <p class="setup-intro">{% translate "Confirm to make these settings the system's configuration. The system stays in Testing mode afterwards, so no Family receives anything until you later choose to go live. Finishing first checks that everything is ready, including accepted tests of these exact settings." %}</p>
-{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
 <p>{% translate "Confirming freezes this revision. Background services install its credentials, wait for the actual consumers to acknowledge them, load fresh source data for the selected financial periods, and complete setup together." %}</p>
 <p>{% translate "An operator may need to recreate the worker and mail containers with their installed credential mounts. The progress page explains this step. No container-control access is granted to the web app." %}</p>

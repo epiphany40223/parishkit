@@ -1,0 +1,10 @@
+/* Shared Admin inactivity dialog (session-v1.js). Kept separate from ui-v1.css
+   so the session warning can change without touching page layout styles. */
+.session-dialog { max-width: min(30rem, calc(100vw - 2rem)); padding: 1.5rem 1.75rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: 0 12px 40px rgb(16 24 40 / 28%); }
+.session-dialog::backdrop { background: rgb(16 24 40 / 45%); }
+.session-dialog h2 { margin-block: 0 .5rem; font-size: 1.25rem; }
+.session-dialog form { margin: 0; }
+.session-dialog-countdown { margin-block: .75rem; font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--warning-ink); }
+.session-dialog-error { color: var(--error-ink); }
+.session-dialog-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.session-dialog-actions > button, .session-dialog-actions > .button { margin-block: .5rem 0; }

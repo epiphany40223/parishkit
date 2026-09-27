@@ -1322,6 +1322,8 @@ def component_origin():
         ("users-v1.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("status-refresh-v1.js", "application/javascript"),
+        ("session-v1.js", "application/javascript"),
+        ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
