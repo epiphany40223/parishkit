@@ -1,5 +1,6 @@
 """Real bootstrap/session ownership and SQL barriers for initial setup metadata."""
 
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -11,7 +12,14 @@ from django.test import RequestFactory
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
-from parishkit.stewardship.accounts.sessions import database_now, end_admin, issue_admin
+from parishkit.stewardship.accounts.sessions import (
+    database_now,
+    end_admin,
+    issue_admin,
+    reauthenticate_admin,
+    require_fresh,
+)
+from parishkit.stewardship.accounts.setup_drafts import view_draft
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_policy import SetupState
 from parishkit.stewardship.accounts.setup_staging import (
@@ -37,16 +45,42 @@ def setup_service(bootstrapped):  # noqa: F811
     return SimpleNamespace(store=store, configured=lambda: False)
 
 
-def login(service):
-    """Issue durable authority after a synthetic verified Google boundary."""
+def login(service, *, authenticated_at=None):
+    """Issue durable authority after a synthetic verified Google boundary.
+
+    ``authenticated_at`` models an older Google sign-in; it defaults to now.
+    """
     user, _ = PortalUser.objects.get_or_create(
         google_subject="synthetic-setup-admin",
         defaults={"email": "admin@example.org", "verified_at": database_now()},
     )
     request = RequestFactory().post("/admin/setup")
     request.session = SessionStore()
-    issue_admin(request, user.pk, store=service.store, authenticated_at=database_now())
+    issue_admin(
+        request,
+        user.pk,
+        store=service.store,
+        authenticated_at=authenticated_at or database_now(),
+    )
     return request
+
+
+def test_step_up_keeps_the_same_login_and_its_draft(setup_service):
+    """Reauthenticating in place is not a new login: the wizard stays owned."""
+    request = login(setup_service, authenticated_at=database_now() - timedelta(hours=1))
+    attempt = begin_setup(request, setup_service)
+    original = PortalSession.objects.get()
+    assert reauthenticate_admin(
+        request,
+        original.principal_id,
+        store=setup_service.store,
+        authenticated_at=database_now(),
+    )
+    assert require_fresh(request) > original.authenticated_at
+    assert begin_setup(request, setup_service) == attempt
+    assert view_draft(request, setup_service).status.attempt_id == attempt.attempt_id
+    assert PortalSession.objects.get().pk == original.pk
+    assert SetupAttempt.objects.get().state == "collecting"
 
 
 def test_same_login_resumes_but_cancelled_attempt_never_restarts(setup_service):
