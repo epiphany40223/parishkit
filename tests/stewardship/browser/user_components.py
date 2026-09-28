@@ -12,6 +12,7 @@ from parishkit.stewardship.accounts.user_rows import (
     domain_rows,
 )
 from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
+from parishkit.stewardship.web.tables import paginate
 
 from ..policy_factory import address, assignment, domain
 
@@ -60,6 +61,10 @@ def components(context, admin):
             | {
                 "domains": domain_rows(policy),
                 "addresses": address_rows(policy),
+                "address_table": paginate(
+                    address_rows(policy), {}, prefix="addresses_"
+                ),
+                "suggestion_table": paginate([], {}, prefix="suggestions_"),
                 "domain_assignments": domain_assignment_rows(policy),
                 "base_digest": "0" * 64,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],

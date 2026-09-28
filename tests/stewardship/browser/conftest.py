@@ -51,6 +51,7 @@ from parishkit.stewardship.accounts.share_forms import (
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.security import CSP
+from parishkit.stewardship.web.tables import paginate
 
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
@@ -1200,12 +1201,25 @@ def component_origin():
                 ],
             },
         ),
-        ("/ministries", "ministries", {"ministries": [ministry], "state": "all"}),
+        (
+            "/ministries",
+            "ministries",
+            {
+                "table": paginate(
+                    [ministry, ministry | {"duid": 12346, "name": "Lectors"}],
+                    {},
+                    carry=(("state", "all"),),
+                ),
+                "query": "",
+                "state": "all",
+            },
+        ),
         (
             "/ministry-preview",
             "ministry-preview",
             {
-                "ministry": ministry,
+                "changing": [ministry],
+                "unchanged": [],
                 "new_active": False,
                 "preview": "synthetic-signed-intent",
                 "seeded_count": 2,

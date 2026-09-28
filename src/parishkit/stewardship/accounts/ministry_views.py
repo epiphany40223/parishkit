@@ -4,19 +4,18 @@ from uuid import uuid4
 
 from django import forms
 from django.core import signing
-from django.core.paginator import InvalidPage, Paginator
+from django.core.paginator import InvalidPage
 from django.db import DatabaseError, transaction
 from django.shortcuts import render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.contracts import (
-    expected_version,
-    filters,
-)
+from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import paginate, table_parameters
 
 from .admin_editing import (
     confirm,
@@ -36,13 +35,23 @@ from .policy import Capability, allows
 from .sessions import authenticated_admin
 
 SALT = "stewardship-ministry-activity-preview-v1"
+# One configuration request holds at most 100 patch operations
+# (request_patch._build_records), so one bulk change is bounded the same way.
+MAX_CHANGES = 100
 
 
 class ActivityForm(forms.Form):
-    """Only a current catalog ID and explicit binary action are browser inputs."""
+    """Only current catalog IDs and one explicit binary action are browser inputs."""
 
-    ministry_duid = forms.IntegerField(min_value=1, max_value=2**31 - 1)
+    ministry_duid = forms.TypedMultipleChoiceField(coerce=int)
     active = forms.ChoiceField(choices=(("yes", "Active"), ("no", "Inactive")))
+
+    def __init__(self, data, *, catalog):
+        """Offer exactly the current catalog's DUIDs as selectable values."""
+        super().__init__(data)
+        self.fields["ministry_duid"].choices = [
+            (str(row["duid"]), row["name"]) for row in catalog
+        ]
 
 
 def current_catalog(document, current):
@@ -112,65 +121,127 @@ def _state(service):
 
 
 def _preview(request, service, principal):
-    """Sign exact scope/intent for confirmation; preview creates no durable change."""
-    form = ActivityForm(request.POST)
-    if not form.is_valid():
-        raise ValueError("Invalid Ministry activity form.")
+    """Sign one exact bulk intent for confirmation; a preview changes nothing.
+
+    Every selected Ministry not already in the requested state becomes one
+    patch operation of a single configuration request, so the whole selection
+    is applied (and audited) atomically or not at all. Rows already in that
+    state are reported and left alone.
+    """
     configuration, current, activity, catalog = _state(service)
-    duid, active = (
-        form.cleaned_data["ministry_duid"],
-        form.cleaned_data["active"] == "yes",
-    )
-    row = next((item for item in catalog if item["duid"] == duid), None)
-    if row is None or row["active"] == active:
-        raise StaleRecordError("Reload the Ministry catalog before changing activity.")
-    previous = activity.get(duid)
-    retained = (
-        MinistryActivity.objects.filter(
-            organization_id=current.organization_id, ministry_duid=duid
+    form = ActivityForm(request.POST, catalog=catalog)
+    if not form.is_valid():
+        return _listing(
+            request,
+            configuration,
+            catalog,
+            {},
+            notice=_("Select at least one Ministry from the list, then try again."),
+            status=400,
         )
-        .values_list("record_id", flat=True)
-        .first()
-    )
-    identifier = previous["id"] if previous else str(retained or uuid4())
-    values = {"active": active}
-    if previous is None:
-        values.update(organization_id=current.organization_id, ministry_duid=duid)
-    patch = [
-        {
-            "operation": "update" if previous else "add",
-            "section": "ministries",
-            "id": identifier,
-            "values": values,
-        }
-    ]
-    policy = configuration.active_configuration.canonical_document["sections"][
-        "login_rules"
-    ]
+    active = form.cleaned_data["active"] == "yes"
+    chosen = set(form.cleaned_data["ministry_duid"])
+    rows = [row for row in catalog if row["duid"] in chosen]
+    changing = [row for row in rows if row["active"] != active]
+    if len(changing) > MAX_CHANGES:
+        return _listing(
+            request,
+            configuration,
+            catalog,
+            {},
+            notice=_(
+                "One change can include at most 100 Ministries. Select fewer "
+                "Ministries and apply the change in several steps."
+            ),
+            status=400,
+        )
+    patch = []
+    for row in changing:
+        previous = activity.get(row["duid"])
+        retained = (
+            MinistryActivity.objects.filter(
+                organization_id=current.organization_id, ministry_duid=row["duid"]
+            )
+            .values_list("record_id", flat=True)
+            .first()
+        )
+        values = {"active": active}
+        if previous is None:
+            values.update(
+                organization_id=current.organization_id, ministry_duid=row["duid"]
+            )
+        patch.append(
+            {
+                "operation": "update" if previous else "add",
+                "section": "ministries",
+                "id": previous["id"] if previous else str(retained or uuid4()),
+                "values": values,
+            }
+        )
+    duids = {row["duid"] for row in changing}
     assignments = [
         row["values"]
-        for row in policy
+        for row in configuration.active_configuration.canonical_document["sections"][
+            "login_rules"
+        ]
         if row["values"].get("kind") == "assignment"
-        and row["values"]["ministry_duid"] == duid
+        and row["values"]["ministry_duid"] in duids
     ]
-    token = sign_preview(
-        actor=principal,
-        configuration=configuration,
-        snapshot=current.snapshot_id,
-        patch=patch,
-        salt=SALT,
+    token = (
+        sign_preview(
+            actor=principal,
+            configuration=configuration,
+            snapshot=current.snapshot_id,
+            patch=patch,
+            salt=SALT,
+        )
+        if patch
+        else None
     )
     return render(
         request,
         "stewardship/ministry-preview.html",
         {
-            "ministry": row,
+            "changing": changing,
+            "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,
             "preview": token,
             "seeded_count": sum(row["source"] == "chair-seed" for row in assignments),
             "manual_count": sum(row["source"] == "manual" for row in assignments),
         },
     )
+
+
+def _listing(request, configuration, catalog, selected, *, notice=None, status=200):
+    """Render the filtered, paged Ministry table (the shared Admin table)."""
+    query, state = selected.get("q", ""), selected.get("state", "all")
+    if len(query) > 200 or state not in {"all", "active", "inactive"}:
+        raise ValueError("Invalid catalog filter.")
+    rows = [
+        row
+        for row in catalog
+        if (
+            query.casefold() in row["name"].casefold()
+            or (query.isdecimal() and query == str(row["duid"]))
+        )
+        and (state == "all" or row["active"] == (state == "active"))
+    ]
+    table = paginate(rows, selected, carry=(("q", query), ("state", state)))
+    response = render(
+        request,
+        "stewardship/ministries.html",
+        {
+            "table": table,
+            "query": query,
+            "state": state,
+            "notice": notice,
+            "parish_name": configuration.active_configuration.parish.name,
+        },
+        status=status,
+    )
+    if status != 200:
+        response.stewardship_safe_error = True
+    return response
 
 
 def _scope(service):
@@ -187,7 +258,9 @@ def ministry_activity(request):
         principal = admin_principal(request, service)
         if request.method == "POST":
             action = form_action(
-                request.POST, preview_fields={"ministry_duid", "active"}
+                request.POST,
+                preview_fields={"ministry_duid", "active"},
+                multiple_fields={"ministry_duid"},
             )
             if action == "preview":
                 response = _preview(request, service, principal)
@@ -199,30 +272,8 @@ def ministry_activity(request):
                 raise ValueError("Unknown configuration action.")
         else:
             configuration, _, _, catalog = _state(service)
-            selected = filters(request.GET, allowed={"q", "state", "page"})
-            query, state = selected.get("q", ""), selected.get("state", "all")
-            if len(query) > 200 or state not in {"all", "active", "inactive"}:
-                raise ValueError("Invalid catalog filter.")
-            catalog = [
-                row
-                for row in catalog
-                if query.casefold() in row["name"].casefold()
-                and (state == "all" or row["active"] == (state == "active"))
-            ]
-            page = Paginator(catalog, 50).page(
-                expected_version(selected.get("page", "1"))
-            )
-            response = render(
-                request,
-                "stewardship/ministries.html",
-                {
-                    "ministries": page.object_list,
-                    "page": page,
-                    "query": query,
-                    "state": state,
-                    "parish_name": configuration.active_configuration.parish.name,
-                },
-            )
+            selected = filters(request.GET, allowed={"q", "state", *table_parameters()})
+            response = _listing(request, configuration, catalog, selected)
         fresh = authenticated_admin(request, store=service.store, read_only=True)
         if not allows(fresh, Capability.CONFIGURE):
             raise PermissionError("Configuration access was revoked.")

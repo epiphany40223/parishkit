@@ -30,6 +30,57 @@
     });
   });
 
+  // Shared Admin tables (web/tables.py, table-navigator.html and
+  // table-selection.html). Row selection is per page: Select all and the
+  // header checkbox choose every enabled row checkbox shown, and bulk action
+  // buttons stay disabled until something is chosen. The server still
+  // validates every submitted selection.
+  document.querySelectorAll("[data-select-table]").forEach((scope) => {
+    const rows = () => [...scope.querySelectorAll("input[data-select-row]")]
+      .filter((node) => !node.disabled);
+    const header = scope.querySelector("input[data-select-all]");
+    const button = scope.querySelector("[data-select-all-button]");
+    const count = scope.querySelector("[data-selected-count]");
+    const actions = scope.querySelectorAll("[data-bulk-action]");
+    const update = () => {
+      const all = rows();
+      const chosen = all.filter((node) => node.checked).length;
+      const every = chosen > 0 && chosen === all.length;
+      if (header) {
+        header.checked = every;
+        header.indeterminate = chosen > 0 && !every;
+      }
+      if (button) {
+        button.hidden = !all.length;
+        button.textContent = every ? "Clear selection" : "Select all";
+      }
+      if (count) count.textContent = chosen ? `${chosen} selected` : "";
+      actions.forEach((node) => { node.disabled = !chosen; });
+    };
+    const choose = (checked) => {
+      rows().forEach((node) => { node.checked = checked; });
+      update();
+    };
+    header?.addEventListener("change", () => choose(header.checked));
+    button?.addEventListener("click", () => {
+      const all = rows();
+      choose(!(all.length && all.every((node) => node.checked)));
+    });
+    scope.addEventListener("change", (event) => {
+      if (event.target instanceof HTMLInputElement
+          && event.target.matches("[data-select-row]")) update();
+    });
+    update();
+  });
+  // A new rows-per-page choice applies at once and starts again at page 1.
+  document.querySelectorAll("select[data-page-size]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const page = select.form?.querySelector("[data-page-number]");
+      if (page) page.value = "1";
+      select.form?.requestSubmit();
+    });
+  });
+
   // Ordinary form submissions: show at once that the click registered, and
   // ignore repeats (double clicks, Enter pressed twice) until the browser
   // navigates. The listener is on document, so it runs after each form's own

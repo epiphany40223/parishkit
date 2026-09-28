@@ -2,34 +2,50 @@
 {% block title %}{% translate "Ministry activity" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministry activity" %}</h1>
-<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved. Campaign selection is managed separately." %}</p>
-<form method="get" class="panel">
-  <label for="ministry-query">{% translate "Search Ministries" %}</label>
-  <input id="ministry-query" name="q" value="{{ query }}" maxlength="200">
-  <label for="ministry-state">{% translate "Activity" %}</label>
+<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved. Campaign selection is managed separately, in Campaign settings." %}</p>
+{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}
+<form method="get" class="filter-bar">
+  <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>
+  <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
+  <div class="short"><label for="ministry-state">{% translate "Activity" %}</label>
   <select id="ministry-state" name="state">
     <option value="all" {% if state == 'all' %}selected{% endif %}>{% translate "All" %}</option>
     <option value="active" {% if state == 'active' %}selected{% endif %}>{% translate "Active" %}</option>
     <option value="inactive" {% if state == 'inactive' %}selected{% endif %}>{% translate "Inactive" %}</option>
-  </select>
+  </select></div>
+  <input type="hidden" name="size" value="{{ table.size_value }}">
   <button type="submit">{% translate "Filter" %}</button>
 </form>
-{% for ministry in ministries %}
-<section class="panel" aria-labelledby="ministry-{{ ministry.duid }}">
-  <h2 id="ministry-{{ ministry.duid }}">{{ ministry.name }}</h2>
-  <p>DUID: {{ ministry.duid|duid }} · {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
-  <p>{% if ministry.included %}{% translate "Selected for the current campaign" %}{% else %}{% translate "Not selected for the current campaign" %}{% endif %}</p>
-  <form method="post">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="preview">
-    <input type="hidden" name="ministry_duid" value="{{ ministry.duid }}">
-    <input type="hidden" name="active" value="{% if ministry.active %}no{% else %}yes{% endif %}">
-    <button type="submit">{% if ministry.active %}{% translate "Preview inactivation" %}{% else %}{% translate "Preview reactivation" %}{% endif %}</button>
-  </form>
-</section>
-{% empty %}<p role="status">{% translate "No Ministries match these filters." %}</p>{% endfor %}
-<nav aria-label="Ministry pages">
-  {% if page.has_previous %}<a href="?q={{ query|urlencode }}&amp;state={{ state }}&amp;page={{ page.previous_page_number }}">{% translate "Previous" %}</a>{% endif %}
-  {% if page.has_next %}<a href="?q={{ query|urlencode }}&amp;state={{ state }}&amp;page={{ page.next_page_number }}">{% translate "Next" %}</a>{% endif %}
-</nav>
+{% translate "Ministry pages" as navigator_label %}
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<form method="post" data-select-table>
+  {% csrf_token %}<input type="hidden" name="action" value="preview">
+  <div class="bulk-bar">
+    {% include "stewardship/table-selection.html" %}
+    <button type="submit" name="active" value="yes" data-bulk-action>{% translate "Review activation" %}</button>
+    <button type="submit" name="active" value="no" class="button-secondary" data-bulk-action>{% translate "Review inactivation" %}</button>
+  </div>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="ministry-table-caption">
+  <table class="data-table">
+    <caption id="ministry-table-caption">{% translate "Ministries from the parish source" %}</caption>
+    <thead><tr>
+      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every Ministry on this page' %}"></th>
+      <th scope="col">{% translate "Ministry" %}</th>
+      <th scope="col" class="numeric">{% translate "DUID" %}</th>
+      <th scope="col">{% translate "Activity" %}</th>
+      <th scope="col">{% translate "Current campaign" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for ministry in table.rows %}<tr>
+      <td class="select-col"><input type="checkbox" name="ministry_duid" value="{{ ministry.duid }}" data-select-row aria-label="{% blocktranslate with name=ministry.name %}Select {{ name }}{% endblocktranslate %}"></td>
+      <th scope="row">{{ ministry.name }}</th>
+      <td class="numeric">{{ ministry.duid|duid }}</td>
+      <td>{% if ministry.active %}<span class="status-badge status-badge-on">{% translate "Active" %}</span>{% else %}<span class="status-badge">{% translate "Inactive" %}</span>{% endif %}</td>
+      <td>{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="5">{% translate "No Ministries match these filters." %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}

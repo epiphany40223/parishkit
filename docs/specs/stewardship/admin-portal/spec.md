@@ -278,6 +278,23 @@ In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
 smaller non-dismissible Testing indicator so report interpretation is clear.
 
+### Admin tables
+
+Admin list tables share one component, so paging, selection and styling behave
+the same everywhere. A long table has a row navigator above and below it: a
+count of the rows shown, a rows-per-page choice (25, 50, 100, 250 or All),
+Previous and Next, and a page-number field. A page number past the end shows
+the last page. Page and size are query parameters, optionally prefixed so two
+tables on one page keep their own place, and navigator links keep the page's
+filters. Only lists whose query strings carry no private values use them;
+report views that hold filters in POST state keep their own paging.
+
+A table with bulk actions has a selection column. Its header checkbox and a
+Select all button choose every row on the current page; the bar above the
+table shows how many rows are selected and enables its action buttons only
+while at least one is. The server validates every submitted selection, so the
+controls also work without script.
+
 ## Background indicators
 
 Admins have two always-visible indicators:
@@ -348,9 +365,13 @@ configuration-request path rather than the credential installer.
 Admins can mark a Ministry inactive or reactivate it through an Admin web
 screen. The screen lists the current Ministry catalog with name, DUID, local
 active/inactive state and campaign inclusion, and supports searching and
-filtering by status. Saves use the ordinary versioned YAML configuration-request
-workflow, with optimistic concurrency, an impact preview and audit; a pending
-save is not presented as applied.
+filtering by name, DUID and status, in a shared [Admin table](#admin-tables).
+Admins select one or more Ministries and activate or inactivate them together.
+Saves use the ordinary versioned YAML configuration-request workflow, with
+optimistic concurrency, an impact preview and audit; one bulk change is one
+request of at most 100 Ministries, applied atomically, and selected Ministries
+already in the requested state are listed and left alone. A pending save is
+not presented as applied.
 
 ParishSoft's Ministry catalog does not supply a reliable active/inactive flag.
 Catalog entries default to locally active unless an Admin has marked them

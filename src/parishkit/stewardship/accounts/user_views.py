@@ -1,5 +1,7 @@
 """Read-only Administrator review of who may sign in to the portal and why."""
 
+from dataclasses import replace
+
 from django.db import DatabaseError, connection, transaction
 from django.db.models import Max, Q
 from django.shortcuts import render
@@ -13,6 +15,7 @@ from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import paginate, table_parameters
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
@@ -32,6 +35,10 @@ from .user_rows import (
     domain_rows,
 )
 from .user_rules import ROLE_ORDER
+
+# Query-string prefixes for the two tables that can grow long enough to page.
+ADDRESSES = "addresses_"
+SUGGESTIONS = "suggestions_"
 
 
 def policy_identities(records):
@@ -116,6 +123,14 @@ def chair_relationships(document):
     return relationships, ministries
 
 
+def _carried(table):
+    """A table's own page and size, kept by the other table's navigator links."""
+    return (
+        (table.size_name, table.size_value),
+        (table.page_name, str(table.number)),
+    )
+
+
 @require_safe
 def users(request):
     """Observe one snapshot, render outside it, then recheck and audit.
@@ -138,8 +153,12 @@ def users(request):
     try:
         service = runtime()
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
-        # The page takes no parameters, so an address never reaches a URL or log.
-        filters(request.GET, allowed=set())
+        # Only the long tables' page numbers and sizes are parameters, so an
+        # address never reaches a URL or log.
+        paging = filters(
+            request.GET,
+            allowed={*table_parameters(ADDRESSES), *table_parameters(SUGGESTIONS)},
+        )
         with read_transaction():
             configuration = editable_configuration(service)
             records = configuration.active_configuration.canonical_document[
@@ -175,12 +194,21 @@ def users(request):
             else (),
             key=lambda item: (item[1].casefold(), item[0]),
         )
+        address_table = paginate(address_rows(policy), paging, prefix=ADDRESSES)
+        suggestion_table = paginate(
+            suggestion_rows(policy, relationships, active=ministries),
+            paging,
+            prefix=SUGGESTIONS,
+            # Paging one table keeps the other table's place.
+            carry=_carried(address_table),
+        )
+        address_table = replace(address_table, carried=_carried(suggestion_table))
         tables = {
             "domains": domain_rows(policy),
-            "addresses": address_rows(policy),
+            "addresses": address_table.rows,
             "domain_assignments": domain_assignment_rows(policy),
             "reviews": suspended_rows(policy, reviews),
-            "suggestions": suggestion_rows(policy, relationships, active=ministries),
+            "suggestions": suggestion_table.rows,
         }
         response = render(
             request,
@@ -192,6 +220,8 @@ def users(request):
                 "base_digest": configuration.active_configuration.digest,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
                 "assignable": assignable,
+                "address_table": address_table,
+                "suggestion_table": suggestion_table,
             },
         )
         with transaction.atomic():
