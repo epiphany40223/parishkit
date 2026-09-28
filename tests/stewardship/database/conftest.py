@@ -68,3 +68,21 @@ def pytest_collection_modifyitems(items):
                         reason="Requires disposable PostgreSQL database_test profile"
                     )
                 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _flush_without_post_migrate():
+    """Skip the post_migrate signal when transactional tests flush.
+
+    pytest-django flushes every table after each transactional test and, by
+    default, re-emits post_migrate so contrib apps can recreate their content
+    types and permissions. Nothing here reads those rows (the session setup
+    already verified the migrated database), and re-creating them doubled the
+    per-test teardown cost, so flushes leave them empty instead.
+    """
+    from unittest import mock
+
+    from django.core.management.commands import flush
+
+    with mock.patch.object(flush, "emit_post_migrate_signal", lambda *a, **k: None):
+        yield
