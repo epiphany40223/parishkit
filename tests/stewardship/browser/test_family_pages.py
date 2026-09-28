@@ -359,3 +359,75 @@ def test_review_page_step_bar_jumps_back_into_editing(page, component_origin):
     page.locator('[data-step-jump="financial"]').click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("0")
+
+
+def viewport_top(page):
+    """How far the window is scrolled down, in CSS pixels."""
+    return page.evaluate("window.scrollY")
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_sign_in_and_next_show_the_top_of_the_page(page, component_origin, width):
+    """Page changes scroll to the top, then focus the heading without scrolling.
+
+    Focusing a heading alone scrolls it to the top of the viewport and hides
+    the campaign title, Family name and step bar above it (#220).
+    """
+    page.set_viewport_size({"width": width, "height": 500})
+    begin(page, component_origin, paged_form(), None)
+    assert viewport_top(page) == 0
+    expect(page.get_by_role("heading", level=1)).to_be_in_viewport()
+    assert "#" not in page.url
+    for _ in range(3):
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        next_page(page)
+        assert viewport_top(page) == 0
+        focused = page.evaluate("document.activeElement.tagName")
+        assert focused == "H3"
+        expect(page.get_by_role("heading", level=1)).to_be_in_viewport()
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.go_back()
+    expect(page.locator("[data-page]:not([hidden]) h3")).to_be_focused()
+    assert viewport_top(page) == 0
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_share_option_checkboxes_line_up_with_their_labels(
+    page, component_origin, width
+):
+    """Each share checkbox sits beside the first line of its (wrapping) label."""
+    page.set_viewport_size({"width": width, "height": 900})
+    form = paged_form()
+    long = (
+        "We will have my bank send a check to the parish every month using "
+        "our bank's online bill payment service"
+    )
+    form["financial"]["options"][0]["labels"] = {
+        "none": long,
+        "one": long,
+        "many": long,
+    }
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("100")
+    boxes = page.locator('input[id^="financial-option-"]')
+    expect(boxes.first).to_be_visible()
+    offsets = boxes.evaluate_all(
+        """inputs => inputs.map(input => {
+            const label = input.closest('label');
+            const text = [...label.childNodes]
+                .find(n => n.nodeType === 3 && n.textContent.trim());
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            const line = range.getClientRects()[0];
+            const box = input.getBoundingClientRect();
+            return {
+                gap: Math.abs(
+                    (box.top + box.height / 2) - (line.top + line.height / 2)
+                ),
+                indent: [...range.getClientRects()].every(r => r.left >= box.right),
+            };
+        })"""
+    )
+    for offset in offsets:
+        assert offset["gap"] <= 4, offsets
+        assert offset["indent"], offsets

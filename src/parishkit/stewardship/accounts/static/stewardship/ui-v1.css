@@ -133,7 +133,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 
 /* Cards */
 .panel { background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: clamp(1.1rem, 3vw, 2rem); margin-block: 1.25rem; }
-.panel > :first-child, .notice > :first-child, fieldset > legend + * { margin-top: 0; }
+.panel > :first-child, .notice > :first-child, fieldset > legend + *, fieldset > legend + [hidden] + * { margin-top: 0; }
 .panel > :last-child, .notice > :last-child { margin-bottom: 0; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
@@ -158,7 +158,11 @@ label + .help, label + .helptext { margin-block: -.15rem .5rem; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
 fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; font-size: 1.05rem; }
-fieldset > legend + * { clear: both; }
+/* Every sibling after the floated legend clears it, not just the next one:
+   a hidden element (e.g. an error line) there would otherwise leave the
+   first visible row flowing beside the float, so a checkbox label's text
+   dropped below its absolutely positioned box. */
+fieldset > legend ~ * { clear: both; }
 fieldset.panel > legend { font-size: 1.3rem; font-weight: 650; }
 input, textarea, select, button { font: inherit; max-width: 100%; }
 input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select { display: block; width: 100%; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: inset 0 1px 2px rgb(16 24 40 / 6%); transition: border-color .15s, box-shadow .15s; }

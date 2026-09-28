@@ -95,6 +95,22 @@ def public_help(service, slot):
     return _page(configuration, definition, slot, "").content
 
 
+def family_portal_title(service):
+    """Title the Family form with the campaign's configured name.
+
+    Admins set that name in Campaign settings (e.g. "Stewardship 2027"), so
+    Families see something meaningful instead of a generic heading. Without a
+    current campaign the parish name is used, then a neutral fallback.
+    """
+    configuration = coherent_configuration(service.store)
+    campaign = configuration.current_campaign
+    name = campaign.active_configuration.name if campaign is not None else ""
+    if name:
+        return name
+    parish = getattr(configuration.active_configuration, "parish", None)
+    return parish.name if parish is not None and parish.name else _("Stewardship")
+
+
 def family_login_title(service):
     """Title the Family sign-in page by what the current campaign collects.
 
