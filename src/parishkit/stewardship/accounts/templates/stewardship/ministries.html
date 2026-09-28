@@ -17,7 +17,7 @@
 {% for ministry in ministries %}
 <section class="panel" aria-labelledby="ministry-{{ ministry.duid }}">
   <h2 id="ministry-{{ ministry.duid }}">{{ ministry.name }}</h2>
-  <p>DUID: {{ ministry.duid|number }} · {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
+  <p>DUID: {{ ministry.duid|duid }} · {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
   <p>{% if ministry.included %}{% translate "Selected for the current campaign" %}{% else %}{% translate "Not selected for the current campaign" %}{% endif %}</p>
   <form method="post">
     {% csrf_token %}

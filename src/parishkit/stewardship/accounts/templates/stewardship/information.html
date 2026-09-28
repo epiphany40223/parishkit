@@ -9,7 +9,7 @@
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and campaign selection" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated. You may read admitted history, but follow-up edits are unavailable." %}</p>{% endif %}
 {% if item %}
-<h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|number }}</h2>
+<h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|duid }}</h2>
 <p>{{ item.disposition_label }}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
 <div>{{ item.text|linebreaksbr }}</div>
 {% if item.replacement_id %}<p><a href="{% url 'admin:information_item' campaign_id item.replacement_id %}">{% translate "Open the replacement request" %}</a></p>{% endif %}
@@ -65,7 +65,7 @@
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Additional-information results' %}"><table>
 <caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Submitted" %}</th><th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
-{% for row in rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|number }}</td>
+{% for row in rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.disposition_label }}{% if row.previously_reported %}<br>{% translate "Previously emailed" %}{% endif %}</td><td>{{ row.text|truncatechars:240 }}</td>
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching requests." %}</td></tr>{% endfor %}</tbody></table></div>

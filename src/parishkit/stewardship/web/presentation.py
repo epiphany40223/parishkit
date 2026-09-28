@@ -37,6 +37,24 @@ def number(value):
     return format(value, ",f") if isinstance(value, Decimal) else format(value, ",d")
 
 
+def duid(value):
+    """Show a ParishSoft identifier exactly as ParishSoft does, never grouped.
+
+    DUIDs (Family, Member, Ministry, Fund, ...) are identifiers, not counts,
+    so thousands separators would only make them harder to match and search.
+    ParishSoft Family IDs may be negative, so a leading minus is kept.
+    """
+    if type(value) is int:
+        return str(value)
+    if (
+        type(value) is str
+        and value.removeprefix("-").isascii()
+        and value.removeprefix("-").isdecimal()
+    ):
+        return value
+    raise ValueError("A DUID must be an exact integer.")
+
+
 def usd(value):
     """Use the canonical cents value, including source adjustments below zero."""
     if not isinstance(value, Money):

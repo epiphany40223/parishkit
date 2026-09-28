@@ -35,7 +35,7 @@
 <caption>{% translate "Family codes, email availability and current campaign response" %}</caption>
 <thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Manual code" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Campaign response" %}</th><th scope="col">{% translate "Contact details" %}</th></tr></thead>
 <tbody>{% for row in rows %}<tr>
-<td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid|number }}</td>
+<td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
 <td>{% if row.code %}<code>{{ row.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 <td>{{ row.reason_label }}<br>{% translate "Eligible email:" %} {% if row.email_eligible %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
 <td>{% if row.responded %}{% translate "Responded" %}{% else %}{% translate "Not yet responded" %}{% endif %}</td>

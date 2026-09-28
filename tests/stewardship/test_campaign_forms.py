@@ -184,9 +184,9 @@ def test_confirmation_values_use_names_not_storage_repr():
     )
     assert (
         display_value("ministry_duids", [1234], ministries=[("1234", "Choir")])
-        == "Choir (DUID 1,234)"
+        == "Choir (DUID 1234)"
     )
-    assert display_value("ministry_duids", [1234]) == "Unavailable (DUID 1,234)"
+    assert display_value("ministry_duids", [1234]) == "Unavailable (DUID 1234)"
     assert display_value("ministry_duids", []) == "None"
     assert display_value("content_versions", {"welcome": str(uuid4())}) == "Welcome"
     assert display_value("content_versions", {}) == "None"

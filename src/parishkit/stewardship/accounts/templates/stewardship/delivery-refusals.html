@@ -11,7 +11,7 @@
 </form>
 {% for refusal in refusals %}<section class="panel">
   <h2><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></h2>
-  <p>{% translate "Family DUID:" %} {{ refusal.family_duid|number }}</p>
+  <p>{% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
   <p>{% translate "Refused at:" %} <time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></p>
   <p>{% translate "Refusal ID:" %} {{ refusal.id }}</p>
 </section>{% empty %}<p>{% translate "No unresolved refusals match this view." %}</p>{% endfor %}

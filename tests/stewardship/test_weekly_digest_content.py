@@ -51,7 +51,7 @@ def test_weekly_retains_identities_corrections_and_explicit_timezone():
     result = render()
     for body in (result.html, result.text):
         for required in (
-            "Family DUID 1,234",
+            "Family DUID 1234",
             "Please call us.",
             "2026-11-02T00:15:00-05:00",
             "America/New_York",
@@ -151,7 +151,7 @@ def test_reference_family_volume_has_every_identity_and_usa_counts():
     assert "New actionable requests: 5,000." in result.text
     assert result.html.count("/items/") == 5000
     assert result.text.count("/items/") == 5000
-    assert "Family DUID 5,000" in result.text
+    assert "Family DUID 5000" in result.text
     validate_weekly_body(result.html, result.text)
 
 

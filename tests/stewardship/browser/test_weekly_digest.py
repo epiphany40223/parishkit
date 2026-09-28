@@ -20,7 +20,9 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
         "link", name="Open full captured request and current status"
     ).click()
     assert page.get_by_role("heading", name="Full text at capture").is_visible()
-    assert "1,234,567" in page.locator("main").inner_text()
+    # The Family DUID is an identifier, shown without grouping.
+    assert "1234567" in page.locator("main").inner_text()
+    assert "1,234,567" not in page.locator("main").inner_text()
     assert "Superseded by a later response" in page.locator("main").inner_text()
     assert (
         "<script>not executable</script>"

@@ -199,7 +199,7 @@ def render_weekly_digest(document, *, public_origin):
         for row in rows:
             family_name = " ".join(row.family_name.split())
             identity = (
-                f"{family_name} — Family DUID {row.family_duid:,}; submitted "
+                f"{family_name} — Family DUID {row.family_duid}; submitted "
                 + row.submitted_at.astimezone(zone).isoformat()
             )
             detail = (

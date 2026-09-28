@@ -2,6 +2,8 @@
 
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.presentation import duid
+
 LABELS = {
     "name": _("Campaign name"),
     "year_label": _("Stewardship year label"),
@@ -36,7 +38,7 @@ def _choices(ids, choices):
         _("%(name)s (DUID %(duid)s)")
         % {
             "name": names.get(str(key), _("Unavailable")),
-            "duid": f"{key:,}",
+            "duid": duid(key),
         }
         for key in ids
     ) or str(_("None"))
