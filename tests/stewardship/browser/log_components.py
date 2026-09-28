@@ -65,6 +65,10 @@ def components(context, admin):
     audit[1]["actor"] = None
     for row in operational:
         row["actor"] = None
+    # The first operational entry was recorded by a background worker whose
+    # task is its subject, as task entries are; the view marks both.
+    operational[0]["actor_id"] = UUID(int=900)
+    operational[0]["actor_worker"] = True
 
     def page(query, rows, following):
         """Render the production context builder's output, as the view does."""

@@ -310,7 +310,8 @@ viewer may open:
 - **Parish and integrations**: Parish settings, Parish logos, Integrations and
   Ministry activity.
 - **Users**: Portal users.
-- **System**: Background work, Outgoing mail, Active Families and System logs.
+- **System**: Background work, Outgoing mail, Families on the form now and
+  System logs.
 
 Entries use the same capability checks as the pages they open, and a section
 with no visible entry is omitted; the menu is not the security boundary. The
@@ -341,7 +342,7 @@ filters. Only lists whose query strings carry no private values use them;
 report views that hold filters in POST state keep their own paging.
 
 Lists read straight from a growing database table (Background work, Outgoing
-mail, Refused addresses, Active Families, Testing Families, Family link
+mail, Refused addresses, Families on the form now, Testing Families, Family link
 preparation and Family campaign codes) page on the server without counting
 every matching row: each page reads one extra row to learn whether a next page
 exists. Their navigator therefore shows the rows on the page but no total or
@@ -358,9 +359,11 @@ controls also work without script.
 
 Admins have two always-visible indicators:
 
-- **Active Families**: count of Family sessions with a heartbeat within the
-  last 90 seconds. Detail lists Family display name, DUID, start time, last
-  activity, and form section; it never shows answers or credentials.
+- **Families on the form now**: count of Family sessions with a heartbeat
+  within the last 90 seconds, that is, Families with the form open in their
+  browser; a Family that signed in but closed the form is not counted. Detail
+  lists Family display name, DUID, start time, last activity, and form
+  section; it never shows answers or credentials.
 - **Background work**: count/state of queued and running task runs. Detail shows
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
   sanitized status, and links to completed/failed records. A distinct Admin-only
@@ -375,6 +378,10 @@ request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
 heartbeats identify abandoned runs; recovery behavior is task-specific.
 Family heartbeat and Admin background-indicator polling are presence-only
 requests: neither refreshes the authenticated session's idle-expiry timestamp.
+When the Admin session has ended, an indicator poll is refused and the page
+stops polling rather than repeating the refused request. Any Admin request made
+without a current session is refused with a plain explanation that the sign-in
+has ended and a link to sign in again, never a missing-capability message.
 The distinct Family activity-keepalive behavior is defined by the
 [session policy](../architecture/spec.md#identity-and-session-security); it does
 not affect presence semantics or carry form answers.
@@ -1131,7 +1138,12 @@ Only Admins access the combined log screen. It supports:
 - operational/audit source, action/type, campaign, entity, actor, task/request
   correlation, text, date range, and level filters;
 - full-text search over approved indexed fields, never credentials;
-- before/after detail for audit events; and
+- before/after detail for audit events;
+- a plain-language explanation beside each entry's stored type, and an actor
+  column that names portal users by address, background worker processes as
+  "Background worker", and any other identity as a service or former user;
+- a "Show related entries" action that filters by the entry's correlation
+  identifier, and a link from each task entry to its background task page; and
 - text or structured JSONL export of the filtered result.
 
 Ministry filtering includes both interactive event identifiers and the

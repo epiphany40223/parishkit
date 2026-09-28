@@ -209,3 +209,36 @@ def test_merge_is_newest_first_across_sources_with_a_stable_cursor():
     whole = operational(NOW.replace(microsecond=0))
     _, cursor = merge([whole, *older], [], size=1)
     assert cursor["before"] == "2026-09-20T12:00:00.000000+00:00"
+
+
+def test_every_row_explains_its_type_in_plain_words():
+    """Known types have a sentence; an unknown type still reads as words."""
+    from parishkit.stewardship.audit.log_descriptions import describe
+
+    assert str(describe("task_claim")) == "A background worker started a task."
+    assert describe("some_new_event") == "Some new event."
+    row = operational_row(
+        {
+            "id": uuid4(),
+            "created_at": NOW,
+            "level": "CRITICAL",
+            "event": "source_refresh_invalid",
+            "actor_id": None,
+            "correlation_id": uuid4(),
+            "context": {},
+        }
+    )
+    assert "previous data was kept" in str(row["description"])
+    row = audit_row(
+        {
+            "id": uuid4(),
+            "created_at": NOW,
+            "event_type": "admin_login",
+            "actor_id": None,
+            "correlation_id": uuid4(),
+            "campaign_reference": None,
+            "subject_id": None,
+            "auditcontext__context": None,
+        }
+    )
+    assert "signed in with Google" in str(row["description"])

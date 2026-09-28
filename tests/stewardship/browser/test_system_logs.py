@@ -35,6 +35,8 @@ def test_logs_mobile_keyboard_and_accessibility(
             == []
         )
     page.goto(component_origin + "/logs")
+    # Worker processes are named as such, not as an unknown person.
+    visible(page.get_by_role("cell", name="Background worker", exact=False).first)
     # Severity is a word beside its symbol, so it never depends on color.
     for word in ("Debug", "Information", "Warning", "Error"):
         assert page.locator(".log-level", has_text=word).count() == 1
@@ -64,7 +66,12 @@ def test_logs_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/logs-older")
     assert page.get_by_role("button", name="Back to the newest entries").count() == 1
     departed = page.get_by_role("row", name="admin_login", exact=False)
-    assert departed.get_by_text("Not a current portal user", exact=False).count() == 1
+    assert (
+        departed.get_by_text("Service, or a former portal user", exact=False).count()
+        == 1
+    )
+    assert departed.get_by_text("An Administrator or Staff member signed in").count()
+    assert departed.get_by_role("button", name="Show related entries").count() == 1
     page.goto(component_origin + "/logs-empty")
     visible(page.get_by_text("No matching entries.", exact=True))
     page.goto(component_origin + "/logs-error-400")
