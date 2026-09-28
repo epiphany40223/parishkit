@@ -6,6 +6,8 @@ import psycopg
 import pytest
 from django.db import connection
 
+from parishkit.stewardship.accounts import schedule_views
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
@@ -331,15 +333,7 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
     data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
-    settings = connection.settings_dict
-    with psycopg.connect(
-        host=settings["HOST"],
-        port=settings["PORT"],
-        user=settings["USER"],
-        password=settings["PASSWORD"],
-        dbname=settings["NAME"],
-        autocommit=True,
-    ) as holder:
+    with other_session() as holder:
         holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
         with connection.cursor() as cursor:
             cursor.execute("SET statement_timeout = '3s'")
@@ -348,7 +342,9 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
                 "/admin/",
                 "/admin/users",
                 path,
+                f"/admin/campaign/{campaign.pk}/settings",
                 f"/admin/campaign/{campaign.pk}/content",
+                f"/admin/campaign/{campaign.pk}/content/email/initial",
             ):
                 assert browser.get(url).status_code == 200, url
             assert post(browser, path, data).status_code == 503
@@ -357,3 +353,44 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
                 cursor.execute("RESET statement_timeout")
     # Once the writer releases the lock the same preview renders normally.
     assert post(browser, path, data).status_code == 200
+
+
+def other_session():
+    """A second autocommit session, as a concurrent writer really arrives."""
+    settings = connection.settings_dict
+    return psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        dbname=settings["NAME"],
+        autocommit=True,
+    )
+
+
+def test_access_revoked_while_a_read_page_renders_is_refused(
+    auth_service, google, monkeypatch
+):
+    """A read-only snapshot cannot hide a revocation committed during the read.
+
+    Another session disables the Administrator after the page's snapshot has
+    begun; the access recheck runs after the snapshot ends and must refuse.
+    """
+    store = auth_service.store
+    _, path = setup(store)
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org")
+    genuine = schedule_views._page
+
+    def revoking(*args, **kwargs):
+        """Render as usual while a concurrent session disables the reader."""
+        with other_session() as other:
+            other.execute(
+                "UPDATE stewardship_portal_user SET disabled=true, "
+                "version=version+1 WHERE id=%s",
+                [admin.pk],
+            )
+        return genuine(*args, **kwargs)
+
+    monkeypatch.setattr(schedule_views, "_page", revoking)
+    assert browser.get(path).status_code == 403

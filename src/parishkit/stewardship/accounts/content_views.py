@@ -367,13 +367,15 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         started=start,
                     )
                 )
-            if not allows(
-                authenticated_admin(request, store=service.store, read_only=True),
-                Capability.CONFIGURE,
-            ):
-                raise PermissionError("Content access was revoked.")
-            response["Cache-Control"] = "no-store"
-            return response
+        # Recheck access after the observation ends, so a GET's read-only
+        # snapshot cannot hide a revocation committed while it rendered.
+        if not allows(
+            authenticated_admin(request, store=service.store, read_only=True),
+            Capability.CONFIGURE,
+        ):
+            raise PermissionError("Content access was revoked.")
+        response["Cache-Control"] = "no-store"
+        return response
     except (
         ConfigError,
         DatabaseError,
