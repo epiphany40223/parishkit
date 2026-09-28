@@ -218,17 +218,13 @@ class Migration(migrations.Migration):
                                 editable=False,
                             ),
                         ),
-                        (
-                            "acknowledged_through",
-                            parishkit.stewardship.storage.UTCDateTimeField(),
-                        ),
+                        ("log_id", models.UUIDField()),
                     ],
                     options={
                         "db_table": "stewardship_critical_event_ack",
-                        "indexes": [
-                            models.Index(
-                                fields=["acknowledged_through"],
-                                name="critical_ack_through",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=["log_id"], name="critical_ack_log"
                             )
                         ],
                     },

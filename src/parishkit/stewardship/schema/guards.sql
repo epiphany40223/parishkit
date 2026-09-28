@@ -88,6 +88,10 @@ ALTER TABLE ONLY public.stewardship_content_version
 ALTER TABLE ONLY public.stewardship_credential_consumer_ack
     ADD CONSTRAINT credential_ack_consumer_once UNIQUE (request_id, consumer);
 
+-- CONSTRAINT: stewardship_critical_event_ack critical_ack_log
+ALTER TABLE ONLY public.stewardship_critical_event_ack
+    ADD CONSTRAINT critical_ack_log UNIQUE (log_id);
+
 -- CONSTRAINT: stewardship_daily_fact daily_fact_date
 ALTER TABLE ONLY public.stewardship_daily_fact
     ADD CONSTRAINT daily_fact_date UNIQUE (fact_set_id, local_date);
@@ -1126,9 +1130,6 @@ CREATE UNIQUE INDEX campaign_one_work_gate ON public.stewardship_campaign_work_g
 
 -- INDEX: chair_review_open_assignment
 CREATE UNIQUE INDEX chair_review_open_assignment ON public.stewardship_chair_review USING btree (assignment_record_id) WHERE (closed_by_id IS NULL);
-
--- INDEX: critical_ack_through
-CREATE INDEX critical_ack_through ON public.stewardship_critical_event_ack USING btree (acknowledged_through);
 
 -- INDEX: config_request_patch_lookup
 CREATE INDEX config_request_patch_lookup ON public.stewardship_config_request USING gin (patch jsonb_path_ops);

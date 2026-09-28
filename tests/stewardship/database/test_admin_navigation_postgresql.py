@@ -209,7 +209,7 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
     browser, _ = signed_in()
     for path in ("/admin/", "/admin/background", "/admin/configuration/parish"):
         response = browser.get(path)
-        assert b"Critical events recorded in the past 24 hours:" in response.content
+        assert b"Critical problems in the past 24 hours" in response.content
     store = auth_service.store
     change(
         store,
@@ -225,4 +225,4 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    assert b"Critical events recorded" not in browser.get("/admin/").content
+    assert b"Critical problems" not in browser.get("/admin/").content

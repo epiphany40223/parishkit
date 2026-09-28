@@ -8,6 +8,7 @@ from django.db import transaction
 from parishkit.stewardship.audit.models import (
     AuditEvent,
     CriticalEventAcknowledgement,
+    OperationalLog,
 )
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.observability import Event
@@ -39,9 +40,7 @@ def acknowledge(browser):
 
 def audits():
     """How many acknowledgements the audit log holds."""
-    return AuditEvent.objects.filter(
-        event_type="critical_events_acknowledged"
-    ).count()
+    return AuditEvent.objects.filter(event_type="critical_events_acknowledged").count()
 
 
 def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
@@ -62,7 +61,7 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
     assert ROUTE in page and 'name="critical" value="yes"' in page
     response = acknowledge(browser)
     assert response.status_code == 302 and response["Location"] == "/admin/"
-    assert CriticalEventAcknowledgement.objects.count() == 1
+    assert CriticalEventAcknowledgement.objects.count() == 3
     assert audits() == 1
     event = AuditEvent.objects.get(event_type="critical_events_acknowledged")
     assert event.auditcontext.context == {"outcome": "succeeded", "count": 3}
@@ -72,12 +71,49 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
     assert BANNER not in home(other)
     # Nothing new to acknowledge records nothing.
     assert acknowledge(other).status_code == 302
-    assert CriticalEventAcknowledgement.objects.count() == 1 and audits() == 1
+    assert CriticalEventAcknowledgement.objects.count() == 3 and audits() == 1
     # A newer CRITICAL event brings the banner back, naming only itself.
     critical(Event.TASK_FAILED)
     page = home(other)
     assert BANNER in page and "Background task failed" in page
     assert "ParishSoft data refresh failed" not in page
+    assert acknowledge(other).status_code == 302
+    assert BANNER not in home(other)
+    # A row a long transaction inserted before the acknowledgement but
+    # committed after it (an earlier created_at) still reaches the banner.
+    earliest = OperationalLog.objects.filter(level="CRITICAL").earliest("created_at")
+    with transaction.atomic():
+        OperationalLog.objects.create(
+            level="CRITICAL",
+            event=Event.FACT_DRIFT.value,
+            schema="exception",
+            context={},
+            created_at=earliest.created_at,
+        )
+    page = home(other)
+    assert BANNER in page and "Report figures did not verify" in page
+
+
+def test_banner_log_link_lists_the_critical_entries(auth_service, google):
+    """The banner's System logs form is accepted and shows the CRITICAL rows."""
+    browser, login = signed_in()
+    assert login.status_code == 302
+    critical(Event.SOURCE_INVALID)
+    page = home(browser)
+    start = page.split('name="start" value="', 1)[1].split('"', 1)[0]
+    with web():
+        response = browser.post(
+            "/admin/logs",
+            {
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+                "applied": "yes",
+                "critical": "yes",
+                "source": "operational",
+                "start": start,
+            },
+        )
+    assert response.status_code == 200
+    assert Event.SOURCE_INVALID.value in response.content.decode()
 
 
 def test_acknowledgement_needs_an_administrator_and_post(

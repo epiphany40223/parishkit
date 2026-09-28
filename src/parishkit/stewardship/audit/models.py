@@ -7,7 +7,7 @@ not enabled by this foundation.
 
 from django.db import models
 
-from parishkit.stewardship.storage import ImmutableRecord, UTCDateTimeField
+from parishkit.stewardship.storage import ImmutableRecord
 
 
 class AuditEvent(ImmutableRecord):
@@ -85,18 +85,19 @@ class OperationalLog(ImmutableRecord):
 
 
 class CriticalEventAcknowledgement(ImmutableRecord):
-    """An Administrator's shared acknowledgement of recent CRITICAL events.
+    """An Administrator's shared acknowledgement of one CRITICAL log entry.
 
-    The Admin banner counts CRITICAL operational log rows newer than the latest
-    acknowledgement, so one acknowledgement hides it for every Admin until a
-    newer CRITICAL event is recorded. Rows are append-only history; the actor
-    and time come from the record itself and its audit event.
+    The Admin banner counts recent CRITICAL operational log rows that have no
+    acknowledgement, so acknowledging hides them for every Admin, while any
+    other CRITICAL row, including one committed after the acknowledgement by a
+    long-running transaction, still appears. Rows are append-only history; the
+    actor and time come from the record itself and its audit event.
     """
 
-    acknowledged_through = UTCDateTimeField()
+    log_id = models.UUIDField()
 
     class Meta:
         db_table = "stewardship_critical_event_ack"
-        indexes = [
-            models.Index(fields=["acknowledged_through"], name="critical_ack_through")
+        constraints = [
+            models.UniqueConstraint(fields=["log_id"], name="critical_ack_log")
         ]

@@ -784,7 +784,7 @@ CREATE TABLE public.stewardship_critical_event_ack (
     created_at timestamp with time zone DEFAULT statement_timestamp() NOT NULL,
     actor_id uuid,
     correlation_id uuid NOT NULL,
-    acknowledged_through timestamp with time zone NOT NULL
+    log_id uuid NOT NULL
 );
 
 -- TABLE: stewardship_daily_fact

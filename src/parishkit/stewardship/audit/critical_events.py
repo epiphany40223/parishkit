@@ -1,16 +1,16 @@
 """The Admin critical-events banner: plain-language summary and shared acknowledgement.
 
 CRITICAL operational log rows from the last day are grouped by event for the
-banner. An Administrator's acknowledgement records the newest acknowledged
-CRITICAL instant, so the banner stays hidden for every Admin until a newer
-CRITICAL event is recorded. Acknowledging changes no log row; it only records
-who saw what, with its audit event, in the same transaction.
+banner. An Administrator's acknowledgement records each CRITICAL row the banner
+counts at that moment, so they stay hidden for every Admin while any other
+CRITICAL row, including one committed later by a long-running transaction,
+appears. Acknowledging changes no log row; it only records who saw what, with
+its audit event, in the same transaction.
 """
 
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Max
 
 from parishkit.stewardship.observability import Event
 
@@ -56,31 +56,32 @@ def summary(counts):
 
 
 def acknowledge(actor_id, *, since, parish_id):
-    """Acknowledge every CRITICAL event the banner currently counts.
+    """Acknowledge every CRITICAL row the banner currently counts.
 
-    Returns how many events were acknowledged; zero records nothing. The
-    acknowledgement covers events up to the newest one visible now, so an
-    event recorded afterwards makes the banner reappear.
+    Returns how many rows were acknowledged; zero records nothing. A row that
+    another Administrator acknowledged concurrently is skipped by its unique
+    log reference rather than refused, so both requests succeed.
     """
     with transaction.atomic():
-        previous = CriticalEventAcknowledgement.objects.aggregate(
-            through=Max("acknowledged_through")
-        )["through"]
-        pending = OperationalLog.objects.filter(level="CRITICAL", created_at__gte=since)
-        if previous is not None:
-            pending = pending.filter(created_at__gt=previous)
-        observed = pending.aggregate(through=Max("created_at"))["through"]
-        if observed is None:
+        pending = list(
+            OperationalLog.objects.filter(level="CRITICAL", created_at__gte=since)
+            .exclude(id__in=CriticalEventAcknowledgement.objects.values("log_id"))
+            .values_list("id", flat=True)
+        )
+        if not pending:
             return 0
-        count = pending.filter(created_at__lte=observed).count()
-        CriticalEventAcknowledgement.objects.create(
-            acknowledged_through=observed, actor_id=actor_id
+        CriticalEventAcknowledgement.objects.bulk_create(
+            [
+                CriticalEventAcknowledgement(log_id=log_id, actor_id=actor_id)
+                for log_id in pending
+            ],
+            ignore_conflicts=True,
         )
         record_action(
             Action.CRITICAL_EVENTS_ACKNOWLEDGED,
             actor_kind=ActorKind.PORTAL_USER,
             actor_id=actor_id,
             parish_id=parish_id,
-            context={"outcome": Outcome.SUCCEEDED, "count": count},
+            context={"outcome": Outcome.SUCCEEDED, "count": len(pending)},
         )
-    return count
+    return len(pending)

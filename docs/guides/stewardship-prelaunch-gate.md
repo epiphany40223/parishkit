@@ -252,17 +252,18 @@ The owner-approved 60-minute Admin inactivity limit then changed the idle
 interval in the setup, test-mail, delivery-control, go-live and Production
 guards that check a live Admin session (Functions digest only).
 The critical-events banner acknowledgement (#131) then added one append-only
-table, `stewardship_critical_event_ack`, with its immutability trigger and
+table, `stewardship_critical_event_ack` (one row per acknowledged CRITICAL
+log entry, unique by log reference), with its immutability trigger and
 function. Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
-| Relations | 220 | `d14ef15b` |
-| Columns | 2440 | `a87bd7ed` |
-| Constraints | 3372 | `5c14425f` |
-| Indexes | 999 | `9f55af14` |
-| Functions | 596 | `ae5d200f` |
-| Triggers | 550 | `d0c71f08` |
+| Relations | 221 | `bbc9571a` |
+| Columns | 2445 | `9c812290` |
+| Constraints | 3378 | `544f9af1` |
+| Indexes | 1002 | `84be1b66` |
+| Functions | 597 | `ecfab563` |
+| Triggers | 551 | `30b4c2c2` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

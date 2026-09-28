@@ -59,21 +59,22 @@ def alert_counts(since):
     """Read independent indexed warning totals in one Admin-shell round trip.
 
     Returns ``({event: count}, delivery_unknown)``. CRITICAL operational events
-    count only when they are newer than both ``since`` and the latest shared
-    acknowledgement, so an acknowledged banner stays hidden until a newer
-    CRITICAL event arrives. Scalar subqueries avoid multiplying log and outbox
-    rows in a join. The immediate server-rendered warning must also work
-    without browser polling.
+    count when they are newer than ``since`` and have no shared
+    acknowledgement. Matching exact rows rather than a time watermark means a
+    CRITICAL row committed after an acknowledgement by a long transaction still
+    appears. Scalar subqueries avoid multiplying log and outbox rows in a join.
+    The immediate server-rendered warning must also work without browser
+    polling.
     """
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT (SELECT coalesce(jsonb_object_agg(event, total), '{}'::jsonb) "
-            "FROM (SELECT event, count(*) AS total "
-            "FROM stewardship_operational_log "
-            "WHERE level='CRITICAL' AND created_at>=%s AND created_at>"
-            "coalesce((SELECT max(acknowledged_through) "
-            "FROM stewardship_critical_event_ack), '-infinity') "
-            "GROUP BY event) AS grouped), "
+            "FROM (SELECT log.event, count(*) AS total "
+            "FROM stewardship_operational_log AS log "
+            "WHERE log.level='CRITICAL' AND log.created_at>=%s AND NOT EXISTS "
+            "(SELECT 1 FROM stewardship_critical_event_ack AS ack "
+            "WHERE ack.log_id=log.id) "
+            "GROUP BY log.event) AS grouped), "
             "(SELECT count(*) FROM stewardship_outbox_message "
             "WHERE state='delivery_unknown' AND purpose=ANY(%s))",
             (since, list(PURPOSES)),
