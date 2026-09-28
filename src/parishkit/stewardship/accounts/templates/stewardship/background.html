@@ -26,9 +26,9 @@
   </tr></thead>
   <tbody>
   {% for task in table.rows %}<tr>
-    <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.name != task.type %}<br><span class="help">{% translate "Task type:" %} <code>{{ task.type }}</code></span>{% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
+    <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}{% if task.name != task.type %}<br><span class="help">{% translate "Task type:" %} <code>{{ task.type }}</code></span>{% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
     <td>{{ task.state }}</td>
-    <td>{{ task.progress.phase }}</td>
+    <td>{{ task.phase_text }}</td>
     <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td>{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
   </tr>{% empty %}<tr><td colspan="5">{% translate "No tasks match this view." %}</td></tr>{% endfor %}
