@@ -32,12 +32,8 @@ from parishkit.stewardship.jobs.family_mail_test_tasks import TASK_TYPE
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
-from parishkit.stewardship.source.family_names import (
-    family_display_name,
-    family_heads_name,
-)
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
-from parishkit.stewardship.source.version_models import SnapshotFamily, SnapshotMember
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import load_preview
 
@@ -136,44 +132,12 @@ def _choice(duid, row, population, current):
 def _family_names(current, duids):
     """Name each requested Family from the current snapshot, in two queries.
 
-    Uses the Family codes directory's rule (``family_heads_name``): the
-    surname, then the active heads of household. A DUID missing from the
-    snapshot gets no name.
+    Uses the Family codes directory's rule (surname, then active heads). A
+    DUID missing from the snapshot gets no name.
     """
-    if current is None or current.snapshot_id is None or not duids:
+    if current is None:
         return {}
-    families = {
-        int(row.source_key): row.payload.payload
-        for row in SnapshotFamily.objects.filter(
-            snapshot_id=current.snapshot_id,
-            source_key__in=[str(duid) for duid in duids],
-        ).select_related("payload")
-    }
-    head_keys = {
-        str(head)
-        for values in families.values()
-        for head in values.get("active_head_duids") or ()
-    }
-    members = {
-        row.source_key: row.payload.payload
-        for row in SnapshotMember.objects.filter(
-            snapshot_id=current.snapshot_id, source_key__in=head_keys
-        ).select_related("payload")
-    }
-    names = {}
-    for duid, values in families.items():
-        heads = []
-        for head in sorted(values.get("active_head_duids") or (), key=int):
-            member = members.get(str(head))
-            if member is None:
-                continue
-            first = (member.get("firstName") or "").strip()
-            last = (member.get("lastName") or "").strip()
-            heads.append(
-                {"first": first, "last": last, "name": f"{first} {last}".strip()}
-            )
-        names[duid] = family_heads_name(family_display_name(values, "Family"), heads)
-    return names
+    return snapshot_family_names(current.snapshot_id, duids, "Family")
 
 
 def _template_in_schedule(campaign_id, revision_id):

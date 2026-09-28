@@ -26,9 +26,8 @@ from parishkit.stewardship.campaigns.credential_models import (
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
-from parishkit.stewardship.source.version_models import SnapshotFamily
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import window_table
@@ -121,7 +120,7 @@ def visible_sessions(configuration, instant):
 
 
 def _names(configuration, rows):
-    """Resolve names only, from one current snapshot in the configured tenant."""
+    """Name each listed Family from one current snapshot in the configured tenant."""
     current = SourceCurrent.objects.first()
     organization = next(
         (
@@ -139,14 +138,11 @@ def _names(configuration, rows):
         or str(current.organization_id) != organization
     ):
         return {}
-    duids = [str(row.family.family_duid) for row in rows]
-    result = {}
-    for record in SnapshotFamily.objects.filter(
-        snapshot_id=current.snapshot_id, source_key__in=duids
-    ).select_related("payload"):
-        value = record.payload.payload
-        result[int(record.source_key)] = family_display_name(value)
-    return result
+    # "Squyres, Tracy and Jeff", as on the Family codes directory; a Family
+    # with no name fields is "Family", as on the send page and directory.
+    return snapshot_family_names(
+        current.snapshot_id, [row.family.family_duid for row in rows], "Family"
+    )
 
 
 @require_safe

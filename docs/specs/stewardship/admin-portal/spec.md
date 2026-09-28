@@ -396,8 +396,10 @@ Admins have two always-visible indicators:
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
-  lists Family display name, DUID, start time, last activity, and form
-  section; it never shows answers or credentials.
+  lists the Family name as on the Family codes directory (surname, then the
+  active heads of household, e.g. "Squyres, Jeff and Tracy"), DUID, start
+  time, last activity, and form section; it never shows answers or
+  credentials.
 - **Background work**: count/state of queued and running task runs. Detail shows
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
   sanitized status, and links to completed/failed records. A distinct Admin-only

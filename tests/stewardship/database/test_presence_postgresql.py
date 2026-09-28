@@ -294,6 +294,10 @@ def test_real_web_grants_support_family_presence_and_admin_names(
         assert beat(family).status_code == 200
         response = admin.get(ADMIN + "?format=json")
         assert response.status_code == 200 and response.json()["count"] == 1
+        # The web role also reads the heads, so the Family is named as on the
+        # Family codes directory: "Surname, Heads" (#232).
+        assert response.json()["sessions"][0]["name"] == "Example, Member"
+        assert b"Example, Member" in admin.get(ADMIN).content
 
 
 def test_header_count_poll_never_fetches_family_names(family_service, google):
@@ -308,7 +312,11 @@ def test_header_count_poll_never_fetches_family_names(family_service, google):
         response = browser.get(ADMIN + "?format=count")
     assert response.status_code == 200 and response.json()["count"] == 1
     assert set(response.json()) == {"count", "as_of"}
-    assert not any("stewardship_source_family" in query["sql"] for query in queries)
+    assert not any(
+        table in query["sql"]
+        for query in queries
+        for table in ("stewardship_source_family", "stewardship_source_member")
+    )
     assert not any("pg_advisory_xact_lock" in query["sql"] for query in queries)
     assert not AuditEvent.objects.filter(event_type="family_presence_viewed").exists()
     response = browser.get(ADMIN + "?format=json")
