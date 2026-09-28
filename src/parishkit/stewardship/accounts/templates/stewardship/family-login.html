@@ -4,9 +4,9 @@
   instructions the parish configured. Contact details live on the
   access-denied page, where a Family who is stuck actually needs them.
 {% endcomment %}
-{% block title %}{{ login_title }}{% endblock %}
+{% block title %}{{ login_title|default:_("Family login") }}{% endblock %}
 {% block content %}<section class="flow panel">
-  <h1>{{ login_title }}</h1>
+  <h1>{{ login_title|default:_("Family login") }}</h1>
   {% if login_help %}<div class="content-block">{{ login_help|safe }}</div>{% endif %}
   <form method="post" action="/">
     {% csrf_token %}
