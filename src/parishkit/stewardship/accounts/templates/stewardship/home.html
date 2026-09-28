@@ -42,7 +42,4 @@
     <p>{% translate "Latest five failures recorded in the past 24 hours." %}</p>
     <ul>{% for task in dashboard.recent_failures %}<li><a href="{% url 'admin:background_task_page' task.id %}">{{ task.task_type }}</a> — <time datetime="{{ task.updated_at|instant }}" data-local-instant>{{ task.updated_at|instant }}</time></li>{% endfor %}</ul>
   </section>{% endif %}
-  <form method="post" action="{% url 'admin:logout' %}">
-    {% csrf_token %}<button type="submit" class="button-secondary">{% translate "Sign out" %}</button>
-  </form>
 {% endblock %}

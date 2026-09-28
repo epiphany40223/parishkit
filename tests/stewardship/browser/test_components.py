@@ -925,3 +925,28 @@ def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_ori
     expect(current).to_be_hidden()
     menu.click()
     visible(current)
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin, width):
+    """Sign out ends the menu; on phones it sits behind the Menu disclosure."""
+    page.route(
+        "**/admin/logout",
+        lambda route: route.fulfill(content_type="text/html", body="Signed out"),
+    )
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/home")
+    menu = page.get_by_role("navigation", name="Administration")
+    button = menu.get_by_role("button", name="Sign out", exact=True)
+    if width < 900:
+        # Narrow screens collapse the menu until the Admin opens it.
+        page.wait_for_function("!document.querySelector('[data-admin-menu]').open")
+        menu.locator("summary").click()
+    visible(button)
+    assert page.get_by_role("button", name="Sign out", exact=True).count() == 1
+    assert page.get_by_text("Stewardship and census").count() == 0
+    button.focus()
+    with page.expect_request("**/admin/logout") as submitted:
+        button.press("Enter")
+    assert submitted.value.method == "POST"
+    assert set(parse_qs(submitted.value.post_data)) == {"csrfmiddlewaretoken"}

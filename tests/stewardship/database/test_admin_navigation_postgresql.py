@@ -70,6 +70,29 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert AuditEvent.objects.filter(event_type="dashboard_viewed").count() == 1
 
 
+def test_every_admin_page_offers_sign_out_in_the_menu(auth_service, google):
+    """The menu ends with a CSRF-protected Sign out form that ends the session."""
+    store = auth_service.store
+    _, owner, _ = add_draft(store, store.active(), uuid4())
+    browser, _ = signed_in()
+    campaign = owner["id"]
+    for path in ("/admin/", f"/admin/campaign/{campaign}/content", "/admin/logs"):
+        body = browser.get(path).content.decode()
+        menu = body[body.index('aria-label="Administration"') :]
+        menu = menu[: menu.index("</nav>")]
+        assert '<form method="post" action="/admin/logout">' in menu
+        assert 'name="csrfmiddlewaretoken"' in menu and "Sign out" in menu
+        # No page carries the old product footer.
+        assert "Stewardship and census" not in body
+    row = PortalSession.objects.get()
+    response = browser.post(
+        "/admin/logout", {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+    )
+    assert response.status_code == 302
+    row.refresh_from_db()
+    assert row.revoked_at is not None
+
+
 def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     auth_service, google
 ):

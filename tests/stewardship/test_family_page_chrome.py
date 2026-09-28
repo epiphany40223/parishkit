@@ -1,4 +1,4 @@
-"""The Family form's title and the product footer on Family-facing pages."""
+"""The Family form's title, and no product footer on any page."""
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -80,7 +80,7 @@ def test_family_pages_have_no_product_footer(template, context):
     assert FOOTER not in render_to_string(template, context)
 
 
-def test_admin_denial_keeps_the_footer():
-    """Admin sign-in denials keep the product footer."""
+def test_admin_denial_has_no_product_footer():
+    """The footer is gone everywhere, including Admin sign-in denials (#244)."""
     html = render_to_string("stewardship/denied.html", {"retry_path": "/admin/login"})
-    assert FOOTER in html
+    assert FOOTER not in html
