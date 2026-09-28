@@ -281,6 +281,9 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     page.set_viewport_size({"width": 390, "height": 900})
     begin(page, component_origin, paged_form(), None)
     segments = page.locator(".family-track button")
+    # The step bar is built by script; wait for it before counting titles,
+    # or a fast read sees none and expects a one-segment bar.
+    expect(page.locator('[data-step-link="intro"]')).to_be_attached()
     titles = page.locator("[data-step-link]").evaluate_all(
         "rows => rows.map(row => row.textContent)"
     )
