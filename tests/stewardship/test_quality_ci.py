@@ -18,13 +18,25 @@ from parishkit.stewardship.quality_sharding import partition, tree_digest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def partition_indexes(job):
+    """Every partition index the shard matrix runs, in order.
+
+    Each matrix entry names the three partitions its job runs concurrently.
+    """
+    return [
+        entry[slot]
+        for entry in job["strategy"]["matrix"]["include"]
+        for slot in ("first", "second", "third")
+    ]
+
+
 def test_workflow_partition_count_matches_required_combiner():
     """The real matrix and strict coverage receipt count cannot silently drift."""
     import yaml
 
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     shard = jobs["stewardship-postgresql-shard"]
-    indexes = shard["strategy"]["matrix"]["shard"]
+    indexes = partition_indexes(shard)
     assert 1 <= len(indexes) <= 32
     assert indexes == list(range(1, len(indexes) + 1))
     for job, operation in (
