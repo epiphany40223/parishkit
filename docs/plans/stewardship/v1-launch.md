@@ -161,7 +161,7 @@ live database must be upgraded in place instead of reinstalled.
   human decides whether to reinstall the validation deployment or add a
   forward migration. Never delete that deployment's database without the
   human's explicit authorization.
-- **Schema freeze: at the pre-launch gate, no later than September 30, 2026.**
+- **Schema freeze: at the pre-launch gate, no later than Friday, October 2, 2026.**
   The then-current baseline becomes the declared production baseline and must
   not be rewritten afterward, as the
   [schema baseline guide](../../guides/stewardship-schema.md) already requires.
@@ -180,15 +180,16 @@ live database must be upgraded in place instead of reinstalled.
 | --- | --- | --- |
 | Mon 9/21–Tue 9/22 | PR #89 lands; this plan lands; ADM-08.01 | Provision the production host, DNS and TLS; create the Google OAuth client, ParishSoft API key, mail-provider account and optional Slack bot token and channel |
 | Wed 9/23–Thu 9/24 | Production image and service commands, deployment runbook, smoke tools, reduced backup | Install on the production host in Testing mode; run smoke tests; run the setup wizard with real ParishSoft data |
-| Fri 9/25–Tue 9/29 | Validation bug fixes first; pre-launch gate reviews start Sat 9/26; remaining launch runbooks; load check | Staff validate the Family form, content, templates, schedules, reports and Testing-routed mail; finalize campaign content |
-| Tue 9/29 | **Code freeze**: only launch-blocking fixes after this point | Report any launch blockers |
-| Wed 9/30 | Pre-launch gate exits; **schema freeze**; verified backup | Approve the launch and known limitations; final smoke tests |
-| Thu 10/1 | Support activation | **Production activation**: readiness, Testing cleanup, activation; confirm catch-up and the initial-mail schedule |
-| Fri 10/2 | Buffer | Sanity checks |
+| Fri 9/25–Thu 10/1 | Validation bug fixes first; pre-launch gate reviews start Sat 9/26; remaining launch runbooks; load check | Staff validate the Family form, content, templates, schedules, reports and Testing-routed mail; finalize campaign content |
+| Fri 10/2 | **Code freeze** (only launch-blocking fixes after this point); pre-launch gate exits; **schema freeze**; verified backup; support activation | Approve the launch and known limitations; final smoke tests; **Production activation**: readiness, Testing cleanup, activation; confirm catch-up and the initial-mail schedule |
 | **Sat 10/3** | Monitor | **Initial Family emails sent** |
 
+The code freeze, gate exit and schema freeze moved from Tue 9/29–Wed 9/30 to
+Fri 10/2 on 2026-09-27 at the human's direction, which leaves no buffer day
+between activation and the initial emails.
+
 If the pre-launch gate or staff validation finds a launch blocker that cannot
-be fixed by September 30, the human decides between moving the go-live date
+be fixed by October 2, the human decides between moving the go-live date
 and cutting the affected feature. The schedule above assumes roughly the
 delivery rate of the preceding week.
 
