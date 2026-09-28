@@ -161,7 +161,6 @@ def test_worker_receipt_cannot_leave_mail_pending_for_a_live_responder(
             execution = claim_hint(**execution_arguments(demand))
             stage_family_pending(demand, execution.claim, family)
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = False
         assert submit(harness, form, answers).submission is not None
         prefix = harness.campaign.active_configuration_id.hex + ":"
         with (

@@ -36,11 +36,10 @@ def validate_answers(
     inputs,
     *,
     additional_enabled,
-    testing,
     today,
     retained_terminal_members=frozenset(),
 ):
-    """Validate all active Members and explicit test consent without persisting.
+    """Validate all active Members' answers without persisting.
 
     Text limits are part of the server-owned form definition. Known source
     multiple-address email fields remain usable; every nonblank address must
@@ -50,7 +49,6 @@ def validate_answers(
     if (
         not isinstance(inputs, CensusInputs)
         or type(additional_enabled) is not bool
-        or type(testing) is not bool
         or type(today) is not date
         or type(retained_terminal_members) is not frozenset
         or not retained_terminal_members <= {str(key) for key in inputs.member_duids}
@@ -62,7 +60,6 @@ def validate_answers(
         "proposed_members",
         "ministries",
         "additional_information",
-        "testing_acknowledged",
     }
     financial_enabled = "financial" in inputs.modules
     if financial_enabled:
@@ -115,13 +112,6 @@ def validate_answers(
         for item in inputs.fields
         if item.entity == "member"
     }
-    if (
-        type(payload["testing_acknowledged"]) is not bool
-        or payload["testing_acknowledged"] != testing
-    ):
-        errors["testing_acknowledged"] = (
-            "Confirm the displayed response mode before submitting."
-        )
     for identifier in inputs.member_duids:
         key, member = str(identifier), members[str(identifier)]
         if not census:

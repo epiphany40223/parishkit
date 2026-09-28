@@ -296,7 +296,7 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
             browser, response = family_login(code)
             assert response.status_code == 302, response.content
             began = perf_counter()
-            response = post(browser, "/family/form", {"testing_acknowledged": False})
+            response = post(browser, "/family/form", {})
             assert response.status_code == 200, response.content
             form = response.json()["form"]
             submitted = post(

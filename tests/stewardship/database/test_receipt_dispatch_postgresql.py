@@ -27,7 +27,6 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def receipt(harness, *, production=False):
     """Allocate through the actual final Submit owner, never a synthetic outbox."""
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = not production
     row = submit(harness, form, answers).submission
     return OutboxMessage.objects.get(
         pk=SubmissionReceiptOccurrence.objects.get(submission=row).outbox_id
@@ -346,7 +345,6 @@ def test_no_recipient_submission_does_not_prevent_archive(live_response_service)
     data.members[3]["emailAddress"] = ""
     refresh(harness, data)
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     row = submit(harness, form, answers).submission
     occurrence = SubmissionReceiptOccurrence.objects.get(submission=row)
     assert occurrence.disposition == "no_deliverable_recipient"

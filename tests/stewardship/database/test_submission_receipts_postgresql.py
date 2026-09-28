@@ -32,7 +32,6 @@ def test_paused_live_submit_creates_a_held_receipt_atomically(live_response_serv
     control(harness.campaign, "pause")
     with web_login():
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = False
         row = submit(harness, form, answers).submission
     receipt = SubmissionReceiptOccurrence.objects.get(submission=row)
     message = OutboxMessage.objects.get(pk=receipt.outbox_id)
@@ -78,7 +77,6 @@ def test_receipt_is_concrete_private_answer_free_and_exactly_bound(request, fixt
     harness = request.getfixturevalue(fixture)
     with web_login():
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = fixture == "response_service"
         answers["members"]["3"]["first_name"] = "Private answer only"
         answers["family"]["email_opt_out"] = True
         answers["additional_information"] = "Private response text"

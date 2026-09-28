@@ -77,7 +77,6 @@ def test_same_intent_can_carry_verified_review_decision(live_response_service):
     """A revisit carries, but cannot invent, a parish reviewer decision."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Requested name"
     first = submit(harness, form, answers).submission
     with work_transaction():
@@ -138,7 +137,6 @@ def test_live_worker_cannot_use_noncurrent_promoted_source(
     earlier, claim = prepare(response_source())
     promote(earlier, claim, harness.campaign, harness.rings)
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Requested name"
     response = submit(harness, form, answers).submission
     data = response_source()
@@ -250,7 +248,6 @@ def test_terminal_old_intent_starts_from_current_source(live_response_service):
     """A new request cannot inherit an obsolete cancelled comparison baseline."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Requested name"
     first = submit(harness, form, answers).submission
     data = response_source()
@@ -277,7 +274,6 @@ def test_web_cannot_label_a_carried_conflict_pending(
     """Authentic input values still require their actual derived conflict state."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Family edit"
     submit(harness, form, answers)
     data = response_source()

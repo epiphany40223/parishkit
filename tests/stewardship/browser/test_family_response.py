@@ -172,7 +172,7 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
     assert attempts == []
     page.get_by_role("button", name="Begin reviewing").click()
     expect(page.get_by_label("First name (required)")).to_have_value("Alex")
-    assert attempts[0].post_data_json == {"testing_acknowledged": False}
+    assert attempts[0].post_data_json == {}
     assert attempts[0].headers["x-csrftoken"] == "a" * 64
     assert page.locator(":focus").inner_text() == "Welcome"
     page.evaluate(axe_source)
@@ -205,10 +205,8 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
     assert not failures
 
 
-def test_testing_requires_two_independent_unchecked_acknowledgments(
-    page, component_origin
-):
-    """Entry consent cannot become final consent or expose a live submission count."""
+def test_testing_submits_without_acknowledgment_checkboxes(page, component_origin):
+    """The Testing banner is the only mode notice; no checkbox gates entry or Submit."""
     submissions = []
 
     def submit(route):
@@ -216,19 +214,13 @@ def test_testing_requires_two_independent_unchecked_acknowledgments(
         route.fulfill(json={"accepted": True})
 
     attempts = prepare(page, component_origin, testing=True, submit=submit)
+    expect(page.get_by_text("Testing mode:", exact=False).first).to_be_visible()
+    assert page.locator("main input[type=checkbox]:visible").count() == 0
     page.get_by_role("button", name="Continue with test").click()
-    assert not attempts and page.get_by_label("First name (required)").count() == 0
-    show(page, page.locator("#testing-entry-ack")).check()
-    page.get_by_role("button", name="Continue with test").click()
+    expect(page.locator("[data-step-link]").first).to_be_attached()
+    assert attempts[0].post_data_json == {}
     review(page)
-    assert not page.locator("#testing-submit-ack").is_checked()
-    page.get_by_role("button", name="Submit test response").click()
-    assert not submissions
-    show(page, page.locator("#testing-submit-ack")).check()
-    page.get_by_role("button", name="Back to edit").click()
-    review(page)
-    assert not page.locator("#testing-submit-ack").is_checked()
-    show(page, page.locator("#testing-submit-ack")).check()
+    assert page.locator("#family-confirmation input[type=checkbox]").count() == 0
     page.get_by_role("button", name="Submit test response").click()
     expect(
         show(
@@ -241,7 +233,7 @@ def test_testing_requires_two_independent_unchecked_acknowledgments(
             ),
         )
     ).to_be_visible()
-    assert submissions[0]["answers"]["testing_acknowledged"] is True
+    assert "testing_acknowledged" not in submissions[0]["answers"]
     assert (
         "Your campaign response has not been recorded"
         in page.locator("main").inner_text()

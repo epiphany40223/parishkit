@@ -114,7 +114,7 @@ def test_bounded_cleanup_removes_chains_metadata_and_pins_but_keeps_reservations
         answers["members"]["3"]["first_name"] = "Same test update"
         submit(harness, form, answers)
     client, response = login(harness.code)
-    issue_baseline(response.wsgi_request, harness.service, testing_acknowledged=True)
+    issue_baseline(response.wsgi_request, harness.service)
     epoch = invalidate_rehearsal(
         campaign_id=harness.campaign.pk, admit=lambda *args: True
     )
@@ -181,7 +181,6 @@ def test_live_response_deletion_is_never_authorized_by_rehearsal_cleanup(
     live_response_service,
 ):
     form, answers = form_and_answers(live_response_service)
-    answers["testing_acknowledged"] = False
     row = submit(live_response_service, form, answers).submission
     with (
         pytest.raises(IntegrityError, match="immutable"),

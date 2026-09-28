@@ -87,7 +87,6 @@ def test_source_refresh_never_invents_household_values(live_response_service, in
     """Preserve household intent, including an inactive Family's history."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["family"]["home_address"] = address()
     first = submit(harness, form, answers).submission
     data = response_source()

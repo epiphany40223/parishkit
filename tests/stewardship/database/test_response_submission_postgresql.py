@@ -30,7 +30,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def form_and_answers(harness):
     """Use the actual authorized field projection as a browser would receive it."""
-    form = issue_baseline(harness.request, harness.service, testing_acknowledged=True)
+    form = issue_baseline(harness.request, harness.service)
     members = {}
     from parishkit.stewardship.responses.member_census import (
         MEMBER_FIELDS,
@@ -49,7 +49,6 @@ def form_and_answers(harness):
         "proposed_members": {},
         "ministries": {},
         "additional_information": "",
-        "testing_acknowledged": True,
     }
 
 
@@ -121,9 +120,10 @@ def test_changed_response_derives_atomic_field_proposal_not_staff_work_in_test(
     assert not AdditionalInformationItem.objects.exists()
 
 
-def test_final_testing_ack_is_separate_from_entry_ack(response_service):
+def test_stale_tab_sending_retired_testing_ack_must_reload(response_service):
+    """#243 retired the Testing checkbox; an old tab's extra key stores nothing."""
     form, answers = form_and_answers(response_service)
-    answers["testing_acknowledged"] = False
+    answers["testing_acknowledged"] = True
     with pytest.raises(InvalidAnswers):
         submit(response_service, form, answers)
     assert not Submission.objects.exists()
@@ -224,7 +224,6 @@ def test_live_submission_commits_selectors_followup_receipt_and_fact_demand(
     harness = live_response_service
     with web_login() if restricted else nullcontext():
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = False
         answers["additional_information"] = "Please call this household."
         row = submit(harness, form, answers).submission
         assert row.mode == "live"

@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def respond(harness, text, *, live=True):
     """Create a real final submission and its transactionally derived item."""
     form, answers = form_and_answers(harness)
-    answers.update(additional_information=text, testing_acknowledged=not live)
+    answers.update(additional_information=text)
     return submit(harness, form, answers).submission
 
 

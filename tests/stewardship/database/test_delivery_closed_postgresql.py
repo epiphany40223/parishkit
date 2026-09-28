@@ -214,7 +214,7 @@ def submit_while_paused(item, settings, *, text="Please contact us"):
     with web_login():
         browser, response = family_login(code)
         assert response.status_code == 302, response.content
-        response = family_post(browser, "/family/form", {"testing_acknowledged": False})
+        response = family_post(browser, "/family/form", {})
         assert response.status_code == 200, response.content
         form = response.json()["form"]
         answers = answers_for(form) | {"additional_information": text}

@@ -354,7 +354,6 @@ def test_real_submission_suppresses_pending_family_mail(response_service, live):
         first = plan_family(guard, family_id=family_id, worker_id=actor)
         assert first.created == 1
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = not live
         assert submit(harness, form, answers).submission is not None
         result = plan_family(guard, family_id=family_id, worker_id=actor)
         assert result.created == 0 and result.skipped == 1 and result.selected is None

@@ -154,7 +154,6 @@ def test_selection_keeps_same_membership_after_epoch_invalidation(response_servi
 def test_live_response_and_credentials_are_not_cleanup_targets(live_response_service):
     """A populated live campaign is not selectable even with a known campaign UUID."""
     form, answers = form_and_answers(live_response_service)
-    answers["testing_acknowledged"] = False
     response = submit(live_response_service, form, answers).submission
     assert response.mode == "live"
     targets, summary = captured(live_response_service.campaign.pk)
