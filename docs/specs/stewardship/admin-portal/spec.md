@@ -733,8 +733,9 @@ making the `scheduled` state reachable before the start date.
 For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
 to the page **Send this email to chosen Families**: a freshly authenticated
-Administrator enters up to ten Family IDs, reviews each Family's eligibility,
-and confirms that real Family data goes to the Testing recipient. Each eligible
+Administrator enters up to ten Family IDs, reviews each Family's eligibility
+(each reviewed row names the Family as the Family codes directory does, the
+surname then the heads of household), and confirms that real Family data goes to the Testing recipient. Each eligible
 Family's real message for a template its invitation or reminder schedules use is
 prepared with that Family's own Testing credential (reusing the credential
 scheduled Testing mail already issued for that Family, which later scheduled

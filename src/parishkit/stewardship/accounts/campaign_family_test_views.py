@@ -185,6 +185,7 @@ def _page(
             "form": form or FamilyTestForm(),
             "families": [
                 {
+                    "name": choice.name,
                     "duid": choice.duid,
                     "eligible": choice.eligible,
                     "label": REASON_LABELS[choice.reason],
