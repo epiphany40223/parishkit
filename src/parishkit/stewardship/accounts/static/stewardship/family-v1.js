@@ -483,9 +483,12 @@
     });
   }
   function memberEditor(member, index, editor, fields, deferValidation) {
-    const group = node("fieldset", null, editor, {id: "member-section-" + member.id, tabindex: "-1"});
+    // ParishSoft's relationship ("Head", "Spouse") is an internal parish
+    // designation, so Families don't see it; the fieldset groups the Member's
+    // fields for assistive technology without drawing another box.
+    const group = node("fieldset", null, editor, {id: "member-section-" + member.id, tabindex: "-1",
+      class: "member-section"});
     node("legend", memberName(member, index), group, {class: "visually-hidden"});
-    node("p", "Relationship: " + (member.relationship || "Not available in parish records"), group);
     if (member.proposed) {
       node("p", "Proposed addition — parish staff will follow up. This does not automatically create a parish record.", group, {class: "changed"});
       const remove = node("button", "Remove proposed member", group, {type: "button"});
@@ -1484,7 +1487,6 @@
       const panel = node("section", null, root, {class: "panel"});
       node("h3", memberName(member, index), panel);
       editControl(panel, memberName(member, index), "member-section-" + member.id);
-      node("p", "Relationship: " + (member.relationship || "Not available in parish records"), panel);
       if (!member.proposed && requests[member.id]) {
         const request = requests[member.id];
         node("p", request.moved_household ? "Requested change: no longer a member of this household." :

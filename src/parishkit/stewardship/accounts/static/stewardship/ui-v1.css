@@ -370,6 +370,9 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
 .label-row .toggletip-bubble { position: static; flex: 1 0 100%; width: auto; max-width: 40rem; box-shadow: none; }
 
+/* A Member's section groups fields without a second box around them. */
+fieldset.member-section { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }
+
 /* Family response pages: one page at a time with Back/Next navigation. */
 #family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
 .family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
