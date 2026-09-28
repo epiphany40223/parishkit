@@ -118,7 +118,8 @@ def test_financial_validator_requires_unambiguous_trusted_option_identities(opti
     """A malformed server catalog cannot silently overwrite a duplicate option."""
     with pytest.raises(TypeError):
         validate_financial_answers(
-            {"annual_pledge": "0", "frequency": "", "shares": {}}, options
+            {"annual_pledge": "0", "frequency": "", "shares": {}, "cannot_give": False},
+            options,
         )
 
 
@@ -127,7 +128,13 @@ def test_positive_pledge_requires_a_share_method(frequency):
     """A positive pledge needs a frequency and at least one offered share method."""
     with pytest.raises(InvalidFinancialAnswers) as failure:
         validate_financial_answers(
-            {"annual_pledge": "10", "frequency": frequency, "shares": {}}, OPTIONS
+            {
+                "annual_pledge": "10",
+                "frequency": frequency,
+                "shares": {},
+                "cannot_give": False,
+            },
+            OPTIONS,
         )
     assert failure.value.fields == {
         "financial.shares": (
@@ -135,15 +142,32 @@ def test_positive_pledge_requires_a_share_method(frequency):
         )
     }
     assert validate_financial_answers(
-        {"annual_pledge": "10", "frequency": frequency, "shares": {CHECK: ""}}, OPTIONS
-    ) == {"annual_pledge": "10.00", "frequency": frequency, "shares": {CHECK: ""}}
+        {
+            "annual_pledge": "10",
+            "frequency": frequency,
+            "shares": {CHECK: ""},
+            "cannot_give": False,
+        },
+        OPTIONS,
+    ) == {
+        "annual_pledge": "10.00",
+        "frequency": frequency,
+        "shares": {CHECK: ""},
+        "cannot_give": False,
+    }
 
 
 def test_positive_pledge_needs_no_share_method_when_none_are_offered():
     """A campaign offering no share methods cannot require one."""
     assert (
         validate_financial_answers(
-            {"annual_pledge": "10", "frequency": "annual", "shares": {}}, ()
+            {
+                "annual_pledge": "10",
+                "frequency": "annual",
+                "shares": {},
+                "cannot_give": False,
+            },
+            (),
         )["shares"]
         == {}
     )
@@ -153,15 +177,17 @@ def test_positive_pledge_needs_no_share_method_when_none_are_offered():
 def test_zero_pledge_needs_neither_frequency_nor_share_method(pledge):
     """The form hides both for a zero pledge, so the server requires neither."""
     assert validate_financial_answers(
-        {"annual_pledge": pledge, "frequency": "", "shares": {}}, OPTIONS
-    ) == {"annual_pledge": "0.00", "frequency": "", "shares": {}}
+        {"annual_pledge": pledge, "frequency": "", "shares": {}, "cannot_give": False},
+        OPTIONS,
+    ) == {"annual_pledge": "0.00", "frequency": "", "shares": {}, "cannot_give": False}
 
 
 def test_zero_pledge_allows_optional_frequency_and_non_cash_intent():
     """A zero annual amount does not discard supplied valid sharing choices."""
     assert (
         validate_financial_answers(
-            {"annual_pledge": "0", "frequency": "", "shares": {}}, OPTIONS
+            {"annual_pledge": "0", "frequency": "", "shares": {}, "cannot_give": False},
+            OPTIONS,
         )["frequency"]
         == ""
     )
@@ -170,6 +196,7 @@ def test_zero_pledge_allows_optional_frequency_and_non_cash_intent():
             "annual_pledge": "0",
             "frequency": "annual",
             "shares": {OTHER: "  Cafe\u0301 gift  ", CHECK: ""},
+            "cannot_give": False,
         },
         OPTIONS,
     )
@@ -207,6 +234,7 @@ def test_final_financial_errors_use_only_server_known_field_keys(patch, field):
         "annual_pledge": "1",
         "frequency": "annual",
         "shares": {CHECK: ""},
+        "cannot_give": False,
     } | patch
     with pytest.raises(InvalidFinancialAnswers) as failure:
         validate_financial_answers(payload, OPTIONS)
@@ -259,12 +287,15 @@ def test_complete_answer_owner_requires_financial_only_for_enabled_module(
         "proposed_members": {},
         "ministries": {},
         "additional_information": "",
+        "cannot_attend": False,
+        "service": {},
     }
     if include:
         payload["financial"] = {
             "annual_pledge": "12.3",
             "frequency": "annual",
             "shares": {},
+            "cannot_give": False,
         }
     if enabled != include:
         with pytest.raises(InvalidAnswers):
@@ -282,3 +313,38 @@ def test_complete_answer_owner_requires_financial_only_for_enabled_module(
             today=date(2026, 10, 1),
         )
         assert result["financial"]["annual_pledge"] == "12.30"
+
+
+def test_cannot_give_records_a_zero_pledge_without_fields():
+    """ "Cannot contribute" hides the pledge fields; the answer is a bare zero."""
+    for pledge in ("", "0", "0.00"):
+        assert validate_financial_answers(
+            {
+                "annual_pledge": pledge,
+                "frequency": "",
+                "shares": {},
+                "cannot_give": True,
+            },
+            OPTIONS,
+        ) == {
+            "annual_pledge": "0.00",
+            "frequency": "",
+            "shares": {},
+            "cannot_give": True,
+        }
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"annual_pledge": "10"},
+        {"frequency": "annual"},
+        {"shares": {CHECK: ""}},
+        {"cannot_give": "yes"},
+    ],
+)
+def test_cannot_give_rejects_any_pledge_detail(patch):
+    """A hidden pledge, frequency or share method cannot be smuggled through."""
+    payload = {"annual_pledge": "", "frequency": "", "shares": {}, "cannot_give": True}
+    with pytest.raises(InvalidFinancialAnswers):
+        validate_financial_answers(payload | patch, OPTIONS)

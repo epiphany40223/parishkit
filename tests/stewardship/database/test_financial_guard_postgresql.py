@@ -33,6 +33,7 @@ def answer(**changes):
         "annual_pledge": "12.30",
         "frequency": "annual",
         "shares": {CHECK: ""},
+        "cannot_give": False,
         **changes,
     }
 
@@ -105,10 +106,30 @@ def test_sql_rejects_forged_financial_values(changes, annual):
         guard(answer(**changes), annual=annual)
 
 
-@pytest.mark.parametrize("missing", ["annual_pledge", "frequency", "shares"])
+@pytest.mark.parametrize(
+    "missing", ["annual_pledge", "frequency", "shares", "cannot_give"]
+)
 def test_sql_rejects_incomplete_financial_aggregate(missing):
     """Every enabled financial submission must contain all normalized fields."""
     value = answer()
     del value[missing]
     with pytest.raises(IntegrityError, match="Financial"), transaction.atomic():
         guard(value)
+
+
+def test_sql_accepts_cannot_give_only_as_a_bare_zero_pledge():
+    """ "Cannot contribute" hides the pledge fields; SQL rejects any detail too."""
+    zero = {"annual_pledge": "0.00", "frequency": "", "shares": {}}
+    guard(answer(cannot_give=True, **zero), annual=Decimal(0))
+    for changes, annual in (
+        ({"annual_pledge": "12.30", "frequency": "annual"}, Decimal("12.30")),
+        ({"frequency": "annual"}, Decimal(0)),
+        ({"shares": {CHECK: ""}}, Decimal(0)),
+    ):
+        with (
+            pytest.raises(IntegrityError, match="cannot contribute"),
+            transaction.atomic(),
+        ):
+            guard(answer(cannot_give=True, **(zero | changes)), annual=annual)
+    with pytest.raises(IntegrityError, match="Financial"), transaction.atomic():
+        guard(answer(cannot_give="yes", **zero), annual=Decimal(0))

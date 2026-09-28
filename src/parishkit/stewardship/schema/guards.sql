@@ -4259,8 +4259,9 @@ DECLARE
     text_value text;
 BEGIN
     IF jsonb_typeof(answer) IS DISTINCT FROM 'object'
-       OR NOT (answer ?& ARRAY['annual_pledge','frequency','shares'])
-       OR answer-ARRAY['annual_pledge','frequency','shares'] <> '{}'::jsonb
+       OR NOT (answer ?& ARRAY['annual_pledge','frequency','shares','cannot_give'])
+       OR answer-ARRAY['annual_pledge','frequency','shares','cannot_give'] <> '{}'::jsonb
+       OR jsonb_typeof(answer->'cannot_give') IS DISTINCT FROM 'boolean'
        OR jsonb_typeof(answer->'annual_pledge') IS DISTINCT FROM 'string'
        OR answer->>'annual_pledge' !~ '^(0|[1-9][0-9]{0,8})\.[0-9]{2}$'
        OR jsonb_typeof(answer->'frequency') IS DISTINCT FROM 'string'
@@ -4273,6 +4274,11 @@ BEGIN
     IF annual IS DISTINCT FROM (answer->>'annual_pledge')::numeric
        OR (annual>0 AND answer->>'frequency'='') THEN
         RAISE EXCEPTION 'Financial annual pledge or frequency is invalid' USING ERRCODE='23514';
+    END IF;
+    -- "Cannot contribute financially" hides every pledge field on the form.
+    IF answer->'cannot_give'='true'::jsonb
+       AND (annual<>0 OR answer->>'frequency'<>'' OR answer->'shares'<>'{}'::jsonb) THEN
+        RAISE EXCEPTION 'A Family that cannot contribute records no pledge' USING ERRCODE='23514';
     END IF;
     -- A positive pledge names how it will be shared whenever methods exist.
     IF annual>0 AND answer->'shares'='{}'::jsonb AND jsonb_array_length(options)>0 THEN
@@ -4394,8 +4400,9 @@ BEGIN
         OR NEW.family_version <> coalesce(previous_version,0)+1
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
-        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','ministries','additional_information'])
-        OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information','financial'] <> '{}'::jsonb
+        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','ministries','additional_information','cannot_attend','service'])
+        OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information','financial','cannot_attend','service'] <> '{}'::jsonb
+        OR jsonb_typeof(NEW.answers->'cannot_attend') <> 'boolean'
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
         OR jsonb_typeof(NEW.answers->'family') <> 'object'
         OR jsonb_typeof(NEW.answers->'members') <> 'object'
@@ -4529,6 +4536,7 @@ BEGIN
         END LOOP;
     END LOOP;
     PERFORM public.stewardship_ministry_answers_guard_v1(NEW,config_row);
+    PERFORM public.stewardship_service_answers_guard_v1(NEW,config_row);
     IF (NEW.answers#>>'{family,mailing_same_as_home}')::boolean
        AND (NEW.answers#>'{family,home_address}'='null'::jsonb
             OR public.stewardship_response_comparison_v1('home_address',NEW.answers#>'{family,home_address}')
@@ -5194,6 +5202,99 @@ BEGIN
                     END IF;
                 END LOOP;
             END LOOP;
+        END LOOP;
+    END LOOP;
+END;
+$$;
+
+-- Built-in Member talents used by a campaign that never edited its list.
+-- Must match responses.service.DEFAULT_TALENTS (a unit test compares them).
+CREATE FUNCTION public.stewardship_talent_defaults_v1() RETURNS jsonb
+    LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT '[{"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a01","label":"Painter","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a02","label":"Florist","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a03","label":"Seamstress","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a04","label":"Carpenter","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a05","label":"Attorney","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a06","label":"Gardener","free_text":false},
+             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a07","label":"Other","free_text":true}]'::jsonb
+$$;
+
+-- Per-Member talents and "cannot participate in any ministries". Identities
+-- match the Ministry answer exactly; a Member who cannot participate stops
+-- every current offered Ministry and joins none.
+CREATE FUNCTION public.stewardship_service_answers_guard_v1(
+    response public.stewardship_submission, campaign public.stewardship_campaign_configuration)
+    RETURNS void LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    answers jsonb := response.answers->'service';
+    options jsonb := coalesce(campaign.values->'talent_options',
+        public.stewardship_talent_defaults_v1());
+    group_name text; member_key text; entry jsonb; talent_key text; talent_value jsonb;
+    option_value jsonb; text_value text; choices jsonb; current_count integer;
+BEGIN
+    IF NOT (campaign.values->'modules' ? 'ministry') THEN
+        IF answers IS DISTINCT FROM '{}'::jsonb THEN
+            RAISE EXCEPTION 'Disabled Ministry talents must be empty' USING ERRCODE='23514';
+        END IF;
+        RETURN;
+    END IF;
+    IF jsonb_typeof(answers) IS DISTINCT FROM 'object'
+       OR NOT (answers ?& ARRAY['members','proposed_members'])
+       OR answers-ARRAY['members','proposed_members'] <> '{}'::jsonb THEN
+        RAISE EXCEPTION 'Talent aggregate must be complete' USING ERRCODE='23514';
+    END IF;
+    FOREACH group_name IN ARRAY ARRAY['members','proposed_members'] LOOP
+        IF jsonb_typeof(answers->group_name) IS DISTINCT FROM 'object'
+           OR (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[])
+               FROM jsonb_object_keys(answers->group_name) key)
+              IS DISTINCT FROM (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[])
+               FROM jsonb_object_keys(response.answers->'ministries'->group_name) key) THEN
+            RAISE EXCEPTION 'Talent identities must match the Ministry answer' USING ERRCODE='23514';
+        END IF;
+        FOR member_key,entry IN SELECT * FROM jsonb_each(answers->group_name) LOOP
+            IF jsonb_typeof(entry) IS DISTINCT FROM 'object'
+               OR NOT (entry ?& ARRAY['cannot_serve','talents'])
+               OR entry-ARRAY['cannot_serve','talents'] <> '{}'::jsonb
+               OR jsonb_typeof(entry->'cannot_serve') IS DISTINCT FROM 'boolean'
+               OR jsonb_typeof(entry->'talents') IS DISTINCT FROM 'object' THEN
+                RAISE EXCEPTION 'Talent entry requires exact fields' USING ERRCODE='23514';
+            END IF;
+            FOR talent_key,talent_value IN SELECT * FROM jsonb_each(entry->'talents') LOOP
+                SELECT option INTO option_value FROM jsonb_array_elements(options) option
+                    WHERE option->>'id'=talent_key;
+                IF option_value IS NULL OR jsonb_typeof(talent_value) IS DISTINCT FROM 'string' THEN
+                    RAISE EXCEPTION 'Talent is not currently offered' USING ERRCODE='23514';
+                END IF;
+                text_value := talent_value#>>'{}';
+                IF length(text_value)>200
+                   OR text_value IS DISTINCT FROM public.stewardship_response_comparison_v1(
+                       'first_name',talent_value)
+                   OR text_value ~ U&'[\0001-\0008\000B\000C\000E-\001F\007F]'
+                   OR (option_value->'free_text'='true'::jsonb AND text_value='')
+                   OR (option_value->'free_text'='false'::jsonb AND text_value<>'') THEN
+                    RAISE EXCEPTION 'Talent text is invalid' USING ERRCODE='23514';
+                END IF;
+            END LOOP;
+            IF entry->'cannot_serve'='true'::jsonb THEN
+                choices := response.answers->'ministries'->group_name->member_key;
+                -- The Ministry guard already proved each leave is a current,
+                -- offered membership; equal counts therefore mean all of them.
+                current_count := CASE WHEN group_name='proposed_members' THEN 0 ELSE (
+                    SELECT count(*) FROM jsonb_array_elements_text(campaign.values->'ministry_duids') duid
+                    WHERE public.stewardship_response_ministry_visible_v1(
+                              response.validation_source_id,response.configuration_id,
+                              response.campaign_id,duid::integer)
+                      AND public.stewardship_response_ministry_current_v1(
+                              response.validation_source_id,response.family_id,member_key,
+                              duid::integer) IS TRUE) END;
+                IF choices->'join' <> '[]'::jsonb
+                   OR coalesce(jsonb_array_length(choices->'leave'),0) <> current_count THEN
+                    RAISE EXCEPTION 'A Member who cannot participate must stop every Ministry' USING ERRCODE='23514';
+                END IF;
+            END IF;
         END LOOP;
     END LOOP;
 END;

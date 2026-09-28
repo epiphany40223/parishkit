@@ -44,9 +44,32 @@ def _duids(values):
         invalid()
 
 
+def _options(options):
+    """Validate an ordered option list (share methods or talents) by identity."""
+    if type(options) is not list or len(options) > 100:
+        invalid()
+    seen = set()
+    for option in options:
+        if type(option) is not dict or set(option) != {"id", "label", "free_text"}:
+            invalid()
+        typed(option["id"], "uuid")
+        text(option["label"], 1024)
+        try:
+            validate_share_label(option["label"])
+        except ValueError:
+            invalid()
+        if option["id"] in seen or type(option["free_text"]) is not bool:
+            invalid()
+        seen.add(option["id"])
+
+
 def campaign_values(values):
-    """Validate the full draft structure and return its canonical UTC interval."""
-    if set(values) != {
+    """Validate the full draft structure and return its canonical UTC interval.
+
+    ``talent_options`` is optional: a campaign that never edited its Member
+    talents list resolves to the built-in defaults (see responses.service).
+    """
+    if set(values) - {"talent_options"} != {
         "name",
         "year_label",
         "timezone",
@@ -117,23 +140,13 @@ def campaign_values(values):
         ):
             invalid()
     options = values["share_options"]
-    if type(options) is not list or len(options) > 100:
-        invalid()
-    seen = set()
-    for option in options:
-        if type(option) is not dict or set(option) != {"id", "label", "free_text"}:
-            invalid()
-        typed(option["id"], "uuid")
-        text(option["label"], 1024)
-        try:
-            validate_share_label(option["label"])
-        except ValueError:
-            invalid()
-        if option["id"] in seen or type(option["free_text"]) is not bool:
-            invalid()
-        seen.add(option["id"])
+    _options(options)
     if "financial" not in modules and options:
         invalid()
+    # Campaign-setting patches merge values, so an edited talent list survives
+    # while the Ministry module is off; it is simply unused until re-enabled.
+    if "talent_options" in values:
+        _options(values["talent_options"])
     content = values["content_versions"]
     if type(content) is not dict or not set(content) <= {
         "welcome",

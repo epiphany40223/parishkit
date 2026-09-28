@@ -13,6 +13,9 @@
   let uncertainSubmission = false;
   let separateMailing = null;
   let requests = {}, initialRequests = {};
+  // Ministry and pledge choices set aside while "cannot participate" or
+  // "cannot contribute" is checked, restored when it is unchecked again.
+  const setAside = new Map();
   const conflicts = new Map();
   // The editor is one form split into pages. `currentPage` names the visible
   // page across rebuilds; `pages` is rebuilt by every edit() call.
@@ -79,6 +82,8 @@
       canonical(requests, "requests") !== canonical(initialRequests, "requests") ||
       canonical(answers.ministries, "ministries") !== canonical(initial.ministries, "ministries") ||
       canonical(answers.financial, "financial") !== canonical(initial.financial, "financial") ||
+      answers.cannot_attend !== initial.cannot_attend ||
+      canonical(answers.service, "service") !== canonical(initial.service, "service") ||
       canonical(answers.proposed_members, "proposed_members") !== canonical(initial.proposed_members, "proposed_members") ||
       Object.entries(answers.members).some(([id, fields]) =>
         Object.entries(fields).some(([name, value]) => canonical(value, name) !==
@@ -123,12 +128,25 @@
     answers = {family: Object.fromEntries((next.household?.fields || []).map(
       (field) => [field.name, structuredClone(field.value)])),
       members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
-      ministries: next.ministries ? {members: {}, proposed_members: {}} : {}};
+      ministries: next.ministries ? {members: {}, proposed_members: {}} : {},
+      cannot_attend: Boolean(next.cannot_attend), service: next.service ? {members: {}, proposed_members: {}} : {}};
+    setAside.clear();
     if (next.financial) answers.financial = structuredClone(next.financial.answers);
     if (next.household) answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
     if (next.ministries) ["members", "proposed_members"].forEach((group) => {
       Object.entries(next.ministries[group]).forEach(([id, entry]) => {
         answers.ministries[group][id] = {join: [...entry.join], ...(group === "members" ? {leave: [...entry.leave]} : {})};
+      });
+    });
+    if (next.service) ["members", "proposed_members"].forEach((group) => {
+      Object.entries(next.service[group]).forEach(([id, entry]) => {
+        answers.service[group][id] = {cannot_serve: entry.cannot_serve, talents: {...entry.talents}};
+        // A previous "cannot participate" answer still means every current
+        // Ministry stops and none is joined, even if the roster has changed.
+        if (entry.cannot_serve && answers.ministries[group]?.[id]) {
+          answers.ministries[group][id].join = [];
+          if (group === "members") answers.ministries[group][id].leave = [...next.ministries.members[id].current];
+        }
       });
     });
     separateMailing = null;
@@ -211,7 +229,9 @@
         }
       });
       preserveMinistries(previous, before);
+      preserveService(previous, before);
       preserveFinancial(previous, before, previousFinancial);
+      if (previous.cannot_attend !== before.cannot_attend) answers.cannot_attend = previous.cannot_attend;
       if (next.additional_enabled && canonical(previous.additional_information, "additional") !==
           canonical(before.additional_information, "additional")) {
         answers.additional_information = previous.additional_information;
@@ -650,6 +670,89 @@
       });
     });
   }
+  function serviceEntry(member) {
+    const group = member.proposed ? "proposed_members" : "members";
+    return answers.service[group][member.id] ||= {cannot_serve: false, talents: {}};
+  }
+  function lockMinistries(member) {
+    // "Cannot participate": stop every current Ministry and join none, keeping
+    // the Family's own choices aside so unchecking restores them.
+    const choices = ministryChoices(member), key = "ministries." + member.id;
+    if (!setAside.has(key)) setAside.set(key, structuredClone(choices));
+    choices.join = [];
+    if (!member.proposed) choices.leave = [...ministryCurrent(member)].sort((a, b) => a - b);
+  }
+  function unlockMinistries(member) {
+    const choices = ministryChoices(member), key = "ministries." + member.id;
+    const saved = setAside.get(key);
+    setAside.delete(key);
+    choices.join = saved ? saved.join : [];
+    if (!member.proposed) choices.leave = saved ? saved.leave : [];
+  }
+  function preserveService(previous, before) {
+    // Keep a Member's own talent and "cannot participate" edits across a
+    // refreshed form, dropping talents the parish no longer offers.
+    if (!form.service) return;
+    const offered = new Set(form.service.talent_options.map((option) => option.id));
+    allMembers().forEach((member) => {
+      if (!ministryEligible(member)) return;
+      const group = member.proposed ? "proposed_members" : "members";
+      const old = before.service?.[group]?.[member.id], edited = previous.service?.[group]?.[member.id];
+      if (!edited || canonical(old, "service") === canonical(edited, "service")) return;
+      const entry = serviceEntry(member);
+      entry.cannot_serve = edited.cannot_serve;
+      entry.talents = Object.fromEntries(Object.entries(edited.talents).filter(([id]) => offered.has(id)));
+      if (entry.cannot_serve) lockMinistries(member);
+    });
+  }
+  function serviceEditor(member, parent) {
+    // Talents and "cannot participate", above the Ministry choices they affect.
+    if (!form.service) return;
+    const entry = serviceEntry(member), prefix = "service-" + member.id;
+    const talents = node("fieldset", null, parent, {class: "panel talents-panel", id: prefix + "-talents"});
+    node("legend", "If you have a special talent that you would like to share with your parish family, please select it below.", talents);
+    form.service.talent_options.forEach((option) => {
+      const id = prefix + "-talent-" + option.id;
+      const wrapper = node("label", null, talents, {for: id});
+      const checkbox = node("input", null, wrapper, {type: "checkbox", id});
+      checkbox.checked = option.id in entry.talents;
+      wrapper.append(document.createTextNode(" " + option.label));
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) entry.talents[option.id] = "";
+        else delete entry.talents[option.id];
+        if (option.free_text) edit(checkbox.checked ? id + "-text" : id);
+      });
+      if (option.free_text && checkbox.checked) {
+        node("label", "Please describe your talent", talents, {for: id + "-text"});
+        const text = node("input", null, talents, {type: "text", id: id + "-text", required: "",
+          maxlength: String(form.service.talent_text_limit), autocomplete: "off", "aria-describedby": id + "-hint"});
+        text.value = entry.talents[option.id];
+        const error = node("p", null, talents, {id: id + "-hint", hidden: ""});
+        const validateText = () => {
+          text.setCustomValidity(text.value.trim() ? "" : "Describe your talent, or uncheck this choice.");
+          error.textContent = text.validationMessage; error.hidden = !error.textContent;
+          text.setAttribute("aria-invalid", String(!text.checkValidity()));
+        };
+        text.addEventListener("input", () => { entry.talents[option.id] = text.value; validateText(); });
+        text.addEventListener("blur", validateText);
+        pageOfValidators(parent).push(validateText);
+      }
+    });
+    const lockId = prefix + "-cannot-serve";
+    const wrapper = node("label", null, parent, {for: lockId, class: "limitation"});
+    const lock = node("input", null, wrapper, {type: "checkbox", id: lockId});
+    lock.checked = entry.cannot_serve;
+    wrapper.append(document.createTextNode(" Because of physical limitations, I/we cannot participate in any ministries at this time."));
+    lock.addEventListener("change", () => {
+      entry.cannot_serve = lock.checked;
+      if (lock.checked) lockMinistries(member); else unlockMinistries(member);
+      edit(lockId);
+    });
+  }
+  function pageOfValidators(element) {
+    // Validators belong to the page being built (the last one added).
+    return pages.at(-1)?.validators || [];
+  }
   function ministryEditor(member, parent) {
     if (!form.ministries) return;
     const path = "ministries." + (member.proposed ? "proposed_members." : "members.") + member.id;
@@ -664,9 +767,17 @@
       }
       return;
     }
+    serviceEditor(member, parent);
     const panel = node("section", null, parent, {class: "panel ministry-panel"});
     node("h4", "Ministry participation", panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
+    const locked = Boolean(form.service && serviceEntry(member).cannot_serve);
+    if (locked) node("p", "Every current ministry will stop, and no new ministry will be joined, because of the choice above.",
+      panel, {class: "changed"});
+    // Locked choices are disabled for keyboards and assistive technology as
+    // well as dimmed; the server enforces the same rule.
+    const choicesBox = node("div", null, panel, {class: "ministry-choices" + (locked ? " is-locked" : "")});
+    if (locked) { choicesBox.setAttribute("inert", ""); choicesBox.setAttribute("aria-disabled", "true"); }
     if (conflict && conflict.choice === undefined) {
       const notice = node("div", null, panel, {"data-conflict": path});
       node("p", "Some of your edited Ministry choices are no longer available. Review the current choices below.", notice);
@@ -681,11 +792,12 @@
     // Current Ministries: each row states the choice once, as a pair of
     // radio buttons defaulting to Continuing, instead of repeating a suffix
     // on every checkbox label.
-    node("h5", "Current ministries", panel);
+    node("h5", "Current ministries", choicesBox);
     const currentOptions = form.ministries.options.filter((option) => current.has(option.id));
-    if (!currentOptions.length) node("p", "No current ministries are included in this campaign.", panel);
+    if (!currentOptions.length) node("p", "No current ministries are included in this campaign.", choicesBox);
     currentOptions.forEach((option) => {
-      const row = node("fieldset", null, panel, {class: "ministry-row"});
+      const row = node("fieldset", null, choicesBox, {class: "ministry-row"});
+      row.disabled = locked;
       node("legend", option.name, row);
       const name = "ministry-" + member.id + "-" + option.id;
       [["continue", "Continuing"], ["leave", "Stop participating"]].forEach(([value, label]) => {
@@ -701,7 +813,7 @@
       });
       row.classList.toggle("changed", choices.leave.includes(option.id));
     });
-    const details = node("details", null, panel, {class: "ministry-join"});
+    const details = node("details", null, choicesBox, {class: "ministry-join"});
     node("summary", "Click here to join another ministry", details);
     let populated = false;
     const joining = node("p", "", panel, {class: "changed", "aria-live": "polite"});
@@ -747,6 +859,14 @@
     const leaving = new Set(choices.leave || []);
     const continuing = names(new Set([...current].filter((id) => !leaving.has(id))));
     const stopping = names(leaving), joining = names(new Set(choices.join || []));
+    if (form.service) {
+      const entry = serviceEntry(member);
+      const talents = form.service.talent_options.filter((option) => option.id in entry.talents).map(
+        (option) => option.free_text ? option.label + ": " + entry.talents[option.id] : option.label);
+      node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
+      if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
+        parent, {class: "changed"});
+    }
     node("p", "Will continue: " + (continuing.join(", ") || "None"), parent);
     if (stopping.length) node("p", "Stopping: " + stopping.join(", "), parent, {class: "changed"});
     if (joining.length) node("p", "Joining: " + joining.join(", "), parent, {class: "changed"});
@@ -768,6 +888,7 @@
     return cents !== null && cents > 0;
   }
   function submittedFinancial() {
+    if (answers.financial.cannot_give) return {annual_pledge: "", frequency: "", shares: {}, cannot_give: true};
     return pledgePositive() ? answers.financial : {...answers.financial, frequency: "", shares: {}};
   }
   function moneyDisplay(cents) {
@@ -790,7 +911,7 @@
       return;
     }
     form.financial.refreshed = true;
-    for (const key of ["annual_pledge", "frequency"]) {
+    for (const key of ["annual_pledge", "frequency", "cannot_give"]) {
       const edited = previous.financial[key], old = before.financial[key], fresh = initial.financial[key];
       if (canonical(edited, key) === canonical(old, key)) continue;
       answers.financial[key] = edited;
@@ -851,14 +972,38 @@
     block("financial", group);
     financialSource(group);
     node("p", "This form records your intention only. It does not take a payment or request bank or card credentials.", group);
-    node("label", "Annual pledge (USD)", group, {for: "financial-annual_pledge"});
-    const annual = node("input", null, group, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
+    const unable = node("label", null, group, {for: "financial-cannot-give", class: "limitation"});
+    const unableBox = node("input", null, unable, {type: "checkbox", id: "financial-cannot-give"});
+    unableBox.checked = answers.financial.cannot_give;
+    unable.append(document.createTextNode(" Because of financial limitations, I/we cannot contribute financially at this time."));
+    unableBox.addEventListener("change", () => {
+      // Hide the pledge fields, keeping the Family's entries aside so that
+      // unchecking the box brings them back.
+      if (unableBox.checked) {
+        setAside.set("financial", structuredClone(answers.financial));
+        Object.assign(answers.financial, {annual_pledge: "", frequency: "", shares: {}, cannot_give: true});
+      } else {
+        const saved = setAside.get("financial");
+        setAside.delete("financial");
+        Object.assign(answers.financial, saved || {annual_pledge: "", frequency: "", shares: {}}, {cannot_give: false});
+      }
+      ["financial.annual_pledge", "financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
+        .forEach((path) => conflicts.delete(path));
+      edit("financial-cannot-give");
+    });
+    // A disabled fieldset takes its controls out of validation, so hidden
+    // pledge fields never block a Family that cannot contribute.
+    const pledge = node("fieldset", null, group, {class: "financial-pledge"});
+    node("legend", "Your pledge", pledge, {class: "visually-hidden"});
+    pledge.hidden = pledge.disabled = answers.financial.cannot_give;
+    node("label", "Annual pledge (USD)", pledge, {for: "financial-annual_pledge"});
+    const annual = node("input", null, pledge, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
     annual.value = answers.financial.annual_pledge;
-    const annualError = node("p", null, group, {id: "financial-annual-hint"});
+    const annualError = node("p", null, pledge, {id: "financial-annual-hint"});
     // A disabled fieldset removes its controls from validation, so hidden
     // frequency and share fields can never block a zero pledge.
-    const conditional = node("fieldset", null, group, {class: "financial-conditional", "data-financial-conditional": ""});
+    const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": ""});
     node("legend", "Pledge details", conditional, {class: "visually-hidden"});
     let shown = pledgePositive();
     const setConditional = () => {
@@ -917,7 +1062,7 @@
     annual.addEventListener("blur", () => validate());
     frequency.addEventListener("change", () => validate());
     validators.push(() => validate());
-    conflictChoice("financial.annual_pledge", annual, group);
+    conflictChoice("financial.annual_pledge", annual, pledge);
     conflictChoice("financial.frequency", frequency, conditional);
     validate(false);
     const shares = node("fieldset", null, conditional);
@@ -1008,6 +1153,10 @@
     editControl(panel, "Financial stewardship", "financial-section");
     financialSource(panel);
     const financial = submittedFinancial();
+    if (financial.cannot_give) {
+      node("p", "Because of financial limitations, I/we cannot contribute financially at this time.", panel, {class: "changed"});
+      return;
+    }
     const cents = moneyCents(financial.annual_pledge), frequency = financial.frequency;
     node("p", "Your annual pledge: " + moneyDisplay(cents), panel, {class: "changed"});
     const periods = form.financial.frequencies[frequency];
@@ -1341,6 +1490,11 @@
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
     submittedBanner(intro.element);
     block("welcome", intro.element);
+    const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});
+    const attendBox = node("input", null, attend, {type: "checkbox", id: "cannot-attend"});
+    attendBox.checked = answers.cannot_attend;
+    attend.append(document.createTextNode(" Because of physical limitations, I/we cannot attend Mass or prayer services at this time."));
+    attendBox.addEventListener("change", () => { answers.cannot_attend = attendBox.checked; });
     structuralConflicts(intro.element);
     if (form.household) {
       const household = addPage(editor, "household", "Family information", "census");
@@ -1464,6 +1618,12 @@
     const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
     node("p", "Nothing is saved until you select “" + submitLabel + "”.", root);
     familySummary();
+    if (answers.cannot_attend) {
+      const welcome = node("section", null, root, {class: "panel"});
+      node("h3", "Welcome", welcome);
+      editControl(welcome, "Welcome", "cannot-attend");
+      node("p", "Because of physical limitations, I/we cannot attend Mass or prayer services at this time.", welcome, {class: "changed"});
+    }
     if (form.household) {
     const household = node("section", null, root, {class: "panel"});
     node("h3", "Family census", household);
@@ -1542,6 +1702,10 @@
           proposed_members: Object.fromEntries(allMembers().filter((member) => member.proposed).map(
             (member) => [member.id, ministryChoices(member)]))
         };
+        // Talents follow exactly the same Member identities as the Ministry answer.
+        payload.service = form.service ? Object.fromEntries(["members", "proposed_members"].map((group) => [group,
+          Object.fromEntries(Object.keys(payload.ministries[group]).map((id) => [id,
+            answers.service[group][id] || {cannot_serve: false, talents: {}}]))])) : {};
         const result = await send("/family/submit", {baseline: form.baseline, answers: payload});
         if (!result) return;
         if (!result.accepted) submissionAttempted = uncertainSubmission;

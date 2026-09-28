@@ -20,6 +20,7 @@ from .member_requests import (
     ordinary_answers,
 )
 from .ministry import InvalidMinistryAnswers, validate_ministry_answers
+from .service import InvalidServiceAnswers, validate_service_answers
 
 
 class InvalidAnswers(ValueError):
@@ -64,6 +65,11 @@ def validate_answers(
     financial_enabled = "financial" in inputs.modules
     if financial_enabled:
         expected_fields.add("financial")
+    # Unchecked welcome/Member choices may be omitted (older tabs and simple
+    # callers); the normalized answer always records them explicitly.
+    if type(payload) is dict:
+        payload = {"cannot_attend": False, "service": {}} | payload
+        expected_fields |= {"cannot_attend", "service"}
     if type(payload) is not dict or set(payload) != expected_fields:
         raise InvalidAnswers(
             {"form": "Reload the authorized form and review its fields."}
@@ -112,6 +118,8 @@ def validate_answers(
         for item in inputs.fields
         if item.entity == "member"
     }
+    if type(payload["cannot_attend"]) is not bool:
+        errors["cannot_attend"] = "Review the welcome page choice."
     for identifier in inputs.member_duids:
         key, member = str(identifier), members[str(identifier)]
         if not census:
@@ -161,6 +169,18 @@ def validate_answers(
         )
     except InvalidMinistryAnswers as error:
         errors.update(error.fields)
+        ministries = None
+    service = {}
+    if ministries is not None:
+        try:
+            service = validate_service_answers(
+                payload["service"],
+                ministries,
+                inputs.ministries,
+                inputs.talent_options,
+            )
+        except InvalidServiceAnswers as error:
+            errors.update(error.fields)
     financial = None
     if financial_enabled:
         if inputs.financial is None:
@@ -185,6 +205,8 @@ def validate_answers(
         "proposed_members": proposed_normalized,
         "ministries": ministries,
         "additional_information": additional,
+        "cannot_attend": payload["cannot_attend"],
+        "service": service,
     }
     if financial_enabled:
         result["financial"] = financial
