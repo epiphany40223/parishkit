@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends 'stewardship/base.html' %}{% load i18n static %}
 {% comment %}
   One form holds the integration's settings and, for integrations with a key,
   an optional write-only field for a replacement key. Saving a key installs it
@@ -6,19 +6,12 @@
   states and fingerprints, which stay in the audit log and the details page.
 {% endcomment %}
 {% block title %}{{ label }}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
 {% if not configured %}<p>{% translate "Slack is not set up. To send operational alerts to a Slack channel, enter the channel ID and paste the Slack app's bot token below, then select Save. The token is checked with Slack before it is used." %}</p>{% endif %}
-{% if summary %}
-<p class="notice{% if summary.kind == 'failed' %} notice-error{% endif %}" role="status"{% if pending %} data-reload-while-pending{% endif %}>
-  {{ summary.message }}
-  {% if summary.kind != 'pending' %}<time datetime="{{ summary.at|date:'c' }}" data-local-instant>{{ summary.at|date:'c' }}</time>{% endif %}
-  {% if summary.kind == 'failed' %}{% translate "The previous key is still in use." %}{% endif %}
-  {% if summary.kind == 'unselected' %}<a href="{% url 'admin:select_credential' summary.request_id %}">{% translate "Finish switching to the new key" %}</a>{% endif %}
-  <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Details" %}</a>
-</p>
-{% endif %}
+<div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>
 {% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh %}</section>{% endif %}
 {% if pending %}
 <p>{% translate "This page updates by itself. You can leave it; the change finishes in the background." %}</p>

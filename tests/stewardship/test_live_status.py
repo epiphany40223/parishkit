@@ -15,7 +15,7 @@ from uuid import UUID
 import pytest
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.campaign_family_test_views import _unsettled
+from parishkit.stewardship.accounts.campaign_family_test_views import _pending
 
 REQUEST = UUID(int=164)
 SCRIPT = (
@@ -136,7 +136,7 @@ def test_background_task_follows_until_terminal(state, live, text):
 )
 def test_family_test_list_follows_only_unsettled_sends(item, unsettled):
     """A sent or failed test stops the list's polling; a queued one keeps it."""
-    assert _unsettled(item) is unsettled
+    assert _pending(item) is unsettled
 
 
 def test_script_backs_off_pauses_and_stops_at_terminal_states():

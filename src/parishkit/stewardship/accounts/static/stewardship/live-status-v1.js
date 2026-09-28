@@ -26,6 +26,11 @@
   if (!region || !region.hasAttribute("data-live-pending")) return;
 
   const name = region.getAttribute("data-live-status");
+  // A page whose own view counts as activity names a passive status URL to
+  // read instead (same-origin paths only); otherwise it re-reads itself.
+  const own = region.getAttribute("data-live-url");
+  const source = own && own.startsWith("/") && !own.startsWith("//")
+    ? own : window.location.href;
   const started = Date.now();
   let attempt = 0;
   let timer = 0;
@@ -111,9 +116,16 @@
     }
     lastMarkup = fresh.innerHTML;
     region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
-    region.toggleAttribute("data-live-pending", fresh.hasAttribute("data-live-pending"));
-    const state = fresh.getAttribute("data-live-state");
-    if (state !== null) region.setAttribute("data-live-state", state);
+    // Mirror the fresh region's attributes (pending, state markers such as
+    // data-export-state) so the page and its tests see the current state.
+    [...region.attributes].forEach((attribute) => {
+      if (attribute.name !== "data-live-url" && !fresh.hasAttribute(attribute.name)) {
+        region.removeAttribute(attribute.name);
+      }
+    });
+    [...fresh.attributes].forEach((attribute) => {
+      region.setAttribute(attribute.name, attribute.value);
+    });
     localize(region);
     elapsed();
   }
@@ -136,7 +148,7 @@
     if (stopped || inFlight || document.visibilityState !== "visible") return;
     inFlight = true;
     try {
-      const response = await fetch(window.location.href, {
+      const response = await fetch(source, {
         credentials: "same-origin",
         cache: "no-store",
         headers: { Accept: "text/html" }

@@ -1,0 +1,13 @@
+{% load i18n %}{% comment %}
+  One integration's credential status line. The settings page shows it in a
+  live region; while a new key is installing, live-status-v1.js re-reads it
+  from the passive integration_status view, and opens the settings page
+  again once the change has finished.
+{% endcomment %}{% if summary %}<p class="notice{% if summary.kind == 'failed' %} notice-error{% endif %}">
+  {{ summary.message }}
+  {% if summary.kind != 'pending' %}<time datetime="{{ summary.at|date:'c' }}" data-local-instant>{{ summary.at|date:'c' }}</time>{% endif %}
+  {% if summary.kind == 'failed' %}{% translate "The previous key is still in use." %}{% endif %}
+  {% if summary.kind == 'unselected' %}<a href="{% url 'admin:select_credential' summary.request_id %}">{% translate "Finish switching to the new key" %}</a>{% endif %}
+  <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Details" %}</a>
+</p>{% endif %}
+{% if not pending and follow_url %}<a hidden data-live-follow href="{{ follow_url }}">{% translate "Reload settings" %}</a>{% endif %}
