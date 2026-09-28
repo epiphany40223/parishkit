@@ -8532,13 +8532,15 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF TG_OP = 'DELETE' THEN
-        -- The worker may delete only an expired setup's exact membership, or
-        -- the membership of a snapshot already marked compacted while it owns
-        -- the live compaction lease (the snapshot guard admits that mark only
-        -- for an unpinned, non-current manifest).
+        -- The worker may delete only an expired setup's exact membership, or,
+        -- while it owns the live compaction lease, the membership of a
+        -- snapshot already marked compacted (the snapshot guard admits that
+        -- mark only for an unpinned, non-current manifest) or of rejected
+        -- staging, which never became source truth.
         IF current_user='pk_stewardship_worker'
            AND NOT public.stewardship_setup_disposable_snapshot_v1(OLD.snapshot_id)
-           AND NOT (snapshot.compacted_at IS NOT NULL AND EXISTS (
+           AND NOT ((snapshot.compacted_at IS NOT NULL OR snapshot.state='rejected')
+               AND EXISTS (
                SELECT 1 FROM public.stewardship_source_lease l
                JOIN public.stewardship_task_run t ON t.id=l.owner_id
                WHERE l.phase='compaction' AND l.expires_at > clock_timestamp()

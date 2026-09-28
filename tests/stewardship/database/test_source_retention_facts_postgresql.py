@@ -251,3 +251,61 @@ def test_fact_cleanup_failure_does_not_stop_snapshot_retention(tmp_path, monkeyp
         for snapshot, _ in history
     )
     assert SourceMutationLease.objects.get().phase == "idle"
+
+
+def test_worker_reclaims_superseded_and_rejected_corpora(tmp_path, monkeypatch):
+    """The live pattern under the real worker login, end to end.
+
+    On the validation deployment, the first batch that reached real
+    memberships failed: rejected staging corpora are never marked compacted,
+    and the membership guard admitted the worker only for compacted
+    manifests, so every batch raised and nothing was reclaimed.
+    """
+    from parishkit.stewardship import observability
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.source.rejection import reject_snapshot
+    from parishkit.stewardship.source.snapshot_models import SourceCompactionBatch
+    from parishkit.stewardship.source.version_models import ENTITY_MODELS
+
+    from .test_background_grants_postgresql import task_login
+
+    def members(snapshot_id):
+        """Count one corpus's membership rows across every entity table."""
+        return sum(
+            membership.objects.filter(snapshot_id=snapshot_id).count()
+            for _, membership in ENTITY_MODELS.values()
+        )
+
+    inputs, owner, _ = fact_fixture(tmp_path)
+    monkeypatch.setattr(
+        compaction,
+        "LIVE_REFERENCES",
+        "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
+    )
+    history = [refresh_with_facts(inputs, owner, watermark) for watermark in (2, 3, 4)]
+    staged, claim = prepared()
+    reject_snapshot(staged.pk, claim, admit=permit)
+    release_source(claim)
+    superseded = history[0][0]
+    assert members(superseded.pk) and members(staged.pk)
+    skipped = []
+    monkeypatch.setattr(
+        observability,
+        "emit_failure",
+        lambda error, *, event: skipped.append(repr(error)),
+    )
+    execution = _Execution()
+    with task_login(ServiceRole.WORKER, exact=True):
+        compaction.compact_before_refresh(execution)
+    assert skipped == []
+    assert members(staged.pk) == 0
+    assert SourceSnapshot.objects.get(pk=staged.pk).state == "rejected"
+    assert members(superseded.pk) == 0
+    assert SourceSnapshot.objects.get(pk=superseded.pk).compacted_at is not None
+    current = history[-1][0]
+    assert (
+        members(current.pk)
+        and SourceSnapshot.objects.get(pk=current.pk).compacted_at is None
+    )
+    assert SourceCompactionBatch.objects.filter(snapshot_count__gt=0).exists()
+    assert SourceMutationLease.objects.get().phase == "idle"
