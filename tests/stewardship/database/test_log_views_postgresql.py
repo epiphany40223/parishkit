@@ -1,5 +1,6 @@
 """The Administrator-only combined log screen under the real web database role."""
 
+import json
 import re
 from collections import Counter
 from datetime import timedelta
@@ -409,3 +410,90 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
     assert (
         response.content.count(b"<tr>") == 51 and b"Older entries" in response.content
     )
+
+
+def export(browser, values=None):
+    """Download the filtered log with a genuine CSRF token."""
+    token = browser.cookies["pk_admin_csrf"].value
+    return browser.post(
+        URL + "/export", {"csrfmiddlewaretoken": token} | (values or {})
+    )
+
+
+def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, google):
+    """Exports carry the screen's filters and detail, newest first, and are audited."""
+    diagnostics()
+    browser, _ = signed_in()
+    response = export(browser, {"applied": "yes", "error": "yes", "source": "both"})
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/csv"
+    assert "attachment" in response["Content-Disposition"]
+    lines = response.content.decode().splitlines()
+    assert lines[0].startswith("time,source,level,type,actor_email")
+    assert any(",ERROR,task_failed," in line for line in lines)
+    assert not any(",WARNING," in line for line in lines)
+    jsonl = export(
+        browser,
+        {
+            "applied": "yes",
+            "critical": "yes",
+            "format": "jsonl",
+            "source": "operational",
+        },
+    )
+    records = [json.loads(line) for line in jsonl.content.decode().splitlines()]
+    assert [record["level"] for record in records] == ["CRITICAL"]
+    assert records[0]["details"] == {"count": "8", "outcome": "failed"}
+    assert list(
+        AuditContext.objects.filter(
+            event__event_type="system_logs_exported"
+        ).values_list("context", flat=True)
+    ) == [
+        {"outcome": "succeeded", "count": len(lines) - 1},
+        {"outcome": "succeeded", "count": 1},
+    ]
+
+
+def test_export_times_use_the_chosen_timezone(auth_service, google):
+    """UTC by default; a supported zone name shifts every time."""
+    diagnostics(("ERROR",))
+    browser, _ = signed_in()
+    values = {"applied": "yes", "error": "yes", "source": "operational"}
+    utc = export(browser, values | {"format": "jsonl"}).content.decode()
+    local = export(
+        browser, values | {"format": "jsonl", "timezone": "America/New_York"}
+    ).content.decode()
+    assert json.loads(utc)["time"].endswith("+00:00")
+    assert json.loads(local)["time"][-6:] in {"-04:00", "-05:00"}
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"format": "xlsx"}, {"timezone": "Mars/Base"}, {"level": "x"}],
+)
+def test_export_refuses_unknown_choices(auth_service, google, values):
+    """Only the closed formats, supported zones and screen filters are accepted."""
+    browser, _ = signed_in()
+    assert export(browser, values).status_code == 400
+
+
+def test_export_is_administrator_only_and_post_only(auth_service, google):
+    """A GET or a non-Administrator gets nothing."""
+    browser, _ = signed_in()
+    assert browser.get(URL + "/export").status_code == 405
+    store = auth_service.store
+    change(
+        store,
+        store.active(),
+        store.active().version_id,
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("staff@example.org", roles=("staff",)),
+            }
+        ],
+    )
+    google[0]["email"] = "staff@example.org"
+    staff, _ = signed_in()
+    assert export(staff).status_code == 403

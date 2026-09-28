@@ -1068,14 +1068,17 @@ Ministry filtering includes both interactive event identifiers and the
 including after campaign-detail purge. ADM-08/RPT-09 own this log-query
 integration; report owners supply the durable non-sensitive event metadata.
 
-Log exports use the asynchronous export-job pipeline, authorization rechecks,
-atomic file publication, purge admission gate, and temporary retention defined
-for other large exports. Text and JSONL are additional formats of that shared
-pipeline; an unbounded export is never assembled in a web request.
+In v1 a log export is a bounded download from the log screen: CSV or JSON
+Lines of the entries matching the screen's filters, newest first, at most the
+newest 10,000, with the same reviewed detail the screen shows. It is
+Administrator-only, uses a CSRF POST like the screen's filters, rechecks
+authorization after the file is built and records a count-only audit event. An
+unbounded export is never assembled in a web request; moving log exports onto
+the asynchronous export-job pipeline used by large report exports is deferred.
 
 Stored timestamps are UTC. The screen renders browser-local timestamps. Export
-requires choosing UTC or browser-local timezone; the chosen zone is recorded in
-export metadata. Logins/logouts, configuration, polls/tasks, each email and
+requires choosing UTC or the browser's timezone (offered by the page); the
+file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, and purge are recorded.
 
