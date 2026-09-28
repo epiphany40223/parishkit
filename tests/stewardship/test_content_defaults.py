@@ -1,9 +1,11 @@
 """Approved default page and email text passes every real content validator."""
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.accounts import content_defaults
 from parishkit.stewardship.accounts.content_defaults import (
     EMAILS,
     PAGES,
@@ -129,6 +131,16 @@ def test_emails_are_html_with_link_preserving_plain_text():
     assert email_text('<p><a href="https://example.org/">Go</a></p>') == (
         "Go: https://example.org/"
     )
+
+
+def test_no_default_text_or_template_advises_turning_a_phone_sideways():
+    """The Family form works in portrait, so orientation advice is obsolete."""
+    templates = Path(content_defaults.__file__).parent / "templates"
+    texts = [repr(PAGES), repr(EMAILS)] + [
+        path.read_text() for path in templates.rglob("*.html")
+    ]
+    for text in texts:
+        assert "landscape" not in text.lower() and "sideways" not in text.lower()
 
 
 def test_receipt_links_to_online_giving_and_names_the_pledge_year():

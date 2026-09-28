@@ -20,10 +20,11 @@ from parishkit.stewardship.web.content import prepare_content
 
 # Contact sentence shared by several pages; kept identical on purpose.
 _CONTACT = "the parish office at {{ parish_phone }} or email {{ parish_email }}"
-_PHONE_TIP = (
-    "<p>If you use a phone, holding it sideways (landscape) makes the form "
-    "easier to read. If you need help, or your link isn’t working, contact the "
-    "parish office at {{ parish_phone }} or {{ parish_email }}.</p>"
+# The Family form works in portrait on phones, so the help line gives no
+# orientation advice.
+_HELP = (
+    "<p>If you need help, or your link isn’t working, contact the parish "
+    "office at {{ parish_phone }} or {{ parish_email }}.</p>"
 )
 _ALTERNATE_ACCESS = (
     "<p>If the link above doesn’t work, go to {{ generic_family_url }} and enter "
@@ -187,7 +188,7 @@ EMAILS = {
         # campaign year, which always has a value.
         "accurate.</em> The commitment you make is for {{ campaign_year }}.</p>"
         '<p><strong><a href="{{ family_url }}">Begin your household’s renewal'
-        "</a></strong></p>" + _ALTERNATE_ACCESS + _SIGNATURE + _PHONE_TIP,
+        "</a></strong></p>" + _ALTERNATE_ACCESS + _SIGNATURE + _HELP,
     ),
     "reminder": DefaultEmail(
         "Reminder: {{ parish_name }} {{ campaign_year }} Stewardship Renewal",
@@ -201,7 +202,7 @@ EMAILS = {
         "Stewardship Team, thank you in advance for completing your "
         "{{ campaign_year }} {{ parish_name }} Stewardship Renewal!</strong></p>"
         + _SIGNATURE
-        + _PHONE_TIP,
+        + _HELP,
     ),
     # {{ online_giving_url }} falls back to the parish website when no giving
     # page is configured, so this link always has a real target.
