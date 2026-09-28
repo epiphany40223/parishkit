@@ -116,11 +116,13 @@ jobs:
     needs: validate
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Two runners with two provider modes each: the freed runner slots let
+    # the PostgreSQL partitions spread wider within the 20-job plan limit.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        provider: [configured, initial, complete, abort]
+        providers: ["configured initial", "complete abort"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -136,14 +138,17 @@ jobs:
       - name: Validate isolated development and production scenarios
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
-          PROVIDER_MODE: ${{ matrix.provider }}
+          PROVIDER_MODES: ${{ matrix.providers }}
         # Reuse installation/image bootstrap, never mutable runtime state.
         # Each test owns a fresh UUID Compose project, credentials and volume.
-        run: >-
-          python -m pytest
-          "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-False]"
-          "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-True]"
-          --require-no-skips --ci-progress --durations=10 -q
+        run: |
+          cases=()
+          for mode in $PROVIDER_MODES; do
+            for production in False True; do
+              cases+=("tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$mode-$production]")
+            done
+          done
+          python -m pytest "${cases[@]}" --require-no-skips --ci-progress --durations=10 -q
 
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:
@@ -216,7 +221,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     services:
       valkey:
         image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
@@ -250,7 +255,7 @@ jobs:
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
       - name: Measure isolated database partition
-        run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 12 --output "$RUNNER_TEMP/stewardship-shard"
+        run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 14 --output "$RUNNER_TEMP/stewardship-shard"
       - name: Retain successful shard evidence
         uses: actions/upload-artifact@v4
         with:
@@ -288,7 +293,7 @@ jobs:
           pattern: stewardship-coverage-*
           path: ${{ runner.temp }}/stewardship-shards
       - name: Scoped line and branch coverage
-        run: python -m parishkit.stewardship.quality_ci combine --count 12 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
+        run: python -m parishkit.stewardship.quality_ci combine --count 14 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
       - name: Retain combined coverage
         uses: actions/upload-artifact@v4
         with:

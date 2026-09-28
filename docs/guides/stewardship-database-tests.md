@@ -28,11 +28,14 @@ duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 
-Pull-request CI runs twelve deterministic PostgreSQL partitions on twelve separate
-runners, each with its own PostgreSQL/Valkey cluster. Only partition one also runs
+Pull-request CI runs fourteen deterministic PostgreSQL partitions on fourteen
+separate runners, each with its own PostgreSQL/Valkey cluster. With the two
+operational-scenario runners (two provider modes each), compose core and three
+browser engines, a full run is exactly the free plan's 20 concurrent jobs, so
+every job starts at once (#158). Only partition one also runs
 the credential-free baseline into its raw coverage database. The required
 `stewardship-postgresql` check independently collects the full database test
-universe, requires successful receipts for all twelve exact partitions from the
+universe, requires successful receipts for all fourteen exact partitions from the
 same source tree, and combines raw line/branch data before enforcing both 80%
 floors. Missing, failed, skipped, cancelled or stale partition evidence cannot
 pass. Coverage percentages are never averaged across partitions.
