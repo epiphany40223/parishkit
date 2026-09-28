@@ -14,6 +14,9 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilySession
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.version_models import SnapshotFamily
 
 from ..policy_factory import address
 from ..test_source_corpus import source
@@ -294,6 +297,19 @@ def test_real_web_grants_support_family_presence_and_admin_names(
         assert beat(family).status_code == 200
         response = admin.get(ADMIN + "?format=json")
         assert response.status_code == 200 and response.json()["count"] == 1
+    # The web role also reads the heads, so the Family is named as on the
+    # Family codes directory: "Surname, Heads" (#232).
+    current = SourceCurrent.objects.get(singleton=True)
+    expected = snapshot_family_names(current.snapshot_id, [1])[1]
+    assert response.json()["sessions"][0]["name"] == expected
+    heads = (
+        SnapshotFamily.objects.select_related("payload")
+        .get(snapshot_id=current.snapshot_id, source_key="1")
+        .payload.payload.get("active_head_duids")
+    )
+    if heads:
+        assert ", " in expected
+    assert expected.encode() in admin.get(ADMIN).content
 
 
 def test_header_count_poll_never_fetches_family_names(family_service, google):
