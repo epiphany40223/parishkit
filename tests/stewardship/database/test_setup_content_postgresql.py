@@ -126,14 +126,22 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
     browser.cookies["pk_admin"] = request.session.session_key
     url = "/admin/setup/content/page/welcome"
     with web_login():
-        assert browser.get("/admin/setup/content").status_code == 200
+        listing = browser.get("/admin/setup/content")
+        assert listing.status_code == 200
+        # The receipt's closing note is listed with the confirmation email.
+        pages, emails = listing.content.decode().split("Email templates", 1)
+        assert "Confirmation email: closing note" not in pages
+        assert emails.index("Submission receipt") < emails.index(
+            "Confirmation email: closing note"
+        )
         response = browser.get(url)
         assert response.status_code == 200, response.content
         assert response["Cache-Control"] == "no-store"
+        # Web-only pages have no plain-text controls (#259), so the editor
+        # posts only the HTML; the plain text is always generated.
         data = {
             "version": str(attempt.version),
             "html": "<p>Hello {{ family_name }}</p>",
-            "generate_text": "on",
         }
         assert browser.post(url, data).status_code == 403
         invalid = post(

@@ -17,6 +17,7 @@ from . import setup_help
 from .authentication import runtime
 from .content_defaults import default_initial
 from .content_forms import (
+    EMAIL_ADDITIONS,
     EMAIL_LABELS,
     ContentForm,
     applicable_slots,
@@ -184,10 +185,30 @@ def setup_content(request):
         filled = _filled(request.GET)
         draft, campaign = _draft(request, service)
         groups = []
-        for kind, labels in (("page", page_slots(campaign)), ("email", EMAIL_LABELS)):
+        pages = page_slots(campaign)
+        # Content only ever sent inside an email is listed right after that
+        # email, not with the Family pages; its kind and slot stay "page".
+        listed = {
+            "page": [
+                ("page", slot, label)
+                for slot, label in pages.items()
+                if slot not in EMAIL_ADDITIONS
+            ],
+            "email": [
+                entry
+                for slot, label in EMAIL_LABELS.items()
+                for entry in [("email", slot, label)]
+                + [
+                    ("page", page, pages[page])
+                    for page, email in EMAIL_ADDITIONS.items()
+                    if email == slot and page in pages
+                ]
+            ],
+        }
+        for group, slots in listed.items():
             groups.append(
                 {
-                    "kind": kind,
+                    "kind": group,
                     "entries": [
                         {
                             "label": label,
@@ -196,7 +217,7 @@ def setup_content(request):
                             ),
                             "state": _state(draft, kind, slot),
                         }
-                        for slot, label in labels.items()
+                        for kind, slot, label in slots
                     ],
                 }
             )

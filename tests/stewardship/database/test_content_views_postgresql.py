@@ -44,7 +44,11 @@ def test_page_content_apply_sanitizes_samples_and_replays(auth_service, google):
     path = catalog + "/page/welcome"
     browser, _ = signed_in()
     assert browser.get(catalog).status_code == 200
-    assert browser.get(path).status_code == 200
+    editor = browser.get(path)
+    assert editor.status_code == 200
+    # Web-only pages offer no plain-text controls (#259); typed text is ignored
+    # and the stored plain text is always generated from the HTML.
+    assert b"data-plain-text" not in editor.content
     response = post(
         browser,
         path,
@@ -52,6 +56,8 @@ def test_page_content_apply_sanitizes_samples_and_replays(auth_service, google):
             store,
             html='<p onclick="unsafe()">Hi {{ family_name }}</p>'
             "<script>steal()</script>",
+            generate_text="",
+            text="Typed text is ignored",
         ),
     )
     assert b"Hi Sample<" in response.content and b"steal()" not in response.content
@@ -438,3 +444,18 @@ def test_plain_text_preview_is_generated_by_the_server_for_admins(auth_service, 
         403,
         302,
     }
+
+
+def test_confirmation_closing_note_is_listed_with_the_confirmation_email(
+    auth_service, google
+):
+    """The receipt's closing note sits under Email templates, after the receipt."""
+    _, catalog, _ = setup(auth_service.store)
+    browser, _ = signed_in()
+    body = browser.get(catalog).content.decode()
+    pages, emails = body.split("Email templates", 1)
+    assert "Confirmation email: closing note" not in pages
+    assert emails.index("Submission receipt") < emails.index(
+        "Confirmation email: closing note"
+    )
+    assert "/page/submission_confirmation" in emails

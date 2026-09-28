@@ -37,7 +37,7 @@ def test_slots_and_module_visibility():
     assert "census" in slots and "member_census" in slots
     assert not {"additional", "ministry", "financial"} & slots.keys()
     assert "census" not in page_slots(campaign(modules=["ministry"])["values"])
-    assert "email delivery" in str(slots["submission_confirmation"])
+    assert str(slots["submission_confirmation"]).startswith("Confirmation email")
 
 
 @pytest.mark.parametrize("generate", [False, True])
@@ -49,7 +49,9 @@ def test_content_sanitized_and_plain_text_independent(generate):
             html='<p onclick="alert(1)">Hi</p><script>steal()</script>',
             text="" if generate else "Edited plain text",
         ),
+        # The one page slot whose plain text is delivered (receipt email).
         kind="page",
+        slot="submission_confirmation",
     )
     assert form.is_valid(), form.errors
     value = form.values(campaign_id="example", slot="welcome")
@@ -69,7 +71,8 @@ def test_content_sanitized_and_plain_text_independent(generate):
 )
 def test_invalid_template_form(kind, changes):
     """A safe typed field is not enough: placeholder/header rules still apply."""
-    form = ContentForm(fields(**changes), kind=kind)
+    slot = "submission_confirmation" if kind == "page" else None
+    form = ContentForm(fields(**changes), kind=kind, slot=slot)
     assert not form.is_valid()
     assert "both body versions" not in str(form.errors)
 
@@ -132,16 +135,17 @@ def test_generated_text_problem_names_the_generator_and_the_fix(slot):
 def test_checked_generation_refuses_typed_plain_text_instead_of_dropping_it():
     """Typed text that differs from the generated text is never silently lost."""
     data = fields(html="<p>Hello</p>", generate_text="on")
-    form = ContentForm(data | {"text": "My own words"}, kind="page")
+    receipt = {"kind": "page", "slot": "submission_confirmation"}
+    form = ContentForm(data | {"text": "My own words"}, **receipt)
     assert not form.is_valid()
     assert form.errors.as_data()["text"][0].code == "text_conflict"
     # Blank, or exactly the generated text (a read-only preview), is fine.
     for text in ("", "Hello", "A\r\n\r\nB"):
         if "A" in text:
             data = data | {"html": "<p>A</p><p>B</p>"}
-        assert ContentForm(data | {"text": text}, kind="page").is_valid()
+        assert ContentForm(data | {"text": text}, **receipt).is_valid()
     # Unchecked, the typed text is kept.
-    kept = ContentForm(data | {"generate_text": "", "text": "Mine"}, kind="page")
+    kept = ContentForm(data | {"generate_text": "", "text": "Mine"}, **receipt)
     assert kept.is_valid() and kept.cleaned_data["prepared"].text == "Mine"
 
 
@@ -347,3 +351,40 @@ def test_every_placeholder_has_a_realistic_fictional_sample():
         assert ".example.invalid/" in samples[name]
     assert samples["parish_email"].endswith(".invalid")
     assert samples["online_giving_url"] == samples["parish_website"]
+
+
+@pytest.mark.parametrize("slot", ["welcome", "financial", "thank_you", None])
+def test_page_slots_never_sent_as_email_always_generate_plain_text(slot):
+    """Web-only page slots offer no plain-text controls and ignore posted text."""
+    form = ContentForm(
+        fields(html="<p>Hello</p>", generate_text="", text="Ignored"),
+        kind="page",
+        slot=slot,
+    )
+    assert "text" not in form.fields and "generate_text" not in form.fields
+    assert form.is_valid(), form.errors
+    assert form.values(campaign_id="example", slot=slot or "welcome")["text"] == "Hello"
+
+
+@pytest.mark.parametrize(
+    "kind,slot", [("page", "submission_confirmation"), ("email", "confirmation")]
+)
+def test_delivered_plain_text_keeps_its_controls(kind, slot):
+    """The receipt block and every email keep the plain-text editor."""
+    form = ContentForm(kind=kind, slot=slot)
+    assert "text" in form.fields and "generate_text" in form.fields
+    if slot == "submission_confirmation":
+        assert "confirmation email" in str(form.fields["text"].help_text)
+
+
+def test_editor_template_hides_plain_text_for_web_only_pages():
+    """The shared editor fields render the plain-text panel only when delivered."""
+    from django.template.loader import render_to_string
+
+    def render(**kwargs):
+        return render_to_string(
+            "stewardship/content-fields.html", {"form": ContentForm(**kwargs)}
+        )
+
+    assert "data-plain-text" not in render(kind="page", slot="welcome")
+    assert "data-plain-text" in render(kind="page", slot="submission_confirmation")
