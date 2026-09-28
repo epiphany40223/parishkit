@@ -31,6 +31,13 @@ REASONS = {
     "provider_refused": "All eligible addresses permanently refused",
     "deliverable": "Deliverable email available",
 }
+# How campaign mail can reach a Family: by deliverable email, only by postal
+# mail (a usable mailing address, see directory_reports.sql), or neither.
+REACH = {
+    "email": "By email",
+    "mail": "By postal mail only",
+    "neither": "Neither email nor postal mail",
+}
 
 
 @dataclass(frozen=True, repr=False)
@@ -43,6 +50,7 @@ class DirectoryQuery:
     phone: str = "any"
     response: str = "any"
     sort: str = "name"
+    reach: str = "any"
     page: int = 1
 
     @classmethod
@@ -64,6 +72,7 @@ class DirectoryQuery:
             or query.phone not in {"any", "yes", "no"}
             or query.response not in {"any", "yes", "no"}
             or query.sort not in {"name", "name_desc", "duid"}
+            or query.reach not in {"any", *REACH}
         ):
             raise ValueError("Invalid directory filters.")
         if query.exact_code:

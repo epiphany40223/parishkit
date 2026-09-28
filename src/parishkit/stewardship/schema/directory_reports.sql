@@ -16,13 +16,15 @@ BEGIN
        OR (parameters->'exact'='false'::jsonb AND parameters->>'family_id' IS NOT NULL)
        OR jsonb_typeof(f) IS DISTINCT FROM 'object'
        OR NOT f ?& ARRAY['search','reason','phone','response','sort']
-       OR f-ARRAY['search','reason','phone','response','sort']<>'{}'::jsonb
+       -- reach is optional: captures made before it existed omit it (= any).
+       OR f-ARRAY['search','reason','phone','response','sort','reach']<>'{}'::jsonb
        OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
        OR length(f->>'search')>200
        OR f->>'reason' NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable')
        OR f->>'phone' NOT IN ('any','yes','no')
        OR f->>'response' NOT IN ('any','yes','no')
        OR f->>'sort' NOT IN ('name','name_desc','duid')
+       OR coalesce(f->>'reach','any') NOT IN ('any','email','mail','neither')
        OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
     THEN RAISE EXCEPTION 'Invalid directory report parameters' USING ERRCODE='23514'; END IF;
     -- BEGIN DIRECTORY SELECTION
@@ -75,7 +77,16 @@ WITH selected AS MATERIALIZED (
         recipients.eligible>0 AS email_eligible,
         recipients.deliverable>0 AS email_deliverable,
         EXISTS(SELECT 1 FROM stewardship_submission r WHERE r.family_id=i.id
-            AND r.campaign_id=campaign_uuid AND r.mode='live') AS responded
+            AND r.campaign_id=campaign_uuid AND r.mode='live') AS responded,
+        -- A usable mailing address: a street line and a city, plus a state or
+        -- a postal code. The postal mail-merge export includes only these.
+        EXISTS(SELECT 1 FROM addresses a
+            WHERE a.source_key='family:'||f.source_key||':primary'
+              AND nullif(btrim(a.fields->>'primaryAddress1'),'') IS NOT NULL
+              AND nullif(btrim(a.fields->>'primaryCity'),'') IS NOT NULL
+              AND (nullif(btrim(a.fields->>'primaryState'),'') IS NOT NULL
+                   OR nullif(btrim(a.fields->>'primaryPostalCode'),'') IS NOT NULL))
+            AS mailable
     FROM family_source f CROSS JOIN source s
     LEFT JOIN stewardship_family_campaign i
         ON i.campaign_id=s.id AND i.family_duid=f.source_key::bigint
@@ -112,6 +123,11 @@ WITH selected AS MATERIALIZED (
               AND c.value->'phones'<>'{}'::jsonb)
           )=(o.f->>'phone'='yes'))
       AND (o.f->>'response'='any' OR responded=(o.f->>'response'='yes'))
+      AND CASE coalesce(o.f->>'reach','any')
+          WHEN 'email' THEN email_deliverable
+          WHEN 'mail' THEN NOT email_deliverable AND mailable
+          WHEN 'neither' THEN NOT email_deliverable AND NOT mailable
+          ELSE true END
       AND (o.f->>'search'='' OR position(lower(o.f->>'search') IN lower(family_name))>0
           OR position(lower(o.f->>'search') IN lower(search_name))>0
           OR position(o.f->>'search' IN family_duid::text)>0
@@ -131,7 +147,9 @@ WITH selected AS MATERIALIZED (
     -- Only the selected page constructs display-only private contact JSON.
     SELECT p.*,f.value->>'envelopeNumber' AS envelope,
         coalesce((SELECT jsonb_agg(jsonb_build_object('duid',h.head,
-            'name',btrim(concat_ws(' ',m.value->>'firstName',m.value->>'lastName')))
+            'name',btrim(concat_ws(' ',m.value->>'firstName',m.value->>'lastName')),
+            'first',btrim(coalesce(m.value->>'firstName','')),
+            'last',btrim(coalesce(m.value->>'lastName','')))
             ORDER BY h.head::bigint)
             FROM jsonb_array_elements_text(f.value->'active_head_duids') h(head)
             JOIN members m ON m.source_key=h.head),'[]'::jsonb) AS heads,
@@ -156,6 +174,8 @@ SELECT jsonb_build_object('metadata',to_jsonb(s),
     'total',(SELECT count(*) FROM filtered),
     'active_total',(SELECT count(*) FROM rows),
     'postal_total',(SELECT count(*) FROM rows WHERE NOT email_deliverable),
+    'unreachable_total',(SELECT count(*) FROM rows
+        WHERE NOT email_deliverable AND NOT mailable),
     'rows',coalesce((SELECT jsonb_agg(
         to_jsonb(p)-ARRAY['ordinal','head_count','address_count','search_name','source_key']
         ORDER BY ordinal) FROM details p),'[]'::jsonb)) INTO answer FROM source s;

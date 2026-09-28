@@ -276,8 +276,21 @@ classification does not make it public: report access and exports remain
 authenticated, codes are excluded from logs, and the public Family login
 retains its guessing protections.
 
-CSV, XLSX, and PDF exports include the same columns, including the manual code.
-They use the standard asynchronous, short-lived, requester-authorized export
+Filters include how campaign mail can reach a Family: by deliverable email, by
+postal mail only (no deliverable email but a usable mailing address: a street
+line and a city, plus a state or postal code), or neither. A one-click
+"Can't be reached by email or mail" preset opens the page filtered to
+neither; it is the only filter accepted in a link (`?reach=neither`), since it
+carries no private value. The page, the postal page and the Admin home page
+show how many Families no campaign mail can reach, linking to that list.
+
+CSV, XLSX, and PDF exports are one header row plus one row per Family, with
+exactly the columns Family, Family heads, ParishSoft DUID and Family code. The
+list filtered to Families no campaign mail can reach adds Phone numbers for
+follow-up calls. Report details (parish, campaign, capture time, Families in
+the file, filters applied and the privacy line "Sensitive: Family codes.
+Authorized recipients only.") are in the PDF header and footer and the XLSX
+"Report information" sheet, never in columns. Exports use the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
@@ -298,11 +311,21 @@ Filters/search include name, DUID, address, phone presence, and reason (no head,
 no address, invalid address, or all otherwise eligible addresses permanently
 refused by the provider).
 
-Detail/export contains Family DUID, envelope number where present, Family/head
-names, family/member phone numbers, complete home/mailing address, reason, and
-campaign manual code. Export formats are CSV, XLSX, and PDF suitable for
-external label/mail-merge software. It never includes the opaque email-link
-token.
+Detail contains Family DUID, envelope number where present, Family/head names,
+family/member phone numbers, complete primary address, reason, and campaign
+manual code.
+
+The export is a mail merge for envelope labels and cover letters: one header
+row plus one row per Family, with the columns ParishSoft DUID, Family,
+Addressee, Family heads, Address line 1–3 (empty optional lines omitted), City,
+State, ZIP (with its +4 extension when present) and Family code. Addressee and
+Family heads join the active heads' names naturally ("Aaron and Isabelle
+Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
+otherwise); Addressee falls back to the Family name. Families without a usable
+mailing address cannot be mailed, so they are left out of the file and counted
+on the page and in the file's report details. The PDF lays the same content
+out as address blocks, with the report details in its header and footer. It
+never includes the opaque email-link token.
 
 ## Ministry change summary
 

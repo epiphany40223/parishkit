@@ -398,3 +398,57 @@ def test_directory_unavailability_and_invalid_filters_are_private(
         recovered, codes = read(browser, recovery)
         assert recovered.status_code == 200 and harness.code.encode() in codes
         assert recovered["Cache-Control"] == "no-store"
+
+
+def test_reach_filter_finds_families_no_campaign_mail_can_reach(
+    live_response_service,
+):
+    """Email, postal-only and neither follow deliverability and the address."""
+    harness = live_response_service
+    report = page(harness)
+    assert report["unreachable_total"] == 0 and report["rows"][0]["mailable"]
+    assert page(harness, reach="email")["total"] == 1
+    assert (
+        page(harness, reach="mail")["total"]
+        == page(harness, reach="neither")["total"]
+        == 0
+    )
+    # No deliverable email: reachable only by postal mail.
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    assert page(harness, reach="mail")["total"] == 1
+    assert page(harness)["unreachable_total"] == 0
+    # And no usable mailing address either: a street line alone is not enough.
+    data.families[1].update(primaryCity="", primaryPostalCode="", primaryState="")
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    report = page(harness, reach="neither")
+    assert report["total"] == report["unreachable_total"] == 1
+    assert not report["rows"][0]["mailable"]
+    assert page(harness, reach="mail")["total"] == 0
+    with pytest.raises(ValueError):
+        page(harness, reach="sometimes")
+
+
+def test_reach_preset_link_and_dashboard_readiness(live_response_service, google):
+    """?reach=neither is the only accepted GET filter; the dashboard counts it."""
+    harness = live_response_service
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    data.families[1].update(primaryAddress1="")
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    browser, _ = signed_in()
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route + "?reach=neither")
+        assert response.status_code == 200 and b"Household Example" in body
+        assert b"no campaign mail can reach" in body
+        assert read(browser, route + "?reach=sometimes")[0].status_code == 400
+        assert read(browser, route + "?reach=neither&search=x")[0].status_code == 400
+        home = browser.get("/admin/").content
+    assert (
+        b"Reaching every Family" in home and (route + "?reach=neither").encode() in home
+    )

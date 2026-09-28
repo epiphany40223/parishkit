@@ -65,6 +65,26 @@ def components(context, admin):
             {"request_id": job.pk, "busy": True},
         ),
     }
+    pages["/report-export-pending"] = (
+        "report-export",
+        {
+            "job": job,
+            "status": {"state": "queued"},
+            "mutable": True,
+            "can_cancel": True,
+            "report_url": "/participation",
+        },
+    )
+    pages["/report-export-failed"] = (
+        "report-export",
+        {
+            "job": job,
+            "status": {"state": "failed"},
+            "mutable": True,
+            "retry_key": UUID(int=31),
+            "report_url": "/participation",
+        },
+    )
     pages["/report-export-expired"] = (
         "report-export",
         {

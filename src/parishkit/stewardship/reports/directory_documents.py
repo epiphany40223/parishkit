@@ -1,60 +1,146 @@
-"""Detached, complete mail-merge columns with explicit address availability."""
+"""Detached directory export documents: a code list or a postal mail merge.
 
-import json
+Each export is one header row plus one row per Family, so a spreadsheet or
+word processor can use it directly. Report details (parish, campaign, capture
+time, filters and the privacy note) are not columns: they go in the PDF header
+and footer and in the XLSX "Report information" sheet.
+
+- The Family-code directory lists Family, Family heads, ParishSoft DUID and
+  Family code. When it is filtered to Families that no campaign mail can reach
+  (reach "neither"), it adds their phone numbers for follow-up calls.
+- The postal export is a mail merge for envelope labels and cover letters. It
+  includes only Families with a usable mailing address; the rest are counted
+  so staff can follow up.
+"""
+
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.web.presentation import phone as format_phone
 
-from .directories import REASONS, address_lines
+from .directories import REACH, REASONS
 
-HEADINGS = (
-    "Record",
+CODE_HEADINGS = ("Family", "Family heads", "ParishSoft DUID", "Family code")
+PHONE_HEADING = "Phone numbers"
+POSTAL_HEADINGS = (
+    "ParishSoft DUID",
     "Family",
-    "Family DUID",
-    "Manual code",
-    "Eligible email",
-    "Deliverable email",
-    "Email availability reason",
-    "Campaign response",
-    "Envelope number",
-    "Active Family heads",
-    "Family and Member phones",
-    "Primary address line 1",
-    "Primary address line 2",
-    "Primary address line 3",
-    "Primary city",
-    "Primary state",
-    "Primary postal code",
-    "Primary ZIP extension",
-    "Primary address availability",
-    "Separate home address",
-    "Separate mailing address",
+    "Addressee",
+    "Family heads",
+    "Address line 1",
+    "Address line 2",
+    "Address line 3",
+    "City",
+    "State",
+    "ZIP",
+    "Family code",
 )
-ADDRESS_FIELDS = (
-    "primaryAddress1",
-    "primaryAddress2",
-    "primaryAddress3",
-    "primaryCity",
-    "primaryState",
-    "primaryPostalCode",
-    "primaryZipPlus",
-)
+PRIVACY = "Sensitive: Family codes. Authorized recipients only."
+FILTER_LABELS = {
+    "phone": ("Phone available", {"yes": "Yes", "no": "No"}),
+    "response": ("Campaign response", {"yes": "Responded", "no": "Not yet responded"}),
+    "reason": ("Email availability", REASONS),
+    "reach": ("Campaign mail can reach", REACH),
+}
 
 
 @dataclass(frozen=True, repr=False)
 class DirectoryDocument:
-    """The renderer has no database handles, clocks, key material or live selectors."""
+    """The renderer has no database handles, clocks, key material or live selectors.
+
+    ``postal`` selects the PDF layout (address blocks rather than a table);
+    ``excluded`` counts Families left out of a postal file for want of a
+    usable mailing address. ``item_count`` is the captured matching count,
+    which the publication must record (the SQL publication guard binds it to
+    the snapshot), so for a postal file it includes the excluded Families.
+    """
 
     metadata: tuple[tuple[str, str], ...]
+    headings: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
     item_count: int
     requested_at: datetime
     title: str
-    headings: ClassVar[tuple[str, ...]] = HEADINGS
-    sheet_name: ClassVar[str] = "Families"
+    postal: bool
+    excluded: int = 0
+    sheet_name: str = "Families"
+
+
+def _clean(value):
+    """A source value as trimmed text; missing values become empty."""
+    return str(value or "").strip()
+
+
+def mailable(address):
+    """A usable mailing address: the same rule as directory_reports.sql.
+
+    A street line and a city, plus a state or a postal code. Captures made
+    before the SQL computed ``mailable`` are judged here the same way.
+    """
+    return bool(
+        _clean(address.get("primaryAddress1"))
+        and _clean(address.get("primaryCity"))
+        and (
+            _clean(address.get("primaryState"))
+            or _clean(address.get("primaryPostalCode"))
+        )
+    )
+
+
+def _series(parts):
+    """Join names naturally: "A", "A and B", "A, B and C"."""
+    parts = [part for part in parts if part]
+    if len(parts) < 3:
+        return " and ".join(parts)
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def head_names(heads):
+    """The Family heads' names as one natural phrase.
+
+    Heads sharing a surname read "Aaron and Isabelle Williams"; otherwise
+    "Aaron Williams and Isabelle Smith". Heads captured before first and last
+    names were kept separately use their full display name.
+    """
+    split = [(_clean(head.get("first")), _clean(head.get("last"))) for head in heads]
+    surnames = {last for _, last in split}
+    if (
+        heads
+        and all("first" in head and "last" in head for head in heads)
+        and len(surnames) == 1
+        and "" not in surnames
+    ):
+        return f"{_series([first for first, _ in split])} {surnames.pop()}".strip()
+    return _series([_clean(head.get("name")) for head in heads])
+
+
+def _zip(address):
+    """The postal code with its +4 extension when there is one."""
+    return "-".join(
+        filter(
+            None,
+            (
+                _clean(address.get("primaryPostalCode")),
+                _clean(address.get("primaryZipPlus")),
+            ),
+        )
+    )
+
+
+def _filters(parameters):
+    """The applied filters in words, for the report details."""
+    applied = []
+    values = parameters["filters"]
+    if values.get("search"):
+        applied.append(f"Search: {values['search']}")
+    for key, (label, choices) in FILTER_LABELS.items():
+        value = values.get(key, "any")
+        if value != "any":
+            applied.append(f"{label}: {choices[value]}")
+    if parameters["exact"]:
+        applied.append("Exact Family code")
+    return "; ".join(applied) or "None"
 
 
 def directory_document(
@@ -70,75 +156,77 @@ def directory_document(
         value = value if isinstance(value, datetime) else datetime.fromisoformat(value)
         if value.utcoffset() is None:
             raise ValueError("Directory timestamps must be aware.")
-        return value.astimezone(zone).isoformat(timespec="seconds")
+        return value.astimezone(zone).strftime("%Y-%m-%d %H:%M %Z")
 
-    title = (
-        "Families without deliverable email"
-        if parameters["postal"]
-        else "Family-code directory"
-    )
+    postal = parameters["postal"]
+    title = "Postal mail merge" if postal else "Family-code directory"
+    rows, excluded = [], 0
+    if postal:
+        headings = POSTAL_HEADINGS
+        for item in payload["rows"]:
+            address = item["address"]
+            if not item.get("mailable", mailable(address)):
+                excluded += 1
+                continue
+            heads = head_names(item["heads"])
+            lines = [
+                _clean(address.get(f"primaryAddress{index}")) for index in (1, 2, 3)
+            ]
+            lines = [line for line in lines if line]
+            lines += [""] * (3 - len(lines))
+            rows.append(
+                (
+                    str(item["family_duid"]),
+                    item["family_name"],
+                    heads or item["family_name"],
+                    heads,
+                    *lines,
+                    _clean(address.get("primaryCity")),
+                    _clean(address.get("primaryState")),
+                    _zip(address),
+                    item["code"] or "",
+                )
+            )
+    else:
+        phones = parameters["filters"].get("reach") == "neither"
+        headings = CODE_HEADINGS + ((PHONE_HEADING,) if phones else ())
+        for item in payload["rows"]:
+            row = (
+                item["family_name"],
+                head_names(item["heads"]),
+                str(item["family_duid"]),
+                item["code"] or "",
+            )
+            if phones:
+                row += (
+                    "; ".join(
+                        f"{row['owner']} ({row['kind']}): {format_phone(row['value'])}"
+                        for row in item["phones"]
+                    ),
+                )
+            rows.append(row)
     source = payload["metadata"]
     metadata = (
         ("Report", title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Campaign reference", source["id"]),
-        ("Source reference", source["source_id"]),
-        ("Source generation", f"{source['source_generation']:,}"),
-        ("Source as of", instant(source["source_as_of"])),
         ("Captured at", instant(captured_at)),
-        ("Requested at", instant(requested_at)),
-        ("Display timezone", timezone),
-        ("Matching Families", f"{payload['total']:,}"),
-        (
-            "Filters and sort",
-            json.dumps(parameters["filters"], ensure_ascii=False, sort_keys=True),
+        ("Families in this file", f"{len(rows):,}"),
+        *(
+            (("Not in this file: no usable mailing address", f"{excluded:,}"),)
+            if postal
+            else ()
         ),
-        ("Exact-code filter", "Applied" if parameters["exact"] else "Not applied"),
-        (
-            "Address note",
-            "The source does not distinguish separate home and mailing addresses.",
-        ),
-        (
-            "Mail merge",
-            "Select rows where Record is Family; "
-            "Report metadata is not a mailing recipient.",
-        ),
-        (
-            "Privacy",
-            "Sensitive parish information and campaign manual codes. "
-            "Authorized recipients only.",
-        ),
+        ("Filters applied", _filters(parameters)),
+        ("Privacy", PRIVACY),
     )
-    rows = []
-    for item in payload["rows"]:
-        address = item["address"]
-        rows.append(
-            (
-                "Family",
-                item["family_name"],
-                str(item["family_duid"]),
-                item["code"] or "Unavailable",
-                "Yes" if item["email_eligible"] else "No",
-                "Yes" if item["email_deliverable"] else "No",
-                REASONS[item["reason"]],
-                "Responded" if item["responded"] else "Not yet responded",
-                str(item["envelope"] or ""),
-                "; ".join(head["name"] for head in item["heads"]),
-                "\n".join(
-                    f"{row['owner']} — {row['kind']}: {format_phone(row['value'])}"
-                    for row in item["phones"]
-                ),
-                *(str(address.get(field) or "") for field in ADDRESS_FIELDS),
-                "Known primary address"
-                if address_lines(address)
-                else "No address supplied"
-                if address
-                else "Unavailable",
-                "Unavailable",
-                "Unavailable",
-            )
-        )
     return DirectoryDocument(
-        metadata, tuple(rows), payload["total"], requested_at, title
+        metadata=metadata,
+        headings=headings,
+        rows=tuple(rows),
+        item_count=payload["total"],
+        requested_at=requested_at,
+        title=title,
+        postal=postal,
+        excluded=excluded,
     )

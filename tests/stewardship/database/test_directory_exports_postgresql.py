@@ -225,11 +225,17 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
             response, body = search(browser, job_route + "download", {})
             assert response.status_code == 200
             assert body.startswith(
-                {"csv": b"Record,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
+                {
+                    "csv": b"Family,Family heads,ParishSoft DUID,Family code\r\n",
+                    "xlsx": b"PK",
+                    "pdf": b"%PDF",
+                }[format]
             )
             assert "family_directory." + format in response["Content-Disposition"]
             if format == "csv":
-                assert harness.code.encode() in body and b"1 Example Street" in body
+                # The code list names Families and codes, not addresses.
+                assert harness.code.encode() in body
+                assert b"1 Example Street" not in body
     data = response_source()
     data.families[1]["lastName"] = "Later changed name"
     snapshot, claim = prepare(data)
@@ -360,3 +366,62 @@ def test_directory_export_staff_gates_and_service_boundaries(
         assert (
             read(browser, f"/admin/reports/exports/{request.pk}/")[0].status_code == 403
         )
+
+
+def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
+    live_response_service, google, tmp_path, settings
+):
+    """The postal file has mailable Families only; the publication keeps the count."""
+    harness = live_response_service
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    for duid in (10, 11):
+        data.families[duid] = data.families[1] | {
+            "familyDUID": duid,
+            "familyID": duid + 100,
+            "lastName": "Unmailable",
+            "primaryCity": "",
+        }
+        data.members[1000 + duid] = data.members[3] | {
+            "memberDUID": 1000 + duid,
+            "familyDUID": duid,
+            "emailAddress": "",
+        }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    browser, _ = signed_in()
+    root = tmp_path / "postal-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
+    route = f"/admin/reports/{harness.campaign.pk}/postal/"
+    fields = DirectoryQuery().form_values() | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route)
+        assert b"They are not in the mail-merge file." in body
+        response = post(browser, route + "export", fields)
+        assert response.status_code == 302
+    request = ExportRequest.objects.get(request_key=fields["request_key"])
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            request.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                TASK_TYPE: export_handler(
+                    store=harness.service.store,
+                    root=root,
+                    general=harness.rings.general,
+                )
+            },
+        )
+    with restricted_download_pool(settings):
+        response, body = search(browser, response["Location"] + "download", {})
+    assert response.status_code == 200
+    lines = body.decode().splitlines()
+    assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
+    assert len(lines) == 2 and lines[1].startswith("1,Household Example,")
+    assert "40000" in lines[1] and harness.code in lines[1]
+    assert request.directory_snapshot.row_count == 3
