@@ -38,6 +38,7 @@ from django.views.decorators.http import (
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.security import login_denial
 
@@ -91,10 +92,13 @@ def denial(*, status=403, retry=None, admin=True):
 
     The kind follows the status alone, as Family ``denied()`` does: a rate
     limit (429) or outage (503) uses the temporary-unavailability text, as the
-    architecture specification requires of Admin OAuth and Family code entry,
-    and that reaches every caller, signed-in Admin report views included. Any
-    other refusal keeps the original generic text.
+    architecture specification requires of Admin OAuth and Family code entry.
+    Any other refusal keeps the original generic text. Report views answer an
+    outage with ``web.report_errors.report_unavailable`` instead, so Admins
+    see a report error rather than this sign-in wording.
     """
+    # Callers deny from inside an except block; record what actually failed.
+    debug_swallowed("admin request denied")
     response = login_denial(
         admin=admin,
         status=status,

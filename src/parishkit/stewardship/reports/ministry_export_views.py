@@ -7,6 +7,7 @@ from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
 from .export_ui import _redirect
@@ -57,7 +58,7 @@ def create(request, campaign_id):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid Ministry export selection.\n", status=400)
 
@@ -121,6 +122,6 @@ def create_packet(request, campaign_id):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid Ministry packet selection.\n", status=400)

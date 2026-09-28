@@ -131,6 +131,13 @@ code is unchanged, scripts receive the same explanation as a `refusal` JSON
 field, and the text is static and reviewed, never exception or submitted text.
 Other refusals keep the closed, generic messages.
 
+A report page that cannot be read because of a transient outage (database,
+storage, configuration, limiter, or unavailable facts or snapshots) answers
+`503` with `Retry-After` and the Admin error page "This report is temporarily
+unavailable", never the Family sign-in denial. With debug logging enabled,
+the swallowed exception behind any such closed response is logged at debug
+level so operators can see what failed.
+
 Review, Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub: the Review page links no
 later step from its body and its primary action is Continue to the email

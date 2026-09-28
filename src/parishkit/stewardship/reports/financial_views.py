@@ -15,7 +15,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
@@ -44,6 +44,7 @@ def _principal(request, store, *, read_only=False):
 
 def _error(campaign_id, *, status):
     """No private filter or exception values, and a way back to the report."""
+    debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/financial-report-error.html",

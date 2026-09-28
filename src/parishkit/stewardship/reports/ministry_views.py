@@ -18,6 +18,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
@@ -69,7 +70,7 @@ def index(request):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except SAFE_FAILURES:
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid Ministry filters.\n", status=400)
 
@@ -127,7 +128,7 @@ def picker(request):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except SAFE_FAILURES:
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid Ministry filters.\n", status=400)
 
@@ -281,7 +282,7 @@ def report(request, campaign_id, *, action=None):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid Ministry filters.\n", status=400)
     finally:
