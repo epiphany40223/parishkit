@@ -211,7 +211,10 @@ def _service_presentation(ministries, options, prior):
     """
     if ministries is None:
         return None
-    offered = {option.id for option in options}
+    # Free text survives only while its option still takes free text; a
+    # parish that turns it off drops old notes rather than having the next
+    # Submit rejected for text the Family can no longer see or edit.
+    offered = {option.id: option.free_text for option in options}
     previous = (prior.answers.get("service") or {}) if prior else {}
     result = {
         "talent_options": [
@@ -227,7 +230,7 @@ def _service_presentation(ministries, options, prior):
             result[group][key] = {
                 "cannot_serve": bool(old.get("cannot_serve")),
                 "talents": {
-                    talent: text
+                    talent: text if offered[talent] else ""
                     for talent, text in (old.get("talents") or {}).items()
                     if talent in offered
                 },
