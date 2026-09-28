@@ -88,7 +88,7 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
     assert gate["needs"] == "stewardship-postgresql-shard"
-    assert gate["if"] == "${{ always() }}"
+    assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert gate["steps"][0]["env"] == {
         "SHARD_RESULT": "${{ needs.stewardship-postgresql-shard.result }}"
     }
@@ -211,7 +211,7 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
     assert actual == expected, collected.stdout + collected.stderr
     gate = jobs["stewardship-compose"]
     assert gate["needs"] == ["stewardship-compose-core", "stewardship-operational"]
-    assert gate["if"] == "${{ always() }}"
+    assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert gate["steps"] == [
         {
             "name": "Require all container scenarios",
