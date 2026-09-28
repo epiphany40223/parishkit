@@ -1,4 +1,4 @@
-"""Action-first Family pages: sticky actions, toggletips and "Read more" (#225)."""
+"""Action-first Family pages: sticky actions, toggletips and full intro text (#225)."""
 
 import pytest
 
@@ -111,35 +111,12 @@ def test_only_one_toggletip_is_open_at_a_time(page, component_origin):
 
 
 @pytest.mark.parametrize("width", [390, 1280])
-def test_long_intro_collapses_behind_read_more(page, component_origin, width):
-    """Only the opening shows until "Read more"; the choice survives rebuilds."""
+def test_long_intro_is_shown_in_full(page, component_origin, width):
+    """Parish-written text always shows in full, with no "Read more" button."""
     page.set_viewport_size({"width": width, "height": 800})
     form = paged_form()
     form["content"]["welcome"] = LONG_WELCOME
     begin(page, component_origin, form, None)
     expect(page.get_by_text("Thank you for taking a few minutes")).to_be_visible()
-    rest = page.get_by_text("Paragraph 4 explains")
-    expect(rest).to_be_hidden()
-    toggle = page.get_by_role("button", name="Read more")
-    expect(toggle).to_have_attribute("aria-expanded", "false")
-    toggle.click()
-    expect(rest).to_be_visible()
-    toggle = page.get_by_role("button", name="Show less")
-    expect(toggle).to_have_attribute("aria-expanded", "true")
-    # Returning from Review rebuilds every page (edit()); the intro the
-    # Family expanded stays expanded.
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
-    review(page)
-    page.locator('[data-step-jump="intro"]').click()
     expect(page.get_by_text("Paragraph 4 explains")).to_be_visible()
-    page.get_by_role("button", name="Show less").click()
-    expect(page.get_by_text("Paragraph 4 explains")).to_be_hidden()
-
-
-def test_short_intro_has_no_read_more(page, component_origin):
-    """A short welcome is shown in full, with no extra button."""
-    form = paged_form()
-    form["content"]["welcome"] = "<h2>Welcome</h2><p>Hello.</p><p>Thanks.</p>"
-    begin(page, component_origin, form, None)
-    expect(page.get_by_text("Thanks.")).to_be_visible()
     expect(page.get_by_role("button", name="Read more")).to_have_count(0)
