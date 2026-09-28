@@ -7,9 +7,10 @@ from uuid import UUID
 
 import pytest
 
+from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
 from .test_family_ministry import begin
-from .test_family_response import expect, prepare
+from .test_family_response import expect, prepare, review, show
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -52,11 +53,14 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
         route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, financial_form(census=True, ministry=True), submit)
-    page.get_by_label("First name (required)").fill("Review edit")
-    page.get_by_label("Annual pledge (USD)").fill("52")
-    page.get_by_label("Pledge frequency").select_option("weekly")
-    page.get_by_label("Additional information (optional)").fill("Private review note")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("First name (required)")).fill("Review edit")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("52")
+    show(page, page.get_by_label("Pledge frequency")).select_option("weekly")
+    show(page, page.locator(f"#financial-option-{CHECK}")).check()
+    show(page, page.get_by_label("Additional information (optional)")).fill(
+        "Private review note"
+    )
+    review(page)
     for label, target in [
         ("Family census", "household-section"),
         ("Review edit", "member-section-3"),
@@ -74,7 +78,7 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
         )
         assert not submissions
         assert page.evaluate("localStorage.length + sessionStorage.length") == 0
-        page.get_by_role("button", name="Review response").click()
+        review(page)
     page.evaluate(axe_source)
     assert (
         page.evaluate("""async () => (await axe.run(document, {
@@ -90,7 +94,14 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
     page.screenshot(path=str(image))
     print(f"Family review inspection: {image}")
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="Thank you!", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
     assert len(submissions) == 1
     assert submissions[0]["members"]["3"]["first_name"] == "Review edit"
     assert submissions[0]["financial"]["annual_pledge"] == "52"
@@ -101,16 +112,28 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
 def test_section_edit_clears_testing_final_consent(page, component_origin):
     """Section shortcuts must not preserve final consent across a new review."""
     attempts = prepare(page, component_origin, testing=True)
-    page.locator("#testing-entry-ack").check()
+    show(page, page.locator("#testing-entry-ack")).check()
     page.get_by_role("button", name="Continue with test").click()
-    page.get_by_role("button", name="Review response").click()
-    page.locator("#testing-submit-ack").check()
-    page.get_by_role("button", name="Edit Additional information").click()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
+    show(page, page.locator("#testing-submit-ack")).check()
+    show(
+        page,
+        page.get_by_role(
+            "button", name="Edit Additional information", include_hidden=True
+        ),
+    ).click()
+    review(page)
     expect(page.locator("#testing-submit-ack")).not_to_be_checked()
     assert len(attempts) == 1
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
-    expect(page.get_by_role("button", name="Submit test response")).to_be_visible()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "button", name="Submit test response", include_hidden=True
+            ),
+        )
+    ).to_be_visible()
 
 
 def test_reload_and_cancel_never_restore_a_private_draft(page, component_origin):
@@ -120,7 +143,9 @@ def test_reload_and_cancel_never_restore_a_private_draft(page, component_origin)
         page, component_origin, submit=lambda route: submissions.append(route.request)
     )
     page.get_by_role("button", name="Begin reviewing").click()
-    page.get_by_label("First name (required)").fill("Unsubmitted private edit")
+    show(page, page.get_by_label("First name (required)")).fill(
+        "Unsubmitted private edit"
+    )
 
     def acknowledge(dialog):
         """Record actual browser loss warnings without suppressing the handler."""
@@ -133,9 +158,12 @@ def test_reload_and_cancel_never_restore_a_private_draft(page, component_origin)
     assert "Unsubmitted private edit" not in page.content()
     page.get_by_role("button", name="Begin reviewing").click()
     expect(page.get_by_label("First name (required)")).to_have_value("Alex")
-    page.get_by_label("First name (required)").fill("Another private edit")
+    show(page, page.get_by_label("First name (required)")).fill("Another private edit")
     page.route("**/family/logout", lambda route: route.fulfill(body="Signed out"))
-    page.get_by_role("button", name="Cancel and sign out").click()
+    show(
+        page,
+        page.get_by_role("button", name="Cancel and sign out", include_hidden=True),
+    ).click()
     expect(page.locator("body")).to_have_text("Signed out")
     assert dialogs == ["beforeunload", "confirm"]
     assert not submissions
@@ -181,21 +209,44 @@ def test_large_household_and_on_demand_ministry_list(page, component_origin):
 
     started = monotonic()
     begin(page, component_origin, form, submit)
-    expect(page.get_by_role("button", name="Add a household member")).to_be_disabled()
+    expect(
+        page.get_by_role("button", name="Add a household member", include_hidden=True)
+    ).to_be_disabled()
     render_seconds = monotonic() - started
-    assert page.get_by_label("Search Ministries").count() == 0
-    page.get_by_text("Join another Ministry", exact=True).first.click()
-    page.get_by_label("Search Ministries").fill("500")
-    page.get_by_label("Ministry 500 — interested in joining").check()
+    assert page.get_by_label("Search ministries").count() == 0
+    show(
+        page, page.get_by_text("Click here to join another ministry", exact=True).first
+    ).click()
+    show(page, page.get_by_label("Search ministries")).fill("500")
+    show(
+        page,
+        page.get_by_role(
+            "checkbox", name="Ministry 500", exact=True, include_hidden=True
+        ),
+    ).check()
     assert page.locator('[id*="-join-"]').count() == 1
-    page.get_by_label("Annual pledge (USD)").fill("0")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     started = monotonic()
-    page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
+    review(page)
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "button", name="Submit to Sample Parish", include_hidden=True
+            ),
+        )
+    ).to_be_visible()
     review_seconds = monotonic() - started
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="Thank you!", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
     assert len(submissions) == 1
     answers = submissions[0]["answers"]
     assert len(answers["members"]) == 20

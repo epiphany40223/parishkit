@@ -14,6 +14,9 @@
   let separateMailing = null;
   let requests = {}, initialRequests = {};
   const conflicts = new Map();
+  // The editor is one form split into pages. `currentPage` names the visible
+  // page across rebuilds; `pages` is rebuilt by every edit() call.
+  let currentPage = null, pages = [];
 
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
@@ -42,6 +45,9 @@
     return digits.length && digits.length <= 15 ? [
       international ? "international" : "national", digits, match[2] || ""] : null;
   }
+  // Phone display and comparison come from the shared site-wide helper
+  // (phone-v1.js, loaded first by family.html).
+  const Phone = window.StewardshipPhone;
   function canonical(value, name) {
     if (value === undefined) return "missing";
     if (value === null || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
@@ -127,6 +133,10 @@
     });
     initial = structuredClone(answers);
     initialRequests = structuredClone(requests);
+    if (!preserve) {
+      currentPage = "intro";
+      history.replaceState({familyPage: "intro"}, "");
+    }
     if (preserve && previous && before) {
       (next.household?.fields || []).forEach(({name}) => {
         if (canonical(previous.family[name], name) !== canonical(before.family[name], name)) {
@@ -200,6 +210,9 @@
       }
     }
     edit();
+    // A refreshed form opens on the first page that needs the Family's choice.
+    const conflict = preserve ? unresolvedConflict(root) : null;
+    if (conflict) showPage(pageOf(conflict));
   }
   function conflictChoice(path, input, parent, apply = null) {
     const conflict = conflicts.get(path);
@@ -231,6 +244,7 @@
   }
   function fieldErrors(errors) {
     edit();
+    let first = null;
     say("Please correct the indicated fields, then review your response again.");
     const list = node("ul", null, message);
     Object.entries(errors).forEach(([path, text]) => {
@@ -241,15 +255,20 @@
         household ? "family-" + household[1] + (household[2] ? "-" + household[2] : "") :
         financial ? "financial-" + (financial[2] ? "shares-" + financial[2] : financial[1]) :
         path === "additional_information" ? "additional-information" : null;
-      const input = id ? document.getElementById(id) : null;
+      // A missing share method has no single field; point at the first choice.
+      const input = id ? document.getElementById(id) :
+        path === "financial.shares" ? root.querySelector('input[id^="financial-option-"]') : null;
       const item = node("li", null, list);
       if (input) {
+        first ||= input;
         input.setCustomValidity(text);
         input.setAttribute("aria-invalid", "true");
-        const errorId = id + "-error";
-        const label = document.querySelector('label[for="' + id + '"]');
-        const link = node("a", (label?.textContent || "Field") + ": " + text, item, {href: "#" + id});
-        link.addEventListener("click", (event) => { event.preventDefault(); input.focus(); });
+        const errorId = (id || input.id) + "-error";
+        const label = document.querySelector('label[for="' + (id || input.id) + '"]');
+        const link = node("a", (label?.textContent || "Field") + ": " + text, item, {href: "#" + (id || input.id)});
+        link.addEventListener("click", (event) => {
+          event.preventDefault(); showPage(pageOf(input), {focus: false}); input.focus();
+        });
         const error = node("p", text, null, {id: errorId});
         input.after(error);
         input.setAttribute("aria-describedby", [input.getAttribute("aria-describedby"), errorId].filter(Boolean).join(" "));
@@ -260,11 +279,21 @@
         }, {once: true});
       } else item.textContent = text;
     });
+    if (first) showPage(pageOf(first), {focus: false});
     message.focus();
   }
-  function familySummary() {
-    const panel = node("div", null, root, {class: "panel"});
-    node("p", form.family.mailingName || form.family.lastName || "Your Family", panel);
+  function familyTitle() {
+    // The Family's surname is the clearest confirmation that the right
+    // household is open; ParishSoft's mailing name may be one person's name.
+    return form.family.lastName ? "The " + form.family.lastName + " Family" :
+      form.family.mailingName || "Your Family";
+  }
+  function familySummary(parent = root) {
+    const panel = node("div", null, parent, {class: "panel family-summary"});
+    node("p", familyTitle(), panel, {class: "family-name"});
+    // ParishSoft's "mailing name" is how parish mail is addressed. Label it:
+    // unlabelled, it read as an unexplained pane showing one Member's name.
+    if (form.family.mailingName) node("p", "Parish mail is addressed to: " + form.family.mailingName, panel);
     if (form.household) {
       node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
       node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
@@ -292,13 +321,12 @@
     if (definition.kind === "date" && !input.readOnly && value && value > form.today) {
       input.setCustomValidity(definition.name === "death_date" ? "Death date cannot be in the future." : "Birth date cannot be in the future.");
     }
-    if (definition.kind === "phone" && value && value !== definition.value) {
+    if (definition.kind === "phone" && value && !Phone.same(value, definition.value)) {
+      // Formatting alone never needs re-validation; a new number must be
+      // complete (+ country code outside the US). The server stays authoritative.
       const key = phoneKey(value);
-      if (!key || key[0] !== "international") {
-        input.setCustomValidity("Enter a complete phone number, using + and country code outside the US.");
-      } else {
-        const digits = key[1];
-        if (!/^[1-9][0-9]{1,14}$/.test(digits)) input.setCustomValidity("Enter a valid international phone number.");
+      if (!key || key[0] !== "international" || !/^[1-9][0-9]{1,14}$/.test(key[1])) {
+        input.setCustomValidity("Enter a complete phone number; include + and country code outside the US.");
       }
     }
     input.setAttribute("aria-invalid", String(!input.checkValidity()));
@@ -384,7 +412,7 @@
   }
   function memberEditor(member, index, editor, fields, deferValidation) {
     const group = node("fieldset", null, editor, {id: "member-section-" + member.id, tabindex: "-1"});
-    node("legend", memberName(member, index), group);
+    node("legend", memberName(member, index), group, {class: "visually-hidden"});
     node("p", "Relationship: " + (member.relationship || "Not available in parish records"), group);
     if (member.proposed) {
       node("p", "Proposed addition — parish staff will follow up. This does not automatically create a parish record.", group, {class: "changed"});
@@ -458,7 +486,7 @@
           input.readOnly = unknown.checked;
           input.required = !unknown.checked;
           input.value = unknown.checked ? "" : value;
-        } else input.value = value;
+        } else input.value = definition.kind === "phone" ? Phone.format(value) : value;
         if (language) {
           language.value = ["", "English", "Spanish"].includes(value) ? value : "other";
           input.readOnly = ["English", "Spanish"].includes(language.value);
@@ -469,15 +497,27 @@
       const status = node("p", "", group, {id: id + "-status", class: "muted"});
       node("p", "", group, {id: id + "-inline-error", hidden: ""});
       function update() {
-        const value = unknown?.checked ? "unknown" : input.value;
+        // A reformatted but unchanged phone keeps the parish record's exact
+        // value; a real change is sent as typed and normalized by the server.
+        const original = initialMember(member)[definition.name];
+        // A newly added person has no record to keep, so only a stored value
+        // (never undefined) can replace what was typed.
+        const value = unknown?.checked ? "unknown" :
+          definition.kind === "phone" && original !== undefined && Phone.same(input.value, original) ?
+            original : input.value;
         memberValues(member)[definition.name] = value;
-        const changed = definition.changed || canonical(value, definition.name) !==
-          canonical(initialMember(member)[definition.name], definition.name);
+        if (["first_name", "last_name"].includes(definition.name)) retitle("member-" + member.id, memberName(member, index));
+        const changed = definition.changed || (definition.kind === "phone" ? !Phone.same(value, original) :
+          canonical(value, definition.name) !== canonical(original, definition.name));
         status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
           changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
       }
       input.addEventListener("input", () => { update(); input.setCustomValidity(""); });
       const validate = () => validateField(input, {...definition, required: input.required});
+      // Reformat a recognized phone number once the Family leaves the field.
+      if (definition.kind === "phone") input.addEventListener("blur", () => {
+        if (Phone.parse(input.value) !== null) input.value = Phone.format(input.value);
+      });
       input.addEventListener("blur", (event) => {
         // Revealing an error during a button's mousedown can move that button
         // before mouseup, swallowing the click. Review validates after click.
@@ -551,9 +591,8 @@
       }
       return;
     }
-    const panel = node("section", null, parent, {class: "panel"});
-    node("h3", "Ministry participation", panel);
-    node("p", "These are requests, not automatic roster changes. A Ministry leader or parish staff member may follow up.", panel);
+    const panel = node("section", null, parent, {class: "panel ministry-panel"});
+    node("h4", "Ministry participation", panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
     if (conflict && conflict.choice === undefined) {
       const notice = node("div", null, panel, {"data-conflict": path});
@@ -561,64 +600,83 @@
       const acknowledge = node("button", "Discard unavailable choices and use the current list", notice, {type: "button"});
       acknowledge.addEventListener("click", () => { conflict.choice = 0; edit(); });
     }
-    function optionControl(option, action, parent) {
-      const label = node("label", null, parent);
-      const id = "ministry-" + member.id + "-" + action + "-" + option.id;
-      const input = node("input", null, label, {id, type: "checkbox"});
-      input.checked = choices[action].includes(option.id);
-      label.append(document.createTextNode(" " + option.name + (action === "leave" ? " — wishes to stop participating" : " — interested in joining")));
-      label.classList.toggle("changed", input.checked);
-      input.addEventListener("change", () => {
-        const selected = new Set(choices[action]);
-        if (input.checked) selected.add(option.id); else selected.delete(option.id);
-        choices[action] = [...selected].sort((a, b) => a - b);
-        label.classList.toggle("changed", input.checked);
-      });
+    function toggle(action, id, selected) {
+      const next = new Set(choices[action]);
+      if (selected) next.add(id); else next.delete(id);
+      choices[action] = [...next].sort((a, b) => a - b);
     }
-    node("h4", "Current Ministries", panel);
+    // Current Ministries: each row states the choice once, as a pair of
+    // radio buttons defaulting to Continuing, instead of repeating a suffix
+    // on every checkbox label.
+    node("h5", "Current ministries", panel);
     const currentOptions = form.ministries.options.filter((option) => current.has(option.id));
-    if (!currentOptions.length) node("p", "No current Ministries are included in this campaign.", panel);
-    currentOptions.forEach((option) => optionControl(option, "leave", panel));
-    const details = node("details", null, panel);
-    node("summary", "Join another Ministry", details);
+    if (!currentOptions.length) node("p", "No current ministries are included in this campaign.", panel);
+    currentOptions.forEach((option) => {
+      const row = node("fieldset", null, panel, {class: "ministry-row"});
+      node("legend", option.name, row);
+      const name = "ministry-" + member.id + "-" + option.id;
+      [["continue", "Continuing"], ["leave", "Stop participating"]].forEach(([value, label]) => {
+        const wrapper = node("label", null, row);
+        const input = node("input", null, wrapper, {type: "radio", name, value,
+          id: name + "-" + value});
+        input.checked = (value === "leave") === choices.leave.includes(option.id);
+        wrapper.append(document.createTextNode(" " + label));
+        input.addEventListener("change", () => {
+          toggle("leave", option.id, value === "leave");
+          row.classList.toggle("changed", value === "leave");
+        });
+      });
+      row.classList.toggle("changed", choices.leave.includes(option.id));
+    });
+    const details = node("details", null, panel, {class: "ministry-join"});
+    node("summary", "Click here to join another ministry", details);
     let populated = false;
-    details.addEventListener("toggle", () => {
-      if (!details.open || populated) return;
+    const joining = node("p", "", panel, {class: "changed", "aria-live": "polite"});
+    const showJoining = () => {
+      const names = form.ministries.options.filter((option) => choices.join.includes(option.id)).map((option) => option.name);
+      joining.textContent = names.length ? "Joining: " + names.join(", ") : "";
+      joining.hidden = !names.length;
+    };
+    const populate = () => {
+      if (populated) return;
       populated = true;
       const searchId = "ministry-search-" + member.id;
-      node("label", "Search Ministries", details, {for: searchId});
+      node("label", "Search ministries", details, {for: searchId});
       const search = node("input", null, details, {id: searchId, type: "search", autocomplete: "off"});
-      const list = node("div", null, details);
+      const list = node("div", null, details, {role: "group", "aria-label": "Ministries you can join"});
       const render = () => {
         list.replaceChildren();
         const query = search.value.normalize("NFC").trim().toLocaleLowerCase("en-US");
         const options = form.ministries.options.filter((option) => !current.has(option.id) &&
           option.name.toLocaleLowerCase("en-US").includes(query));
-        options.forEach((option) => optionControl(option, "join", list));
-        if (!options.length) node("p", "No matching Ministries.", list);
+        options.forEach((option) => {
+          const label = node("label", null, list);
+          const input = node("input", null, label, {type: "checkbox", id: "ministry-" + member.id + "-join-" + option.id});
+          input.checked = choices.join.includes(option.id);
+          label.append(document.createTextNode(" " + option.name));
+          input.addEventListener("change", () => { toggle("join", option.id, input.checked); showJoining(); });
+        });
+        if (!options.length) node("p", "No matching ministries.", list);
       };
       search.addEventListener("input", render);
       render();
-    });
-    if (choices.join.length) {
-      node("p", "Interested in joining: " + form.ministries.options.filter(
-        (option) => choices.join.includes(option.id)).map((option) => option.name).join(", "), panel, {class: "changed"});
-    }
+    };
+    details.addEventListener("toggle", () => { if (details.open) populate(); });
+    // Keep the chosen ministries visible even while the list is collapsed.
+    panel.append(joining);
+    showJoining();
   }
   function ministryReview(member, parent) {
     if (!ministryEligible(member)) return;
-    node("h4", "Ministry requests", parent);
-    const choices = ministryChoices(member);
-    let selected = false;
-    ["leave", "join"].forEach((action) => {
-      form.ministries.options.filter((option) => (choices[action] || []).includes(option.id)).forEach((option) => {
-        node("p", (action === "join" ? "Interested in joining: " : "Wishes to stop participating: ") + option.name,
-          parent, {class: "changed"});
-        selected = true;
-      });
-    });
-    if (!selected) node("p", "No Ministry changes requested.", parent);
-    node("p", "Parish staff or a Ministry leader may follow up; this does not change a roster automatically.", parent);
+    node("h4", "Ministries", parent);
+    const choices = ministryChoices(member), current = ministryCurrent(member);
+    const names = (ids) => form.ministries.options.filter((option) => ids.has(option.id)).map((option) => option.name);
+    const leaving = new Set(choices.leave || []);
+    const continuing = names(new Set([...current].filter((id) => !leaving.has(id))));
+    const stopping = names(leaving), joining = names(new Set(choices.join || []));
+    node("p", "Will continue: " + (continuing.join(", ") || "None"), parent);
+    if (stopping.length) node("p", "Stopping: " + stopping.join(", "), parent, {class: "changed"});
+    if (joining.length) node("p", "Joining: " + joining.join(", "), parent, {class: "changed"});
   }
   function moneyCents(value) {
     // Annual pledges fit exactly in JS integer cents; never multiply a parsed
@@ -629,6 +687,15 @@
     const [whole, fraction = ""] = text.replaceAll(",", "").split(".");
     const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
     return Number.isSafeInteger(cents) && cents <= 99999999999 ? cents : null;
+  }
+  function pledgePositive() {
+    // Frequency and share methods apply only to a pledge above zero: then they
+    // are required; otherwise they are hidden, cleared and left out.
+    const cents = moneyCents(answers.financial?.annual_pledge ?? "");
+    return cents !== null && cents > 0;
+  }
+  function submittedFinancial() {
+    return pledgePositive() ? answers.financial : {...answers.financial, frequency: "", shares: {}};
   }
   function moneyDisplay(cents) {
     return cents === null ? "Not provided" : "$" + Math.floor(cents / 100).toLocaleString("en-US") +
@@ -702,7 +769,7 @@
     }
     if (!form.financial) return;
     const group = node("fieldset", null, parent, {class: "panel", id: "financial-section", tabindex: "-1"});
-    node("legend", "Financial stewardship", group);
+    node("legend", "Financial stewardship", group, {class: "visually-hidden"});
     block("financial", group);
     financialSource(group);
     node("p", "This form records your intention only. It does not take a payment or request bank or card credentials.", group);
@@ -711,22 +778,49 @@
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
     annual.value = answers.financial.annual_pledge;
     const annualError = node("p", null, group, {id: "financial-annual-hint"});
-    node("label", "Pledge frequency", group, {for: "financial-frequency"});
-    const frequency = node("select", null, group, {id: "financial-frequency", "aria-describedby": "financial-frequency-hint"});
-    node("option", "Select a frequency (optional for a zero pledge)", frequency, {value: ""});
+    // A disabled fieldset removes its controls from validation, so hidden
+    // frequency and share fields can never block a zero pledge.
+    const conditional = node("fieldset", null, group, {class: "financial-conditional", "data-financial-conditional": ""});
+    node("legend", "Pledge details", conditional, {class: "visually-hidden"});
+    let shown = pledgePositive();
+    const setConditional = () => {
+      const show = pledgePositive();
+      if (show !== shown) {
+        shown = show;
+        if (!show) {
+          // Clear hidden answers so a zero pledge never carries a stale
+          // frequency or share method into review or submission.
+          answers.financial.frequency = "";
+          answers.financial.shares = {};
+          ["financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
+            .forEach((path) => conflicts.delete(path));
+        }
+        // Rebuild so the controls match the answers, keeping the caret in the
+        // pledge field the Family is typing in.
+        const caret = annual.selectionStart;
+        edit("financial-annual_pledge");
+        document.getElementById("financial-annual_pledge")?.setSelectionRange(caret, caret);
+        return;
+      }
+      conditional.hidden = !show;
+      conditional.disabled = !show;
+    };
+    node("label", "Pledge frequency (required)", conditional, {for: "financial-frequency"});
+    const frequency = node("select", null, conditional, {id: "financial-frequency", "aria-describedby": "financial-frequency-hint"});
+    node("option", "Select a frequency", frequency, {value: ""});
     for (const [key, label] of [["weekly", "Weekly"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["annual", "Once annually"]]) {
       node("option", label, frequency, {value: key});
     }
     frequency.value = answers.financial.frequency;
-    const frequencyError = node("p", null, group, {id: "financial-frequency-hint"});
-    const approximation = node("p", null, group, {"aria-live": "polite", id: "financial-installment"});
+    const frequencyError = node("p", null, conditional, {id: "financial-frequency-hint"});
+    const approximation = node("p", null, conditional, {"aria-live": "polite", id: "financial-installment"});
     let showErrors = false;
     const validate = (show = true) => {
       showErrors ||= show;
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
       annual.setCustomValidity(cents === null ? "Enter an annual pledge from $0.00 to $999,999,999.99 with up to two decimals." : "");
       frequency.required = cents !== null && cents > 0;
-      frequency.setCustomValidity(frequency.required && !periods ? "Select a pledge frequency." : "");
+      frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
         error.textContent = showErrors ? input.validationMessage : "";
         error.hidden = !error.textContent;
@@ -738,16 +832,19 @@
         ". The annual total remains " + moneyDisplay(cents) + "; the final payment may differ slightly." :
         "Enter a pledge and select a frequency to see the approximate installment.";
     };
-    annual.addEventListener("input", () => { answers.financial.annual_pledge = annual.value; validate(false); });
+    annual.addEventListener("input", () => {
+      answers.financial.annual_pledge = annual.value; setConditional(); validate(false);
+    });
     frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(false); });
     annual.addEventListener("blur", () => validate());
     frequency.addEventListener("change", () => validate());
     validators.push(() => validate());
     conflictChoice("financial.annual_pledge", annual, group);
-    conflictChoice("financial.frequency", frequency, group);
+    conflictChoice("financial.frequency", frequency, conditional);
     validate(false);
-    const shares = node("fieldset", null, group);
-    node("legend", "How would you like to share? (optional)", shares);
+    const shares = node("fieldset", null, conditional);
+    node("legend", "How would you like to share? (choose at least one)", shares);
+    const sharesError = node("p", null, shares, {id: "financial-shares-error", hidden: ""});
     form.financial.options.forEach((option) => {
       const path = "financial.shares." + option.id, conflict = conflicts.get(path);
       if (conflict && conflict.choice === undefined) {
@@ -813,6 +910,18 @@
         if (remove.checked) { delete answers.financial.shares[id]; conflicts.delete("financial.shares." + id); edit(); }
       });
     });
+    const firstShare = shares.querySelector('input[type="checkbox"][id^="financial-option-"]');
+    const validateShares = () => {
+      if (!firstShare) return;
+      const offered = form.financial.options.some((option) => option.id in answers.financial.shares);
+      firstShare.setCustomValidity(pledgePositive() && !offered ? "Choose at least one way to share your pledge." : "");
+      sharesError.textContent = firstShare.validationMessage;
+      sharesError.hidden = !sharesError.textContent;
+      firstShare.setAttribute("aria-invalid", String(!firstShare.checkValidity()));
+      firstShare.setAttribute("aria-describedby", sharesError.id);
+    };
+    validators.push(validateShares);
+    setConditional();
   }
   function financialReview(parent) {
     if (!form.financial) return;
@@ -820,17 +929,18 @@
     node("h3", "Financial stewardship", panel);
     editControl(panel, "Financial stewardship", "financial-section");
     financialSource(panel);
-    const cents = moneyCents(answers.financial.annual_pledge), frequency = answers.financial.frequency;
+    const financial = submittedFinancial();
+    const cents = moneyCents(financial.annual_pledge), frequency = financial.frequency;
     node("p", "Your annual pledge: " + moneyDisplay(cents), panel, {class: "changed"});
     const periods = form.financial.frequencies[frequency];
     node("p", periods ? "Approximate " + frequency + " installment: " +
       moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)) +
       ". The annual total is authoritative; the final payment may differ slightly." : "No frequency selected (zero pledge).", panel);
     const list = node("ul", null, panel);
-    form.financial.options.filter((option) => option.id in answers.financial.shares).forEach((option) => {
-      node("li", financialLabel(option) + (option.free_text ? ": " + answers.financial.shares[option.id] : ""), list);
+    form.financial.options.filter((option) => option.id in financial.shares).forEach((option) => {
+      node("li", financialLabel(option) + (option.free_text ? ": " + financial.shares[option.id] : ""), list);
     });
-    if (!list.children.length) node("p", "No share methods selected.", panel);
+    if (!list.children.length && cents > 0) node("p", "No share methods selected.", panel);
   }
   function householdDisplay(value) {
     if (value === null) return "Not provided";
@@ -840,7 +950,6 @@
   }
   function householdEditor(editor) {
     const section = node("section", null, editor, {id: "household-section", tabindex: "-1", "aria-label": "Family census"});
-    node("h3", "Family census", section);
     const controls = new Map(), validators = [];
     let reviewRequested = false;
     const labels = {line1: "Address line 1", line2: "Address line 2",
@@ -1065,13 +1174,87 @@
       same.setAttribute("aria-invalid", String(!same.checkValidity()));
     };
   }
-  function edit() {
-    heading("Step 1 of 2: Review your household", form.household ? "census" : form.ministries ? "ministry" : "financial");
-    node("progress", "50%", root, {max: "2", value: "1", "aria-label": "Response progress"});
-    block("welcome", root);
-    block("census", root);
-    block("ministry", root);
-    familySummary();
+  function pageOf(element) {
+    return element?.closest("[data-page]")?.dataset.page || null;
+  }
+  function addPage(editor, key, title, presence) {
+    // Each page is a section of the one editor form, so every answer, conflict
+    // and validator keeps working unchanged; only visibility is paged.
+    const element = node("section", null, editor, {class: "family-page", "data-page": key,
+      "aria-labelledby": "page-" + key + "-title"});
+    element.hidden = true;
+    node("h3", title, element, {id: "page-" + key + "-title", tabindex: "-1"});
+    const page = {key, title, presence, element, validators: []};
+    pages.push(page);
+    return page;
+  }
+  function showPage(key, {focus = true, push = false} = {}) {
+    // Unknown keys (a removed Member, a disabled module) fall back to the
+    // first page rather than leaving an empty screen.
+    const page = pages.find((entry) => entry.key === key) || pages[0];
+    currentPage = page.key;
+    pages.forEach((entry) => { entry.element.hidden = entry !== page; });
+    const index = pages.indexOf(page);
+    session.dataset.presenceSection = page.presence;
+    const step = root.querySelector("[data-family-step]");
+    if (step) step.textContent = "Step " + (index + 1) + " of " + (pages.length + 1) + ": " + page.title;
+    const bar = root.querySelector("[data-family-progress]");
+    if (bar) { bar.max = String(pages.length + 1); bar.value = String(index + 1); }
+    root.querySelectorAll("[data-step-link]").forEach((button) => {
+      if (button.dataset.stepLink === page.key) button.setAttribute("aria-current", "step");
+      else button.removeAttribute("aria-current");
+    });
+    root.querySelector("[data-page-back]").hidden = index === 0;
+    root.querySelector("[data-page-next]").hidden = index === pages.length - 1;
+    root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
+    if (push) history.pushState({familyPage: page.key}, "");
+    if (focus) {
+      page.element.querySelector("h3").focus();
+      page.element.scrollIntoView?.({block: "start"});
+    }
+  }
+  function retitle(key, title) {
+    // Keep a Member page's heading, step link and counter in step with the
+    // name being typed, so a new person's page stops saying "Household member".
+    const page = pages.find((entry) => entry.key === key);
+    if (!page || page.title === title) return;
+    page.title = title;
+    page.element.querySelector("h3").textContent = title;
+    const link = root.querySelector('[data-step-link="' + key + '"]');
+    if (link) link.textContent = title;
+    if (currentPage === key) {
+      const step = root.querySelector("[data-family-step]");
+      if (step) step.textContent = step.textContent.replace(/:.*$/, ": " + title);
+    }
+  }
+  function unresolvedConflict(scope) {
+    return [...scope.querySelectorAll("[data-conflict]")].find((element) => {
+      const conflict = conflicts.get(element.dataset.conflict);
+      return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
+    });
+  }
+  function pageValid(page) {
+    // Validate only this page before moving forward; the final Review step
+    // still validates every page, so skipping ahead cannot bypass a check.
+    const conflict = unresolvedConflict(page.element);
+    if (conflict) {
+      say("Choose a value for every changed record on this page before continuing.");
+      conflict.querySelector("input, button")?.focus();
+      return false;
+    }
+    page.validators.forEach((validate) => validate());
+    const invalid = [...page.element.querySelectorAll("input, select, textarea")].find(
+      (input) => !input.disabled && !input.checkValidity());
+    if (invalid) { invalid.focus(); return false; }
+    say("");
+    return true;
+  }
+  function edit(target = null) {
+    heading(familyTitle(), "welcome");
+    pages = [];
+    const step = node("p", "", root, {class: "family-step", "data-family-step": "", "aria-live": "polite"});
+    step.id = "family-step";
+    node("progress", null, root, {"data-family-progress": "", "aria-labelledby": "family-step"});
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
     let reviewPointerDown = false;
     editor.addEventListener("pointerdown", (event) => {
@@ -1080,41 +1263,87 @@
     editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
-    const validateHousehold = form.household ? householdEditor(editor) : () => {};
-    structuralConflicts(editor);
-    if (form.household) block("member_census", editor);
-    if (form.household || form.ministries) allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
-      () => reviewPointerDown));
+    const intro = addPage(editor, "intro", "Welcome", "welcome");
+    block("welcome", intro.element);
+    if (!form.household) familySummary(intro.element);
+    structuralConflicts(intro.element);
     if (form.household) {
-    const add = node("button", "Add a household member", editor, {type: "button"});
-    add.disabled = Object.keys(answers.proposed_members).length >= form.max_proposed_members;
-    add.addEventListener("click", () => {
-      const id = crypto.randomUUID();
-      answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
-      edit(); document.getElementById("member-" + id + "-first_name")?.focus();
-    });
+      const household = addPage(editor, "household", "Family information", "census");
+      familySummary(household.element);
+      block("census", household.element);
+      household.validators.push(householdEditor(household.element));
     }
-    financialEditor(editor, fields);
+    if (form.household || form.ministries) {
+      const members = allMembers();
+      members.forEach((member, index) => {
+        const page = addPage(editor, "member-" + member.id, memberName(member, index),
+          form.household ? "census" : "ministry");
+        if (index === 0) {
+          if (form.household) block("member_census", page.element);
+          block("ministry", page.element);
+        }
+        const start = fields.length;
+        memberEditor(member, index, page.element, fields, () => reviewPointerDown);
+        page.validators.push(...fields.slice(start));
+        if (form.household && index === members.length - 1) addMemberButton(page.element);
+      });
+      if (form.household && !members.length) addMemberButton(pages.at(-1).element);
+    }
+    const removedFinancial = conflicts.get("financial.removed");
+    if (form.financial || (removedFinancial && removedFinancial.choice === undefined)) {
+      const financial = addPage(editor, "financial", "Financial stewardship", "financial");
+      financialEditor(financial.element, financial.validators);
+    }
     if (form.additional_enabled) {
-      block("additional", editor);
-      node("label", "Additional information (optional)", editor, {for: "additional-information"});
-      const extra = node("textarea", null, editor, {id: "additional-information", rows: "5",
+      const additional = addPage(editor, "additional", "Additional information", "additional");
+      block("additional", additional.element);
+      node("label", "Additional information (optional)", additional.element, {for: "additional-information"});
+      const extra = node("textarea", null, additional.element, {id: "additional-information", rows: "5",
         maxlength: String(form.additional_max_length), autocomplete: "off"});
       extra.value = answers.additional_information;
       extra.addEventListener("input", () => { answers.additional_information = extra.value; });
-      conflictChoice("additional", extra, editor);
+      conflictChoice("additional", extra, additional.element);
     }
-    node("button", "Review response", editor, {type: "submit"});
+    // A compact list of every step, collapsed by default so phones see the
+    // page first. Jumping skips per-page checks; Review validates everything.
+    const steps = node("details", null, editor, {class: "family-steps"});
+    node("summary", "All steps", steps);
+    const list = node("ol", null, steps);
+    pages.forEach((page) => {
+      const button = node("button", page.title, node("li", null, list), {type: "button", "data-step-link": page.key});
+      button.addEventListener("click", () => { steps.open = false; showPage(page.key, {push: true}); });
+    });
+    node("li", "Review and submit", list);
+    const nav = node("div", null, editor, {class: "actions family-nav"});
+    const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
+    back.addEventListener("click", () => {
+      const index = pages.findIndex((page) => page.key === currentPage);
+      if (index > 0) showPage(pages[index - 1].key, {push: true});
+    });
+    const next = node("button", "Next", nav, {type: "button", "data-page-next": ""});
+    next.addEventListener("click", () => {
+      const index = pages.findIndex((page) => page.key === currentPage);
+      if (pageValid(pages[index])) showPage(pages[index + 1].key, {push: true});
+    });
+    node("button", "Review response", nav, {type: "submit", "data-page-review": ""});
+    // Enter in a field (or a phone keyboard's Go) means Next on every page but
+    // the last, instead of implicitly submitting straight to Review.
+    editor.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof HTMLInputElement)) return;
+      if (["checkbox", "radio", "button", "submit"].includes(event.target.type)) return;
+      if (currentPage !== pages.at(-1).key) { event.preventDefault(); next.click(); }
+    });
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
       reviewPointerDown = false;
-      if ([...conflicts.entries()].some(([path, conflict]) => conflictApplies(path) && conflict.choice === undefined)) {
+      const conflict = unresolvedConflict(editor);
+      if (conflict) {
         say("Choose a value for every changed record before reviewing your response.");
-        root.querySelector("[data-conflict] input, [data-conflict] button")?.focus();
+        showPage(pageOf(conflict), {focus: false});
+        conflict.querySelector("input, button")?.focus();
         return;
       }
-      fields.forEach((validate) => validate());
-      validateHousehold();
+      pages.forEach((page) => page.validators.forEach((validate) => validate()));
       // Inline errors already explain each failure. Native validation popups
       // can steal focus from the requested field after it is scrolled into view.
       if (editor.checkValidity()) {
@@ -1122,8 +1351,25 @@
         // to ordinary status must restore the unresolved choices, not erase them.
         [...conflicts.keys()].filter(conflictApplies).forEach((path) => conflicts.delete(path));
         review();
+      } else {
+        const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
+        showPage(pageOf(invalid), {focus: false});
+        invalid?.focus();
       }
-      else editor.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
+    });
+    const targetElement = target ? document.getElementById(target) : null;
+    showPage(pageOf(targetElement) || currentPage || "intro", {focus: !targetElement});
+    targetElement?.focus();
+  }
+  function addMemberButton(parent) {
+    const add = node("button", "Add a household member", parent, {type: "button", class: "button-secondary"});
+    add.disabled = Object.keys(answers.proposed_members).length >= form.max_proposed_members;
+    add.addEventListener("click", () => {
+      const id = crypto.randomUUID();
+      answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
+      currentPage = "member-" + id;
+      history.pushState({familyPage: currentPage}, "");
+      edit("member-" + id + "-first_name");
     });
   }
   function conflictApplies(path) {
@@ -1138,13 +1384,18 @@
     // away from or mutate a final submission whose outcome is still pending.
     node("button", "Edit " + label, parent, {type: "button", "data-review-edit": ""}).addEventListener("click", () => {
       if (busy || finished) return;
-      edit();
-      document.getElementById(target)?.focus();
+      edit(target);
+      history.pushState({familyPage: currentPage}, "");
     });
   }
   function review() {
-    heading("Step 2 of 2: Confirm and submit", "review");
-    node("progress", "100%", root, {max: "2", value: "2", "aria-label": "Response progress"});
+    heading(familyTitle(), "review");
+    const step = node("p", "Step " + (pages.length + 1) + " of " + (pages.length + 1) + ": Review and submit", root,
+      {class: "family-step", id: "family-step"});
+    step.setAttribute("aria-live", "polite");
+    node("progress", null, root, {max: String(pages.length + 1), value: String(pages.length + 1),
+      "aria-labelledby": "family-step"});
+    if (history.state?.familyPage !== "review") history.pushState({familyPage: "review"}, "");
     block("review", root);
     const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
     node("p", "Nothing is saved until you select “" + submitLabel + "”.", root);
@@ -1185,7 +1436,8 @@
         const changed = definition.changed || canonical(value, definition.name) !==
           canonical(initialMember(member)[definition.name], definition.name);
         const display = node("dd", definition.name === "birth_date" && value === "unknown" ?
-          "Unknown — request parish review of removing any recorded birth date" : value || "Not provided", list);
+          "Unknown — request parish review of removing any recorded birth date" :
+          (definition.kind === "phone" ? Phone.format(value) : value) || "Not provided", list);
         if (changed) {
           display.classList.add("changed");
           node("span", " — Changed from parish records", display);
@@ -1209,8 +1461,8 @@
       ack.addEventListener("change", () => { answers.testing_acknowledged = ack.checked; });
     }
     const actions = node("div", null, confirmation, {class: "actions"});
-    const back = node("button", "Back to edit", actions, {type: "button"});
-    back.addEventListener("click", edit);
+    const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary"});
+    back.addEventListener("click", () => { edit(); history.pushState({familyPage: currentPage}, ""); });
     const submit = node("button", submitLabel, actions, {type: "submit"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1223,6 +1475,7 @@
       try {
         const payload = {...answers, members: Object.fromEntries(Object.entries(answers.members).map(
           ([id, value]) => [id, requests[id] || value]))};
+        if (form.financial) payload.financial = submittedFinancial();
         if (form.ministries) payload.ministries = {
           members: Object.fromEntries(form.members.filter((member) => !requests[member.id] && ministryEligible(member)).map(
             (member) => [member.id, ministryChoices(member)])),
@@ -1289,6 +1542,17 @@
   });
   window.addEventListener("beforeunload", (event) => {
     if (!finished && dirty()) { event.preventDefault(); event.returnValue = ""; }
+  });
+  window.addEventListener("popstate", (event) => {
+    const key = event.state?.familyPage;
+    if (!key || !form || finished || busy) return;
+    const editing = Boolean(root.querySelector("[data-page]"));
+    if (key === "review") {
+      if (editing) root.querySelector("[data-page-review]")?.click();
+      return;
+    }
+    if (!editing) edit();
+    showPage(key);
   });
   window.addEventListener("pagehide", clear);
   window.addEventListener("pageshow", (event) => { if (event.persisted) window.location.reload(); });

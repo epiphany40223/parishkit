@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from .test_family_response import expect, form_payload, member_field
+from .test_family_response import expect, form_payload, member_field, review, show
 from .test_member_census import start
 
 pytestmark = pytest.mark.parametrize(
@@ -26,7 +26,12 @@ def capture(submissions):
 
 def fill_new(page):
     """Find the new local UUID from its labeled control, then fill required data."""
-    add = page.get_by_role("button", name="Add a household member", exact=True)
+    add = show(
+        page,
+        page.get_by_role(
+            "button", name="Add a household member", exact=True, include_hidden=True
+        ),
+    )
     # Begin returns before the asynchronous form fetch/render necessarily does.
     # Capture the baseline only after its controls exist, not before click's wait.
     expect(add).to_be_visible()
@@ -42,10 +47,12 @@ def fill_new(page):
     identity = control.get_attribute("id")[len("member-") : -len("-first_name")]
     assert str(UUID(identity)) == identity
     control.fill("New")
-    page.locator(f"#member-{identity}-last_name").fill("Household")
-    page.locator(f"#member-{identity}-birth_date-unknown").check()
-    page.locator(f"#member-{identity}-gender").select_option("Unspecified")
-    page.locator(f"#member-{identity}-language-choice").select_option("English")
+    show(page, page.locator(f"#member-{identity}-last_name")).fill("Household")
+    show(page, page.locator(f"#member-{identity}-birth_date-unknown")).check()
+    show(page, page.locator(f"#member-{identity}-gender")).select_option("Unspecified")
+    show(page, page.locator(f"#member-{identity}-language-choice")).select_option(
+        "English"
+    )
     return identity
 
 
@@ -66,23 +73,27 @@ def test_terminal_confirmation_skips_ordinary_fields_review_back_and_submit(
     submitted, errors = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     start(page, component_origin, submit=capture(submitted))
-    page.locator("#member-3-email").fill("invalid and discarded")
+    show(page, page.locator("#member-3-email")).fill("invalid and discarded")
     page.once("dialog", lambda dialog: dialog.dismiss())
-    page.get_by_label("Household status").select_option("moved_household")
+    show(page, page.get_by_label("Household status")).select_option("moved_household")
     expect(page.get_by_label("Household status")).to_have_value("current")
     page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_label("Household status").select_option("deceased_status")
+    show(page, page.get_by_label("Household status")).select_option("deceased_status")
     expect(page.locator("#member-3-email")).to_have_count(0)
-    page.get_by_label("Death date (optional)").fill("2026-01-01")
+    show(page, page.get_by_label("Death date (optional)")).fill("2026-01-01")
     assert_accessible(page, axe_source)
-    page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_text("Requested change: deceased.", exact=False)).to_be_visible()
+    review(page)
+    expect(
+        show(page, page.get_by_text("Requested change: deceased.", exact=False))
+    ).to_be_visible()
     assert submitted == []
     page.get_by_role("button", name="Back to edit").click()
     expect(page.get_by_label("Death date (optional)")).to_have_value("2026-01-01")
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submitted[0]["members"] == {
         "3": {"deceased_status": True, "confirmed": True, "death_date": "2026-01-01"}
     }
@@ -97,22 +108,32 @@ def test_proposed_add_edit_remove_and_submit_are_tab_only(
     start(page, component_origin, submit=capture(submitted))
     identity = fill_new(page)
     assert_accessible(page, axe_source)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     expect(
-        page.get_by_role("heading", name="New Household", exact=True)
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="New Household", exact=True, include_hidden=True
+            ),
+        )
     ).to_be_visible()
     page.get_by_role("button", name="Back to edit").click()
-    page.locator(f"#member-{identity}-first_name").fill("Corrected")
+    show(page, page.locator(f"#member-{identity}-first_name")).fill("Corrected")
     page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_role("button", name="Remove proposed member").click()
+    show(
+        page,
+        page.get_by_role("button", name="Remove proposed member", include_hidden=True),
+    ).click()
     expect(page.locator(f"#member-{identity}-first_name")).to_have_count(0)
     replacement = fill_new(page)
     assert replacement != identity
     assert submitted == []
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert set(submitted[0]["proposed_members"]) == {replacement}
     assert submitted[0]["proposed_members"][replacement]["birth_date"] == "unknown"
 
@@ -134,18 +155,20 @@ def test_terminal_request_stale_competition_requires_choice(page, component_orig
 
     start(page, component_origin, submit=submit)
     page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_label("Household status").select_option("moved_household")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("Household status")).select_option("moved_household")
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     group = page.locator('[data-conflict="members.3.request"]')
     expect(group).to_be_visible()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     assert len(submitted) == 1
     group.get_by_role("button", name="Use the updated response", exact=False).click()
     expect(page.get_by_label("Household status")).to_have_value("deceased_status")
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submitted[-1]["members"]["3"] == fresh["members"][0]["request"]
 
 
@@ -168,16 +191,18 @@ def test_proposed_concurrent_withdrawal_does_not_silently_revive_edit(
         ) if len(submitted) == 1 else route.fulfill(json={"accepted": True})
 
     start(page, component_origin, form=form, submit=submit)
-    page.locator(f"#member-{identity}-first_name").fill("Edited")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator(f"#member-{identity}-first_name")).fill("Edited")
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     group = page.locator(f'[data-conflict="proposed_members.{identity}"]')
     expect(group).to_be_visible()
     group.get_by_role("button", name="Use the updated response", exact=False).click()
     expect(page.locator(f"#member-{identity}-first_name")).to_have_count(0)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submitted[-1]["proposed_members"] == {}
 
 
@@ -194,16 +219,21 @@ def test_death_date_error_maps_to_control_and_future_is_inline(page, component_o
 
     start(page, component_origin, submit=submit)
     page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_label("Household status").select_option("deceased_status")
-    page.get_by_label("Death date (optional)").fill("2026-09-14")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("Household status")).select_option("deceased_status")
+    show(page, page.get_by_label("Death date (optional)")).fill("2026-09-14")
+    review(page)
     expect(page.locator("#member-3-death_date-inline-error")).to_contain_text("future")
-    page.get_by_label("Death date (optional)").fill("1950-01-01")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("Death date (optional)")).fill("1950-01-01")
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("#member-3-death_date-error")).to_contain_text("precede birth")
-    page.get_by_role(
-        "link", name="Death date (optional): Death date cannot precede birth."
+    show(
+        page,
+        page.get_by_role(
+            "link",
+            name="Death date (optional): Death date cannot precede birth.",
+            include_hidden=True,
+        ),
     ).click()
     expect(page.locator("#member-3-death_date")).to_be_focused()
 
@@ -225,21 +255,23 @@ def test_ordinary_edit_competing_with_new_terminal_request_needs_choice(
             route.fulfill(json={"accepted": True})
 
     start(page, component_origin, submit=submit)
-    page.locator("#member-3-first_name").fill("Edited")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-first_name")).fill("Edited")
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     group = page.locator('[data-conflict="members.3.request"]')
     expect(group).to_be_visible()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     assert len(submitted) == 1
     group.get_by_role(
         "button",
         name="Keep my household request" if keep_edit else "Use the updated response",
         exact=False,
     ).click()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     if keep_edit:
         assert submitted[-1]["members"]["3"]["first_name"] == "Edited"
     else:
@@ -262,23 +294,27 @@ def test_terminal_toggle_and_review_back_preserve_hidden_field_conflict(
             route.fulfill(json={"accepted": True})
 
     start(page, component_origin, submit=submit)
-    page.locator("#member-3-first_name").fill("My edit")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-first_name")).fill("My edit")
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.locator('[data-conflict="members.3.first_name"]')).to_be_visible()
-    page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_label("Household status").select_option("moved_household")
-    page.get_by_role("button", name="Review response").click()
     expect(
-        page.get_by_role("heading", name="Step 2 of 2: Confirm and submit")
+        show(page, page.locator('[data-conflict="members.3.first_name"]'))
+    ).to_be_visible()
+    page.once("dialog", lambda dialog: dialog.accept())
+    show(page, page.get_by_label("Household status")).select_option("moved_household")
+    review(page)
+    expect(
+        show(page, page.locator(".family-step", has_text="Review and submit"))
     ).to_be_visible()
     page.get_by_role("button", name="Back to edit").click()
-    page.get_by_label("Household status").select_option("current")
+    show(page, page.get_by_label("Household status")).select_option("current")
     group = page.locator('[data-conflict="members.3.first_name"]')
     expect(group).to_be_visible()
     expect(page.locator("#member-3-first_name")).to_be_disabled()
     group.get_by_label("Use updated records", exact=False).check()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submitted[-1]["members"]["3"]["first_name"] == "Updated records"

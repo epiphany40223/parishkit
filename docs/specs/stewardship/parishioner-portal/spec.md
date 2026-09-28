@@ -86,15 +86,20 @@ Passive presence polling does not extend the session. The expiry warning offers
 continued interaction when the idle deadline can still be refreshed and states
 when the absolute four-hour deadline cannot be extended.
 
-Forward/back controls preserve the in-memory state, move focus to the step
-heading, and never submit. A visible progress indicator names the current step
-and total. Browser history cannot resubmit or expose a completed form.
+Each step is its own page. Back/Next controls preserve the in-memory state,
+move focus to the step heading, and never submit; Next first checks only the
+current page and keeps the Family there with inline errors. A visible progress
+indicator names the current step and total, and a collapsed "All steps" list
+jumps to any page (Review still checks every page). Browser Back/Forward move
+between pages. Every page shows the Family's name (for example "The Squyres
+Family") so the Family can confirm the right household is open. Browser history
+cannot resubmit or expose a completed form.
 
 Steps are assembled from enabled modules:
 
 1. Welcome and prior-submission status.
 2. Family census, when enabled.
-3. One Member section per current active Member when census or Ministry
+3. One Member page per current active Member when census or Ministry
    stewardship is enabled; its census and Ministry subsections appear only when
    their respective modules are enabled.
 4. Add and fully edit proposed Members, when census is enabled, including their
@@ -210,16 +215,18 @@ choices. Hiding an existing membership or earlier request does not delete it or
 turn omission into a new leave/withdrawal action. Recheck the same policy at
 submission, including the linked stale-form reconfirmation requirement.
 
-Current memberships appear first, each with an unchecked "wishes to stop"
-control. Existing memberships are excluded from join choices. "Join another
-Ministry" expands/searches the potentially long selected-Ministry list only on
-demand and supports multiple choices. Selecting and then deselecting returns to
-no requested change.
+Current memberships appear first under "Current ministries", each stating
+its choice once as "Continuing" (the default) or "Stop participating". Leaving
+is always honored; the form does not describe it as a request that may be
+declined. Existing memberships are excluded from join choices. "Click here to
+join another ministry" expands/searches the potentially long selected-Ministry
+list only on demand and supports multiple choices, and the chosen ministries
+stay listed as "Joining: …" while it is collapsed. Selecting and then
+deselecting returns to no requested change. Review lists each Member's
+ministries as "Will continue", "Stopping" and "Joining".
 
-The UI does not promise that a request changes a roster automatically. It
-states that a Ministry leader or parish staff member may follow up. A repeat
-submission uses the latest effective requested state; removing an unresolved
-choice cancels/supersedes its workflow while retaining history.
+A repeat submission uses the latest effective requested state; removing an
+unresolved choice cancels/supersedes its workflow while retaining history.
 
 ## Financial stewardship
 
@@ -234,7 +241,8 @@ warning, never `$0.00`. Individual contribution transactions are not shown.
 
 The Family must enter an annual upcoming-period pledge. `$0.00` is valid. For a
 positive pledge, select exactly one frequency: weekly, monthly, quarterly, or
-annual. The UI divides by 52, 12, 4, or 1 using decimal arithmetic and displays
+annual, and at least one share method whenever any are offered; both are
+required, in the browser and by server validation. The UI divides by 52, 12, 4, or 1 using decimal arithmetic and displays
 an approximate two-decimal installment; annual total remains authoritative and
 the page notes the final payment may differ slightly.
 
@@ -259,8 +267,8 @@ Family contains zero active Members, "I" for exactly one, and "We" for two or
 more. Proposed Members count, while terminal Members do not. The financial step
 remains available with the same validation when no Members remain; marking all
 Members terminal does not discard or clear the Family's pledge/share answers.
-With a zero pledge, frequency/share methods are optional but allowed to express
-a non-cash intent.
+With a zero (or not yet entered) pledge, the frequency and share-method fields
+are hidden, cleared and not required, and the form submits neither.
 
 The `campaign_year` placeholder consistently means the configured campaign year
 label in Admin previews, page content, emails, share labels and Ministry
