@@ -1,5 +1,6 @@
 """Explicit operational read projection; no rendered mail or credential reads."""
 
+import json
 import re
 from uuid import UUID
 
@@ -57,18 +58,30 @@ def unknown_count():
 def alert_counts(since):
     """Read independent indexed warning totals in one Admin-shell round trip.
 
-    A scalar subquery avoids multiplying log and outbox rows in a join. The
-    immediate server-rendered warning must also work without browser polling.
+    Returns ``({event: count}, delivery_unknown)``. CRITICAL operational events
+    count only when they are newer than both ``since`` and the latest shared
+    acknowledgement, so an acknowledged banner stays hidden until a newer
+    CRITICAL event arrives. Scalar subqueries avoid multiplying log and outbox
+    rows in a join. The immediate server-rendered warning must also work
+    without browser polling.
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT (SELECT count(*) FROM stewardship_operational_log "
-            "WHERE level='CRITICAL' AND created_at>=%s), "
+            "SELECT (SELECT coalesce(jsonb_object_agg(event, total), '{}'::jsonb) "
+            "FROM (SELECT event, count(*) AS total "
+            "FROM stewardship_operational_log "
+            "WHERE level='CRITICAL' AND created_at>=%s AND created_at>"
+            "coalesce((SELECT max(acknowledged_through) "
+            "FROM stewardship_critical_event_ack), '-infinity') "
+            "GROUP BY event) AS grouped), "
             "(SELECT count(*) FROM stewardship_outbox_message "
             "WHERE state='delivery_unknown' AND purpose=ANY(%s))",
             (since, list(PURPOSES)),
         )
-        return cursor.fetchone()
+        events, unknown = cursor.fetchone()
+    if isinstance(events, str):
+        events = json.loads(events)
+    return {str(key): int(value) for key, value in events.items()}, unknown
 
 
 def listing(window, *, state, query):

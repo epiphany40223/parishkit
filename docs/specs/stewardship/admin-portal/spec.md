@@ -278,6 +278,19 @@ In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
 smaller non-dismissible Testing indicator so report interpretation is clear.
 
+Every Admin page also shows a critical-problems banner while CRITICAL
+operational events from the last 24 hours are unacknowledged. It names each
+kind of problem in plain language with its count (for example "ParishSoft data
+refresh failed (2×)"), links to the [log screen](#logs) filtered to CRITICAL
+operational entries from that window, and offers Acknowledge to Administrators
+(the System logs capability). One acknowledgement is shared: it records the
+newest acknowledged event's time and the acknowledging Administrator in an
+append-only row with an audit event, hides the banner for every Admin, and
+changes no log entry. A CRITICAL event recorded afterwards brings the banner
+back. The banner costs the Admin page one query, shared with the delivery
+warning count. It is distinct from security-event acknowledgement, which is
+per recipient.
+
 ### Admin tables
 
 Admin list tables share one component, so paging, selection and styling behave

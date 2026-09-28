@@ -19,6 +19,7 @@ from .accounts import (
     confirmation_views,
     content_history,
     content_views,
+    critical_event_views,
     delivery_control_views,
     family_authentication,
     go_live_views,
@@ -467,6 +468,11 @@ admin_patterns = [
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,
         name="security_event_acknowledge",
+    ),
+    path(
+        "critical-events/acknowledge",
+        critical_event_views.acknowledge_critical_events,
+        name="critical_events_acknowledge",
     ),
     path("source/refresh", refresh_views.source_refresh, name="source_refresh"),
     path(

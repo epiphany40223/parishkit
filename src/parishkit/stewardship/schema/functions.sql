@@ -2209,6 +2209,16 @@ CREATE FUNCTION public.stewardship_credential_consumer_ack_immutable_v1() RETURN
             END;
             $$;
 
+-- FUNCTION: stewardship_critical_event_ack_immutable_v1()
+CREATE FUNCTION public.stewardship_critical_event_ack_immutable_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+
 -- FUNCTION: stewardship_credential_consumers_v1(text)
 CREATE FUNCTION public.stewardship_credential_consumers_v1(target text) RETURNS jsonb
     LANGUAGE sql IMMUTABLE

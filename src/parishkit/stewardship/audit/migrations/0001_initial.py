@@ -187,6 +187,52 @@ class Migration(migrations.Migration):
                         ],
                     },
                 ),
+                migrations.CreateModel(
+                    name="CriticalEventAcknowledgement",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "acknowledged_through",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_critical_event_ack",
+                        "indexes": [
+                            models.Index(
+                                fields=["acknowledged_through"],
+                                name="critical_ack_through",
+                            )
+                        ],
+                    },
+                ),
                 migrations.AddIndex(
                     model_name="auditevent",
                     index=models.Index(

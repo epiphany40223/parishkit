@@ -778,6 +778,15 @@ CREATE VIEW public.stewardship_current_chair WITH (security_barrier='true') AS
      CROSS JOIN LATERAL jsonb_array_elements(((contact.canonical)::jsonb -> 'emails'::text)) email(value))
   WHERE ((((member.canonical)::jsonb -> 'schema_version'::text) = '1'::jsonb) AND (((contact.canonical)::jsonb -> 'schema_version'::text) = '1'::jsonb) AND (((ministry.canonical)::jsonb -> 'schema_version'::text) = '1'::jsonb) AND (((roster.canonical)::jsonb -> 'schema_version'::text) = '1'::jsonb) AND (((member.canonical)::jsonb -> 'active'::text) = 'true'::jsonb) AND (((ministry.canonical)::jsonb -> 'catalog_present'::text) = 'true'::jsonb) AND (((roster.canonical)::jsonb -> 'current'::text) = 'true'::jsonb) AND (translate(((roster.canonical)::jsonb ->> 'ministryRoleName'::text), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'::text, 'abcdefghijklmnopqrstuvwxyz'::text) = 'chairperson'::text) AND ((email.value -> 'valid'::text) = 'true'::jsonb));
 
+-- TABLE: stewardship_critical_event_ack
+CREATE TABLE public.stewardship_critical_event_ack (
+    id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT statement_timestamp() NOT NULL,
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    acknowledged_through timestamp with time zone NOT NULL
+);
+
 -- TABLE: stewardship_daily_fact
 CREATE TABLE public.stewardship_daily_fact (
     id uuid NOT NULL,

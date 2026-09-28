@@ -251,7 +251,9 @@ installs its credentials.
 The owner-approved 60-minute Admin inactivity limit then changed the idle
 interval in the setup, test-mail, delivery-control, go-live and Production
 guards that check a live Admin session (Functions digest only).
-Regenerated from a fresh install, the current baseline is:
+The critical-events banner acknowledgement (#131) then added one append-only
+table, `stewardship_critical_event_ack`, with its immutability trigger and
+function. Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |

@@ -552,6 +552,10 @@ ALTER TABLE ONLY public.stewardship_credential_key_state
 ALTER TABLE ONLY public.stewardship_credential_key_state
     ADD CONSTRAINT stewardship_credential_key_state_pkey PRIMARY KEY (id);
 
+-- CONSTRAINT: stewardship_critical_event_ack stewardship_critical_event_ack_pkey
+ALTER TABLE ONLY public.stewardship_critical_event_ack
+    ADD CONSTRAINT stewardship_critical_event_ack_pkey PRIMARY KEY (id);
+
 -- CONSTRAINT: stewardship_daily_fact stewardship_daily_fact_pkey
 ALTER TABLE ONLY public.stewardship_daily_fact
     ADD CONSTRAINT stewardship_daily_fact_pkey PRIMARY KEY (id);
@@ -1123,6 +1127,9 @@ CREATE UNIQUE INDEX campaign_one_work_gate ON public.stewardship_campaign_work_g
 -- INDEX: chair_review_open_assignment
 CREATE UNIQUE INDEX chair_review_open_assignment ON public.stewardship_chair_review USING btree (assignment_record_id) WHERE (closed_by_id IS NULL);
 
+-- INDEX: critical_ack_through
+CREATE INDEX critical_ack_through ON public.stewardship_critical_event_ack USING btree (acknowledged_through);
+
 -- INDEX: config_request_patch_lookup
 CREATE INDEX config_request_patch_lookup ON public.stewardship_config_request USING gin (patch jsonb_path_ops);
 
@@ -1444,6 +1451,9 @@ CREATE INDEX stewardship_credential_deployment_correlation_id_4c90b4bf ON public
 
 -- INDEX: stewardship_credential_key_state_correlation_id_b14cc912
 CREATE INDEX stewardship_credential_key_state_correlation_id_b14cc912 ON public.stewardship_credential_key_state USING btree (correlation_id);
+
+-- INDEX: stewardship_critical_event_ack_correlation_id_c937031c
+CREATE INDEX stewardship_critical_event_ack_correlation_id_c937031c ON public.stewardship_critical_event_ack USING btree (correlation_id);
 
 -- INDEX: stewardship_credential_key_state_kind_ba19bfb3_like
 CREATE INDEX stewardship_credential_key_state_kind_ba19bfb3_like ON public.stewardship_credential_key_state USING btree (kind varchar_pattern_ops);
@@ -2548,6 +2558,9 @@ CREATE TRIGGER stewardship_credential_ack_guard_v1 BEFORE INSERT ON public.stewa
 
 -- TRIGGER: stewardship_credential_consumer_ack stewardship_credential_consumer_ack_immutable_guard_v1
 CREATE TRIGGER stewardship_credential_consumer_ack_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_credential_consumer_ack FOR EACH ROW EXECUTE FUNCTION public.stewardship_credential_consumer_ack_immutable_v1();
+
+-- TRIGGER: stewardship_critical_event_ack stewardship_critical_event_ack_immutable_guard_v1
+CREATE TRIGGER stewardship_critical_event_ack_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_critical_event_ack FOR EACH ROW EXECUTE FUNCTION public.stewardship_critical_event_ack_immutable_v1();
 
 -- TRIGGER: stewardship_credential_deployment stewardship_credential_deployment_mutable_guard_v1
 CREATE TRIGGER stewardship_credential_deployment_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_credential_deployment FOR EACH ROW EXECUTE FUNCTION public.stewardship_credential_deployment_mutable_v1();
