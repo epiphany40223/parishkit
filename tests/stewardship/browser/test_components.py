@@ -446,7 +446,11 @@ def test_visual_content_editor_never_executes_source_or_pasted_markup(
     page.locator('textarea[name="html"]').fill(
         '<img src=x onerror="window.unsafe=true">'
     )
-    assert not editor.is_visible()
+    # The pane stays visible but read-only until the server's sanitized
+    # preview answers (unanswered here); raw source never reaches it.
+    assert editor.is_visible()
+    assert editor.get_attribute("contenteditable") == "false"
+    assert editor.locator("img").count() == 0
     assert page.evaluate("window.unsafe === undefined")
     page.reload()
     editor = page.locator("[data-content-editor]")

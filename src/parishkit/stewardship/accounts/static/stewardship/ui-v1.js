@@ -774,9 +774,77 @@
     return copy.innerHTML;
   };
 
-  // The visual editor starts with server-sanitized markup only. Raw source
-  // edits never go through innerHTML: they must round-trip through the preview
-  // sanitizer before returning to visual editing. Paste/drop are plain text.
+  // Redraw the visual pane from the server's sanitizer while the HTML source
+  // is edited. The pane stays visible but dims and stops accepting edits until
+  // the newest request answers (a stale pane edited now would overwrite the
+  // source). The one response also carries the generated plain text, relayed
+  // to the plain-text preview as "stewardship:source-preview", and a
+  // plain-language list of removed markup, shown as text (never as markup).
+  function liveSource(form, visual, editor, source) {
+    const url = visual.dataset.previewUrl;
+    const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
+    const updating = visual.querySelector("[data-visual-updating]");
+    const unavailable = visual.querySelector("[data-visual-unavailable]");
+    const removedNotice = visual.querySelector("[data-visual-removed]");
+    const removedList = visual.querySelector("[data-visual-removed-list]");
+    if (!url || !csrf || !updating || !unavailable || !removedNotice || !removedList) {
+      // Without the live preview, fall back to the safe old behavior.
+      source.addEventListener("input", () => { visual.hidden = true; });
+      return;
+    }
+    let timer = null;
+    let controller = null;
+    const busy = (value) => {
+      visual.setAttribute("aria-busy", String(value));
+      editor.contentEditable = value ? "false" : "true";
+      updating.hidden = !value;
+    };
+    const refresh = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      const request = controller;
+      try {
+        const response = await fetch(url, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"},
+          body: new URLSearchParams({html: source.value}), signal: request.signal
+        });
+        if (!response.ok) throw new Error("preview unavailable");
+        const data = await response.json();
+        if (typeof data.html !== "string" || typeof data.text !== "string"
+            || !Array.isArray(data.removed)) throw new Error("preview unavailable");
+        if (controller !== request) return;
+        // Server-sanitized markup only: the same allowlist the stored content
+        // passed, so this is as safe as the page's initial render.
+        editor.innerHTML = data.html;
+        removedList.textContent = data.removed.filter((item) => typeof item === "string").join("; ");
+        removedNotice.hidden = !data.removed.length;
+        unavailable.hidden = true;
+        busy(false);
+        form.dispatchEvent(new CustomEvent("stewardship:source-preview", {detail: {text: data.text}}));
+      } catch (error) {
+        if (error.name === "AbortError" || controller !== request) return;
+        // Keep the pane read-only: its content no longer matches the source.
+        updating.hidden = true;
+        unavailable.hidden = false;
+        form.dispatchEvent(new CustomEvent("stewardship:source-preview", {detail: {text: null}}));
+      }
+    };
+    source.addEventListener("input", () => {
+      busy(true);
+      unavailable.hidden = true;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 800);
+    });
+    // The visual editor marks its container as live for the plain-text panel.
+    visual.dataset.livePreview = "true";
+  }
+
+  // The visual editor only ever shows server-sanitized markup. It starts from
+  // the stored (sanitized) content; while the Admin edits the HTML source, the
+  // source is posted to the server's sanitizer after a pause and the pane is
+  // redrawn from the sanitized result, never from the raw source. Paste/drop
+  // into the pane are plain text.
   document.querySelectorAll("[data-content-form]").forEach((form) => {
     const visual = form.querySelector("[data-visual-content]");
     const editor = form.querySelector("[data-content-editor]");
@@ -793,7 +861,7 @@
       form.dispatchEvent(new Event("stewardship:html-changed"));
     };
     editor.addEventListener("input", sync);
-    source.addEventListener("input", () => { visual.hidden = true; });
+    liveSource(form, visual, editor, source);
     const selectedRange = () => {
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) return null;
@@ -930,7 +998,21 @@
         edit();
       }
     });
-    source.addEventListener("input", schedule);
+    // With a live visual editor, source edits reach the server once, through
+    // the visual preview's request, which relays the generated text here.
+    if (form.querySelector('[data-visual-content][data-live-preview="true"]')) {
+      form.addEventListener("stewardship:source-preview", (event) => {
+        if (!box.checked) return;
+        if (typeof event.detail?.text === "string") {
+          text.value = event.detail.text;
+          unavailable.hidden = true;
+        } else {
+          unavailable.hidden = false;
+        }
+      });
+    } else {
+      source.addEventListener("input", schedule);
+    }
     form.addEventListener("stewardship:html-changed", schedule);
     form.addEventListener("submit", () => { if (box.checked) text.disabled = true; });
     window.addEventListener("pageshow", () => { text.disabled = false; });

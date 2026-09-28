@@ -773,7 +773,14 @@ versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
 that browser editors write become paragraphs, `<b>`/`<i>` become
 `<strong>`/`<em>`, and markup-free text keeps blank-line paragraphs and line
 breaks; already-sanitized content is unchanged. The visual editor starts new
-paragraphs as `<p>` and keeps the line breaks of pasted plain text. Generated
+paragraphs as `<p>` and keeps the line breaks of pasted plain text. While the
+Admin edits the HTML source, the visual editor stays visible: after a short
+pause the source is sent to the server's sanitizer, and the editor is redrawn
+only from the sanitized result (never from the raw source), dimmed and
+read-only until it answers. A notice names the markup sanitizing removed
+(elements, attributes, unsafe link targets, comments). The same passive
+request, which never renews the idle session, also returns the generated
+plain text. Generated
 plain text separates paragraphs with a blank line, starts list items with a
 hyphen (or a number), and writes each link as `label: URL`. While
 "Generate plain text from HTML" is checked, the editor shows the server's
