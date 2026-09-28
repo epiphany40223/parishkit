@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review Member talents" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Member talents" %}</h1>
+{% if unchanged %}<p>{% translate "No talents have changed." %}</p>{% else %}
+<section class="panel"><h2>{% translate "Current order and labels" %}</h2><ol>{% for option in before %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<section class="panel"><h2>{% translate "Proposed order and labels" %}</h2><ol>{% for option in after %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<p>{% translate "Confirm to save these talents." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
+{% endif %}
+<p><a href="{% url 'admin:talent_settings' campaign.pk %}">{% translate "Return to Member talents" %}</a></p>
+{% endblock %}

@@ -47,6 +47,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    talent_views,
     user_rule_views,
     user_views,
     withdrawal_views,
@@ -410,6 +411,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/share-options",
         share_views.share_settings,
         name="share_settings",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/talents",
+        talent_views.talent_settings,
+        name="talent_settings",
     ),
     path("campaign/new", campaign_views.campaign_settings, name="campaign_new"),
     path(

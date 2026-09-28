@@ -70,6 +70,7 @@ PAGES = {
     ),
     "schedule_settings": Page("campaign", _("Mail schedules")),
     "share_settings": Page("campaign", _("Share options")),
+    "talent_settings": Page("campaign", _("Member talents")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing Families"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
