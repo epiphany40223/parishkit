@@ -12,6 +12,6 @@
 </section>{% endfor %}
 {% if blocking %}<p class="notice notice-error" role="alert">{% translate "In-flight or uncertain work blocks this change. Resolve it before creating a fresh preview." %} {{ blocking|number }}</p>{% else %}
 <p>{% translate "This exact preview expires in 15 minutes. Any change to relevant work invalidates it. Confirmation requests installation and returns a durable receipt; it does not send email." %}</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply all changes" %}</button></form>{% endif %}
+<form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply all changes" %}</button></form>{% endif %}
 <p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Return to schedules" %}</a></p>
 {% endblock %}
