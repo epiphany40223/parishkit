@@ -16,6 +16,7 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.web.contracts import filters
 
+from .log_descriptions import describe
 from .schemas import FIELDS, Action
 
 PAGE_SIZE = 50
@@ -204,6 +205,7 @@ def operational_row(record):
         "level_symbol": symbol,
         "level_label": label,
         "event": record["event"],
+        "description": describe(record["event"]),
         "actor_id": record["actor_id"],
         "correlation_id": record["correlation_id"],
         "campaign_id": None,
@@ -222,6 +224,7 @@ def audit_row(record):
         "level_symbol": "",
         "level_label": _("Audit record"),
         "event": record["event_type"],
+        "description": describe(record["event_type"]),
         "actor_id": record["actor_id"],
         "correlation_id": record["correlation_id"],
         "campaign_id": record["campaign_reference"],

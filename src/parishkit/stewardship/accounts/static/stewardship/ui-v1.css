@@ -384,3 +384,16 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
   .panel, .table-scroll { box-shadow: none; border-color: #999; }
   .table-scroll { overflow: visible; }
 }
+
+/* A compact form rendered inline in table cells (e.g. "Show related entries"
+   on System logs), with its submit button styled as a text link. */
+.inline-form { display: inline; margin: 0; }
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--link, var(--accent, #0b57d0));
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

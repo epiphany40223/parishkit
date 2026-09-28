@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 from parishkit.stewardship.web.exports import csv_cell, download_headers
@@ -162,13 +163,24 @@ def _load(query, *, size=None):
     # The same size bounds each source's read, so the merge is the true next page.
     page, following = merge(operational, audit, size=size)
     # Shown on screen only, for the actors on this page; never audited or logged.
+    identities = {row["actor_id"] for row in page if row["actor_id"]}
     actors = dict(
-        PortalUser.objects.filter(
-            pk__in={row["actor_id"] for row in page if row["actor_id"]}
-        ).values_list("id", "email")
+        PortalUser.objects.filter(pk__in=identities).values_list("id", "email")
+    )
+    # Most other actors are background worker processes (each task claim is
+    # recorded under the claiming worker's identity), not people.
+    workers = set(
+        TaskRun.objects.filter(worker_id__in=identities - set(actors))
+        .values_list("worker_id", flat=True)
+        .distinct()
     )
     for row in page:
         row["actor"] = actors.get(row["actor_id"])
+        row["actor_worker"] = row["actor_id"] in workers
+        # Task entries name the task as their subject; link to its page.
+        row["task_subject"] = bool(
+            row["subject_id"] and row["event"].startswith("task_")
+        )
     return page, following
 
 

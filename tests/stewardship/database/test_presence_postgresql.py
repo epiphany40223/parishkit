@@ -116,7 +116,7 @@ def test_admin_detail_has_names_and_no_answers_or_credentials(family_service, go
     assert b'class="table-nav"' in page and b'class="data-table"' in page
     assert browser.get(ADMIN + "?size=25").status_code == 200
     assert browser.get(ADMIN + "?size=500").status_code == 400
-    assert b"Active Families:" in browser.get("/admin/").content
+    assert b"Families on the form now:" in browser.get("/admin/").content
 
 
 def test_visibility_expires_independently_of_logged_in_session(family_service, google):

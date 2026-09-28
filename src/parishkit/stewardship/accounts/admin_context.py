@@ -184,7 +184,7 @@ def _navigation_items(actor, admin, campaign, configuration):
     if admin:
         add("system", "background", _("Background work"))
         add("system", "deliveries", _("Outgoing mail"))
-        add("system", "presence", _("Active Families"))
+        add("system", "presence", _("Families on the form now"))
     if allows(actor, Capability.SYSTEM_LOGS):
         add("system", "logs", _("System logs"))
     return items

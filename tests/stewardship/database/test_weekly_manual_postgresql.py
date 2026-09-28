@@ -273,3 +273,21 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
                 assert response["Cache-Control"] == "no-store"
         assert WeeklyManualRequest.objects.count() == (0 if stale else 1)
         assert TaskRun.objects.count() == before + (0 if stale else 1)
+
+
+def test_manual_form_explains_a_missing_weekly_schedule(response_service, google):
+    """Without a Weekly digest schedule the page says so instead of refusing blindly."""
+    harness = response_service
+    with campaign_clock(INSTANT):
+        browser, _ = signed_in()
+        path = f"/admin/reports/weekly-digests/request/{harness.campaign.pk}/"
+        before = TaskRun.objects.count()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(path)
+        assert page.status_code == 409
+        assert b"no Weekly Admin digest schedule" in page.content
+        schedules = f"/admin/campaign/{harness.campaign.pk}/schedules"
+        assert schedules.encode() in page.content
+        assert b"Queue new manual report" not in page.content
+        assert WeeklyManualRequest.objects.count() == 0
+        assert TaskRun.objects.count() == before
