@@ -130,6 +130,9 @@
       members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
       ministries: next.ministries ? {members: {}, proposed_members: {}} : {},
       cannot_attend: Boolean(next.cannot_attend), service: next.service ? {members: {}, proposed_members: {}} : {}};
+    // Choices set aside by a limitation survive a refresh (for Members that
+    // still exist); a fresh form starts with none.
+    const keptAside = preserve ? new Map(setAside) : new Map();
     setAside.clear();
     if (next.financial) answers.financial = structuredClone(next.financial.answers);
     if (next.household) answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
@@ -141,12 +144,6 @@
     if (next.service) ["members", "proposed_members"].forEach((group) => {
       Object.entries(next.service[group]).forEach(([id, entry]) => {
         answers.service[group][id] = {cannot_serve: entry.cannot_serve, talents: {...entry.talents}};
-        // A previous "cannot participate" answer still means every current
-        // Ministry stops and none is joined, even if the roster has changed.
-        if (entry.cannot_serve && answers.ministries[group]?.[id]) {
-          answers.ministries[group][id].join = [];
-          if (group === "members") answers.ministries[group][id].leave = [...next.ministries.members[id].current];
-        }
       });
     });
     separateMailing = null;
@@ -160,6 +157,8 @@
       answers.proposed_members[member.id] = Object.fromEntries(member.fields.map(
         (field) => [field.name, field.value]));
     });
+    // A fresh form's limitations are part of its baseline, not an edit.
+    if (!preserve) enforceLimitations(keptAside, false);
     initial = structuredClone(answers);
     initialRequests = structuredClone(requests);
     if (!preserve) {
@@ -241,6 +240,7 @@
         }
       }
     }
+    if (preserve) enforceLimitations(keptAside, true);
     edit();
     // A refreshed form opens on the first page that needs the Family's choice.
     const conflict = preserve ? unresolvedConflict(root) : null;
@@ -690,20 +690,48 @@
     if (!member.proposed) choices.leave = saved ? saved.leave : [];
   }
   function preserveService(previous, before) {
-    // Keep a Member's own talent and "cannot participate" edits across a
-    // refreshed form, dropping talents the parish no longer offers.
+    // Keep this tab's own talent and "cannot participate" edits across a
+    // refreshed form. Each talent and the flag merge separately against the
+    // form this tab started from, so another tab's talents are not dropped;
+    // talents the parish no longer offers are left out.
     if (!form.service) return;
     const offered = new Set(form.service.talent_options.map((option) => option.id));
     allMembers().forEach((member) => {
       if (!ministryEligible(member)) return;
       const group = member.proposed ? "proposed_members" : "members";
-      const old = before.service?.[group]?.[member.id], edited = previous.service?.[group]?.[member.id];
-      if (!edited || canonical(old, "service") === canonical(edited, "service")) return;
+      const old = before.service?.[group]?.[member.id] || {cannot_serve: false, talents: {}};
+      const edited = previous.service?.[group]?.[member.id];
+      if (!edited) return;
       const entry = serviceEntry(member);
-      entry.cannot_serve = edited.cannot_serve;
-      entry.talents = Object.fromEntries(Object.entries(edited.talents).filter(([id]) => offered.has(id)));
-      if (entry.cannot_serve) lockMinistries(member);
+      if (edited.cannot_serve !== old.cannot_serve) entry.cannot_serve = edited.cannot_serve;
+      new Set([...Object.keys(old.talents), ...Object.keys(edited.talents)]).forEach((id) => {
+        if (edited.talents[id] === old.talents[id] || !offered.has(id)) return;
+        if (edited.talents[id] === undefined) delete entry.talents[id];
+        else entry.talents[id] = edited.talents[id];
+      });
     });
+  }
+  function enforceLimitations(kept, preserve) {
+    // After every merge, a "cannot participate" Member stops every current
+    // Ministry and joins none, and "cannot contribute" leaves no pledge, even
+    // when another tab set the limitation while this one had other edits.
+    // Set-aside choices restore on uncheck: kept ones from before a refresh,
+    // else this tab's merged choices, or nothing for a freshly loaded form.
+    allMembers().forEach((member) => {
+      if (!form.service || !ministryEligible(member)) return;
+      const key = "ministries." + member.id;
+      if (kept.has(key)) setAside.set(key, kept.get(key));
+      if (!serviceEntry(member).cannot_serve) return;
+      if (!preserve && !setAside.has(key)) setAside.set(key, member.proposed ? {join: []} : {join: [], leave: []});
+      lockMinistries(member);
+    });
+    if (!form.financial || !answers.financial) return;
+    if (kept.has("financial")) setAside.set("financial", kept.get("financial"));
+    if (answers.financial.cannot_give) {
+      if (!setAside.has("financial")) setAside.set("financial", {annual_pledge: preserve ? answers.financial.annual_pledge : "",
+        frequency: preserve ? answers.financial.frequency : "", shares: preserve ? {...answers.financial.shares} : {}});
+      Object.assign(answers.financial, {annual_pledge: "", frequency: "", shares: {}});
+    }
   }
   function serviceEditor(member, parent) {
     // Talents and "cannot participate", above the Ministry choices they affect.

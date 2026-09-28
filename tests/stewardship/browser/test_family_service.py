@@ -4,6 +4,8 @@ Welcome "cannot attend", Member talents, "cannot participate" (locks every
 Ministry) and financial "cannot contribute" (hides the pledge fields).
 """
 
+from copy import deepcopy
+
 import pytest
 
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
@@ -156,3 +158,77 @@ def test_cannot_give_hides_pledge_fields_and_restores_them(
         "shares": {},
         "cannot_give": True,
     }
+
+
+def refreshing(submissions, fresh):
+    """First Submit returns a refreshed form; the next one is accepted."""
+
+    def submit(route):
+        submissions.append(route.request.post_data_json["answers"])
+        if len(submissions) == 1:
+            route.fulfill(status=409, json={"error": "review_required", "form": fresh})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    return submit
+
+
+def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
+    """After a refresh, unchecking still restores this tab's own join."""
+    form, submissions = service_form(), []
+    begin(page, component_origin, form, refreshing(submissions, deepcopy(form)))
+    show(page, page.get_by_text("Click here to join another ministry", exact=True))
+    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_label("Search ministries").fill("pantry")
+    page.get_by_role("checkbox", name="Food pantry", exact=True).check()
+    page.get_by_label(SERVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    page.get_by_label(SERVE).uncheck()
+    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_visible()
+
+
+def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
+    """Another tab's "cannot participate" wins over this tab's pending join."""
+    form, submissions = service_form(), []
+    fresh = deepcopy(form)
+    fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
+    fresh["service"]["members"]["3"] = {
+        "cannot_serve": True,
+        "talents": {OTHER: "Organ"},
+    }
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Painter")).check()
+    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_label("Search ministries").fill("pantry")
+    page.get_by_role("checkbox", name="Food pantry", exact=True).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    # Talents merge one by one: this tab's Painter and the other tab's Other.
+    expect(page.get_by_label("Painter")).to_be_checked()
+    expect(page.get_by_label("Please describe your talent")).to_have_value("Organ")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["ministries"]["members"]["3"] == {"join": [], "leave": [4]}
+    assert submissions[1]["service"]["members"]["3"] == {
+        "cannot_serve": True,
+        "talents": {PAINTER: "", OTHER: "Organ"},
+    }
+
+
+def test_refresh_keeps_a_hidden_pledge_for_unchecking(page, component_origin):
+    """A pledge hidden by "cannot contribute" comes back after a refresh."""
+    form, submissions = financial_form(), []
+    begin(page, component_origin, form, refreshing(submissions, deepcopy(form)))
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("120")
+    page.get_by_label(GIVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(GIVE))).to_be_checked()
+    page.get_by_label(GIVE).uncheck()
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("120")
