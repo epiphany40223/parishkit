@@ -337,7 +337,7 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     expect(page.get_by_label("We will send a check", exact=True)).to_be_checked()
     review(page)
     expect(
-        show(page, page.get_by_text("Your annual pledge: $25.00", exact=True))
+        show(page, page.get_by_text("Your annual pledge: $25", exact=True))
     ).to_be_visible()
 
 

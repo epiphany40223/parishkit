@@ -771,8 +771,10 @@
     return pledgePositive() ? answers.financial : {...answers.financial, frequency: "", shares: {}};
   }
   function moneyDisplay(cents) {
-    return cents === null ? "Not provided" : "$" + Math.floor(cents / 100).toLocaleString("en-US") +
-      "." + String(cents % 100).padStart(2, "0");
+    // Whole-dollar amounts omit ".00"; other amounts show both cent digits.
+    if (cents === null) return "Not provided";
+    const dollars = "$" + Math.floor(cents / 100).toLocaleString("en-US");
+    return cents % 100 ? dollars + "." + String(cents % 100).padStart(2, "0") : dollars;
   }
   function financialLabel(option) {
     const count = form.household ? form.members.filter((member) => !requests[member.id]).length +
