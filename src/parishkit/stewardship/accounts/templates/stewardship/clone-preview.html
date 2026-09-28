@@ -7,7 +7,7 @@
 <h2>{% translate "New schedules" %}</h2>{% for schedule in schedules %}<section class="panel">{% include 'stewardship/schedule-summary.html' with value=schedule %}</section>{% empty %}<p>{% translate "No schedules selected." %}</p>{% endfor %}
 <h2>{% translate "Copied content — fictional Family preview" %}</h2>
 {% for item in content_previews %}<section class="panel"><h3>{{ item.label }}</h3>{% if item.rendered.subject %}<p>{{ item.rendered.subject }}</p>{% endif %}<div>{{ item.rendered.html|safe }}</div><h4>{% translate "Plain text" %}</h4><pre>{{ item.rendered.text }}</pre></section>{% empty %}<p>{% translate "No configured content to copy. Unresolved legacy references are not readiness evidence." %}</p>{% endfor %}
-<p>{% translate "This exact preview expires in 15 minutes. Configuration, source or lifecycle changes require a fresh preview." %}</p>
+<p>{% translate "Confirm to create the new campaign." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Create reviewed draft" %}</button></form>
 <p><a href="{% url 'admin:campaign_clone' source.pk %}">{% translate "Return to clone form" %}</a></p>
 {% endblock %}

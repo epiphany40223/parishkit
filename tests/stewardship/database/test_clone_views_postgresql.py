@@ -177,7 +177,7 @@ def test_clone_seed_and_confirmation_both_expire(auth_service, google, monkeypat
     assert post(browser, path, data).status_code == 409
     assert (
         post(browser, path, {"action": "confirm", "preview": proposal}).status_code
-        == 400
+        == 409
     )
 
 

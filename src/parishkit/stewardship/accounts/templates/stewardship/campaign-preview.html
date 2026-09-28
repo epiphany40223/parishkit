@@ -6,9 +6,9 @@
 {% if default_content %}<p>{% translate "Every page and email of the new campaign starts with the default text. You can edit any of them afterward under Campaign content and templates." %}</p>{% endif %}
 {% if removes_share_options %}<p class="notice" role="note">{% translate "Disabling financial stewardship removes this draft's sharing options. Re-enabling it starts with the default options, not your customized labels. The previous configuration remains in retained history." %}</p>{% endif %}
 {% for change in changes %}<section class="panel"><h2>{{ change.label }}</h2>
-<p>{% translate "Applied:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
+<p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
 <p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
-<p>{% translate "This exact preview expires in 15 minutes. Confirmation requests installation; settings change only after the request is Applied. A campaign or source change requires a fresh preview." %}</p>
+<p>{% translate "Confirm to save these settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 <button type="submit">{% translate "Apply changes" %}</button></form>
 {% endblock %}

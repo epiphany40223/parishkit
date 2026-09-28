@@ -2,13 +2,13 @@
 
 from uuid import uuid4
 
-from django.core import signing
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import load_preview
 
 from .admin_editing import (
     confirm,
@@ -44,7 +44,7 @@ def _preview_schema(request, request_id):
     token = request.POST.get("preview", "")
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
-    intent = signing.loads(token, salt=SALT + str(request_id), max_age=900)
+    intent = load_preview(token, salt=SALT + str(request_id), link=request.path)
     _, base = intake_base(intent["base"])
     return credential_request_schema(base.document())
 

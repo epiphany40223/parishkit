@@ -186,6 +186,17 @@ def _inline_credential_form(configuration, request, target):
     return InlineCredentialForm(target, initial={"intent": intent})
 
 
+def _retain_unused_time(target, settings, before):
+    """Keep the stored daily time when the refresh is hourly or every 15 minutes.
+
+    The page hides (and the browser does not send) the daily time for those
+    frequencies, so an empty or stale value there is never a change to review.
+    """
+    if target == "parishsoft" and settings.get("full_refresh", "daily") != "daily":
+        settings = settings | {"nightly_time": before.get("nightly_time", "02:00")}
+    return settings
+
+
 def _save(request, service, configuration, actor, target):
     """Replace the key (and any changed settings) from the settings page.
 
@@ -221,6 +232,7 @@ def _save(request, service, configuration, actor, target):
     record = _optional(configuration, target)
     settings = form.public_settings()
     before = record["values"]["settings"] if record is not None else settings
+    settings = _retain_unused_time(target, settings, before)
     if target == "parishsoft":
         # Refresh defaults are implied, not stored, in older settings. A key
         # save never upgrades the settings schema: change the schedule first.
@@ -261,10 +273,10 @@ def _preview(request, service, actor, target):
         return _page(request, configuration, target, form=form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload integration settings.")
-    settings = form.public_settings()
     before = record["values"]["settings"]
     if target == "parishsoft":
         before = {"full_refresh": "daily", "nightly_time": "02:00"} | before
+    settings = _retain_unused_time(target, form.public_settings(), before)
     if settings == before:
         form.add_error(None, _("No settings have changed."))
         return _page(request, configuration, target, form=form, status=400)

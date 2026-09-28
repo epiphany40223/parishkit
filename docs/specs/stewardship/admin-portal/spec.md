@@ -438,6 +438,19 @@ credential installed. Slack is optional; its token and channel must be
 supplied/removed together. Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer.
 
+Page text describes what the Admin sees happen, never the machinery: no
+configuration files, installers, fingerprints or preview lifetimes. Signed
+previews still expire after fifteen minutes; confirming an expired or
+out-of-date preview is a correctable refusal ("This preview is out of date")
+that links back to the page that builds it, so one click starts a fresh review
+and nothing is saved in between. A finished key change (updated, failed,
+cancelled or expired) shows on its integration's page for 24 hours; one that is
+installed but not yet in use keeps showing until it is resolved. The history
+stays on the change's details page and in the audit log. The ParishSoft daily
+refresh time is shown only for the once-a-day frequency; for hourly and
+15-minute refreshes the stored time is kept unchanged and is not a change to
+review.
+
 ### Ministry activity management
 
 Admins can mark a Ministry inactive or reactivate it through an Admin web

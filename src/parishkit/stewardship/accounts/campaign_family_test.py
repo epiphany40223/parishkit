@@ -10,7 +10,6 @@ code, a link, rendered content or a recipient address.
 from dataclasses import dataclass
 from uuid import UUID, uuid4, uuid5
 
-from django.core import signing
 from django.urls import reverse
 
 from parishkit.stewardship.campaigns.credential_models import (
@@ -35,6 +34,7 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import load_preview
 
 from .admin_editing import editable_configuration, principal
 from .content_models import ContentVersion
@@ -248,7 +248,7 @@ def _binding(preview_token):
     """Reject a malformed or expired signed preview before touching the database."""
     if type(preview_token) is not str or len(preview_token) > 4096:
         raise ValueError("Invalid Family test command.")
-    binding = signing.loads(preview_token, salt=SALT, max_age=900)
+    binding = load_preview(preview_token, salt=SALT)
     if (
         type(binding) is not dict
         or set(binding) != BINDING_KEYS

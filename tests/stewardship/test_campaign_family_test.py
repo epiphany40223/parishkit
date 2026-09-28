@@ -8,6 +8,7 @@ from django.core import signing
 
 from parishkit.stewardship.accounts import campaign_family_test as intake
 from parishkit.stewardship.jobs import family_mail_test_tasks as tasks
+from parishkit.stewardship.storage import StaleRecordError
 
 
 def test_family_duids_are_bounded_distinct_and_exact():
@@ -71,7 +72,8 @@ def test_expired_preview_is_rejected(monkeypatch):
     assert intake._binding(token)["families"] == ["1", "2"]
     now = signing.time.time()
     monkeypatch.setattr(signing.time, "time", lambda: now + 901)
-    with pytest.raises(signing.SignatureExpired):
+    # Expiry is now the plain, recoverable "out of date" refusal (a 409).
+    with pytest.raises(StaleRecordError, match="out of date"):
         intake._binding(token)
 
 

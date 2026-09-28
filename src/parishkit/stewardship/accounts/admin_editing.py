@@ -26,7 +26,11 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.refusals import UserFacingDenied
+from parishkit.stewardship.web.refusals import (
+    UserFacingDenied,
+    expired_preview,
+    load_preview,
+)
 
 from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
@@ -153,7 +157,7 @@ def confirm(
     token = request.POST.get("preview", "")
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
-    intent = signing.loads(token, salt=salt, max_age=900)
+    intent = load_preview(token, salt=salt, link=request.path)
     if intent["actor"] != str(actor.identity):
         raise PermissionError("Preview belongs to another Administrator.")
     key = UUID(intent["key"])
@@ -173,9 +177,8 @@ def confirm(
                 or (str(snapshot) if snapshot is not None else None)
                 != intent["snapshot"]
             ):
-                raise StaleRecordError(
-                    "Review a fresh preview before applying changes."
-                )
+                # Settings changed since the review; start a fresh one.
+                raise expired_preview(request.path)
             return True
 
     receipt = record_request(

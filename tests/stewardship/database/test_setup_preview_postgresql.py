@@ -151,7 +151,7 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
             b"Sample Parish",
             b"Thank You page",
             b"Initial invitation",
-            b"no private credential values",
+            b"keys themselves are never displayed",
         ):
             assert expected in response.content
         # Review is an ordinary step: no links jump ahead to the tests or

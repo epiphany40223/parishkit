@@ -13,7 +13,7 @@
 {% endfor %}
 <section class="panel">
   <p>{% translate "The selected Member is retained as the seed's identity evidence when the request activates. The parish source then keeps the assignment in force while it shows that Member as a current Chairperson of that Ministry, and suspends it otherwise. No confirmation grants Administrator or Staff beyond roles the address already inherited." %}</p>
-  <p>{% translate "The change is applied as a configuration request against the applied policy and the promoted source. This preview expires in 15 minutes." %}</p>
+  <p>{% translate "Confirm to save this change." %}</p>
 </section>
 <form method="post" action="{% url 'admin:chair_confirmations' %}">
   {% csrf_token %}<input type="hidden" name="action" value="confirm">

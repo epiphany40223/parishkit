@@ -380,7 +380,9 @@ def test_closed_send_rejects_unreviewed_or_expired_commands(
 
             now = signing.time.time()
             monkeypatch.setattr(signing.time, "time", lambda: now + 901)
-        assert post(browser, path, values).status_code == 400
+        # Expiry is the recoverable "out of date" refusal; forgeries stay 400.
+        expected = 409 if mutation == "expired" else 400
+        assert post(browser, path, values).status_code == expected
     assert not CampaignMailTest.objects.exists()
 
 
@@ -401,7 +403,7 @@ def test_expired_retry_preserves_journal_without_resending(campaign_test, monkey
     with monkeypatch.context() as patch:
         patch.setattr(signing.time, "time", lambda: now + 901)
         with web_login():
-            assert post(browser, path, {"preview_token": token}).status_code == 400
+            assert post(browser, path, {"preview_token": token}).status_code == 409
     assert CampaignMailTest.objects.count() == 1
     row.refresh_from_db()
     assert row.state == "queued"

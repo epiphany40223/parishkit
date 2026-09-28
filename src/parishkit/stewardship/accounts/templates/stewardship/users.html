@@ -4,7 +4,7 @@
 {% block content %}
 <h1>{% translate "Portal users" %}</h1>
 <div data-rule-autosave data-apply-url="{% url 'admin:rule_apply' %}" data-request-url="{% url 'admin:rule_request' request_id='00000000-0000-4000-8000-000000000000' %}" data-base-url="{% url 'admin:rule_base' %}" data-base-digest="{{ base_digest }}"></div>
-<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and applied as a configuration request, never directly from the row. An exact address always replaces its domain rule for that person." %}</p>
+<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
 <p>{% translate "A successful sign-in is one that was allowed and opened a session. A Google sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>
 
 <h2 id="domain-rules">{% translate "Google Workspace hosted-domain rules" %}</h2>
@@ -75,7 +75,7 @@
 
 {% if reviews %}
 <h2 id="chair-reviews">{% translate "Suspended Chairperson assignments awaiting review" %}</h2>
-<p>{% translate "Each row is a Parish source Chairperson assignment the promoted source no longer confirms, with the Member it was confirmed for and why it is suspended. It grants no Ministry scope now. Restore it as an Administrator entry, which the parish source never rewrites, or remove it; either is a reviewed configuration request, and the reason you enter is recorded in the audit. If the parish source shows the Member as Chairperson again before you decide, the seed reactivates and the review closes by itself." %}</p>
+<p>{% translate "Each row is a Parish source Chairperson assignment the promoted source no longer confirms, with the Member it was confirmed for and why it is suspended. It grants no Ministry scope now. Restore it as an Administrator entry, which the parish source never rewrites, or remove it; either is reviewed before it is saved, and the reason you enter is recorded in the audit log. If the parish source shows the Member as Chairperson again before you decide, the seed reactivates and the review closes by itself." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="chair-reviews"><table class="data-table">
 <caption>{% translate "Suspended seeded assignments" %}</caption><thead><tr><th scope="col">{% translate "Address" %}</th><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Confirmed Member" %}</th><th scope="col">{% translate "Why suspended" %}</th><th scope="col">{% translate "Suspended since" %}</th><th scope="col">{% translate "Current source" %}</th><th scope="col">{% translate "Roles granted now" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Decide" %}</th></tr></thead><tbody>
 {% for row in reviews %}<tr>

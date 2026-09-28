@@ -3,10 +3,9 @@
 from dataclasses import dataclass, field
 from uuid import UUID, uuid5
 
-from django.core import signing
-
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.web.refusals import load_preview
 
 from .branding_staging import staged_bundle
 from .configuration_requests import policy_operation_id
@@ -93,7 +92,7 @@ def verify_preview(request, service, token):
     """A signature never replaces fresh session, source, credential and draft checks."""
     if type(token) is not str or len(token) > 4096:
         raise ValueError("Invalid setup preview.")
-    binding = signing.loads(token, salt=PREVIEW_SALT, max_age=900)
+    binding = load_preview(token, salt=PREVIEW_SALT, link=request.path)
     current = prepare_preview(request, service)
     if current.binding() != binding:
         from parishkit.stewardship.storage import StaleRecordError
