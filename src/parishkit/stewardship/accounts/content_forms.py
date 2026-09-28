@@ -37,12 +37,16 @@ PAGE_LABELS = {
     "review": _("Review and attestation introduction"),
     "thank_you": _("Thank You page"),
     "access_denied": _("Access-denied contact help"),
-    "submission_confirmation": _("Submission receipt message (email delivery)"),
+    "submission_confirmation": _("Confirmation email: closing note"),
 }
+# Page slots whose content is only ever delivered inside an email. The content
+# lists show them under Email templates, after the email they are added to;
+# their storage kind and slot stay "page" (#259).
+EMAIL_ADDITIONS = {"submission_confirmation": "confirmation"}
 EMAIL_LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
-    "confirmation": _("Submission receipt"),
+    "confirmation": _("Confirmation email"),
     "daily_digest": _("Daily Admin digest"),
     "weekly_digest": _("Weekly Admin digest"),
     "critical_alert": _("Critical alert"),
@@ -117,6 +121,17 @@ def family_access_message(part, problem, names, *, generated):
     return _("%(part)s is missing %(names)s.") % {"part": label, "names": listed} + fix
 
 
+def has_plain_text(kind, slot):
+    """Whether a slot's plain-text version is ever delivered.
+
+    Emails carry HTML and plain-text alternatives, and the Submission receipt
+    message page slot is appended to the confirmation email. Every other page
+    slot is only rendered as HTML, so its stored plain text is always generated
+    and the editor does not offer it.
+    """
+    return kind == "email" or slot == "submission_confirmation"
+
+
 class ContentForm(forms.Form):
     """HTML is sanitized before preview; plaintext can be generated or edited."""
 
@@ -148,6 +163,14 @@ class ContentForm(forms.Form):
         super().__init__(*args, **kwargs)
         if kind == "page":
             del self.fields["subject"]
+        if not has_plain_text(kind, slot):
+            del self.fields["generate_text"]
+            del self.fields["text"]
+        elif slot == "submission_confirmation":
+            self.fields["text"].help_text = _(
+                "This message is added to the confirmation email, which is sent "
+                "with both HTML and plain-text versions."
+            )
         elif slot in {"initial", "reminder"}:
             self.fields["text"].help_text = _(
                 "Both body versions require {{ family_code }} and {{ family_url }}. "
@@ -160,15 +183,16 @@ class ContentForm(forms.Form):
         values = super().clean()
         if self.errors or values.get("clear"):
             return values
+        # Slots without plain-text controls always generate it from the HTML.
+        generate = values.get("generate_text", True)
+        typed = values.get("text", "")
         try:
-            prepared = prepare_content(
-                values["html"], text=None if values["generate_text"] else values["text"]
-            )
+            prepared = prepare_content(values["html"], text=None if generate else typed)
             if (
-                values["generate_text"]
-                and values["text"].strip()
+                generate
+                and typed.strip()
                 # Browsers submit a textarea's line breaks as CRLF.
-                and values["text"].replace("\r\n", "\n") != prepared.text
+                and typed.replace("\r\n", "\n") != prepared.text
             ):
                 # Never silently drop typed plain text in favour of generated.
                 self.add_error(
@@ -216,9 +240,7 @@ class ContentForm(forms.Form):
                 self.add_error(
                     None,
                     forms.ValidationError(
-                        family_access_message(
-                            part, problem, names, generated=values["generate_text"]
-                        ),
+                        family_access_message(part, problem, names, generated=generate),
                         code="family_access",
                     ),
                 )

@@ -596,7 +596,12 @@ The campaign editor includes:
   save or preview and apply), with the content list marking each slot as
   default, customized or empty. A new campaign that is not a clone starts
   with the default text for every applicable slot, added in its creation
-  request; a clone copies its source's content instead;
+  request; a clone copies its source's content instead. Plain-text controls
+  appear only where plain text is delivered: every email, and the
+  confirmation email's closing note (the `submission_confirmation` page slot,
+  which is added after the confirmation email's message and is listed under
+  Email templates right after that email). Web-only page slots always store
+  plain text generated from their HTML, and the editor does not offer it;
 - page/email preview using safe sample data or an explicitly selected Family;
   and
 - Testing/Production controls.

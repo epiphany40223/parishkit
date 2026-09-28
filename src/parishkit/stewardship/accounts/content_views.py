@@ -35,6 +35,7 @@ from .authentication import runtime
 from .campaign_views import _scope, _state
 from .content_defaults import default_initial
 from .content_forms import (
+    EMAIL_ADDITIONS,
     EMAIL_LABELS,
     ContentForm,
     matches_default,
@@ -89,6 +90,7 @@ def _catalog(request, configuration, campaign):
     """List named page slots and independent email revisions for per-mail selection."""
     records = _records(configuration, campaign.pk)
     pages = []
+    additions = {}
     for slot, label in page_slots(campaign.active_configuration.values).items():
         record = next(
             (
@@ -98,19 +100,23 @@ def _catalog(request, configuration, campaign):
             ),
             None,
         )
-        pages.append(
-            {
-                "label": label,
-                "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
-                "state": _content_state(record),
-            }
-        )
+        entry = {
+            "label": label,
+            "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
+            "state": _content_state(record),
+        }
+        # Content only ever sent inside an email is listed with that email.
+        if slot in EMAIL_ADDITIONS:
+            additions[EMAIL_ADDITIONS[slot]] = entry
+        else:
+            pages.append(entry)
     emails = []
     for slot, label in EMAIL_LABELS.items():
         emails.append(
             {
                 "label": label,
                 "singleton": slot == "confirmation",
+                "addition": additions.get(slot),
                 "url": reverse("admin:content_edit", args=[campaign.pk, "email", slot]),
                 "revisions": [
                     {

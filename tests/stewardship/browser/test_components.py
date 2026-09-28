@@ -950,3 +950,15 @@ def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin,
         button.press("Enter")
     assert submitted.value.method == "POST"
     assert set(parse_qs(submitted.value.post_data)) == {"csrfmiddlewaretoken"}
+
+
+def test_web_only_page_editor_has_no_plain_text_panel(page, component_origin):
+    """Web-only pages (#259) show no plain-text controls; the editor still works."""
+    page.goto(component_origin + "/setup-content-edit")
+    editor = page.locator("[data-content-editor]")
+    visible(editor)
+    assert page.locator("[data-plain-text]").count() == 0
+    assert page.locator('textarea[name="text"]').count() == 0
+    assert page.locator('input[name="generate_text"]').count() == 0
+    editor.fill("Welcome edit")
+    assert "Welcome edit" in page.locator('textarea[name="html"]').input_value()

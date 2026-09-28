@@ -139,3 +139,7 @@ def test_fill_result_parameters_are_closed():
     assert result_url("filled", ["page_welcome", "email_initial", "page_review"]) == (
         "/admin/setup/content?filled_pages=2&filled_emails=1"
     )
+    # The confirmation email's closing note is listed, and counted, as an email.
+    assert result_url(
+        "reset", ["page_welcome", "email_confirmation", "page_submission_confirmation"]
+    ) == ("/admin/setup/content?reset_pages=1&reset_emails=2")
