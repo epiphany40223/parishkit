@@ -137,6 +137,31 @@ PAGES = {
         "{{ financial_start }} through {{ financial_end }}.</p>"
         "<p>Thank you for your generosity!</p>"
     ),
+    # Optional page between Financial and Additional information. Removing
+    # this content (or leaving it empty) removes the page from the Family form.
+    "closing": (
+        "<h2>Protect the earth</h2>"
+        "<p>The Church’s teaching on stewardship of the earth sees its goods as "
+        "gifts from God, intended for the benefit of everyone. We are called to "
+        "<strong>protect</strong> these gifts as stewards and trustees, not as "
+        "mere consumers and users. Please consider:</p>"
+        "<h3>At home and at work</h3>"
+        "<ul><li>Avoid printing emails and making photocopies</li>"
+        "<li>Reduce your use of electricity; turn off lights in rooms you are not "
+        "using</li>"
+        "<li>Reduce water use</li>"
+        "<li>Recycle what you can</li>"
+        "<li>Set your thermostat a little higher in summer and lower in winter</li>"
+        "<li>Wash and dry full loads, and use the right water level on your "
+        "washer</li>"
+        "<li>Caulk and weather-strip doors and windows</li></ul>"
+        "<h3>In your yard</h3>"
+        "<ul><li>Leave grass clippings on the lawn</li>"
+        "<li>Water early or late in the day</li></ul>"
+        "<h3>On the road</h3>"
+        "<ul><li>Walk, carpool, or take public transportation</li>"
+        "<li>Check tire pressure and keep your car well maintained</li></ul>"
+    ),
     "additional": (
         "<p>If you have any additional information that you wish to share with "
         "{{ parish_name }} that was not covered by any previous question, please "

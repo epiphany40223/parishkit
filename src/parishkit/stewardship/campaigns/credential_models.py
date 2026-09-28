@@ -374,6 +374,7 @@ PRESENCE_SECTIONS = (
     "members",
     "ministry",
     "financial",
+    "closing",
     "additional",
     "review",
 )

@@ -434,3 +434,40 @@ def test_share_option_checkboxes_line_up_with_their_labels(
     for offset in offsets:
         assert offset["gap"] <= 4, offsets
         assert offset["indent"], offsets
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_optional_closing_page_sits_between_financial_and_additional(
+    page, component_origin, axe_source, width
+):
+    """Closing content adds one content-only step; without it there is none."""
+    page.set_viewport_size({"width": width, "height": 900})
+    form = paged_form()
+    form["content"]["closing"] = (
+        "<h2>Protect the earth</h2><p>Walk, carpool, or take public transit.</p>"
+    )
+    begin(page, component_origin, form, None)
+    expect(page.locator('[data-step-link="intro"]')).to_be_attached()
+    titles = page.locator("[data-step-link]").evaluate_all(
+        "rows => rows.map(row => row.textContent)"
+    )
+    assert titles[-3:] == ["Financial stewardship", "Closing", "Additional information"]
+    page.locator('[data-step-link="closing"]').click()
+    # The parish text's own heading is the visible title; "Closing" stays for
+    # screen readers and focus only.
+    expect(page.get_by_role("heading", name="Protect the earth")).to_be_visible()
+    expect(page.locator("#page-closing-title")).to_be_focused()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    next_page(page)
+    expect(
+        page.get_by_role("heading", name="Additional information", level=3)
+    ).to_be_visible()
+
+
+def test_no_closing_content_means_no_closing_step(page, component_origin):
+    """Removing the closing content removes its step from the Family form."""
+    begin(page, component_origin, paged_form(), None)
+    expect(page.locator('[data-step-link="intro"]')).to_be_attached()
+    expect(page.locator('[data-step-link="closing"]')).to_have_count(0)

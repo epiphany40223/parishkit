@@ -118,8 +118,10 @@ Steps are assembled from enabled modules:
 4. Add and fully edit proposed Members, when census is enabled, including their
    enabled census and Ministry subsections.
 5. Financial stewardship, when enabled.
-6. Additional information, when enabled.
-7. Review and final Submit.
+6. Closing, a content-only page shown only while the campaign's closing content
+   has visible text; removing or emptying that content removes the step.
+7. Additional information, when enabled.
+8. Review and final Submit.
 
 When the Family has submitted before, the welcome page opens with "You last
 submitted your renewal on DATE AND TIME. You can review, change and submit

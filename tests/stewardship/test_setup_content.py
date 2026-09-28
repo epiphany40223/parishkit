@@ -84,7 +84,7 @@ def test_default_updates_distinguish_never_set_cleared_and_saved():
     values = campaign()["values"]
     steps = {f"{kind}_{slot}" for kind, slot in applicable_slots(values)}
     everything = default_updates({}, values, attempt, which=FILL_UNSET)
-    assert set(everything) == steps and len(steps) == 11 + 6
+    assert set(everything) == steps and len(steps) == 12 + 6
     assert all(
         matches_default(row["values"])
         and row["values"]["campaign_id"] == str(attempt)

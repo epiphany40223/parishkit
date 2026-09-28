@@ -26,6 +26,7 @@ SLOTS = {
     "welcome": _("Welcome"),
     "review": _("Review"),
     "thank_you": _("Thank you"),
+    "closing": _("Closing page"),
     "additional": _("Additional information"),
     **MODULES,
 }

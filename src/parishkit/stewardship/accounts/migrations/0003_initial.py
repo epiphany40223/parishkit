@@ -1922,6 +1922,7 @@ class Migration(migrations.Migration):
                                     "page_access_denied",
                                     "page_additional",
                                     "page_census",
+                                    "page_closing",
                                     "page_financial",
                                     "page_login_help",
                                     "page_member_census",

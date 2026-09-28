@@ -116,7 +116,7 @@ def test_new_draft_starts_with_default_content(auth_service, google):
     assert sorted((r["values"]["kind"], r["values"]["slot"]) for r in records) == (
         sorted(applicable_slots(values))
     )
-    assert len(records) == 11 + 6
+    assert len(records) == 12 + 6
     assert all(matches_default(record["values"]) for record in records)
     # The legacy page references select exactly the new page revisions.
     pages = {
@@ -126,11 +126,18 @@ def test_new_draft_starts_with_default_content(auth_service, google):
     }
     assert values["content_versions"] == {
         slot: pages[slot]
-        for slot in ("welcome", "census", "additional", "review", "thank_you")
+        for slot in (
+            "welcome",
+            "census",
+            "closing",
+            "additional",
+            "review",
+            "thank_you",
+        )
     }
     catalog = browser.get(f"/admin/campaign/{row.pk}/content").content.decode()
     assert "start with default text" in catalog
-    assert catalog.count("— Default text") == 11 + 6
+    assert catalog.count("— Default text") == 12 + 6
 
 
 def test_disabling_financial_preview_warns_before_discarding_custom_sharing(

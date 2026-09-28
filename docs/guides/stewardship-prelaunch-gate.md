@@ -283,15 +283,18 @@ The new Family and Member answers (#247) then added the talents defaults,
 the talents-and-limitation answer guard and the talents report functions, and
 extended the submission and financial answer guards and the financial and
 Ministry follow-up report functions (Functions only).
+The optional closing page (#248) then admitted a `closing` content slot and
+presence section (two CHECK constraints and one guard body; Constraints and
+Functions digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `d0155245` |
+| Constraints | 3398 | `0701ed5b` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 601 | `7bcc6332` |
+| Functions | 601 | `b5df5b19` |
 | Triggers | 553 | `32504824` |
 | Policies | 28 | `1c9c3b2d` |
 
