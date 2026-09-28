@@ -28,6 +28,7 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
+from parishkit.stewardship.web.tables import window_table
 
 from .models import NONTERMINAL_STATES, TASK_STATES, TaskRun
 from .ownership import database_now
@@ -282,14 +283,24 @@ def background_page(request):
         _named(task)
         progress = task["progress"]
         progress["display"] = Percentage(progress["current"], progress["total"])
-    following = request.GET.copy()
-    following["page"] = str(work["page"] + 1)
+    # _read already validated every query value, so the filters can be
+    # carried on each navigator link as they are.
+    table = window_table(
+        PageWindow(work["page"], work["size"]),
+        work["tasks"],
+        work["has_next"],
+        carry=[
+            (name, value)
+            for name, value in request.GET.items()
+            if name not in {"page", "size"}
+        ],
+    )
     response = render(
         request,
         "stewardship/background.html",
         {
             "work": work,
-            "next_query": following.urlencode(),
+            "table": table,
             "selected_state": request.GET.get("state", "nonterminal"),
             "states": ("nonterminal", "all", *TASK_STATES),
         },

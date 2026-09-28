@@ -9,6 +9,13 @@ selection for tables that offer bulk actions (see the admin-portal spec).
 
 Only list pages whose query strings carry no private values use this helper;
 report views that keep their filters in POST state keep their own paging.
+
+Two kinds of page share the model and the navigator. ``paginate`` slices an
+in-memory list and knows the total. ``window_table`` wraps a database page
+read through ``web.contracts.PageWindow``, which fetches one sentinel row to
+learn whether a next page exists instead of counting every matching row; its
+navigator therefore shows no total or page count, and offers only the sizes a
+PageWindow accepts.
 """
 
 from dataclasses import dataclass
@@ -16,6 +23,8 @@ from math import ceil
 from urllib.parse import urlencode
 
 PAGE_SIZES = (25, 50, 100, 250)
+# PageWindow caps a database page at 100 rows, so windowed tables offer fewer.
+WINDOW_SIZES = (25, 50, 100)
 ALL = "all"
 
 
@@ -25,11 +34,16 @@ class TablePage:
 
     rows: list
     number: int
-    pages: int
-    count: int
+    pages: int | None
+    count: int | None
     size: int | None
     prefix: str
     carried: tuple
+    # Only windowed tables set this: they know whether a next page exists
+    # without knowing how many pages there are.
+    has_next: bool | None = None
+    sizes: tuple = PAGE_SIZES
+    allow_all: bool = True
 
     @property
     def page_name(self):
@@ -49,7 +63,7 @@ class TablePage:
     @property
     def first_index(self):
         """1-based position of the first row shown, or 0 for an empty table."""
-        if not self.count:
+        if not self.rows:
             return 0
         return 1 if self.size is None else (self.number - 1) * self.size + 1
 
@@ -60,9 +74,17 @@ class TablePage:
 
     @property
     def size_choices(self):
-        """(value, label, selected) for every rows-per-page option."""
-        choices = [(str(size), str(size), size == self.size) for size in PAGE_SIZES]
-        return choices + [(ALL, "All", self.size is None)]
+        """(value, label, selected) for every rows-per-page option.
+
+        A size outside the standard choices (for example one typed into an
+        older bookmarked URL that the page still accepts) is listed too, so
+        the control always shows the size actually in use.
+        """
+        sizes = sorted({*self.sizes, *([self.size] if self.size else [])})
+        choices = [(str(size), str(size), size == self.size) for size in sizes]
+        if self.allow_all:
+            choices.append((ALL, "All", self.size is None))
+        return choices
 
     def query(self, number):
         """Query string for another page, keeping filters and the page size."""
@@ -82,7 +104,8 @@ class TablePage:
     @property
     def next_query(self):
         """Query string for the next page, or None on the last page."""
-        return self.query(self.number + 1) if self.number < self.pages else None
+        more = self.has_next if self.pages is None else self.number < self.pages
+        return self.query(self.number + 1) if more else None
 
 
 def paginate(rows, parameters, *, prefix="", default=50, carry=()):
@@ -117,6 +140,28 @@ def paginate(rows, parameters, *, prefix="", default=50, carry=()):
         size=size,
         prefix=prefix,
         carried=tuple((name, value) for name, value in carry if value),
+    )
+
+
+def window_table(window, rows, has_next, *, prefix="", carry=()):
+    """Describe one PageWindow page for the shared navigator.
+
+    ``window`` is the PageWindow the view already used to read ``rows`` and
+    ``has_next`` (see ``PageWindow.rows``); the view keeps its own parsing and
+    bounds, so JSON endpoints sharing that parser are unchanged. The total is
+    unknown by design, so ``count`` and ``pages`` are None.
+    """
+    return TablePage(
+        rows=list(rows),
+        number=window.page,
+        pages=None,
+        count=None,
+        size=window.size,
+        prefix=prefix,
+        carried=tuple((name, value) for name, value in carry if value),
+        has_next=bool(has_next),
+        sizes=WINDOW_SIZES,
+        allow_all=False,
     )
 
 

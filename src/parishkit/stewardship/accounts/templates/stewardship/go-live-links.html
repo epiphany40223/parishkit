@@ -7,9 +7,10 @@
 <p class="notice">{% translate "These links remain inactive until final Production confirmation. Preparation sends no email and does not change Family codes. Completed Testing deletions cannot be undone." %}</p>
 {% if inputs_unavailable %}<p role="status">{% translate "Current preparation inputs are unavailable. Complete cleanup and wait for current source processing before trying again." %}</p>{% endif %}
 {% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}"><button type="submit">{% translate "Prepare inactive Family links" %}</button></form>{% endif %}
+{% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div data-live-status="links" aria-live="polite"{% if live_pending %} data-live-pending{% endif %}>
 {% if live_pending %}{% translate "Preparing Family links…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}
-{% for record in records %}
+{% for record in table.rows %}
 <section class="panel" aria-labelledby="preparation-{{ record.preparation.pk }}">
 <h2 id="preparation-{{ record.preparation.pk }}">{% translate "Preparation" %} <time data-local-instant datetime="{{ record.preparation.created_at|instant }}">{{ record.preparation.created_at|instant }}</time></h2>
 <dl><dt>{% translate "Worker state" %}</dt><dd>{{ record.task.state }}</dd>
@@ -25,6 +26,6 @@
 </section>
 {% empty %}<p>{% translate "No link preparation has been requested." %}</p>{% endfor %}
 </div>
-<nav aria-label="{% translate 'Preparation history pages' %}">{% if page > 1 %}<a href="?page={{ previous_page }}">{% translate "Previous" %}</a>{% endif %} {% if has_next %}<a href="?page={{ next_page }}">{% translate "Next" %}</a>{% endif %}</nav>
+{% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' campaign.pk transition.pk %}">{% translate "Return to cleanup" %}</a></p>
 {% endblock %}

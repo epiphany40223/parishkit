@@ -6,6 +6,8 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.tables import window_table
 
 
 def components(context, admin):
@@ -78,8 +80,8 @@ def components(context, admin):
                 "controls": {"retry": "synthetic-retry", "cancel": "synthetic-cancel"},
             }
         ],
-        "page": 1,
     }
+    links["table"] = window_table(PageWindow(1, 25), links["records"], False)
     confirmation = ready | {
         "state": Value(
             target_state="active",

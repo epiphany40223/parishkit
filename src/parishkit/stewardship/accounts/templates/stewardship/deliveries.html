@@ -9,16 +9,33 @@
   <select name="state" id="delivery-state">{% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|delivery_label }}</option>{% endfor %}</select>
   <label for="delivery-query">{% translate "Exact Family DUID or delivery ID" %}</label>
   <input id="delivery-query" name="q" value="{{ query }}" maxlength="64">
+  <input type="hidden" name="size" value="{{ table.size_value }}">
   <button type="submit">{% translate "Show deliveries" %}</button>
 </form>
-{% for delivery in deliveries %}
-<section class="panel">
-  <h2><a href="{% url 'admin:delivery' delivery.id %}">{% if delivery.family__family_duid %}{% translate "Family DUID" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</a></h2>
-  <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
-  <p>{% translate "Provider attempts:" %} {{ delivery.attempt|number }}</p>
-  <p>{% translate "Last changed:" %} <time datetime="{{ delivery.updated_at|instant }}" data-local-instant>{{ delivery.updated_at|instant }}</time></p>
-</section>
-{% empty %}<p class="panel">{% translate "No deliveries match this view." %}</p>{% endfor %}
-{% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
-{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
+{% translate "Outgoing mail pages" as navigator_label %}
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="delivery-table-caption">
+<table class="data-table">
+  <caption id="delivery-table-caption">{% translate "Outgoing mail, most recently changed first" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Recipient" %}</th>
+    <th scope="col">{% translate "Purpose" %}</th>
+    <th scope="col">{% translate "Mode" %}</th>
+    <th scope="col">{% translate "State" %}</th>
+    <th scope="col" class="numeric">{% translate "Provider attempts" %}</th>
+    <th scope="col">{% translate "Last changed" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for delivery in table.rows %}<tr>
+    <th scope="row"><a href="{% url 'admin:delivery' delivery.id %}">{% if delivery.family__family_duid %}{% translate "Family DUID" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</a></th>
+    <td>{{ delivery.purpose|delivery_label }}</td>
+    <td>{{ delivery.mode|delivery_label }}</td>
+    <td>{{ delivery.state|delivery_label }}</td>
+    <td class="numeric">{{ delivery.attempt|number }}</td>
+    <td><time datetime="{{ delivery.updated_at|instant }}" data-local-instant>{{ delivery.updated_at|instant }}</time></td>
+  </tr>{% empty %}<tr><td colspan="6">{% translate "No deliveries match this view." %}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}

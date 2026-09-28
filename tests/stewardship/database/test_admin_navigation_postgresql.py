@@ -120,6 +120,10 @@ def test_background_pagination_preserves_filtered_scope(auth_service, google):
     assert response.status_code == 200
     assert b"state=succeeded&amp;size=1&amp;page=2" in response.content
     assert b'value="succeeded" selected' in response.content
+    # Shared navigator and table styling; a windowed page shows no total.
+    assert b'class="table-nav"' in response.content
+    assert b'class="data-table"' in response.content
+    assert b"Showing 1\xe2\x80\x931<" in response.content
 
 
 def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):

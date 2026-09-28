@@ -156,8 +156,9 @@ def test_report_pagination_uses_bounded_windows_and_navigation(report):
         response.close()
         assert body.count('scope="row"') == 1
         assert f'<th scope="row">{page}</th>' in body
-        assert ("Next page" in body) == (page == 1)
-        assert ("Previous page" in body) == (page == 2)
+        # The shared navigator links only to pages that exist.
+        assert ('rel="next"' in body) == (page == 1)
+        assert ('rel="prev"' in body) == (page == 2)
 
 
 def test_admin_messages_stay_in_the_admin_database_session(report, monkeypatch):

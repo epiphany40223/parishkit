@@ -49,8 +49,12 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert PortalSession.objects.get().last_activity_at == before
         assert not ProductionTransitionRequest.objects.exists()
         assert TaskRun.objects.count() == tasks
-        assert browser.get(path + "/families").status_code == 200
+        families = browser.get(path + "/families")
+        assert families.status_code == 200
+        assert b'class="table-nav"' in families.content
+        assert browser.get(path + "/families?size=25").status_code == 200
         assert browser.get(path + "/families?page=0").status_code == 400
+        assert browser.get(path + "/families?size=500").status_code == 400
         assert browser.get(path + "?actor=other").status_code == 400
         assert browser.post(path, {}).status_code == 403  # missing CSRF
 

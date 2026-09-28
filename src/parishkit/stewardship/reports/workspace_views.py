@@ -20,10 +20,10 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.tables import paginate
 
 from .charts import render_participation
 from .daily_digest import population_cards, statistics_cards
@@ -260,9 +260,6 @@ def _page_context(campaign_id, query, selected, principal):
                 campaign_id=campaign_id, requester_id=principal.identity
             ).order_by("-created_at", "id")[:10]
         ),
-        "previous_url": query.url(campaign_id, page=query.page - 1)
-        if query.page > 1
-        else None,
     }
     if selected.document is not None:
         context.update(participation_context(selected.document))
@@ -271,10 +268,14 @@ def _page_context(campaign_id, query, selected, principal):
             if query.sort == "date_asc"
             else list(reversed(context["rows"]))
         )
-        context["rows"], more = PageWindow(page=query.page).rows(rows)
-        context["next_url"] = (
-            query.url(campaign_id, page=query.page + 1) if more else None
+        # The whole document is already in memory, so the shared navigator
+        # can show the total and allow any page or "All".
+        context["table"] = paginate(
+            rows,
+            {"page": str(query.page), "size": query.size},
+            carry=query.carried(),
         )
+        context["rows"] = context["table"].rows
         context["row_count"] = len(selected.document.days)
         context["chart_url"] = (
             reverse(

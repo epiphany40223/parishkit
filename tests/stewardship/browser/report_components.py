@@ -8,6 +8,7 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.digest_presentation import participation_context
 from parishkit.stewardship.reports.workspace import ReportQuery
+from parishkit.stewardship.web.tables import paginate
 
 from ..test_daily_digest_content import document
 
@@ -38,6 +39,7 @@ def components(context, admin):
         "exact_row_count": len(chart.days),
         "export_allowed": True,
         "row_count": len(chart.days),
+        "table": paginate(participation_context(chart)["rows"], {}),
         "chart_url": "/digest-chart.png",
     }
     job = SimpleNamespace(

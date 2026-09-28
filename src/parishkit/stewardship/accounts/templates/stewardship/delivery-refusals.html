@@ -7,14 +7,29 @@
 <form method="get" class="panel">
   <label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
+  <input type="hidden" name="size" value="{{ table.size_value }}">
   <button type="submit">{% translate "Show refusals" %}</button>
 </form>
-{% for refusal in refusals %}<section class="panel">
-  <h2><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></h2>
-  <p>{% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
-  <p>{% translate "Refused at:" %} <time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></p>
-  <p>{% translate "Refusal ID:" %} {{ refusal.id }}</p>
-</section>{% empty %}<p>{% translate "No unresolved refusals match this view." %}</p>{% endfor %}
-{% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
-{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
+{% translate "Refused address pages" as navigator_label %}
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="refusal-table-caption">
+<table class="data-table">
+  <caption id="refusal-table-caption">{% translate "Unresolved refused addresses" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Address" %}</th>
+    <th scope="col" class="numeric">{% translate "Family DUID" %}</th>
+    <th scope="col">{% translate "Refused at" %}</th>
+    <th scope="col">{% translate "Refusal ID" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for refusal in table.rows %}<tr>
+    <th scope="row"><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></th>
+    <td class="numeric">{{ refusal.family_duid|duid }}</td>
+    <td><time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></td>
+    <td><code>{{ refusal.id }}</code></td>
+  </tr>{% empty %}<tr><td colspan="4">{% translate "No unresolved refusals match this view." %}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}

@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
+from parishkit.stewardship.web.tables import window_table
 
 from .activation_progress import control, progress
 from .authentication import runtime
@@ -19,8 +20,11 @@ from .setup_views import _closed, error_response
 def links(request, campaign_id, request_id):
     """GET only reads progress; it cannot generate or disclose Family credentials."""
     try:
-        values = filters(request.GET, allowed={"page"})
-        window = PageWindow(expected_version(values.get("page", "1")), 25)
+        values = filters(request.GET, allowed={"page", "size"})
+        window = PageWindow(
+            expected_version(values.get("page", "1")),
+            expected_version(values.get("size", "25")),
+        )
         _closed(request, {"control"})
         service = runtime()
         if request.method == "POST":
@@ -44,6 +48,11 @@ def links(request, campaign_id, request_id):
                     and record["cleanup"].state in NONTERMINAL_STATES
                 )
                 for record in context["records"]
+            )
+            # Preparation records stay panels (each has its own controls); only
+            # the paging uses the shared navigator.
+            context["table"] = window_table(
+                window, context["records"], context["has_next"]
             )
             response = render(request, "stewardship/go-live-links.html", context)
         return _checked(request, service, response)

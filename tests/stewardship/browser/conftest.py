@@ -50,8 +50,9 @@ from parishkit.stewardship.accounts.share_forms import (
 )
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
+from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
-from parishkit.stewardship.web.tables import paginate
+from parishkit.stewardship.web.tables import paginate, window_table
 
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
@@ -72,6 +73,20 @@ from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
+# One running task shared by the background page's work summary and table.
+BACKGROUND_TASK = {
+    "id": str(uuid4()),
+    "type": "source_refresh",
+    "name": "ParishSoft data refresh",
+    "state": "running",
+    "heartbeat_at": NOW.isoformat(),
+    "progress": {
+        "phase": "fetching",
+        "current": 1000,
+        "total": 3000,
+        "display": Percentage(1000, 3000),
+    },
+}
 
 
 def finishing_context(**status):
@@ -918,11 +933,9 @@ def component_origin():
                 "table_caption": "Active Families",
                 "table_headings": ["Family DUID", "Code"],
                 "table_rows": [["1234567890123456789", "ABCDEFGH"]],
-                "page": 2,
-                "size": 50,
-                "has_next": True,
-                "previous_page": 1,
-                "next_page": 3,
+                "table": window_table(
+                    PageWindow(2, 50), [["1234567890123456789", "ABCDEFGH"]], True
+                ),
             },
         ),
         (
@@ -1140,7 +1153,21 @@ def component_origin():
                             "section": "welcome",
                         }
                     ],
-                }
+                },
+                "table": window_table(
+                    PageWindow(1, 50),
+                    [
+                        {
+                            "name": "Sample Family",
+                            "duid": 12345,
+                            "started_at": NOW,
+                            "last_activity_at": NOW,
+                            "presence_at": NOW,
+                            "section": "welcome",
+                        }
+                    ],
+                    False,
+                ),
             },
         ),
         (
@@ -1278,23 +1305,11 @@ def component_origin():
                         "retry_wait": 0,
                         "abandoned": 0,
                     },
-                    "tasks": [
-                        {
-                            "id": str(uuid4()),
-                            "type": "source_refresh",
-                            "state": "running",
-                            "heartbeat_at": NOW.isoformat(),
-                            "progress": {
-                                "phase": "fetching",
-                                "current": 1000,
-                                "total": 3000,
-                                "display": Percentage(1000, 3000),
-                            },
-                        }
-                    ],
+                    "tasks": [BACKGROUND_TASK],
                 },
                 "states": ("nonterminal", "all", "succeeded", "failed"),
                 "selected_state": "nonterminal",
+                "table": window_table(PageWindow(1, 50), [BACKGROUND_TASK], True),
             },
         ),
     ):

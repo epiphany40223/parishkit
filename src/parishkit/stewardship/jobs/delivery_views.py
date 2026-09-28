@@ -34,6 +34,7 @@ from parishkit.stewardship.web.contracts import (
     expected_version,
     filters,
 )
+from parishkit.stewardship.web.tables import window_table
 
 from .delivery_admin import clear_recipient_refusal
 from .delivery_metadata import FIELDS, STATES, family_duid, listing, messages
@@ -197,6 +198,20 @@ def _next(request, window, has_next):
     return values.urlencode() if has_next else None
 
 
+def _table(request, window, rows, following):
+    """Shared navigator model for a list page, carrying its validated filters."""
+    return window_table(
+        window,
+        rows,
+        following,
+        carry=[
+            (name, value)
+            for name, value in request.GET.items()
+            if name not in {"page", "size"}
+        ],
+    )
+
+
 def _previous(request, window):
     """History and notes share a page; always make earlier evidence reachable."""
     if window.page == 1:
@@ -216,12 +231,10 @@ def delivery_list(request):
         state, query = values.get("state", "all"), values.get("q", "")
         rows, following = listing(window, state=state, query=query)
         return dict(
-            deliveries=rows,
+            table=_table(request, window, rows, following),
             states=STATES,
             selected_state=state,
             query=query,
-            next_query=_next(request, window, following),
-            previous_query=_previous(request, window),
         ), len(rows)
 
     return _page(request, "stewardship/deliveries.html", load)
@@ -319,10 +332,8 @@ def refusal_list(request):
             query = query.filter(family_duid=family_duid(values["duid"]))
         rows, following = window.rows(query.order_by("family_duid", "address", "id"))
         return dict(
-            refusals=rows,
+            table=_table(request, window, rows, following),
             query=values.get("duid", ""),
-            next_query=_next(request, window, following),
-            previous_query=_previous(request, window),
         ), len(rows)
 
     return _page(request, "stewardship/delivery-refusals.html", load)

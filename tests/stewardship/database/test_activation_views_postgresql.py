@@ -89,6 +89,8 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
         page = browser.get(path)
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
+        assert b"Preparation history pages" in page.content
+        assert page.context["table"].size == 25
         assert page.context["prepare"]
         assert not ProductionTokenPreparation.objects.exists()
         assert (
