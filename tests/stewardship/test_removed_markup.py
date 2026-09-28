@@ -54,3 +54,10 @@ def test_input_is_bounded_like_the_sanitizer():
     """Oversized source is refused before parsing, as sanitize_html does."""
     with pytest.raises(ValueError):
         removed_markup("x" * (MAX_TEXT_BYTES + 1))
+
+
+def test_descendants_of_elements_dropped_with_content_are_not_listed():
+    """An svg's own paths vanish with it; only the svg itself is reported."""
+    raw = '<svg><path d="M0 0" class="x"/><g><rect/></g></svg><p>kept</p>'
+    assert removed_markup(raw) == ["<svg> element and its content"]
+    assert sanitize_html(raw) == "<p>kept</p>"

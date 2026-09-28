@@ -342,3 +342,44 @@ def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
     assert editor.get_attribute("contenteditable") == "false"
     assert editor.inner_text() == "Hello Sample Family"
     assert page.locator("[data-visual-updating]").is_hidden()
+
+
+def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_origin):
+    """Typing after a request was sent invalidates it; only current answers apply."""
+    held = []
+
+    def hold_first(route):
+        """Keep the first source request unanswered; answer the rest normally."""
+        html = parse_qs(route.request.post_data, keep_blank_values=True)["html"][0]
+        if html == "<p>First</p>" and not held:
+            held.append(route)
+        else:
+            serve_preview(route)
+
+    page.route("**/admin/content/plain-text", hold_first)
+    page.goto(component_origin + "/content-settings")
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
+    )
+    page.get_by_text("HTML source", exact=True).click()
+    source = page.locator('textarea[name="html"]')
+    source.fill("<p>First</p>")
+    page.wait_for_timeout(1000)  # let the 800 ms debounce send the request
+    assert held, "the first source request should be pending"
+    # Newer source arrives while the first request is still unanswered.
+    source.fill("<p>Second</p>")
+    editor = page.locator("[data-content-editor]")
+    bold = page.get_by_role("button", name="Bold", exact=True)
+    assert bold.is_disabled()
+    held[0].fulfill(json={"html": "<p>First</p>", "text": "First", "removed": []})
+    page.wait_for_timeout(200)
+    # The stale answer was ignored: the pane stayed locked and unchanged.
+    assert editor.get_attribute("contenteditable") == "false"
+    assert "First" not in editor.inner_text()
+    page.wait_for_function(
+        "() => document.querySelector('[data-content-editor]').textContent === 'Second'"
+    )
+    assert editor.get_attribute("contenteditable") == "true"
+    assert bold.is_enabled()
+    assert source.input_value() == "<p>Second</p>"
+    assert page.locator('textarea[name="text"]').input_value() == "Second"

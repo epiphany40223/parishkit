@@ -381,12 +381,23 @@ class _Markup(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.tags = []
         self.comments = False
+        # Depth inside an element dropped with its content: its descendants
+        # vanish with it, so they are not reported separately.
+        self.dropped = 0
 
     def handle_starttag(self, tag, attrs):
-        self.tags.append((tag, attrs))
+        if not self.dropped:
+            self.tags.append((tag, attrs))
+        if tag in _DROPPED_WITH_CONTENT:
+            self.dropped += 1
+
+    def handle_endtag(self, tag):
+        if tag in _DROPPED_WITH_CONTENT and self.dropped:
+            self.dropped -= 1
 
     def handle_startendtag(self, tag, attrs):
-        self.tags.append((tag, attrs))
+        if not self.dropped:
+            self.tags.append((tag, attrs))
 
     def handle_comment(self, data):
         self.comments = True

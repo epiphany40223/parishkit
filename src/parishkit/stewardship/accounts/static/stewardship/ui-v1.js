@@ -794,26 +794,34 @@
     }
     let timer = null;
     let controller = null;
+    const tools = [...form.querySelectorAll("[data-content-tag]")];
+    // A stale pane accepts neither typing nor formatting: either would call
+    // sync() and overwrite newer source with the stale pane's content.
     const busy = (value) => {
       visual.setAttribute("aria-busy", String(value));
       editor.contentEditable = value ? "false" : "true";
+      tools.forEach((button) => { button.disabled = value; });
       updating.hidden = !value;
     };
     const refresh = async () => {
       controller?.abort();
       controller = new AbortController();
       const request = controller;
+      const posted = source.value;
+      // A response applies only while it still describes the current source:
+      // newer typing aborts this request and schedules another.
+      const current = () => controller === request && source.value === posted;
       try {
         const response = await fetch(url, {
           method: "POST", credentials: "same-origin", cache: "no-store",
           headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"},
-          body: new URLSearchParams({html: source.value}), signal: request.signal
+          body: new URLSearchParams({html: posted}), signal: request.signal
         });
         if (!response.ok) throw new Error("preview unavailable");
         const data = await response.json();
         if (typeof data.html !== "string" || typeof data.text !== "string"
             || !Array.isArray(data.removed)) throw new Error("preview unavailable");
-        if (controller !== request) return;
+        if (!current()) return;
         // Server-sanitized markup only: the same allowlist the stored content
         // passed, so this is as safe as the page's initial render.
         editor.innerHTML = data.html;
@@ -823,7 +831,7 @@
         busy(false);
         form.dispatchEvent(new CustomEvent("stewardship:source-preview", {detail: {text: data.text}}));
       } catch (error) {
-        if (error.name === "AbortError" || controller !== request) return;
+        if (error.name === "AbortError" || !current()) return;
         // Keep the pane read-only: its content no longer matches the source.
         updating.hidden = true;
         unavailable.hidden = false;
@@ -833,6 +841,9 @@
     source.addEventListener("input", () => {
       busy(true);
       unavailable.hidden = true;
+      // Invalidate any request in flight now, not when the next one starts.
+      controller?.abort();
+      controller = null;
       window.clearTimeout(timer);
       timer = window.setTimeout(refresh, 800);
     });
@@ -875,6 +886,7 @@
         event.preventDefault(); // Keep the selected text when clicking a tool.
       });
       button.addEventListener("click", () => {
+        if (editor.getAttribute("contenteditable") === "false") return;
         const tag = button.dataset.contentTag;
         if (!["strong", "em", "p", "h2", "ul"].includes(tag)) return;
         const range = saved || selectedRange();
@@ -906,6 +918,7 @@
     });
     editor.addEventListener("paste", (event) => {
       event.preventDefault();
+      if (editor.getAttribute("contenteditable") === "false") return;
       const range = selectedRange();
       if (!range || !event.clipboardData) return;
       range.deleteContents();
@@ -958,16 +971,19 @@
       controller?.abort();
       controller = new AbortController();
       const request = controller;
+      // Like the visual preview, a response applies only to the source it
+      // was generated from, so an older answer never overwrites a newer one.
+      const posted = source.value;
       try {
         const response = await fetch(panel.dataset.plainTextUrl, {
           method: "POST", credentials: "same-origin", cache: "no-store",
           headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"},
-          body: new URLSearchParams({html: source.value}), signal: request.signal
+          body: new URLSearchParams({html: posted}), signal: request.signal
         });
         if (!response.ok) throw new Error("preview unavailable");
         const data = await response.json();
         if (typeof data.text !== "string") throw new Error("preview unavailable");
-        if (box.checked && controller === request) {
+        if (box.checked && controller === request && source.value === posted) {
           text.value = data.text;
           unavailable.hidden = true;
         }
@@ -1003,6 +1019,8 @@
     if (form.querySelector('[data-visual-content][data-live-preview="true"]')) {
       form.addEventListener("stewardship:source-preview", (event) => {
         if (!box.checked) return;
+        // The shared answer is newer than any plain-text request in flight.
+        controller?.abort();
         if (typeof event.detail?.text === "string") {
           text.value = event.detail.text;
           unavailable.hidden = true;
