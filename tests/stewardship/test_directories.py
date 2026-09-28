@@ -100,6 +100,7 @@ def test_primary_address_nulls_and_unavailable_state(address, expected, label):
             "rows": [
                 {
                     "family_name": "Example",
+                    "display_name": "Example",
                     "family_duid": 1,
                     "address": address,
                     "address_lines": lines,
@@ -128,13 +129,27 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
             "total": 2,
             "testing_codes": testing,
             "rows": [
-                {"family_name": "Example", "family_duid": 1, "code": "ABCD-EFGH"},
-                {"family_name": "Codeless", "family_duid": 2, "code": None},
+                {
+                    "family_name": "Example",
+                    "display_name": "Example, Anna and John",
+                    "family_duid": 1,
+                    "code": "ABCD-EFGH",
+                },
+                {
+                    "family_name": "Codeless",
+                    "display_name": "Codeless",
+                    "family_duid": 2,
+                    "code": None,
+                },
             ],
             "query": DirectoryQuery(),
         },
     )
     link = 'href="/#code=ABCD-EFGH" target="_blank" rel="noopener" data-open-form>'
     assert html.count(link) == (0 if testing else 1)
+    # The Name cell and the contact-details summary show the surname and heads;
+    # a live Open form link names the Family for screen readers too.
+    assert "<td>Example, Anna and John</td>" in html
+    assert html.count("Example, Anna and John") == (2 if testing else 3)
     assert ("data-open-form-notice" in html) is not testing
     assert ("appear next to the codes once the campaign is live" in html) is testing

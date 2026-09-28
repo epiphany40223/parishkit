@@ -121,17 +121,22 @@ def test_head_names_join_naturally(heads, expected):
     assert head_names(heads) == expected
 
 
-def test_code_directory_csv_has_exactly_four_plain_columns():
-    """No record column, no metadata row: a header and one row per Family."""
+def test_code_directory_csv_has_exactly_three_plain_columns():
+    """No record column, no metadata row: a header and one row per Family.
+
+    Family is the surname, then the heads of household; heads of another
+    surname are shown in full.
+    """
     rows = csv_rows(document([item(family_duid=12345 + index) for index in range(52)]))
     assert rows[0] == list(CODE_HEADINGS)
     assert len(rows) == 53
     assert rows[1] == [
-        "'=Sample Family",
-        "Aaron and Isabelle Williams",
+        "'=Sample Family, Aaron Williams and Isabelle Williams",
         "12345",
         "ABCDEFGH",
     ]
+    rows = csv_rows(document([item(family_name="Williams")]))
+    assert rows[1][0] == "Williams, Aaron and Isabelle"
 
 
 def test_unreachable_directory_adds_phone_numbers():
@@ -190,13 +195,15 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     book = load_workbook(output)
     sheet = book["Families"]
     assert tuple(cell.value for cell in sheet[1]) == CODE_HEADINGS
-    assert sheet["A2"].value == "=Sample Family" and sheet["A2"].data_type == "s"
+    assert sheet["A2"].value == "=Sample Family, Aaron Williams and Isabelle Williams"
+    assert sheet["A2"].data_type == "s"
     assert dict(
         (row[0].value, row[1].value) for row in book["Report information"].iter_rows()
     )["Privacy"].startswith("Sensitive: Family codes.")
     book.close()
     line = next(table_lines(report))[0]
-    assert "Aaron and Isabelle Williams" in line and "ABCDEFGH" in line
+    assert "=Sample Family, Aaron Williams and Isabelle Williams" in line
+    assert "ABCDEFGH" in line
     for postal in (False, True):
         output = io.BytesIO()
         assert render_directory(document([item()], postal=postal), output, format="pdf")

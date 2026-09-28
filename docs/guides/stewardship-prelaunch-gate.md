@@ -273,7 +273,11 @@ record's immutability trigger) and `stewardship_backup_drive_probe` (queued
 "Test access" checks, with a guard function and trigger that admit only
 pending-to-final updates), and added `backup_offsite_failed` to the
 operational incident kinds (the kind constraint and the incident render
-function). Regenerated from a fresh install, the current baseline is:
+function).
+The Family codes Name column (#232) then made the directory report function
+build the surname-and-heads name it searches and orders by (one function
+body; Functions digest only).
+Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -281,7 +285,7 @@ function). Regenerated from a fresh install, the current baseline is:
 | Columns | 2460 | `c519d0e4` |
 | Constraints | 3397 | `96375006` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 598 | `20b7b665` |
+| Functions | 598 | `5124dc51` |
 | Triggers | 553 | `32504824` |
 | Policies | 28 | `1c9c3b2d` |
 

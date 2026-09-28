@@ -31,10 +31,12 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.goto(component_origin + "/family-directory")
     visible(page.get_by_text("ABCDEFGH", exact=True))
     assert page.locator("Family").count() == 0
-    page.get_by_text("Contact details for Example <Family>", exact=True).click()
+    page.get_by_text(
+        "Contact details for Example <Family>, Example Head", exact=True
+    ).click()
     visible(page.get_by_text("Example Head", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
-    search = page.get_by_label("Search Family name, DUID or address")
+    search = page.get_by_label("Search by name, head of household, DUID or address")
     search.fill("Private name")
     search.focus()
     page.keyboard.press("Tab")
@@ -87,7 +89,7 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             "America/Detroit" if scripts else "UTC"
         )
         visible(page.get_by_text("51 estimated matching Families", exact=False))
-        page.get_by_label("Search Family name, DUID or address").fill(
+        page.get_by_label("Search by name, head of household, DUID or address").fill(
             "Unsaved private edit"
         )
         page.get_by_label("Export format").select_option("xlsx")

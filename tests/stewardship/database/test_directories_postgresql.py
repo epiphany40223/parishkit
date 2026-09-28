@@ -82,7 +82,10 @@ def test_native_directory_code_filters_contacts_and_response(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
         assert response.status_code == 200 and harness.code.encode() in body
-        assert b"<td>Example</td>" in body and b"Do not show this private" not in body
+        assert (
+            b"<td>Example, Member</td>" in body
+            and b"Do not show this private" not in body
+        )
         # Simplified columns: DUID on its own, Yes/No values, no retired rows.
         for text in (
             b"ParishSoft DUID",
@@ -382,7 +385,7 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
                 browser, f"/admin/reports/{harness.campaign.pk}/families/"
             )
         assert response.status_code == 200
-        assert b"<td>Example</td>" in body and b"Successor" not in body
+        assert b"<td>Example, Member</td>" in body and b"Successor" not in body
 
 
 def test_directory_unavailability_and_invalid_filters_are_private(
@@ -461,7 +464,7 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     route = f"/admin/reports/{harness.campaign.pk}/families/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route + "?reach=neither")
-        assert response.status_code == 200 and b"<td>Example</td>" in body
+        assert response.status_code == 200 and b"<td>Example, Member</td>" in body
         assert b'value="neither" selected' in body
         assert b"no campaign mail can reach" not in body
         # Only Testing mode explains that live codes wait for go-live.
@@ -489,3 +492,60 @@ def test_family_name_is_the_surname_not_a_first_name_mailing_name(
     report = page(harness)
     assert [row["family_name"] for row in report["rows"]] == ["Example"]
     assert page(harness, search="Anna")["total"] == 0
+
+
+def test_directory_names_lead_with_the_surname_then_the_heads(live_response_service):
+    """ "Surname, First and Second" names, ordered and searched by the whole string.
+
+    The SQL selection builds the same string as family_heads_name so search and
+    the same-surname order agree with what the page and the exports show.
+    """
+    harness = live_response_service
+    data = response_source()
+    # Family 1 ("Example") gains a head of another surname; three more Example
+    # Families have one head, two heads and none (a child only).
+    data.members[4] = data.members[3] | {
+        "memberDUID": 4,
+        "firstName": "Second",
+        "lastName": "Other",
+        "emailAddress": "",
+    }
+    for duid, heads in ((7, ("Zed",)), (8, ("Amy", "Bob")), (9, ())):
+        data.families[duid] = data.families[1] | {
+            "familyDUID": duid,
+            "familyID": duid + 100,
+        }
+        for index, first in enumerate(heads or ("Child",)):
+            data.members[100 * duid + index] = data.members[3] | {
+                "memberDUID": 100 * duid + index,
+                "familyDUID": duid,
+                "firstName": first,
+                "memberType": "Head" if heads else "Other",
+                "emailAddress": "",
+            }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    report = page(harness)
+    assert [row["display_name"] for row in report["rows"]] == [
+        "Example",
+        "Example, Amy and Bob",
+        "Example, Member and Second Other",
+        "Example, Zed",
+    ]
+    assert [row["family_duid"] for row in report["rows"]] == [9, 8, 1, 7]
+    assert [row["family_duid"] for row in page(harness, sort="name_desc")["rows"]] == [
+        7,
+        1,
+        8,
+        9,
+    ]
+    # Search matches the whole shown name, so a head's first name finds the Family.
+    for text, expected in (
+        ("zed", [7]),
+        ("Example, Member and Second Other", [1]),
+        ("amy and bob", [8]),
+        ("Other", [1]),
+    ):
+        assert [
+            row["family_duid"] for row in page(harness, search=text)["rows"]
+        ] == expected

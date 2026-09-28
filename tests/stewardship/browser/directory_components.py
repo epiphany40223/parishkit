@@ -6,12 +6,14 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.directories import REASONS, DirectoryQuery
+from parishkit.stewardship.source.family_names import family_heads_name
 
 
 def components(context, admin):
     """Browser tests share the existing server/process pool; no provider is used."""
     campaign = UUID(int=80)
     query = DirectoryQuery(search="Example")
+    heads = [{"name": "Example Head"}]
     values = {
         "campaign_id": campaign,
         "metadata": {
@@ -22,6 +24,7 @@ def components(context, admin):
         "rows": [
             {
                 "family_name": "Example <Family>",
+                "display_name": family_heads_name("Example <Family>", heads),
                 "family_duid": 12345,
                 "code": "ABCDEFGH",
                 "reason_label": REASONS["provider_refused"],
@@ -29,7 +32,7 @@ def components(context, admin):
                 "email_deliverable": False,
                 "responded": True,
                 "envelope": "0123",
-                "heads": [{"name": "Example Head"}],
+                "heads": heads,
                 "phones": [
                     {"owner": "Example Head", "kind": "home", "value": "202-555-0123"}
                 ],

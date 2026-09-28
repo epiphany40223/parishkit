@@ -234,7 +234,7 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
             assert response.status_code == 200
             assert body.startswith(
                 {
-                    "csv": b"Family,Family heads,ParishSoft DUID,Family code\r\n",
+                    "csv": b"Family,ParishSoft DUID,Family code\r\n",
                     "xlsx": b"PK",
                     "pdf": b"%PDF",
                 }[format]
