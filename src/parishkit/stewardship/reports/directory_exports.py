@@ -18,6 +18,15 @@ from .export_services import TASK_TYPE, admit_campaign, audit, authorize
 REPORTS = frozenset({"family_directory", "postal_outreach"})
 
 
+class ExportRequestBound(ValueError):
+    """A form's one-time request key was already used for a different export.
+
+    Typically the page came back from the browser cache and was submitted again
+    with another format. It is refused (never rebound) but, unlike malformed
+    filters, the Admin can simply reload the page and submit again.
+    """
+
+
 def create_directory_export(
     store,
     user_id,
@@ -90,7 +99,7 @@ def create_directory_export(
             ) != (report, campaign_id, parameters, format, browser_timezone) or (
                 snapshot is not None and previous.directory_snapshot_id != snapshot.pk
             ):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()

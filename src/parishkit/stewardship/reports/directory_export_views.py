@@ -13,7 +13,7 @@ from parishkit.stewardship.accounts.family_authentication import (
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .directories import DirectoryQuery
-from .directory_exports import create_directory_export
+from .directory_exports import ExportRequestBound, create_directory_export
 from .directory_views import _error, _principal
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
@@ -52,5 +52,7 @@ def create(request, campaign_id, *, postal=False):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError):
         return _error(campaign_id, postal=postal, status=503)
+    except ExportRequestBound:
+        return _error(campaign_id, postal=postal, status=409)
     except ValueError:
         return _error(campaign_id, postal=postal, status=400)

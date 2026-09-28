@@ -195,6 +195,14 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 post(browser, route + "export", fields)["Location"]
                 == response["Location"]
             )
+            # The same one-time key reused for another format (a page back
+            # from the browser cache) is refused clearly, and queues nothing.
+            other = "pdf" if format != "pdf" else "csv"
+            before = ExportRequest.objects.count()
+            reused = post(browser, route + "export", fields | {"format": other})
+            assert reused.status_code == 409
+            assert b"already used for a different export" in reused.content
+            assert ExportRequest.objects.count() == before
             job_route = response["Location"]
             with CaptureQueriesContext(connection) as queries:
                 response, body = read(browser, job_route)

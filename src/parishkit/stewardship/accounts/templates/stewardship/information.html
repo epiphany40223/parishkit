@@ -53,7 +53,7 @@
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
 <p>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. Complete text is captured when you queue the export; later changes do not alter that capture." %}</p>
 <p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
-<form method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
+<form data-submit-waits method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>

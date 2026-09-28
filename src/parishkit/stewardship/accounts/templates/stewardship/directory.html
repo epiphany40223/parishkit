@@ -23,7 +23,7 @@
 <p>{{ total|number }} {% translate "estimated matching Families, using the applied filters and sort above—not just this page. Source and response values are captured when queued; later changes do not alter that capture." %}</p>
 <p class="notice">{% translate "Sensitive parish information and campaign manual codes: download only to a trusted device and share only with authorized recipients. No email-link tokens are included." %}</p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports are unavailable; the read-only directory remains available while read access stays open." %}</p>{% endif %}
-<form method="post" action="{% if postal %}{% url 'admin:postal_directory_export' campaign_id %}{% else %}{% url 'admin:family_directory_export' campaign_id %}{% endif %}">{% csrf_token %}
+<form data-submit-waits method="post" action="{% if postal %}{% url 'admin:postal_directory_export' campaign_id %}{% else %}{% url 'admin:family_directory_export' campaign_id %}{% endif %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
