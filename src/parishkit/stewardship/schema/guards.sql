@@ -4274,6 +4274,10 @@ BEGIN
        OR (annual>0 AND answer->>'frequency'='') THEN
         RAISE EXCEPTION 'Financial annual pledge or frequency is invalid' USING ERRCODE='23514';
     END IF;
+    -- A positive pledge names how it will be shared whenever methods exist.
+    IF annual>0 AND answer->'shares'='{}'::jsonb AND jsonb_array_length(options)>0 THEN
+        RAISE EXCEPTION 'Financial share method is required' USING ERRCODE='23514';
+    END IF;
     FOR share_key,share_value IN SELECT key,value FROM jsonb_each(answer->'shares') LOOP
         IF (SELECT count(*) FROM jsonb_array_elements(options) option
             WHERE option->>'id'=share_key) <> 1

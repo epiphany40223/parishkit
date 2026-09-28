@@ -63,9 +63,16 @@ STAFF = Principal(uuid4(), frozenset({"staff"}), frozenset())
 def pledge(harness, form, **financial):
     """Submit one complete live response carrying this financial answer."""
     answers = answers_for(form)
-    answers["financial"] = (
-        dict(annual_pledge="1,234.5", frequency="monthly", shares={}) | financial
-    )
+    answer = dict(annual_pledge="1,234.5", frequency="monthly") | financial
+    # A positive pledge must name a share method whenever any are offered.
+    positive = answer["annual_pledge"] not in {"0", "0.00"}
+    offered = [
+        option["id"]
+        for option in form["financial"]["options"]
+        if not option["free_text"]
+    ]
+    answer.setdefault("shares", {offered[0]: ""} if positive and offered else {})
+    answers["financial"] = answer
     return respond(harness, form, answers)
 
 
@@ -491,7 +498,13 @@ def test_several_families_summary_order_and_pages(response_service):
         pledge(harness, load_form(harness), shares={CHECK: ""})
     with campaign_clock(opened + timedelta(hours=2)), web_login():
         second = family_session(harness, 2)
-        pledge(second, load_form(second), annual_pledge="500", frequency="weekly")
+        pledge(
+            second,
+            load_form(second),
+            annual_pledge="500",
+            frequency="weekly",
+            shares={OTHER: "Stock gift"},
+        )
     with campaign_clock(opened + timedelta(hours=3)), web_login():
         third = family_session(harness, 6)
         pledge(third, load_form(third), annual_pledge="0", frequency="")
@@ -518,7 +531,8 @@ def test_several_families_summary_order_and_pages(response_service):
         "Annual": 0,
         "No frequency": 1,
     }
-    assert summary["no_share"] == 2 and sum(dict(summary["shares"]).values()) == 1
+    # Positive pledges must name a share method, so only the zero pledge has none.
+    assert summary["no_share"] == 1 and sum(dict(summary["shares"]).values()) == 2
 
     names = [row["family_name"] for row in page["rows"]]
     assert names == sorted(names, key=str.lower)
@@ -540,7 +554,7 @@ def test_several_families_summary_order_and_pages(response_service):
         ({"frequency": "weekly"}, {2}),
         ({"frequency": "none"}, {6}),
         ({"share": CHECK}, {1}),
-        ({"share": "none"}, {2, 6}),
+        ({"share": "none"}, {6}),
         ({"pledge_min": "500", "pledge_max": "500.00"}, {2}),
         ({"search": "zETa"}, {6}),
         ({"search": "6"}, {6}),

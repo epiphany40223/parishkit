@@ -312,9 +312,36 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 
+
+/* Family response pages: one page at a time with Back/Next navigation. */
+#family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
+.family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
+#family-flow progress { width: 100%; height: .5rem; margin-bottom: 1rem; }
+.family-page > h3 { margin-top: .5rem; }
+.family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
+.family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem; border-top: 1px solid var(--border); margin-top: 1.5rem; }
+.family-nav [data-page-back] { margin-inline-end: auto; }
+.family-steps { margin-block: 1rem; }
+.family-steps ol { margin: .25rem 0 0; padding-inline-start: 1.5rem; }
+.family-steps button { background: none; border: 0; box-shadow: none; color: var(--accent); padding: .35rem 0; min-height: 44px; text-align: start; font-weight: 600; }
+.family-steps button[aria-current="step"] { color: var(--ink); text-decoration: underline; }
+.financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
+/* Ministry rows: the ministry name, then the choice, stated once. */
+.ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
+.ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }
+.ministry-row > label { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; }
+.ministry-row.changed { border-inline-start-width: .3rem; }
+/* The join list is collapsed by default; make the disclosure look actionable. */
+.ministry-join > summary { list-style: none; display: inline-flex; align-items: center; gap: .5rem; }
+.ministry-join > summary::-webkit-details-marker { display: none; }
+.ministry-join > summary::before { content: ""; width: .5rem; height: .5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.ministry-join[open] > summary::before { transform: rotate(45deg); }
+.ministry-join > label, .ministry-join [role=group] > label { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+
 @media (max-width: 36rem) {
   main { padding-top: 1.25rem; }
   .actions > button { flex: 1 1 auto; }
+  .family-nav [data-page-back] { margin-inline-end: 0; }
   th, td { padding: .6rem .7rem; }
   caption { padding: .85rem .7rem; }
 }

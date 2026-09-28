@@ -91,10 +91,9 @@ PAGES = {
         "errors.</p>"
     ),
     # The bold labels match the Family form's Ministry controls exactly
-    # (static family-v1.js): the "Current Ministries" heading, each current
-    # Ministry's "wishes to stop participating" checkbox, the "Join another
-    # Ministry" disclosure and each option's "interested in joining" checkbox.
-    # The form promises only that a leader or staff member *may* follow up.
+    # (static family-v1.js): the "Current ministries" heading, each current
+    # ministry's "Continuing" / "Stop participating" choice, and the "Click
+    # here to join another ministry" disclosure. Leaving is always honored.
     "ministry": (
         "<p>Every skill, talent, and ability is a unique gift from God. Our call "
         "to serve is an invitation to discern <em>where</em> and <em>how</em> the "
@@ -104,14 +103,13 @@ PAGES = {
         "does its best to keep it up to date, so please understand if you see "
         "errors.</p>"
         "<ul><li>Ministries each person takes part in are listed under "
-        "<strong>Current Ministries</strong>. To continue in one, you don’t need "
-        "to change anything.</li>"
-        "<li>To stop participating in a ministry, check its box marked "
-        "<strong>wishes to stop participating</strong>.</li>"
-        "<li>To begin a new ministry, or to learn more about one, open "
-        "<strong>Join another Ministry</strong>, search for it, and check its box "
-        "marked <strong>interested in joining</strong>. A Ministry leader or "
-        "parish staff member may follow up with you.</li></ul>"
+        "<strong>Current ministries</strong>, marked <strong>Continuing</strong>. "
+        "To continue in one, you don’t need to change anything.</li>"
+        "<li>To stop participating in a ministry, choose "
+        "<strong>Stop participating</strong>.</li>"
+        "<li>To begin a new ministry, or to learn more about one, select "
+        "<strong>Click here to join another ministry</strong>, search for it, and "
+        "check its box. Someone from that ministry will contact you.</li></ul>"
     ),
     "financial": (
         "<p>Treasure is the word most often associated with stewardship. Many "

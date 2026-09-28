@@ -4,7 +4,14 @@ from copy import deepcopy
 
 import pytest
 
-from .test_family_response import expect, form_payload, member_field, prepare
+from .test_family_response import (
+    expect,
+    form_payload,
+    member_field,
+    prepare,
+    review,
+    show,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -33,8 +40,17 @@ def test_complete_member_controls_review_and_atomic_payload(
         route.fulfill(json={"accepted": True})
 
     start(page, component_origin, submit=submit)
-    expect(page.get_by_role("group", name="Alex Sample", exact=True)).to_be_visible()
-    expect(page.get_by_text("Relationship: Head", exact=True)).to_be_visible()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "group", name="Alex Sample", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
+    expect(
+        show(page, page.get_by_text("Relationship: Head", exact=True))
+    ).to_be_visible()
     for name, value in [
         ("prefix", "Dr."),
         ("nickname", "Al"),
@@ -44,27 +60,28 @@ def test_complete_member_controls_review_and_atomic_payload(
         ("mobile_phone", "202-555-0123 x12"),
         ("work_phone", "+33 1 42 68 53 00"),
     ]:
-        page.locator("#member-3-" + name).fill(value)
-    page.locator("#member-3-gender").select_option("Female")
-    page.locator("#member-3-marital_status").select_option("Widowed")
-    page.locator("#member-3-language-choice").select_option("other")
+        show(page, page.locator("#member-3-" + name)).fill(value)
+    show(page, page.locator("#member-3-gender")).select_option("Female")
+    show(page, page.locator("#member-3-marital_status")).select_option("Widowed")
+    show(page, page.locator("#member-3-language-choice")).select_option("other")
     expect(page.locator("#member-3-language")).to_be_focused()
-    page.locator("#member-3-language").fill("French")
-    page.locator("#member-3-birth_date").fill("1980-02-29")
-    page.get_by_role("button", name="Review response").click()
-    expect(
-        page.get_by_role("heading", name="Step 2 of 2: Confirm and submit")
-    ).to_be_focused()
-    expect(page.get_by_text("1980-02-29", exact=False)).to_be_visible()
+    show(page, page.locator("#member-3-language")).fill("French")
+    show(page, page.locator("#member-3-birth_date")).fill("1980-02-29")
+    review(page)
+    # Review focuses its page heading, the Family name.
+    expect(page.locator("#family-flow > h2")).to_be_focused()
+    expect(show(page, page.get_by_text("1980-02-29", exact=False))).to_be_visible()
     assert submitted == []
     page.get_by_role("button", name="Back to edit").click()
     expect(page.locator("#member-3-language-choice")).to_have_value("other")
     expect(page.locator("#member-3-language")).to_have_value("French")
     expect(page.locator("#member-3-birth_date")).to_have_value("1980-02-29")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert len(submitted) == 1
     values = submitted[0]["members"]["3"]
     assert values["birth_date"] == "1980-02-29"
@@ -78,34 +95,36 @@ def test_missing_birth_requires_explicit_unknown_and_back_preserves_it(
     form = form_payload()
     member_field(form, "birth_date").update(value="", available=False)
     start(page, component_origin, form=form)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     expect(page.locator("#member-3-birth_date")).to_be_focused()
-    expect(page.locator("#member-3-birth_date-inline-error")).to_be_visible()
-    page.locator("#member-3-birth_date-unknown").check()
-    page.get_by_role("button", name="Review response").click()
     expect(
-        page.get_by_role("heading", name="Step 2 of 2: Confirm and submit")
+        show(page, page.locator("#member-3-birth_date-inline-error"))
+    ).to_be_visible()
+    show(page, page.locator("#member-3-birth_date-unknown")).check()
+    review(page)
+    expect(
+        show(page, page.locator(".family-step", has_text="Review and submit"))
     ).to_be_visible()
     page.get_by_role("button", name="Back to edit").click()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_checked()
-    page.locator("#member-3-birth_date-unknown").uncheck()
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-birth_date-unknown")).uncheck()
+    review(page)
     expect(page.locator("#member-3-birth_date")).to_be_focused()
 
 
 def test_future_birth_and_language_other_are_validated_on_blur(page, component_origin):
     start(page, component_origin)
-    page.locator("#member-3-birth_date").fill("2026-09-14")
-    page.locator("#member-3-gender").focus()
+    show(page, page.locator("#member-3-birth_date")).fill("2026-09-14")
+    show(page, page.locator("#member-3-gender")).focus()
     expect(page.locator("#member-3-birth_date-inline-error")).to_contain_text("future")
-    page.locator("#member-3-birth_date").fill("2000-01-01")
-    page.locator("#member-3-language-choice").select_option("other")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-birth_date")).fill("2000-01-01")
+    show(page, page.locator("#member-3-language-choice")).select_option("other")
+    review(page)
     expect(page.locator("#member-3-language")).to_be_focused()
-    page.locator("#member-3-language").fill("Spanish")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-language")).fill("Spanish")
+    review(page)
     expect(
-        page.get_by_role("heading", name="Step 2 of 2: Confirm and submit")
+        show(page, page.locator(".family-step", has_text="Review and submit"))
     ).to_be_visible()
 
 
@@ -114,15 +133,15 @@ def test_unavailable_required_choice_is_not_defaulted(page, component_origin, na
     form = form_payload()
     member_field(form, name).update(value="", available=False)
     start(page, component_origin, form=form)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     expect(page.locator("#member-3-" + name)).to_be_focused()
     if name == "gender":
-        page.locator("#member-3-gender").select_option("Unspecified")
+        show(page, page.locator("#member-3-gender")).select_option("Unspecified")
     else:
-        page.locator("#member-3-language-choice").select_option("English")
-    page.get_by_role("button", name="Review response").click()
+        show(page, page.locator("#member-3-language-choice")).select_option("English")
+    review(page)
     expect(
-        page.get_by_role("heading", name="Step 2 of 2: Confirm and submit")
+        show(page, page.locator(".family-step", has_text="Review and submit"))
     ).to_be_visible()
 
 
@@ -140,8 +159,8 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
         route.fulfill(status=409, json={"error": "review_required", "form": fresh})
 
     start(page, component_origin, submit=submit)
-    page.locator("#member-3-birth_date-unknown").check()
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-birth_date-unknown")).check()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_disabled()
     group = page.locator('[data-conflict="members.3.birth_date"]')
@@ -150,7 +169,7 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
     ).check()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_enabled()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_checked(checked=use_edit)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     # Clicking finishes before a fetch necessarily reaches the route callback.
     # Await the second response so this cannot inspect the earlier submission.
     with page.expect_response("**/family/submit") as response:
@@ -167,9 +186,9 @@ def test_member_inline_errors_do_not_show_on_initial_render(page, component_orig
     member_field(form, "email")["value"] = "invalid"
     start(page, component_origin, form=form)
     expect(page.locator("#member-3-email-inline-error")).to_be_hidden()
-    page.locator("#member-3-email").focus()
-    page.locator("#member-3-first_name").focus()
-    expect(page.locator("#member-3-email-inline-error")).to_be_visible()
+    show(page, page.locator("#member-3-email")).focus()
+    show(page, page.locator("#member-3-first_name")).focus()
+    expect(show(page, page.locator("#member-3-email-inline-error"))).to_be_visible()
     expect(page.locator("#member-3-email")).to_have_attribute("aria-invalid", "true")
 
 
@@ -178,10 +197,10 @@ def test_phone_formatting_alone_does_not_mark_a_change(page, component_origin):
     form = form_payload()
     member_field(form, "home_phone")["value"] = "2025550123"
     start(page, component_origin, form=form)
-    page.locator("#member-3-home_phone").fill("+1 (202) 555-0123")
-    page.locator("#member-3-first_name").focus()
+    show(page, page.locator("#member-3-home_phone")).fill("+1 (202) 555-0123")
+    show(page, page.locator("#member-3-first_name")).focus()
     expect(page.locator("#member-3-home_phone-status")).to_have_text("")
-    page.locator("#member-3-home_phone").fill("+1 (202) 555-0123 x1")
+    show(page, page.locator("#member-3-home_phone")).fill("+1 (202) 555-0123 x1")
     expect(page.locator("#member-3-home_phone-status")).to_contain_text("Changed")
 
 
@@ -190,23 +209,25 @@ def test_short_national_phone_is_invalid_but_short_international_is_not(
 ):
     """Do not apply the national ten-digit expectation to international numbers."""
     start(page, component_origin)
-    page.locator("#member-3-home_phone").fill("555")
-    page.locator("#member-3-first_name").focus()
-    expect(page.locator("#member-3-home_phone-inline-error")).to_be_visible()
-    page.locator("#member-3-home_phone").fill("+43 1 234")
-    page.locator("#member-3-first_name").focus()
+    show(page, page.locator("#member-3-home_phone")).fill("555")
+    show(page, page.locator("#member-3-first_name")).focus()
+    expect(
+        show(page, page.locator("#member-3-home_phone-inline-error"))
+    ).to_be_visible()
+    show(page, page.locator("#member-3-home_phone")).fill("+43 1 234")
+    show(page, page.locator("#member-3-first_name")).focus()
     expect(page.locator("#member-3-home_phone-inline-error")).to_be_hidden()
 
 
 def test_empty_same_as_home_shows_an_inline_error(page, component_origin):
     start(page, component_origin)
-    page.locator("#family-mailing_same_as_home").check()
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#family-mailing_same_as_home")).check()
+    review(page)
     expect(page.locator("#family-mailing_same_as_home")).to_be_focused()
     expect(page.locator("#family-mailing_same_as_home-constraint")).to_contain_text(
         "Provide a home address"
     )
-    page.locator("#family-mailing_same_as_home").uncheck()
+    show(page, page.locator("#family-mailing_same_as_home")).uncheck()
     expect(page.locator("#family-mailing_same_as_home-constraint")).to_be_hidden()
 
 
@@ -217,26 +238,32 @@ def test_member_separators_have_inline_errors_before_review(
     page, component_origin, value
 ):
     start(page, component_origin)
-    page.locator("#member-3-nickname").fill(value)
-    page.locator("#member-3-first_name").focus()
-    expect(page.locator("#member-3-nickname-inline-error")).to_be_visible()
+    show(page, page.locator("#member-3-nickname")).fill(value)
+    show(page, page.locator("#member-3-first_name")).focus()
+    expect(show(page, page.locator("#member-3-nickname-inline-error"))).to_be_visible()
 
 
 def test_unknown_birth_copy_explains_removal_request(page, component_origin):
     start(page, component_origin)
     expect(
-        page.get_by_text(
-            "Choosing Unknown requests removal of any recorded birth date, "
-            "subject to parish review.",
-            exact=True,
+        show(
+            page,
+            page.get_by_text(
+                "Choosing Unknown requests removal of any recorded birth date, "
+                "subject to parish review.",
+                exact=True,
+            ),
         )
     ).to_be_visible()
-    page.locator("#member-3-birth_date-unknown").check()
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.locator("#member-3-birth_date-unknown")).check()
+    review(page)
     expect(
-        page.get_by_text(
-            "Unknown — request parish review of removing any recorded birth date",
-            exact=False,
+        show(
+            page,
+            page.get_by_text(
+                "Unknown — request parish review of removing any recorded birth date",
+                exact=False,
+            ),
         )
     ).to_be_visible()
 
@@ -253,10 +280,12 @@ def test_phone_json_text_is_invalid_and_distinct_from_a_real_phone(
     form = form_payload()
     member_field(form, "home_phone")["value"] = "2025550123"
     start(page, component_origin, form=form)
-    page.locator("#member-3-home_phone").fill(value)
-    page.locator("#member-3-first_name").focus()
+    show(page, page.locator("#member-3-home_phone")).fill(value)
+    show(page, page.locator("#member-3-first_name")).focus()
     expect(page.locator("#member-3-home_phone-status")).to_contain_text("Changed")
-    expect(page.locator("#member-3-home_phone-inline-error")).to_be_visible()
-    page.get_by_role("button", name="Review response").click()
+    expect(
+        show(page, page.locator("#member-3-home_phone-inline-error"))
+    ).to_be_visible()
+    review(page)
     expect(page.locator("#member-3-home_phone")).to_be_focused()
     assert errors == []

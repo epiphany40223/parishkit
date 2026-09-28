@@ -123,11 +123,38 @@ def test_financial_validator_requires_unambiguous_trusted_option_identities(opti
 
 
 @pytest.mark.parametrize("frequency", FREQUENCIES)
-def test_positive_pledge_can_submit_without_selecting_a_share_method(frequency):
-    """The specification requires frequency, but does not require a share method."""
+def test_positive_pledge_requires_a_share_method(frequency):
+    """A positive pledge needs a frequency and at least one offered share method."""
+    with pytest.raises(InvalidFinancialAnswers) as failure:
+        validate_financial_answers(
+            {"annual_pledge": "10", "frequency": frequency, "shares": {}}, OPTIONS
+        )
+    assert failure.value.fields == {
+        "financial.shares": (
+            "Choose at least one way you would like to share your pledge."
+        )
+    }
     assert validate_financial_answers(
-        {"annual_pledge": "10", "frequency": frequency, "shares": {}}, OPTIONS
-    ) == {"annual_pledge": "10.00", "frequency": frequency, "shares": {}}
+        {"annual_pledge": "10", "frequency": frequency, "shares": {CHECK: ""}}, OPTIONS
+    ) == {"annual_pledge": "10.00", "frequency": frequency, "shares": {CHECK: ""}}
+
+
+def test_positive_pledge_needs_no_share_method_when_none_are_offered():
+    """A campaign offering no share methods cannot require one."""
+    assert (
+        validate_financial_answers(
+            {"annual_pledge": "10", "frequency": "annual", "shares": {}}, ()
+        )["shares"]
+        == {}
+    )
+
+
+@pytest.mark.parametrize("pledge", ["0", "0.00"])
+def test_zero_pledge_needs_neither_frequency_nor_share_method(pledge):
+    """The form hides both for a zero pledge, so the server requires neither."""
+    assert validate_financial_answers(
+        {"annual_pledge": pledge, "frequency": "", "shares": {}}, OPTIONS
+    ) == {"annual_pledge": "0.00", "frequency": "", "shares": {}}
 
 
 def test_zero_pledge_allows_optional_frequency_and_non_cash_intent():
@@ -176,7 +203,11 @@ def test_zero_pledge_allows_optional_frequency_and_non_cash_intent():
 )
 def test_final_financial_errors_use_only_server_known_field_keys(patch, field):
     """Validation reports trusted controls without echoing values or forged IDs."""
-    payload = {"annual_pledge": "1", "frequency": "annual", "shares": {}} | patch
+    payload = {
+        "annual_pledge": "1",
+        "frequency": "annual",
+        "shares": {CHECK: ""},
+    } | patch
     with pytest.raises(InvalidFinancialAnswers) as failure:
         validate_financial_answers(payload, OPTIONS)
     assert field in failure.value.fields

@@ -188,10 +188,10 @@ def test_ministry_instructions_match_the_family_form_controls():
         Path(accounts.__file__).parent / "static/stewardship/family-v1.js"
     ).read_text()
     for label in (
-        "Current Ministries",
-        "wishes to stop participating",
-        "Join another Ministry",
-        "interested in joining",
+        "Current ministries",
+        "Continuing",
+        "Stop participating",
+        "Click here to join another ministry",
     ):
         assert label in script and f"<strong>{label}</strong>" in PAGES["ministry"]
 

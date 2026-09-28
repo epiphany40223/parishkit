@@ -16,7 +16,7 @@ from parishkit.stewardship.responses.financial_presentation import (
 from ..financial_factory import CAMPAIGN, configuration, cursor, record
 from ..test_financial_answers import CHECK, OTHER
 from .test_family_ministry import begin, ministry_form
-from .test_family_response import expect
+from .test_family_response import expect, review, show
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -56,7 +56,7 @@ def financial_form(*, census=False, ministry=False, available=True):
 
 def final_submit(page):
     """Both deliberate actions are necessary, even after a refreshed response."""
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
 
 
@@ -81,22 +81,42 @@ def test_retained_terminal_ministry_eligibility_without_census(
             route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    page.get_by_label("Annual pledge (USD)").fill("25")
-    page.get_by_label("Pledge frequency").select_option("annual")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("25")
+    show(page, page.get_by_label("Pledge frequency")).select_option("annual")
+    show(page, page.locator(f"#financial-option-{CHECK}")).check()
     if stale_edit:
-        page.get_by_label("Choir — wishes to stop participating").check()
+        show(
+            page,
+            page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
+                "Stop participating"
+            ),
+        ).check()
         final_submit(page)
         expect(
-            page.get_by_role("button", name="Discard unavailable Ministry edits")
+            show(
+                page,
+                page.get_by_role(
+                    "button",
+                    name="Discard unavailable Ministry edits",
+                    include_hidden=True,
+                ),
+            )
         ).to_be_visible()
-        page.get_by_role("button", name="Review response").click()
+        review(page)
         assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
         assert len(submissions) == 1
-        page.get_by_role("button", name="Discard unavailable Ministry edits").click()
+        show(
+            page,
+            page.get_by_role(
+                "button", name="Discard unavailable Ministry edits", include_hidden=True
+            ),
+        ).click()
     assert page.get_by_label("Household status").count() == 0
     assert page.get_by_text("Ministry participation", exact=True).count() == 0
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submissions[-1]["ministries"] == {"members": {}, "proposed_members": {}}
     assert submissions[-1]["members"] == {"3": {}}
     assert submissions[-1]["financial"]["annual_pledge"] == "25"
@@ -125,23 +145,47 @@ def test_concurrent_terminal_request_requires_explicit_ministry_discard(
             route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    page.get_by_label("Annual pledge (USD)").fill("0")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     if action == "join":
-        page.get_by_text("Join another Ministry", exact=True).click()
-        page.get_by_label("Food pantry — interested in joining").check()
+        show(
+            page, page.get_by_text("Click here to join another ministry", exact=True)
+        ).click()
+        show(
+            page,
+            page.get_by_role(
+                "checkbox", name="Food pantry", exact=True, include_hidden=True
+            ),
+        ).check()
     else:
-        page.get_by_label("Choir — wishes to stop participating").check()
+        show(
+            page,
+            page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
+                "Stop participating"
+            ),
+        ).check()
     final_submit(page)
     expect(page.get_by_label("Household status")).to_have_value(kind)
     expect(
-        page.get_by_role("button", name="Discard unavailable Ministry edits")
+        show(
+            page,
+            page.get_by_role(
+                "button", name="Discard unavailable Ministry edits", include_hidden=True
+            ),
+        )
     ).to_be_visible()
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
-    page.get_by_role("button", name="Discard unavailable Ministry edits").click()
+    show(
+        page,
+        page.get_by_role(
+            "button", name="Discard unavailable Ministry edits", include_hidden=True
+        ),
+    ).click()
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submissions[-1]["ministries"]["members"] == {}
     assert submissions[-1]["members"]["3"][kind] is True
 
@@ -176,12 +220,14 @@ def test_financial_modules_mobile_final_only_and_accessible(
     expect(page.get_by_text("Parish records for", exact=False)).to_contain_text(
         "$1,200.00"
     )
-    page.get_by_label("Annual pledge (USD)").fill("1,000.01")
-    page.get_by_label("Pledge frequency").select_option("monthly")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
+    show(page, page.get_by_label("Pledge frequency")).select_option("monthly")
     expect(page.locator("#financial-installment")).to_contain_text("$83.33")
-    page.get_by_label("I will send a check", exact=True).check()
-    page.get_by_label("I will share another way", exact=True).check()
-    page.get_by_label("Details for I will share another way").fill("Stock gift")
+    show(page, page.get_by_label("I will send a check", exact=True)).check()
+    show(page, page.get_by_label("I will share another way", exact=True)).check()
+    show(page, page.get_by_label("Details for I will share another way")).fill(
+        "Stock gift"
+    )
     page.evaluate(axe_source)
     assert (
         page.evaluate("""async () => (await axe.run(document, {
@@ -190,9 +236,9 @@ def test_financial_modules_mobile_final_only_and_accessible(
         == []
     )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     expect(
-        page.get_by_text("Your annual pledge: $1,000.01", exact=True)
+        show(page, page.get_by_text("Your annual pledge: $1,000.01", exact=True))
     ).to_be_visible()
     page.get_by_role("button", name="Back to edit").click()
     assert not submissions
@@ -200,7 +246,14 @@ def test_financial_modules_mobile_final_only_and_accessible(
         "Stock gift"
     )
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "heading", name="Thank you!", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
     assert submissions[0]["financial"] == {
         "annual_pledge": "1,000.01",
         "frequency": "monthly",
@@ -221,24 +274,26 @@ def test_financial_validation_zero_and_unavailable(page, component_origin):
 
     begin(page, component_origin, financial_form(available=False), submit)
     expect(
-        page.get_by_text("Financial records are unavailable", exact=False)
+        show(page, page.get_by_text("Financial records are unavailable", exact=False))
     ).to_be_visible()
     assert "$0.00" not in page.locator("main").inner_text()
     for invalid in ("", "-1", "1e2", "1.001", "1,23", "1000000000"):
-        page.get_by_label("Annual pledge (USD)").fill(invalid)
-        page.get_by_role("button", name="Review response").click()
+        show(page, page.get_by_label("Annual pledge (USD)")).fill(invalid)
+        review(page)
         assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
         expect(page.get_by_label("Annual pledge (USD)")).to_have_attribute(
             "aria-invalid", "true"
         )
-    page.get_by_label("Annual pledge (USD)").fill("1")
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("1")
+    review(page)
     expect(page.get_by_label("Pledge frequency")).to_have_attribute(
         "aria-invalid", "true"
     )
-    page.get_by_label("Annual pledge (USD)").fill("0")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submissions[0]["financial"] == {
         "annual_pledge": "0",
         "frequency": "",
@@ -258,14 +313,19 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
         financial_form(census=True, ministry=True),
         lambda route: route.fulfill(json={"accepted": True}),
     )
-    page.get_by_label("Annual pledge (USD)").fill("25.00")
-    page.get_by_label("Pledge frequency").select_option("annual")
-    page.get_by_label("I will send a check", exact=True).check()
-    page.get_by_label("Choir — wishes to stop participating").check()
-    page.get_by_role("button", name="Review response").click()
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("25.00")
+    show(page, page.get_by_label("Pledge frequency")).select_option("annual")
+    show(page, page.get_by_label("I will send a check", exact=True)).check()
+    show(
+        page,
+        page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
+            "Stop participating"
+        ),
+    ).check()
+    review(page)
     page.get_by_role("button", name="Back to edit").click()
     page.once("dialog", lambda dialog: dialog.accept())
-    page.get_by_label("Household status").select_option("moved_household")
+    show(page, page.get_by_label("Household status")).select_option("moved_household")
     assert page.get_by_text("Ministry participation", exact=True).count() == 0
     expect(
         page.get_by_label("This household will send a check", exact=True)
@@ -275,8 +335,10 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     expect(page.get_by_label("I will send a check", exact=True)).to_be_checked()
     fill_new(page)
     expect(page.get_by_label("We will send a check", exact=True)).to_be_checked()
-    page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_text("Your annual pledge: $25.00", exact=True)).to_be_visible()
+    review(page)
+    expect(
+        show(page, page.get_by_text("Your annual pledge: $25.00", exact=True))
+    ).to_be_visible()
 
 
 @pytest.mark.parametrize("changed", ["pledge", "removed", "text_requirement"])
@@ -307,26 +369,41 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         ) if len(submissions) == 1 else route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    page.get_by_label("Annual pledge (USD)").fill("25.00")
-    page.get_by_label("I will share another way", exact=True).check()
-    page.get_by_label("Details for I will share another way").fill("Keep this note")
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("25.00")
+    show(page, page.get_by_label("I will share another way", exact=True)).check()
+    show(page, page.get_by_label("Details for I will share another way")).fill(
+        "Keep this note"
+    )
     final_submit(page)
-    page.get_by_role("button", name="Review response").click()
+    review(page)
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
     if changed == "pledge":
-        page.get_by_role("radio", name="Use my edit", exact=False).check()
+        show(
+            page,
+            page.get_by_role(
+                "radio", name="Use my edit", exact=False, include_hidden=True
+            ),
+        ).check()
     elif changed == "removed":
         # Confirmation removes its own control immediately; click, rather than
         # waiting for a checked state on a control that must no longer exist.
-        page.get_by_label("Remove this unavailable method before continuing").click()
+        show(
+            page, page.get_by_label("Remove this unavailable method before continuing")
+        ).click()
+        # A positive pledge still needs a share method once the old one is gone.
+        show(page, page.locator(f"#financial-option-{CHECK}")).check()
     else:
-        page.get_by_label("Discard this note and keep the selected method").click()
+        show(
+            page, page.get_by_label("Discard this note and keep the selected method")
+        ).click()
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
     assert submissions[1]["financial"]["annual_pledge"] == "25.00"
     assert submissions[1]["financial"]["shares"] == (
-        {}
+        {CHECK: ""}
         if changed == "removed"
         else {OTHER: "" if changed == "text_requirement" else "Keep this note"}
     )
@@ -356,13 +433,19 @@ def test_deselected_removed_method_cannot_create_an_unresolvable_conflict(
             route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    page.get_by_label("I will share another way", exact=True).uncheck()
+    # Share methods apply to a positive pledge; replace the old note's method.
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("10")
+    show(page, page.get_by_label("Pledge frequency")).select_option("annual")
+    show(page, page.locator(f"#financial-option-{CHECK}")).check()
+    show(page, page.get_by_label("I will share another way", exact=True)).uncheck()
     final_submit(page)
-    expect(page.get_by_role("button", name="Review response")).to_be_visible()
+    expect(page.locator(".family-nav")).to_be_visible()
     assert len(submissions) == 1
     final_submit(page)
-    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
-    assert submissions[1]["financial"]["shares"] == {}
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["financial"]["shares"] == {CHECK: ""}
 
 
 @pytest.mark.parametrize("count,label", [(0, "This household"), (1, "I"), (2, "We")])
@@ -378,4 +461,8 @@ def test_financial_only_uses_private_effective_count(
         form,
         lambda route: route.fulfill(json={"accepted": True}),
     )
-    expect(page.get_by_label(label + " will send a check", exact=True)).to_be_visible()
+    # Share methods appear only for a positive pledge.
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("10")
+    expect(
+        show(page, page.get_by_label(label + " will send a check", exact=True))
+    ).to_be_visible()
