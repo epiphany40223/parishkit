@@ -46,7 +46,7 @@ EMAIL_ADDITIONS = {"submission_confirmation": "confirmation"}
 EMAIL_LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
-    "confirmation": _("Submission receipt"),
+    "confirmation": _("Confirmation email"),
     "daily_digest": _("Daily Admin digest"),
     "weekly_digest": _("Weekly Admin digest"),
     "critical_alert": _("Critical alert"),

@@ -257,7 +257,7 @@ def test_receipt_template_edits_one_selection_and_retains_old_revision(
     browser, _ = signed_in()
     path = catalog + "/email/confirmation"
     with task_login(ServiceRole.WEB):
-        assert b"Edit receipt template" in browser.get(catalog).content
+        assert b"Edit confirmation email" in browser.get(catalog).content
         assert b"Before" in browser.get(path).content
         preview = post(browser, path, values(store, subject="After"))
         assert b"Submitted:" in preview.content and b"Questions:" in preview.content
@@ -455,7 +455,7 @@ def test_confirmation_closing_note_is_listed_with_the_confirmation_email(
     body = browser.get(catalog).content.decode()
     pages, emails = body.split("Email templates", 1)
     assert "Confirmation email: closing note" not in pages
-    assert emails.index("Submission receipt") < emails.index(
+    assert emails.index(">Confirmation email<") < emails.index(
         "Confirmation email: closing note"
     )
     assert "/page/submission_confirmation" in emails

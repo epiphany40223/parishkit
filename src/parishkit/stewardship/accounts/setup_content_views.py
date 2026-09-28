@@ -162,11 +162,12 @@ def result_url(action, steps):
 
     ``_filled`` parses this back; the list then names the slots kept as-is.
     """
+    # Page slots only ever sent inside an email count as emails, matching
+    # where the content list shows them.
+    additions = {f"page_{slot}" for slot in EMAIL_ADDITIONS}
+    kinds = ["email" if step in additions else step.split("_", 1)[0] for step in steps]
     query = urlencode(
-        {
-            f"{action}_{kind}s": sum(step.startswith(kind + "_") for step in steps)
-            for kind in ("page", "email")
-        }
+        {f"{action}_{kind}s": kinds.count(kind) for kind in ("page", "email")}
     )
     return reverse("admin:setup_content") + "?" + query
 
@@ -281,9 +282,13 @@ def setup_content_edit(request, kind, slot):
             slot=slot,
             initial=initial,
         )
+        # Accept every editor field, not just this slot's: a tab opened before
+        # web-only pages lost their plain-text controls (#259) still posts
+        # them, and the form ignores them rather than losing the Admin's HTML.
         _closed(
             request,
-            {*form.fields, "version"},
+            {*ContentForm.base_fields, "version"}
+            - ({"subject", "base_digest"} if kind == "page" else {"base_digest"}),
             query={"start"} if request.method != "POST" else frozenset(),
         )
         if request.GET and not start:

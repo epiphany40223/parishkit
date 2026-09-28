@@ -131,7 +131,7 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         # The receipt's closing note is listed with the confirmation email.
         pages, emails = listing.content.decode().split("Email templates", 1)
         assert "Confirmation email: closing note" not in pages
-        assert emails.index("Submission receipt") < emails.index(
+        assert emails.index(">Confirmation email<") < emails.index(
             "Confirmation email: closing note"
         )
         response = browser.get(url)
@@ -154,7 +154,9 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         assert unexpected.json()["refusal"]["message"] == (
             "The form was submitted with unexpected data."
         )
-        saved = post(browser, url, data)
+        # A tab opened before #259 still posts the plain-text fields; the
+        # save succeeds and ignores them rather than losing the HTML.
+        saved = post(browser, url, data | {"generate_text": "on", "text": "Old"})
         assert saved.status_code == 302, saved.content
         assert saved["Location"] == "/admin/setup/content"
         stale = post(browser, url, data)
@@ -212,7 +214,8 @@ def test_fill_defaults_fills_only_empty_slots_in_one_version(setup_http, monkeyp
             SetupDraftSection.objects.get(step="campaign").values["campaign"]
         )
         assert filled["Location"] == (
-            f"{url}?filled_pages={len(slots) - 1}&filled_emails={len(EMAILS)}"
+            # The confirmation email's closing note counts as an email (#259).
+            f"{url}?filled_pages={len(slots) - 2}&filled_emails={len(EMAILS) + 1}"
         )
         rows = content_rows()
         assert rows["page_welcome"] == kept
@@ -342,11 +345,11 @@ def test_reset_all_replaces_every_slot_only_when_confirmed(setup_http, monkeypat
             SetupDraftSection.objects.get(step="campaign").values["campaign"]
         )
         assert done["Location"] == (
-            f"{url}?reset_pages={len(slots)}&reset_emails={len(EMAILS)}"
+            f"{url}?reset_pages={len(slots) - 1}&reset_emails={len(EMAILS) + 1}"
         )
         assert all(matches_default(row["values"]) for row in rows.values())
         report = browser.get(done["Location"])
-        assert b"Reset 12 page(s) and 6 email(s)" in report.content
+        assert b"Reset 11 page(s) and 7 email(s)" in report.content
         # Everything already matches its default: a repeat replaces nothing.
         again = post(
             browser,
@@ -416,10 +419,10 @@ def test_saving_the_first_campaign_fills_every_applicable_slot(setup_http, monke
         # One version bump covers the campaign and all of its content.
         assert SetupAttempt.objects.get().version == attempt.version + 1
         assert saved["Location"] == (
-            "/admin/setup/content?filled_pages=11&filled_emails=6"
+            "/admin/setup/content?filled_pages=10&filled_emails=7"
         )
         listing = browser.get(saved["Location"])
-        assert b"Filled in the default text for 11 page(s)" in listing.content
+        assert b"Filled in the default text for 10 page(s)" in listing.content
         assert b"filled in automatically" in listing.content
         assert b"Fill in the default text for all" not in listing.content
 
