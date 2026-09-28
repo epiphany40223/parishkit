@@ -1,7 +1,8 @@
 {% load i18n %}{% comment %}
   Admin sidebar, built from accounts/admin_navigation.py. The disclosure is
   open by default so the menu works without JavaScript; ui-v1.js collapses it
-  on narrow screens only. aria-current marks the current page.
+  on narrow screens only. aria-current marks the current page. Sign out is a
+  POST form (logout is CSRF-protected) styled as the last menu item.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
   <details class="admin-menu" open data-admin-menu>
     <summary>{% translate "Menu" %}</summary>
@@ -19,6 +20,7 @@
       </li>
       {% endfor %}
       {% endif %}
+      <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form></li>
     </ul>
   </details>
 </nav>

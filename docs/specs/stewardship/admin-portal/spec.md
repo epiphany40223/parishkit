@@ -313,6 +313,11 @@ viewer may open:
 - **System**: Background work, Outgoing mail, Families on the form now and
   System logs.
 
+The menu always ends with **Sign out**, set apart from the sections, on every
+signed-in Admin page (including during initial setup). It is a POST form with
+the Admin CSRF token to the logout route, styled like a menu entry, because
+logout is CSRF-protected. Pages carry no product footer.
+
 Entries use the same capability checks as the pages they open, and a section
 with no visible entry is omitted; the menu is not the security boundary. The
 entry for the current page, or for the nearest ancestor page listed in the
