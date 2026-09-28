@@ -333,7 +333,18 @@ the image there, pushes it to GHCR to obtain the digest production admits,
 and then follows this runbook's [upgrade](#upgrade) steps: a best-effort
 backup, stop, `retarget-image`, migration and grants, a fresh static tree,
 start and health. The host must be logged in to GHCR with a token that can
-write packages (`docker login ghcr.io`). Run it from the checkout:
+write packages (`docker login ghcr.io`).
+
+It chooses the Compose file from the database's setup completion marker, not
+from whatever happens to be running: `compose.json` once setup has completed
+(or `compose-slack.json`, which renders the same mounts, if the project
+already runs under it), otherwise `compose-initial.json`. It then starts every
+online service of that file, so a run also repairs a deployment that an
+interrupted deploy left partly stopped. It finishes by checking that each
+online service is running and healthy, naming any that is not, and prints a
+timestamp for every step plus how long the online services were down. If the
+database itself is not running, it refuses before stopping anything and says
+how to start it. Run it from the checkout:
 
 ```sh
 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
