@@ -212,7 +212,7 @@ def test_large_household_and_on_demand_ministry_list(page, component_origin):
     render_seconds = monotonic() - started
     assert page.get_by_label("Search ministries").count() == 0
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True).first
+        page, page.get_by_text("Click here to join more ministries", exact=True).first
     ).click()
     show(page, page.get_by_label("Search ministries")).fill("500")
     show(

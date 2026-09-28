@@ -67,7 +67,7 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
         ),
     ).check()
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True)
+        page, page.get_by_text("Click here to join more ministries", exact=True)
     ).click()
     show(page, page.get_by_label("Search ministries")).fill("pantry")
     show(
@@ -92,7 +92,7 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     review(page)
     expect(
-        show(page, page.get_by_text("Joining: Food pantry", exact=True))
+        show(page, page.locator(".ministry-joining li", has_text="Food pantry").first)
     ).to_be_visible()
     page.get_by_role("button", name="Back to edit").click()
     expect(
@@ -145,7 +145,7 @@ def test_stale_hidden_choice_requires_explicit_discard_without_hidden_label(
 
     begin(page, component_origin, form, submit)
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True)
+        page, page.get_by_text("Click here to join more ministries", exact=True)
     ).click()
     show(
         page,
@@ -201,7 +201,7 @@ def test_terminal_choice_omits_all_in_step_ministry_edits(page, component_origin
 
     begin(page, component_origin, ministry_form(), submit)
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True)
+        page, page.get_by_text("Click here to join more ministries", exact=True)
     ).click()
     show(
         page,
@@ -237,7 +237,7 @@ def test_proposed_member_can_select_ministry_without_source_identity(
     begin(page, component_origin, ministry_form(), submit)
     identifier = fill_new(page)
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True).last
+        page, page.get_by_text("Click here to join more ministries", exact=True).last
     ).click()
     show(page, page.locator(f"#ministry-{identifier}-join-9")).check()
     review(page)
@@ -249,3 +249,46 @@ def test_proposed_member_can_select_ministry_without_source_identity(
         identifier: {"join": [9]}
     }
     assert identifier in submissions[0]["proposed_members"]
+
+
+def test_stopping_is_amber_and_joins_are_a_bulleted_list(page, component_origin):
+    """Stopping uses the attention colour; each joined ministry is its own line."""
+    form = ministry_form(census=False)
+    form["ministries"]["options"].append({"id": 11, "name": "Greeters"})
+    begin(page, component_origin, form, None)
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    show(page, choir.get_by_label("Stop participating")).check()
+    expect(choir).to_have_class("ministry-row stopping")
+    amber = page.evaluate(
+        "getComputedStyle(document.documentElement)"
+        ".getPropertyValue('--warning-bg').trim()"
+    )
+    background = choir.evaluate("e => getComputedStyle(e).backgroundColor")
+    probe = page.evaluate(
+        "c => { const e = document.createElement('div'); e.style.background = c;"
+        " document.body.append(e); const v = getComputedStyle(e).backgroundColor;"
+        " e.remove(); return v; }",
+        amber,
+    )
+    assert background == probe
+    page.get_by_text("Click here to join more ministries", exact=True).click()
+    for name in ("Food pantry", "Greeters"):
+        page.get_by_role("checkbox", name=name, exact=True).check()
+    items = page.locator(".ministry-joining li")
+    expect(items).to_have_text(["Food pantry", "Greeters"])
+
+
+def test_join_disclosure_says_tap_on_a_touch_only_device(page, component_origin):
+    """A coarse pointer with no fine pointer reads "Tap"; otherwise "Click"."""
+    page.add_init_script(
+        """(() => {
+          const real = window.matchMedia.bind(window);
+          window.matchMedia = (query) => query === '(pointer: coarse)' ?
+            {matches: true, media: query} : query === '(any-pointer: fine)' ?
+            {matches: false, media: query} : real(query);
+        })();"""
+    )
+    begin(page, component_origin, ministry_form(census=False), None)
+    expect(
+        show(page, page.get_by_text("Tap here to join more ministries", exact=True))
+    ).to_be_visible()

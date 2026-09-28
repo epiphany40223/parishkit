@@ -148,7 +148,7 @@ def test_concurrent_terminal_request_requires_explicit_ministry_discard(
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     if action == "join":
         show(
-            page, page.get_by_text("Click here to join another ministry", exact=True)
+            page, page.get_by_text("Click here to join more ministries", exact=True)
         ).click()
         show(
             page,

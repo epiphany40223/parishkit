@@ -845,13 +845,15 @@
         wrapper.append(document.createTextNode(" " + label));
         input.addEventListener("change", () => {
           toggle("leave", option.id, value === "leave");
-          row.classList.toggle("changed", value === "leave");
+          row.classList.toggle("stopping", value === "leave");
         });
       });
-      row.classList.toggle("changed", choices.leave.includes(option.id));
+      // Stopping is a notable change, shown in the attention (amber) colour
+      // rather than the green used for additions.
+      row.classList.toggle("stopping", choices.leave.includes(option.id));
     });
     const details = node("details", null, choicesBox, {class: "ministry-join"});
-    const summary = node("summary", "Click here to join another ministry", details);
+    const summary = node("summary", joinLabel(), details);
     if (locked) {
       // A <summary> cannot be disabled natively: mark it disabled for
       // assistive technology, take it out of the tab order, and refuse to open.
@@ -860,10 +862,11 @@
       summary.addEventListener("click", (event) => event.preventDefault());
     }
     let populated = false;
-    const joining = node("p", "", panel, {class: "changed", "aria-live": "polite"});
+    const joining = node("div", null, panel, {class: "changed ministry-joining", "aria-live": "polite"});
     const showJoining = () => {
       const names = form.ministries.options.filter((option) => choices.join.includes(option.id)).map((option) => option.name);
-      joining.textContent = names.length ? "Joining: " + names.join(", ") : "";
+      joining.replaceChildren();
+      if (names.length) nameList("Joining:", names, joining);
       joining.hidden = !names.length;
     };
     const populate = () => {
@@ -895,6 +898,18 @@
     panel.append(joining);
     showJoining();
   }
+  function nameList(heading, names, parent) {
+    // One ministry per line: a heading, then a bulleted list.
+    node("p", heading, parent);
+    const list = node("ul", null, parent);
+    names.forEach((name) => node("li", name, list));
+  }
+  function joinLabel() {
+    // "Tap" on a touch-only device (a phone or tablet), "Click" everywhere else.
+    const touch = window.matchMedia("(pointer: coarse)").matches &&
+      !window.matchMedia("(any-pointer: fine)").matches;
+    return (touch ? "Tap" : "Click") + " here to join more ministries";
+  }
   function ministryReview(member, parent) {
     if (!ministryEligible(member)) return;
     node("h4", "Ministries", parent);
@@ -912,8 +927,8 @@
         parent, {class: "changed"});
     }
     node("p", "Will continue: " + (continuing.join(", ") || "None"), parent);
-    if (stopping.length) node("p", "Stopping: " + stopping.join(", "), parent, {class: "changed"});
-    if (joining.length) node("p", "Joining: " + joining.join(", "), parent, {class: "changed"});
+    if (stopping.length) nameList("Stopping:", stopping, node("div", null, parent, {class: "changed stopping"}));
+    if (joining.length) nameList("Joining:", joining, node("div", null, parent, {class: "changed ministry-joining"}));
   }
   function moneyCents(value) {
     // Annual pledges fit exactly in JS integer cents; never multiply a parsed

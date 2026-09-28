@@ -210,7 +210,7 @@ def test_ministry_instructions_match_the_family_form_controls():
         "Current ministries",
         "Continuing",
         "Stop participating",
-        "Click here to join another ministry",
+        "here to join more ministries",
     ):
         assert label in script and f"<strong>{label}</strong>" in PAGES["ministry"]
 

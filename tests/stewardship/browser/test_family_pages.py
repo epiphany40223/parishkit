@@ -208,14 +208,18 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
     body = page.locator("main").inner_text()
     assert "These are requests" not in body and "wishes to stop" not in body
     choir.get_by_label("Stop participating").check()
-    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
-    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_visible()
+    expect(
+        page.locator(".ministry-joining li", has_text="Food pantry").first
+    ).to_be_visible()
     capture(page, "member-ministries")
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     review(page)
-    for text in ("Will continue: None", "Stopping: Choir", "Joining: Food pantry"):
-        expect(page.get_by_text(text, exact=True)).to_be_visible()
+    expect(page.get_by_text("Will continue: None", exact=True)).to_be_visible()
+    # Stopping and joining are bulleted, one ministry per line.
+    expect(page.locator(".stopping li", has_text="Choir")).to_be_visible()
+    expect(page.locator(".ministry-joining li", has_text="Food pantry")).to_be_visible()
     assert "may follow up" not in page.locator("main").inner_text()
     capture(page, "review")
     page.get_by_role("button", name="Submit to Sample Parish").click()

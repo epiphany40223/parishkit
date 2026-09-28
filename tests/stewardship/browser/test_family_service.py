@@ -75,7 +75,7 @@ def test_talents_and_ministry_lock_restore_and_submit(
     page.get_by_label("Other", exact=True).check()
     page.get_by_label("Please describe your talent").fill(" Organ ")
     # The Family's own choice before the lock: join Food pantry.
-    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     page.get_by_label(SERVE).check()
@@ -85,7 +85,7 @@ def test_talents_and_ministry_lock_restore_and_submit(
     # Readable, not inert: rows are disabled fieldsets and the join
     # disclosure is marked disabled, out of the tab order and cannot open.
     assert page.locator(".ministry-choices[inert]").count() == 0
-    summary = page.get_by_text("Click here to join another ministry", exact=True)
+    summary = page.get_by_text("Click here to join more ministries", exact=True)
     expect(summary).to_have_attribute("aria-disabled", "true")
     expect(summary).to_have_attribute("tabindex", "-1")
     summary.click()
@@ -96,7 +96,9 @@ def test_talents_and_ministry_lock_restore_and_submit(
         "aria-describedby", note.get_attribute("id")
     )
     expect(page.get_by_label(SERVE)).to_have_accessible_description(note.inner_text())
-    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_hidden()
+    expect(
+        page.locator(".ministry-joining li", has_text="Food pantry").first
+    ).to_be_hidden()
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -105,7 +107,9 @@ def test_talents_and_ministry_lock_restore_and_submit(
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
     expect(choir.get_by_label("Continuing")).to_be_checked()
     expect(choir.get_by_label("Continuing")).to_be_enabled()
-    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_visible()
+    expect(
+        page.locator(".ministry-joining li", has_text="Food pantry").first
+    ).to_be_visible()
     page.get_by_label(SERVE).check()
     review(page)
     expect(page.get_by_text(ATTEND, exact=True)).to_be_visible()
@@ -190,8 +194,8 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     """After a refresh, unchecking still restores this tab's own join."""
     form, submissions = service_form(), []
     begin(page, component_origin, form, refreshing(submissions, deepcopy(form)))
-    show(page, page.get_by_text("Click here to join another ministry", exact=True))
-    page.get_by_text("Click here to join another ministry", exact=True).click()
+    show(page, page.get_by_text("Click here to join more ministries", exact=True))
+    page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     page.get_by_label(SERVE).check()
@@ -199,7 +203,9 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(show(page, page.get_by_label(SERVE))).to_be_checked()
     page.get_by_label(SERVE).uncheck()
-    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_visible()
+    expect(
+        page.locator(".ministry-joining li", has_text="Food pantry").first
+    ).to_be_visible()
 
 
 def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
@@ -213,7 +219,7 @@ def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
     }
     begin(page, component_origin, form, refreshing(submissions, fresh))
     show(page, page.get_by_label("Painter")).check()
-    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     review(page)

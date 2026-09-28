@@ -257,12 +257,15 @@ submission, including the linked stale-form reconfirmation requirement.
 Current memberships appear first under "Current ministries", each stating
 its choice once as "Continuing" (the default) or "Stop participating". Leaving
 is always honored; the form does not describe it as a request that may be
-declined. Existing memberships are excluded from join choices. "Click here to
-join another ministry" expands/searches the potentially long selected-Ministry
-list only on demand and supports multiple choices, and the chosen ministries
-stay listed as "Joining: …" while it is collapsed. Selecting and then
+declined. A Ministry set to "Stop participating" is highlighted in the
+attention (amber) colour. Existing memberships are excluded from join choices.
+"Click here to join more ministries" ("Tap here…" on a touch-only device)
+expands/searches the potentially long selected-Ministry list only on demand and
+supports multiple choices, and the chosen ministries stay listed under
+"Joining:", one per line, while it is collapsed. Selecting and then
 deselecting returns to no requested change. Review lists each Member's
-ministries as "Will continue", "Stopping" and "Joining".
+ministries as "Will continue", "Stopping" and "Joining", the last two as
+bulleted lists.
 
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
@@ -281,7 +284,7 @@ requires a short description, at most 200 characters. No talent is required.
 Each Member may also check "Because of physical limitations, I/we cannot
 participate in any ministries at this time." While checked, every current
 Ministry is set to "Stop participating", every join choice is cleared, and the
-Ministry choices and "Click here to join another ministry" are disabled for
+Ministry choices and the join-more-ministries disclosure are disabled for
 pointer, keyboard and assistive technology alike. Unchecking restores the
 Family's own earlier choices. The server rejects a response in which such a
 Member continues or joins any Ministry. Talents and this answer are recorded
