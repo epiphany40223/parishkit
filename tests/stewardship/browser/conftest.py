@@ -1366,6 +1366,7 @@ def component_origin():
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
+        ("family-login-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
         ("information-export-v1.js", "application/javascript"),

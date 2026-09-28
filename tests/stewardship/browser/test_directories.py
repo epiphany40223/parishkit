@@ -111,3 +111,24 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         ).is_disabled()
     finally:
         context.close()
+
+
+def test_open_form_link_prefills_the_family_code(page, component_origin):
+    """The link opens the sign-in in a new tab with the code in the fragment.
+
+    The sign-in page copies the code into its field and drops the fragment
+    without submitting anything, so staff review it and press Continue.
+    """
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/family-directory")
+    link = page.locator("[data-open-form]")
+    assert link.get_attribute("href") == "/#code=ABCDEFGH"
+    assert link.get_attribute("target") == "_blank"
+    assert link.get_attribute("rel") == "noopener"
+    posts = []
+    page.on("request", lambda sent: sent.method == "POST" and posts.append(sent.url))
+    page.goto(component_origin + "/family-login#code=ABCDEFGH")
+    expect(page.get_by_label("Family code")).to_have_value("ABCDEFGH")
+    assert page.url == component_origin + "/family-login"
+    assert posts == []

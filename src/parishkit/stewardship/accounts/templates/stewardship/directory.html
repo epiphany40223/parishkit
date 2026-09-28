@@ -5,7 +5,7 @@
 <p>{{ metadata.name }} — {% translate "Active registered Families from source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
 <p>{% translate "A Family can receive campaign email when at least one active Family head has a valid email address that has not been permanently refused. This is different from simply having an email address." %}</p>
 <p>{% translate "Across all active Families, those without deliverable email:" %} {{ postal_proportion }}.</p>
-{% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
+{% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. Links to open each Family's form appear next to the codes once the campaign is live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% else %}<p class="notice" data-open-form-notice>{% translate "Opening a Family's form signs this browser in as that Family and replaces any other Family form open in it; your Admin session is unaffected." %}</p>{% endif %}
 <p>{% translate "Manual codes are specific to this campaign and are available to Admin and Staff. No email-link token is shown. Protect this page and share a code only with the appropriate Family." %}</p>
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a> · {% if postal %}<a href="{% url 'admin:family_directory' campaign_id %}">{% translate "All active Families" %}</a>{% else %}<a href="{% url 'admin:postal_directory' campaign_id %}">{% translate "Families without deliverable email" %}</a>{% endif %}</p>
 <form method="post" action="{{ report_url }}" class="filter-bar">{% csrf_token %}
@@ -39,7 +39,7 @@
 <tbody>{% for row in rows %}<tr>
 <td>{{ row.family_name }}</td>
 <td>{{ row.family_duid|duid }}</td>
-<td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
+<td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% if not testing_codes %}<br><a href="{% url 'public:entry' %}#code={{ row.code|urlencode }}" target="_blank" rel="noopener" data-open-form>{% translate "Open form" %}<span class="visually-hidden"> {% translate "for" %} {{ row.family_name }}</span></a>{% endif %}{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 <td>{% if row.reason == 'deliverable' %}{% translate "Yes" %}{% else %}<span title="{{ row.reason_label }}">{% translate "No" %}</span> <small>({{ row.reason_label }})</small>{% endif %}</td>
 <td>{% if row.responded %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
 <td class="contact-details"><details><summary>{% translate "Contact details for" %} {{ row.family_name }}</summary>
