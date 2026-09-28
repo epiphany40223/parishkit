@@ -112,7 +112,6 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         )
     )
     from parishkit.stewardship.reports import workspace_views
-    from parishkit.stewardship.web.contracts import PageWindow
 
     unknown = uuid4()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -167,18 +166,24 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
 
     # Use a smaller page budget to exercise actual pagination with this small
     # source fixture. Selection, ordering, rows and URL construction stay real.
-    monkeypatch.setattr(
-        workspace_views, "PageWindow", lambda *, page: PageWindow(page=page, size=2)
-    )
+    # A 2-row page size is added to the accepted sizes for this test only.
+    from parishkit.stewardship.reports import workspace
+    from parishkit.stewardship.web import tables
+
+    monkeypatch.setattr(tables, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
+    monkeypatch.setattr(workspace, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, picker = read(browser, "/admin/reports/campaigns/?scope=current")
         assert response.status_code == 200 and b"scope=current" in picker
-        response, page_one = read(browser, path + "?sort=date_desc&inactive=yes")
+        options = "?sort=date_desc&inactive=yes&size=2"
+        response, page_one = read(browser, path + options)
         assert response.status_code == 200
         assert b"Inactive subtotal" in page_one
-        assert b"Next page" in page_one
-        _, page_two = read(browser, path + "?sort=date_desc&inactive=yes&page=2")
-        assert b"Previous page" in page_two and b"Next page" in page_two
+        assert b'rel="next"' in page_one and b'rel="prev"' not in page_one
+        # Navigator links keep every validated report option.
+        assert b"sort=date_desc" in page_one and b"inactive=yes" in page_one
+        _, page_two = read(browser, path + options + "&page=2")
+        assert b'rel="prev"' in page_two and b'rel="next"' in page_two
         days_one = re.findall(rb"<td>(2026-10-\d\d)</td>", page_one)
         days_two = re.findall(rb"<td>(2026-10-\d\d)</td>", page_two)
         assert len(days_one) == len(days_two) == 2

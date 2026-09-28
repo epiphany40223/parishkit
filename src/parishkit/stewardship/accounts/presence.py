@@ -30,6 +30,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
+from parishkit.stewardship.web.tables import window_table
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime as admin_runtime
@@ -165,10 +166,13 @@ def active_families(request):
     try:
         service = admin_runtime()
         actor = principal(request, service, passive=True)
-        selected = filters(request.GET, allowed={"page", "format"})
+        selected = filters(request.GET, allowed={"page", "size", "format"})
         if selected.get("format", "html") not in {"html", "json", "count"}:
             raise ValueError("Invalid presence format.")
-        window = PageWindow(expected_version(selected.get("page", "1")), 50)
+        window = PageWindow(
+            expected_version(selected.get("page", "1")),
+            expected_version(selected.get("size", "50")),
+        )
         boundary = (
             transaction.atomic
             if selected.get("format") == "count"
@@ -217,7 +221,10 @@ def active_families(request):
                 else render(
                     request,
                     "stewardship/presence.html",
-                    {"presence": data, "next_page": window.page + 1},
+                    {
+                        "presence": data,
+                        "table": window_table(window, data["sessions"], has_next),
+                    },
                 )
             )
             # Passive header polling discloses no identity list. Audit actual

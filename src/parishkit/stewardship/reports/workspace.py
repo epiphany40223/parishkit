@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import PageWindow, filters
+from parishkit.stewardship.web.tables import ALL, PAGE_SIZES
 
 from .participation import SCOPE_LABELS
 
@@ -21,18 +22,22 @@ class ReportQuery:
     page: int = 1
     sort: str = "date_asc"
     timezone_explicit: bool = True
+    # Rows per page of the daily table: one of PAGE_SIZES or "all".
+    size: str = "50"
 
     @classmethod
     def parse(cls, parameters):
         """Reject duplicate/unknown keys, unbounded pages and arbitrary sort text."""
         values = filters(
-            parameters, allowed={"scope", "timezone", "inactive", "page", "sort"}
+            parameters,
+            allowed={"scope", "timezone", "inactive", "page", "sort", "size"},
         )
         scope = values.get("scope", "historical")
         zone = values.get("timezone", "UTC")
         inactive = values.get("inactive", "no")
         page = values.get("page", "1")
         sort = values.get("sort", "date_asc")
+        size = values.get("size", "50")
         if (
             scope not in SCOPE_LABELS
             or zone not in timezone_names()
@@ -41,12 +46,30 @@ class ReportQuery:
             or not page.isdecimal()
             or str(int(page)) != page
             or sort not in {"date_asc", "date_desc"}
+            or size not in {*map(str, PAGE_SIZES), ALL}
         ):
             raise ValueError("Invalid report filters.")
         PageWindow(page=int(page))
         return cls(
-            scope, zone, inactive == "yes", int(page), sort, "timezone" in values
+            scope,
+            zone,
+            inactive == "yes",
+            int(page),
+            sort,
+            "timezone" in values,
+            size,
         )
+
+    def carried(self):
+        """Filter values every daily-table navigator link must keep."""
+        values = [
+            ("scope", self.scope),
+            ("inactive", "yes" if self.inactive else "no"),
+            ("sort", self.sort),
+        ]
+        if self.timezone_explicit:
+            values.append(("timezone", self.timezone))
+        return values
 
     def url(self, campaign_id, *, page=None):
         """Preserve validated state and the explicit campaign on every link."""
@@ -56,6 +79,9 @@ class ReportQuery:
             "page": self.page if page is None else page,
             "sort": self.sort,
         }
+        # Keep existing report URLs unchanged at the default size.
+        if self.size != "50":
+            values["size"] = self.size
         if self.timezone_explicit:
             values["timezone"] = self.timezone
         return (

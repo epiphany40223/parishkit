@@ -302,6 +302,14 @@ tables on one page keep their own place, and navigator links keep the page's
 filters. Only lists whose query strings carry no private values use them;
 report views that hold filters in POST state keep their own paging.
 
+Lists read straight from a growing database table (Background work, Outgoing
+mail, Refused addresses, Active Families, Testing Families, Family link
+preparation and Family campaign codes) page on the server without counting
+every matching row: each page reads one extra row to learn whether a next page
+exists. Their navigator therefore shows the rows on the page but no total or
+page count, and offers 25, 50 or 100 rows. The participation workspace's daily
+table is already in memory, so it shows the total and offers every size.
+
 A table with bulk actions has a selection column. Its header checkbox and a
 Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only

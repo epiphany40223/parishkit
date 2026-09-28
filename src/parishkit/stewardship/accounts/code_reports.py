@@ -26,6 +26,7 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import window_table
 
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
@@ -130,11 +131,7 @@ def family_codes(request, campaign_id):
                         "table_rows": table,
                         "table_caption": _("Active Families"),
                         "table_headings": [_("Family DUID"), _("Code")],
-                        "has_next": has_next,
-                        "page": window.page,
-                        "size": window.size,
-                        "next_page": window.page + 1,
-                        "previous_page": window.page - 1,
+                        "table": window_table(window, table, has_next),
                     },
                 ).encode()
                 prepared_count = len(table)

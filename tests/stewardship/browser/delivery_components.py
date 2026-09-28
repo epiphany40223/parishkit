@@ -2,6 +2,9 @@
 
 from uuid import uuid4
 
+from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.tables import window_table
+
 
 def components(now):
     """Keep each operational state visible without browser provider credentials."""
@@ -23,11 +26,15 @@ def components(now):
         "/deliveries",
         "deliveries",
         dict(
-            deliveries=[message],
+            table=window_table(
+                PageWindow(1, 25),
+                [message],
+                True,
+                carry=[("state", "delivery_unknown")],
+            ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
             query="",
-            next_query="page=2",
         ),
     )
     yield (
@@ -65,7 +72,11 @@ def components(now):
             ],
         ),
     )
-    yield "/delivery-refusals", "delivery-refusals", dict(refusals=[refusal])
+    yield (
+        "/delivery-refusals",
+        "delivery-refusals",
+        dict(table=window_table(PageWindow(1, 25), [refusal], False)),
+    )
     yield (
         "/delivery-refusal",
         "delivery-refusal",

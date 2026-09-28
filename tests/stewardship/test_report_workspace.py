@@ -73,6 +73,9 @@ def test_read_admission_classifies_only_known_campaign_closure(
         "email=private@example.org",
         "inactive=1",
         "timezone=invalid",
+        "size=7",
+        "size=1000",
+        "size=",
     ],
 )
 def test_queries_are_bounded_nonidentifying_and_closed(query):
@@ -164,3 +167,12 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     assert book["Participation"]["I2"].value == "1234567890123456.78"
     assert book["Participation"]["I2"].data_type == "s"
     book.close()
+
+
+def test_daily_table_size_is_carried_only_when_not_default():
+    """Existing report links stay unchanged; a chosen size survives navigation."""
+    campaign = document().participation.campaign_id
+    assert "size=" not in ReportQuery.parse(QueryDict()).url(campaign)
+    chosen = ReportQuery.parse(QueryDict("size=all&sort=date_desc"))
+    assert chosen.size == "all" and "size=all" in chosen.url(campaign, page=1)
+    assert ("sort", "date_desc") in chosen.carried()

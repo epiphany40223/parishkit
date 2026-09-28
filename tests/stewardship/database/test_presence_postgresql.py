@@ -111,7 +111,11 @@ def test_admin_detail_has_names_and_no_answers_or_credentials(family_service, go
     }
     assert family_service.code.encode() not in response.content
     assert family_service.token.encode() not in response.content
-    assert b"Recently visible Family sessions" in browser.get(ADMIN).content
+    page = browser.get(ADMIN).content
+    assert b"Recently visible Family sessions" in page
+    assert b'class="table-nav"' in page and b'class="data-table"' in page
+    assert browser.get(ADMIN + "?size=25").status_code == 200
+    assert browser.get(ADMIN + "?size=500").status_code == 400
     assert b"Active Families:" in browser.get("/admin/").content
 
 

@@ -96,6 +96,13 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
             assert family_mail.code.encode() not in response.content
             assert message.sealed_substitutions.encode() not in response.content
             assert b"sealed_substitutions" not in response.content
+        listing = browser.get("/admin/deliveries?state=all&size=25")
+        assert listing.status_code == 200
+        assert b'class="table-nav"' in listing.content
+        assert b'<input type="hidden" name="state" value="all">' in listing.content
+        refusals = browser.get("/admin/deliveries/refusals")
+        assert refusals.status_code == 200
+        assert b'class="table-nav"' in refusals.content
         result = browser.get("/admin/background/counts")
         assert result.json()["delivery_unknown"] == 1
     # Dashboard is activity; the status pages themselves must remain passive.

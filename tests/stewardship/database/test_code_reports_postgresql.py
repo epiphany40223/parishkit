@@ -89,7 +89,11 @@ def test_role_bound_code_report_and_safe_audit(
             return
         assert response.status_code == expected
         if expected == 200:
-            assert code in b"".join(response.streaming_content)
+            body = b"".join(response.streaming_content)
+            assert code in body
+            # The shared navigator pages the report without inventing a total.
+            assert b'class="table-nav"' in body and b"Rows per page" in body
+            assert b'name="size"' in body and b" of 1<" not in body
             response.close()
             events = AuditEvent.objects.filter(
                 event_type="family_codes_viewed"

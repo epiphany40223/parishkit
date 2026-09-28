@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.readiness import source_readiness
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
+from parishkit.stewardship.web.tables import window_table
 
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
@@ -194,8 +195,11 @@ def cleanup_status(request, campaign_id, request_id):
 def testing_families(request, campaign_id):
     """Admin-only current Testing Family identities, with bounded server pagination."""
     try:
-        parameters = filters(request.GET, allowed={"page"})
-        window = PageWindow(expected_version(parameters.get("page", "1")), 50)
+        parameters = filters(request.GET, allowed={"page", "size"})
+        window = PageWindow(
+            expected_version(parameters.get("page", "1")),
+            expected_version(parameters.get("size", "50")),
+        )
         service = runtime()
         # Kept on the work lock: passive admission and the cleanup inventory
         # run inside this block and refuse under a read-only snapshot.
@@ -223,11 +227,7 @@ def testing_families(request, campaign_id):
             "stewardship/go-live-families.html",
             {
                 "campaign": scope.campaign,
-                "rows": rows,
-                "page": window.page,
-                "has_next": has_next,
-                "next_page": window.page + 1,
-                "previous_page": window.page - 1,
+                "table": window_table(window, rows, has_next),
             },
         )
         return _checked(request, service, response)
