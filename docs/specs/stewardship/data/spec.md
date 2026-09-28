@@ -800,7 +800,9 @@ Unknown placeholders are validation failures, not empty text.
 Initial invitations and reminders require the code and secure-link placeholders
 in each body alternative, including generated plaintext. Those credential
 placeholders are not allowed in subjects. Authoring, configuration validation
-and background preparation enforce the same rule; generated plaintext keeps the
+and background preparation enforce the same rule, and the editors name which
+version (subject, HTML, typed or generated plain text) lacks or wrongly holds
+which placeholder or reserved marker; generated plaintext keeps the
 secure link as `label: URL`, and an author can still edit it. Testing subject
 presentation reserves its mandatory mode prefix and shortens only
 non-credential content.

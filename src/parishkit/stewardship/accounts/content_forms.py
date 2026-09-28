@@ -10,10 +10,10 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.web.content import (
     MAX_TEXT_BYTES,
     PLACEHOLDERS,
+    family_email_problems,
     prepare_content,
     render_template,
     validate_admin_digest_content,
-    validate_family_email,
     validate_receipt_content,
     validate_template,
 )
@@ -65,6 +65,45 @@ def page_slots(campaign):
     if not campaign["additional_information"]:
         excluded.add("additional")
     return {slot: label for slot, label in PAGE_LABELS.items() if slot not in excluded}
+
+
+PART_LABELS = {
+    "subject": _("The email subject"),
+    "html": _("The HTML version"),
+    "text": _("The plain-text version"),
+    "generated": _("The plain text generated from the HTML version"),
+}
+
+
+def family_access_message(part, problem, names, *, generated):
+    """One specific, fixable sentence for a broken invitation/reminder part.
+
+    Names which version has which problem; when the generated plain text is
+    the one missing a placeholder, says how to fix that (placeholders only in
+    a link's address are kept as "label: URL", so usually the HTML version
+    lacks it too; otherwise uncheck generation and edit the plain text).
+    """
+    label = PART_LABELS["generated" if part == "text" and generated else part]
+    listed = " and ".join("{{ " + name + " }}" for name in names)
+    if problem == "credential":
+        return _(
+            "%(part)s contains %(names)s. Access codes and links belong only in "
+            "the email body; remove them from the subject."
+        ) % {"part": label, "names": listed}
+    if problem == "reserved":
+        return _(
+            "%(part)s contains a reserved system marker. Remove it and use the "
+            "documented placeholders instead."
+        ) % {"part": label}
+    fix = (
+        _(
+            " Add it to the HTML version as visible text or as a link, or uncheck "
+            "“Generate plain text from HTML” and add it to the plain text."
+        )
+        if part == "text" and generated
+        else _(" Add it where the Family should see it.")
+    )
+    return _("%(part)s is missing %(names)s.") % {"part": label, "names": listed} + fix
 
 
 class ContentForm(forms.Form):
@@ -139,21 +178,20 @@ class ContentForm(forms.Form):
             )
             return values
         if self.kind == "email" and self.slot in {"initial", "reminder"}:
-            try:
-                validate_family_email(values["subject"], prepared.html, prepared.text)
-            except ValueError:
+            problems = family_email_problems(
+                values["subject"], prepared.html, prepared.text
+            )
+            for part, problem, names in problems:
                 self.add_error(
                     None,
                     forms.ValidationError(
-                        _(
-                            "Initial invitations and reminders require "
-                            "{{ family_code }} and {{ family_url }} in both body "
-                            "versions, and neither in the subject. Do not use "
-                            "reserved system markers."
+                        family_access_message(
+                            part, problem, names, generated=values["generate_text"]
                         ),
                         code="family_access",
                     ),
                 )
+            if problems:
                 return values
         values["prepared"] = prepared
         return values

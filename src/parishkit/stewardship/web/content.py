@@ -422,6 +422,29 @@ def render_template(value, substitutions, *, html=False, subject=False):
     return sanitize_html(rendered) if html else rendered
 
 
+def family_email_problems(subject, html, text):
+    """Every way an invitation/reminder breaks the access contract, per part.
+
+    Returns ``(part, problem, names)`` tuples in a fixed order: ``part`` is
+    "subject", "html" or "text"; ``problem`` is "credential" (an access
+    placeholder in the subject), "reserved" (a reserved system marker) or
+    "missing" (a required placeholder absent from a body); ``names`` are the
+    placeholders concerned. Editors turn these into specific messages.
+    """
+    problems = []
+    names = validate_template(subject, subject=True) & FAMILY_CREDENTIAL_PLACEHOLDERS
+    if names:
+        problems.append(("subject", "credential", tuple(sorted(names))))
+    for part, value in (("subject", subject), ("html", html), ("text", text)):
+        if FAMILY_CODE_MARKER in value or FAMILY_LINK_MARKER in value:
+            problems.append((part, "reserved", ()))
+    for part, value in (("html", html), ("text", text)):
+        missing = FAMILY_CREDENTIAL_PLACEHOLDERS - validate_template(value)
+        if missing:
+            problems.append((part, "missing", tuple(sorted(missing))))
+    return problems
+
+
 def validate_family_email(subject, html, text):
     """Share the invitation/reminder contract across editing, apply and rendering.
 
@@ -430,16 +453,14 @@ def validate_family_email(subject, html, text):
     cannot silently disappear from that alternative. Authors can edit the plain
     text explicitly when extraction cannot preserve the required placeholders.
     """
-    if validate_template(subject, subject=True) & FAMILY_CREDENTIAL_PLACEHOLDERS:
-        raise ValueError("Family credentials belong in email bodies, not subjects.")
-    for value in (subject, html, text):
-        if FAMILY_CODE_MARKER in value or FAMILY_LINK_MARKER in value:
-            raise ValueError("Family email contains a reserved placeholder.")
-    if any(
-        not validate_template(value) >= FAMILY_CREDENTIAL_PLACEHOLDERS
-        for value in (html, text)
-    ):
-        raise ValueError("Each Family email body requires its code and link.")
+    messages = {
+        "credential": "Family credentials belong in email bodies, not subjects.",
+        "reserved": "Family email contains a reserved placeholder.",
+        "missing": "Each Family email body requires its code and link.",
+    }
+    problems = family_email_problems(subject, html, text)
+    if problems:
+        raise ValueError(messages[problems[0][1]])
 
 
 def validate_receipt_content(subject, html, text):
