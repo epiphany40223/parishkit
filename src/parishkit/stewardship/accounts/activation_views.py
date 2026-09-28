@@ -6,6 +6,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 
 from .activation_progress import control, progress
@@ -35,6 +36,15 @@ def links(request, campaign_id, request_id):
             )
         else:
             context = progress(request, service, campaign_id, request_id, window=window)
+            # Follow the page while any shown preparation or disposal runs.
+            context["live_pending"] = any(
+                record["task"].state in NONTERMINAL_STATES
+                or (
+                    record["cleanup"] is not None
+                    and record["cleanup"].state in NONTERMINAL_STATES
+                )
+                for record in context["records"]
+            )
             response = render(request, "stewardship/go-live-links.html", context)
         return _checked(request, service, response)
     except ObjectDoesNotExist:

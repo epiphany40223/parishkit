@@ -160,11 +160,10 @@ def _page(
             initial={"preview": signing.dumps(preview.binding(), salt=SALT)}
         )
     items = [item | {"label": _label(item)} for item in recent_tickets(campaign_id)]
-    # Reload only a plain GET of the status (never a POST response, which a
-    # reload would resubmit) while a test is on its way and no review is shown.
-    refresh = (
-        request.method == "GET" and not duids and any(_pending(item) for item in items)
-    )
+    # The Recent Family tests region follows itself (live-status-v1.js) while
+    # a test is on its way. The script swaps only that region and never
+    # reloads the page, so a POST response or a shown review is never re-sent.
+    refresh = any(_pending(item) for item in items)
     # The "requested" notice stays while its tests are still on their way.
     sent = None
     if not duids:
@@ -200,6 +199,9 @@ def _page(
             and len(preview.families) <= preview.available,
             "items": items,
             "refresh": refresh,
+            "refresh_url": reverse(
+                "admin:campaign_mail_families", args=[campaign_id, revision_id]
+            ),
             "fresh": fresh,
             "signed_in_minutes": minutes,
             "restored": restored,

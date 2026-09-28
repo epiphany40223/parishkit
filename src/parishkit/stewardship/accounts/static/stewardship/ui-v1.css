@@ -215,6 +215,14 @@ button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
+/* Live status regions (live-status-v1.js, live-running.html): a still-running
+   indicator that says so in words, and prominent finished/failed outcomes. */
+.live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
+.live-running .help { flex-basis: 100%; margin: 0; }
+.live-spinner { display: inline-block; width: 1em; height: 1em; align-self: center; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+.live-done { color: var(--accent-strong); }
+.live-failed { color: var(--error-ink); }
+.live-status-problem { margin-top: .5rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 [data-content-toolbar] { display: flex; flex-wrap: wrap; gap: .5rem; }
 [data-content-toolbar] button { margin: 0; padding-inline: .9rem; font-size: .925rem; }
