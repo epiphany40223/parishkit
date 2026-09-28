@@ -250,17 +250,22 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
             },
         )
         plan = cursor.fetchone()[0][0]["Plan"]
-    nodes, detail_loops = [plan], []
+    nodes, phone_loops, head_groups = [plan], [], []
     while nodes:
         node = nodes.pop()
         nodes.extend(node.get("Plans", []))
-        if node["Node Type"] == "Aggregate" and any(
-            "jsonb_build_object('owner'" in output
-            or "jsonb_build_object('duid'" in output
-            for output in node.get("Output", [])
-        ):
-            detail_loops.append(node["Actual Loops"])
-    assert len(detail_loops) == 2 and all(loops == 50 for loops in detail_loops)
+        outputs = node.get("Output", [])
+        if node["Node Type"] != "Aggregate":
+            continue
+        if any("jsonb_build_object('owner'" in output for output in outputs):
+            phone_loops.append(node["Actual Loops"])
+        elif any("jsonb_build_object('duid'" in output for output in outputs):
+            head_groups.append(node)
+    # Phones are gathered per shown row; heads in one grouped pass over the
+    # page's Families only (page_heads), never the whole directory.
+    assert phone_loops == [50]
+    assert len(head_groups) == 1 and head_groups[0]["Actual Loops"] == 1
+    assert head_groups[0]["Actual Rows"] <= 50
 
 
 def test_staff_directories_survive_limiter_outage_but_not_revocation(
@@ -549,3 +554,35 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
         assert [
             row["family_duid"] for row in page(harness, search=text)["rows"]
         ] == expected
+
+
+def test_directory_search_finds_the_shown_name_despite_odd_whitespace(
+    live_response_service,
+):
+    """SQL trims names exactly as family_names.py does, tabs and no-break spaces too.
+
+    The page shows the Python-built name; search and sort use the SQL-built
+    one. Padding that only Python stripped used to make them differ.
+    """
+    harness = live_response_service
+    data = response_source()
+    data.families[1] = data.families[1] | {"lastName": "Example "}
+    data.members[3] = data.members[3] | {
+        "firstName": " Member\t",
+        "lastName": " Example ",
+    }
+    data.members[4] = data.members[3] | {
+        "memberDUID": 4,
+        "firstName": "Second ",
+        "lastName": " Other ",
+        "emailAddress": "",
+    }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    (row,) = [row for row in page(harness)["rows"] if row["family_duid"] == 1]
+    assert row["family_name"] == "Example"
+    assert row["display_name"] == "Example, Member and Second Other"
+    assert [
+        found["family_duid"]
+        for found in page(harness, search=row["display_name"])["rows"]
+    ] == [1]
