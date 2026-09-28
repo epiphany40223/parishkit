@@ -16,7 +16,7 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.web.contracts import filters
 
-from .log_descriptions import describe
+from .log_descriptions import ACTOR_KINDS, describe, words
 from .schemas import FIELDS, Action
 
 PAGE_SIZE = 50
@@ -178,6 +178,15 @@ def _details(context):
     return shown
 
 
+def detail_labels(details):
+    """The recorded detail with each field named in words, for display only.
+
+    Exports keep the stored field names, which are what a filter or script
+    matches; the page shows "Lag microseconds" instead of "lag_microseconds".
+    """
+    return [(words(key), value) for key, value in details]
+
+
 def page_context(query, rows, following):
     """The one template context, shared by the view and its browser fixtures."""
     return {
@@ -211,6 +220,8 @@ def operational_row(record):
         "campaign_id": None,
         "subject_id": None,
         "details": _details(record["context"]),
+        "detail_rows": detail_labels(_details(record["context"])),
+        "actor_kind_label": None,
     }
 
 
@@ -230,6 +241,11 @@ def audit_row(record):
         "campaign_id": record["campaign_reference"],
         "subject_id": record["subject_id"],
         "details": _details(record["auditcontext__context"]),
+        "detail_rows": detail_labels(_details(record["auditcontext__context"])),
+        # Audit contexts say what kind of actor acted; the page names portal
+        # users and workers itself and uses this for Families, the system
+        # and the operator, which have no portal account to look up.
+        "actor_kind_label": ACTOR_KINDS.get(record.get("auditcontext__actor_kind")),
     }
 
 
