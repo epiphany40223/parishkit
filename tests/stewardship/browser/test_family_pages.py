@@ -359,3 +359,33 @@ def test_review_page_step_bar_jumps_back_into_editing(page, component_origin):
     page.locator('[data-step-jump="financial"]').click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("0")
+
+
+def viewport_top(page):
+    """How far the window is scrolled down, in CSS pixels."""
+    return page.evaluate("window.scrollY")
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_sign_in_and_next_show_the_top_of_the_page(page, component_origin, width):
+    """Page changes scroll to the top, then focus the heading without scrolling.
+
+    Focusing a heading alone scrolls it to the top of the viewport and hides
+    the campaign title, Family name and step bar above it (#220).
+    """
+    page.set_viewport_size({"width": width, "height": 500})
+    begin(page, component_origin, paged_form(), None)
+    assert viewport_top(page) == 0
+    expect(page.get_by_role("heading", level=1)).to_be_in_viewport()
+    assert "#" not in page.url
+    for _ in range(3):
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        next_page(page)
+        assert viewport_top(page) == 0
+        focused = page.evaluate("document.activeElement.tagName")
+        assert focused == "H3"
+        expect(page.get_by_role("heading", level=1)).to_be_in_viewport()
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.go_back()
+    expect(page.locator("[data-page]:not([hidden]) h3")).to_be_focused()
+    assert viewport_top(page) == 0

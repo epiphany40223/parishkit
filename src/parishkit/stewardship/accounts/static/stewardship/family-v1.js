@@ -137,7 +137,8 @@
     initialRequests = structuredClone(requests);
     if (!preserve) {
       currentPage = "intro";
-      history.replaceState({familyPage: "intro"}, "");
+      // Drop any #fragment so a reload or restore never jumps down the page.
+      history.replaceState({familyPage: "intro"}, "", location.pathname + location.search);
     }
     if (preserve && previous && before) {
       (next.household?.fields || []).forEach(({name}) => {
@@ -237,11 +238,18 @@
       });
     });
   }
+  function focusTop(element) {
+    // Show the whole page (campaign title, Family name, step bar) and still
+    // move keyboard/screen-reader focus to the new heading: focusing alone
+    // would scroll the heading to the top and hide everything above it.
+    window.scrollTo(0, 0);
+    element?.focus({preventScroll: true});
+  }
   function heading(text, section) {
     root.replaceChildren();
     session.dataset.presenceSection = section;
     const title = node("h2", text, root, {tabindex: "-1"});
-    title.focus();
+    focusTop(title);
     return title;
   }
   function fieldErrors(errors) {
@@ -1259,10 +1267,7 @@
     root.querySelector("[data-page-next]").hidden = index === pages.length - 1;
     root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
     if (push) history.pushState({familyPage: page.key}, "");
-    if (focus) {
-      page.element.querySelector("h3").focus();
-      page.element.scrollIntoView?.({block: "start"});
-    }
+    if (focus) focusTop(page.element.querySelector("h3"));
   }
   function retitle(key, title) {
     // Keep a Member page's heading, step link and counter in step with the
@@ -1587,6 +1592,9 @@
   window.addEventListener("beforeunload", (event) => {
     if (!finished && dirty()) { event.preventDefault(); event.returnValue = ""; }
   });
+  // Page changes scroll to the top themselves (focusTop); stop the browser
+  // from restoring an older scroll position on back/forward.
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   window.addEventListener("popstate", (event) => {
     const key = event.state?.familyPage;
     if (!key || !form || finished || busy) return;
