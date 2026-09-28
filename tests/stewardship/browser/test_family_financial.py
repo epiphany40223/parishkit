@@ -217,8 +217,9 @@ def test_financial_modules_mobile_final_only_and_accessible(
         page, component_origin, financial_form(census=census, ministry=ministry), submit
     )
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("")
+    # Family pages show whole-dollar amounts without cents (#256).
     expect(page.get_by_text("Parish records for", exact=False)).to_contain_text(
-        "$1,200.00"
+        "pledge $1,200;"
     )
     show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
     show(page, page.get_by_label("Pledge frequency")).select_option("monthly")
