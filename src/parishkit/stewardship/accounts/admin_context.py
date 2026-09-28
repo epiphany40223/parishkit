@@ -8,6 +8,8 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDOW
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
+from parishkit.stewardship.campaigns.domain import CampaignState
+from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
@@ -46,7 +48,7 @@ def portal_chrome(request):
         return {"admin_chrome": _setup_chrome(actor, configuration, session)}
     admin = allows(actor, Capability.CONFIGURE)
     campaign = configuration.current_campaign
-    items = _navigation_items(actor, admin, campaign)
+    items = _navigation_items(actor, admin, campaign, configuration)
     # Presentation only: reuse the instant the owning view read inside its own
     # read snapshot (never an earlier one from before a lock wait).
     now = getattr(request, "_stewardship_display_now", None) or database_now()
@@ -119,7 +121,7 @@ def portal_chrome(request):
     }
 
 
-def _navigation_items(actor, admin, campaign):
+def _navigation_items(actor, admin, campaign, configuration):
     """Sidebar entries ``(section, url_name, label, url)`` the actor may open.
 
     Each entry uses the same capability the page itself checks, so the menu
@@ -139,7 +141,17 @@ def _navigation_items(actor, admin, campaign):
             if campaign.state != "archived":
                 add("campaign", "content_catalog", _("Pages and emails"), campaign.pk)
             add("campaign", "schedule_settings", _("Mail schedules"), campaign.pk)
-            if "financial" in values.get("modules", ()):
+            # Share options are editable only on an unlocked Testing draft; the
+            # page refuses anything else, so do not offer a link that fails.
+            if (
+                "financial" in values.get("modules", ())
+                and configuration.mode == "testing"
+                and structural_edit_admitted(
+                    CampaignState(campaign.state),
+                    ever_active=campaign.ever_active,
+                    locked=campaign.structural_locked,
+                )
+            ):
                 add("campaign", "share_settings", _("Share options"), campaign.pk)
             if campaign.state == "draft":
                 add("campaign", "go_live", _("Go-live readiness"), campaign.pk)

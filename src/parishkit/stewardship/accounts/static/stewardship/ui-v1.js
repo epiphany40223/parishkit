@@ -11,7 +11,9 @@
     const wide = window.matchMedia("(min-width: 60rem)");
     const syncMenu = () => { adminMenu.open = wide.matches; };
     syncMenu();
-    wide.addEventListener("change", syncMenu);
+    // Older Safari only offers the deprecated addListener on media queries.
+    if (typeof wide.addEventListener === "function") wide.addEventListener("change", syncMenu);
+    else if (typeof wide.addListener === "function") wide.addListener(syncMenu);
   }
 
   document.querySelectorAll("time[data-local-instant]").forEach((node) => {

@@ -60,7 +60,9 @@ PAGES = {
     "content_catalog": Page("campaign", _("Pages and emails")),
     "content_edit": Page("campaign", _("Edit page or email"), "content_catalog"),
     "content_revision": Page("campaign", _("Content revision"), "content_catalog"),
-    "content_history": Page("campaign", _("Content history"), "content_catalog"),
+    # Retained content can belong to an earlier campaign, which the editing
+    # catalog refuses, so its trail runs through Campaign settings instead.
+    "content_history": Page("campaign", _("Content history"), "campaign_settings"),
     "content_history_revision": Page("campaign", _("Revision"), "content_history"),
     "campaign_mail": Page("campaign", _("Preview and test email"), "content_catalog"),
     "campaign_mail_families": Page(
@@ -293,7 +295,17 @@ def build(match, items):
     sections = []
     for section in SECTIONS:
         entries = [
-            {"url": url, "label": label, "current": entry_name == current_item}
+            {
+                "url": url,
+                "label": label,
+                # "page" for the page itself; "true" when the entry is only
+                # the nearest listed ancestor of the page being viewed.
+                "current": (
+                    ("page" if entry_name == name else "true")
+                    if entry_name == current_item
+                    else None
+                ),
+            }
             for key, entry_name, label, url in items
             if key == section.key
         ]

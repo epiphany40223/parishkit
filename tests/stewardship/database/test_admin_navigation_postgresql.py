@@ -89,7 +89,8 @@ def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     # The trail links back to the catalog and names the email being edited.
     assert f'<li><a href="{catalog}">Pages and emails</a></li>'.encode() in edit.content
     assert b'<span aria-current="page">Initial invitation</span>' in edit.content
-    assert f'<a href="{catalog}" aria-current="page">'.encode() in edit.content
+    # On the child page the catalog entry marks the location, not the page.
+    assert f'<a href="{catalog}" aria-current="true">'.encode() in edit.content
 
 
 def test_anonymous_and_family_pages_do_not_gain_admin_chrome(auth_service, google):

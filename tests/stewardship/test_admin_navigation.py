@@ -119,9 +119,12 @@ def test_current_item_and_section_follow_the_page_chain():
     sections, trail = navigation.build(match, _items())
     current = [section for section in sections if section["current"]]
     assert [section["key"] for section in current] == ["campaign"]
-    assert [item["label"] for item in current[0]["items"] if item["current"]] == [
-        navigation.PAGES["content_catalog"].label
-    ]
+    # The listed ancestor is marked as the current location, not the page.
+    assert [
+        (item["label"], item["current"])
+        for item in current[0]["items"]
+        if item["current"]
+    ] == [(navigation.PAGES["content_catalog"].label, "true")]
     assert [crumb["label"] for crumb in trail] == [
         navigation.PAGES["index"].label,
         navigation.SECTION_LABELS["campaign"],
@@ -164,3 +167,55 @@ def test_non_admin_and_unknown_routes_yield_no_trail():
     ):
         _, trail = navigation.build(match, _items())
         assert trail == []
+
+
+def test_exact_page_entry_is_marked_as_the_current_page():
+    """On a sidebar entry's own page, its link is aria-current="page"."""
+    match = SimpleNamespace(url_name="reports", namespace="admin", kwargs={})
+    sections, _ = navigation.build(match, _items())
+    marked = [
+        item for section in sections for item in section["items"] if item["current"]
+    ]
+    assert [(item["label"], item["current"]) for item in marked] == [
+        (navigation.PAGES["reports"].label, "page")
+    ]
+
+
+def test_retained_content_trail_avoids_the_current_campaign_editor():
+    """Historical content links back through Campaign settings, not the editor."""
+    assert navigation._chain("content_history_revision") == [
+        "campaign_settings",
+        "content_history",
+        "content_history_revision",
+    ]
+
+
+@pytest.mark.parametrize(
+    "state,ever_active,locked,mode,modules,offered",
+    [
+        ("draft", False, False, "testing", ["financial"], True),
+        ("draft", False, False, "testing", ["census"], False),
+        ("draft", False, True, "testing", ["financial"], False),
+        ("draft", True, False, "testing", ["financial"], False),
+        ("active", True, True, "production", ["financial"], False),
+        ("draft", False, False, "production", ["financial"], False),
+    ],
+)
+def test_share_options_is_offered_only_where_it_can_be_edited(
+    monkeypatch, state, ever_active, locked, mode, modules, offered
+):
+    """The sidebar never links to share options the page would refuse."""
+    from parishkit.stewardship.accounts import admin_context
+
+    monkeypatch.setattr(admin_context, "allows", lambda *args, **kwargs: True)
+    campaign = SimpleNamespace(
+        pk=uuid4(),
+        state=state,
+        ever_active=ever_active,
+        structural_locked=locked,
+        active_configuration=SimpleNamespace(values={"modules": modules}),
+    )
+    items = admin_context._navigation_items(
+        SimpleNamespace(ministries=()), True, campaign, SimpleNamespace(mode=mode)
+    )
+    assert any(name == "share_settings" for _, name, _, _ in items) is offered

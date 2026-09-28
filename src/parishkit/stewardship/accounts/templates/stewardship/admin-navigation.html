@@ -14,7 +14,7 @@
       <li class="admin-section{% if section.current %} is-current{% endif %}">
         <p class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</p>
         <ul aria-labelledby="admin-section-{{ section.key }}">
-          {% for item in section.items %}<li><a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a></li>{% endfor %}
+          {% for item in section.items %}<li><a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a></li>{% endfor %}
         </ul>
       </li>
       {% endfor %}

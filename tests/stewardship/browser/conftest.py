@@ -233,12 +233,12 @@ def component_origin():
                     {
                         "url": "/parish-settings",
                         "label": "Parish settings",
-                        "current": False,
+                        "current": None,
                     },
                     {
                         "url": "/ministries",
                         "label": "Ministry activity",
-                        "current": True,
+                        "current": "page",
                     },
                 ],
             },
