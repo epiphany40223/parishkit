@@ -14,6 +14,7 @@ from openpyxl.styles.numbers import BUILTIN_FORMATS
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.parish_views import ParishForm
+from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.jobs.campaign_mail_values import campaign_values
 from parishkit.stewardship.reports.information_rendering import xlsx_cell
 from parishkit.stewardship.responses.page_content import public_values
@@ -315,3 +316,20 @@ def test_an_instant_after_utc_midnight_can_be_the_previous_local_day():
     assert dates.format_instant(moment, ZONE, "us_numeric", compact=True) == (
         "01/05/27 10:00 PM"
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "style", "expected"),
+    [
+        ("09:00:00", "us_long", "9:00 AM"),
+        ("21:05:00", "us_long", "9:05 PM"),
+        ("21:05:00", "eu_long", "21:05"),
+        ("09:00:30", "us_long", "9:00:30 AM"),
+        ("", "us_long", ""),
+        ("not a time", "us_long", "not a time"),
+    ],
+)
+def test_parish_time_uses_the_style_clock(value, style, expected):
+    """Schedule times follow the parish style's 12- or 24-hour clock."""
+    with dates.using(style):
+        assert parish_time(value) == expected
