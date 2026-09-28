@@ -506,6 +506,24 @@
     refresh();
   });
 
+  // A field marked data-show-when="name=value" is shown only while the form's
+  // control called "name" has that value, e.g. the daily refresh time only
+  // for the once-a-day frequency. Hidden fields are disabled so they are not
+  // sent; without JavaScript every field simply stays visible.
+  document.querySelectorAll("[data-show-when]").forEach((input) => {
+    const [name, value] = input.dataset.showWhen.split("=");
+    const control = input.form && input.form.elements.namedItem(name);
+    const wrapper = input.closest("div");
+    if (!control || !wrapper) return;
+    const update = () => {
+      const shown = control.value === value;
+      wrapper.hidden = !shown;
+      input.disabled = !shown;
+    };
+    control.addEventListener("change", update);
+    update();
+  });
+
   // Optional modules remain ordinary accessible fieldsets without JavaScript.
   // Hidden fields are disabled, not silently copied into submitted data. The
   // server independently rejects stray data for every disabled module.

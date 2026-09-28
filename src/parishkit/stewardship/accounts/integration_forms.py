@@ -60,10 +60,15 @@ class IntegrationForm(forms.Form):
                 initial="02:00",
                 required=False,
                 max_length=5,
-                widget=forms.TimeInput(format="%H:%M", attrs={"type": "time"}),
+                # Shown only for the once-a-day frequency (ui-v1.js); the view
+                # ignores it otherwise.
+                widget=forms.TimeInput(
+                    format="%H:%M",
+                    attrs={"type": "time", "data-show-when": "full_refresh=daily"},
+                ),
                 help_text=_(
-                    "Parish-local time for the once-a-day refresh; default 2:00 a.m. "
-                    "Not used for hourly or 15-minute refreshes."
+                    "Parish-local time for the once-a-day refresh only; "
+                    "default 2:00 a.m."
                 ),
             )
         elif target == "google_workspace":

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID, uuid5
 
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -85,6 +86,15 @@ def _selection(row):
     return None if selection is None else _status(selection).state
 
 
+# How long a finished key change stays on its integration's settings page.
+RESULT_VISIBLE = timedelta(hours=24)
+
+
+def _settled_long_ago(row):
+    """True when a finished key change is older than the page shows it for."""
+    return timezone.now() - row.updated_at > RESULT_VISIBLE
+
+
 def summary(target, record):
     """Describe the latest key change for ``target`` in plain language.
 
@@ -97,6 +107,13 @@ def summary(target, record):
         .first()
     )
     if row is None:
+        return None
+    # A finished change is news for a day, not forever; its history stays on
+    # the details page and in the audit log. A key that is installed but not
+    # yet in use still needs action, so it keeps showing.
+    in_use = record["values"]["credential_fingerprint"] == row.resulting_fingerprint
+    needs_action = row.state == "applied" and not in_use
+    if row.state not in SECRET_PENDING and not needs_action and _settled_long_ago(row):
         return None
     if row.state in SECRET_PENDING:
         return CredentialSummary(
