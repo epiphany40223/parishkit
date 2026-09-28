@@ -19,6 +19,11 @@
   let currentPage = null, pages = [];
   // Pages opened at least once this visit; the step bar shows them as done.
   const visited = new Set();
+  // Parish intro texts the Family expanded with "Read more"; edit() rebuilds
+  // the pages on many answers, and an expanded intro should stay expanded.
+  const expanded = new Set();
+  // Intros shorter than this many characters are shown in full.
+  const READ_MORE_LENGTH = 300;
 
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
@@ -37,6 +42,42 @@
     // Only the owning server's render_template output is HTML. Every answer,
     // label and error elsewhere in this file is assigned through textContent.
     element.innerHTML = form.content[slot];
+    readMore(element, slot);
+  }
+  function readMore(element, slot) {
+    // Long parish-written intros show their opening (any leading headings
+    // and the first paragraph) and hide the rest behind "Read more", so each
+    // page's first question stays near the top on a phone. Short text, or
+    // text with nothing after its first paragraph, is shown as written.
+    const lead = [...element.children].find((child) => !/^H[1-6]$/.test(child.tagName));
+    if (!lead || element.textContent.trim().length < READ_MORE_LENGTH) return;
+    const rest = [];
+    for (let next = lead.nextSibling; next; next = next.nextSibling) rest.push(next);
+    const more = node("div", null, null, {id: "family-" + slot + "-more", class: "read-more"});
+    more.append(...rest);
+    if (!more.textContent.trim()) { element.append(...rest); return; }
+    element.append(more);
+    const toggle = node("button", null, element, {type: "button", class: "read-more-toggle",
+      "aria-controls": more.id});
+    const paint = () => {
+      more.hidden = !expanded.has(slot);
+      toggle.setAttribute("aria-expanded", String(expanded.has(slot)));
+      toggle.textContent = expanded.has(slot) ? "Show less" : "Read more";
+    };
+    toggle.addEventListener("click", () => {
+      if (!expanded.delete(slot)) expanded.add(slot);
+      paint();
+    });
+    paint();
+  }
+  function tipLabel(text, id, tip, parent) {
+    // A label with an "i" help button beside it (ui-v1.js toggletips). The
+    // button sits beside the <label>, not inside it: a label may contain
+    // only the one control it names.
+    const row = node("div", null, parent, {class: "label-row"});
+    node("label", text, row, {for: id, id: id + "-label"});
+    row.append(window.StewardshipToggletip.create(tip, id + "-label"));
+    return row;
   }
   function phoneKey(value) {
     const match = /^(\+?[0-9][0-9 ().-]*|\([0-9][0-9 ().-]*)(?:\s*(?:ext\.?|x|#|;ext=)\s*([0-9]{1,12}))?$/i.exec(value);
@@ -435,7 +476,8 @@
     if (request) node("p", "Your household change will be sent for parish review. Other census edits for this person will not be submitted.", group, {class: "changed"});
     if (request?.deceased_status) {
       const deathId = "member-" + member.id + "-death_date";
-      node("label", "Death date (optional)", group, {for: deathId});
+      tipLabel("Death date (optional)", deathId, "The parish reviews the date and the deceased-status " +
+        "request separately. Entering a date does not change parish records by itself.", group);
       const input = node("input", null, group, {id: deathId, type: "date", max: form.today,
         "aria-describedby": deathId + "-inline-error"});
       input.value = request.death_date;
@@ -444,7 +486,6 @@
       const validate = () => validateField(input, {name: "death_date", kind: "date", required: false});
       input.addEventListener("change", validate);
       fields.push(validate);
-      node("p", "The date and deceased-status request are reviewed separately. Supplying a date does not change parish records automatically.", group);
     }
   }
   function structuralConflicts(editor) {
@@ -493,7 +534,11 @@
       const id = "member-" + member.id + "-" + definition.name;
       const path = (member.proposed ? "proposed_members." : "members.") + member.id + "." + definition.name;
       const choices = definition.choices || [];
-      node("label", definition.label + (definition.required ? " (required)" : " (optional)"), group, {for: id});
+      const labelText = definition.label + (definition.required ? " (required)" : " (optional)");
+      if (definition.kind === "phone") {
+        tipLabel(labelText, id, "Use a US number, or + and the country code for an international " +
+          "number. You can add an extension.", group);
+      } else node("label", labelText, group, {for: id});
       const input = node(choices.length ? "select" : "input", null, group, {id,
         autocomplete: "off", "aria-describedby": id + "-status " + id + "-inline-error"});
       if (choices.length) {
@@ -509,10 +554,7 @@
       if (definition.kind === "date") input.max = form.today;
       input.required = definition.required;
       if (definition.name === "email") input.inputMode = "email";
-      if (definition.kind === "phone") {
-        input.inputMode = "tel";
-        node("p", "US national number, or + and country code for international numbers. Extensions are allowed.", group, {class: "muted"});
-      }
+      if (definition.kind === "phone") input.inputMode = "tel";
       let unknown = null, language = null;
       if (definition.kind === "date") {
         const label = node("label", null, group);
@@ -1055,7 +1097,8 @@
       }
       if (name === "email_opt_out") {
         const id = "family-" + name;
-        node("label", "Opt out of all parish emails", group, {for: id});
+        tipLabel("Opt out of all parish emails", id, "The parish will follow up on this request. " +
+          "It does not change emails about this campaign.", group);
         const input = node("select", null, group, {id, "aria-describedby": output.id});
         if (initial.family[name] === null) node("option", "Not provided", input, {value: ""});
         node("option", "No", input, {value: "false"});
@@ -1065,7 +1108,6 @@
           answers.family[name] = input.value === "" ? null : input.value === "true";
           status(definition, output);
         });
-        node("p", "The parish will follow up on this request. This does not change campaign email delivery.", group);
       } else {
         Object.entries(labels).forEach(([component, label]) => {
           const id = "family-" + name + "-" + component;
@@ -1501,7 +1543,7 @@
       editControl(additional, "Additional information", "additional-information");
       node("p", answers.additional_information || "Not provided", additional);
     }
-    const confirmation = node("form", null, root, {autocomplete: "off"});
+    const confirmation = node("form", null, root, {autocomplete: "off", id: "family-confirmation"});
     answers.testing_acknowledged = false;
     if (testing) {
       const label = node("label", null, confirmation);
@@ -1509,10 +1551,13 @@
       label.append(document.createTextNode(" I understand this submits a disposable test response, not a live campaign response."));
       ack.addEventListener("change", () => { answers.testing_acknowledged = ack.checked; });
     }
-    const actions = node("div", null, confirmation, {class: "actions"});
+    // The same sticky bar as the editing pages, so Submit stays in reach. A
+    // sticky element only sticks within its parent, so the bar belongs to the
+    // whole Review page and its Submit button joins the form by id.
+    const actions = node("div", null, root, {class: "actions family-nav"});
     const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary"});
     back.addEventListener("click", () => { edit(); history.pushState({familyPage: currentPage}, ""); });
-    const submit = node("button", submitLabel, actions, {type: "submit"});
+    const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;
