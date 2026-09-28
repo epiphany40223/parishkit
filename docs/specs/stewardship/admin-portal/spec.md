@@ -291,6 +291,44 @@ transaction commits after the acknowledgement, brings the banner back. The banne
 warning count. It is distinct from security-event acknowledgement, which is
 per recipient.
 
+### Admin navigation
+
+Admin pages share one layout: a sidebar menu beside the page, and a breadcrumb
+trail above the page heading. Both come from a single declarative registry in
+`accounts/admin_navigation.py`, keyed by URL name, that gives each Admin page a
+section, a parent page and a label, so the menu and the trails cannot drift and
+no template hand-writes a breadcrumb.
+
+The sidebar starts with Home, then these sections, each listing the entries the
+viewer may open:
+
+- **Campaign**: Campaign settings (or New campaign), Pages and emails, Mail
+  schedules, Share options (financial campaigns), Go-live readiness (drafts)
+  and Delivery controls (Production).
+- **Reports**: Campaign reports, Ministry reports, Family codes, Postal
+  outreach and the Manual information report.
+- **Parish and integrations**: Parish settings, Parish logos, Integrations and
+  Ministry activity.
+- **Users**: Portal users.
+- **System**: Background work, Outgoing mail, Active Families and System logs.
+
+Entries use the same capability checks as the pages they open, and a section
+with no visible entry is omitted; the menu is not the security boundary. The
+entry for the current page, or for the nearest ancestor page listed in the
+menu, is marked `aria-current="page"` and its section is highlighted. On wide
+screens the sidebar is a sticky column; on narrow screens it collapses behind a
+Menu disclosure that works without script.
+
+The breadcrumb trail runs Home › section › each ancestor page › the current
+page, for example Home › Campaign › Pages and emails › Initial invitation. A
+view may name the current page more specifically (the email being edited, the
+integration). Ancestor links reuse the current request's resolved route
+arguments. Home shows no trail. Building the menu and trail runs no queries.
+Until initial setup completes, the only menu entry is the setup wizard, which
+has its own stepper. Every Admin route is either a registered page or listed
+as a non-page (form actions, downloads, images, status fragments, sign-in and
+the setup wizard), and a test requires every new route to be classified.
+
 ### Admin tables
 
 Admin list tables share one component, so paging, selection and styling behave

@@ -9,18 +9,20 @@
   {% if parish_branding.favicon %}<link rel="icon" type="image/png" href="{{ parish_branding.favicon }}">{% endif %}
   {% block head %}{% endblock %}
 </head>
-<body>
+<body{% if admin_chrome %} class="admin-body"{% endif %}>
   <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
   <header class="site-header">
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}
-    {% block navigation %}{% if admin_chrome %}{% include 'stewardship/admin-navigation.html' %}{% endif %}{% endblock %}
+    {% block navigation %}{% if admin_chrome %}{% include 'stewardship/admin-status.html' %}{% endif %}{% endblock %}
   </header>
+  {% if admin_chrome %}<div class="admin-shell">{% include 'stewardship/admin-navigation.html' %}{% endif %}
   <main id="main" tabindex="-1">
-    {% if admin_chrome %}{% include 'stewardship/admin-banners.html' %}{% endif %}
+    {% if admin_chrome %}{% include 'stewardship/admin-breadcrumbs.html' %}{% include 'stewardship/admin-banners.html' %}{% endif %}
     {% block banners %}{% endblock %}
     {% include 'stewardship/components/errors.html' %}
     {% block content %}{% endblock %}
   </main>
+  {% if admin_chrome %}</div>{% endif %}
   <footer class="site-footer"><p>{% translate "Stewardship and census" %}</p></footer>
 </body>
 </html>

@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+  Breadcrumb trail from accounts/admin_navigation.py. A view may pass
+  breadcrumb_label to name the current page more specifically.
+{% endcomment %}{% if admin_chrome.breadcrumbs|length > 1 %}<nav class="breadcrumbs" aria-label="{% translate 'Breadcrumb' %}">
+  <ol>{% for crumb in admin_chrome.breadcrumbs %}<li>{% if forloop.last %}<span aria-current="page">{% if breadcrumb_label %}{{ breadcrumb_label }}{% else %}{{ crumb.label }}{% endif %}</span>{% elif crumb.url %}<a href="{{ crumb.url }}">{{ crumb.label }}</a>{% else %}<span>{{ crumb.label }}</span>{% endif %}</li>{% endfor %}</ol>
+</nav>{% endif %}

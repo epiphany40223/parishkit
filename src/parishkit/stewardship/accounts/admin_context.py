@@ -8,9 +8,12 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDOW
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
+from parishkit.stewardship.campaigns.domain import CampaignState
+from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
+from . import admin_navigation
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -45,59 +48,7 @@ def portal_chrome(request):
         return {"admin_chrome": _setup_chrome(actor, configuration, session)}
     admin = allows(actor, Capability.CONFIGURE)
     campaign = configuration.current_campaign
-    navigation = [(reverse("admin:index"), _("Home"))]
-    if allows(actor, Capability.CAMPAIGN_REPORT):
-        navigation.append((reverse("admin:reports"), _("Campaign reports")))
-    if allows(actor, Capability.MINISTRY_REPORT) or any(
-        allows(actor, Capability.MINISTRY_REPORT, ministry_id=duid)
-        for duid in actor.ministries
-    ):
-        navigation.append((reverse("admin:ministry_reports"), _("Ministry reports")))
-    if admin:
-        navigation.extend(
-            [
-                (reverse("admin:parish_settings"), _("Parish settings")),
-                (reverse("admin:branding_settings"), _("Parish logos")),
-                (reverse("admin:integrations"), _("Integrations")),
-                (reverse("admin:ministries"), _("Ministry activity")),
-                (reverse("admin:background"), _("Background work")),
-                (reverse("admin:deliveries"), _("Outgoing mail")),
-            ]
-        )
-    # The same capabilities the pages themselves check, so they cannot disagree.
-    if allows(actor, Capability.MANAGE_USERS):
-        navigation.append((reverse("admin:users"), _("Portal users")))
-    if allows(actor, Capability.SYSTEM_LOGS):
-        navigation.append((reverse("admin:logs"), _("System logs")))
-    if campaign and allows(actor, Capability.FAMILY_CODES):
-        navigation.extend(
-            [
-                (
-                    reverse("admin:family_directory", args=[campaign.pk]),
-                    _("Family codes"),
-                ),
-                (
-                    reverse("admin:postal_directory", args=[campaign.pk]),
-                    _("Postal outreach"),
-                ),
-            ]
-        )
-    if admin:
-        navigation.append(
-            (
-                reverse("admin:campaign_settings", args=[campaign.pk])
-                if campaign
-                else reverse("admin:campaign_new"),
-                _("Campaign settings") if campaign else _("New campaign"),
-            )
-        )
-        if campaign:
-            navigation.append(
-                (
-                    reverse("admin:weekly_digest_manual", args=[campaign.pk]),
-                    _("Manual information report"),
-                )
-            )
+    items = _navigation_items(actor, admin, campaign, configuration)
     # Presentation only: reuse the instant the owning view read inside its own
     # read snapshot (never an earlier one from before a lock wait).
     now = getattr(request, "_stewardship_display_now", None) or database_now()
@@ -117,10 +68,12 @@ def portal_chrome(request):
         from .delivery_control_commands import inventory
         from .policy_models import PortalUser
 
-        navigation.append(
+        items.append(
             (
-                reverse("admin:delivery_control", args=[campaign.pk]),
+                "campaign",
+                "delivery_control",
                 _("Delivery controls"),
+                reverse("admin:delivery_control", args=[campaign.pk]),
             )
         )
         if campaign.delivery_paused:
@@ -133,11 +86,17 @@ def portal_chrome(request):
                 .first(),
                 "url": reverse("admin:delivery_control", args=[campaign.pk]),
             }
+    sections, breadcrumbs = admin_navigation.build(
+        getattr(request, "resolver_match", None), items
+    )
     return {
         "admin_chrome": {
             "admin": admin,
             "parish_name": parish.name if parish else None,
-            "navigation": [{"url": url, "label": label} for url, label in navigation],
+            "home_url": reverse("admin:index"),
+            "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
+            "sections": sections,
+            "breadcrumbs": breadcrumbs,
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "restored": configuration.restore_review_required,
@@ -160,6 +119,75 @@ def portal_chrome(request):
             ),
         }
     }
+
+
+def _navigation_items(actor, admin, campaign, configuration):
+    """Sidebar entries ``(section, url_name, label, url)`` the actor may open.
+
+    Each entry uses the same capability the page itself checks, so the menu
+    and the pages cannot disagree; the menu is still not the security
+    boundary. Campaign entries follow the current campaign.
+    """
+    items = []
+
+    def add(section, name, label, *args):
+        """Append one entry, reversing its Admin URL."""
+        items.append((section, name, label, reverse(f"admin:{name}", args=args)))
+
+    if admin:
+        if campaign:
+            values = campaign.active_configuration.values or {}
+            add("campaign", "campaign_settings", _("Campaign settings"), campaign.pk)
+            if campaign.state != "archived":
+                add("campaign", "content_catalog", _("Pages and emails"), campaign.pk)
+            add("campaign", "schedule_settings", _("Mail schedules"), campaign.pk)
+            # Share options are editable only on an unlocked Testing draft; the
+            # page refuses anything else, so do not offer a link that fails.
+            if (
+                "financial" in values.get("modules", ())
+                and configuration.mode == "testing"
+                and structural_edit_admitted(
+                    CampaignState(campaign.state),
+                    ever_active=campaign.ever_active,
+                    locked=campaign.structural_locked,
+                )
+            ):
+                add("campaign", "share_settings", _("Share options"), campaign.pk)
+            if campaign.state == "draft":
+                add("campaign", "go_live", _("Go-live readiness"), campaign.pk)
+        else:
+            add("campaign", "campaign_new", _("New campaign"))
+    if allows(actor, Capability.CAMPAIGN_REPORT):
+        add("reports", "reports", _("Campaign reports"))
+    if allows(actor, Capability.MINISTRY_REPORT) or any(
+        allows(actor, Capability.MINISTRY_REPORT, ministry_id=duid)
+        for duid in actor.ministries
+    ):
+        add("reports", "ministry_reports", _("Ministry reports"))
+    if campaign and allows(actor, Capability.FAMILY_CODES):
+        add("reports", "family_directory", _("Family codes"), campaign.pk)
+        add("reports", "postal_directory", _("Postal outreach"), campaign.pk)
+    if admin and campaign:
+        add(
+            "reports",
+            "weekly_digest_manual",
+            _("Manual information report"),
+            campaign.pk,
+        )
+    if admin:
+        add("parish", "parish_settings", _("Parish settings"))
+        add("parish", "branding_settings", _("Parish logos"))
+        add("parish", "integrations", _("Integrations"))
+        add("parish", "ministries", _("Ministry activity"))
+    if allows(actor, Capability.MANAGE_USERS):
+        add("users", "users", _("Portal users"))
+    if admin:
+        add("system", "background", _("Background work"))
+        add("system", "deliveries", _("Outgoing mail"))
+        add("system", "presence", _("Active Families"))
+    if allows(actor, Capability.SYSTEM_LOGS):
+        add("system", "logs", _("System logs"))
+    return items
 
 
 def _setup_pending():
@@ -200,7 +228,9 @@ def _setup_chrome(actor, configuration, session):
         "admin": False,
         "setup_pending": True,
         "parish_name": None,
-        "navigation": [{"url": reverse("admin:setup"), "label": _("Initial setup")}],
+        "setup_url": reverse("admin:setup"),
+        "sections": [],
+        "breadcrumbs": [],
         "testing": configuration.mode == "testing",
         "testing_recipient": None,
         "restored": configuration.restore_review_required,

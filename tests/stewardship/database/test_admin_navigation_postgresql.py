@@ -61,7 +61,36 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert body.count(b'id="session-warning"') == 1
     assert body.count(b'id="session-expired"') == 1
     assert (b"Family participation" in body) == (role != "ministry_leader")
+    # Campaign pages and emails, and Mail schedules, are first-class entries.
+    assert (b"Pages and emails" in body) == (role == "administrator")
+    assert (b"Mail schedules" in body) == (role == "administrator")
+    assert body.count(b'aria-label="Administration"') == 1
+    # Home is the current page; the home trail is just "Home", so no trail.
+    assert b'aria-label="Breadcrumb"' not in body
     assert AuditEvent.objects.filter(event_type="dashboard_viewed").count() == 1
+
+
+def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
+    auth_service, google
+):
+    """Campaign › Pages and emails › <email>, with the sidebar entry current."""
+    store = auth_service.store
+    result, owner, _ = add_draft(store, store.active(), uuid4())
+    campaign = owner["id"]
+    browser, _ = signed_in()
+    catalog = f"/admin/campaign/{campaign}/content"
+    body = browser.get(catalog).content
+    assert b'aria-label="Breadcrumb"' in body
+    assert b'<span aria-current="page">Pages and emails</span>' in body
+    assert f'<a href="{catalog}" aria-current="page">'.encode() in body
+    assert b"admin-section is-current" in body
+    edit = browser.get(f"{catalog}/email/initial")
+    assert edit.status_code == 200
+    # The trail links back to the catalog and names the email being edited.
+    assert f'<li><a href="{catalog}">Pages and emails</a></li>'.encode() in edit.content
+    assert b'<span aria-current="page">Initial invitation</span>' in edit.content
+    # On the child page the catalog entry marks the location, not the page.
+    assert f'<a href="{catalog}" aria-current="true">'.encode() in edit.content
 
 
 def test_anonymous_and_family_pages_do_not_gain_admin_chrome(auth_service, google):

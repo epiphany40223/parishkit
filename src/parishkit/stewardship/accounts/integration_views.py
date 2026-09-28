@@ -153,6 +153,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "fresh": fresh,
             "target": target,
             "label": LABELS[target],
+            # Names the integration in the Admin breadcrumb trail.
+            "breadcrumb_label": LABELS[target],
             "summary": latest,
             "pending": pending,
             "configured": configured,
@@ -284,6 +286,7 @@ def _preview(request, service, actor, target):
         {
             "target": target,
             "label": LABELS[target],
+            "breadcrumb_label": LABELS[target],
             "configuration": configuration,
             "changes": [
                 {
@@ -336,6 +339,7 @@ def _remove(request, service, configuration, actor, target):
         {
             "target": target,
             "label": LABELS[target],
+            "breadcrumb_label": LABELS[target],
             "configuration": configuration,
             "removing": True,
             "changes": [
@@ -521,6 +525,8 @@ def replace_credential(request, target):
                 "form": form,
                 "target": target,
                 "label": LABELS[target],
+                "breadcrumb_label": _("Replace %(label)s credential")
+                % {"label": LABELS[target]},
             },
             status=status,
         )
