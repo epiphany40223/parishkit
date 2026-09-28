@@ -1271,3 +1271,83 @@
   tick();
   window.setInterval(tick, 15000);
 })();
+
+// Toggletips, shared by the Family and Admin pages: a small "i" button beside
+// a label that shows or hides one short help bubble on click, tap, Enter or
+// Space. Never on hover: touch screens have none, and hover bubbles vanish
+// while someone is reading them. Markup (components/toggletip.html renders it
+// on the server; window.StewardshipToggletip.create(text, labelId) builds it
+// in page scripts):
+//   <span class="toggletip">
+//     <button type="button" class="toggletip-button" aria-expanded="false"
+//       aria-controls="ID" aria-label="More information"
+//       aria-describedby="LABEL-ID">i</button>
+//     <span class="toggletip-bubble" id="ID" hidden>Help text</span>
+//   </span>
+// The bubble follows its button in the document, so screen readers reach it
+// next. The button's name is generic on purpose: naming it after its label
+// ("More about Phone") would make it a second match for that label's text,
+// both for voice control and for tests that find fields by label. Its
+// description (the label, when given an id) says which field it explains. One document-level listener serves every toggletip, including ones
+// page scripts add later. Only one bubble is open at a time; Escape or a
+// click elsewhere closes it. Without JavaScript the bubble stays hidden and
+// the button does nothing, so keep anything essential in visible text.
+(() => {
+  let count = 0;
+  function close(tip, returnFocus = false) {
+    tip.classList.remove("toggletip-open");
+    tip.querySelector(".toggletip-button").setAttribute("aria-expanded", "false");
+    tip.querySelector(".toggletip-bubble").hidden = true;
+    if (returnFocus) tip.querySelector(".toggletip-button").focus();
+  }
+  function open(tip) {
+    document.querySelectorAll(".toggletip-open").forEach((other) => close(other));
+    const bubble = tip.querySelector(".toggletip-bubble");
+    tip.classList.add("toggletip-open");
+    tip.querySelector(".toggletip-button").setAttribute("aria-expanded", "true");
+    bubble.hidden = false;
+    // Keep the bubble on screen: a button near the right edge of a phone
+    // would otherwise push it past the viewport (and scroll the page).
+    bubble.style.insetInlineStart = "";
+    const edge = 8, box = bubble.getBoundingClientRect();
+    const overflow = box.right - (document.documentElement.clientWidth - edge);
+    if (overflow > 0) {
+      // Shift left by the overflow, but never past the viewport's left edge.
+      bubble.style.insetInlineStart = -Math.max(0, Math.min(overflow, box.left - edge)) + "px";
+    }
+  }
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.(".toggletip-button");
+    const openTip = document.querySelector(".toggletip-open");
+    if (button) {
+      const tip = button.closest(".toggletip");
+      if (tip === openTip) close(tip);
+      else open(tip);
+    } else if (openTip && !openTip.contains(event.target)) close(openTip);
+  });
+  document.addEventListener("keydown", (event) => {
+    const openTip = document.querySelector(".toggletip-open");
+    if (event.key === "Escape" && openTip) close(openTip, openTip.contains(document.activeElement));
+  });
+  window.StewardshipToggletip = {
+    create(text, labelId = "") {
+      // Build the markup above for script-rendered pages (the Family form).
+      const tip = document.createElement("span");
+      tip.className = "toggletip";
+      const button = document.createElement("button");
+      const id = "toggletip-" + (++count);
+      Object.entries({type: "button", class: "toggletip-button", "aria-expanded": "false",
+        "aria-controls": id, "aria-label": "More information"}).forEach(
+        ([key, value]) => button.setAttribute(key, value));
+      if (labelId) button.setAttribute("aria-describedby", labelId);
+      button.textContent = "i";
+      const bubble = document.createElement("span");
+      bubble.className = "toggletip-bubble";
+      bubble.id = id;
+      bubble.hidden = true;
+      bubble.textContent = text;
+      tip.append(button, bubble);
+      return tip;
+    }
+  };
+})();

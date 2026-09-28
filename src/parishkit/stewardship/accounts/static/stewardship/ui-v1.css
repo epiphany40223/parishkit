@@ -342,12 +342,36 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 
 
+/* Toggletips (ui-v1.js): a small round "i" button beside a label that opens
+   one short help bubble on click or tap. In a .label-row the bubble opens
+   in the page flow on its own line under the label, pushing the field down
+   rather than covering it; anywhere else it floats below its button. */
+.label-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-block: 1rem .35rem; }
+.label-row > label, .label-row > legend { margin: 0; }
+.toggletip { position: relative; display: inline-block; vertical-align: middle; }
+.label-row > .toggletip { display: contents; }
+.toggletip-button { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; min-height: 0; margin: 0; padding: 0; border: 2px solid var(--accent); border-radius: 50%; background: var(--paper); color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 700; line-height: 1; box-shadow: none; position: relative; }
+/* A 44px touch target around the 28px circle, without enlarging the icon. */
+.toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
+.toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
+.toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
+.label-row .toggletip-bubble { position: static; flex: 1 0 100%; width: auto; max-width: 40rem; box-shadow: none; }
+
+/* "Read more" (family-v1.js): long parish-written intro text shows its first
+   paragraph and hides the rest behind one button. */
+.read-more-toggle, .read-more-toggle:not(:disabled):hover { margin-block: 0 .5rem; padding: .5rem 0; border: 0; background: none; box-shadow: none; color: var(--accent); text-decoration: underline; text-underline-offset: .2em; }
+.read-more-toggle:not(:disabled):hover { color: var(--accent-strong); }
+
 /* Family response pages: one page at a time with Back/Next navigation. */
 #family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
 .family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
 .family-page > h3 { margin-top: .5rem; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
-.family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem; border-top: 1px solid var(--border); margin-top: 1.5rem; }
+.family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
+.family-nav > button { margin-block: 0; }
+/* Keep a field that receives focus (Next to an error, Tab) clear of the
+   sticky bar instead of scrolling it underneath. */
+html:has(.family-nav) { scroll-padding-bottom: 6rem; }
 .family-nav [data-page-back] { margin-inline-end: auto; }
 /* Family step bar: the setup wizard's segmented track, but each segment is a
    44px-tall button (tap target) drawing a slim bar, with a tooltip on hover and

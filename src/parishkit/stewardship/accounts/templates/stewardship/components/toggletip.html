@@ -1,0 +1,7 @@
+{% load i18n %}{% comment %}
+  A click/tap help bubble beside a label (behavior and markup notes in
+  ui-v1.js). Put it next to the <label>, never inside it, e.g.:
+    <div class="label-row"><label for="sender" id="sender-label">…</label>
+    {% include "stewardship/components/toggletip.html" with tip_id="sender-tip" tip_label_id="sender-label" tip_text=_("Shown as the From name.") %}</div>
+  tip_id must be unique on the page; tip_label_id is optional.
+{% endcomment %}<span class="toggletip"><button type="button" class="toggletip-button" aria-expanded="false" aria-controls="{{ tip_id }}" aria-label="{% translate 'More information' %}"{% if tip_label_id %} aria-describedby="{{ tip_label_id }}"{% endif %}>i</button><span class="toggletip-bubble" id="{{ tip_id }}" hidden>{{ tip_text }}</span></span>
