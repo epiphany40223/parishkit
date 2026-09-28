@@ -345,15 +345,33 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 /* Family response pages: one page at a time with Back/Next navigation. */
 #family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
 .family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
-#family-flow progress { width: 100%; height: .5rem; margin-bottom: 1rem; }
 .family-page > h3 { margin-top: .5rem; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem; border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav [data-page-back] { margin-inline-end: auto; }
-.family-steps { margin-block: 1rem; }
-.family-steps ol { margin: .25rem 0 0; padding-inline-start: 1.5rem; }
-.family-steps button { background: none; border: 0; box-shadow: none; color: var(--accent); padding: .35rem 0; min-height: 44px; text-align: start; font-weight: 600; }
-.family-steps button[aria-current="step"] { color: var(--ink); text-decoration: underline; }
+/* Family step bar: the setup wizard's segmented track, but each segment is a
+   44px-tall button (tap target) drawing a slim bar, with a tooltip on hover and
+   keyboard focus. Color is never the only signal: the "Step N of M" line and
+   aria-current name the current step. */
+/* The shared theme lays out every main nav as a wrapping flex row, which
+   would shrink this list to nothing; the bar spans the full width instead. */
+main nav.family-track { display: block; margin: 0; }
+.family-track ol { display: flex; gap: 3px; list-style: none; margin: .25rem 0 1rem; padding: 0; }
+.family-track li { flex: 1 1 0; min-width: 0; margin: 0; position: relative; }
+.family-track ol.family-track-dense { gap: 0; }
+.family-track-dense button::before { border-radius: 0; }
+.family-track button { display: block; width: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; cursor: pointer; position: relative; }
+.family-track button::before { content: ""; position: absolute; inset-inline: 0; top: 50%; height: .45rem; transform: translateY(-50%); border-radius: 999px; background: #d3dbd9; }
+.family-track .family-track-done::before { background: var(--accent); }
+.family-track .family-track-current::before { background: var(--gold, #b5862e); height: .6rem; }
+.family-track button::after { content: attr(data-tip); position: absolute; top: calc(100% + .1rem); z-index: 2; display: none; width: max-content; max-width: min(16rem, 60vw); padding: .35rem .6rem; border-radius: .4rem; background: var(--ink, #1b2a31); color: var(--paper, #fff); font-size: .875rem; font-weight: 600; line-height: 1.3; text-align: start; white-space: normal; pointer-events: none; }
+/* Anchor each tooltip by where its segment sits (first, middle or last third)
+   so, at no more than 60% of the viewport wide, it never runs off a phone. */
+.family-track .family-tip-start::after { inset-inline-start: 0; }
+.family-track .family-tip-middle::after { left: 50%; transform: translateX(-50%); }
+.family-track .family-tip-end::after { inset-inline-end: 0; }
+.family-track button:hover::after, .family-track button:focus::after { display: block; }
+.family-submitted { margin-block: 0 1rem; }
 .financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
 /* Ministry rows: the ministry name, then the choice, stated once. */
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }

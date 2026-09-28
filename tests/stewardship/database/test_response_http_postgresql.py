@@ -13,6 +13,7 @@ from parishkit.stewardship.responses.models import (
     ProposedChange,
     Submission,
 )
+from parishkit.stewardship.web.presentation import parish_instant
 
 from .campaign_builders import campaign_clock
 from .campaign_builders import change as change_configuration
@@ -376,9 +377,11 @@ def test_live_http_no_change_submit_logs_out_and_revisit_shows_status(
         harness.client, response = login(harness.code, harness.client)
         assert response.status_code == 302
         revisited = load_form(harness)
-        assert (
-            revisited["last_submitted_at"]
-            == Submission.objects.get().submitted_at.isoformat()
+        submitted = Submission.objects.get()
+        assert revisited["last_submitted_at"] == submitted.submitted_at.isoformat()
+        assert revisited["last_submitted_display"] == parish_instant(
+            submitted.submitted_at,
+            submitted.family.campaign.active_configuration.timezone,
         )
         assert answers_for(revisited) == answers_for(form)
 

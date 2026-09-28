@@ -59,12 +59,11 @@ PAGES = {
         "<li>Pray with loved ones</li>"
         "<li>Organize or join a small prayer group</li></ul>"
     ),
+    # Kept to one sentence: the sign-in page is only the code entry. Contact
+    # details are on the access-denied page instead.
     "login_help": (
-        "<p>To begin, enter the Family code from your invitation email, or use "
-        "the personal link in that email.</p>"
-        "<p>Can’t find your invitation, or having trouble signing in? Contact the "
-        "{{ parish_name }} parish office at {{ parish_phone }} or email "
-        "{{ parish_email }}.</p>"
+        "<p>Enter the Family code from your invitation email, or use the personal "
+        "link in that email.</p>"
     ),
     "pre_start": (
         "<p>{{ parish_name }}’s {{ campaign_year }} stewardship renewal opens on "

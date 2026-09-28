@@ -50,10 +50,12 @@ def test_optional_public_help_failure_keeps_fixed_safe_fallback(
         assert response.status_code == (200 if slot == "login_help" else 403)
         assert b"synthetic-private-diagnostic" not in response.content
         assert (
-            b"Family campaign sign-in"
+            b" login</h1>"
             if slot == "login_help"
             else b"This Family code cannot be found or used."
         ) in response.content
+        # The sign-in page is only the code entry: no Admin link.
+        assert b"/admin/login" not in response.content or slot != "login_help"
         assert response["Cache-Control"] == "no-store"
         assert calls == [slot]
 

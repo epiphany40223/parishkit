@@ -1,14 +1,17 @@
 {% extends 'stewardship/base.html' %}{% load i18n %}
-{% block title %}{% translate "Family campaign sign-in" %}{% endblock %}
+{% comment %}
+  The first page a Family sees: only the title, the code entry and any short
+  instructions the parish configured. Contact details live on the
+  access-denied page, where a Family who is stuck actually needs them.
+{% endcomment %}
+{% block title %}{{ login_title|default:_("Family login") }}{% endblock %}
 {% block content %}<section class="flow panel">
-  <h1>{% translate "Family campaign sign-in" %}</h1>
+  <h1>{{ login_title|default:_("Family login") }}</h1>
   {% if login_help %}<div class="content-block">{{ login_help|safe }}</div>{% endif %}
   <form method="post" action="/">
     {% csrf_token %}
     <label for="family-code">{% translate "Family code" %}</label>
-    <p class="help" id="code-help">{% translate "Enter the eight letters from your campaign invitation." %}</p>
-    <input id="family-code" name="code" type="text" maxlength="128" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="code-help" required>
+    <input id="family-code" name="code" type="text" maxlength="128" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
     <button type="submit">{% translate "Continue" %}</button>
   </form>
-  <p><a href="/admin/login">{% translate "Administration sign-in" %}</a></p>
 </section>{% endblock %}

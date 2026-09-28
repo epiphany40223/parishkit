@@ -18,6 +18,7 @@ from parishkit.stewardship.responses.models import (
     SubmissionReceiptOccurrence,
 )
 from parishkit.stewardship.source.models import SourceSnapshotPin
+from parishkit.stewardship.web.presentation import parish_instant
 
 from ..census_factory import member
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
@@ -76,7 +77,12 @@ def test_financial_final_submit_revisit_and_replacement(
         form = revisit(harness)
         assert form["financial"]["answers"] == first.answers["financial"]
         assert form["financial"]["previously_submitted"]
-        assert bool(form["last_submitted_at"]) is live
+        # Live and Testing (this rehearsal epoch) both report the last
+        # submission, for the welcome page's banner.
+        assert form["last_submitted_at"] == first.submitted_at.isoformat()
+        assert form["last_submitted_display"] == parish_instant(
+            first.submitted_at, first.family.campaign.active_configuration.timezone
+        )
         answers = answers_for(form)
         answers["financial"] = {"annual_pledge": "0", "frequency": "", "shares": {}}
         second = respond(harness, form, answers)

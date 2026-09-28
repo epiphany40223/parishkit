@@ -11,6 +11,7 @@ from django.db.models import F, Q
 from django.http import HttpResponseRedirect, JsonResponse, RawPostDataException
 from django.middleware.csrf import rotate_token
 from django.shortcuts import render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import (
     require_GET,
     require_http_methods,
@@ -92,6 +93,19 @@ def _optional_public_help(slot):
         with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
             content = public_help(service, slot)
     return content
+
+
+def _login_title():
+    """The sign-in page's title follows the campaign modules; a failed optional
+    read falls back to the neutral title rather than an error page."""
+    from parishkit.stewardship.responses.availability import family_login_title
+
+    title = _("Family login")
+    service = getattr(settings, "STEWARDSHIP_FAMILY_RUNTIME", None)
+    if isinstance(service, FamilyRuntime):
+        with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
+            title = family_login_title(service)
+    return title
 
 
 def denied(kind="", *, status=403, retry=None):
@@ -366,7 +380,10 @@ def entry(request):
             return render(
                 request,
                 "stewardship/family-login.html",
-                {"login_help": _optional_public_help("login_help")},
+                {
+                    "login_help": _optional_public_help("login_help"),
+                    "login_title": _login_title(),
+                },
             )
         ip = _ip_counter(service, request.client_address)
         delay = service.limiter.counters([ip])

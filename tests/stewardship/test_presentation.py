@@ -116,7 +116,9 @@ def test_family_shell_has_no_inline_assets_and_keeps_noscript_fallback():
             "absolute_deadline": now + timedelta(hours=4),
         },
     )
-    assert "<noscript>" in html and "data-local-instant" in html
+    assert "<noscript>" in html
+    # The session deadline drives the expiry warning but is not shown (#207).
+    assert "data-idle-deadline" in html and "Session deadline" not in html
     assert 'src="/static/stewardship/ui-v1.js"' in html
     assert "<script>" not in html and "<style>" not in html
     assert 'href="#main"' in html

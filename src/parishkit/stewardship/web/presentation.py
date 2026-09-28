@@ -171,3 +171,17 @@ def parish_date(value):
     if type(value) is not date:
         raise ValueError("Campaign date formatting requires a calendar date.")
     return value.strftime("%B") + f" {value.day}, {value.year}"
+
+
+def parish_instant(value, timezone):
+    """Show an instant in the campaign's time zone, e.g. "September 28, 2026 at
+    7:15 AM EDT", so every Family and Admin sees the same wall-clock time."""
+    from zoneinfo import ZoneInfo
+
+    local = value.astimezone(ZoneInfo(timezone))
+    hour = local.hour % 12 or 12
+    meridiem = "AM" if local.hour < 12 else "PM"
+    return (
+        f"{parish_date(local.date())} at {hour}:{local.minute:02d} {meridiem} "
+        f"{local.tzname()}"
+    )

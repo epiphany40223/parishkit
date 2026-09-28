@@ -484,7 +484,8 @@ def test_timestamp_and_passive_presence_never_keep_session_alive(
         lambda route: (attempts.append(route.request), route.abort()),
     )
     page.goto(component_origin + "/family")
-    assert "6:00 AM PDT" in page.locator("time").inner_text()
+    # The deadline itself is not shown (#207); only the warning and expiry are.
+    assert page.get_by_text("Session deadline").count() == 0
     page.clock.fast_forward(56 * 60 * 1000)
     visible(page.locator("#session-warning"))
     assert attempts == []
