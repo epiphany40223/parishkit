@@ -88,12 +88,15 @@ when the absolute four-hour deadline cannot be extended.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors. A visible progress
-indicator names the current step and total, and a collapsed "All steps" list
-jumps to any page (Review still checks every page). Browser Back/Forward move
-between pages. Every page shows the Family's name (for example "The Squyres
-Family") so the Family can confirm the right household is open. Browser history
-cannot resubmit or expose a completed form.
+current page and keeps the Family there with inline errors. A "Step N of M"
+line names the current step, and a segmented step bar like the setup wizard's
+has one button per step: each is named by its step, shows a "Step N of M"
+tooltip on hover or keyboard focus, and jumps to that page on click or tap. The
+Review segment checks every page, so the response cannot be completed until all
+steps are done. Browser Back/Forward move between pages. Every page shows the
+Family's name (for example "The Squyres Family") so the Family can confirm the
+right household is open; ParishSoft's mailing name and the session deadline are
+not shown. Browser history cannot resubmit or expose a completed form.
 
 Steps are assembled from enabled modules:
 
@@ -108,9 +111,18 @@ Steps are assembled from enabled modules:
 6. Additional information, when enabled.
 7. Review and final Submit.
 
-The welcome page says whether the Family previously submitted live answers and
-shows the last submitted time in the browser timezone. Testing submissions do
-not satisfy that status.
+When the Family has submitted before, the welcome page opens with "You last
+submitted your renewal on DATE AND TIME. You can review, change and submit
+again as many times as you like; your most recent submission is the one we
+use." The time is shown in the campaign's time zone. In Testing mode it reports
+the Testing submission from the current rehearsal; live submissions and other
+rehearsals never count. Families that have never submitted see no banner.
+
+The sign-in page shows only its title, the code field and the parish's short
+sign-in instructions; parish contact details appear on the access-denied page
+instead. The title follows the campaign modules: "Family stewardship login"
+(Ministry or financial stewardship), "Family census login", or "Family
+stewardship and census login".
 
 Values differing from current source data use an icon, text label such as
 "Your updated value," and styling; color alone is insufficient. A source
