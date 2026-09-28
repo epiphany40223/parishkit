@@ -315,6 +315,9 @@
     if (!list) return;
     list.replaceChildren();
     const total = pages.length + 1;
+    // A very large household (dozens of Members) would overflow a phone if
+    // every segment kept its gap; dense bars draw segments edge to edge.
+    list.classList.toggle("family-track-dense", total > 24);
     const steps = [...pages.map((page) => ({key: page.key, title: page.title})),
       {key: "review", title: "Review and submit"}];
     steps.forEach((step, index) => {
