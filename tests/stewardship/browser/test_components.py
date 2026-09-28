@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from .conftest import NOW, load_collections
+from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -64,7 +65,7 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
         ".textContent.includes('1,234')"
     )
     assert page.locator("[data-task-counts]").inner_text() == "1,234 of 5,000 (25%)"
-    assert page.locator("[data-load-records]").is_visible()
+    visible(page.locator("[data-load-records]"))
     assert "Done" in page.locator('[data-load-phase="fetching"]').inner_text()
     assert "In progress" in page.locator('[data-load-phase="staging"]').inner_text()
     assert len(requests) == 1 and requests[0].method == "POST"
@@ -185,7 +186,7 @@ def test_setup_progress_shows_each_collection_then_offers_continue(
     assert (
         "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
     )
-    assert page.get_by_role("link", name="Continue to the next step").is_visible()
+    visible(page.get_by_role("link", name="Continue to the next step"))
     assert page.locator("[data-task-counts]").inner_text() == "9,000 of 9,000 (100%)"
     assert "Done" in page.locator('[data-load-phase="validating"]').inner_text()
 
@@ -210,7 +211,7 @@ def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
     )
     page.get_by_role("button", name="Sign in with Google").click()
     page.wait_for_url("https://accounts.google.com/**")
-    assert page.get_by_role("heading", name="Synthetic Google sign-in").is_visible()
+    visible(page.get_by_role("heading", name="Synthetic Google sign-in"))
 
 
 def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
@@ -426,7 +427,7 @@ def test_visual_content_editor_never_executes_source_or_pasted_markup(
     """Visual edits sync source; raw source waits for the server sanitizer."""
     page.goto(component_origin + path)
     editor = page.locator("[data-content-editor]")
-    assert editor.is_visible()
+    visible(editor)
     editor.fill("A visual edit")
     assert "A visual edit" in page.locator('textarea[name="html"]').input_value()
     editor.evaluate("""node => {
@@ -448,7 +449,7 @@ def test_visual_content_editor_never_executes_source_or_pasted_markup(
     )
     # The pane stays visible but read-only until the server's sanitized
     # preview answers (unanswered here); raw source never reaches it.
-    assert editor.is_visible()
+    visible(editor)
     assert editor.get_attribute("contenteditable") == "false"
     assert editor.locator("img").count() == 0
     assert page.evaluate("window.unsafe === undefined")
@@ -485,10 +486,10 @@ def test_timestamp_and_passive_presence_never_keep_session_alive(
     page.goto(component_origin + "/family")
     assert "6:00 AM PDT" in page.locator("time").inner_text()
     page.clock.fast_forward(56 * 60 * 1000)
-    assert page.locator("#session-warning").is_visible()
+    visible(page.locator("#session-warning"))
     assert attempts == []
     page.clock.fast_forward(5 * 60 * 1000)
-    assert page.locator("#session-expired").is_visible()
+    visible(page.locator("#session-expired"))
     assert not page.locator("#session-warning").is_visible()
     assert attempts == []
 
@@ -512,7 +513,7 @@ def test_activity_keepalive_is_empty_csrf_protected_and_bounded(page, component_
     assert attempts[0].method == "POST" and not attempts[0].post_data
     assert attempts[0].headers["x-csrftoken"] == "a" * 64
     page.clock.fast_forward(60 * 60 * 1000)
-    assert page.locator("#session-expired").is_visible()
+    visible(page.locator("#session-expired"))
     assert len(attempts) == 1
 
 
@@ -676,10 +677,10 @@ def test_javascript_disabled_retains_admin_form_and_family_explanation(
     try:
         page = context.new_page()
         page.goto(component_origin + "/login")
-        assert page.get_by_role("button", name="Sign in with Google").is_visible()
+        visible(page.get_by_role("button", name="Sign in with Google"))
         assert page.locator("form").get_attribute("method") == "post"
         page.goto(component_origin + "/family")
-        assert page.locator("noscript").is_visible()
+        visible(page.locator("noscript"))
         assert "enable JavaScript" in page.locator("noscript").inner_text()
     finally:
         context.close()
@@ -696,15 +697,15 @@ def test_parish_editor_retains_native_form_validation_and_timezone_scope(
     assert not name.evaluate("field => field.checkValidity()")
     name.fill("A renamed parish")
     assert name.evaluate("field => field.checkValidity()")
-    assert page.get_by_role("button", name="Preview changes").is_visible()
+    visible(page.get_by_role("button", name="Preview changes"))
 
 
 def test_ministry_preview_preserves_operational_indicators(page, component_origin):
     """Configuration pages do not replace the persistent Admin navigation/header."""
     for path in ("/ministries", "/ministry-preview", "/configuration-request"):
         page.goto(component_origin + path)
-        assert page.locator("[data-background-indicator]").is_visible()
-        assert page.get_by_role("complementary", name="Testing mode").is_visible()
+        visible(page.locator("[data-background-indicator]"))
+        visible(page.get_by_role("complementary", name="Testing mode"))
 
 
 def test_shared_table_selection_enables_bulk_actions(page, component_origin):
@@ -721,7 +722,7 @@ def test_shared_table_selection_enables_bulk_actions(page, component_origin):
     rows.first.check()
     header = page.get_by_label("Select every Ministry on this page")
     assert header.evaluate("node => node.indeterminate")
-    assert page.get_by_text("Showing 1–2 of 2").first.is_visible()
+    visible(page.get_by_text("Showing 1–2 of 2").first)
 
 
 def test_campaign_modules_hide_and_disable_unselected_fields(page, component_origin):
@@ -731,10 +732,10 @@ def test_campaign_modules_hide_and_disable_unselected_fields(page, component_ori
     financial = page.get_by_role("group", name="Financial periods and funds")
     assert not ministry.is_visible() and not financial.is_visible()
     page.get_by_label("Ministry stewardship").check()
-    assert ministry.is_visible()
+    visible(ministry)
     assert page.get_by_label("Included Ministries").input_value() == "4"
     page.get_by_label("Financial stewardship").check()
-    assert financial.is_visible()
+    visible(financial)
     page.get_by_label("Upcoming financial period start").fill("2027-01-01")
     page.get_by_label("Financial stewardship").uncheck()
     posted = page.locator("[data-campaign-form]").evaluate(
@@ -752,11 +753,9 @@ def test_campaign_modules_remain_usable_without_javascript(
     try:
         page = context.new_page()
         page.goto(component_origin + "/campaign-settings")
-        assert page.get_by_role(
-            "group", name="Financial periods and funds"
-        ).is_visible()
+        visible(page.get_by_role("group", name="Financial periods and funds"))
         assert page.get_by_label("Upcoming financial period start").is_enabled()
-        assert page.get_by_role("button", name="Preview changes").is_visible()
+        visible(page.get_by_role("button", name="Preview changes"))
     finally:
         context.close()
 
@@ -853,7 +852,7 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     assert page.locator(".setup-steps").is_hidden()
     page.locator(".setup-stepper-list summary").focus()
     page.keyboard.press("Enter")
-    assert page.locator(".setup-steps").is_visible()
+    visible(page.locator(".setup-steps"))
     current = page.locator('.setup-steps [aria-current="step"]')
     assert "Current step" in current.inner_text()
     assert "Completed" in page.locator(".setup-step-done").first.inner_text()

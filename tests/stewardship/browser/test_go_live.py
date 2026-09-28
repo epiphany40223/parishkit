@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -41,9 +43,9 @@ def test_go_live_acknowledgement_and_status_are_accessible(
             == []
         )
     assert "5,000 out of 12,000" in page.locator("main").inner_text()
-    assert page.get_by_role(
-        "button", name="Retry failed cleanup from its checkpoints"
-    ).is_visible()
+    visible(
+        page.get_by_role("button", name="Retry failed cleanup from its checkpoints")
+    )
 
 
 def test_cleanup_controls_work_without_javascript(browser_engine, component_origin):
@@ -52,21 +54,21 @@ def test_cleanup_controls_work_without_javascript(browser_engine, component_orig
     try:
         page = context.new_page()
         page.goto(component_origin + "/go-live")
-        assert page.get_by_role("checkbox").is_visible()
-        assert page.get_by_role("button", name="Start Testing cleanup").is_visible()
+        visible(page.get_by_role("checkbox"))
+        visible(page.get_by_role("button", name="Start Testing cleanup"))
         page.goto(component_origin + "/go-live-cleanup")
-        assert page.get_by_role("link", name="Refresh cleanup progress").is_visible()
-        assert page.get_by_role(
-            "button", name="Cancel cleanup without restoring deleted data"
-        ).is_visible()
+        visible(page.get_by_role("link", name="Refresh cleanup progress"))
+        visible(
+            page.get_by_role(
+                "button", name="Cancel cleanup without restoring deleted data"
+            )
+        )
         page.goto(component_origin + "/go-live-links")
         assert "2,500 out of 5,000 (50%)" in page.locator("main").inner_text()
-        assert page.get_by_role("button", name="Retry failed preparation").is_visible()
-        assert page.get_by_role(
-            "button", name="Cancel and discard these inactive links"
-        ).is_visible()
-        assert page.get_by_role(
-            "link", name="Refresh preparation progress"
-        ).is_visible()
+        visible(page.get_by_role("button", name="Retry failed preparation"))
+        visible(
+            page.get_by_role("button", name="Cancel and discard these inactive links")
+        )
+        visible(page.get_by_role("link", name="Refresh preparation progress"))
     finally:
         context.close()

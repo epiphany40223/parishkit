@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -29,8 +31,8 @@ def test_refresh_confirmation_is_accessible_and_states_what_happens(
     assert page.locator("time[data-local-instant]").count() == 1
     assert page.get_by_text("A refresh is running", exact=False).count() == 0
     page.goto(component_origin + "/source-refresh-running")
-    assert page.get_by_text("Not yet refreshed", exact=False).is_visible()
-    assert page.get_by_text("A refresh is running now", exact=False).is_visible()
+    visible(page.get_by_text("Not yet refreshed", exact=False))
+    visible(page.get_by_text("A refresh is running now", exact=False))
 
 
 def test_the_request_posts_natively_with_its_key(browser_engine, component_origin):

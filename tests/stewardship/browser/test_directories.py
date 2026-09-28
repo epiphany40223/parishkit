@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -27,11 +29,11 @@ def test_directories_are_accessible_and_keep_filters_in_post(
             == []
         )
     page.goto(component_origin + "/family-directory")
-    assert page.get_by_text("ABCDEFGH", exact=True).is_visible()
+    visible(page.get_by_text("ABCDEFGH", exact=True))
     assert page.locator("Family").count() == 0
     page.get_by_text("Contact details for Example <Family>", exact=True).click()
-    assert page.get_by_text("Example Head", exact=True).is_visible()
-    assert page.get_by_text("1 Example Street", exact=False).is_visible()
+    visible(page.get_by_text("Example Head", exact=True))
+    visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label("Search Family name, DUID or address")
     search.fill("Private name")
     search.focus()
@@ -52,7 +54,7 @@ def test_directory_pagination_works_without_scripts(browser_engine, component_or
     try:
         page = context.new_page()
         page.goto(component_origin + "/postal-directory")
-        assert page.get_by_text("ABCDEFGH", exact=True).is_visible()
+        visible(page.get_by_text("ABCDEFGH", exact=True))
         page.route("**/postal/", lambda route: route.fulfill(body="Next page"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Next page").click()
@@ -84,9 +86,7 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         assert page.get_by_label("Export timezone").input_value() == (
             "America/Detroit" if scripts else "UTC"
         )
-        assert page.get_by_text(
-            "51 estimated matching Families", exact=False
-        ).is_visible()
+        visible(page.get_by_text("51 estimated matching Families", exact=False))
         page.get_by_label("Search Family name, DUID or address").fill(
             "Unsaved private edit"
         )

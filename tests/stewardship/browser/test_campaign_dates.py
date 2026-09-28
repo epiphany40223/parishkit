@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -24,7 +26,7 @@ def test_period_start_fills_an_empty_end_one_year_minus_a_day(page, component_or
     financial(page, component_origin)
     page.locator('[name="financial_start"]').fill("2027-01-01")
     assert value(page, "financial_end") == "2027-12-31"
-    assert page.get_by_text("End date filled in; change it if needed.").is_visible()
+    visible(page.get_by_text("End date filled in; change it if needed."))
     # A filled-in end follows further edits of the start.
     page.locator('[name="financial_start"]').fill("2027-07-01")
     assert value(page, "financial_end") == "2028-06-30"
@@ -50,7 +52,7 @@ def test_overlap_confirmation_appears_only_while_needed(page, component_origin):
     # The auto-filled end (2027-06-30) makes the period overlap October 2026.
     page.locator('[name="financial_start"]').fill("2026-07-01")
     assert value(page, "financial_end") == "2027-06-30"
-    assert group.is_visible()
+    visible(group)
     box.check()
     page.locator('[name="financial_start"]').fill("2027-01-01")
     assert group.is_hidden() and not box.is_checked()
@@ -62,15 +64,13 @@ def test_schedule_window_overlap_follows_the_campaign_dates(page, component_orig
     group = page.locator("[data-overlap-confirmation]")
     assert group.is_hidden()
     page.locator('[name="window-end_date"]').fill("2027-01-05")
-    assert group.is_visible()
+    visible(group)
     group.locator('input[type="checkbox"]').check()
     page.locator('[name="window-end_date"]').fill("2026-12-31")
     assert group.is_hidden()
     assert not group.locator('input[type="checkbox"]').is_checked()
     # No emails are saved yet: say so instead of offering an empty list.
-    assert page.get_by_text(
-        "No invitation or reminder emails are saved yet"
-    ).is_visible()
+    visible(page.get_by_text("No invitation or reminder emails are saved yet"))
     assert page.get_by_role("link", name="Create the emails").get_attribute("href") == (
         "/admin/setup/content"
     )

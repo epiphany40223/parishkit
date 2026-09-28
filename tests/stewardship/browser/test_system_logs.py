@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -64,7 +66,7 @@ def test_logs_mobile_keyboard_and_accessibility(
     departed = page.get_by_role("row", name="admin_login", exact=False)
     assert departed.get_by_text("Not a current portal user", exact=False).count() == 1
     page.goto(component_origin + "/logs-empty")
-    assert page.get_by_text("No matching entries.", exact=True).is_visible()
+    visible(page.get_by_text("No matching entries.", exact=True))
     page.goto(component_origin + "/logs-error-400")
     assert page.get_by_role("alert").count() == 1
     assert page.get_by_text("Identifiers must be complete", exact=False).count() == 1
