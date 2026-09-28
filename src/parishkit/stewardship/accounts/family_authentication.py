@@ -108,6 +108,19 @@ def _login_title():
     return title
 
 
+def _portal_title():
+    """The Family form's title is the campaign name; a failed optional read
+    falls back to the neutral title rather than an error page."""
+    from parishkit.stewardship.responses.availability import family_portal_title
+
+    title = _("Stewardship")
+    service = getattr(settings, "STEWARDSHIP_FAMILY_RUNTIME", None)
+    if isinstance(service, FamilyRuntime):
+        with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
+            title = family_portal_title(service)
+    return title
+
+
 def denied(kind="", *, status=403, retry=None):
     """Unknown, inactive and non-parishioner credentials use identical responses.
 
@@ -454,6 +467,7 @@ def portal(request):
             "stewardship/family.html",
             {
                 "testing": request.family_session.mode == "testing",
+                "portal_title": _portal_title(),
                 "server_now": database_now(),
                 "absolute_deadline": request.family_session.expires_at,
                 "deadline": min(
