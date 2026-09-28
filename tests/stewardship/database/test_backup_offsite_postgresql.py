@@ -50,7 +50,8 @@ def offsite(tmp_path, monkeypatch):
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
     monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
-    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session: drive)
+    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, tag: drive)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: drive.tag)
     monkeypatch.setattr(
         backup_offsite, "RuntimeLayout", lambda c: SimpleNamespace(credential=str)
     )

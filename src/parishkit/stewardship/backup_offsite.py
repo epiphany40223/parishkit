@@ -32,6 +32,7 @@ from .backup import MANIFEST, SET_NAME
 from .backup_drive import (
     DriveClient,
     DriveFailure,
+    deployment_tag,
     folder_id_from_url,
     prune,
     upload_set,
@@ -60,6 +61,19 @@ def destination():
     if runtime is None or runtime.active_configuration is None:
         return None
     return destination_from(runtime.active_configuration.canonical_document)
+
+
+def set_tag():
+    """This deployment's Drive tag, from its runtime row's ID.
+
+    Two deployments pointed at one shared-drive folder (for example a
+    validation server and production) each see and prune only their own sets.
+    """
+    from .accounts.runtime_models import SystemConfiguration
+
+    return deployment_tag(
+        SystemConfiguration.objects.values_list("pk", flat=True).get()
+    )
 
 
 def destination_from(document):
@@ -179,7 +193,9 @@ def _copy_pending(
         credential = read_private(
             RuntimeLayout(configuration).credential("google_workspace")
         )
-        client = DriveClient(session_factory(credential, subject=subject))
+        client = DriveClient(
+            session_factory(credential, subject=subject), tag=set_tag()
+        )
         del credential
     except (CryptographicError, ConfigError, OSError, DriveFailure):
         return _failed(folder_id, None, None, "credential")

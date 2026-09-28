@@ -3,7 +3,7 @@
 import hashlib
 from itertools import count
 
-from parishkit.stewardship.backup_drive import FOLDER_MIME, DriveFailure
+from parishkit.stewardship.backup_drive import FOLDER_MIME, TAG_VALUE, DriveFailure
 
 
 class FakeDrive:
@@ -14,7 +14,10 @@ class FakeDrive:
     tests can script transient and permanent errors.
     """
 
-    def __init__(self, root="rootfolder0123", *, can_add=True):
+    def __init__(self, root="rootfolder0123", *, can_add=True, tag=TAG_VALUE):
+        # ``tag`` is the deployment tag this client writes and lists; set it
+        # to another value to act as a second deployment sharing the folder.
+        self.tag = tag
         self.ids = count(1)
         self.items = {root: {"name": "root", "mime": FOLDER_MIME, "parent": None}}
         self.root = root
@@ -60,13 +63,13 @@ class FakeDrive:
             for identifier, item in self.items.items()
             if item.get("parent") == parent
             and not item["trashed"]
-            and (not tagged or item.get("tagged"))
+            and (not tagged or item.get("tag") == self.tag)
             and (folders is not True or item["mime"] == FOLDER_MIME)
         ]
 
     def create_folder(self, name, parent):
         self._maybe_fail("create_folder")
-        return self._new(name=name, mime=FOLDER_MIME, parent=parent, tagged=True)
+        return self._new(name=name, mime=FOLDER_MIME, parent=parent, tag=self.tag)
 
     def upload(
         self, path, name, parent, *, content_type="application/octet-stream", **_
@@ -85,12 +88,13 @@ class FakeDrive:
         self._maybe_fail("trash")
         self.items[file_id]["trashed"] = True
 
-    def sets(self):
-        """Names of the live tagged set folders in the root, oldest first."""
+    def sets(self, tag=None):
+        """Names of the live set folders tagged ``tag`` (default: this client's)."""
+        tag = self.tag if tag is None else tag
         return sorted(
             item["name"]
             for item in self.items.values()
             if item.get("parent") == self.root
-            and item.get("tagged")
+            and item.get("tag") == tag
             and not item["trashed"]
         )

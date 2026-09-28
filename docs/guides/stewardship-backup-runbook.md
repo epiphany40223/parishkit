@@ -93,7 +93,18 @@ same `backup-worker` run uploads the new set's three files (the two sealed
 files and `manifest.json`, never anything unencrypted) into a subfolder named
 like the set, inside the Drive folder the Administrator chose. It then keeps
 the newest thirty such subfolders and moves older ones to the Drive trash; it
-never touches a file or folder it did not create. The run's JSON line gains
+never touches a file or folder it did not create. Each subfolder is tagged
+with the deployment's identity, so two deployments pointed at the same folder
+(for example a validation server and production) each keep and prune only
+their own sets. Even so, give each deployment its own folder: a shared one
+mixes both deployments' sets and makes a restore easier to get wrong, and a
+deployment restored from another's backup (for example a validation server
+seeded from a production backup) carries the same identity and so the same
+tag, so the two would prune each other's sets. Set folders created before
+this tagging keep the old tag: they are never pruned, and the first copy
+after the change writes a new folder of the same name beside any old one
+(which may be a partial copy). Delete the old-tag folders by hand once newer
+copies exist. The run's JSON line gains
 an `offsite` field (`uploaded`, `failed` with a category, or
 `not_configured`), and a failed copy never fails the backup itself: the local
 set is recorded as usual, and the next run copies any of the three newest

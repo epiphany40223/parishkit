@@ -33,8 +33,12 @@ API = "https://www.googleapis.com/drive/v3/files"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 # The tag marks folders this code created; retention never touches others.
+# Its value names the deployment (``deployment_tag``), so two deployments
+# pointed at one folder never prune or replace each other's sets. ``TAG_VALUE``
+# is the value used before that, and only by a client given no deployment.
 TAG_KEY = "parishkitStewardshipBackup"
 TAG_VALUE = "v1"
+DEPLOYMENT_TAG = re.compile(r"^[A-Za-z0-9-]{1,100}$")
 # Off-site sets kept in the Drive folder, matching the host's retention
 # (backup.RETAINED_SETS); older tagged set folders go to the Drive trash.
 RETAINED_SETS = 30
@@ -46,6 +50,11 @@ REQUEST_SECONDS = 60
 PROBE_WAIT = timedelta(minutes=5)
 # A sealed dump can be large; the single-request body upload streams the file.
 UPLOAD_SECONDS = 3600
+
+
+def deployment_tag(deployment_id):
+    """The tag value for one deployment's set folders (its runtime row's ID)."""
+    return f"deployment-{deployment_id}"
 
 
 class DriveFailure(Exception):
@@ -161,8 +170,12 @@ class DriveClient:
     failures to :class:`DriveFailure` categories.
     """
 
-    def __init__(self, session):
+    def __init__(self, session, *, tag=TAG_VALUE):
+        # The tag goes into a Drive query string, so it must stay plain.
+        if type(tag) is not str or not DEPLOYMENT_TAG.fullmatch(tag):
+            raise ValueError("A Drive set tag is letters, digits and hyphens.")
         self.session = session
+        self.tag = tag
 
     def _call(self, method, url, *, params=None, timeout=REQUEST_SECONDS, **kwargs):
         """Send one request and map every failure to a fixed category."""
@@ -203,7 +216,7 @@ class DriveClient:
         query = [f"'{parent}' in parents", "trashed = false"]
         if tagged:
             query.append(
-                f"appProperties has {{ key='{TAG_KEY}' and value='{TAG_VALUE}' }}"
+                f"appProperties has {{ key='{TAG_KEY}' and value='{self.tag}' }}"
             )
         if folders is True:
             query.append(f"mimeType = '{FOLDER_MIME}'")
@@ -229,7 +242,7 @@ class DriveClient:
             "name": name,
             "mimeType": FOLDER_MIME,
             "parents": [parent],
-            "appProperties": {TAG_KEY: TAG_VALUE},
+            "appProperties": {TAG_KEY: self.tag},
         }
         return self._call("POST", API, params={"fields": "id"}, json=body).json()["id"]
 
