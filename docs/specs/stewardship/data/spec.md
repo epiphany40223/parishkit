@@ -1101,8 +1101,9 @@ HEAD) takes no row locks and does not join that order: it observes one
 the promoted source pointer are seen together as their writers committed them,
 and a long writer such as a source promotion or an installer never blocks an
 Admin page. Any write inside the snapshot fails closed. Previews that sign a
-request, confirmations, audit writes and every mutation keep the work-order
-lock, and campaign-detail reads still use the
+request, confirmations and mutations keep the work-order lock; access audits
+of page views do not, and commit in their own short transaction after the
+snapshot. Campaign-detail reads still use the
 [campaign read guards](#campaign-read-guards) above; the snapshot replaces
 neither. A read whose helpers require the work order keeps the lock.
 
