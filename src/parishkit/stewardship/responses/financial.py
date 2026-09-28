@@ -76,9 +76,11 @@ def household_pronoun(count):
 def validate_financial_answers(payload, options):
     """Validate a complete enabled section against server-owned stable share IDs.
 
-    Zero permits an omitted frequency and no sharing choice, but does not relax
-    the validity of any supplied frequency, option identity or required text.
-    The owner rejects the entire financial section when its module is disabled.
+    A positive pledge requires a frequency and, when any share methods are
+    offered, at least one of them. Zero permits an omitted frequency and no
+    sharing choice, but does not relax the validity of any supplied frequency,
+    option identity or required text. The owner rejects the entire financial
+    section when its module is disabled.
     """
     if type(options) is not tuple or any(
         not isinstance(option, ShareOption) for option in options
@@ -130,6 +132,16 @@ def validate_financial_answers(payload, options):
                 )
             else:
                 normalized[key] = text
+        if (
+            amount is not None
+            and amount.cents > 0
+            and allowed
+            and not shares
+            and "financial.shares" not in errors
+        ):
+            errors["financial.shares"] = (
+                "Choose at least one way you would like to share your pledge."
+            )
     if errors:
         raise InvalidFinancialAnswers(errors)
     return {

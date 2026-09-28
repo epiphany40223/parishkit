@@ -254,7 +254,10 @@ guards that check a live Admin session (Functions digest only).
 The critical-events banner acknowledgement (#131) then added one append-only
 table, `stewardship_critical_event_ack` (one row per acknowledged CRITICAL
 log entry, unique by log reference), with its immutability trigger and
-function. Regenerated from a fresh install, the current baseline is:
+function. The paged Family form then made the financial guard require a
+share method for a positive pledge whenever any are offered (one function
+body; Functions digest only). Regenerated from a fresh install, the current
+baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -262,7 +265,7 @@ function. Regenerated from a fresh install, the current baseline is:
 | Columns | 2445 | `9c812290` |
 | Constraints | 3378 | `544f9af1` |
 | Indexes | 1002 | `84be1b66` |
-| Functions | 597 | `ecfab563` |
+| Functions | 597 | `17c31947` |
 | Triggers | 551 | `30b4c2c2` |
 | Policies | 28 | `1c9c3b2d` |
 

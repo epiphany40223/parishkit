@@ -44,6 +44,16 @@ def test_sql_accepts_exact_annual_and_known_share_options(frequency):
     guard(answer(annual_pledge="0.00", frequency="", shares={}), annual=Decimal(0))
 
 
+def test_sql_requires_a_share_method_only_for_a_positive_pledge():
+    """A positive pledge names a share method when any are offered; zero does not."""
+    with (
+        pytest.raises(IntegrityError, match="share method is required"),
+        transaction.atomic(),
+    ):
+        guard(answer(shares={}))
+    guard(answer(annual_pledge="0.00", frequency="", shares={}), annual=Decimal(0))
+
+
 @pytest.mark.parametrize(
     "changes,annual",
     [
