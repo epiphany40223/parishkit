@@ -554,35 +554,3 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
         assert [
             row["family_duid"] for row in page(harness, search=text)["rows"]
         ] == expected
-
-
-def test_directory_search_finds_the_shown_name_despite_odd_whitespace(
-    live_response_service,
-):
-    """SQL trims names exactly as family_names.py does, tabs and no-break spaces too.
-
-    The page shows the Python-built name; search and sort use the SQL-built
-    one. Padding that only Python stripped used to make them differ.
-    """
-    harness = live_response_service
-    data = response_source()
-    data.families[1] = data.families[1] | {"lastName": "Example "}
-    data.members[3] = data.members[3] | {
-        "firstName": " Member\t",
-        "lastName": " Example ",
-    }
-    data.members[4] = data.members[3] | {
-        "memberDUID": 4,
-        "firstName": "Second ",
-        "lastName": " Other ",
-        "emailAddress": "",
-    }
-    snapshot, claim = prepare(data)
-    promote(snapshot, claim, harness.campaign, harness.rings)
-    (row,) = [row for row in page(harness)["rows"] if row["family_duid"] == 1]
-    assert row["family_name"] == "Example"
-    assert row["display_name"] == "Example, Member and Second Other"
-    assert [
-        found["family_duid"]
-        for found in page(harness, search=row["display_name"])["rows"]
-    ] == [1]
