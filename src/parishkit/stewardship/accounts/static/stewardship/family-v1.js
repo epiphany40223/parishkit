@@ -710,7 +710,9 @@
       new Set([...Object.keys(old.talents), ...Object.keys(edited.talents)]).forEach((id) => {
         if (edited.talents[id] === old.talents[id] || !offered.has(id)) return;
         if (edited.talents[id] === undefined) delete entry.talents[id];
-        else entry.talents[id] = edited.talents[id];
+        // A note stays only while its option still takes free text.
+        else entry.talents[id] = form.service.talent_options.find((option) => option.id === id).free_text ?
+          edited.talents[id] : "";
       });
     });
   }
@@ -772,6 +774,9 @@
     const lockId = prefix + "-cannot-serve";
     const wrapper = node("label", null, parent, {for: lockId, class: "limitation"});
     const lock = node("input", null, wrapper, {type: "checkbox", id: lockId});
+    // edit() rebuilds the page, so a live region would be new and silent.
+    // Instead the checkbox (focus returns to it) is described by the note.
+    if (entry.cannot_serve) lock.setAttribute("aria-describedby", lockId + "-note");
     lock.checked = entry.cannot_serve;
     wrapper.append(document.createTextNode(" Because of physical limitations, I/we cannot participate in any ministries at this time."));
     lock.addEventListener("change", () => {
@@ -803,12 +808,13 @@
     node("h4", "Ministry participation", panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
     const locked = Boolean(form.service && serviceEntry(member).cannot_serve);
+    // Read with the "cannot participate" checkbox through aria-describedby.
     if (locked) node("p", "Every current ministry will stop, and no new ministry will be joined, because of the choice above.",
-      panel, {class: "changed"});
-    // Locked choices are disabled for keyboards and assistive technology as
-    // well as dimmed; the server enforces the same rule.
+      panel, {class: "changed", id: "service-" + member.id + "-cannot-serve-note"});
+    // Locked choices stay visible and readable (not inert): each row is a
+    // disabled fieldset, and the join disclosure cannot be opened. The
+    // server enforces the same rule.
     const choicesBox = node("div", null, panel, {class: "ministry-choices" + (locked ? " is-locked" : "")});
-    if (locked) { choicesBox.setAttribute("inert", ""); choicesBox.setAttribute("aria-disabled", "true"); }
     if (conflict && conflict.choice === undefined) {
       const notice = node("div", null, panel, {"data-conflict": path});
       node("p", "Some of your edited Ministry choices are no longer available. Review the current choices below.", notice);
@@ -845,7 +851,14 @@
       row.classList.toggle("changed", choices.leave.includes(option.id));
     });
     const details = node("details", null, choicesBox, {class: "ministry-join"});
-    node("summary", "Click here to join another ministry", details);
+    const summary = node("summary", "Click here to join another ministry", details);
+    if (locked) {
+      // A <summary> cannot be disabled natively: mark it disabled for
+      // assistive technology, take it out of the tab order, and refuse to open.
+      summary.setAttribute("aria-disabled", "true");
+      summary.setAttribute("tabindex", "-1");
+      summary.addEventListener("click", (event) => event.preventDefault());
+    }
     let populated = false;
     const joining = node("p", "", panel, {class: "changed", "aria-live": "polite"});
     const showJoining = () => {

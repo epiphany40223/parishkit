@@ -82,7 +82,20 @@ def test_talents_and_ministry_lock_restore_and_submit(
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
     expect(choir.get_by_label("Stop participating")).to_be_checked()
     expect(choir.get_by_label("Stop participating")).to_be_disabled()
-    expect(page.locator(".ministry-choices")).to_have_attribute("inert", "")
+    # Readable, not inert: rows are disabled fieldsets and the join
+    # disclosure is marked disabled, out of the tab order and cannot open.
+    assert page.locator(".ministry-choices[inert]").count() == 0
+    summary = page.get_by_text("Click here to join another ministry", exact=True)
+    expect(summary).to_have_attribute("aria-disabled", "true")
+    expect(summary).to_have_attribute("tabindex", "-1")
+    summary.click()
+    expect(page.locator(".ministry-join")).not_to_have_attribute("open", "")
+    # The rebuilt checkbox (focus returns to it) is described by the note.
+    note = page.get_by_text("Every current ministry will stop", exact=False)
+    expect(page.get_by_label(SERVE)).to_have_attribute(
+        "aria-describedby", note.get_attribute("id")
+    )
+    expect(page.get_by_label(SERVE)).to_have_accessible_description(note.inner_text())
     expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_hidden()
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
@@ -232,3 +245,23 @@ def test_refresh_keeps_a_hidden_pledge_for_unchecking(page, component_origin):
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
     page.get_by_label(GIVE).uncheck()
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("120")
+
+
+def test_refresh_drops_a_note_when_its_option_stops_taking_text(page, component_origin):
+    """A local Other note is not resubmitted once Other takes no text."""
+    form, submissions = service_form(), []
+    fresh = deepcopy(form)
+    fresh["service"]["talent_options"][-1]["free_text"] = False
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Other", exact=True)).check()
+    page.get_by_label("Please describe your talent").fill("Organ")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label("Other", exact=True))).to_be_checked()
+    assert page.get_by_label("Please describe your talent").count() == 0
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["service"]["members"]["3"]["talents"] == {OTHER: ""}
