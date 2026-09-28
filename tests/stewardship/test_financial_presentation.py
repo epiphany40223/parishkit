@@ -41,7 +41,12 @@ def test_first_and_repeat_financial_presentation_does_not_prefill_comparison(ava
         contributions=[record("9.99")],
     )
     form = financial_presentation(inputs, None, parish_name="Sample Parish")
-    assert form["answers"] == {"annual_pledge": "", "frequency": "", "shares": {}}
+    assert form["answers"] == {
+        "annual_pledge": "",
+        "frequency": "",
+        "shares": {},
+        "cannot_give": False,
+    }
     assert form["pledge"]["display"] == ("$1,200" if available else "Unavailable")
     assert form["observed_at"] == ("2026-10-15T04:00:00+00:00" if available else None)
     previous = {"annual_pledge": "0.00", "frequency": "", "shares": {OTHER: "Gift"}}
@@ -50,7 +55,9 @@ def test_first_and_repeat_financial_presentation_does_not_prefill_comparison(ava
         SimpleNamespace(answers={"financial": previous}),
         parish_name="Sample Parish",
     )
-    assert form["answers"] == previous and form["previously_submitted"]
+    # A response recorded before "cannot contribute" existed reads as False.
+    assert form["answers"] == previous | {"cannot_give": False}
+    assert form["previously_submitted"]
     form["answers"]["shares"].clear()
     assert previous["shares"] == {OTHER: "Gift"}
     assert financial_presentation(None, None, parish_name="Sample Parish") is None

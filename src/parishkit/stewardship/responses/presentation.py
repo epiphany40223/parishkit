@@ -34,6 +34,7 @@ from .merge import KnownValue
 from .ministry_requests import ministry_presentation
 from .models import Submission
 from .page_content import family_page_slots, public_substitutions, render_pages
+from .service import TALENT_TEXT_LIMIT
 
 
 def form_presentation(form):
@@ -133,6 +134,15 @@ def form_presentation(form):
     composition = (
         effective_household(form.inputs.member_duids, prior) if not census else None
     )
+    ministries = ministry_presentation(
+        form.inputs.ministries,
+        prior,
+        terminal_members=frozenset(row["id"] for row in members if row["request"]),
+        proposed_members=frozenset(row["id"] for row in proposed),
+        unavailable_members=composition.terminal_members
+        if composition
+        else frozenset(),
+    )
     member_count = (
         sum(not member["request"] for member in members) + len(proposed)
         if census
@@ -149,15 +159,9 @@ def form_presentation(form):
         "household": _household_presentation(values, census_prior) if census else None,
         "members": members,
         "proposed_members": proposed,
-        "ministries": ministry_presentation(
-            form.inputs.ministries,
-            prior,
-            terminal_members=frozenset(row["id"] for row in members if row["request"]),
-            proposed_members=frozenset(row["id"] for row in proposed),
-            unavailable_members=composition.terminal_members
-            if composition
-            else frozenset(),
-        ),
+        "ministries": ministries,
+        "service": _service_presentation(ministries, form.inputs.talent_options, prior),
+        "cannot_attend": bool(prior and prior.answers.get("cannot_attend")),
         "financial": financial_presentation(
             form.inputs.financial, prior, parish_name=form.inputs.parish_name
         ),
@@ -194,6 +198,39 @@ def form_presentation(form):
             baseline, campaign, family, members, member_count, form.inputs.financial
         ),
     }
+
+
+def _service_presentation(ministries, options, prior):
+    """Talents and "cannot participate" for each Member on the Ministry page.
+
+    Kept apart from the Ministry entries (whose shape is the Ministry answer)
+    but keyed by the same identities. Prior answers prefill only options still
+    offered; a removed talent is dropped, since no follow-up depends on it.
+    """
+    if ministries is None:
+        return None
+    offered = {option.id for option in options}
+    previous = (prior.answers.get("service") or {}) if prior else {}
+    result = {
+        "talent_options": [
+            {"id": option.id, "label": option.label, "free_text": option.free_text}
+            for option in options
+        ],
+        "talent_text_limit": TALENT_TEXT_LIMIT,
+    }
+    for group in ("members", "proposed_members"):
+        result[group] = {}
+        for key in ministries[group]:
+            old = (previous.get(group) or {}).get(key) or {}
+            result[group][key] = {
+                "cannot_serve": bool(old.get("cannot_serve")),
+                "talents": {
+                    talent: text
+                    for talent, text in (old.get("talents") or {}).items()
+                    if talent in offered
+                },
+            }
+    return result
 
 
 def _terminal_presentation(identifier, indexed, proposals):

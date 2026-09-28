@@ -441,9 +441,28 @@ installment, selected share-option labels, Other text, active status, and
 source comparison pledge/contribution aggregates with as-of time.
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero, frequency, and share method. Summary shows Family count, annual
-total, frequency distribution, and share-method counts. Exports are CSV, XLSX,
-and PDF. No Ministry leader receives aggregate or Family financial detail.
+zero/nonzero/cannot contribute, frequency, and share method. Summary shows
+Family count, annual total, frequency distribution, share-method counts and the
+number of Families that cannot contribute financially; such a Family's
+frequency reads "Cannot contribute". Exports are CSV, XLSX, and PDF. No
+Ministry leader receives aggregate or Family financial detail.
+
+## Talents and limitations
+
+**Access:** Admin and Staff only.
+
+From each Family's currently effective live response, one table lists Members
+who shared a talent (with any Other text, worded from the campaign's current
+talent list) or who cannot participate in any ministries, and a second lists
+Families who cannot attend Mass or prayer services (see
+[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)).
+Testing responses are excluded. Filters are a name or Family DUID search and
+one choice of everything, cannot participate, cannot attend, or a single
+talent; a summary counts each. The filtered result downloads immediately as CSV
+(Members, then Families) or XLSX (one sheet each), in a chosen display
+timezone. Viewing and downloading are audited with a count only. These answers
+are never written to ParishSoft. The Ministry follow-up queue also notes when a
+leave comes from a Member who cannot participate in any ministries.
 
 ## System logs
 

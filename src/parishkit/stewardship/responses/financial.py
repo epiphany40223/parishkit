@@ -81,6 +81,10 @@ def validate_financial_answers(payload, options):
     sharing choice, but does not relax the validity of any supplied frequency,
     option identity or required text. The owner rejects the entire financial
     section when its module is disabled.
+
+    ``cannot_give`` records "Because of financial limitations, I/we cannot
+    contribute financially at this time." The form hides the pledge fields
+    then, so the answer is a zero pledge with no frequency or share methods.
     """
     if type(options) is not tuple or any(
         not isinstance(option, ShareOption) for option in options
@@ -89,12 +93,34 @@ def validate_financial_answers(payload, options):
     allowed = {option.id: option for option in options}
     if len(allowed) != len(options):
         raise TypeError("Financial share option identities must be unique.")
-    if type(payload) is not dict or set(payload) != {
-        "annual_pledge",
-        "frequency",
-        "shares",
-    }:
+    if type(payload) is dict:
+        # Omitted means the box was not checked (older tabs, simple callers).
+        payload = {"cannot_give": False} | payload
+    if (
+        type(payload) is not dict
+        or set(payload) != {"annual_pledge", "frequency", "shares", "cannot_give"}
+        or type(payload["cannot_give"]) is not bool
+    ):
         raise InvalidFinancialAnswers({"financial": "Review the financial fields."})
+    if payload["cannot_give"]:
+        # The hidden pledge may be blank or zero; nothing else is meaningful.
+        # Check types first: an unhashable forged value must be a 422, not
+        # a TypeError from the set membership test.
+        if (
+            type(payload["annual_pledge"]) is not str
+            or payload["annual_pledge"] not in {"", "0", "0.00"}
+            or payload["frequency"] != ""
+            or payload["shares"] != {}
+        ):
+            raise InvalidFinancialAnswers(
+                {"financial": "A Family that cannot contribute enters no pledge."}
+            )
+        return {
+            "annual_pledge": "0.00",
+            "frequency": "",
+            "shares": {},
+            "cannot_give": True,
+        }
     errors, amount = {}, None
     try:
         amount = pledge_amount(payload["annual_pledge"])
@@ -148,4 +174,5 @@ def validate_financial_answers(payload, options):
         "annual_pledge": amount.canonical,
         "frequency": frequency,
         "shares": normalized,
+        "cannot_give": False,
     }

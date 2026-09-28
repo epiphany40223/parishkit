@@ -17,6 +17,9 @@ env/
 .ruff_cache/
 .mypy_cache/
 node_modules/
+# A symlinked node_modules (e.g. shared by a worktree) is a file, which
+# node_modules/ does not match.
+node_modules
 playwright-report/
 test-results/
 htmlcov/

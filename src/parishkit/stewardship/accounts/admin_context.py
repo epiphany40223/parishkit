@@ -153,6 +153,16 @@ def _navigation_items(actor, admin, campaign, configuration):
                 )
             ):
                 add("campaign", "share_settings", _("Share options"), campaign.pk)
+            if (
+                "ministry" in values.get("modules", ())
+                and configuration.mode == "testing"
+                and structural_edit_admitted(
+                    CampaignState(campaign.state),
+                    ever_active=campaign.ever_active,
+                    locked=campaign.structural_locked,
+                )
+            ):
+                add("campaign", "talent_settings", _("Member talents"), campaign.pk)
             if campaign.state == "draft":
                 add("campaign", "go_live", _("Go-live readiness"), campaign.pk)
         else:

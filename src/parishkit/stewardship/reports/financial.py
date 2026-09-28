@@ -73,7 +73,7 @@ class FinancialQuery:
         bounded_text(query.search)
         if (
             query.active not in {"any", "active", "inactive", "unavailable"}
-            or query.amount not in {"any", "zero", "nonzero"}
+            or query.amount not in {"any", "zero", "nonzero", "cannot_give"}
             or query.frequency not in {"any", "none", *FREQUENCIES}
             or query.sort
             not in {"name", "name_desc", "newest", "oldest", "pledge", "pledge_desc"}
@@ -271,7 +271,12 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
             if row["frequency"] and annual.available
             else MoneyAmount(None)
         )
-        row["frequency_label"] = FREQUENCY_LABELS[row["frequency"] or "none"]
+        # A Family that cannot contribute has no frequency; say why instead.
+        row["frequency_label"] = (
+            "Cannot contribute"
+            if row.get("cannot_give")
+            else FREQUENCY_LABELS[row["frequency"] or "none"]
+        )
         labels = seen.get(row.pop("configuration_id"), {})
         row["shares"] = [
             {"label": labels.get(key, "Unavailable share method"), "text": text}

@@ -17,15 +17,16 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
-from .financial import FREQUENCIES, MAX_PLEDGE_CENTS, SHARE_TEXT_LIMIT
+from .financial import FREQUENCIES, MAX_PLEDGE_CENTS, SHARE_TEXT_LIMIT, ShareOption
 from .financial_inputs import FinancialInputs
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
+from .service import TALENT_TEXT_LIMIT, talent_options
 
 FORM_SCHEMA = "family-response-v1"
-PROJECTION_VERSION = "family-inputs-v8"
+PROJECTION_VERSION = "family-inputs-v9"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -95,6 +96,9 @@ class CensusInputs:
     ministries: MinistryInputs | None = None
     financial: FinancialInputs | None = None
     parish_name: str = ""
+    # Resolved from configuration (defaults when never edited); already covered
+    # by definition_digest, so not repeated in the projection digest.
+    talent_options: tuple[ShareOption, ...] = ()
 
     @property
     def projection_digest(self):
@@ -155,6 +159,15 @@ def definition_digest(configuration):
             if "ministry" in modules
             else [],
             "ministry_label_limit": MAX_MINISTRY_LABEL
+            if "ministry" in modules
+            else None,
+            "talents": {
+                "options": [
+                    (option.id, option.label, option.free_text)
+                    for option in talent_options(configuration)
+                ],
+                "text_limit": TALENT_TEXT_LIMIT,
+            }
             if "ministry" in modules
             else None,
             "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
@@ -413,6 +426,7 @@ def census_inputs(
         ministries,
         financial,
         parish_name,
+        talent_options(configuration),
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

@@ -41,6 +41,7 @@ def financial_presentation(inputs, prior, *, parish_name):
         "annual_pledge": previous["annual_pledge"] if previous else "",
         "frequency": previous["frequency"] if previous else "",
         "shares": dict(previous["shares"]) if previous else {},
+        "cannot_give": bool(previous and previous.get("cannot_give")),
     }
     options = [
         {

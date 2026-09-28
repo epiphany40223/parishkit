@@ -71,6 +71,7 @@ def test_financial_final_submit_revisit_and_replacement(
             "annual_pledge": "1234.50",
             "frequency": "monthly",
             "shares": {CHECK: "", OTHER: "Café gift"},
+            "cannot_give": False,
         }
         assert not ProposedChange.objects.exists()
         assert SubmissionReceiptOccurrence.objects.filter(submission=first).count() == 1

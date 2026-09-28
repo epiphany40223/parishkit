@@ -61,7 +61,7 @@ BEGIN
             OR length(f->>'search')>200
             OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
             OR f->>'active' NOT IN ('any','active','inactive','unavailable')
-            OR f->>'amount' NOT IN ('any','zero','nonzero')
+            OR f->>'amount' NOT IN ('any','zero','nonzero','cannot_give')
             OR f->>'frequency'
                 NOT IN ('any','none','weekly','monthly','quarterly','annual')
             OR f->>'sort'
@@ -151,10 +151,16 @@ WITH selected AS MATERIALIZED (
             <=nullif(f->>'latest_end','')::date)
         AND (f->>'pledge_min'='' OR r.annual_pledge>=nullif(f->>'pledge_min','')::numeric)
         AND (f->>'pledge_max'='' OR r.annual_pledge<=nullif(f->>'pledge_max','')::numeric)
-        AND (f->>'amount'='any' OR (f->>'amount'='zero' AND r.annual_pledge=0)
-            OR (f->>'amount'='nonzero' AND r.annual_pledge>0))
+        -- "Zero" and "No frequency" mean a Family that pledged nothing, not one
+        -- that cannot contribute; that answer has its own filter and count.
+        AND (f->>'amount'='any' OR (f->>'amount'='zero' AND r.annual_pledge=0
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
+            OR (f->>'amount'='nonzero' AND r.annual_pledge>0)
+            -- "Cannot contribute financially" (a zero pledge with that answer).
+            OR (f->>'amount'='cannot_give' AND r.financial->'cannot_give'='true'::jsonb))
         AND (f->>'frequency'='any'
-            OR (f->>'frequency'='none' AND nullif(r.financial->>'frequency','') IS NULL)
+            OR (f->>'frequency'='none' AND nullif(r.financial->>'frequency','') IS NULL
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
             OR r.financial->>'frequency'=f->>'frequency')
         AND (f->>'share'='any'
             OR (f->>'share'='none' AND r.financial->'shares'='{}'::jsonb)
@@ -177,6 +183,8 @@ WITH selected AS MATERIALIZED (
         -- Money crosses JSON only as canonical text: a JSON number would be
         -- parsed as a binary float and lose exactness.
         r.annual_pledge::numeric(24,2)::text AS annual_pledge,r.frequency,
+        -- Responses recorded before this answer existed read as false.
+        coalesce(r.financial->'cannot_give'='true'::jsonb,false) AS cannot_give,
         r.financial->'shares' AS shares,
         -- Option wording is versioned with the configuration the Family saw; the
         -- application words it with the Family form's own rule.
@@ -226,12 +234,14 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
         'annual_total',coalesce(sum(annual_pledge),0)::numeric(24,2)::text,
         'frequencies',coalesce((SELECT jsonb_object_agg(k,n) FROM (
             SELECT coalesce(frequency,'none') AS k,count(*) AS n FROM filtered
+            WHERE financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb
             GROUP BY 1) d),'{}'::jsonb),
         'shares',coalesce((SELECT jsonb_object_agg(k,n) FROM (
             SELECT s.key AS k,count(*) AS n FROM filtered q
             CROSS JOIN LATERAL jsonb_object_keys(q.financial->'shares') s(key)
             GROUP BY 1) d),'{}'::jsonb),
-        'no_share',count(*) FILTER (WHERE financial->'shares'='{}'::jsonb))
+        'no_share',count(*) FILTER (WHERE financial->'shares'='{}'::jsonb),
+        'cannot_give',count(*) FILTER (WHERE financial->'cannot_give'='true'::jsonb))
         FROM filtered),
     'total',(SELECT count(*) FROM filtered),
     'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)

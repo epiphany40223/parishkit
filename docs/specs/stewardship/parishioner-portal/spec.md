@@ -128,6 +128,12 @@ use." The time is shown in the campaign's time zone. In Testing mode it reports
 the Testing submission from the current rehearsal; live submissions and other
 rehearsals never count. Families that have never submitted see no banner.
 
+Below the welcome text the Family may check "Because of physical limitations,
+I/we cannot attend Mass or prayer services at this time." The answer is
+recorded with every response (unchecked by default, prefilled on a repeat
+visit), shown on Review when checked, and reported to Staff; it is never
+written to ParishSoft.
+
 The sign-in page shows only its title, the code field and the parish's short
 sign-in instructions; parish contact details appear on the access-denied page
 instead. The title is "*campaign name* login", using the name the
@@ -251,6 +257,26 @@ ministries as "Will continue", "Stopping" and "Joining".
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
 
+### Talents and "cannot participate"
+
+Above each Member's Ministry choices, the form asks: "If you have a special
+talent that you would like to share with your parish family, please select it
+below." It offers the campaign's talent checkboxes, which an Admin edits
+alongside the share options (see
+[Admin portal](../admin-portal/spec.md#member-talents)). A campaign that never
+edited them offers the built-in defaults: Painter, Florist, Seamstress,
+Carpenter, Attorney, Gardener and Other. An option marked for free text (Other)
+requires a short description, at most 200 characters. No talent is required.
+
+Each Member may also check "Because of physical limitations, I/we cannot
+participate in any ministries at this time." While checked, every current
+Ministry is set to "Stop participating", every join choice is cleared, and the
+Ministry choices and "Click here to join another ministry" are disabled for
+pointer, keyboard and assistive technology alike. Unchecking restores the
+Family's own earlier choices. The server rejects a response in which such a
+Member continues or joins any Ministry. Talents and this answer are recorded
+with the response and are never written to ParishSoft.
+
 ## Financial stewardship
 
 When enabled, the page shows read-only aggregates from the latest promoted
@@ -292,6 +318,13 @@ remains available with the same validation when no Members remain; marking all
 Members terminal does not discard or clear the Family's pledge/share answers.
 With a zero (or not yet entered) pledge, the frequency and share-method fields
 are hidden, cleared and not required, and the form submits neither.
+
+The Family may instead check "Because of financial limitations, I/we cannot
+contribute financially at this time." While checked, the pledge, frequency and
+share-method fields are hidden and not required, and the response records a
+zero pledge marked as "cannot contribute"; unchecking restores the Family's
+earlier entries. The server rejects a pledge, frequency or share method
+submitted with this answer.
 
 The `campaign_year` placeholder consistently means the configured campaign year
 label in Admin previews, page content, emails, share labels and Ministry

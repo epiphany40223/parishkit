@@ -226,6 +226,10 @@ DESCRIPTIONS = {
     "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "financial_report_viewed": _("Someone opened the financial report."),
+    "talents_report_viewed": _("Someone opened the talents and limitations report."),
+    "talents_report_exported": _(
+        "Someone downloaded the talents and limitations report."
+    ),
     "portal_users_viewed": _("An Administrator opened the portal users list."),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),

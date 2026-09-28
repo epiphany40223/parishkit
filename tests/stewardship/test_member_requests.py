@@ -140,6 +140,8 @@ def validate(members, proposed):
             "proposed_members": proposed,
             "ministries": {},
             "additional_information": "",
+            "cannot_attend": False,
+            "service": {},
         },
         CensusInputs(
             10,

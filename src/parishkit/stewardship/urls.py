@@ -47,6 +47,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    talent_views,
     user_rule_views,
     user_views,
     withdrawal_views,
@@ -74,6 +75,9 @@ from .reports import (
     workspace_views,
 )
 from .reports import ministry_views as ministry_report_views
+from .reports import (
+    talent_views as talent_report_views,
+)
 from .responses import views as response_views
 
 public_patterns = [
@@ -156,6 +160,16 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/financial/export",
         financial_export_views.create,
         name="financial_export",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/talents/",
+        talent_report_views.report,
+        name="talents_report",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/talents/export",
+        talent_report_views.export,
+        name="talents_export",
     ),
     path(
         "reports/<uuid:campaign_id>/families/export",
@@ -410,6 +424,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/share-options",
         share_views.share_settings,
         name="share_settings",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/talents",
+        talent_views.talent_settings,
+        name="talent_settings",
     ),
     path("campaign/new", campaign_views.campaign_settings, name="campaign_new"),
     path(

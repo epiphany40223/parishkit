@@ -259,6 +259,7 @@ def test_financial_modules_mobile_final_only_and_accessible(
         "annual_pledge": "1,000.01",
         "frequency": "monthly",
         "shares": {CHECK: "", OTHER: "Stock gift"},
+        "cannot_give": False,
     }
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0
     assert not errors
@@ -299,6 +300,7 @@ def test_financial_validation_zero_and_unavailable(page, component_origin):
         "annual_pledge": "0",
         "frequency": "",
         "shares": {},
+        "cannot_give": False,
     }
 
 

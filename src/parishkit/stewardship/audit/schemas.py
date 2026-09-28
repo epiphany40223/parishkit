@@ -74,6 +74,8 @@ class Action(StrEnum):
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
     FINANCIAL_REPORT_VIEWED = "financial_report_viewed"
+    TALENTS_REPORT_VIEWED = "talents_report_viewed"
+    TALENTS_REPORT_EXPORTED = "talents_report_exported"
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"

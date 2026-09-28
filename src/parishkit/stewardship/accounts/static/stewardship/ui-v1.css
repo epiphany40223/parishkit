@@ -405,6 +405,15 @@ main nav.family-track { display: block; margin: 0; }
 .family-track button:hover::after, .family-track button:focus::after { display: block; }
 .family-submitted { margin-block: 0 1rem; }
 .financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
+/* Limitation checkboxes ("cannot attend", "cannot participate", "cannot
+   contribute") stand apart from ordinary choices, since they hide or lock
+   other answers. */
+label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
+.financial-pledge { border: 0; padding: 0; margin: 0; background: none; }
+.talents-panel > label { display: block; }
+/* Ministry choices locked by "cannot participate" are also inert. */
+.ministry-choices.is-locked { opacity: .55; }
+.ministry-choices.is-locked .ministry-join > summary { cursor: not-allowed; }
 /* Ministry rows: the ministry name, then the choice, stated once. */
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
 .ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }

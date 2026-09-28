@@ -39,6 +39,8 @@ def answers():
             )
         },
         "additional_information": " Text ",
+        "cannot_attend": False,
+        "service": {},
     }
 
 
@@ -77,6 +79,8 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
             }
         },
         "additional_information": "Text",
+        "cannot_attend": False,
+        "service": {},
     }
     assert answers == before
 
@@ -178,3 +182,18 @@ def test_empty_active_household_is_not_an_invented_member(answers):
         today=date(2026, 9, 13),
     )
     assert result["members"] == {}
+
+
+@pytest.mark.parametrize("value", [None, "yes", 1])
+def test_cannot_attend_must_be_a_boolean(answers, value):
+    """The welcome page checkbox is a plain yes/no answer."""
+    answers["cannot_attend"] = value
+    with pytest.raises(InvalidAnswers) as caught:
+        validate(answers)
+    assert "cannot_attend" in caught.value.fields
+
+
+def test_cannot_attend_is_recorded(answers):
+    """A checked welcome page box is stored with the response."""
+    answers["cannot_attend"] = True
+    assert validate(answers)["cannot_attend"] is True

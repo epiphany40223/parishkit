@@ -13,6 +13,7 @@
 <p class="notice">{% translate "These are structural settings. They lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's timezone, not your browser timezone." %}</p>
 {% if not campaign %}<p>{% translate "A new draft starts with the Parish timezone. Its timezone can be changed after the draft is created. Creating a successor ends the opportunity to purge earlier campaigns until the next Return to Testing." %}</p>{% endif %}
 {% if editable %}
+{% if campaign and form.ministry.value %}<p><a href="{% url 'admin:talent_settings' campaign.pk %}">{% translate "Edit the talents Members can share" %}</a></p>{% endif %}
 {% if campaign and form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Edit how Families will share" %}</a></p>{% endif %}
 <form method="post" class="panel" data-campaign-form{% if not campaign %} data-new-campaign{% endif %}>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
