@@ -130,9 +130,10 @@ rehearsals never count. Families that have never submitted see no banner.
 
 The sign-in page shows only its title, the code field and the parish's short
 sign-in instructions; parish contact details appear on the access-denied page
-instead. The title follows the campaign modules: "Family stewardship login"
-(Ministry or financial stewardship), "Family census login", or "Family
-stewardship and census login".
+instead. The title is "*campaign name* login", using the name the
+Administrator set in Campaign settings. A campaign without a name falls back
+to its modules: "Family stewardship login" (Ministry or financial
+stewardship), "Family census login", or "Family stewardship and census login".
 
 Values differing from current source data use an icon, text label such as
 "Your updated value," and styling; color alone is insufficient. A source

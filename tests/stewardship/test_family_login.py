@@ -9,13 +9,13 @@ from parishkit.stewardship.responses import availability
 from parishkit.stewardship.web.presentation import parish_instant
 
 
-def _service(monkeypatch, modules):
+def _service(monkeypatch, modules, name=""):
     """A stand-in configuration whose current campaign has ``modules``."""
     campaign = (
         None
         if modules is None
         else SimpleNamespace(
-            active_configuration=SimpleNamespace(values={"modules": modules})
+            active_configuration=SimpleNamespace(name=name, values={"modules": modules})
         )
     )
     monkeypatch.setattr(
@@ -39,8 +39,14 @@ def _service(monkeypatch, modules):
     ],
 )
 def test_login_title_follows_campaign_modules(monkeypatch, modules, title):
-    """Stewardship means ministry or financial; census means household details."""
+    """An unnamed campaign's title says what it collects."""
     assert availability.family_login_title(_service(monkeypatch, modules)) == title
+
+
+def test_login_title_uses_the_campaign_name(monkeypatch):
+    """A named campaign titles the sign-in page "<campaign name> login"."""
+    service = _service(monkeypatch, ["financial"], name="Stewardship 2027")
+    assert availability.family_login_title(service) == "Stewardship 2027 login"
 
 
 @pytest.mark.parametrize(
