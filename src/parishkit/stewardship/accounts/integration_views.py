@@ -153,6 +153,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "fresh": fresh,
             "target": target,
             "label": LABELS[target],
+            # Names the integration in the Admin breadcrumb trail.
+            "breadcrumb_label": LABELS[target],
             "summary": latest,
             "pending": pending,
             "configured": configured,

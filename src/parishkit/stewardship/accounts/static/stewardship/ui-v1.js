@@ -3,6 +3,17 @@
 // Progressive enhancement only: never store answers or credentials in browser
 // storage, and never convert date-only campaign buckets into browser dates.
 (() => {
+  // The Admin sidebar menu is open in the markup so it works without
+  // JavaScript. Collapse it on narrow screens, where it sits above the page
+  // content, and keep it open on wide screens, where its toggle is hidden.
+  const adminMenu = document.querySelector("[data-admin-menu]");
+  if (adminMenu && typeof window.matchMedia === "function") {
+    const wide = window.matchMedia("(min-width: 60rem)");
+    const syncMenu = () => { adminMenu.open = wide.matches; };
+    syncMenu();
+    wide.addEventListener("change", syncMenu);
+  }
+
   document.querySelectorAll("time[data-local-instant]").forEach((node) => {
     const date = new Date(node.dateTime);
     if (!Number.isFinite(date.getTime()) || typeof Intl === "undefined") return;

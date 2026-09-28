@@ -222,10 +222,31 @@ def component_origin():
     admin = {
         "admin": True,
         "parish_name": "Sample Parish",
-        "navigation": [
-            {"url": "/home", "label": "Home"},
-            {"url": "/parish-settings", "label": "Parish settings"},
-            {"url": "/ministries", "label": "Ministry activity"},
+        "home_url": "/home",
+        "home_current": False,
+        "sections": [
+            {
+                "key": "parish",
+                "label": "Parish and integrations",
+                "current": True,
+                "items": [
+                    {
+                        "url": "/parish-settings",
+                        "label": "Parish settings",
+                        "current": False,
+                    },
+                    {
+                        "url": "/ministries",
+                        "label": "Ministry activity",
+                        "current": True,
+                    },
+                ],
+            },
+        ],
+        "breadcrumbs": [
+            {"label": "Home", "url": "/home"},
+            {"label": "Parish and integrations", "url": "/parish-settings"},
+            {"label": "Ministry activity", "url": None},
         ],
         "testing": True,
         "testing_recipient": "testing@example.org",

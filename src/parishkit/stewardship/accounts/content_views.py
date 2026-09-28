@@ -165,6 +165,8 @@ def _page(
             "form": form,
             "campaign": campaign,
             "label": label,
+            # Names the page or email in the Admin breadcrumb trail.
+            "breadcrumb_label": label,
             "visual": visual,
             "placeholders": sorted(PLACEHOLDERS),
             "default_url": default_url,
@@ -253,6 +255,7 @@ def _preview(
         {
             "campaign": campaign,
             "label": label,
+            "breadcrumb_label": label,
             "before": before,
             "after": after,
             "affected": affected,

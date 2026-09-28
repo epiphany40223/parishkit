@@ -896,3 +896,26 @@ def test_setup_track_segments_name_their_step_on_hover(page, component_origin, w
     assert page.evaluate("document.querySelector('.setup-track span:hover') !== null")
     assert track.bounding_box() == before
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_origin):
+    """Desktop shows the open sidebar; narrow screens collapse it behind Menu."""
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(component_origin + "/ministries")
+    sidebar = page.get_by_role("navigation", name="Administration")
+    current = sidebar.locator('a[aria-current="page"]')
+    assert current.is_visible() and current.inner_text() == "Ministry activity"
+    assert not sidebar.get_by_text("Menu").is_visible()
+    trail = page.get_by_role("navigation", name="Breadcrumb")
+    assert trail.get_by_role("link", name="Home").is_visible()
+    assert trail.locator('[aria-current="page"]').inner_text() == "Ministry activity"
+    # The sidebar sits beside the content, not above it, on a wide screen.
+    side = sidebar.bounding_box()
+    main = page.locator("main").bounding_box()
+    assert side["x"] + side["width"] <= main["x"] + 1
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.reload()
+    menu = sidebar.get_by_text("Menu")
+    assert menu.is_visible() and not current.is_visible()
+    menu.click()
+    assert current.is_visible()
