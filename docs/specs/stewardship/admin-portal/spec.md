@@ -495,7 +495,9 @@ Google Workspace mail integration, whose delegated user and key the copies
 use. **Test access** queues a check that the Google Workspace credential
 installer answers by writing and trashing one small file in the folder; the
 page follows the result with the passive live-status pattern and explains
-each failure in plain language. The Integrations list always links to this
+each failure in plain language. The folder that was tested stays in the
+folder field and is named beside the result, so the Administrator can save it
+without pasting the link again. The Integrations list always links to this
 page: "Set up off-site backups" before it is configured, and "Change" after.
 The page and the administration home show
 the last successful off-host copy; until the integration is added, the home

@@ -380,6 +380,12 @@ def workspace(monkeypatch, request):
     return request.getfixturevalue("auth_service")
 
 
+def database_now_sql():
+    """The database's current time, read in its own transaction."""
+    with transaction.atomic():
+        return database_now()
+
+
 def apply(store, response):
     """Install the queued configuration change the web just recorded."""
     assert response.status_code == 302, response.content
@@ -422,6 +428,16 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert (probe.folder_id, probe.subject) == (FOLDER, "mail@example.org")
     status = browser.get(URL + "/status")
     assert status.status_code == 200 and b"Checking access" in status.content
+    # After Test access, the tested folder stays in the field for Save and is
+    # named beside the result, whether the check is pending, passed or failed.
+    tested = browser.get(URL).content
+    assert f'value="{LINK}"'.encode() in tested
+    assert b"Folder tested:" in tested
+    BackupDriveProbe.objects.filter(pk=probe.pk).update(
+        state="failed", failure_kind="permission", completed_at=database_now_sql()
+    )
+    failed = browser.get(URL).content
+    assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
     assert post(browser, URL, {"action": "test", "target": "x"}).status_code == 400
     preview = hidden(
         post(
