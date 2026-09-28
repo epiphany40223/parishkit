@@ -20,10 +20,14 @@ from django.core.validators import validate_email
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .authority import apply_version, recover_active
-from .configuration_errors import ConfigurationReadinessUnavailable
+from .configuration_errors import (
+    ConfigurationHistoryInvalid,
+    ConfigurationReadinessUnavailable,
+)
 from .configuration_requests import _identities, _status
 from .configuration_snapshots import is_prepared, prepare_snapshot
 from .installation_lock import installation_lock
@@ -609,6 +613,11 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             apply_version(store, materializer, intent.candidate)
         except ActivationRefused:
             _restore_refused(store, materializer._check)
+        except ConfigurationHistoryInvalid as error:
+            # Deterministic: the same request can never verify against this
+            # history, so fail it visibly rather than retrying it forever.
+            emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+            materializer.checkpoint("failed", failure_code="invalid_candidate")
         return _status(request)
 
 

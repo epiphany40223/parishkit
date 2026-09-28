@@ -22,6 +22,7 @@ from .content_schema import RECOVERY_SCHEMA as CONTENT_RECOVERY_SCHEMA
 from .content_schema import REQUEST_SCHEMA as CONTENT_REQUEST_SCHEMA
 from .content_schema import SCHEMA as CONTENT_SCHEMA
 from .content_schema import validate_content_change
+from .content_trust import records_of, trusted_content
 from .ministry_activity import RECOVERY_SCHEMA as MINISTRY_RECOVERY_SCHEMA
 from .ministry_activity import REQUEST_SCHEMA as MINISTRY_REQUEST_SCHEMA
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
@@ -271,8 +272,12 @@ def _build_records(
     document = base.document()
     validate_sections = validator_for(schema)
     # Revalidate the base too: the caller cannot manufacture an invalid envelope.
-    if parse_version(document, validate_sections=validate_sections) != base:
-        _invalid()
+    # Its content is applied and digest-verified, so today's content text rules
+    # do not re-run on it (content_trust, #187).
+    with trusted_content():
+        if parse_version(document, validate_sections=validate_sections) != base:
+            _invalid()
+    carried = records_of(document)
     document["version_id"] = str(candidate_id)
     document["predecessor_digest"] = base.digest
     normalized = []
@@ -337,7 +342,10 @@ def _build_records(
                     del existing["values"]["online_giving_url"]
             item["values"] = values
         normalized.append(item)
-    candidate = parse_version(document, validate_sections=validate_sections)
+    # Content records carried unchanged from the base keep their applied
+    # validation; added or changed records meet the current text rules.
+    with trusted_content(carried):
+        candidate = parse_version(document, validate_sections=validate_sections)
     # The complete schema/envelope validation above rejects non-JSON values,
     # excessive nesting/size, unknown fields, and credential-bearing syntax.
     canonical_patch = json.dumps(
