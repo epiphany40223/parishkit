@@ -98,7 +98,9 @@ def portal_chrome(request):
                     _("Manual information report"),
                 )
             )
-    now = database_now()
+    # Presentation only: reuse the instant the owning view read inside its own
+    # read snapshot (never an earlier one from before a lock wait).
+    now = getattr(request, "_stewardship_display_now", None) or database_now()
     counts = _background_counts(actor, now)
     parish = getattr(configuration.active_configuration, "parish", None)
     critical_count, delivery_unknown = (

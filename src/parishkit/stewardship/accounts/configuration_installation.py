@@ -679,6 +679,8 @@ def coherent_configuration(store):
     mutation must also hold their owning workflow's admission/serialization
     guard; a successful point-in-time read is not a reusable readiness token.
     """
+    from parishkit.stewardship.request_scope import verified_configurations
+
     selected = store.active()
     runtime = SystemConfiguration.objects.first()
     if (
@@ -687,13 +689,20 @@ def coherent_configuration(store):
         or runtime.active_configuration_id != selected.version_id
     ):
         raise ConfigError("Configuration is incomplete or requires recovery.")
-    snapshot, version = intake_base(selected.digest)
-    if (
-        snapshot.pk != runtime.active_configuration_id
-        or version != selected
-        or store.manifest_reference() != (selected.version_id, selected.digest)
-    ):
+    # Within one web request, the immutable corpus of an unchanged selection is
+    # verified once (request_scope). The live selection above and the second
+    # manifest read below still run on every call.
+    remembered = verified_configurations()
+    key = (selected.version_id, selected.digest)
+    snapshot = remembered.get(key) if remembered is not None else None
+    if snapshot is None or snapshot.pk != runtime.active_configuration_id:
+        snapshot, version = intake_base(selected.digest)
+        if snapshot.pk != runtime.active_configuration_id or version != selected:
+            raise ConfigError("Configuration is incomplete or requires recovery.")
+    if store.manifest_reference() != key:
         raise ConfigError("Configuration is incomplete or requires recovery.")
+    if remembered is not None:
+        remembered[key] = snapshot
     # Reuse the exact projection instance just verified, including its prefetch
     # cache. Downstream policy reads must not reload the same immutable corpus.
     runtime.active_configuration = snapshot
