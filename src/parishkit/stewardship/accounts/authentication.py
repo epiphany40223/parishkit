@@ -455,7 +455,19 @@ def index(request):
             config = coherent_configuration(service.store)
             if config.restore_review_required:
                 return denial(status=503, retry=5)
-            data = summary(principal, config, database_now())
+            if config.current_campaign_id is not None:
+                from parishkit.stewardship.campaigns.models import Campaign
+
+                # The summary and the page both read the campaign's settings;
+                # load them together once rather than lazily twice.
+                config.current_campaign = Campaign.objects.select_related(
+                    "active_configuration"
+                ).get(pk=config.current_campaign_id)
+            now = database_now()
+            data = summary(principal, config, now)
+            # The chrome renders right after this transaction; it reuses this
+            # instant, read inside this snapshot, instead of another clock query.
+            request._stewardship_display_now = now
             # Presentation only: this exact projection is already verified and
             # captured with the summary in the same snapshot. Rendering
             # happens after release; chrome must use that observation, not

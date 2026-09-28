@@ -30,6 +30,7 @@ INSTALLED_APPS = [
 # Django auth tables support allauth internals; no password backend or routes.
 MIDDLEWARE = [
     "parishkit.stewardship.observability.CorrelationMiddleware",
+    "parishkit.stewardship.request_scope.RequestScopeMiddleware",
     "parishkit.stewardship.web.security.SecurityBoundaryMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "parishkit.stewardship.accounts.authentication.AuthLimitMiddleware",
