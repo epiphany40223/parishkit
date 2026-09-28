@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from uuid import UUID, uuid4, uuid5
 
-from django.core import signing
 from django.db import connection
 
 from parishkit.stewardship.campaigns.models import Campaign
@@ -18,6 +17,7 @@ from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.readiness_mail import ReadinessMail
 from parishkit.stewardship.sender_name import resolved_sender_name
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import load_preview
 
 from .admin_editing import editable_configuration, principal
 from .campaign_mail_models import CampaignMailTest
@@ -185,7 +185,7 @@ def request_sample(
         or type(acknowledge_unknown) is not bool
     ):
         raise ValueError("Invalid campaign test command.")
-    binding = signing.loads(preview_token, salt=SALT, max_age=900)
+    binding = load_preview(preview_token, salt=SALT)
     if (
         type(binding) is not dict
         or set(binding)

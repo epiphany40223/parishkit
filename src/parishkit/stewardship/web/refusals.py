@@ -17,6 +17,7 @@ server-owned paths from ``reverse``.
 
 from dataclasses import dataclass
 
+from django.core import signing
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.storage import StaleRecordError
@@ -92,3 +93,34 @@ def unexpected_fields():
         _("The form was submitted with unexpected data."),
         fix=_("Reload the page and try again."),
     )
+
+
+# Signed previews stay valid for fifteen minutes. The limit is enforced here;
+# pages no longer announce it, and an expired preview gets a plain refusal.
+PREVIEW_MAX_AGE = 900
+
+
+def expired_preview(link=None):
+    """The standard refusal when a reviewed preview is too old or out of date.
+
+    ``link`` returns the Admin to the page that builds the preview, so one click
+    starts a fresh review; nothing is saved by following it.
+    """
+    return UserFacingStale(
+        _("This preview is out of date."),
+        fix=_("Review the changes again, then confirm."),
+        link=link,
+        link_label=_("Review the changes again") if link else None,
+    )
+
+
+def load_preview(token, *, salt, link=None):
+    """Verify a signed preview, turning expiry into the plain stale refusal.
+
+    Tampered or foreign tokens still raise ``BadSignature`` (a generic 400);
+    only a genuine, expired signature becomes the recoverable refusal.
+    """
+    try:
+        return signing.loads(token, salt=salt, max_age=PREVIEW_MAX_AGE)
+    except signing.SignatureExpired:
+        raise expired_preview(link) from None

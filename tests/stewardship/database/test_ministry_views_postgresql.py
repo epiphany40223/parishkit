@@ -224,7 +224,9 @@ def test_expired_or_wrong_actor_preview_cannot_create_request(
     assert post(browser, {"action": "confirm", "preview": foreign}).status_code == 403
     signed_at = signing.time.time()
     monkeypatch.setattr(signing.time, "time", lambda: signed_at + 901)
-    assert post(browser, {"action": "confirm", "preview": token}).status_code == 400
+    expired = post(browser, {"action": "confirm", "preview": token})
+    assert expired.status_code == 409
+    assert "out of date" in expired.json()["refusal"]["message"]
     assert not ConfigurationChangeRequest.objects.exists()
 
 

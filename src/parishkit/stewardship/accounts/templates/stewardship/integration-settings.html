@@ -21,7 +21,7 @@
 {% if credential %}
 {% if not fresh %}<p class="help">{% translate "For security, saving a new key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}</p>{% endif %}
 {{ credential.as_div }}
-{% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable because its installer service is not running. You can still change the other settings." %}</p>{% endif %}
+{% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable. You can still change the other settings; ask your system administrator if this persists." %}</p>{% endif %}
 <button type="submit">{% translate "Save" %}</button>
 </form>
 {% if removable %}<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="remove">

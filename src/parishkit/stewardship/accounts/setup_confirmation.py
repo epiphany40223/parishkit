@@ -8,13 +8,13 @@ installer/consumer/activation workflow is registered and operational.
 from dataclasses import dataclass
 from uuid import UUID
 
-from django.core import signing
 from django.db import connection
 from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.web.refusals import load_preview
 
 from .configuration_requests import _status, check_historical_additions
 from .models import ConfigurationChangeRequest
@@ -93,7 +93,7 @@ def freeze_setup(request, service, *, preview_token):
         raise StorageInvariantError("Setup confirmation must own its transaction.")
     if type(preview_token) is not str or len(preview_token) > 4096:
         raise ValueError("Invalid setup confirmation.")
-    binding = signing.loads(preview_token, salt=PREVIEW_SALT, max_age=900)
+    binding = load_preview(preview_token, salt=PREVIEW_SALT, link=request.path)
     with work_transaction():
         actor, attempt = _owned(request, service)
         if attempt is None or _expiry(attempt, database_now()) is not None:

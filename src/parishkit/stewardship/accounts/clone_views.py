@@ -15,7 +15,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import stale_page
+from parishkit.stewardship.web.refusals import expired_preview, stale_page
 
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
@@ -42,9 +42,7 @@ def _seed(request, actor, configuration, salt):
         try:
             seed = signing.loads(token, salt=salt, max_age=900)
         except signing.SignatureExpired:
-            raise StaleRecordError(
-                "Reload the expired clone before editing it."
-            ) from None
+            raise expired_preview(request.path) from None
         if seed["actor"] != str(actor.identity):
             raise PermissionError("Clone belongs to another Administrator.")
         if seed["base"] != digest:

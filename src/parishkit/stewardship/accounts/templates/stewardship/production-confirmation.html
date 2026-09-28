@@ -25,7 +25,7 @@
 <dt>{% translate "Coalesced Family slots (not additional messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
 <dt>{% translate "Coalesced report slots (not additional messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd></dl>
 <p>{% translate "Changed eligibility or schedule inputs require a new preview. Background execution rechecks eligibility, so actual counts may differ from this as-of preview." %}</p>
-{% if preview.expires_at %}<p>{% translate "Preview expires" %}: <time data-local-instant datetime="{{ preview.expires_at|instant }}">{{ preview.expires_at|instant }}</time></p>{% endif %}
+
 </section>{% endif %}
 {% if confirmation_token and fresh %}<section class="panel"><h2>{% translate "Confirm Production" %}</h2>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">

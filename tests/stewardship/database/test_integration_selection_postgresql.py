@@ -155,7 +155,7 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
         "values"
     ]
     assert record["credential_fingerprint"] == file_fingerprint(CANDIDATE)
-    assert b"already selected" in value.browser.get(value.url).content
+    assert b"already in use" in value.browser.get(value.url).content
     assert (
         post(value.browser, value.url, {"action": "confirm", "preview": preview})[
             "Location"

@@ -13,13 +13,13 @@
 <p>{% translate "All test emails go to" %}: {{ testing_recipient }}</p>
 <p>{% translate "Draft revision" %}: {{ draft.status.version|number }}</p></section>
 <section class="panel"><h2>{% translate "Readiness" %}</h2>
-<p>{% translate "The complete public configuration is valid and bound to this login's source load, staged logo and credential settings. Successful tests of this exact revision are required before confirmation. Credential installation, consumer acknowledgements and the final source load then run in the background." %}</p>
+<p>{% translate "Everything below is valid. Run the connection tests before you confirm; after confirming, the system saves your keys and loads your parish data in the background." %}</p>
 </section>
 <h2>{% translate "Named pages and email samples" %}</h2>
 {% for entry in samples %}<section class="panel"><h3>{{ entry.label }}</h3>
 {% with sample=entry.sample %}{% include 'stewardship/content-sample.html' %}{% endwith %}</section>{% endfor %}
 <details><summary>{% translate "Exact proposed public configuration" %}</summary>
-<p>{% translate "Credential fingerprints identify staged inputs; no private credential values are included." %}</p>
+<p>{% translate "Key identifiers are shown; the keys themselves are never displayed." %}</p>
 <p>{% translate "Configuration digest" %}: <code>{{ candidate_digest }}</code></p><pre>{{ document }}</pre></details>
 {% include 'stewardship/setup-navigation.html' %}
 {% endblock %}
