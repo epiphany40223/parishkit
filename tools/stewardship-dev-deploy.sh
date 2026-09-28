@@ -16,7 +16,16 @@
 #   3. Follows the deployment runbook's upgrade steps: backup (best effort;
 #      it refuses before setup), stop the online services, retarget-image in
 #      the new image, migration and grants, a fresh static tree, then start
-#      what was running and check health.
+#      EVERY online service of the correct topology and check health.
+#
+# The topology comes from the database, not from whatever happened to be
+# running: compose.json once the setup wizard has recorded completion (kept
+# as compose-slack.json if the project already runs under that equivalent
+# file), else compose-initial.json. All of that topology's online services
+# are started, so a deploy also repairs a deployment an interrupted run left
+# half-stopped, and the run fails loudly naming any service that is not
+# running and healthy at the end. Each step prints a UTC timestamp, and the
+# run reports how long the online services were down.
 #
 # Configuration (environment variables):
 #   STEWARDSHIP_HOST        ssh destination (required)
@@ -69,46 +78,79 @@ isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
     --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777)
 
-echo "==> Building ${repo}:${tag}"
+echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
 docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \
     --tag "${repo}:${tag}" "$build" >/dev/null
-echo "==> Pushing"
+echo "==> $(date -u +%H:%M:%S) Pushing"
 docker push --quiet "${repo}:${tag}" >/dev/null
 image=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${repo}:${tag}" |
     grep -m1 "^${repo}@sha256:")
 echo "    ${image}"
 
-# The Compose file the project is running under: compose-initial.json before
-# the setup wizard, compose.json or compose-slack.json after it.
-compose=$(docker compose ls --all --format json |
-    jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles' | cut -d, -f1)
-if [ -z "$compose" ]; then
-    echo "No Compose project named ${project} is running." >&2
-    exit 1
-fi
-dc=(docker compose -f "$compose" -p "$project")
-online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey' || true)
-echo "==> Project ${project} runs $(basename "$compose")"
+step() {
+    # Timestamped progress, so downtime can be measured from the log (#162).
+    echo "==> $(date -u +%H:%M:%S) $*"
+}
+quiet() {
+    # Compose progress lines add nothing to a deploy log.
+    grep -vE ' (Creat|Start|Wait|Running|Healthy|Recreat)' || true
+}
 
-echo "==> Backup (best effort)"
+# The postgres service is identical in every topology, so any rendered file
+# reaches it. The setup wizard's committed completion marker decides which
+# topology the online services must run under.
+probe=(docker compose -f "$services/compose-initial.json" -p "$project")
+completed=$("${probe[@]}" exec -T postgres psql -U pk_stewardship_operator \
+    -d stewardship -Atc "SELECT EXISTS (SELECT 1 FROM stewardship_setup_completion)" \
+    2>/dev/null || true)
+running=$(docker compose ls --all --format json |
+    jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles' | tr , '\n' | head -1)
+case "$completed" in
+    t)
+        compose="$services/compose.json"
+        # compose-slack.json renders the same mounts (#149); keep it rather
+        # than switch files needlessly when that is what the project runs.
+        [ "$(basename "$running")" = compose-slack.json ] && compose="$running" ;;
+    f)
+        compose="$services/compose-initial.json" ;;
+    *)
+        # Nothing has been stopped yet, so refusing here is always safe.
+        echo "Cannot read the setup completion marker. Start the database first:" >&2
+        echo "  docker compose -f $services/compose-initial.json -p $project up --detach --wait postgres" >&2
+        exit 1 ;;
+esac
+dc=(docker compose -f "$compose" -p "$project")
+# Profiled services are the one-shot offline commands; everything else is
+# an online service this deploy must leave running.
+mapfile -t wanted < <("${dc[@]}" config --services | grep -vxE 'postgres|valkey')
+online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey' || true)
+step "Project ${project} will run $(basename "$compose") (setup complete: ${completed})"
+[ -z "$running" ] || [ "$running" = "$compose" ] ||
+    echo "    switching from $(basename "$running")"
+
+step "Backup (best effort)"
 "${dc[@]}" run --rm -T backup-worker >/dev/null 2>&1 &&
     echo "    taken" || echo "    refused or unavailable; continuing"
 
-echo "==> Stopping online services"
+step "Stopping online services"
+stopped_at=$(date -u +%s)
+# Stop whatever runs now, under whichever file started it; the start below
+# brings up the full target topology regardless.
+# shellcheck disable=SC2086 # one service name per word
 [ -z "$online" ] || "${dc[@]}" stop $online >/dev/null 2>&1
 
-echo "==> Retargeting"
+step "Retargeting"
 "${isolated[@]}" \
     --mount "type=bind,source=$root,target=$root" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
     "$image" retarget-image --config /run/operator.yaml --image "$image"
 
-echo "==> Migration and grants"
+step "Migration and grants"
 "${dc[@]}" run --rm -T migration 2>&1 | tail -1
 "${dc[@]}" run --rm -T database-provision database-grants \
     --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
 
-echo "==> Static files"
+step "Static files"
 # Disposable pre-launch data: keep only the previous tree.
 rm -rf "$root/cache/static.previous"
 mv "$root/cache/static" "$root/cache/static.previous"
@@ -117,22 +159,45 @@ install -d -o 10001 -g 10001 -m 0700 "$root/cache/static"
     --mount "type=bind,source=$root/cache/static,target=$root/cache/static" \
     "$image" collect-static --destination "$root/cache/static"
 
-echo "==> Starting"
-# caddy last, as first installation does.
-rest=$(printf '%s\n' $online | grep -vx caddy || true)
-[ -z "$rest" ] || "${dc[@]}" up --detach --wait $rest 2>&1 | grep -vE ' (Creat|Start|Wait|Running|Healthy|Recreat)' || true
-if printf '%s\n' $online | grep -qx caddy; then
-    "${dc[@]}" up --detach --wait caddy 2>&1 | grep -vE ' (Creat|Start|Wait|Running|Healthy|Recreat)' || true
+step "Starting every online service"
+# caddy last, as first installation does: it fronts web, so the site returns
+# only once everything behind it is up.
+mapfile -t first < <(printf '%s\n' "${wanted[@]}" | grep -vx caddy || true)
+[ "${#first[@]}" -eq 0 ] || "${dc[@]}" up --detach --wait "${first[@]}" 2>&1 | quiet
+if printf '%s\n' "${wanted[@]}" | grep -qx caddy; then
+    "${dc[@]}" up --detach --wait caddy 2>&1 | quiet
 fi
+
 # Just-started services can report an incomplete dependency observation for a
 # few seconds; retry before calling the deploy failed.
+healthy=0
 for attempt in $(seq 1 12); do
     if "${dc[@]}" exec -T web pk-stewardship health --config "$services/web.yaml"; then
-        echo "==> Deployed ${image}"
-        exit 0
+        healthy=1
+        break
     fi
     [ "$attempt" -eq 12 ] || sleep 5
 done
-echo "==> Deployed ${image}, but health is still failing" >&2
-exit 1
+step "Online services were down for $(( $(date -u +%s) - stopped_at ))s"
+
+# Every online service of the target topology must be running, and healthy
+# where it has a healthcheck. Name each one that is not.
+states=$("${dc[@]}" ps --all --format json | jq -rs 'flatten | .[] |
+    "\(.Service) \(.State) \(if .Health == "" then "none" else .Health end)"')
+bad=()
+for service in "${wanted[@]}"; do
+    line=$(printf '%s\n' "$states" | awk -v s="$service" '$1 == s' | head -1)
+    case "$line" in
+        "$service running healthy" | "$service running none") ;;
+        "") bad+=("$service: missing") ;;
+        *) bad+=("${line/ /: }") ;;
+    esac
+done
+if [ "${#bad[@]}" -gt 0 ] || [ "$healthy" -ne 1 ]; then
+    echo "==> Deployed ${image}, but the deployment is NOT healthy:" >&2
+    [ "$healthy" -eq 1 ] || echo "    web health check still failing" >&2
+    printf '    %s\n' "${bad[@]}" >&2
+    exit 1
+fi
+step "Deployed ${image}; all ${#wanted[@]} online services are running and healthy"
 REMOTE
