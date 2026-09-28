@@ -307,10 +307,13 @@ The sidebar starts with Home, then these sections, each listing the entries the
 viewer may open:
 
 - **Campaign**: Campaign settings (or New campaign), Pages and emails, Mail
-  schedules, Share options (financial campaigns), Go-live readiness (drafts)
+  schedules, Share options (financial campaigns), Member talents (Ministry
+  campaigns), Go-live readiness (drafts)
   and Delivery controls (Production).
 - **Reports**: Campaign reports, Ministry reports, Family codes, Postal
-  outreach and the Manual information report.
+  outreach and the Manual information report. The campaign reports page also
+  links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
+  report.
 - **Parish and integrations**: Parish settings, Parish logos, Integrations and
   Ministry activity.
 - **Users**: Portal users.
@@ -575,6 +578,7 @@ The campaign editor includes:
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
 - editable/reorderable share options with stable IDs and placeholders;
+- editable/reorderable Member talents (see [Member talents](#member-talents));
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
@@ -617,6 +621,17 @@ replacement counts. One transaction locks the Campaign, close occurrence,
 schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
 provider uncertainty; and commits the new end date together with every selected
 schedule change. Any failure rolls back the complete edit.
+
+### Member talents
+
+The talent checkboxes on each Member's ministry page (see
+[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate))
+are a campaign list edited like the share options: ordered rows with stable
+identities, explicit deletion, a free-text flag, a signed preview and confirm.
+A campaign that never edited its talents shows the built-in defaults, and the
+first save stores them with their fixed identities, so earlier answers still
+match; an emptied list stays empty. Talents are structural settings (above) and
+are offered only when Ministry stewardship is enabled.
 
 ### Production transition
 

@@ -55,6 +55,7 @@ sections:
     "Parish and integration configuration": [ADM-03, ARC-06]
     "Ministry activity management": [ADM-03, DAT-05, FAM-05]
     "Campaign configuration": [ADM-04]
+    "Member talents": [ADM-04]
     "Production transition": [ADM-05]
     "Restore release": [ADM-06, OPS-06]
     "Live delivery pause": [ADM-06]
@@ -74,6 +75,7 @@ sections:
     "Existing Member census": [FAM-04]
     "Proposed Members": [FAM-04]
     "Ministry stewardship": [FAM-05]
+    'Talents and "cannot participate"': [FAM-05]
     "Financial stewardship": [FAM-05]
     "Additional information": [FAM-06]
     "Review and submission": [FAM-06]
@@ -115,6 +117,7 @@ sections:
     "Multi-Ministry follow-up packet": [RPT-07]
     "Pending census changes": [RPT-08]
     "Financial stewardship detail": [RPT-08]
+    "Talents and limitations": [RPT-04]
     "System logs": [RPT-09]
     "Daily email report parity": [RPT-09]
   operations/spec.md:
