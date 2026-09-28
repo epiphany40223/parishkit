@@ -415,8 +415,10 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .financial-pledge { border: 0; padding: 0; margin: 0; background: none; }
 .talents-panel > label { display: block; }
 /* Ministry choices locked by "cannot participate" are also inert. */
-.ministry-choices.is-locked { opacity: .55; }
-.ministry-choices.is-locked .ministry-join > summary { cursor: not-allowed; }
+/* Locked choices read as unavailable through color that still meets
+   contrast (never opacity), a dashed outline and a not-allowed cursor. */
+.ministry-choices.is-locked { color: var(--muted); border-inline-start: 3px dashed var(--muted); padding-inline-start: .75rem; }
+.ministry-choices.is-locked :is(label, .ministry-join > summary) { cursor: not-allowed; }
 /* Ministry rows: the ministry name, then the choice, stated once. */
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
 .ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }

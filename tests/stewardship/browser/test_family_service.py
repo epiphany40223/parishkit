@@ -82,7 +82,17 @@ def test_talents_and_ministry_lock_restore_and_submit(
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
     expect(choir.get_by_label("Stop participating")).to_be_checked()
     expect(choir.get_by_label("Stop participating")).to_be_disabled()
-    expect(page.locator(".ministry-choices")).to_have_attribute("inert", "")
+    # Readable, not inert: rows are disabled fieldsets and the join
+    # disclosure is marked disabled, out of the tab order and cannot open.
+    assert page.locator(".ministry-choices[inert]").count() == 0
+    summary = page.get_by_text("Click here to join another ministry", exact=True)
+    expect(summary).to_have_attribute("aria-disabled", "true")
+    expect(summary).to_have_attribute("tabindex", "-1")
+    summary.click()
+    expect(page.locator(".ministry-join")).not_to_have_attribute("open", "")
+    expect(
+        page.get_by_text("Every current ministry will stop", exact=False)
+    ).to_have_attribute("aria-live", "polite")
     expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_hidden()
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
