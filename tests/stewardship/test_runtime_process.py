@@ -30,6 +30,7 @@ def test_web_process_settings_keep_finite_reserved_headroom(tmp_path, production
     assert options["timeout"] < configuration.runtime_budget.proxy_timeout_seconds
     assert options["reload"] is (not production)
     assert options["preload_app"] is False
+    assert options["control_socket_disable"] is True
     assert options["post_worker_init"] is runtime_process.admitted_worker_started
     assert options["worker_exit"] is runtime_process.admitted_worker_exited
 

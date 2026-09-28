@@ -40,6 +40,11 @@ def gunicorn_options(configuration):
         "graceful_timeout": budget.drain_seconds,
         "keepalive": 5,
         "worker_tmp_dir": "/tmp",
+        # Gunicorn 25+ opens a runtime-management control socket under
+        # $HOME/.gunicorn by default. The image's root filesystem is read-only
+        # and nothing uses gunicornc, so the socket only produced a startup
+        # error and would add an unneeded management surface.
+        "control_socket_disable": True,
         # Gunicorn forcibly chmods its native pidfile to 0644. Our startup hook
         # instead records the master in the owner-only receipt directory.
         "on_starting": publish_supervisor_identity,
