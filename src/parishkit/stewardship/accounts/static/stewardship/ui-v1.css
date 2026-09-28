@@ -377,6 +377,12 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 #family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
 .family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
 .family-page > h3 { margin-top: .5rem; }
+/* Campaign artwork (#248): a full-width banner on the welcome page and a
+   small icon above each page heading; both scale down on narrow phones. */
+.family-banner { display: block; width: 100%; max-width: 40rem; height: auto; margin: 0 auto .75rem; }
+.family-page-icon { display: block; width: 6rem; height: auto; margin: .25rem 0 0; }
+.artwork-banner { max-width: 100%; height: auto; }
+.artwork-section { width: 6rem; height: auto; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }

@@ -136,5 +136,6 @@ def current_content(message, template_record_id, scope, *, private, public_origi
             render.text.replace(CODE_PLACEHOLDER, reference.code).replace(
                 LINK_PLACEHOLDER, url
             ),
+            banner_origin=public_origin,
         )
         return render, sealed, mail

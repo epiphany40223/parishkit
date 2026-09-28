@@ -138,6 +138,9 @@ def _navigation_items(actor, admin, campaign, configuration):
         if campaign:
             values = campaign.active_configuration.values or {}
             add("campaign", "campaign_settings", _("Campaign settings"), campaign.pk)
+            # Theme artwork (#248) stays editable while the campaign runs.
+            if campaign.state != "archived":
+                add("campaign", "artwork_settings", _("Campaign images"), campaign.pk)
             if campaign.state != "archived":
                 add("campaign", "content_catalog", _("Pages and emails"), campaign.pk)
             add("campaign", "schedule_settings", _("Mail schedules"), campaign.pk)

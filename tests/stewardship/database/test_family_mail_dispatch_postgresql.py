@@ -385,3 +385,24 @@ def test_observed_acceptance_survives_campaign_end(family_mail):  # noqa: F811
     message.refresh_from_db()
     assert message.state == "delivered"
     assert ScheduleFulfillment.objects.get().disposition == "delivered"
+
+
+def test_invitation_banner_resolves_under_the_exact_mail_role(family_mail):  # noqa: F811
+    """Initial mail re-rendered at dispatch shows the campaign banner (#248)."""
+    from .test_artwork_views_postgresql import set_banner
+
+    banner = set_banner(family_mail.service.store, family_mail.campaign.pk)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            mail, *_ = begin_submission(
+                message.pk,
+                execution.claim,
+                private=family_mail.rings.private,
+                public_origin="https://parish.example.org",
+            )
+            finish_submission(
+                message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+            )
+    assert f"https://parish.example.org/branding/{banner}.png" in mail.html

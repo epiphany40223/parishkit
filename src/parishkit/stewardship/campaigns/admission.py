@@ -111,7 +111,8 @@ def validate_installation(document, *, request_id=None):
         values = candidates[identifier]["values"]
         if identifier != str(current) and values != row.active_configuration.values:
             raise ConfigError("Historical campaign configuration cannot be edited.")
-        editable = {"name", "year_label", "content_versions"}
+        # Campaign artwork (#248) is presentation, so it stays editable live.
+        editable = {"name", "year_label", "content_versions", "artwork"}
         if intent and intent.campaign_id == row.pk:
             editable.add("end_date")
         if row.structural_locked and {

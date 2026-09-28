@@ -4,6 +4,7 @@ import re
 from html import unescape
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.accounts.branding_context import campaign_artwork
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
@@ -199,6 +200,8 @@ def form_presentation(form):
         "content": _page_content(
             baseline, campaign, family, members, member_count, form.inputs.financial
         ),
+        # Optional campaign banner and page icons (#248); absent when unset.
+        "images": campaign_artwork(campaign.values),
     }
 
 

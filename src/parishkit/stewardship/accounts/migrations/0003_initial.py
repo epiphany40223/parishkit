@@ -1029,7 +1029,17 @@ class Migration(migrations.Migration):
                     model_name="brandingasset",
                     constraint=models.CheckConstraint(
                         condition=models.Q(
-                            ("label__in", ["large", "menu", "icon", "favicon"])
+                            (
+                                "label__in",
+                                [
+                                    "large",
+                                    "menu",
+                                    "icon",
+                                    "favicon",
+                                    "banner",
+                                    "section",
+                                ],
+                            )
                         ),
                         name="branding_asset_label",
                     ),

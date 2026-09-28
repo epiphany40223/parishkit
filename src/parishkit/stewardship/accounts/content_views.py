@@ -11,6 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_POST
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.configuration import BANNER_EMAILS
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -31,6 +32,7 @@ from parishkit.stewardship.web.refusals import (
 )
 
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
+from .artwork_views import artwork_patch
 from .authentication import runtime
 from .campaign_views import _scope, _state
 from .content_defaults import default_initial
@@ -190,6 +192,32 @@ def _page(
     return response
 
 
+def _shows_banner(campaign, kind, slot):
+    """Whether a Family email shows the campaign banner (#248), or None.
+
+    None means the choice does not apply: pages and Admin-only emails.
+    """
+    if kind != "email" or slot not in BANNER_EMAILS:
+        return None
+    artwork = campaign.active_configuration.values.get("artwork", {})
+    return slot not in artwork.get("hide_banner", [])
+
+
+def _banner_patch(campaign, form, slot):
+    """The campaign update for a changed "show the banner" choice, if any."""
+    current = _shows_banner(campaign, form.kind, slot)
+    if current is None or form.cleaned_data.get("show_banner") == current:
+        return []
+    artwork = dict(campaign.active_configuration.values.get("artwork", {}))
+    hidden = set(artwork.get("hide_banner", []))
+    if current:
+        hidden.add(slot)
+    else:
+        hidden.discard(slot)
+    artwork["hide_banner"] = [name for name in BANNER_EMAILS if name in hidden]
+    return artwork_patch(campaign, artwork)
+
+
 def _preview(
     request, service, actor, state, campaign, form, label, previous, slot, salt
 ):
@@ -208,6 +236,7 @@ def _preview(
             patch, affected = revision_patch(
                 base.document(), campaign, previous, values
             )
+            patch += _banner_patch(campaign, form, slot)
         except UserFacingError as error:
             # A correctable refusal (removing a template that a schedule
             # still sends) is shown beside the form, which keeps its input.
@@ -291,6 +320,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             fields = set(ContentForm.base_fields) - (
                 {"subject"} if kind == "page" else set()
             )
+            # Only Family emails carry the campaign banner choice (#248).
+            if kind == "email" and slot in BANNER_EMAILS:
+                fields.add("show_banner")
             action = form_action(request.POST, preview_fields=fields)
             if kind is None:
                 raise ValueError("The catalog is read-only.")
@@ -352,6 +384,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                     kind=kind,
                     slot=slot,
                     initial=initial,
+                    banner=_shows_banner(campaign, kind, slot),
                 )
                 response = (
                     _preview(

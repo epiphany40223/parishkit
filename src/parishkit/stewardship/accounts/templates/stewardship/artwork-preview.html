@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review campaign image" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review campaign image" %}</h1>
+<p class="notice">{% blocktranslate with slot=label %}This image is uploaded but not yet in use. Confirm to use it as: {{ slot }}.{% endblocktranslate %}</p>
+<section class="panel"><figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview artwork-{{ asset.label }}"><figcaption>{{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure></section>
+<p>{% translate "Uploads that are never confirmed are discarded after a day." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+<button type="submit">{% translate "Use this image" %}</button></form>
+<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Back to campaign images" %}</a></p>
+{% endblock %}

@@ -66,7 +66,9 @@ class BrandingAsset(ImmutableRecord):
                 fields=["bundle", "label"], name="branding_asset_variant"
             ),
             models.CheckConstraint(
-                condition=models.Q(label__in=["large", "menu", "icon", "favicon"]),
+                condition=models.Q(
+                    label__in=["large", "menu", "icon", "favicon", "banner", "section"]
+                ),
                 name="branding_asset_label",
             ),
             models.CheckConstraint(

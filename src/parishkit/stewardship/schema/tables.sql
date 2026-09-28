@@ -161,7 +161,7 @@ CREATE TABLE public.stewardship_branding_asset (
     bundle_id uuid NOT NULL,
     CONSTRAINT branding_asset_bounds CHECK (((height >= 1) AND (height <= 1024) AND (size >= 1) AND (size <= 5242880) AND (width >= 1) AND (width <= 1024))),
     CONSTRAINT branding_asset_digest CHECK (((sha256)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT branding_asset_label CHECK (((label)::text = ANY ((ARRAY['large'::character varying, 'menu'::character varying, 'icon'::character varying, 'favicon'::character varying])::text[]))),
+    CONSTRAINT branding_asset_label CHECK (((label)::text = ANY ((ARRAY['large'::character varying, 'menu'::character varying, 'icon'::character varying, 'favicon'::character varying, 'banner'::character varying, 'section'::character varying])::text[]))),
     CONSTRAINT stewardship_branding_asset_height_check CHECK ((height >= 0)),
     CONSTRAINT stewardship_branding_asset_size_check CHECK ((size >= 0)),
     CONSTRAINT stewardship_branding_asset_width_check CHECK ((width >= 0))

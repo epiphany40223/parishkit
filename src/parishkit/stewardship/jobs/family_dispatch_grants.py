@@ -28,6 +28,11 @@ METADATA_FIELDS = (
 )
 
 
+# The only branding columns mail dispatch reads (branding_context.artwork_images).
+ARTWORK_ASSET_COLUMNS = frozenset({"id", "bundle_id", "width", "height"})
+ARTWORK_BUNDLE_COLUMNS = frozenset({"id", "state"})
+
+
 def add_dispatch_grants(tables, columns):
     """The isolated mail role resolves tokens and journals only fenced deliveries."""
     from parishkit.stewardship.reports.digest_grants import add_digest_dispatch_grants
@@ -36,6 +41,14 @@ def add_dispatch_grants(tables, columns):
     add_digest_dispatch_grants(tables, columns, private=True)
     add_weekly_dispatch_grants(tables, columns, private=True)
     add_receipt_reads(columns)
+    # Re-rendering at dispatch resolves the campaign banner (#248): only an
+    # image's identity and size, and whether its bundle is ready.
+    columns.setdefault("stewardship_branding_asset", {}).setdefault(
+        "SELECT", set()
+    ).update(ARTWORK_ASSET_COLUMNS)
+    columns.setdefault("stewardship_branding_bundle", {}).setdefault(
+        "SELECT", set()
+    ).update(ARTWORK_BUNDLE_COLUMNS)
     for table in (
         "stewardship_ops_incident",
         "stewardship_ops_notice",

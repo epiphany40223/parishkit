@@ -108,6 +108,13 @@ Enter or Space, never on hover, and closes with Escape or a click elsewhere.
 Help that every Family needs stays visible, including the birth-date Unknown
 explanation below and the pledge's "intention only" statement.
 
+Optional campaign images appear when the Admin has set them for the current
+campaign: the wide banner
+at the top of the welcome page, and a small icon (about 96 CSS pixels) above
+the heading of the welcome, Member, financial and closing pages. They are
+decorative (empty text alternatives), since the headings and text already carry
+their meaning, and scale down to fit a phone screen.
+
 Steps are assembled from enabled modules:
 
 1. Welcome and prior-submission status.

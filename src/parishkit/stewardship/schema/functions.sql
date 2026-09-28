@@ -504,7 +504,8 @@ BEGIN
     SELECT * INTO selected FROM public.stewardship_branding_bundle
         WHERE id=NEW.bundle_id;
     maximum := CASE NEW.label
-        WHEN 'large' THEN 1024 WHEN 'favicon' THEN 32 ELSE 128 END;
+        WHEN 'large' THEN 1024 WHEN 'banner' THEN 1024 WHEN 'section' THEN 256
+        WHEN 'favicon' THEN 32 ELSE 128 END;
     IF NOT FOUND OR selected.state<>'writing'
        OR selected.expires_at<=clock_timestamp()
        OR NEW.actor_id IS DISTINCT FROM selected.owner_id
@@ -539,9 +540,12 @@ BEGIN
         OR (OLD.state='cleanup_pending' AND NEW.state='scrubbed')) THEN
         RAISE EXCEPTION 'Invalid branding transition' USING ERRCODE='23514';
     END IF;
+    -- A logo bundle holds exactly its four variants; a campaign artwork
+    -- bundle (#248) holds exactly one banner or section image.
     IF NEW.state='ready' AND (NEW.expires_at<=clock_timestamp()
-       OR (SELECT count(*) FROM public.stewardship_branding_asset
-           WHERE bundle_id=NEW.id)<>4) THEN
+       OR NOT (SELECT (count(*)=4 AND bool_and(label IN('large','menu','icon','favicon')))
+           OR (count(*)=1 AND bool_and(label IN('banner','section')))
+           FROM public.stewardship_branding_asset WHERE bundle_id=NEW.id)) THEN
         RAISE EXCEPTION 'Branding bundle is incomplete or expired'
             USING ERRCODE='23514';
     END IF;
@@ -559,6 +563,16 @@ BEGIN
                     AND receipt.state='failed' AND receipt.failure_code='invalid_candidate'
                     AND NOT EXISTS (SELECT 1 FROM public.stewardship_config_activation WHERE request_id=q.id))) THEN
             RAISE EXCEPTION 'Retained configuration pins branding'
+                USING ERRCODE='23514';
+        END IF;
+        -- Campaign artwork (#248) named by any campaign configuration pins
+        -- its image the same way.
+        IF EXISTS (SELECT 1 FROM public.stewardship_campaign_configuration c
+            CROSS JOIN LATERAL jsonb_each_text(
+                coalesce(c.values->'artwork'->'images','{}'::jsonb)) image
+            JOIN public.stewardship_branding_asset a ON a.id::text=image.value
+            WHERE a.bundle_id=NEW.id) THEN
+            RAISE EXCEPTION 'Retained campaign configuration pins artwork'
                 USING ERRCODE='23514';
         END IF;
         IF public.stewardship_branding_pending_v1(NEW.id) THEN
@@ -598,6 +612,10 @@ CREATE FUNCTION public.stewardship_branding_pending_v1(identifier uuid) RETURNS 
         JOIN public.stewardship_config_request r ON r.patch @>
             jsonb_build_array(jsonb_build_object('section','parish','values',
                 jsonb_build_object('branding',jsonb_build_object(a.label,a.id::text))))
+            -- Campaign artwork (#248) names its asset under any image slot.
+            OR jsonb_path_exists(r.patch,
+                '$[*] ? (@.section == "campaigns").values.artwork.images.* ? (@ == $id)',
+                jsonb_build_object('id',a.id::text))
         WHERE a.bundle_id=identifier AND coalesce((
             SELECT c.state FROM public.stewardship_config_checkpoint c
             WHERE c.request_id=r.id ORDER BY c.sequence DESC LIMIT 1
@@ -641,6 +659,52 @@ BEGIN
             NEW.current_campaign_id, NEW.current_campaign_id);
     RETURN NEW;
 END $$;
+
+-- FUNCTION: stewardship_campaign_artwork_v1()
+CREATE FUNCTION public.stewardship_campaign_artwork_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE predecessor uuid; previous jsonb;
+        selected public.stewardship_branding_bundle%ROWTYPE;
+        image record;
+BEGIN
+    -- Campaign artwork (#248): every newly selected image is one ready,
+    -- single-image bundle of the right kind (a banner, or a section icon for
+    -- a page slot), owned by this Admin on this base unless an activated
+    -- campaign configuration already retains it. Unchanged slots need no check.
+    SELECT predecessor_id INTO predecessor
+        FROM public.stewardship_configuration_version WHERE id=NEW.configuration_id;
+    SELECT c.values->'artwork'->'images' INTO previous
+        FROM public.stewardship_campaign_configuration c
+        WHERE c.configuration_id=predecessor AND c.record_id=NEW.record_id;
+    FOR image IN SELECT key, value FROM jsonb_each_text(
+            coalesce(NEW.values->'artwork'->'images','{}'::jsonb)) LOOP
+        CONTINUE WHEN previous->>image.key IS NOT DISTINCT FROM image.value;
+        PERFORM pg_advisory_xact_lock(736230,1);
+        SELECT b.* INTO selected FROM public.stewardship_branding_bundle b
+            JOIN public.stewardship_branding_asset a ON a.bundle_id=b.id
+            WHERE a.id::text=image.value
+                AND a.label=CASE image.key WHEN 'banner' THEN 'banner' ELSE 'section' END;
+        IF NOT FOUND OR selected.state<>'ready' THEN
+            RAISE EXCEPTION 'Campaign artwork requires a ready normalized image'
+                USING ERRCODE='23514';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_configuration c
+            JOIN public.stewardship_config_activation v
+                ON v.configuration_id=c.configuration_id
+            CROSS JOIN LATERAL jsonb_each_text(
+                coalesce(c.values->'artwork'->'images','{}'::jsonb)) kept
+            WHERE kept.value=image.value) AND
+            (predecessor IS NULL OR selected.expires_at<=clock_timestamp()
+             OR selected.base_id<>predecessor
+             OR selected.owner_id IS DISTINCT FROM NEW.actor_id) THEN
+            RAISE EXCEPTION 'Staged artwork ownership or configuration changed'
+                USING ERRCODE='23514';
+        END IF;
+    END LOOP;
+    RETURN NEW;
+END;
+$$;
 
 -- FUNCTION: stewardship_campaign_boundary_mutable_v1()
 CREATE FUNCTION public.stewardship_campaign_boundary_mutable_v1() RETURNS trigger
@@ -1100,7 +1164,7 @@ BEGIN
         END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork'])) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
         END IF;
     END IF;

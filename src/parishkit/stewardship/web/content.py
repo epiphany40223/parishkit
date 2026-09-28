@@ -600,13 +600,48 @@ class Graphic:
 
 def prepare_graphics(upload):
     """Bounded PNG/JPEG/WebP input; static PNG variants strip EXIF and active data."""
+    return _normalized_variants(
+        upload, (("large", 1024), ("small", 128), ("favicon", 32))
+    )
+
+
+# Campaign artwork (#248): one normalized PNG, fitted within this many pixels
+# per side. A banner is shown up to about 600 CSS px wide; a section icon at
+# about 96 CSS px, so 256 stays sharp on high-density phone screens.
+ARTWORK_SIZES = {"banner": 1024, "section": 256}
+
+
+def prepare_artwork(upload, label):
+    """Normalize one campaign banner or section icon like a logo upload.
+
+    A banner must be wide (at least 2:1) and an icon roughly square (at most
+    2:1 either way), so neither can crowd a phone screen or a Family page.
+    """
+    if label not in ARTWORK_SIZES:
+        raise ValueError("Unknown artwork kind.")
+    graphics = _normalized_variants(upload, ((label, ARTWORK_SIZES[label]),))
+    graphic = graphics[label]
+    ratio = graphic.width / graphic.height
+    if (label == "banner" and ratio < 2) or (
+        label == "section" and not 0.5 <= ratio <= 2
+    ):
+        raise ValueError("Upload does not have the expected shape.")
+    return graphics
+
+
+def _normalized_variants(upload, sizes):
+    """Decode one bounded upload once and emit fresh PNGs fitted to each size.
+
+    Every output is re-encoded from a fresh pixel buffer, so EXIF, ICC and
+    text chunks from the upload are never kept.
+    """
     try:
         data = upload.read(MAX_IMAGE_BYTES + 1)
         if not isinstance(data, bytes) or not 0 < len(data) <= MAX_IMAGE_BYTES:
             raise ValueError
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(BytesIO(data)) as probe:
+            with Image.open(BytesIO(data), formats=("PNG", "JPEG", "WEBP")) as probe:
                 if (
                     probe.format not in {"PNG", "JPEG", "WEBP"}
                     or probe.width * probe.height > MAX_IMAGE_PIXELS
@@ -614,7 +649,7 @@ def prepare_graphics(upload):
                 ):
                     raise ValueError
                 probe.verify()
-            with Image.open(BytesIO(data)) as source:
+            with Image.open(BytesIO(data), formats=("PNG", "JPEG", "WEBP")) as source:
                 source.load()
                 normalized = ImageOps.exif_transpose(source).convert("RGBA")
                 # Every output is at most 1,024 pixels per side. Bound the pixel
@@ -624,7 +659,7 @@ def prepare_graphics(upload):
                 # A fresh pixel buffer deliberately discards EXIF/ICC/text data.
                 clean = Image.frombytes("RGBA", normalized.size, normalized.tobytes())
         result = {}
-        for label, size in (("large", 1024), ("small", 128), ("favicon", 32)):
+        for label, size in sizes:
             variant = clean.copy()
             variant.thumbnail((size, size), Image.Resampling.LANCZOS)
             output = BytesIO()
@@ -642,3 +677,66 @@ def prepare_graphics(upload):
         Image.DecompressionBombWarning,
     ):
         raise ValueError("Upload must be a supported, bounded static image.") from None
+
+
+# Widest banner a Family email shows; most email layouts are about 600px wide.
+EMAIL_BANNER_WIDTH = 600
+
+
+def email_banner(image, alt):
+    """Server-built banner image for the top of a Family email (#248).
+
+    ``image`` is ``{"url", "width", "height"}`` for a published campaign
+    banner, or ``None`` for no banner. Parish content itself never carries
+    images; this markup comes only from here. Email clients need absolute
+    HTTPS image addresses, so any other address yields no banner at all.
+    The inline style keeps the banner fluid on narrow phone mail clients.
+    """
+    if not image:
+        return ""
+    url = image["url"]
+    if type(url) is not str or not url.startswith("https://") or '"' in url:
+        return ""
+    width = min(image["width"], EMAIL_BANNER_WIDTH)
+    height = max(1, round(image["height"] * width / image["width"]))
+    return (
+        f'<p><img src="{escape(url, quote=True)}" alt="{escape(alt, quote=True)}" '
+        f'width="{width}" height="{height}" style="display:block;width:100%;'
+        f'max-width:{width}px;height:auto;border:0"></p>'
+    )
+
+
+# The fixed Testing notice route_family_mail() puts before any banner; its
+# description text is escaped, so it contains no "<".
+_TEST_NOTICE = r"(?:<h2>TEST</h2><p>[^<]*</p>)?"
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+
+def without_email_banner(html, origin):
+    """Remove the one server-built campaign banner (#248) before content checks.
+
+    Family email HTML is otherwise exactly sanitized parish content, which
+    never admits images. Only exactly what email_banner() builds is allowed,
+    only once, only first (after the fixed Testing notice, if any), only from
+    this deployment's public HTTPS ``origin``, and only a wide image (at least
+    twice as wide as tall), so it can never serve as a hidden tracking pixel.
+    Anything else is left in place and fails the sanitizer comparison.
+    """
+    if type(origin) is not str or not re.fullmatch(
+        r"https://[A-Za-z0-9.\-]+(?::[0-9]{1,5})?", origin
+    ):
+        return html
+    match = re.match(
+        _TEST_NOTICE
+        + r'(<p><img src="'
+        + re.escape(origin)
+        + r"/branding/"
+        + _UUID
+        + r'\.png" alt="[^"<>]*" width="([0-9]{1,4})" height="([0-9]{1,4})" '
+        r'style="display:block;width:100%;max-width:\2px;height:auto;border:0">'
+        r"</p>)",
+        html,
+    )
+    if not match or int(match.group(2)) < 2 * int(match.group(3)):
+        return html
+    return html[: match.start(1)] + html[match.end(1) :]

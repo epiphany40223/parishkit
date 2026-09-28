@@ -289,16 +289,23 @@ Functions digests).
 The Drive access-check guard (#268) then made the probe guard a non-callable
 SECURITY DEFINER that refuses a check naming anyone but the applied Workspace
 mailbox user (one guard body; Functions digest only).
+Campaign images (#248) then let a campaign's configuration name optional
+theme artwork: they admitted single-image `banner` and `section` branding
+assets (the asset label constraint and the asset and bundle guard bodies),
+pinned campaign-selected images against cleanup and pending-request checks,
+kept `artwork` editable while a campaign is live (the campaign pointer
+guard), and validated new selections in a new `stewardship_campaign_artwork_v1`
+trigger (Constraints, Functions and Triggers digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `0701ed5b` |
+| Constraints | 3398 | `79351bb3` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 601 | `e8bf5d25` |
-| Triggers | 553 | `32504824` |
+| Functions | 602 | `00ce8ff0` |
+| Triggers | 554 | `64154a74` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A
