@@ -66,3 +66,38 @@ def test_default_names_a_family_without_a_surname(monkeypatch):
     """The caller's default stands in for a missing surname."""
     _install(monkeypatch, {"5": {"active_head_duids": []}}, {})
     assert snapshot_names.snapshot_family_names("snap", [5], "Family") == {5: "Family"}
+
+
+def test_presence_names_a_nameless_family_family(monkeypatch):
+    """The presence page passes "Family" as the default, like the send page."""
+    from parishkit.stewardship.accounts import presence
+
+    current = SimpleNamespace(snapshot_id="snap", organization_id="org")
+    monkeypatch.setattr(
+        presence,
+        "SourceCurrent",
+        SimpleNamespace(objects=SimpleNamespace(first=lambda: current)),
+    )
+    _install(
+        monkeypatch,
+        {"7": {"active_head_duids": [70]}},
+        {"70": {"firstName": "Jeff", "lastName": "Squyres", "active": True}},
+    )
+    configuration = SimpleNamespace(
+        active_configuration=SimpleNamespace(
+            canonical_document={
+                "sections": {
+                    "integrations": [
+                        {
+                            "values": {
+                                "kind": "parishsoft",
+                                "settings": {"organization_id": "org"},
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    rows = [SimpleNamespace(family=SimpleNamespace(family_duid=7))]
+    assert presence._names(configuration, rows) == {7: "Family, Jeff Squyres"}

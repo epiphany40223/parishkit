@@ -138,9 +138,10 @@ def _names(configuration, rows):
         or str(current.organization_id) != organization
     ):
         return {}
-    # "Squyres, Tracy and Jeff", as on the Family codes directory.
+    # "Squyres, Tracy and Jeff", as on the Family codes directory; a Family
+    # with no name fields is "Family", as on the send page and directory.
     return snapshot_family_names(
-        current.snapshot_id, [row.family.family_duid for row in rows]
+        current.snapshot_id, [row.family.family_duid for row in rows], "Family"
     )
 
 
