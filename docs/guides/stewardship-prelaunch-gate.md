@@ -279,6 +279,10 @@ build the surname-and-heads name it searches and orders by (one function
 body; Functions digest only). The parish date format (#221) then added the
 nullable `stewardship_parish.date_format` column and its CHECK constraint
 over the known style codes.
+The new Family and Member answers (#247) then added the talents defaults,
+the talents-and-limitation answer guard and the talents report functions, and
+extended the submission and financial answer guards and the financial and
+Ministry follow-up report functions (Functions only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -287,7 +291,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `d0155245` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 598 | `5124dc51` |
+| Functions | 601 | `8fafb172` |
 | Triggers | 553 | `32504824` |
 | Policies | 28 | `1c9c3b2d` |
 
