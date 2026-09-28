@@ -557,6 +557,19 @@ ten such sends are in progress per campaign. It creates and satisfies no
 scheduled occurrence or fulfillment, does not satisfy the readiness check,
 cannot be resent, and is deleted by Testing cleanup like all other Testing mail.
 It does not open the portal outside the campaign dates.
+When the Administrator's Google sign-in is older than the fresh window, the
+review shows how long ago they signed in and offers **Confirm with Google** in
+place of Send. The reviewed Family IDs, never credentials, are kept in the
+server-side session across that
+[step-up](../architecture/spec.md#identity-and-session-security), so the same
+review returns for the Administrator to confirm; nothing is sent automatically.
+A stale confirmation is refused with a page that says nothing was sent. After a
+send, the page confirms how many tests were requested and refreshes their
+status while any is still on its way.
+
+Every other fresh-authentication action refused from a submitted form says that
+nothing was done or sent and offers the same step-up; forms that carry a secret,
+such as a replacement key, keep nothing and ask for it again.
 
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;

@@ -21,10 +21,16 @@ from .campaign_family_test import (
     request_tests,
 )
 from .integration_views import ERRORS, _checked
+from .sessions import FreshAuthenticationRequired, freshness
 from .setup_views import error_response
 
+# Session keys, never query parameters: DUIDs to restore after a Google
+# step-up, and a one-time "requested" confirmation after a successful send.
+RESTORE_KEY = "pk_family_test_restore"
+SENT_KEY = "pk_family_test_sent"
+
 TICKET_LABELS = {
-    "queued": _("Awaiting the general worker"),
+    "queued": _("Queued — it will be sent shortly"),
     "prepared": _("Prepared for the mail worker"),
     "cancelled": _("Cancelled before preparation"),
     "failed": _("Preparation failed"),
@@ -96,14 +102,57 @@ def _label(item):
     return TICKET_LABELS[item["state"]]
 
 
-def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
+def _scope(campaign_id, revision_id):
+    """Bind a restore entry to exactly this campaign and email template."""
+    return {"campaign": str(campaign_id), "revision": str(revision_id)}
+
+
+def _restore(request, campaign_id, revision_id):
+    """Take back the DUIDs saved before a Google step-up, once, if they match."""
+    saved = request.session.pop(RESTORE_KEY, None)
+    if not isinstance(saved, dict) or {
+        key: saved.get(key) for key in ("campaign", "revision")
+    } != _scope(campaign_id, revision_id):
+        return ()
+    try:
+        return parse_family_duids(" ".join(str(value) for value in saved["families"]))
+    except (KeyError, TypeError, ValueError):
+        return ()
+
+
+def _remember(request, campaign_id, revision_id, duids):
+    """Keep a reviewed selection across the Google step-up (DUIDs only).
+
+    Nothing is sent from this: after returning, the Admin sees a fresh preview
+    of the same Families and still confirms and presses Send themselves.
+    """
+    request.session[RESTORE_KEY] = _scope(campaign_id, revision_id) | {
+        "families": [str(duid) for duid in duids]
+    }
+
+
+def _pending(item):
+    """Whether a recent test is still on its way, so the list should refresh."""
+    if item["message_state"] is not None:
+        return item["message_state"] in {"pending", "retry_wait", "submitting"}
+    return item["state"] == "queued"
+
+
+def _page(
+    request, service, campaign_id, revision_id, *, duids=(), form=None, restored=False
+):
     """Render current eligibility and status; a preview is intent, never a send."""
     preview = prepare(request, service, campaign_id, revision_id, duids)
+    fresh, minutes = freshness(request)
+    if duids and not fresh:
+        # Sending needs a recent Google sign-in; keep the selection for after.
+        _remember(request, campaign_id, revision_id, duids)
     confirm = None
     if duids and preview.epoch_id is not None:
         confirm = FamilyTestConfirmForm(
             initial={"preview": signing.dumps(preview.binding(), salt=SALT)}
         )
+    items = [item | {"label": _label(item)} for item in recent_tickets(campaign_id)]
     response = render(
         request,
         "stewardship/campaign-mail-families.html",
@@ -129,9 +178,14 @@ def _page(request, service, campaign_id, revision_id, *, duids=(), form=None):
             "sendable": not preview.held
             and all(choice.eligible for choice in preview.families)
             and len(preview.families) <= preview.available,
-            "items": [
-                item | {"label": _label(item)} for item in recent_tickets(campaign_id)
-            ],
+            "items": items,
+            # Refresh while a test is on its way, unless a review is on screen.
+            "refresh": not duids and any(_pending(item) for item in items),
+            "fresh": fresh,
+            "signed_in_minutes": minutes,
+            "restored": restored,
+            "sent": request.session.pop(SENT_KEY, None) if not duids else None,
+            "next": request.path,
             "sample_url": reverse(
                 "admin:campaign_mail", args=[campaign_id, revision_id]
             ),
@@ -148,7 +202,15 @@ def campaign_mail_families(request, campaign_id, revision_id):
         service = runtime()
         if request.method != "POST":
             filters(request.GET, allowed=set())
-            return _page(request, service, campaign_id, revision_id)
+            duids = _restore(request, campaign_id, revision_id)
+            return _page(
+                request,
+                service,
+                campaign_id,
+                revision_id,
+                duids=duids,
+                restored=bool(duids),
+            )
         if _action(request) == "preview":
             form = FamilyTestForm(request.POST)
             duids = form.cleaned_data["families"] if form.is_valid() else ()
@@ -158,14 +220,33 @@ def campaign_mail_families(request, campaign_id, revision_id):
         form = FamilyTestConfirmForm(request.POST)
         if not form.is_valid():
             raise ValueError("Confirm the reviewed Families and the acknowledgement.")
-        request_tests(
-            request,
-            service,
-            campaign_id,
-            revision_id,
-            preview_token=form.cleaned_data["preview"],
-            acknowledge=form.cleaned_data["acknowledge"],
-        )
+        try:
+            rows = request_tests(
+                request,
+                service,
+                campaign_id,
+                revision_id,
+                preview_token=form.cleaned_data["preview"],
+                acknowledge=form.cleaned_data["acknowledge"],
+            )
+        except FreshAuthenticationRequired as error:
+            # Nothing was sent. Keep the reviewed DUIDs so that, after the
+            # Google step-up, the page shows the same review ready to send.
+            try:
+                binding = signing.loads(form.cleaned_data["preview"], salt=SALT)
+                _remember(
+                    request,
+                    campaign_id,
+                    revision_id,
+                    parse_family_duids(" ".join(binding["families"])),
+                )
+                kept = True
+            except (signing.BadSignature, KeyError, TypeError, ValueError):
+                kept = False
+            response = error_response(error)
+            response.stewardship_inputs_kept = kept
+            return response
+        request.session[SENT_KEY] = len(rows)
         return _checked(
             request,
             service,

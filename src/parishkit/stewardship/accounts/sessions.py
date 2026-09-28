@@ -361,12 +361,31 @@ class FreshAuthenticationRequired(PermissionError):
     """
 
 
+FRESH_SECONDS = 300
+
+
+def freshness(request):
+    """Say whether a gated action would be admitted now, for page notices only.
+
+    Returns ``(fresh, minutes)``: ``minutes`` is how long ago this session last
+    signed in with Google (``None`` without a live session). It never admits
+    anything; every gated command still calls ``require_fresh`` itself.
+    """
+    row = getattr(request, "portal_session", None)
+    if row is None:
+        return False, None
+    age = (database_now() - row.authenticated_at).total_seconds()
+    return 0 <= age <= FRESH_SECONDS, max(0, int(age // 60))
+
+
 def require_fresh(request):
     """A fresh Google round trip, not a browser flag, admits privileged commands."""
     row = getattr(request, "portal_session", None)
     if (
         row is None
-        or not 0 <= (database_now() - row.authenticated_at).total_seconds() <= 300
+        or not 0
+        <= (database_now() - row.authenticated_at).total_seconds()
+        <= FRESH_SECONDS
     ):
         raise FreshAuthenticationRequired("Please authenticate with Google again.")
     return row.authenticated_at

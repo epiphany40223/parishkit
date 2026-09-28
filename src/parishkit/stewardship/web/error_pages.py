@@ -131,6 +131,8 @@ def error_page(request, response):
         "reauthenticate": reauthenticate,
         "next": admin_return_path(request.get_full_path()),
         "submitted": request.method == "POST",
+        # The view kept the Admin's choices (server-side) for after the step-up.
+        "inputs_kept": getattr(response, "stewardship_inputs_kept", False),
         "sign_in": (
             ("/admin/login" if admin else "/")
             if code == ErrorCode.DENIED and not reauthenticate
