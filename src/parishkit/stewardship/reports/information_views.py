@@ -3,7 +3,7 @@
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
@@ -16,7 +16,6 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import AdditionalInformationItem
@@ -69,7 +68,10 @@ def _error(campaign_id, *, item_id=None, status=400):
 
 def _audit(principal, campaign_id, outcome):
     """Retain parish-owned access evidence, not private search or displayed values."""
-    with work_transaction():
+    # An audit append takes no row locks, so it need not join the
+    # writers' work order; waiting there stalled report pages behind
+    # every source promotion and installer.
+    with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
         ).get()
