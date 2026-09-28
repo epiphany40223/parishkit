@@ -6,11 +6,16 @@ example, and how the system uses it. Django renders ``help_text`` under the
 field and links it to the control with ``aria-describedby``. Its default
 templates mark help text safe, so these strings must never contain markup or
 anything derived from input.
+
+Help longer than about one line opens from an "i" button beside the label
+(field_tips.py); HINTS names the one line that stays visible for fields whose
+format or rule is needed every time.
 """
 
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
+from . import field_tips
 from .campaign_forms import MULTI_SELECT_HELP
 
 PARISH = {
@@ -273,14 +278,40 @@ CONTENT = {
 }
 
 
+# One visible line for fields whose full help moves into a tip. Keep each to
+# the format, example or rule an Admin needs every time they fill it in.
+HINTS = {
+    "website": _("For example https://www.yourparish.org/"),
+    "timezone": _("For example America/New_York."),
+    "phone": _("Ten-digit US number, for example (212) 555-1234."),
+    "online_giving_url": _("Optional. Must start with https://."),
+    "staff_domains": _("One domain per line, for example yourparish.org."),
+    "ministry_domains": _("One domain per line."),
+    "staff_addresses": _("One address per line."),
+    "ministry_addresses": _("One address per line."),
+    "admin_addresses": _("One address per line."),
+    "delegated_email": _("A licensed Workspace user, not the service account."),
+    "sender": _("The mailbox itself or one of its verified Gmail aliases."),
+    "channel_id": _("For example C0123456789 (the ID, not the name)."),
+    "testing_recipient": _("A staff mailbox only trusted people can read."),
+    "logo": _("PNG, JPEG or WebP, up to 5 MB."),
+    "candidate": _("Paste it exactly. It is never displayed again."),
+    "organization_id": _("For example 1234."),
+}
+# The multi-select lists keep a short how-to visible; the tip has the full text.
+for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
+    HINTS[name] = _("Hold Ctrl (Cmd on a Mac) to choose several, or Shift for a range.")
+
+
 def apply(form, texts, *, replace=False):
     """Set help text on the form's fields that do not already explain themselves.
 
     An existing, more specific help text (for example a slot-specific content
     rule) is kept unless ``replace`` says the generic shared text is superseded.
+    Long help then moves into a tip beside the label, leaving its HINTS line.
     """
     for name, text in texts.items():
         field = form.fields.get(name)
         if field is not None and (replace or not field.help_text):
             field.help_text = text
-    return form
+    return field_tips.shorten(form, HINTS)

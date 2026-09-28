@@ -369,6 +369,14 @@ open. Help under a field is a short hint; longer field explanations belong in
 the About panel or a click-to-open field tip, never in hover-only tooltips,
 which touch and keyboard users cannot reach.
 
+Field help longer than about one line opens from an "i" button beside the
+field's label (the shared toggletip). Only a one-line hint stays visible under
+the label, for fields whose format or rule is needed every time (an example
+address, "one per line", a key's paste rule), and a warning that blocks the
+field, such as having no emails to schedule, always stays visible. The field
+remains described by its full help, so screen readers announce it without
+opening the tip. Checkbox help stays beside the box.
+
 ## Background indicators
 
 Admins have two always-visible indicators:
