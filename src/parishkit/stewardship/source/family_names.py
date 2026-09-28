@@ -32,7 +32,13 @@ def name_series(parts):
     return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
-def family_heads_name(surname, heads):
+def _head_full_name(head):
+    """One head's "first last", or the older single display name."""
+    parts = (_text(head, "first"), _text(head, "last"))
+    return " ".join(part for part in parts if part) or _text(head, "name")
+
+
+def family_heads_name(surname, heads, *, surname_first=True):
     """The Family as staff recognize it: "Squyres, Tracy and Jeff".
 
     The surname leads so the string sorts by it. Heads sharing that surname
@@ -40,11 +46,21 @@ def family_heads_name(surname, heads):
     ("Squyres, Tracy and Jeff Smith"). Without heads it is just the surname.
     Heads captured before first and last names were kept separately
     contribute their full display name.
+
+    With ``surname_first=False`` the names read naturally, as on an envelope:
+    heads sharing one surname say it once at the end ("Tracy and Jeff
+    Squyres"); otherwise each head's full name is kept ("Tracy Squyres and
+    Jeff Smith"). Without heads it is again just the surname.
     """
+    if not surname_first:
+        split = [(_text(head, "first"), _text(head, "last")) for head in heads]
+        lasts = {last for _, last in split}
+        if heads and len(lasts) == 1 and "" not in lasts:
+            return f"{name_series([first for first, _ in split])} {lasts.pop()}".strip()
+        return name_series([_head_full_name(head) for head in heads]) or surname
     parts = []
     for head in heads:
         first, last = _text(head, "first"), _text(head, "last")
-        full = " ".join(part for part in (first, last) if part) or _text(head, "name")
-        parts.append(first if last == surname else full)
+        parts.append(first if last == surname else _head_full_name(head))
     names = name_series(parts)
     return f"{surname}, {names}" if names else surname

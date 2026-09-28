@@ -72,3 +72,36 @@ def test_family_heads_name_leads_with_the_surname(heads, expected):
 def test_name_series_joins_naturally(parts, expected):
     """Natural English joins, skipping blanks."""
     assert name_series(parts) == expected
+
+
+@pytest.mark.parametrize(
+    ("heads", "expected"),
+    [
+        ([], "Squyres"),
+        (
+            [
+                {"first": "Jeff", "last": "Squyres"},
+                {"first": "Tracy", "last": "Squyres"},
+            ],
+            "Jeff and Tracy Squyres",
+        ),
+        (
+            [{"first": "Tracy", "last": "Squyres"}, {"first": "Jeff", "last": "Smith"}],
+            "Tracy Squyres and Jeff Smith",
+        ),
+        ([{"first": first, "last": "Ng"} for first in "ABC"], "A, B and C Ng"),
+        (
+            [{"name": "Old Capture"}, {"name": "Second Head"}],
+            "Old Capture and Second Head",
+        ),
+        # A head without a first name adds nothing, as in surname-first order.
+        (
+            [{"first": "", "last": "Smith"}, {"first": "Jeff", "last": "Smith"}],
+            "Jeff Smith",
+        ),
+        ([{"first": "", "last": "Smith"}, {"first": " ", "last": "Smith"}], "Smith"),
+    ],
+)
+def test_family_heads_name_can_put_first_names_first(heads, expected):
+    """Envelope order: shared surname once at the end, else each full name."""
+    assert family_heads_name("Squyres", heads, surname_first=False) == expected
