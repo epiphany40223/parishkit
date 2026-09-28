@@ -311,7 +311,7 @@ def test_removing_the_destination_records_that_copies_stopped(offsite):
     assert episode() is None
 
 
-def test_the_installer_answers_access_checks(monkeypatch):
+def test_the_installer_answers_access_checks(workspace, monkeypatch):
     """The Workspace installer login completes checks; the guard keeps them final."""
     drive = FakeDrive(FOLDER)
     monkeypatch.setattr(key_files, "read_private", lambda path: b"key")
@@ -475,7 +475,7 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert backups(store) == []
 
 
-def test_a_check_that_waited_too_long_closes_unanswered(monkeypatch):
+def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch):
     """The installer never runs a stale check; the page already said so."""
     from datetime import timedelta
 
@@ -496,3 +496,50 @@ def test_a_check_that_waited_too_long_closes_unanswered(monkeypatch):
     assert (row.state, row.failure_kind) == ("failed", "unanswered")
     with transaction.atomic():
         assert latest_probe(actor, database_now()).kind == "unanswered"
+
+
+def insert_probe(subject):
+    """Insert one access check as the real web login; return any SQL error."""
+    try:
+        with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
+            BackupDriveProbe.objects.create(
+                requested_by_id=uuid4(), folder_id=FOLDER, subject=subject
+            )
+    except DatabaseError as error:
+        return error.__cause__.sqlstate
+    return None
+
+
+def test_a_check_may_only_name_the_applied_workspace_mailbox(workspace):
+    """The web cannot make the installer impersonate another domain user."""
+    assert insert_probe("mail@example.org") is None
+    assert insert_probe("someone.else@example.org") == "23514"
+    assert insert_probe("MAIL@example.org") == "23514"
+    row = BackupDriveProbe.objects.get(subject="mail@example.org")
+    with pytest.raises(DatabaseError), transaction.atomic():
+        BackupDriveProbe.objects.filter(pk=row.pk).update(
+            subject="someone.else@example.org"
+        )
+
+
+def test_a_check_needs_an_applied_workspace_integration():
+    """With no Workspace mail applied there is no user a check may name."""
+    assert insert_probe("mail@example.org") == "23514"
+
+
+def test_the_probe_guard_is_a_non_callable_definer():
+    """The guard reads applied settings as its owner and cannot be called."""
+    for login in (
+        lambda: task_login(ServiceRole.WEB, exact=True),
+        lambda: target_login("google_workspace"),
+    ):
+        with login(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT prosecdef, proconfig, "
+                "has_function_privilege(current_user, oid, 'EXECUTE') "
+                "FROM pg_proc WHERE "
+                "oid='public.stewardship_backup_probe_guard_v1()'::regprocedure"
+            )
+            definer, configuration, executable = cursor.fetchone()
+            assert definer and not executable
+            assert configuration == ["search_path=pg_catalog, public, pg_temp"]
