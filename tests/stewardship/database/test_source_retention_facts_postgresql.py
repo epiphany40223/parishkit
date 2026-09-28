@@ -226,7 +226,7 @@ def test_fact_cleanup_failure_does_not_stop_snapshot_retention(tmp_path, monkeyp
     history = [refresh_with_facts(inputs, owner, watermark) for watermark in (2, 3)]
     skipped = []
 
-    def refuse(execution, limit=200):
+    def refuse(execution, **kwargs):
         """Simulate the old pin guard refusing the worker's fact pin release."""
         raise IntegrityError(
             "Worker may release only unused response comparison inputs"

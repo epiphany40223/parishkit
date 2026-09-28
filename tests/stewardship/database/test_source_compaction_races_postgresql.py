@@ -26,26 +26,39 @@ history = source_history_fixture
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_cleanup_failure_rolls_back_metadata_memberships_and_payloads(
+def test_failed_deletion_chunk_is_never_readable_and_the_next_run_finishes(
     history, monkeypatch
 ):
-    """A failed batch is retryable without a partially compacted visible corpus."""
-    original = compaction._delete_corpora
+    """Marking commits first, so a failed chunk leaves an unreadable corpus.
 
-    def fail(*args):
-        """Inject failure after actual SQL deletion, before the transaction commits."""
-        original(*args)
-        raise RuntimeError("synthetic interruption")
+    Deletion runs in short chunks after the marking transaction commits. A
+    failure rolls back only its chunk; the manifest is already compacted, so
+    no reader sees a partial corpus, and the next run reclaims the leftovers.
+    """
+    original = compaction._reclaim_memberships
+
+    def fail(*args, **kwargs):
+        """Inject failure after actual SQL deletion, before the chunk commits."""
+        with transaction.atomic():
+            original(*args, **kwargs)
+            raise RuntimeError("synthetic interruption")
 
     with monkeypatch.context() as context:
-        context.setattr(compaction, "_delete_corpora", fail)
+        context.setattr(compaction, "_reclaim_memberships", fail)
         with pytest.raises(RuntimeError, match="synthetic interruption"):
             cleanup()
-    assert SourceSnapshot.objects.get(pk=history[0].pk).compacted_at is None
+    assert SourceSnapshot.objects.get(pk=history[0].pk).compacted_at is not None
+    with pytest.raises(InvalidSourcePayload, match="unavailable"):
+        reconstruct_snapshot(history[0].pk)
     assert SourceFamily.objects.count() == 3
     assert not SourceCompactionBatch.objects.exists()
-    assert reconstruct_snapshot(history[0].pk)
-    assert cleanup().snapshot_count == 1
+    again = cleanup()
+    assert (again.snapshot_count, again.membership_count, again.payload_count) == (
+        0,
+        9,
+        1,
+    )
+    assert SourceFamily.objects.count() == 2
 
 
 def test_new_pin_winning_the_row_lock_prevents_cleanup(history):
@@ -88,10 +101,10 @@ def test_compaction_winning_the_row_lock_rejects_later_pin(history, monkeypatch)
     """A selector cannot protect deleted input after waiting for a committed batch."""
     deleted, finish, pin_started = Event(), Event(), Event()
     pin_backend = []
-    original = compaction._delete_corpora
+    original = compaction._mark_compacted
 
     def pause(*args):
-        """Expose the exact interval after deletion but before transaction commit."""
+        """Expose the interval after marking but before the marking commits."""
         result = original(*args)
         deleted.set()
         assert finish.wait(10)
@@ -115,7 +128,7 @@ def test_compaction_winning_the_row_lock_rejects_later_pin(history, monkeypatch)
         finally:
             connections.close_all()
 
-    monkeypatch.setattr(compaction, "_delete_corpora", pause)
+    monkeypatch.setattr(compaction, "_mark_compacted", pause)
     with ThreadPoolExecutor(max_workers=2) as pool:
         cleaning_future = pool.submit(cleaning)
         try:

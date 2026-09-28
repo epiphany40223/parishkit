@@ -5,6 +5,8 @@ ownership prevents concurrent promotion; shared snapshot locks protect active
 readers through lazy queries. Only explicit normalized source tables are targets.
 """
 
+from time import monotonic
+
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Q
 from django.db.models.expressions import RawSQL
@@ -46,9 +48,19 @@ LIVE_REFERENCES = (
     ") AS live WHERE id IS NOT NULL"
 )
 
-# One snapshot per batch keeps each deleting transaction to a few seconds; a
-# refresh run then clears at most this many before it starts loading.
+# A refresh run marks at most this many batches of snapshots before loading.
 BATCHES_PER_REFRESH = 20
+
+# Deletion runs in its own short transactions that hold neither the task row
+# nor the source lease row, so the heartbeat (which waits at most two seconds
+# for those rows) can always renew. Every deleted row still fires its SQL
+# guard, which verifies the live compaction lease, so bound each chunk.
+MEMBERSHIP_CHUNK = 2000
+PAYLOAD_CHUNK = 500
+
+# One refresh spends at most this long on retention; memberships of
+# already-compacted or rejected corpora left over are reclaimed next run.
+RETENTION_BUDGET_SECONDS = 60
 
 
 def _live_pins(now):
@@ -56,25 +68,6 @@ def _live_pins(now):
     return SourceSnapshotPin.objects.filter(
         Q(expires_at__isnull=True) | Q(expires_at__gt=now)
     )
-
-
-def _rejected_corpora(limit):
-    """Rejected staging never became source truth; its memberships are waste.
-
-    Select rejected manifests that still own membership rows in any entity
-    table (a load can fail after staging only some kinds).
-    """
-    owned = " UNION ALL ".join(
-        f"SELECT 1 FROM {membership._meta.db_table} m WHERE m.snapshot_id=s.id"
-        for _, membership in ENTITY_MODELS.values()
-    )
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT id FROM stewardship_source_snapshot s WHERE s.state='rejected' "
-            f"AND EXISTS ({owned}) ORDER BY s.created_at, s.id LIMIT %s",
-            (limit,),
-        )
-        return [row[0] for row in cursor.fetchall()]
 
 
 def _select_compaction(current, now, limit):
@@ -117,40 +110,99 @@ def _select_compaction(current, now, limit):
     ]
 
 
-def _delete_corpora(identifiers, payload_limit):
-    """Delete exact memberships, then bounded unreferenced payload versions."""
-    membership_count, payload_count = 0, 0
-    with connection.cursor() as cursor:
+def _reclaim_memberships(limit=MEMBERSHIP_CHUNK):
+    """Delete one bounded chunk of memberships of compacted or rejected corpora.
+
+    Runs in its own transaction and takes no task or lease row lock; the
+    membership guard admits the worker only under the live compaction lease
+    and only for a compacted manifest or rejected staging. Picks up rows a
+    previous run left behind, so an interrupted run loses nothing.
+    """
+    deleted = 0
+    with transaction.atomic(), connection.cursor() as cursor:
+        for _, membership in ENTITY_MODELS.values():
+            if deleted >= limit:
+                break
+            table = connection.ops.quote_name(membership._meta.db_table)
+            # Probe per snapshot through the snapshot_id index, not a scan of
+            # the whole membership table.
+            cursor.execute(
+                f"DELETE FROM {table} WHERE id IN (SELECT m.id FROM {table} m "
+                "WHERE m.snapshot_id IN (SELECT s.id "
+                "FROM stewardship_source_snapshot s "
+                "WHERE (s.compacted_at IS NOT NULL OR s.state='rejected') "
+                f"AND EXISTS (SELECT 1 FROM {table} x WHERE x.snapshot_id=s.id)) "
+                "LIMIT %s)",
+                (limit - deleted,),
+            )
+            deleted += cursor.rowcount
+    return deleted
+
+
+def _reclaim_payloads(limit=PAYLOAD_CHUNK):
+    """Delete one bounded chunk of payload versions no membership references.
+
+    Its own short transaction, like memberships; the payload guard requires
+    the live compaction lease and foreign keys refuse any referenced version.
+    """
+    deleted = 0
+    with transaction.atomic(), connection.cursor() as cursor:
         for payload, membership in ENTITY_MODELS.values():
-            member_table = connection.ops.quote_name(membership._meta.db_table)
-            payload_table = connection.ops.quote_name(payload._meta.db_table)
-            if identifiers:
-                cursor.execute(
-                    f"DELETE FROM {member_table} WHERE snapshot_id=ANY(%s)",
-                    (identifiers,),
-                )
-                membership_count += cursor.rowcount
+            if deleted >= limit:
+                break
             orphans = list(
                 payload.objects.filter(
                     ~Exists(membership.objects.filter(payload_id=OuterRef("id")))
                 )
                 .order_by("id")
-                .values_list("id", flat=True)[:payload_limit]
+                .values_list("id", flat=True)[: limit - deleted]
             )
             if orphans:
-                cursor.execute(
-                    f"DELETE FROM {payload_table} WHERE id=ANY(%s)", (orphans,)
-                )
-                payload_count += cursor.rowcount
-    return membership_count, payload_count
+                table = connection.ops.quote_name(payload._meta.db_table)
+                cursor.execute(f"DELETE FROM {table} WHERE id=ANY(%s)", (orphans,))
+                deleted += cursor.rowcount
+    return deleted
 
 
-def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
-    """Commit one bounded audited batch, retaining manifests, pins, readers and anchors.
+def _drain(reclaim, deadline, between):
+    """Repeat one chunked reclaimer until it runs dry or the budget is spent."""
+    total = 0
+    while monotonic() < deadline:
+        between()
+        count = reclaim()
+        total += count
+        if count == 0:
+            break
+    return total
 
-    Every row lock remains held through deletion and final ownership verification.
-    A pin that wins the race is rechecked in a fresh query after lock acquisition.
-    Payload foreign keys provide a final independent protected-reference boundary.
+
+def _mark_compacted(candidates, now, worker_id):
+    """Mark locked candidates compacted; readers then refuse them for good."""
+    for snapshot in candidates:
+        snapshot.compacted_at = now
+        snapshot.version += 1
+        snapshot.actor_id = worker_id
+        snapshot.save()
+
+
+def compact_source(
+    claim,
+    *,
+    admit,
+    snapshot_limit=50,
+    payload_limit=500,
+    deadline=None,
+    between=lambda: None,
+):
+    """Mark one bounded audited batch compacted, then reclaim rows in chunks.
+
+    Marking runs in one short transaction under the verified source claim:
+    candidate rows are locked, late pins are rechecked, and readers holding
+    their shared lock are skipped. Deletion then runs in separate bounded
+    transactions that hold no task or lease row, so it can never starve the
+    heartbeat; a compacted manifest is unreadable, so a partly reclaimed corpus
+    is never observed. ``deadline`` (a monotonic instant) bounds the deletion
+    and ``between`` runs before each chunk (the execution's liveness check).
     """
     if claim.phase != "compaction":
         raise ValueError("Source cleanup requires dedicated compaction ownership.")
@@ -159,6 +211,7 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
         for value in (snapshot_limit, payload_limit)
     ):
         raise ValueError("Source cleanup requires bounded positive batch sizes.")
+    deadline = monotonic() + RETENTION_BUDGET_SECONDS if deadline is None else deadline
     with transaction.atomic():
         verify_source(claim)
         _admit(admit, "compact", None)
@@ -166,23 +219,20 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
         now = _now()
         recent, yearly = retention_cutoffs(now)
         candidates = _select_compaction(current, now, snapshot_limit)
-        for snapshot in candidates:
-            snapshot.compacted_at = now
-            snapshot.version += 1
-            snapshot.actor_id = claim.worker_id
-            snapshot.save()
-        # Rejected manifests keep their state; only their memberships go.
-        rejected = _rejected_corpora(snapshot_limit)
-        memberships, payloads = _delete_corpora(
-            [row.pk for row in candidates] + rejected, payload_limit
-        )
+        _mark_compacted(candidates, now, claim.worker_id)
+    memberships = _drain(_reclaim_memberships, deadline, between)
+    payloads = _drain(
+        lambda: _reclaim_payloads(min(PAYLOAD_CHUNK, payload_limit)), deadline, between
+    )
+    with transaction.atomic():
+        verify_source(claim)
         evidence = SourceCompactionBatch.objects.create(
             task_id=claim.task_id,
             source_fence=claim.fence,
             cutoff_at=now,
             recent_cutoff=recent,
             yearly_cutoff=yearly,
-            snapshot_count=len(candidates) + len(rejected),
+            snapshot_count=len(candidates),
             membership_count=memberships,
             payload_count=payloads,
             actor_id=claim.worker_id,
@@ -198,11 +248,10 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
                 "outcome": Outcome.SUCCEEDED,
             },
         )
-        verify_source(claim)
         return evidence
 
 
-def _compact_superseded_facts(execution, limit=200):
+def _compact_superseded_facts(execution, limit=5, deadline=None):
     """Delete superseded, unused report fact generations in every campaign.
 
     Every refresh rebuilds report facts, and each generation pins its source
@@ -229,16 +278,23 @@ def _compact_superseded_facts(execution, limit=200):
             .values_list("campaign_id", flat=True)
             .distinct()
         )
+    # compact_facts holds this task's claim row for its whole transaction, so
+    # keep each one to a few generations; the heartbeat waits at most 2 s.
+    deadline = monotonic() + RETENTION_BUDGET_SECONDS if deadline is None else deadline
     removed = []
     for campaign_id in campaigns:
-        execution.check()
-        with transaction.atomic():
-            removed += compact_facts(
-                campaign_id,
-                execution.claim,
-                admit=lambda action, inputs: action == "compact",
-                limit=limit,
-            )
+        while monotonic() < deadline:
+            execution.check()
+            with transaction.atomic():
+                batch = compact_facts(
+                    campaign_id,
+                    execution.claim,
+                    admit=lambda action, inputs: action == "compact",
+                    limit=limit,
+                )
+            removed += batch
+            if len(batch) < limit:
+                break
     return removed
 
 
@@ -280,19 +336,28 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                 # fact cleanup failure (for example an outdated pin guard)
                 # must not stop snapshot retention, which still reclaims
                 # every snapshot no pin protects.
+                deadline = monotonic() + RETENTION_BUDGET_SECONDS
                 try:
-                    _compact_superseded_facts(execution)
+                    _compact_superseded_facts(execution, deadline=deadline)
                 except Exception as error:
                     _skipped(error)
                 for _ in range(batches):
+                    if monotonic() >= deadline:
+                        break
                     execution.check()
                     batch = compact_source(
                         claim,
                         admit=_admit_compaction,
-                        snapshot_limit=1,
+                        snapshot_limit=5,
                         payload_limit=1000,
+                        deadline=deadline,
+                        between=execution.check,
                     )
-                    if not (batch.snapshot_count or batch.payload_count):
+                    if not (
+                        batch.snapshot_count
+                        or batch.membership_count
+                        or batch.payload_count
+                    ):
                         break
         finally:
             with execution.effect():
