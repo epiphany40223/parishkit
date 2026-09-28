@@ -1576,6 +1576,29 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 migrations.AddConstraint(
+                    model_name="parish",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("date_format__isnull", True),
+                            (
+                                "date_format__in",
+                                (
+                                    "us_long",
+                                    "us_medium",
+                                    "us_numeric",
+                                    "eu_long",
+                                    "eu_medium",
+                                    "eu_numeric",
+                                    "eu_dot",
+                                    "iso",
+                                ),
+                            ),
+                            _connector="OR",
+                        ),
+                        name="parish_date_format",
+                    ),
+                ),
+                migrations.AddConstraint(
                     model_name="policysecurityevent",
                     constraint=models.UniqueConstraint(
                         fields=("activation", "rule_record_id"),

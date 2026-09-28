@@ -11,6 +11,7 @@ from parishkit.stewardship.jobs.campaign_mail_values import (
     document_parish,
     giving_url,
 )
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     render_template,
@@ -37,13 +38,19 @@ def public_substitutions(parish, campaign):
             "phone": parish.phone,
             "email": reply_to(parish.configuration_id),
             "online_giving_url": parish.online_giving_url,
+            "date_format": parish.date_format,
         },
         campaign.values,
     )
 
 
 def public_values(parish, campaign):
-    """Pure public values shared by page rendering and concurrency projection."""
+    """Pure public values shared by page rendering and concurrency projection.
+
+    Dates use the parish's own ``date_format`` so worker-rendered receipts
+    and request-rendered pages agree.
+    """
+    style = dates.normalized(parish.get("date_format"))
     values = dict.fromkeys(PLACEHOLDERS, "")
     values.update(
         parish_name=parish["name"],
@@ -52,8 +59,8 @@ def public_values(parish, campaign):
         parish_email=parish.get("email", ""),
         online_giving_url=giving_url(parish),
         campaign_name=campaign["name"],
-        campaign_start=parish_date(date.fromisoformat(campaign["start_date"])),
-        campaign_end=parish_date(date.fromisoformat(campaign["end_date"])),
+        campaign_start=parish_date(date.fromisoformat(campaign["start_date"]), style),
+        campaign_end=parish_date(date.fromisoformat(campaign["end_date"]), style),
         campaign_timezone=campaign["timezone"],
         campaign_year=campaign_year(campaign),
         generic_family_url="/",

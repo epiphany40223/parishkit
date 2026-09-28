@@ -53,7 +53,7 @@ def test_weekly_retains_identities_corrections_and_explicit_timezone():
         for required in (
             "Family DUID 1234",
             "Please call us.",
-            "2026-11-02T00:15:00-05:00",
+            "November 2, 2026 at 12:15 AM EST",
             "America/New_York",
             "EST",
             "Superseded:",

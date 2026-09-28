@@ -31,6 +31,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "parishkit.stewardship.observability.CorrelationMiddleware",
     "parishkit.stewardship.request_scope.RequestScopeMiddleware",
+    "parishkit.stewardship.accounts.branding_context.DateFormatMiddleware",
     "parishkit.stewardship.web.security.SecurityBoundaryMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "parishkit.stewardship.accounts.authentication.AuthLimitMiddleware",
@@ -51,6 +52,7 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "parishkit.stewardship.accounts.branding_context.parish_branding",
+                "parishkit.stewardship.accounts.branding_context.date_format",
                 "parishkit.stewardship.accounts.admin_context.portal_chrome",
             ]
         },

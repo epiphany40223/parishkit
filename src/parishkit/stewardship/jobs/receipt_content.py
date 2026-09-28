@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 from html import escape
-from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import (
     FAMILY_CREDENTIAL_PLACEHOLDERS,
     PLACEHOLDERS,
@@ -94,12 +94,8 @@ def render_receipt(
         or type(campaign_timezone) is not str
     ):
         raise ValueError("Receipt requires an aware submission instant and timezone.")
-    local = submitted_at.astimezone(ZoneInfo(campaign_timezone))
-    stamp = (
-        local.strftime("%B ")
-        + str(local.day)
-        + local.strftime(", %Y at %I:%M:%S %p %Z")
-    )
+    # The parish date format; a worker lends the active choice (see broker).
+    stamp = dates.format_instant(submitted_at, campaign_timezone)
     if prepare_content(block.html, text=block.text) != block:
         raise ValueError("Receipt block requires canonical safe content.")
     validate_receipt_content("", block.html, block.text)

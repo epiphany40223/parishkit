@@ -8,6 +8,8 @@ runtime/fonts and input document, not promised byte-identical across upgrades.
 from contextlib import contextmanager
 from threading import RLock
 
+from parishkit.stewardship.web.dates import format_date
+
 from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
@@ -108,7 +110,10 @@ def _draw(figure, document):
         )
         axes.set_xticks(
             ticks,
-            [document.days[index].local_date.isoformat() for index in ticks],
+            [
+                format_date(document.days[index].local_date, compact=True)
+                for index in ticks
+            ],
             rotation=30,
             ha="right",
         )

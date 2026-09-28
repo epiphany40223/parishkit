@@ -9,10 +9,11 @@ import csv
 import io
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from itertools import chain
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.presentation import campaign_year
 from parishkit.stewardship.web.presentation import phone as format_phone
@@ -23,6 +24,7 @@ from .information_rendering import (
     record_lines,
     visible_text,
     write_pages,
+    xlsx_cell,
 )
 from .ministries import OUTCOMES, STATES
 
@@ -80,7 +82,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
 
     def contacted(value):
         """A recorded contact date, or blank for completion by hand."""
-        return moment(value).date().isoformat() if value else ""
+        return moment(value).date() if value else ""
 
     def contacts(item, kind):
         """Leaders see only published contact values, as in the Ministry report."""
@@ -106,7 +108,9 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         return label
 
     source = payload["metadata"]
-    period = f"{source['start_date']} to {source['end_date']}"
+    period = dates.Span(
+        date.fromisoformat(source["start_date"]), date.fromisoformat(source["end_date"])
+    )
     # The same single meaning of a campaign's year as Admin previews, page
     # blocks and share labels: the configured label, else the financial
     # period's start year, else the campaign start year. The captured metadata
@@ -154,9 +158,9 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         ("Stewardship period", period),
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),
-        ("Source as of", moment(source["source_as_of"]).isoformat(timespec="seconds")),
-        ("Captured at", moment(source["observed_at"]).isoformat(timespec="seconds")),
-        ("Requested at", moment(requested_at).isoformat(timespec="seconds")),
+        ("Source as of", moment(source["source_as_of"])),
+        ("Captured at", moment(source["observed_at"])),
+        ("Requested at", moment(requested_at)),
         ("Display timezone", timezone),
         (
             "Ministries",
@@ -235,12 +239,13 @@ def packet_xlsx(document, output):
     from openpyxl.utils import get_column_letter
 
     def write(sheet, row, column, value, *, bold=False):
-        """Literal strings only, so no captured value can become a formula."""
-        text = visible_text(value)
-        if len(text) > MAX_CELL_CHARACTERS:
+        """Literal strings or native dates, so no value can become a formula."""
+        if (
+            not isinstance(value, date)
+            and len(visible_text(dates.display_text(value))) > MAX_CELL_CHARACTERS
+        ):
             raise ValueError("A packet value exceeds the spreadsheet cell limit.")
-        cell = sheet.cell(row, column, text)
-        cell.data_type = "s"
+        cell = xlsx_cell(sheet, row, column, value)
         cell.alignment = Alignment(wrap_text=True, vertical="top")
         cell.font = Font(bold=bold)
 

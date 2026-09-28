@@ -30,6 +30,8 @@ class SetupParishForm(ParishForm):
     """Reuse profile fields without accepting an active-configuration mutation."""
 
     base_digest = None
+    # Set later in Parish settings; the wizard keeps its fixed field list.
+    date_format = None
 
     def __init__(self, *args, **kwargs):
         """Explain each profile field in plain language."""

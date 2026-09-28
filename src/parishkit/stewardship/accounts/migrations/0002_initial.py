@@ -820,6 +820,10 @@ class Migration(migrations.Migration):
                             "online_giving_url",
                             models.URLField(blank=True, max_length=2048, null=True),
                         ),
+                        (
+                            "date_format",
+                            models.CharField(blank=True, max_length=16, null=True),
+                        ),
                     ],
                     options={
                         "db_table": "stewardship_parish",

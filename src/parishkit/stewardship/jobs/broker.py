@@ -144,11 +144,20 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
     )
     def consume(*args, **kwargs):
         """Only a canonical UUID reaches dispatch; private errors stay local."""
+        from parishkit.stewardship.accounts.branding_context import (
+            active_date_format,
+        )
+        from parishkit.stewardship.web import dates
+
+        # Work that renders dates without an explicit parish style (option
+        # wording, export text) uses the active configuration's choice.
+        token = dates.use(active_date_format)
         try:
             consume_hint(args, kwargs, service=service, handlers=registry, stop=stop)
         except Exception as error:
             emit_failure(error)
         finally:
+            dates.reset(token)
             from django.db import connections
 
             connections.close_all()

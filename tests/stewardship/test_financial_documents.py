@@ -4,6 +4,7 @@ import csv
 import io
 from datetime import UTC, date, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,9 +19,12 @@ from parishkit.stewardship.reports.information_rendering import (
     visible_text,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.web.dates import Span, csv_text
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
 PARAMETERS = {"filters": FinancialQuery().form_values(), "proof": None}
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 def row(**changes):
@@ -111,8 +115,8 @@ def test_rows_word_money_status_shares_and_local_instants():
         "Online giving; Another way: Stock gift",
         "$1,200.00",
         "$100.00",
-        "2026-09-19T11:04:00-04:00",
-        "2026-09-01T11:04:00-04:00",
+        datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK),
+        datetime(2026, 9, 1, 11, 4, tzinfo=NEW_YORK),
         "2",
         str(UUID(int=97)),
     )
@@ -129,15 +133,23 @@ def test_rows_word_money_status_shares_and_local_instants():
     assert built.rows[2][2] == "Inactive"
     metadata = dict(built.metadata)
     assert metadata["Report"] == "Financial stewardship detail"
-    assert metadata["Source as of"] == "2026-09-19T11:04:00-04:00"
+    # Typed display-zone values; each renderer formats them (see #221).
+    assert metadata["Source as of"] == datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK)
     # The money's own read time is stated apart from the source promotion time.
-    assert metadata["Source giving read as of"] == "2026-09-10T11:04:00-04:00"
+    assert metadata["Source giving read as of"] == datetime(
+        2026, 9, 10, 11, 4, tzinfo=NEW_YORK
+    )
     assert metadata["Captured at"] == metadata["Source as of"]
     assert metadata["Requested at"] == metadata["Source as of"]
     assert metadata["Display timezone"] == "America/New_York"
     assert metadata["Campaign date-filter timezone"] == "America/Chicago"
-    assert metadata["Source comparison period"] == "2025-07-01 through 2026-06-30"
-    assert metadata["Source contributions through"] == "2026-06-30"
+    assert metadata["Source comparison period"] == Span(
+        date(2025, 7, 1), date(2026, 6, 30)
+    )
+    assert csv_text(metadata["Source comparison period"]) == (
+        "2025-07-01 through 2026-06-30"
+    )
+    assert metadata["Source contributions through"] == date(2026, 6, 30)
     assert metadata["Matching Families"] == "3"
     assert metadata["Total annual pledges"] == "$2,469.00"
     # Counts are wrapped values, never keys, so a long label cannot break a PDF.

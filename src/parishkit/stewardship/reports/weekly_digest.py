@@ -12,6 +12,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from parishkit.stewardship.web.content import bounded_text
+from parishkit.stewardship.web.dates import format_date, format_local
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
 from .links import report_url
@@ -164,7 +165,7 @@ def render_weekly_digest(document, *, public_origin):
     observed = document.observed_at.astimezone(zone)
     title = (
         "Manual weekly" if document.manual else "Weekly"
-    ) + f" information digest — {observed.date().isoformat()}"
+    ) + f" information digest — {format_date(observed.date())}"
     url = report_url(public_origin, document.report_path)
     information_label = (
         "Current actionable requests" if document.manual else "New actionable requests"
@@ -173,7 +174,7 @@ def render_weekly_digest(document, *, public_origin):
         document.parish_name,
         document.campaign_name,
         title,
-        f"Captured {observed.isoformat()} ({observed.tzname()}); "
+        f"Captured {format_local(observed)}; "
         + f"campaign timezone {document.campaign_timezone}.",
         f"{information_label}: {len(document.information):,}. "
         + f"Corrections: {len(document.corrections):,}.",
@@ -200,7 +201,7 @@ def render_weekly_digest(document, *, public_origin):
             family_name = " ".join(row.family_name.split())
             identity = (
                 f"{family_name} — Family DUID {row.family_duid}; submitted "
-                + row.submitted_at.astimezone(zone).isoformat()
+                + format_local(row.submitted_at.astimezone(zone))
             )
             detail = (
                 excerpt(row.text)

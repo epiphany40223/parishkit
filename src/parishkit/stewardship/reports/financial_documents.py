@@ -12,6 +12,8 @@ from datetime import date, datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.web import dates
+
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -101,7 +103,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
         if parsed.utcoffset() is None:
             raise ValueError("Financial report timestamps must be aware.")
-        return parsed.astimezone(zone).isoformat(timespec="seconds")
+        return parsed.astimezone(zone)
 
     if result["total"] != len(result["rows"]):
         raise ValueError("Financial export requires every matching Family.")
@@ -127,11 +129,14 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Campaign date-filter timezone", source["timezone"]),
         (
             "Source comparison period",
-            f"{source['comparison_start']} through {source['comparison_end']}",
+            dates.Span(
+                date.fromisoformat(source["comparison_start"]),
+                date.fromisoformat(source["comparison_end"]),
+            ),
         ),
         (
             "Source contributions through",
-            through.isoformat() if isinstance(through, date) else UNPROVEN,
+            through if isinstance(through, date) else UNPROVEN,
         ),
         ("Matching Families", f"{result['total']:,}"),
         ("Total annual pledges", summary["annual_total"].display),

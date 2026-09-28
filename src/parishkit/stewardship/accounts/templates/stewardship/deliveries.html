@@ -32,7 +32,7 @@
     <td>{{ delivery.mode|delivery_label }}</td>
     <td>{{ delivery.state|delivery_label }}</td>
     <td class="numeric">{{ delivery.attempt|number }}</td>
-    <td><time datetime="{{ delivery.updated_at|instant }}" data-local-instant>{{ delivery.updated_at|instant }}</time></td>
+    <td><time datetime="{{ delivery.updated_at|instant }}" data-local-instant data-compact>{{ delivery.updated_at|instant }}</time></td>
   </tr>{% empty %}<tr><td colspan="6">{% translate "No deliveries match this view." %}</td></tr>{% endfor %}
   </tbody>
 </table>

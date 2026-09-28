@@ -37,14 +37,8 @@
     });
   });
 
-  document.querySelectorAll("time[data-local-instant]").forEach((node) => {
-    const date = new Date(node.dateTime);
-    if (!Number.isFinite(date.getTime()) || typeof Intl === "undefined") return;
-    node.textContent = new Intl.DateTimeFormat("en-US", {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", timeZoneName: "short"
-    }).format(date);
-  });
+  // The parish's chosen date format (date-format-v1.js, loaded first).
+  if (window.ParishDates) window.ParishDates.localize(document);
 
   // A download's timezone choice offers the browser's own zone, chosen by
   // default; without script the choice stays UTC.
@@ -389,10 +383,8 @@
     const warning = panel.querySelector("[data-progress-unavailable]");
     const deadlines = [...panel.querySelectorAll("[data-progress-deadline]")];
     const number = new Intl.NumberFormat("en-US");
-    const localTime = new Intl.DateTimeFormat("en-US", {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", timeZoneName: "short"
-    });
+    const localTime = {format: (date) => window.ParishDates ?
+      window.ParishDates.instant(date) : date.toISOString()};
     let active = panel.dataset.progressActive === "true";
     let closed = false, pending = false, timer = null, controller = null;
     // Anchor server instants to monotonic elapsed time, not the browser's wall

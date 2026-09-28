@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -35,7 +35,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
         if parsed.utcoffset() is None:
             raise ValueError("Ministry report timestamps must be aware.")
-        return parsed.astimezone(zone).isoformat(timespec="seconds")
+        return parsed.astimezone(zone)
 
     action = parameters["action"]
     selected = payload["summaries"] if action == "summary" else payload["rows"]
@@ -58,7 +58,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
         ("Display timezone", timezone),
-        ("Age reference date", source["report_date"]),
+        ("Age reference date", date.fromisoformat(source["report_date"])),
         ("Campaign date-filter timezone", source["timezone"]),
         ("Matching results", f"{payload['total']:,}"),
         (

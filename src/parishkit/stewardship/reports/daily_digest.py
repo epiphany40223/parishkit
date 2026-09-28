@@ -13,6 +13,7 @@ from io import BytesIO
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
+from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
 
 from .charts import render_participation
@@ -74,9 +75,10 @@ class DailyDigestDocument:
         """Make recovery ranges explicit, even when some intervening slots succeeded."""
         first, last = self.covered_dates[0], self.covered_dates[-1]
         if first == last:
-            return f"Daily campaign digest — {last.isoformat()}"
+            return f"Daily campaign digest — {format_date(last)}"
         return (
-            f"Recovery campaign digest — {first.isoformat()} through {last.isoformat()}"
+            f"Recovery campaign digest — {format_date(first)} through "
+            f"{format_date(last)}"
         )
 
     @property
@@ -145,7 +147,7 @@ def population_cards(active, *, financial_enabled, inactive=False):
 def participation_row(day, *, financial_enabled):
     """Format one exact daily fact identically in email, web tables and tooltips."""
     cells = [
-        day.local_date.isoformat(),
+        format_date(day.local_date, compact=True),
         f"{day.first_responses:,}" if day.population_available else "Unavailable",
         day.participation,
     ]

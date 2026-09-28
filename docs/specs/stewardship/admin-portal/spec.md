@@ -86,6 +86,10 @@ campaign configuration before making the system configured:
    recipient.
 7. Exact preview/readiness summary and final confirmation.
 
+The [parish date format](../spec.md#global-presentation-rules) is not a wizard
+step: setup starts with the default US long style, and an Admin changes it
+afterwards in Parish settings.
+
 The wizard presents these as one ordered sequence of pages, defined once in
 code. The Parish profile comes first, so the administrator starts by
 describing their own parish. The credential pages follow, each immediately

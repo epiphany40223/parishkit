@@ -45,7 +45,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
     assert page.get_by_text("$102.88", exact=False).count() == 1
     assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
-    assert page.get_by_text("contributions through 2026-06-30", exact=False).count()
+    assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
     assert page.get_by_label("Share method").input_value() == ONLINE
     chosen = page.locator("#filter-share option:checked")

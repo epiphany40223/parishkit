@@ -292,6 +292,22 @@ views. Campaign dates, scheduled jobs, and report day buckets use that
 Campaign's immutable timezone snapshot. Local-day conversion must handle
 daylight-saving gaps and folds without running an occurrence twice.
 
+Dates and times follow one parish date format that an Admin chooses in Parish
+settings (issue #221): US long ("January 1, 2027", the default), US medium,
+US numeric (month first), European long, European medium, European numeric
+(day first, with slashes or dots) or ISO 8601. US styles pair with a 12-hour
+clock and the others with a 24-hour clock. Admin pages, Family pages, email
+and page placeholders, and PDF exports all use it; dense tables such as
+System logs, background work and deliveries use its compact variant (short
+month names or two-digit years, no time-zone abbreviation). One Python
+formatter (`web/dates.py`) and one browser script (`date-format-v1.js`, which
+reads `<body data-date-format>`) implement the same table. Exports that
+programs read are exempt: CSV files always use ISO 8601 (`2027-01-31`, and
+timestamps as `2027-01-31 14:05` in the export's stated display time zone),
+and XLSX cells are native dates in Excel's built-in locale-aware formats (14
+for dates, 22 for timestamps). Operational and security alert emails keep
+their UTC stamp, which the database renders identically.
+
 ## Requirement traceability
 
 Every source requirement maps to one normative section:

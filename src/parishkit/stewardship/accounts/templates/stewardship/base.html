@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% translate "Stewardship campaign" %}{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'stewardship/ui-v1.css' %}">
+  <script src="{% static 'stewardship/date-format-v1.js' %}" defer></script>
   <script src="{% static 'stewardship/ui-v1.js' %}" defer></script>
   {% if parish_branding.favicon %}<link rel="icon" type="image/png" href="{{ parish_branding.favicon }}">{% endif %}
   {% block head %}{% endblock %}
 </head>
-<body{% if admin_chrome %} class="admin-body"{% endif %}>
+<body{% if admin_chrome %} class="admin-body"{% endif %} data-date-format="{{ date_format|default:'us_long' }}">
   <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
   <header class="site-header">
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}

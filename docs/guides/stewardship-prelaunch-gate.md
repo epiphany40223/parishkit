@@ -276,14 +276,16 @@ operational incident kinds (the kind constraint and the incident render
 function).
 The Family codes Name column (#232) then made the directory report function
 build the surname-and-heads name it searches and orders by (one function
-body; Functions digest only).
+body; Functions digest only). The parish date format (#221) then added the
+nullable `stewardship_parish.date_format` column and its CHECK constraint
+over the known style codes.
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
-| Columns | 2460 | `c519d0e4` |
-| Constraints | 3397 | `96375006` |
+| Columns | 2461 | `2c20283d` |
+| Constraints | 3398 | `d0155245` |
 | Indexes | 1006 | `bd3148b3` |
 | Functions | 598 | `5124dc51` |
 | Triggers | 553 | `32504824` |

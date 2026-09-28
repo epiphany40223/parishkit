@@ -821,14 +821,17 @@
   function financialSource(parent) {
     const value = form.financial;
     node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
+    // Calendar dates and instants use the parish date format (date-format-v1.js).
+    const dates = window.ParishDates;
+    const start = dates ? dates.date(value.upcoming.start) : value.upcoming.start;
     node("p", value.upcoming.start > form.today ?
-      "This pledge does not take effect before " + value.upcoming.start + "." :
-      "This stewardship period began on " + value.upcoming.start + ".", parent);
+      "This pledge does not take effect before " + start + "." :
+      "This stewardship period began on " + start + ".", parent);
     node("p", "Parish records for " + value.comparison.label + ": pledge " + value.pledge.display +
       "; contributions " + value.contributions.display + ".", parent);
     if (value.observed_at) node("p", "Giving records last refreshed " +
-      new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"}).format(new Date(value.observed_at)) +
-      ". Contributions through " + value.through_date + ".", parent);
+      (dates ? dates.instant(new Date(value.observed_at)) : value.observed_at) +
+      ". Contributions through " + (dates ? dates.date(value.through_date) : value.through_date) + ".", parent);
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
     if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});

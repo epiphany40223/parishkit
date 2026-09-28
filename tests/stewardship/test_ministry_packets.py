@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from openpyxl import load_workbook
@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.ministry_packets import (
     render_packet,
     sheet_names,
 )
+from parishkit.stewardship.web.dates import Span
 
 MOMENT = datetime(2026, 9, 20, 2, 30, tzinfo=UTC)
 OUTCOME = HEADINGS.index("Outcome")
@@ -187,16 +188,16 @@ def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
         "Join",
         "New",
         "member@example.org",
-        "2026-09-19",
+        date(2026, 9, 19),
         "home: +1 (202) 555-0123",
         "",
         "",
     )
     assert second[1] == "" and second[2] == "Leave"
-    assert second[4] == second[6] == "Not published" and second[7] == "2026-09-19"
+    assert second[4] == second[6] == "Not published" and second[7] == date(2026, 9, 19)
     assert dict(document.sections[0].details)["Chairs"] == "Pat Lee, Sam Roe"
     assert dict(document.sections[0].details)["Stewardship period"] == (
-        "2026-09-01 to 2026-10-31"
+        Span(date(2026, 9, 1), date(2026, 10, 31))
     )
     # No configured label: the campaign-year rule falls back to the start year.
     assert dict(document.sections[0].details)["Stewardship year"] == "2026"

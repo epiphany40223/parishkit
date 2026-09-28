@@ -171,7 +171,7 @@ def directory_document(
         value = value if isinstance(value, datetime) else datetime.fromisoformat(value)
         if value.utcoffset() is None:
             raise ValueError("Directory timestamps must be aware.")
-        return value.astimezone(zone).strftime("%Y-%m-%d %H:%M %Z")
+        return value.astimezone(zone)
 
     postal = parameters["postal"]
     title = "Postal mail merge" if postal else "Family-code directory"

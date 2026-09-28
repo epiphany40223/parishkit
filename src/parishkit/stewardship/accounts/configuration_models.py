@@ -8,6 +8,7 @@ historical rows can become an independent configuration authority.
 from django.db import models
 
 from parishkit.stewardship.storage import ImmutableRecord
+from parishkit.stewardship.web import dates
 
 
 class AppliedConfigurationVersion(ImmutableRecord):
@@ -126,6 +127,8 @@ class Parish(ImmutableRecord):
     favicon_id = models.UUIDField()
     # Optional: a canonical document omits the key when no URL is configured.
     online_giving_url = models.URLField(max_length=2048, null=True, blank=True)
+    # Optional like the giving URL; unset means the default US long style.
+    date_format = models.CharField(max_length=16, null=True, blank=True)
 
     class Meta:
         db_table = "stewardship_parish"
@@ -149,6 +152,11 @@ class Parish(ImmutableRecord):
                 condition=models.Q(online_giving_url__isnull=True)
                 | models.Q(online_giving_url__iregex=r"^https://"),
                 name="parish_online_giving_https",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(date_format__isnull=True)
+                | models.Q(date_format__in=dates.FORMATS),
+                name="parish_date_format",
             ),
         ]
 
