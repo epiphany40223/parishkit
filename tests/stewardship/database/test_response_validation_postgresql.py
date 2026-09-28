@@ -54,9 +54,7 @@ def test_promotions_compare_exact_form_dependencies(response_service, change, st
         data.members[8] = {**data.members[3], "memberDUID": 8, "memberType": "Spouse"}
         snapshot, claim = prepare(data)
         promote(snapshot, claim, response_service.campaign, response_service.rings)
-    original = issue_baseline(
-        response_service.request, response_service.service, testing_acknowledged=True
-    )
+    original = issue_baseline(response_service.request, response_service.service)
     if change == "other_family":
         data.families[2]["lastName"] = "Different unrelated Family"
     elif change == "canonical":
@@ -85,9 +83,7 @@ def test_promotions_compare_exact_form_dependencies(response_service, change, st
 def test_promotion_losing_family_eligibility_never_returns_refreshed_data(
     response_service,
 ):
-    form = issue_baseline(
-        response_service.request, response_service.service, testing_acknowledged=True
-    )
+    form = issue_baseline(response_service.request, response_service.service)
     data = source()
     data.members[3]["memberStatus"] = "Inactive"
     snapshot, claim = prepare(data)
@@ -98,9 +94,7 @@ def test_promotion_losing_family_eligibility_never_returns_refreshed_data(
 
 
 def test_baseline_reference_cannot_cross_family_sessions(response_service):
-    form = issue_baseline(
-        response_service.request, response_service.service, testing_acknowledged=True
-    )
+    form = issue_baseline(response_service.request, response_service.service)
     _, response = login(response_service.code)
     for identifier in (form.baseline.pk, uuid4(), str(form.baseline.pk)):
         with pytest.raises(BaselineUnavailable, match="fresh authorized"):
@@ -108,9 +102,7 @@ def test_baseline_reference_cannot_cross_family_sessions(response_service):
 
 
 def test_replaced_baseline_cannot_be_submitted(response_service):
-    old = issue_baseline(
-        response_service.request, response_service.service, testing_acknowledged=True
-    )
+    old = issue_baseline(response_service.request, response_service.service)
     new = issue_baseline(response_service.request, response_service.service)
     with pytest.raises(BaselineUnavailable):
         validate(response_service, old.baseline.pk)
@@ -124,6 +116,5 @@ def test_reconstruction_works_under_restricted_web_login(response_service):
         form = issue_baseline(
             response_service.request,
             response_service.service,
-            testing_acknowledged=True,
         )
         assert not validate(response_service, form.baseline.pk).review_required

@@ -22,7 +22,7 @@ These pages reveal no Family information. In Production, lifecycle state and
 the resolved boundaries govern access. In Testing, the one current `draft`
 campaign is treated as active solely for portal gating while the current instant
 falls inside its resolved interval; before/after pages still apply outside that
-interval, and the Testing interstitial/acknowledgments below remain mandatory.
+interval, and the Testing interstitial and banner below remain mandatory.
 Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
@@ -366,15 +366,16 @@ campaign dates through its current rehearsal-epoch code or token under the
 Production credentials are not accepted in Testing. Immediately after successful authentication and
 before any household data is displayed, an interstitial states that this is a
 test, answers will be permanently deleted before launch, the response will not
-count, and the Family will need to respond again in Production. The user must
-explicitly choose **Continue with test** or sign out.
+count, and the Family will need to respond again in Production. The user
+chooses **Continue with test** or signs out; no acknowledgment checkbox is
+required.
 
 Every form step has a persistent, non-color-only Testing banner repeating that
-answers are disposable. The final review requires a separate unchecked
-acknowledgment immediately beside a **Submit test response** button. The
-acknowledgment says that this is not the Family's campaign response and will be
-deleted. Server validation requires it; prior acceptance of the entry
-interstitial is not sufficient.
+answers are disposable, and the final button reads **Submit test response**.
+The banner is the mode notice: neither entry nor final Submit asks for a
+separate acknowledgment checkbox (#243). The server takes the mode from the
+admitted session and its baseline, never from the browser, so a Testing
+baseline cannot back a live submission.
 
 Submissions are prominently marked Test on the Thank You page and administration
 views. The Thank You content explicitly says the campaign response has not been

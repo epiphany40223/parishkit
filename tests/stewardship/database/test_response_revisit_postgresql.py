@@ -35,7 +35,6 @@ def test_promotion_cancels_inaccessible_member_proposals(live_response_service, 
 
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Requested change"
     response = submit(harness, form, answers).submission
     data = response_source()
@@ -67,7 +66,6 @@ def test_changed_promotions_release_only_unused_comparison_pins(live_response_se
 
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"].update(
         first_name="Requested first", last_name="Requested last"
     )
@@ -100,7 +98,6 @@ def test_response_reconciliation_uses_exact_restricted_worker(live_response_serv
 
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Family update"
     first = submit(harness, form, answers).submission
     data = response_source()
@@ -174,7 +171,6 @@ def revisit(harness):
             "additional_information": prior.answers["additional_information"]
             if prior
             else "",
-            "testing_acknowledged": False,
         },
         fields,
     )
@@ -185,7 +181,6 @@ def test_repeat_response_keeps_pending_value_and_first_participation(
 ):
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Family update"
     first = submit(harness, form, answers).submission
     harness, form, answers, fields = revisit(harness)
@@ -210,7 +205,6 @@ def test_repeat_response_keeps_pending_value_and_first_participation(
 def test_additional_text_replacement_and_withdrawal_keep_history(live_response_service):
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["additional_information"] = "First request"
     submit(harness, form, answers)
     old = AdditionalInformationItem.objects.get()
@@ -249,7 +243,6 @@ def test_promotion_reconciles_same_transaction_and_revisit_uses_merged_value(
 ):
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Family update"
     first = submit(harness, form, answers).submission
     proposal = ProposedChange.objects.get(submission=first)

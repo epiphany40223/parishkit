@@ -109,13 +109,11 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
     assert not errors
 
 
-def test_section_edit_clears_testing_final_consent(page, component_origin):
-    """Section shortcuts must not preserve final consent across a new review."""
+def test_section_edit_returns_to_a_testing_review(page, component_origin):
+    """A section shortcut from Review leads back to a Testing review, not live."""
     attempts = prepare(page, component_origin, testing=True)
-    show(page, page.locator("#testing-entry-ack")).check()
     page.get_by_role("button", name="Continue with test").click()
     review(page)
-    show(page, page.locator("#testing-submit-ack")).check()
     show(
         page,
         page.get_by_role(
@@ -123,7 +121,6 @@ def test_section_edit_clears_testing_final_consent(page, component_origin):
         ),
     ).click()
     review(page)
-    expect(page.locator("#testing-submit-ack")).not_to_be_checked()
     assert len(attempts) == 1
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     expect(

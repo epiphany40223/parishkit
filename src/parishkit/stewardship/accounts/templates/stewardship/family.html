@@ -10,8 +10,7 @@
   <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
   <div id="family-flow" data-testing="{{ testing|yesno:'true,false' }}">
     <div class="panel" id="family-entry">
-      {% if testing %}<p>{% translate "Before viewing household information, confirm that you understand this rehearsal will not count as a response to the campaign. Test answers will be discarded before the live campaign. You must return to submit your response when the live campaign opens, or contact the parish." %}</p>
-      <label><input type="checkbox" id="testing-entry-ack"> {% translate "I understand that I am entering Testing mode." %}</label>{% endif %}
+      {% if testing %}<p>{% translate "This is a test. Test answers will not count as your response and will be deleted before the live campaign opens, so you will need to respond again then." %}</p>{% endif %}
       <button type="button" id="family-start">{% if testing %}{% translate "Continue with test" %}{% else %}{% translate "Begin reviewing our information" %}{% endif %}</button>
     </div>
   </div>

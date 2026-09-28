@@ -53,7 +53,6 @@ def allocation(harness, *, population="historical", watermark=0, source=None):
 def respond(harness):
     """Submit through the real validation transaction, with no fabricated versions."""
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     return submit(harness, form, answers).submission
 
 

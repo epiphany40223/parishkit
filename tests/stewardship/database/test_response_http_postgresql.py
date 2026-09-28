@@ -37,7 +37,7 @@ def post(client, path, payload):
 
 def load_form(harness):
     """The baseline request contains only entry consent, never response fields."""
-    response = post(harness.client, "/family/form", {"testing_acknowledged": True})
+    response = post(harness.client, "/family/form", {})
     assert response.status_code == 200, response.content
     return response.json()["form"]
 
@@ -80,7 +80,6 @@ def answers_for(form):
         }
         if form["ministries"] is not None
         else {},
-        "testing_acknowledged": form["testing"],
         **(
             {"financial": form["financial"]["answers"]} if form.get("financial") else {}
         ),
@@ -236,16 +235,12 @@ def test_disabled_additional_field_does_not_replay_prior_text(response_service):
     )
 
 
-def test_shell_and_testing_ack_reveal_no_household_data(response_service):
+def test_testing_shell_reveals_no_household_data(response_service):
     harness = response_service
     response = harness.client.get("/family/")
     assert response.status_code == 200
     assert b"Testing mode" in response.content
     assert b"valid@example.org" not in response.content
-    assert not FamilyFormBaseline.objects.exists()
-    response = post(harness.client, "/family/form", {"testing_acknowledged": False})
-    assert response.status_code == 409
-    assert response.json() == {"error": "testing_acknowledgment"}
     assert not FamilyFormBaseline.objects.exists()
     form = load_form(harness)
     assert form["last_submitted_at"] is None
@@ -282,7 +277,7 @@ def test_each_private_form_boundary_rechecks_current_admission(
             settings.STEWARDSHIP_AUTH_RUNTIME, setup_complete=lambda: False
         )
     body = (
-        {"testing_acknowledged": True}
+        {}
         if path == "/family/form"
         else {"baseline": form["baseline"], "answers": answers_for(form)}
     )
@@ -391,7 +386,7 @@ def test_csrf_and_intermediate_answer_injection_cannot_persist_drafts(response_s
     assert (
         harness.client.post(
             "/family/form",
-            {"testing_acknowledged": True},
+            {},
             content_type="application/json",
         ).status_code
         == 403
@@ -399,7 +394,7 @@ def test_csrf_and_intermediate_answer_injection_cannot_persist_drafts(response_s
     result = post(
         harness.client,
         "/family/form",
-        {"testing_acknowledged": True, "answers": "private draft"},
+        {"answers": "private draft"},
     )
     assert result.status_code == 422 and b"private draft" not in result.content
     assert not FamilyFormBaseline.objects.exists()
@@ -476,7 +471,7 @@ def test_revisit_never_serializes_hidden_conflicting_source_value(
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     harness.client, _ = login(harness.code)
-    response = post(harness.client, "/family/form", {"testing_acknowledged": False})
+    response = post(harness.client, "/family/form", {})
     assert response.status_code == 200
     assert b"Hidden competing value" not in response.content
     field = next(

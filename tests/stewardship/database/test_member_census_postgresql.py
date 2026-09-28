@@ -275,7 +275,6 @@ def test_typed_member_proposals_resolve_only_when_upstream_catches_up(
     """Reconcile civil nulls, phones, enums and manual text as typed values."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"][name] = answer
     row = submit(harness, form, answers).submission
     proposal = ProposedChange.objects.get(submission=row)
@@ -354,7 +353,7 @@ def test_oversized_source_is_a_controlled_form_unavailable(
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     with web_login():
-        response = post(harness.client, "/family/form", {"testing_acknowledged": True})
+        response = post(harness.client, "/family/form", {})
     assert response.status_code == 503
     assert response.json() == {"error": "temporarily_unavailable"}
     assert value.encode() not in response.content
@@ -399,7 +398,6 @@ def test_unusable_pending_source_field_does_not_block_other_refresh(
     """Block an unusable comparison, retain provenance, then resolve on correction."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["home_phone"] = "+44 20 8366 1177"
     row = submit(harness, form, answers).submission
     proposal = ProposedChange.objects.get(submission=row)
@@ -434,12 +432,7 @@ def test_unusable_pending_source_field_does_not_block_other_refresh(
     assert OperationalLog.objects.filter(event="source_member_unusable").count() == 1
     harness.client, result = login(harness.code, harness.client)
     assert result.status_code == 302
-    assert (
-        post(
-            harness.client, "/family/form", {"testing_acknowledged": False}
-        ).status_code
-        == 503
-    )
+    assert post(harness.client, "/family/form", {}).status_code == 503
     if recovery == "corrected":
         data.members[3]["homePhone"] = "+44 20 8366 1177"
     else:

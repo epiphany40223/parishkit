@@ -123,7 +123,7 @@
     answers = {family: Object.fromEntries((next.household?.fields || []).map(
       (field) => [field.name, structuredClone(field.value)])),
       members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
-      ministries: next.ministries ? {members: {}, proposed_members: {}} : {}, testing_acknowledged: false};
+      ministries: next.ministries ? {members: {}, proposed_members: {}} : {}};
     if (next.financial) answers.financial = structuredClone(next.financial.answers);
     if (next.household) answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
     if (next.ministries) ["members", "proposed_members"].forEach((group) => {
@@ -1517,13 +1517,6 @@
       node("p", answers.additional_information || "Not provided", additional);
     }
     const confirmation = node("form", null, root, {autocomplete: "off", id: "family-confirmation"});
-    answers.testing_acknowledged = false;
-    if (testing) {
-      const label = node("label", null, confirmation);
-      const ack = node("input", null, label, {type: "checkbox", required: "", id: "testing-submit-ack"});
-      label.append(document.createTextNode(" I understand this submits a disposable test response, not a live campaign response."));
-      ack.addEventListener("change", () => { answers.testing_acknowledged = ack.checked; });
-    }
     // The same sticky bar as the editing pages, so Submit stays in reach. A
     // sticky element only sticks within its parent, so the bar belongs to the
     // whole Review page and its Submit button joins the form by id.
@@ -1590,11 +1583,9 @@
   }
   document.getElementById("family-start").addEventListener("click", async (event) => {
     if (busy) return;
-    const ack = document.getElementById("testing-entry-ack");
-    if (testing && !ack.checked) { say("Confirm Testing mode before continuing."); ack.focus(); return; }
     busy = true; event.target.disabled = true;
     try {
-      const result = await send("/family/form", {testing_acknowledged: testing && ack.checked});
+      const result = await send("/family/form", {});
       if (!result || finished) return;
       if (result.form) { say(""); accept(result.form, false); }
       else say("The campaign form is not available. Please try again later.");

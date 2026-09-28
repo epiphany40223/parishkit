@@ -140,7 +140,6 @@ def validate(members, proposed):
             "proposed_members": proposed,
             "ministries": {},
             "additional_information": "",
-            "testing_acknowledged": False,
         },
         CensusInputs(
             10,
@@ -154,7 +153,6 @@ def validate(members, proposed):
             "d" * 64,
         ),
         additional_enabled=False,
-        testing=False,
         today=TODAY,
     )
 

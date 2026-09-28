@@ -146,7 +146,7 @@ def test_real_family_session_end_is_not_a_csrf_failure(family_service):
     token = page_token(client, "/family/")
     logout = client.post("/family/logout", {"csrfmiddlewaretoken": token})
     assert logout.status_code == 302
-    body = b'{"testing_acknowledged": true}'
+    body = b"{}"
     response = client.post("/family/form", body, HTTP_X_CSRFTOKEN=token, **JSON)
     assert response.status_code == 403
     assert response.json() == {"error": "session_ended"}

@@ -69,7 +69,6 @@ def test_source_promotion_and_submit_serialize(
     """Either winner yields one coherent response or an explicit fresh review."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Family edit"
     data = response_source()
     if relevant:
@@ -132,7 +131,6 @@ def test_simultaneous_duplicate_submit_has_one_atomic_winner(live_response_servi
     """Two simultaneous retries cannot create two responses or two receipts."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     ready = Queue()
 
     def submit_once():
@@ -212,7 +210,6 @@ def test_compaction_waits_for_final_form_pin_lifetime(request, monkeypatch, fini
         patch.setattr(snapshots, "_now", lambda: old_time)
         harness = request.getfixturevalue("live_response_service")
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     # A later snapshot is that day's retention anchor, leaving the actual form
     # baseline compactable except for its real expiring/permanent parent pin.
     with monkeypatch.context() as patch:

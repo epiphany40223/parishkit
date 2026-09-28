@@ -259,7 +259,6 @@ def test_complete_answer_owner_requires_financial_only_for_enabled_module(
         "proposed_members": {},
         "ministries": {},
         "additional_information": "",
-        "testing_acknowledged": False,
     }
     if include:
         payload["financial"] = {
@@ -273,7 +272,6 @@ def test_complete_answer_owner_requires_financial_only_for_enabled_module(
                 payload,
                 inputs,
                 additional_enabled=False,
-                testing=False,
                 today=date(2026, 10, 1),
             )
     else:
@@ -281,7 +279,6 @@ def test_complete_answer_owner_requires_financial_only_for_enabled_module(
             payload,
             inputs,
             additional_enabled=False,
-            testing=False,
             today=date(2026, 10, 1),
         )
         assert result["financial"]["annual_pledge"] == "12.30"

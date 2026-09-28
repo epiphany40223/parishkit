@@ -39,7 +39,6 @@ def answers():
             )
         },
         "additional_information": " Text ",
-        "testing_acknowledged": False,
     }
 
 
@@ -50,7 +49,7 @@ def validate(payload, **kwargs):
         payload,
         inputs,
         today=date(2026, 9, 13),
-        **({"additional_enabled": True, "testing": False} | kwargs),
+        **({"additional_enabled": True} | kwargs),
     )
 
 
@@ -145,24 +144,12 @@ def test_invalid_values_return_only_static_field_errors(answers, field, value):
     assert set(caught.value.fields) == {f"members.1.{field}"}
 
 
-@pytest.mark.parametrize("value", [None, 1, "yes", False])
-def test_testing_requires_separate_exact_final_ack(answers, value):
-    answers["testing_acknowledged"] = value
+def test_retired_testing_ack_key_is_an_unknown_field(answers):
+    """#243 removed the Testing checkbox; a stale tab's extra key asks to reload."""
+    answers["testing_acknowledged"] = True
     with pytest.raises(InvalidAnswers) as caught:
-        validate(answers, testing=True)
-    assert "testing_acknowledged" in caught.value.fields
-
-
-def test_testing_ack_is_not_stored_as_an_answer(answers):
-    answers["testing_acknowledged"] = True
-    result = validate(answers, testing=True)
-    assert "testing_acknowledged" not in result
-
-
-def test_live_form_rejects_test_ack_instead_of_changing_namespace(answers):
-    answers["testing_acknowledged"] = True
-    with pytest.raises(InvalidAnswers):
         validate(answers)
+    assert set(caught.value.fields) == {"form"}
 
 
 @pytest.mark.parametrize(
@@ -188,7 +175,6 @@ def test_empty_active_household_is_not_an_invented_member(answers):
         answers,
         CensusInputs(10, (), family_fields(), "d" * 64),
         additional_enabled=True,
-        testing=False,
         today=date(2026, 9, 13),
     )
     assert result["members"] == {}

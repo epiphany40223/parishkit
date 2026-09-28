@@ -17,7 +17,6 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from .answers import InvalidAnswers
 from .baselines import (
     FamilyAdmissionDenied,
-    RehearsalAcknowledgmentRequired,
     issue_baseline,
 )
 from .diagnostics import record_unusable_source
@@ -67,8 +66,6 @@ def _failure(error):
         record_unusable_source(error)
     if isinstance(error, InvalidAnswers):
         return _json({"error": "validation", "fields": error.fields}, status=422)
-    if isinstance(error, RehearsalAcknowledgmentRequired):
-        return _json({"error": "testing_acknowledgment"}, status=409)
     if isinstance(error, BaselineUnavailable):
         return _json({"error": "reload_required"}, status=409)
     if isinstance(error, FamilyAdmissionDenied):
@@ -78,28 +75,22 @@ def _failure(error):
 
 @require_POST
 def start(request):
-    """Accept only explicit entry consent; the response is an answer-free baseline.
+    """Start the form with an empty request; the response is an answer-free baseline.
 
-    No request data is passed to persistence except the consent boolean. Values
-    returned to the tab are transient materialization of trusted retained data.
+    No request data is passed to persistence. The Testing-mode banner, not a
+    checkbox, tells a tester which mode they are in (#243). Values returned to
+    the tab are transient materialization of trusted retained data.
     """
     try:
-        body = _body(request, maximum=128)
-        if (
-            set(body) != {"testing_acknowledged"}
-            or type(body["testing_acknowledged"]) is not bool
-        ):
-            raise InvalidAnswers({"form": "Confirm the displayed response mode."})
+        if _body(request, maximum=128) != {}:
+            raise InvalidAnswers({"form": "Reload the form and try again."})
         with work_transaction():
-            form = issue_baseline(
-                request, runtime(), testing_acknowledged=body["testing_acknowledged"]
-            )
+            form = issue_baseline(request, runtime())
             return _json({"form": form_presentation(form)})
     except (
         *UNAVAILABLE,
         InvalidAnswers,
         FamilyAdmissionDenied,
-        RehearsalAcknowledgmentRequired,
     ) as error:
         return _failure(error)
 
@@ -136,6 +127,5 @@ def submit(request):
         InvalidAnswers,
         FamilyAdmissionDenied,
         BaselineUnavailable,
-        RehearsalAcknowledgmentRequired,
     ) as error:
         return _failure(error)

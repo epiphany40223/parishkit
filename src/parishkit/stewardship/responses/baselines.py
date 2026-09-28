@@ -38,10 +38,6 @@ class FamilyAdmissionDenied(PermissionError):
     """Expired/lost Family access must not return refreshed private form data."""
 
 
-class RehearsalAcknowledgmentRequired(PermissionError):
-    """Testing entry requires a deliberate acknowledgment before showing answers."""
-
-
 @dataclass(frozen=True)
 class FormBaseline:
     """Transient materialized form inputs alongside the retained metadata record."""
@@ -131,17 +127,13 @@ def cancel_session_baselines(session_ids):
         end_baseline(row, state="cancelled")
 
 
-def issue_baseline(request, service, *, testing_acknowledged=False):
+def issue_baseline(request, service):
     """Atomically bind current reviewed inputs to this session, never to a draft.
 
-    In Testing, the first baseline is issued only after the CSRF-protected entry
-    acknowledgment. Its metadata is the acknowledgment evidence for that exact
-    session/epoch; it contains no answers. Later refreshes in the same session
-    may reuse that acknowledgment. Final Submit requires its separate explicit
-    test acknowledgment and never infers it from this record.
+    The baseline's mode and rehearsal epoch come from the admitted session, so a
+    Testing baseline can never back a live submission; no separate Testing
+    acknowledgment is collected (#243). The baseline contains no answers.
     """
-    if type(testing_acknowledged) is not bool:
-        raise TypeError("Testing acknowledgment must be explicit.")
     with work_transaction():
         configuration, campaign, family, session = admitted_family(request, service)
         mode = "test" if session.mode == "testing" else "live"
@@ -151,10 +143,6 @@ def issue_baseline(request, service, *, testing_acknowledged=False):
             mode=mode,
             rehearsal_epoch_id=session.rehearsal_epoch_id,
         )
-        if mode == "test" and not testing_acknowledged and not owned.exists():
-            raise RehearsalAcknowledgmentRequired(
-                "Confirm Testing mode before continuing."
-            )
         current = SourceCurrent.objects.select_for_update().get()
         if current.snapshot_id is None:
             raise FormInputsUnavailable("The Family form inputs are unavailable.")

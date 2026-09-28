@@ -10,7 +10,6 @@ from django.db.models import F
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.responses.baselines import (
     FamilyAdmissionDenied,
-    RehearsalAcknowledgmentRequired,
     end_baseline,
     issue_baseline,
 )
@@ -27,16 +26,8 @@ def issue(harness, **kwargs):
     return issue_baseline(harness.request, harness.service, **kwargs)
 
 
-def test_rehearsal_requires_entry_ack_before_any_form_metadata(response_service):
-    with pytest.raises(RehearsalAcknowledgmentRequired):
-        issue(response_service)
-    assert not FamilyFormBaseline.objects.exists()
-    assert not SourceSnapshotPin.objects.filter(parent_kind="form_baseline").exists()
-    assert not Submission.objects.exists()
-
-
 def test_issued_baseline_is_answer_free_and_exactly_pinned(response_service):
-    form = issue(response_service, testing_acknowledged=True)
+    form = issue(response_service)
     baseline = form.baseline
     assert baseline.source_id == response_service.snapshot.pk
     assert baseline.projection_digest == form.inputs.projection_digest
@@ -59,7 +50,7 @@ def test_issued_baseline_is_answer_free_and_exactly_pinned(response_service):
 
 
 def test_refresh_replaces_metadata_and_pin_not_answers(response_service):
-    first = issue(response_service, testing_acknowledged=True).baseline
+    first = issue(response_service).baseline
     second = issue(response_service).baseline
     first.refresh_from_db()
     assert first.state == "replaced" and first.ended_at is not None
@@ -72,18 +63,19 @@ def test_refresh_replaces_metadata_and_pin_not_answers(response_service):
     ) == {second.pk}
 
 
-def test_different_session_requires_its_own_ack(response_service):
-    first = issue(response_service, testing_acknowledged=True).baseline
+def test_different_session_gets_its_own_baseline(response_service):
+    """A Testing baseline needs no acknowledgment; sessions stay independent."""
+    first = issue(response_service).baseline
     _, response = login(response_service.code)
-    with pytest.raises(RehearsalAcknowledgmentRequired):
-        issue_baseline(response.wsgi_request, response_service.service)
-    assert FamilyFormBaseline.objects.count() == 1
+    second = issue_baseline(response.wsgi_request, response_service.service).baseline
+    assert second.family_session_id != first.family_session_id
+    assert FamilyFormBaseline.objects.count() == 2
     first.refresh_from_db()
     assert first.state == "open"
 
 
 def test_cancel_releases_only_own_pin(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with work_transaction():
         assert end_baseline(baseline, state="cancelled")
         assert not end_baseline(baseline, state="cancelled")
@@ -104,7 +96,7 @@ def test_cancel_releases_only_own_pin(response_service):
     ],
 )
 def test_sql_rejects_rebinding_even_with_version_bump(response_service, field, value):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     if field == "expires_at":
         value = baseline.expires_at + timedelta(hours=1)
     with pytest.raises(IntegrityError, match="immutable"), work_transaction():
@@ -123,13 +115,13 @@ def test_missing_pin_rolls_back_entire_issuance(response_service, monkeypatch):
 
     monkeypatch.setattr(baselines, "pin_snapshot", lambda *args, **kwargs: None)
     with pytest.raises(IntegrityError, match="source protection"):
-        issue(response_service, testing_acknowledged=True)
+        issue(response_service)
     assert not FamilyFormBaseline.objects.exists()
     assert not Submission.objects.exists()
 
 
 def test_submitted_state_requires_atomic_submission(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with pytest.raises(IntegrityError, match="immutable response"), work_transaction():
         end_baseline(baseline, state="submitted")
     baseline.refresh_from_db()
@@ -138,7 +130,7 @@ def test_submitted_state_requires_atomic_submission(response_service):
 
 
 def test_ended_state_requires_atomic_unpin(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with pytest.raises(IntegrityError, match="expiring protection"), work_transaction():
         FamilyFormBaseline.objects.filter(pk=baseline.pk).update(
             state="cancelled", ended_at=baseline.created_at, version=F("version") + 1
@@ -148,7 +140,7 @@ def test_ended_state_requires_atomic_unpin(response_service):
 
 
 def test_metadata_writes_require_common_order(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with (
         pytest.raises(IntegrityError, match="ordered admission"),
         transaction.atomic(),
@@ -169,12 +161,12 @@ def test_lost_session_cannot_issue_private_inputs(response_service):
         },
     )
     with pytest.raises(FamilyAdmissionDenied):
-        issue(response_service, testing_acknowledged=True)
+        issue(response_service)
     assert not FamilyFormBaseline.objects.exists()
 
 
 def test_pin_side_cannot_remove_active_protection(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with pytest.raises(IntegrityError, match="source protection"), work_transaction():
         SourceSnapshotPin.objects.filter(
             parent_kind="form_baseline", parent_id=baseline.pk
@@ -183,7 +175,7 @@ def test_pin_side_cannot_remove_active_protection(response_service):
 
 
 def test_logout_cancels_unfinished_baseline_and_pin(response_service):
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     response = response_service.client.post(
         "/family/logout",
         {
@@ -205,7 +197,7 @@ def test_session_housekeeping_releases_answer_free_metadata(response_service):
         revoke_family_sessions,
     )
 
-    baseline = issue(response_service, testing_acknowledged=True).baseline
+    baseline = issue(response_service).baseline
     with work_transaction():
         revoke_family_sessions(
             [response_service.request.family_session], now=database_now()
@@ -221,7 +213,7 @@ def test_real_web_grants_issue_replace_and_cancel_baseline(response_service):
     from .test_runtime_auth_grants_postgresql import web_login
 
     with web_login():
-        first = issue(response_service, testing_acknowledged=True).baseline
+        first = issue(response_service).baseline
         second = issue(response_service).baseline
         with work_transaction():
             assert end_baseline(second, state="cancelled")

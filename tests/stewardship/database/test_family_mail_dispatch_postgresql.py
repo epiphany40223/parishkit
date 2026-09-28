@@ -303,7 +303,6 @@ def test_response_after_preparation_cancels_without_decrypting(
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = prepare(harness)
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = not production
         assert submit(harness, form, answers).submission is not None
 
         def forbidden(*args, **kwargs):

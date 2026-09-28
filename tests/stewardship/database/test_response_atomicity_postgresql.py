@@ -39,7 +39,7 @@ def test_partial_followup_replacement_cannot_forge_history(
     harness = live_response_service
     with web_login() if restricted else nullcontext():
         form, answers = form_and_answers(harness)
-        answers.update(testing_acknowledged=False, additional_information="First text")
+        answers.update(additional_information="First text")
         first = submit(harness, form, answers).submission
         old = AdditionalInformationItem.objects.get(submission=first)
         harness, form, answers, _ = revisit(harness)
@@ -109,7 +109,6 @@ def test_noop_derivation_owner_cannot_commit_incomplete_response(
     harness = live_response_service
     with web_login() if restricted else nullcontext():
         form, answers = form_and_answers(harness)
-        answers["testing_acknowledged"] = False
         if kind in {"census_withdrawal", "followup_replacement", "followup_withdrawal"}:
             answers["members"]["3"]["first_name"] = "Prior request"
             answers["additional_information"] = "Prior follow-up"
@@ -164,11 +163,9 @@ def test_two_separate_family_sessions_require_fresh_review_after_first_submit(
     """A still-authorized second adult cannot silently overwrite the first response."""
     first = live_response_service
     form1, answers1 = form_and_answers(first)
-    answers1["testing_acknowledged"] = False
     client, response = login(first.code)
     second = replace(first, client=client, request=response.wsgi_request)
     form2, answers2 = form_and_answers(second)
-    answers2["testing_acknowledged"] = False
     answers1["members"]["3"]["first_name"] = "First adult change"
     row1 = submit(first, form1, answers1).submission
     stale = submit(second, form2, answers2)
@@ -194,7 +191,6 @@ def test_late_owner_failure_rolls_back_every_effect(
 
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "New name"
     answers["additional_information"] = "Please follow up"
 
@@ -236,7 +232,6 @@ def test_proposal_cannot_link_backwards_in_response_history(live_response_servic
     """SQL independently enforces same-field, forward-only supersession identity."""
     harness = live_response_service
     form, answers = form_and_answers(harness)
-    answers["testing_acknowledged"] = False
     answers["members"]["3"]["first_name"] = "Requested name"
     old = submit(harness, form, answers).submission
     harness, form, answers, _ = revisit(harness)
