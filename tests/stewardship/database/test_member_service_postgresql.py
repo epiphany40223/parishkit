@@ -4,7 +4,7 @@ import json
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, connection
+from django.db import IntegrityError, connection, transaction
 
 from parishkit.stewardship.responses.service import (
     DEFAULT_TALENTS,
@@ -155,3 +155,96 @@ def test_edited_talent_list_is_offered_and_enforced(response_service):
     assert respond(harness, form, answers).answers["service"]["members"]["3"][
         "talents"
     ] == {musician: ""}
+
+
+def guard(submission, answers, *, modules=None):
+    """Run the SQL service guard on a copy of a stored response."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_service_answers_guard_v1("
+            "jsonb_populate_record(s, jsonb_build_object('answers', %s::jsonb)),"
+            "CASE WHEN %s::jsonb IS NULL THEN c ELSE jsonb_populate_record(c,"
+            " jsonb_build_object('values', c.values || jsonb_build_object("
+            "'modules', %s::jsonb))) END) "
+            "FROM stewardship_submission s "
+            "JOIN stewardship_campaign_configuration c "
+            "  ON c.configuration_id=s.configuration_id AND c.record_id=s.campaign_id "
+            "WHERE s.id=%s",
+            [
+                json.dumps(answers),
+                # SQL NULL (not JSON null) keeps the campaign's own modules.
+                None if modules is None else json.dumps(modules),
+                None if modules is None else json.dumps(modules),
+                submission.pk,
+            ],
+        )
+
+
+def test_sql_guard_edge_cases(response_service):
+    """Module off, a non-object section, and a proposed Member's join."""
+    harness = response_service
+    form = start(harness)
+    submission = respond(harness, form, answers_for(form))
+    answers = json.loads(json.dumps(submission.answers))
+    guard(submission, answers)
+    # Without the Ministry module only an empty section is allowed.
+    with transaction.atomic():
+        guard(submission, answers | {"service": {}}, modules=["census"])
+    with pytest.raises(IntegrityError, match="Disabled"), transaction.atomic():
+        guard(submission, answers, modules=["census"])
+    for bad in ([], "x", None, {"members": {}}):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            guard(submission, answers | {"service": bad})
+    # A proposed Member who cannot participate may not join anything.
+    local = "00000000-0000-4000-8000-00000000abcd"
+    forged = json.loads(json.dumps(answers))
+    forged["ministries"]["proposed_members"][local] = {"join": [9]}
+    forged["service"]["proposed_members"][local] = {
+        "cannot_serve": True,
+        "talents": {},
+    }
+    with pytest.raises(IntegrityError, match="stop every"), transaction.atomic():
+        guard(submission, forged)
+    forged["ministries"]["proposed_members"][local] = {"join": []}
+    with transaction.atomic():
+        guard(submission, forged)
+
+
+def test_turning_off_free_text_drops_the_old_note(response_service):
+    """A revisit after Other stops taking text prefills no note and submits."""
+    harness = response_service
+    form = start(harness)
+    answers = answers_for(form)
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": False, "talents": {OTHER: "Organ"}}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+    options = default_talent_options()
+    options[-1]["free_text"] = False
+    store = harness.service.store
+    result = change_configuration(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"talent_options": options},
+            }
+        ],
+    )
+    assert result.state == "applied"
+    form = revisit(harness)
+    assert form["service"]["members"]["3"]["talents"] == {OTHER: ""}
+    answers = answers_for(form)
+    answers["service"] = {
+        "members": {"3": form["service"]["members"]["3"]},
+        "proposed_members": {},
+    }
+    assert respond(harness, form, answers).answers["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": {OTHER: ""},
+    }
