@@ -727,3 +727,7 @@ def test_cannot_contribute_is_reported_and_filterable(response_service):
     assert page["summary"]["cannot_give"] == 1
     assert report(harness, amount="cannot_give")["total"] == 1
     assert report(harness, amount="nonzero")["total"] == 0
+    # "Zero" and "No frequency" mean a Family that pledged nothing.
+    assert report(harness, amount="zero")["total"] == 0
+    assert report(harness, frequency="none")["total"] == 0
+    assert dict(page["summary"]["frequencies"])["No frequency"] == 0

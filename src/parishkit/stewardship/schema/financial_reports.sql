@@ -151,12 +151,16 @@ WITH selected AS MATERIALIZED (
             <=nullif(f->>'latest_end','')::date)
         AND (f->>'pledge_min'='' OR r.annual_pledge>=nullif(f->>'pledge_min','')::numeric)
         AND (f->>'pledge_max'='' OR r.annual_pledge<=nullif(f->>'pledge_max','')::numeric)
-        AND (f->>'amount'='any' OR (f->>'amount'='zero' AND r.annual_pledge=0)
+        -- "Zero" and "No frequency" mean a Family that pledged nothing, not one
+        -- that cannot contribute; that answer has its own filter and count.
+        AND (f->>'amount'='any' OR (f->>'amount'='zero' AND r.annual_pledge=0
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
             OR (f->>'amount'='nonzero' AND r.annual_pledge>0)
             -- "Cannot contribute financially" (a zero pledge with that answer).
             OR (f->>'amount'='cannot_give' AND r.financial->'cannot_give'='true'::jsonb))
         AND (f->>'frequency'='any'
-            OR (f->>'frequency'='none' AND nullif(r.financial->>'frequency','') IS NULL)
+            OR (f->>'frequency'='none' AND nullif(r.financial->>'frequency','') IS NULL
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
             OR r.financial->>'frequency'=f->>'frequency')
         AND (f->>'share'='any'
             OR (f->>'share'='none' AND r.financial->'shares'='{}'::jsonb)
@@ -230,6 +234,7 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
         'annual_total',coalesce(sum(annual_pledge),0)::numeric(24,2)::text,
         'frequencies',coalesce((SELECT jsonb_object_agg(k,n) FROM (
             SELECT coalesce(frequency,'none') AS k,count(*) AS n FROM filtered
+            WHERE financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb
             GROUP BY 1) d),'{}'::jsonb),
         'shares',coalesce((SELECT jsonb_object_agg(k,n) FROM (
             SELECT s.key AS k,count(*) AS n FROM filtered q
