@@ -269,6 +269,54 @@ def test_client_upload_uses_a_resumable_session(tmp_path):
     assert session.requests[1][:2] == ("PUT", location)
 
 
+def test_client_upload_verifies_against_a_shared_drive_reply(tmp_path):
+    """Drive's real replies: fields go on the session start, then are read back.
+
+    The final PUT of a resumable upload returns only the fields chosen when
+    the session started; a shared drive with no ``fields`` there replies
+    with just id, name and type. The client asks for size and MD5 up front,
+    and reads them back if a reply still lacks them, so the copy verifies.
+    """
+    path = tmp_path / "database.pgdump.sealed"
+    path.write_bytes(b"ciphertext")
+    digest = hashlib.md5(b"ciphertext", usedforsecurity=False).hexdigest()
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    default_reply = {
+        "kind": "drive#file",
+        "id": "1FileIdOnSharedDrive0",
+        "name": path.name,
+        "mimeType": "application/octet-stream",
+    }
+    session = FakeSession(
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, default_reply),
+        FakeResponse(
+            200, {"id": "1FileIdOnSharedDrive0", "size": "10", "md5Checksum": digest}
+        ),
+    )
+    result = DriveClient(session).upload(path, path.name, FOLDER)
+    assert (result["size"], result["md5Checksum"]) == ("10", digest)
+    start, put, read_back = session.requests
+    assert start[2]["params"]["fields"] == "id,size,md5Checksum"
+    assert start[2]["params"]["supportsAllDrives"] == "true"
+    assert put[:2] == ("PUT", location)
+    assert read_back[:2] == ("GET", f"{backup_drive.API}/1FileIdOnSharedDrive0")
+    assert read_back[2]["params"]["supportsAllDrives"] == "true"
+
+
+def test_client_upload_reads_nothing_back_when_the_reply_is_complete(tmp_path):
+    """A reply that already has size and MD5 needs no extra request."""
+    path = tmp_path / "file"
+    path.write_bytes(b"ciphertext")
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    session = FakeSession(
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "10", "md5Checksum": "m"}),
+    )
+    DriveClient(session).upload(path, "file", FOLDER)
+    assert [request[0] for request in session.requests] == ["POST", "PUT"]
+
+
 def test_client_refuses_an_unexpected_upload_location(tmp_path):
     path = tmp_path / "file"
     path.write_bytes(b"ciphertext")

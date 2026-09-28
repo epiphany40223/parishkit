@@ -242,12 +242,20 @@ class DriveClient:
         content_type="application/octet-stream",
         timeout=UPLOAD_SECONDS,
     ):
-        """Upload one file with a resumable session; return id, size and MD5."""
+        """Upload one file with a resumable session; return id, size and MD5.
+
+        Drive answers the final upload request with the file fields chosen
+        when the session was started, so ``fields`` goes on that first
+        request; without it the reply is only id, name and type, and every
+        copy would fail verification. If a reply still lacks size or MD5,
+        they are read back from the stored file.
+        """
+        fields = {"fields": "id,size,md5Checksum"}
         metadata = {"name": name, "parents": [parent]}
         start = self._call(
             "POST",
             UPLOAD,
-            params={"uploadType": "resumable"},
+            params={"uploadType": "resumable", **fields},
             data=json.dumps(metadata),
             headers={
                 "Content-Type": "application/json; charset=UTF-8",
@@ -262,7 +270,7 @@ class DriveClient:
             data = self._call(
                 "PUT",
                 location,
-                params={"fields": "id,size,md5Checksum"},
+                params=fields,
                 data=stream,
                 headers={
                     "Content-Type": content_type,
@@ -270,6 +278,10 @@ class DriveClient:
                 },
                 timeout=timeout,
             ).json()
+        if data.get("size") is None or data.get("md5Checksum") is None:
+            if not isinstance(data.get("id"), str) or not FOLDER_ID.match(data["id"]):
+                raise DriveFailure("unavailable")
+            data = self._call("GET", f"{API}/{data['id']}", params=fields).json()
         return data
 
     def trash(self, file_id):
