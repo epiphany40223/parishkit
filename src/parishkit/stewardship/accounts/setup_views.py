@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -45,7 +46,7 @@ def _closed(request, fields, query=frozenset()):
         or set(request.POST) - {*fields, "csrfmiddlewaretoken"}
         or any(len(values) != 1 for _, values in request.POST.lists())
     ):
-        raise ValueError("Invalid setup fields.")
+        raise unexpected_fields()
 
 
 def _checked(request, service, response, draft=None):
@@ -117,6 +118,10 @@ def page_error(request, error, current=None, *, fallback=error_response):
         (text for kinds, text in PAGE_ERRORS if isinstance(error, kinds)),
         _("Setup is temporarily unavailable. Try again in a moment."),
     )
+    # A user-facing refusal (web.refusals) explains itself more precisely.
+    refusal = getattr(error, "refusal", None)
+    if refusal is not None:
+        message = refusal.message
     wizard = None
     try:
         service = runtime()
@@ -131,6 +136,7 @@ def page_error(request, error, current=None, *, fallback=error_response):
         "stewardship/setup-unavailable.html",
         {
             "message": message,
+            "refusal": refusal,
             "wizard": wizard,
             "blocked": wizard.step(current) if wizard else None,
         },
@@ -177,6 +183,12 @@ def setup(request):
             return _checked(request, service, HttpResponseRedirect(destination))
         _closed(request, set())
         draft = view_draft(request, service)
+        if draft is not None and draft.status.state == SetupState.FROZEN:
+            # A confirmed setup finishes in the background; its owner sees
+            # the "Finishing setup" progress page instead of the wizard.
+            return _checked(
+                request, service, HttpResponseRedirect("/admin/setup/cancel")
+            )
         response = render(request, "stewardship/setup.html", _context(draft))
         return _checked(request, service, response, draft)
     except ConfigError:
@@ -212,7 +224,7 @@ def setup_step(request, step):
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload this setup form.")
+                raise stale_page()
             if form.is_valid():
                 save_section(
                     request,

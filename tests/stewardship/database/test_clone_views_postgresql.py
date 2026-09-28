@@ -116,6 +116,17 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
     assert not mail.scheduleoccurrence_set.exists()
     config = SystemConfiguration.objects.get().active_configuration
     assert config.content_versions.filter(campaign_id=new.pk).count() == 1
+    # A clone copies its source's content unchanged and adds no defaults.
+    records = store.active().document()["sections"]["content"]
+    copied = [
+        row["values"] for row in records if row["values"]["campaign_id"] == str(new.pk)
+    ]
+    original = [
+        row["values"]
+        for row in records
+        if row["values"]["campaign_id"] == str(source.pk)
+    ]
+    assert copied == [value | {"campaign_id": str(new.pk)} for value in original]
     assert (
         post(browser, path, {"action": "confirm", "preview": proposal})["Location"]
         == accepted["Location"]

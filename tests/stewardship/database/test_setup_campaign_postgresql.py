@@ -186,7 +186,7 @@ def test_staged_financial_funds_and_replaced_key_require_current_evidence(
             organization_id=1,
             expected_version=saved.version,
         )
-        with pytest.raises(LookupError, match="source load"):
+        with pytest.raises(LookupError, match="Load the parish data"):
             campaign_catalog(request, setup_service, attempt.pk)
     assert not Campaign.objects.exists()
 

@@ -120,6 +120,16 @@ whose prerequisites are unmet explains what is missing and links the step
 that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
 errors remain for polling and command endpoints.
 
+A refusal an Admin can correct, in the wizard or the campaign, content and
+schedule editors, says what was wrong and how to fix it, with a link to the
+page that fixes it when there is one (for example, a template that a mail
+schedule still sends, a page changed in another tab, or a missing earlier
+step). Where the form can be shown again, the explanation appears beside it and
+keeps what the Admin entered; otherwise the error page shows it. The status
+code is unchanged, scripts receive the same explanation as a `refusal` JSON
+field, and the text is static and reviewed, never exception or submitted text.
+Other refusals keep the closed, generic messages.
+
 Review, Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub: the Review page links no
 later step from its body and its primary action is Continue to the email
@@ -129,10 +139,18 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
-The first-campaign content page can fill every empty applicable page and email
-slot with the same default text in one versioned save; it never replaces a slot
-the Admin already saved, and each default passes the normal content validation
-described under [content and email templates](../data/spec.md#content-and-email-templates).
+Pages and emails start with built-in default text. Saving the first campaign
+fills every applicable page and email slot the draft has never set, in the same
+versioned save as the campaign, and a later campaign save fills only slots that
+became applicable (for example, a newly enabled module). It never replaces text
+the Admin saved, and it keeps a slot the Admin explicitly cleared empty. The
+content page can also fill every empty applicable slot, including cleared ones,
+and, after an explicit confirmation, reset every applicable slot to its default
+in one versioned save; schedules that send a replaced email follow its new
+revision. A fill result names each slot it kept because it holds the Admin's
+own text, and the content list marks every slot as default, customized or
+empty. Each default passes the normal content validation described under
+[content and email templates](../data/spec.md#content-and-email-templates).
 
 The mail schedule pages (the first-campaign step and the regular schedule
 settings) start with a short guide: what each mail type is, that exactly one
@@ -203,7 +221,17 @@ and every required consumer acknowledges its secret fingerprint. A crash or
 failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Finalization progress displays both
 deadlines and does not renew them; expiry cancels unfinished setup, and a new
-attempt requires cleanup and a new login. Before the marker,
+attempt requires cleanup and a new login. After confirmation, and whenever the
+frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
+setup" page on the original login's cancellation route. It lists each step in
+plain language (each credential's installation, the server operator's
+acknowledgement with a count of acknowledged services, applying the
+configuration, the final parish data load, and completion) with the time since
+confirmation. It polls a passive status every 15 seconds while visible,
+reloading when a step changes and showing a Continue link to the Admin home once
+setup completes. A failed step explains what to do; when a credential cannot
+start because the original Google sign-in is more than five minutes old, the
+page offers the same-session step-up, which keeps the setup. Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the
@@ -363,7 +391,12 @@ The campaign editor includes:
 - daily/weekly digest local schedules;
 - additional-information toggle;
 - named content slots with WYSIWYG/plain-text views, each of which can start
-  an empty slot from built-in, parish-neutral default text;
+  an empty slot from built-in, parish-neutral default text or reset a saved
+  slot to it (the editor is only pre-filled; nothing changes until the normal
+  save or preview and apply), with the content list marking each slot as
+  default, customized or empty. A new campaign that is not a clone starts
+  with the default text for every applicable slot, added in its creation
+  request; a clone copies its source's content instead;
 - page/email preview using safe sample data or an explicitly selected Family;
   and
 - Testing/Production controls.

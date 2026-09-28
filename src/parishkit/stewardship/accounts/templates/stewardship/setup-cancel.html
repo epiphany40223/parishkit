@@ -1,36 +1,54 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Initial setup progress" %}{% endblock %}
+{% block title %}{% translate "Finishing setup" %}{% endblock %}
+{% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
-<h1>{% translate "Initial setup progress" %}</h1>
+<h1>{% translate "Finishing setup" %}</h1>
 {% if attempt.state == 'expired' %}
 <p>{% translate "If provider-mounted consumers were already recreated, ask the operator to wait for credential rollback, then recreate worker and mail-dispatch using the documented initial-setup Compose topology. Restarting the configured services is not sufficient after candidate files have been removed." %}</p>
 <p role="status">{% translate "Cancellation is recorded. Background cleanup must restore the original configuration and remove temporary setup data before a new attempt can finish." %}</p>
 <p><a href="{% url 'admin:setup' %}">{% translate "Check setup status" %}</a></p>
 {% else %}
-<p role="status">{% translate "Setup is not complete yet. The system remains in Testing mode and no live campaign has started." %}</p>
-<p>{% translate "Configuration checkpoint" %}: {{ checkpoint }}</p>
-{% if credentials %}<ul>{% for item in credentials %}<li>{{ item.target }}: {{ item.request__state }}</li>{% endfor %}</ul>{% endif %}
+<p class="setup-intro">{% translate "You confirmed setup. The server is now installing the credentials and applying the configuration in the background. The system stays in Testing mode and no campaign opens to parishioners. This page checks progress automatically every 15 seconds while it is visible." %}</p>
+<div class="setup-load-result" data-finishing-done hidden>
+<h2>{% translate "Setup is complete" %}</h2>
+<p>{% translate "The system is configured. Continue to the administration home." %}</p>
+<div class="setup-actions"><a class="setup-continue" href="/admin/">{% translate "Continue" %}</a></div>
+</div>
+{% if reauthenticate %}<div class="notice notice-error" role="alert">
+<p>{% translate "Your Google sign-in is too old for installing credentials. Sign in again with the same account to continue; your setup is kept." %}</p>
+{% include 'stewardship/components/reauthenticate.html' with next=next %}
+</div>{% endif %}
+{% if overall == 'failed' %}<p class="notice notice-error" role="alert">{% translate "Setup could not finish. The failed step below explains what happened and what to do." %}</p>{% endif %}
+<section class="panel" data-finishing data-finishing-url="{{ status_url }}" data-finishing-signature="{{ signature }}">
+<h2>{% translate "Progress" %}</h2>
+<ol class="setup-load-phases" aria-label="{% translate 'Steps to finish setup' %}">{% for step in steps %}
+<li class="setup-load-{{ step.state }}" data-finishing-step="{{ step.key }}"><span class="setup-load-label">{{ step.label }}</span> <span class="setup-load-status">{{ step.status }}</span>
+<p>{{ step.text }}{% if step.count %} {% blocktranslate trimmed with done=step.count.done total=step.count.total %}{{ done }} of {{ total }} services acknowledged.{% endblocktranslate %}{% endif %}</p>
+{% if step.progress %}<p>{{ step.progress|out_of }}</p>{% endif %}
+{% if step.task %}<p>{% translate "Task reference" %}: <code>{{ step.task }}</code></p>{% endif %}
+</li>{% endfor %}
+</ol>
+<p>{% translate "Time since you confirmed setup:" %} {% blocktranslate trimmed count minutes=elapsed_minutes %}{{ minutes }} minute{% plural %}{{ minutes }} minutes{% endblocktranslate %}</p>
+<p data-finishing-unavailable hidden role="status">{% translate "Progress is temporarily unavailable. Reload the page to check again." %}</p>
+<p><a href="{% url 'admin:setup_cancel' %}">{% translate "Check progress now" %}</a></p>
+</section>
 {% if not prepared %}
-<section class="panel"><h2>{% translate "Initial credential consumer step" %}</h2>
+<section class="panel"><h2>{% translate "What the server operator does" %}</h2>
 <p>{% translate "Once the credential installers have staged their files, the deployment operator must recreate the actual worker and mail containers using the generated configured Compose topology (the Slack variant when enabled). Use the same Compose project as initial startup, not a second deployment." %}</p>
 <p>{% translate "Run the documented credential acknowledgement command inside each actual consumer after recreation. A one-off container does not acknowledge the real consumer. The installer retains rollback material until the final setup transaction succeeds." %}</p>
 <p>{% translate "Follow the Initial Setup section of the Stewardship runtime operator guide. The web application cannot recreate containers or access the Docker daemon." %}</p></section>
 {% endif %}
-{% if source %}
-<section class="panel"><h2>{% translate "Final source load" %}</h2>
-<p>{{ source.state }} — {{ source.phase }}</p>
-<p>{{ source.progress|out_of }}</p>
-<p>{% translate "Task reference" %}: <code>{{ source.id }}</code></p>
-{% if source.state == 'failed' or source.state == 'cancelled' %}<p role="alert">{% translate "Setup did not complete. Use the task reference to investigate the service logs, then cancel this attempt before starting again." %}</p>{% endif %}
-</section>
-{% elif prepared %}<p>{% translate "Credential acknowledgements and YAML preparation are complete. Waiting for the scheduler and final source worker." %}</p>{% endif %}
-<p><a href="{% url 'admin:setup_cancel' %}">{% translate "Refresh setup progress" %}</a></p>
 <p>{% translate "This page does not renew your original login's idle or absolute deadlines." %}</p>
 <section class="panel" aria-label="{% translate 'Final setup deadlines' %}">
 <p>{% translate "Inactivity limit (30 minutes after your last saved change; viewing this page does not count):" %} <time data-local-instant datetime="{{ deadlines.idle_at|date:'c' }}">{{ deadlines.idle_at|date:'c' }}</time></p>
 <p>{% translate "Sign-in limit (12 hours after you signed in):" %} <time data-local-instant datetime="{{ deadlines.absolute_at|date:'c' }}">{{ deadlines.absolute_at|date:'c' }}</time></p>
 <p>{% translate "Final setup must complete before these deadlines. Interrupted work can resume only while this original login remains valid. Expiry cancels unfinished setup; after cleanup, sign out and sign in to start again." %}</p>
 </section>
+<details><summary>{% translate "Technical details" %}</summary>
+<p>{% translate "Configuration checkpoint" %}: {{ checkpoint|default:'—' }}</p>
+<ul>{% for item in credentials %}<li>{{ item.target }}: {{ item.request__state }}</li>{% endfor %}</ul>
+</details>
+<h2>{% translate "Cancel setup" %}</h2>
 <p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>
 <form method="post">{% csrf_token %}
 <input type="hidden" name="attempt" value="{{ attempt.attempt_id }}">

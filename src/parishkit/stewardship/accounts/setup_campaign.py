@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from django.db.models import F
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
+from parishkit.stewardship.web.refusals import UserFacingMissing
 
 from .sessions import database_now
 from .setup_drafts import _owned
@@ -28,7 +31,7 @@ class SetupCatalog:
 def campaign_catalog(request, service, attempt_id):
     """No global/current corpus or another login can substitute for staged truth."""
     with work_transaction():
-        _, attempt = _owned(request, service, attempt_id)
+        attempt = _owned(request, service, attempt_id)[1]
         if (
             attempt.state != "collecting"
             or _expiry(attempt, database_now()) is not None
@@ -48,7 +51,11 @@ def campaign_catalog(request, service, attempt_id):
             snapshot__source_fence=F("exchange__source_fence"),
         ).first()
         if result is None:
-            raise LookupError("Complete this setup's source load first.")
+            raise UserFacingMissing(
+                _("Load the parish data before choosing the first campaign."),
+                link=reverse("admin:setup_source"),
+                link_label=_("Go to “Load parish data”"),
+            )
         profile = SetupDraftSection.objects.values_list("values", flat=True).get(
             attempt=attempt, step="parish", scrubbed_at=None
         )

@@ -8,6 +8,8 @@
 {% if blocked.state == 'blocked' %}<p>{{ blocked.status }}</p>
 <p><a href="{{ blocked.fix_url }}">{% blocktranslate trimmed with step=blocked.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
 {% else %}<p>{{ message }}</p>
+{% if refusal.fix %}<p>{{ refusal.fix }}</p>{% endif %}
+{% if refusal.link %}<p><a href="{{ refusal.link }}">{{ refusal.link_label }}</a></p>{% endif %}
 {% if wizard.resume %}<p><a href="{{ wizard.resume.href }}">{% blocktranslate trimmed with step=wizard.resume.label %}Go to the next step that needs work: “{{ step }}”{% endblocktranslate %}</a></p>{% endif %}
 {% endif %}
 </div>

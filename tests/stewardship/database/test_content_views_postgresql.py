@@ -304,3 +304,93 @@ def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     assert ConfigurationChangeRequest.objects.count() == requests
     email = browser.get(catalog + "/email/reminder?start=default")
     assert email.status_code == 200 and b"Continue your household" in email.content
+
+
+def test_configured_content_editor_can_reset_to_the_default(auth_service, google):
+    """A configured slot's reset only pre-fills; applying it replaces the text."""
+    from parishkit.stewardship.accounts.content_defaults import default_data
+    from parishkit.stewardship.accounts.content_forms import matches_default
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    path = catalog + "/page/welcome"
+    browser, _ = signed_in()
+    browser.get(path)
+    mine = post(browser, path, values(store, html="<p>Mine</p>"))
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(mine)}))
+    listing = browser.get(catalog).content.decode()
+    assert "Family welcome</a> — Customized" in listing
+    saved = browser.get(path)
+    assert b"Reset to the default text" in saved.content
+    assert b"Start from the default text" not in saved.content
+    requests = ConfigurationChangeRequest.objects.count()
+    reset = browser.get(path + "?start=default")
+    assert reset.status_code == 200
+    assert b"Personal prayer" in reset.content
+    assert b"will replace the current text" in reset.content
+    assert b"Reset to the default text" not in reset.content
+    assert ConfigurationChangeRequest.objects.count() == requests
+    preview = post(
+        browser,
+        path,
+        default_data("page", "welcome")
+        | {"base_digest": store.active().digest, "action": "preview"},
+    )
+    assert preview.status_code == 200, preview.content
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    record = next(
+        row
+        for row in store.active().document()["sections"]["content"]
+        if (row["values"]["kind"], row["values"]["slot"]) == ("page", "welcome")
+    )
+    assert matches_default(record["values"])
+    assert "Family welcome</a> — Default text" in browser.get(catalog).content.decode()
+
+
+def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, google):
+    """The refusal names the schedule problem and links Mail schedules on the form."""
+    store = auth_service.store
+    campaign, catalog, schedule = setup(store)
+    row = content(str(campaign.pk), kind="email", slot="initial")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **row},
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": schedule["id"],
+                    "values": {
+                        "template_version": row["id"],
+                        "subject": row["values"]["subject"],
+                    },
+                },
+            ],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    path = catalog + "/email/initial/" + row["id"]
+    browser.get(path)
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, path, values(store, subject="Invitation", clear="on"))
+    body = refused.content.decode()
+    assert refused.status_code == 400
+    assert "used by a mail schedule, so it can&#x27;t be removed" in body
+    assert f'<a href="/admin/campaign/{campaign.pk}/schedules">' in body
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_stale_content_form_says_to_reload(auth_service, google):
+    """An editor posted against an older configuration explains the reload."""
+    store = auth_service.store
+    _, catalog, _ = setup(store)
+    browser, _ = signed_in()
+    path = catalog + "/page/welcome"
+    browser.get(path)
+    stale = post(browser, path, values(store) | {"base_digest": "0" * 64})
+    assert stale.status_code == 409
+    assert "another tab" in stale.json()["refusal"]["message"]

@@ -50,14 +50,59 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
         ).last_activity_at
         response = browser.get("/admin/setup/cancel")
         assert response.status_code == 200, response.content
-        assert b"Initial setup progress" in response.content
+        assert b"Finishing setup" in response.content
+        assert b"Install the ParishSoft credential" in response.content
+        assert b"Apply the configuration" in response.content
         assert b"actual consumer" in response.content
+        assert b"too old for installing credentials" not in response.content
         assert response.context["attempt"].attempt_id == attempt.attempt_id
+        assert response.context["overall"] == "working"
+        # The page's poll is a passive read of the same status.
+        polled = browser.get("/admin/setup/cancel?format=json")
+        assert polled.status_code == 200, polled.content
+        assert polled.json() == {
+            "overall": "working",
+            "signature": response.context["signature"],
+        }
+        assert browser.get("/admin/setup/cancel?format=xml").status_code == 400
+        assert browser.get("/admin/setup/cancel?other=1").status_code == 400
+        # The setup overview sends a confirmed setup's owner to this page.
+        overview = browser.get("/admin/setup")
+        assert overview.status_code == 302
+        assert overview["Location"] == "/admin/setup/cancel"
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == before
         )
     assert not setup_http.configured()
+
+
+def test_finishing_page_asks_for_a_fresh_sign_in_when_install_cannot_start(
+    setup_http, monkeypatch, tmp_path
+):
+    """An old original sign-in blocks credential intake; the page says how to fix."""
+    from datetime import timedelta
+
+    request, _, token = prepared(setup_http, monkeypatch, tmp_path)
+    browser = client_for(request)
+    with web_login():
+        browser.get(PATH)
+        values = {"preview_token": token, "confirmed": "on"}
+        assert post(browser, PATH, values).status_code == 302
+    # SQL only lets a sign-in instant advance, so let ten minutes pass on
+    # the status reader's clock instead of ageing the session.
+    from parishkit.stewardship.accounts import setup_finalization_status
+
+    later = setup_finalization_status.database_now() + timedelta(minutes=10)
+    monkeypatch.setattr(setup_finalization_status, "database_now", lambda: later)
+    with web_login():
+        response = browser.get("/admin/setup/cancel")
+        assert response.status_code == 200, response.content
+        body = response.content.decode()
+        assert "Your Google sign-in is too old for installing credentials." in body
+        assert "your setup is kept" in body
+        assert 'name="next" value="/admin/setup/cancel"' in body
+        assert response.context["reauthenticate"]
 
 
 def test_missing_readiness_disables_ui_and_server_refuses_forced_confirmation(

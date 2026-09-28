@@ -12,6 +12,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import stale_page
 
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
@@ -44,7 +45,7 @@ def _seed(request, actor, configuration, salt):
         if seed["actor"] != str(actor.identity):
             raise PermissionError("Clone belongs to another Administrator.")
         if seed["base"] != digest:
-            raise StaleRecordError("Reload the clone before editing it.")
+            raise stale_page()
         return UUID(seed["target"]), token
     target = uuid4()
     return target, signing.dumps(
@@ -78,7 +79,7 @@ def _preview(
     configuration, fingerprint = state[0], state[-1]
     values = form.values()
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload the clone before editing it.")
+        raise stale_page()
     parish = document_parish(configuration.active_configuration.canonical_document)
     if values["timezone"] != parish["timezone"]:
         form.add_error("timezone", "A new campaign must start in the Parish timezone.")

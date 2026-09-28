@@ -7,6 +7,10 @@ from django.test import Client
 
 from parishkit.stewardship.accounts.campaign_forms import initial_fields
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.content_forms import (
+    applicable_slots,
+    matches_default,
+)
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -71,7 +75,9 @@ def test_new_draft_requires_confirmation_and_applied_receipt(auth_service, googl
     store = auth_service.store
     response = browser.get(NEW)
     assert response.status_code == 200 and b"Create campaign draft" in response.content
-    proposal = token(post(browser, NEW, fields(store)))
+    preview = post(browser, NEW, fields(store))
+    assert b"starts with the default text" in preview.content
+    proposal = token(preview)
     assert (
         not Campaign.objects.exists()
         and not ConfigurationChangeRequest.objects.exists()
@@ -89,6 +95,42 @@ def test_new_draft_requires_confirmation_and_applied_receipt(auth_service, googl
     assert ConfigurationChangeRequest.objects.count() == 1
     assert browser.get(NEW).status_code == 409
     assert b"Campaign settings" in browser.get(url(row)).content
+
+
+def test_new_draft_starts_with_default_content(auth_service, google):
+    """A new campaign's request carries every applicable default page and email."""
+    browser, _ = signed_in()
+    store = auth_service.store
+    browser.get(NEW)
+    proposal = token(post(browser, NEW, fields(store)))
+    apply(store, post(browser, NEW, {"action": "confirm", "preview": proposal}))
+    row = Campaign.objects.get()
+    document = store.active().document()["sections"]
+    records = [
+        record
+        for record in document["content"]
+        if record["values"]["campaign_id"] == str(row.pk)
+    ]
+    values = row.active_configuration.values
+    # Census only with the additional-information prompt: 11 pages, 6 emails.
+    assert sorted((r["values"]["kind"], r["values"]["slot"]) for r in records) == (
+        sorted(applicable_slots(values))
+    )
+    assert len(records) == 11 + 6
+    assert all(matches_default(record["values"]) for record in records)
+    # The legacy page references select exactly the new page revisions.
+    pages = {
+        record["values"]["slot"]: record["id"]
+        for record in records
+        if record["values"]["kind"] == "page"
+    }
+    assert values["content_versions"] == {
+        slot: pages[slot]
+        for slot in ("welcome", "census", "additional", "review", "thank_you")
+    }
+    catalog = browser.get(f"/admin/campaign/{row.pk}/content").content.decode()
+    assert "start with default text" in catalog
+    assert catalog.count("— Default text") == 11 + 6
 
 
 def test_disabling_financial_preview_warns_before_discarding_custom_sharing(
@@ -181,7 +223,11 @@ def test_current_campaign_blocks_second_creation_and_old_preview(auth_service, g
     store = auth_service.store
     proposal = token(post(browser, NEW, fields(store)))
     add_draft(store, store.active(), uuid4())
-    assert post(browser, NEW, fields(store)).status_code == 409
+    refused = post(browser, NEW, fields(store))
+    assert refused.status_code == 409
+    assert refused.json()["refusal"]["message"] == (
+        "A new campaign can't be created right now."
+    )
     assert (
         post(browser, NEW, {"action": "confirm", "preview": proposal}).status_code
         == 409

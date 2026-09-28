@@ -150,3 +150,70 @@ def test_family_pages_link_only_to_the_family_home():
     body = through(request, response).content.decode()
     assert "/admin/" not in body
     assert 'href="/"' in body
+
+
+@pytest.mark.parametrize(
+    "kind,status",
+    [
+        ("UserFacingError", 400),
+        ("UserFacingStale", 409),
+        ("UserFacingMissing", 404),
+        ("UserFacingDenied", 403),
+    ],
+)
+def test_user_facing_refusals_explain_and_link_the_fix(kind, status):
+    """A reviewed refusal keeps its status and shows its message, fix and link."""
+    from parishkit.stewardship.web import refusals
+
+    error = getattr(refusals, kind)(
+        "The template is in use.",
+        fix="Change the schedule first.",
+        link="/admin/setup/schedules",
+        link_label="Go to Mail schedules",
+    )
+    response = error_response(error)
+    assert response.status_code == status
+    assert json.loads(response.content)["refusal"] == {
+        "message": "The template is in use.",
+        "fix": "Change the schedule first.",
+        "link": {"url": "/admin/setup/schedules", "label": "Go to Mail schedules"},
+    }
+    page = through(RequestFactory().post("/admin/setup/content", **PAGE), response)
+    body = page.content.decode()
+    assert page.status_code == status and page.stewardship_safe_error
+    assert "The template is in use." in body and "Change the schedule first." in body
+    assert '<a href="/admin/setup/schedules">Go to Mail schedules</a>' in body
+    # The closed generic message is replaced, not repeated.
+    assert "Check this value." not in body
+
+
+def test_plain_errors_keep_the_closed_generic_text():
+    """An ordinary ValueError never exposes its text and has no refusal field."""
+    response = error_response(ValueError("secret detail"))
+    assert "refusal" not in json.loads(response.content)
+    body = through(RequestFactory().get("/admin/x", **PAGE), response).content
+    assert b"secret detail" not in body and b"Check this value." in body
+
+
+def test_standard_refusals_and_link_validation():
+    """Stale and unexpected-field refusals are static; links must be same-origin."""
+    from parishkit.stewardship.web.refusals import (
+        UserFacingError,
+        stale_page,
+        unexpected_fields,
+    )
+
+    stale = error_response(stale_page())
+    assert stale.status_code == 409
+    assert "another tab" in json.loads(stale.content)["refusal"]["message"]
+    invalid = json.loads(error_response(unexpected_fields()).content)
+    assert invalid["refusal"]["fix"] == "Reload the page and try again."
+    assert invalid["refusal"]["link"] is None
+    for link, label in (
+        ("https://example.org/", "Elsewhere"),
+        ("//example.org/", "Elsewhere"),
+        ("/admin/setup", None),
+        (None, "Label"),
+    ):
+        with pytest.raises(TypeError):
+            UserFacingError("Message", link=link, link_label=label)

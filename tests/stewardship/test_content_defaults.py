@@ -202,3 +202,39 @@ def test_initial_values_start_an_unsaved_editor(kind, slot):
     assert initial["html"] == default_data(kind, slot)["html"]
     assert initial["generate_text"] is (kind == "page")
     assert ("subject" in initial) is (kind == "email")
+
+
+def test_default_content_selects_new_page_revisions_for_a_new_campaign():
+    """Every applicable slot gets a default; legacy page references select them."""
+    from parishkit.stewardship.accounts.content_forms import (
+        applicable_slots,
+        default_content,
+        matches_default,
+    )
+
+    owner = str(uuid4())
+    values = campaign(additional_information=False)["values"]
+    records, versions = default_content(owner, values)
+    assert [
+        (row["values"]["kind"], row["values"]["slot"]) for row in records
+    ] == applicable_slots(values)
+    assert len(records) == 10 + 6
+    assert all(matches_default(row["values"]) for row in records)
+    assert versions == {
+        row["values"]["slot"]: row["id"]
+        for row in records
+        if row["values"]["slot"] in {"welcome", "census", "review", "thank_you"}
+        and row["values"]["kind"] == "page"
+    }
+    validate_content_records(
+        {
+            "sections": {
+                "campaigns": [
+                    {"id": owner, "values": values | {"content_versions": versions}}
+                ],
+                "content": records,
+            }
+        }
+    )
+    edited = records[0]["values"] | {"html": "<p>Mine</p>", "text": "Mine"}
+    assert not matches_default(edited)

@@ -3,8 +3,8 @@
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version
+from parishkit.stewardship.web.refusals import stale_page
 
 from . import setup_help
 from .authentication import runtime
@@ -40,7 +40,7 @@ def setup_shares(request):
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
-                raise StaleRecordError("Reload the first-campaign share options.")
+                raise stale_page()
             if formset.is_valid():
                 # values() gives new rows fresh IDs, so compute it only once.
                 options = formset.values()

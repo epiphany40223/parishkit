@@ -181,7 +181,9 @@ def error_response(error):
 
     Scripts receive JSON. A browser page request is shown the same messages as
     an HTML page by the browser-error middleware, which, for a missing fresh
-    authentication, offers the step-up "Confirm with Google" instead.
+    authentication, offers the step-up "Confirm with Google" instead. A
+    user-facing refusal (``web.refusals``) keeps its base type's status but
+    adds its reviewed explanation and fix link.
     """
     if debug_logging_enabled():
         # The response names only a closed category; say what actually failed.
@@ -193,13 +195,17 @@ def error_response(error):
         response.stewardship_reauthenticate = True
         return response
     if isinstance(error, PermissionError):
-        return validation_response([FieldError(ErrorCode.DENIED)], status=403)
-    if isinstance(error, StaleRecordError):
-        return validation_response([FieldError(ErrorCode.STALE)], status=409)
-    if isinstance(error, ConfigError):
-        return validation_response([FieldError(ErrorCode.UNAVAILABLE)], status=503)
-    if isinstance(error, (ValueError, InvalidPage, signing.BadSignature)):
-        return validation_response([FieldError(ErrorCode.INVALID)], status=400)
-    if isinstance(error, LookupError):
-        return validation_response([FieldError(ErrorCode.UNAVAILABLE)], status=404)
-    return validation_response([FieldError(ErrorCode.UNAVAILABLE)], status=503)
+        code, status = ErrorCode.DENIED, 403
+    elif isinstance(error, StaleRecordError):
+        code, status = ErrorCode.STALE, 409
+    elif isinstance(error, ConfigError):
+        code, status = ErrorCode.UNAVAILABLE, 503
+    elif isinstance(error, (ValueError, InvalidPage, signing.BadSignature)):
+        code, status = ErrorCode.INVALID, 400
+    elif isinstance(error, LookupError):
+        code, status = ErrorCode.UNAVAILABLE, 404
+    else:
+        code, status = ErrorCode.UNAVAILABLE, 503
+    return validation_response(
+        [FieldError(code)], status=status, refusal=getattr(error, "refusal", None)
+    )

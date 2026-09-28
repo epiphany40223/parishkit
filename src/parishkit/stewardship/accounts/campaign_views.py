@@ -27,6 +27,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
 from .admin_editing import (
     confirm,
@@ -39,6 +40,7 @@ from .admin_editing import (
 from .authentication import runtime
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_preview import describe_changes
+from .content_forms import default_content
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
@@ -174,7 +176,14 @@ def _target(configuration, campaigns, held, campaign_id):
             # existing work/credential hold above is a separate prerequisite.
             nonterminal_purge=False,
         ):
-            raise StaleRecordError("A new campaign is not currently admitted.")
+            raise UserFacingStale(
+                _("A new campaign can't be created right now."),
+                fix=_(
+                    "A new campaign can be created only in Testing mode, after "
+                    "every earlier campaign is archived, and while no background "
+                    "work is running."
+                ),
+            )
         return None, True
     campaign = next((row for row in campaigns if row.pk == campaign_id), None)
     if campaign is None:
@@ -229,7 +238,7 @@ def _preview(request, service, actor, state, campaign, form):
     if not form.is_valid():
         return _page(request, configuration, campaign, form, editable=True, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload the campaign before editing it.")
+        raise stale_page()
     values = form.values()
     if (
         campaign is None
@@ -277,13 +286,24 @@ def _preview(request, service, actor, state, campaign, form):
             + "?"
             + urlencode({name: values[name] for name in sorted(window_fields)})
         )
+    target = str(campaign.pk if campaign else uuid4())
+    content = []
+    if campaign is None:
+        # A new (non-cloned) campaign starts with the default text for every
+        # page and email its modules use, added in this same configuration
+        # change so it never exists without content. Each default passes the
+        # normal editor validation, and build_candidate below validates the
+        # whole candidate. Cloned campaigns copy their source content instead
+        # (campaign_cloning), and later module changes add no content.
+        content, values["content_versions"] = default_content(target, values)
     patch = [
         {
             "operation": "update" if campaign else "add",
             "section": "campaigns",
-            "id": str(campaign.pk if campaign else uuid4()),
+            "id": target,
             "values": changed if campaign else values,
-        }
+        },
+        *({"operation": "add", "section": "content", **row} for row in content),
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
@@ -304,6 +324,7 @@ def _preview(request, service, actor, state, campaign, form):
         "stewardship/campaign-preview.html",
         {
             "creating": campaign is None,
+            "default_content": bool(content),
             "removes_share_options": bool(previous.get("share_options"))
             and "financial" not in values["modules"],
             "changes": describe_changes(
@@ -345,7 +366,7 @@ def campaign_settings(request, campaign_id=None):
             filters(request.GET, allowed=set())
         with work_transaction():
             state = _state(service)
-            configuration, campaigns, source, held, _ = state
+            configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
             previous = campaign.active_configuration.values if campaign else {}
             ministries, funds = _catalog(configuration, source, previous)
@@ -370,7 +391,14 @@ def campaign_settings(request, campaign_id=None):
             )
             if request.method == "POST":
                 if not editable:
-                    raise StaleRecordError("Campaign structural settings are locked.")
+                    raise UserFacingStale(
+                        _("These campaign settings are locked."),
+                        fix=_(
+                            "They can be changed only for the current draft "
+                            "campaign in Testing mode, before it has ever been "
+                            "active, and while no background work is running."
+                        ),
+                    )
                 response = _preview(request, service, actor, state, campaign, form)
             else:
                 response = _page(
