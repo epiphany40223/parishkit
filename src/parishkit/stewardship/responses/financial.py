@@ -104,8 +104,13 @@ def validate_financial_answers(payload, options):
         raise InvalidFinancialAnswers({"financial": "Review the financial fields."})
     if payload["cannot_give"]:
         # The hidden pledge may be blank or zero; nothing else is meaningful.
-        if payload["annual_pledge"] not in {"", "0", "0.00"} or (
-            payload["frequency"] != "" or payload["shares"] != {}
+        # Check types first: an unhashable forged value must be a 422, not
+        # a TypeError from the set membership test.
+        if (
+            type(payload["annual_pledge"]) is not str
+            or payload["annual_pledge"] not in {"", "0", "0.00"}
+            or payload["frequency"] != ""
+            or payload["shares"] != {}
         ):
             raise InvalidFinancialAnswers(
                 {"financial": "A Family that cannot contribute enters no pledge."}

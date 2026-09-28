@@ -341,6 +341,11 @@ def test_cannot_give_records_a_zero_pledge_without_fields():
         {"frequency": "annual"},
         {"shares": {CHECK: ""}},
         {"cannot_give": "yes"},
+        {"annual_pledge": ["0"]},
+        {"annual_pledge": {"0": 0}},
+        {"annual_pledge": None},
+        {"frequency": []},
+        {"shares": []},
     ],
 )
 def test_cannot_give_rejects_any_pledge_detail(patch):
