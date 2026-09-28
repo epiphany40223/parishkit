@@ -49,3 +49,34 @@ def work_transaction():
     with transaction.atomic():
         lock_work_order()
         yield
+
+
+@contextmanager
+def read_transaction():
+    """Observe one consistent snapshot without joining the writers' lock order.
+
+    The work-order lock orders writers so they cannot deadlock; a pure read
+    takes no row locks and needs only a coherent view of rows that writers
+    commit atomically (an activated configuration with its projections, a
+    promoted source snapshot with its pointer). REPEATABLE READ gives every
+    statement in the block the same snapshot, so a read can never pair a newly
+    committed configuration with an older projection, and READ ONLY makes any
+    accidental write fail closed instead of escaping the writers' order. Admin
+    page views use this so a long writer (a source promotion, an installer)
+    never blocks them. Helpers that assert require_work_order() still refuse
+    here: such a view needs work_transaction().
+
+    Inside an existing transaction the snapshot and isolation already belong
+    to its owner, so the block only nests; it never adds or drops that owner's
+    lock.
+    """
+    if connection.vendor != "postgresql":
+        raise StorageInvariantError("Snapshot reads require PostgreSQL.")
+    if connection.in_atomic_block:
+        with transaction.atomic():
+            yield
+        return
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        yield

@@ -2,10 +2,13 @@
 
 from uuid import uuid4
 
+import psycopg
 import pytest
+from django.db import connection
 
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
+from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..campaign_factory import schedule
@@ -313,3 +316,44 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     preview = post(browser, path, data)
     assert f'action="{path}"'.encode() in preview.content
     token(preview)
+
+
+def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
+    """A long writer (a source promotion, an installer) blocks no Admin read.
+
+    Another session holds the work-order lock for the whole test. Read pages
+    observe one read-only snapshot and still render; a preview that joins the
+    writers' order waits for that lock and, under the short statement timeout,
+    refuses instead of rendering, so a regression fails fast either way.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    data, indexes = fields(store, campaign)
+    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    settings = connection.settings_dict
+    with psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        dbname=settings["NAME"],
+        autocommit=True,
+    ) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
+        with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '3s'")
+        try:
+            for url in (
+                "/admin/",
+                "/admin/users",
+                path,
+                f"/admin/campaign/{campaign.pk}/content",
+            ):
+                assert browser.get(url).status_code == 200, url
+            assert post(browser, path, data).status_code == 503
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET statement_timeout")
+    # Once the writer releases the lock the same preview renders normally.
+    assert post(browser, path, data).status_code == 200

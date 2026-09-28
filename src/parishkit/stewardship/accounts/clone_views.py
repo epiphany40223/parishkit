@@ -8,7 +8,10 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    read_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
@@ -160,7 +163,11 @@ def campaign_clone(request, campaign_id):
             )
             if action == "confirm":
                 return confirm(request, service, actor, salt=salt, current_scope=_scope)
-        with work_transaction():
+        with (
+            read_transaction()
+            if request.method in {"GET", "HEAD"}
+            else work_transaction()
+        ):
             state = _state(service)
             configuration, campaigns, current_source, held, _ = state
             _target(configuration, campaigns, held, None)

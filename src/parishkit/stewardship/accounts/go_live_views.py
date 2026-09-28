@@ -191,6 +191,8 @@ def testing_families(request, campaign_id):
         parameters = filters(request.GET, allowed={"page"})
         window = PageWindow(expected_version(parameters.get("page", "1")), 50)
         service = runtime()
+        # Kept on the work lock: passive admission and the cleanup inventory
+        # run inside this block and refuse under a read-only snapshot.
         with work_transaction():
             principal(request, service, passive=True)
             configuration = editable_configuration(service)

@@ -6,7 +6,7 @@ from django.core import signing
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -106,7 +106,7 @@ def select_credential(request, request_id):
                 request_schema=_preview_schema(request, request_id),
             )
         else:
-            with work_transaction():
+            with read_transaction():
                 configuration, receipt, record = _selection(service, request_id)
                 base = service.store.active()
                 if (

@@ -12,7 +12,10 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import schedule_window_changed
 from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    read_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import stale_page
@@ -199,7 +202,11 @@ def schedule_settings(request, campaign_id):
                 salt=salt,
                 current_scope=lambda service: _scope(service, campaign_id),
             )
-        with work_transaction():
+        with (
+            read_transaction()
+            if request.method in {"GET", "HEAD"}
+            else work_transaction()
+        ):
             state = _state(service)
             campaign = _campaign(state, campaign_id)
             _, editable = _target(state[0], state[1], state[3], campaign_id)

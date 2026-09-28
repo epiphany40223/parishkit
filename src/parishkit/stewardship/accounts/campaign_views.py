@@ -22,7 +22,10 @@ from parishkit.stewardship.campaigns.lifecycle import (
     structural_edit_admitted,
 )
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    read_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
@@ -364,7 +367,11 @@ def campaign_settings(request, campaign_id=None):
                 return response
         else:
             filters(request.GET, allowed=set())
-        with work_transaction():
+        with (
+            read_transaction()
+            if request.method in {"GET", "HEAD"}
+            else work_transaction()
+        ):
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)

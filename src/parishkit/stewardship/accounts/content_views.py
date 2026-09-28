@@ -11,7 +11,10 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_POST
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    read_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import (
@@ -283,7 +286,11 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 raise ValueError("The catalog is read-only.")
             if action == "confirm":
                 return confirm(request, service, actor, salt=salt, current_scope=_scope)
-        with work_transaction():
+        with (
+            read_transaction()
+            if request.method in {"GET", "HEAD"}
+            else work_transaction()
+        ):
             state = _state(service)
             configuration, campaign = state[0], _campaign(state, campaign_id)
             if kind is None:
