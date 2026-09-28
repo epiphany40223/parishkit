@@ -108,12 +108,17 @@ def _scope(campaign_id, revision_id):
 
 
 def _restore(request, campaign_id, revision_id):
-    """Take back the DUIDs saved before a Google step-up, once, if they match."""
-    saved = request.session.pop(RESTORE_KEY, None)
+    """Take back the DUIDs saved before a Google step-up, once, if they match.
+
+    A visit to another template's page leaves the entry alone, so it is used
+    only by the page it was saved for.
+    """
+    saved = request.session.get(RESTORE_KEY)
     if not isinstance(saved, dict) or {
         key: saved.get(key) for key in ("campaign", "revision")
     } != _scope(campaign_id, revision_id):
         return ()
+    del request.session[RESTORE_KEY]
     try:
         return parse_family_duids(" ".join(str(value) for value in saved["families"]))
     except (KeyError, TypeError, ValueError):
@@ -153,6 +158,19 @@ def _page(
             initial={"preview": signing.dumps(preview.binding(), salt=SALT)}
         )
     items = [item | {"label": _label(item)} for item in recent_tickets(campaign_id)]
+    # Reload only a plain GET of the status (never a POST response, which a
+    # reload would resubmit) while a test is on its way and no review is shown.
+    refresh = (
+        request.method == "GET" and not duids and any(_pending(item) for item in items)
+    )
+    # The "requested" notice stays while its tests are still on their way.
+    sent = None
+    if not duids:
+        sent = (
+            request.session.get(SENT_KEY)
+            if refresh
+            else request.session.pop(SENT_KEY, None)
+        )
     response = render(
         request,
         "stewardship/campaign-mail-families.html",
@@ -179,12 +197,11 @@ def _page(
             and all(choice.eligible for choice in preview.families)
             and len(preview.families) <= preview.available,
             "items": items,
-            # Refresh while a test is on its way, unless a review is on screen.
-            "refresh": not duids and any(_pending(item) for item in items),
+            "refresh": refresh,
             "fresh": fresh,
             "signed_in_minutes": minutes,
             "restored": restored,
-            "sent": request.session.pop(SENT_KEY, None) if not duids else None,
+            "sent": sent,
             "next": request.path,
             "sample_url": reverse(
                 "admin:campaign_mail", args=[campaign_id, revision_id]

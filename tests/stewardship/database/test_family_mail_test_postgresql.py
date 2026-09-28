@@ -1287,7 +1287,10 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
     finally:
         # The Google step-up refreshes this same session's sign-in time.
         age_session(-timedelta(minutes=10))
+    # Another template's page leaves the saved selection for its own page.
+    other = path.replace(path.split("/")[-2], str(uuid4()))
     with web_login():
+        assert browser.get(other).status_code != 200
         page = browser.get(path)
     assert page.status_code == 200
     assert page.context["restored"] and page.context["fresh"]
@@ -1307,4 +1310,10 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
     assert b"status-refresh-v1.js" in page.content
     assert str(page.context["items"][0]["label"]).startswith("Queued")
     with web_login():
-        assert browser.get(path).context["sent"] is None
+        # The confirmation stays while the test is still on its way...
+        assert browser.get(path).context["sent"] == 1
+        # ...and a POST response (here an invalid review) never auto-reloads,
+        # since reloading it would resubmit the form.
+        invalid = post(browser, path, {"action": "preview", "families": "x"})
+    assert invalid.status_code == 400
+    assert b"status-refresh-v1.js" not in invalid.content
