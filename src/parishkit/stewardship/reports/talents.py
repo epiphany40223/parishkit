@@ -105,7 +105,7 @@ def shape_result(result, *, configuration):
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
     counts = result["summary"]["talents"]
     # Talents the parish has since removed are counted together, so the
-    # summary still accounts for every Member row that lists one.
+    # summary includes every talent that any listed Member chose.
     retired = sum(count for key, count in counts.items() if key not in labels)
     result["summary"]["talents"] = [
         (label, counts.get(key, 0)) for key, label in labels.items()
