@@ -4,9 +4,15 @@ import re
 import unicodedata
 from urllib.parse import quote
 
+from . import dates
+
 
 def csv_cell(value):
-    """Neutralize spreadsheet formulas, including control/whitespace prefixes."""
+    """Neutralize spreadsheet formulas, including control/whitespace prefixes.
+
+    Dates and display-zone timestamps become ISO 8601 text (see dates.csv_text).
+    """
+    value = dates.csv_text(value)
     text = "" if value is None else str(value)
     start = 0
     while start < len(text) and (

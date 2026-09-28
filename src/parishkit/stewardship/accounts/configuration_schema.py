@@ -21,6 +21,7 @@ from parishkit.stewardship.schema_primitives import (
     typed,
 )
 from parishkit.stewardship.sender_name import clean_sender_name
+from parishkit.stewardship.web import dates
 
 from . import source_cadence_schema
 from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
@@ -60,7 +61,7 @@ def _validate_v1_sections(document):
         invalid()
     parish = parishes[0]["values"]
     required = {"name", "website", "timezone", "phone", "branding"}
-    if set(parish) - {"online_giving_url"} != required:
+    if set(parish) - {"online_giving_url", "date_format"} != required:
         invalid()
     text(parish["name"])
     typed(parish["website"], "url")
@@ -69,6 +70,9 @@ def _validate_v1_sections(document):
         typed(parish["online_giving_url"], "link")
         if not parish["online_giving_url"].lower().startswith("https://"):
             invalid()
+    # Optional and absent in documents written before the setting existed.
+    if "date_format" in parish and parish["date_format"] not in dates.FORMATS:
+        invalid()
     text(parish["timezone"])
     if parish["timezone"] not in timezone_names():
         invalid()

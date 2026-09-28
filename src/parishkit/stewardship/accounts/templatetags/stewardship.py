@@ -1,6 +1,7 @@
 """Only typed values reach the canonical display functions; HTML stays escaped."""
 
 import re
+from datetime import date
 
 from django import template
 from django.utils.html import format_html
@@ -17,9 +18,25 @@ for name in (
     "percentage",
     "out_of",
     "instant",
-    "parish_date",
 ):
     register.filter(name, getattr(presentation, name))
+
+
+@register.filter
+def parish_date(value, style=None):
+    """A calendar date, or its ISO text from a JSON projection, in the parish format.
+
+    Templates never format dates themselves (a guard test enforces this);
+    unparseable text is shown unchanged rather than failing the whole page.
+    """
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        try:
+            value = date.fromisoformat(value)
+        except ValueError:
+            return value
+    return presentation.parish_date(value, style)
 
 
 @register.filter

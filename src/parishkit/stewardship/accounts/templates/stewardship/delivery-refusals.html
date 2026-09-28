@@ -25,7 +25,7 @@
   {% for refusal in table.rows %}<tr>
     <th scope="row"><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></th>
     <td class="numeric">{{ refusal.family_duid|duid }}</td>
-    <td><time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></td>
+    <td><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
     <td><code>{{ refusal.id }}</code></td>
   </tr>{% empty %}<tr><td colspan="4">{% translate "No unresolved refusals match this view." %}</td></tr>{% endfor %}
   </tbody>

@@ -77,7 +77,7 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
     value = document()
     with localcontext(prec=2):
         result = render(value)
-    assert result.subject == "Daily campaign digest — 2026-11-02"
+    assert result.subject == "Daily campaign digest — November 2, 2026"
     for required in (
         "Active Families: 1,000",
         "Active Members: 2,345",
@@ -86,8 +86,8 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         "Families that have responded: 2 out of 1,000 (0.2%)",
         "Current annual pledges: $2,234.56",
         "Configured comparison pledges: $1,000.00",
-        "2026-11-02 | 1 | 3 out of 1,234 (0.2%) | $3,234.56",
-        "Source #3 as of 2026-11-02T00:00:00-05:00",
+        "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56",
+        "Source #3 as of November 2, 2026 at 12:00 AM EST",
         "submission cutoff 1,001",
         value.report_path,
     ):
@@ -123,10 +123,12 @@ def test_recovery_covers_complete_range_even_with_intervening_success():
         covered_dates=(value.participation.first_date, value.participation.last_date),
     )
     result = render(value)
-    assert result.subject == "Recovery campaign digest — 2026-10-31 through 2026-11-02"
-    assert "2026-10-31 | 1 | 1 out of 1,234 (0.1%) | $1,234.56" in result.text
-    assert "2026-11-01 | 1 | 2 out of 1,234 (0.2%) | $2,234.56" in result.text
-    assert "2026-11-02 | 1 | 3 out of 1,234 (0.2%) | $3,234.56" in result.text
+    assert result.subject == (
+        "Recovery campaign digest — October 31, 2026 through November 2, 2026"
+    )
+    assert "Oct 31, 2026 | 1 | 1 out of 1,234 (0.1%) | $1,234.56" in result.text
+    assert "Nov 1, 2026 | 1 | 2 out of 1,234 (0.2%) | $2,234.56" in result.text
+    assert "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56" in result.text
 
 
 def test_disabled_financial_is_not_rendered_even_if_inputs_have_amounts():
@@ -176,8 +178,8 @@ def test_missing_observations_remain_unavailable_and_zero_remains_zero():
         ),
     )
     result = render(value)
-    assert "2026-10-31 | Unavailable | Unavailable | Unavailable" in result.text
-    assert "2026-11-01 | 0 | 0 out of 0 (—) | $0.00" in result.text
+    assert "Oct 31, 2026 | Unavailable | Unavailable | Unavailable" in result.text
+    assert "Nov 1, 2026 | 0 | 0 out of 0 (—) | $0.00" in result.text
     assert "Configured comparison pledges: Unavailable" in result.text
 
 

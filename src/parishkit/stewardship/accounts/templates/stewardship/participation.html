@@ -34,9 +34,9 @@
 <dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ statistics.submission_watermark|number }}</dd>
 {% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 {% if statistics.financial %}
-<p>{% translate "Upcoming pledge period:" %} {{ statistics.financial.upcoming.start|date:'Y-m-d' }} — {{ statistics.financial.upcoming.end|date:'Y-m-d' }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.upcoming.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
-<p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|date:'Y-m-d' }} — {{ statistics.financial.comparison.end|date:'Y-m-d' }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.comparison.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
-<p>{% translate "Giving observed at:" %} {% if statistics.giving %}<time datetime="{{ statistics.giving.observed_at|date:'c' }}" data-local-instant>{{ statistics.giving.observed_at|date:'c' }}</time> ({% translate "through" %} {{ statistics.giving.through_date|date:'Y-m-d' }}){% else %}{% translate "Unavailable" %}{% endif %}</p>
+<p>{% translate "Upcoming pledge period:" %} {{ statistics.financial.upcoming.start|parish_date }} — {{ statistics.financial.upcoming.end|parish_date }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.upcoming.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|parish_date }} — {{ statistics.financial.comparison.end|parish_date }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.comparison.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Giving observed at:" %} {% if statistics.giving %}<time datetime="{{ statistics.giving.observed_at|date:'c' }}" data-local-instant>{{ statistics.giving.observed_at|date:'c' }}</time> ({% translate "through" %} {{ statistics.giving.through_date|parish_date }}){% else %}{% translate "Unavailable" %}{% endif %}</p>
 {% endif %}
 {% if query.inactive %}<h3>{% translate "Inactive subtotal — separate from active statistics" %}</h3><dl>{% for label,value in inactive_cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
 </section>
@@ -66,7 +66,7 @@
 <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 <form method="post" action="{% url 'admin:report_export_create' campaign.pk %}">{% csrf_token %}
 <input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
-<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Generate export" %}</button></form>
 {% else %}<p>{% translate "Exports of the displayed chart become available when a complete generation is ready." %}</p>{% endif %}
 <h3>{% translate "Export current inputs" %}</h3>
@@ -76,7 +76,7 @@
 <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 <form data-submit-waits method="post" action="{% url 'admin:report_exact_create' campaign.pk %}">{% csrf_token %}
 <input type="hidden" name="population_scope" value="{{ query.scope }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ exact_key }}">
-<label for="exact-format">{% translate "Current-input export format" %}</label><select id="exact-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+<label for="exact-format">{% translate "Current-input export format" %}</label><select id="exact-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Queue current-input export" %}</button></form>
 {% else %}<p>{% translate "Current report inputs are unavailable; no export can be queued yet." %}</p>{% endif %}
 <h3>{% translate "Your recent current-input requests" %}</h3>

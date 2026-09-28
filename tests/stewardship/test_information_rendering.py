@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 from openpyxl import load_workbook
+from openpyxl.styles.numbers import BUILTIN_FORMATS
 
 from parishkit.stewardship.reports.information_documents import (
     HEADINGS,
@@ -87,7 +88,8 @@ def test_csv_full_results_and_formula_safety(history):
     assert all(row["Family"] == "'=Sample <Family>" for row in items)
     assert all(row["Staff notes"] == "'+Literal notes" for row in items)
     assert items[-1]["Submitted text"].endswith("FINAL TEXT MARKER")
-    assert items[-1]["Requested at"] == "2026-10-02T09:00:00-04:00"
+    # CSV timestamps are ISO 8601 in the stated display time zone (#221).
+    assert items[-1]["Requested at"] == "2026-10-02 09:00"
     assert len(report.rows[0]) == len(HEADINGS)
 
 
@@ -103,7 +105,10 @@ def test_xlsx_values_are_literal_complete_and_structured():
         assert sheet["M3"].value == "@Older notes" and sheet["M3"].data_type == "s"
         assert sheet.freeze_panes == "A2" and sheet.print_title_rows == "$1:$1"
         assert sheet.auto_filter.ref == "A1:Q3"
-        assert book["Report information"]["B9"].value == "2026-10-02T09:00:00-04:00"
+        # Native date-time cells in Excel's locale-aware built-in format 22.
+        requested = book["Report information"]["B9"]
+        assert requested.value == datetime(2026, 10, 2, 9, 0)
+        assert requested.is_date and requested.number_format == BUILTIN_FORMATS[22]
     finally:
         book.close()
 
@@ -117,6 +122,8 @@ def test_pdf_pagination_preserves_all_long_text_and_history():
         sum(len(line.strip()) for line in lines if set(line.strip()) == {"x"}) == 4200
     )
     assert any("@Older notes" in line for line in lines)
+    # PDFs use the parish date format (the default US long style here).
+    assert any("October 2, 2026 at 9:00 AM EDT" in line for line in lines)
     assert all(len(line) <= 108 for line in lines)
     stream = io.BytesIO()
     pages = information_pdf(report, stream)
@@ -132,7 +139,7 @@ def test_empty_reports_still_include_source_and_request_provenance():
     rows = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))
     assert len(rows) == 1 and rows[0]["Matching items"] == "0"
     assert rows[0]["Source reference"] == "source"
-    assert rows[0]["Requested at"] == "2026-10-02T09:00:00-04:00"
+    assert rows[0]["Requested at"] == "2026-10-02 09:00"
     assert report.item_count == 0 and not report.rows
 
 

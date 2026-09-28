@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Review schedule reconciliation" %}</h1><p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "Sent messages cannot be recalled. Successful logical-schedule fulfillment remains valid across revisions. Failed and safely cancellable old work is superseded; changes apply atomically or not at all." %}</p>
-{% if window_changes %}<section class="panel"><h2>{% translate "Campaign window" %}</h2><p>{% translate "Current:" %} {{ before_window.start_date }} – {{ before_window.end_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date }} – {{ after_window.end_date }} ({{ after_window.timezone }})</p></section>{% endif %}
+{% if window_changes %}<section class="panel"><h2>{% translate "Campaign window" %}</h2><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
 {% if 'financial' in window_changes %}<section class="panel"><h2>{% translate "Financial overlap acknowledgment" %}</h2><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
 {% for change in changes %}<section class="panel"><h2>{{ change.label }} — {{ change.operation|capfirst }}</h2>
 <h3>{% translate "Current schedule" %}</h3>{% include 'stewardship/schedule-summary.html' with value=change.before %}

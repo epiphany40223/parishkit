@@ -21,7 +21,7 @@
 <dt>{% translate "Source generation" %}</dt><dd>{{ source.generation|number }}</dd>
 <dt>{% translate "Source as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
 <dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ job.submission_watermark|number }}</dd>
-<dt>{% translate "Through campaign date" %}</dt><dd>{{ job.through_date|date:'Y-m-d' }}</dd>
+<dt>{% translate "Through campaign date" %}</dt><dd>{{ job.through_date|parish_date }}</dd>
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ job.timezone_configuration.timezone }}</dd>
 <dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd>
 <dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd></dl>

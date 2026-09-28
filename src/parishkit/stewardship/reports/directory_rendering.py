@@ -11,6 +11,7 @@ import csv
 import io
 from textwrap import wrap
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
 from .information_rendering import information_xlsx, pdf_font, visible_text
@@ -42,7 +43,7 @@ def directory_csv(document, output):
 
 def _cell_lines(value, width):
     """Wrap one cell to its column width without dropping any text."""
-    text = visible_text(value, supported=pdf_font()[1])
+    text = visible_text(dates.display_text(value), supported=pdf_font()[1])
     return wrap(text, width=width, break_long_words=True) or [""]
 
 
@@ -125,7 +126,11 @@ def directory_pdf(document, output):
         ).rstrip()
     )
     subtitle = " · ".join(
-        (details["Parish"], details["Campaign"], f"Captured {details['Captured at']}")
+        (
+            details["Parish"],
+            details["Campaign"],
+            f"Captured {dates.display_text(details['Captured at'])}",
+        )
     )
     counts = f"{details['Families in this file']} Families in this file"
     if document.postal:

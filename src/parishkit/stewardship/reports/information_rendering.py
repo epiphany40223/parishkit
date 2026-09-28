@@ -2,12 +2,14 @@
 
 import csv
 import io
+from datetime import date, datetime
 from functools import cache
 from itertools import chain, islice
 from pathlib import Path
 from textwrap import wrap
 from unicodedata import category
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
 PAGE_LINES = 34
@@ -56,6 +58,30 @@ def pdf_font():
     return str(path), frozenset(FT2Font(str(path)).get_charmap())
 
 
+def xlsx_cell(sheet, row, column, value):
+    """Write one cell: a native date/timestamp, or literal (never formula) text.
+
+    Timestamps arrive already converted to the export's stated display time
+    zone; Excel datetimes are naive, so the zone is dropped only here. Excel's
+    built-in formats 14 and 22 follow each viewer's own regional settings.
+    """
+    from openpyxl.styles.numbers import BUILTIN_FORMATS
+
+    if isinstance(value, date):
+        timestamp = isinstance(value, datetime)
+        # Set the format before the value: openpyxl otherwise registers its own
+        # custom ISO pattern for the value, which would stay in the file.
+        cell = sheet.cell(row, column)
+        cell.number_format = BUILTIN_FORMATS[
+            dates.XLSX_DATETIME if timestamp else dates.XLSX_DATE
+        ]
+        cell.value = value.replace(tzinfo=None) if timestamp else value
+        return cell
+    cell = sheet.cell(row, column, visible_text(dates.display_text(value)))
+    cell.data_type = "s"
+    return cell
+
+
 def information_csv(document, output):
     """Emit a typed metadata row even for an empty result; never lose provenance."""
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
@@ -87,8 +113,7 @@ def information_xlsx(document, output):
             chain((document.headings,), document.rows), 1
         ):
             for column, value in enumerate(values, 1):
-                cell = sheet.cell(row_index, column, visible_text(value))
-                cell.data_type = "s"
+                cell = xlsx_cell(sheet, row_index, column, value)
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
                 if row_index == 1:
                     cell.font = Font(bold=True)
@@ -108,8 +133,7 @@ def information_xlsx(document, output):
             chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1
         ):
             metadata.cell(index, 1, key).font = Font(bold=True)
-            cell = metadata.cell(index, 2, visible_text(value))
-            cell.data_type = "s"
+            cell = xlsx_cell(metadata, index, 2, value)
             cell.alignment = Alignment(wrap_text=True, vertical="top")
         metadata.column_dimensions["A"].width = 32
         metadata.column_dimensions["B"].width = 90
@@ -129,7 +153,7 @@ def record_lines(records, *, width=108):
         for label, value in record:
             prefix = label + ": "
             for index, paragraph in enumerate(
-                visible_text(value, supported=supported).split("\n")
+                visible_text(dates.display_text(value), supported=supported).split("\n")
             ):
                 lines = wrap(
                     paragraph,

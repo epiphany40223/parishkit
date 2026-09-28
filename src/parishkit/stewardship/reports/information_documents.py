@@ -53,7 +53,7 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
         if parsed.utcoffset() is None:
             raise ValueError("Information report timestamps must be aware.")
-        return parsed.astimezone(zone).isoformat(timespec="seconds")
+        return parsed.astimezone(zone)
 
     source = payload["metadata"]
     if payload["total"] != len(payload["rows"]):

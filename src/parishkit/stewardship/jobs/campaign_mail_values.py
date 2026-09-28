@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
 from parishkit.stewardship.web.presentation import phone as format_phone
 
@@ -37,10 +38,17 @@ def giving_url(parish):
 
 
 def campaign_values(*, parish, campaign):
-    """Format civil dates without consulting a worker timezone or private Family."""
+    """Format civil dates without consulting a worker timezone or private Family.
+
+    Workers have no request, so the parish's own ``date_format`` is passed
+    explicitly; an unset value means the default style.
+    """
+    style = dates.normalized(parish.get("date_format"))
     financial = campaign["financial"]
-    start = parish_date(date.fromisoformat(financial["start"])) if financial else ""
-    end = parish_date(date.fromisoformat(financial["end"])) if financial else ""
+    start = (
+        parish_date(date.fromisoformat(financial["start"]), style) if financial else ""
+    )
+    end = parish_date(date.fromisoformat(financial["end"]), style) if financial else ""
     return {
         "parish_name": parish["name"],
         "parish_website": parish["website"],
@@ -48,8 +56,10 @@ def campaign_values(*, parish, campaign):
         "parish_email": parish.get("email", ""),
         "online_giving_url": giving_url(parish),
         "campaign_name": campaign["name"],
-        "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
-        "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),
+        "campaign_start": parish_date(
+            date.fromisoformat(campaign["start_date"]), style
+        ),
+        "campaign_end": parish_date(date.fromisoformat(campaign["end_date"]), style),
         "campaign_timezone": campaign["timezone"],
         "campaign_year": campaign_year(campaign),
         "financial_start": start,

@@ -5,7 +5,7 @@
 <p>{{ metadata.name }}</p>
 <p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
 <p>{% translate "Family names use the source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Timestamps use your browser timezone when available; UTC is the fallback." %}</p>
-{% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start end=metadata.comparison_end through=metadata.giving_through|date:'Y-m-d' %}Source pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
+{% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}Source pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "Source pledges and contributions are unavailable: the latest giving read is not proven complete for this campaign's comparison period. Unavailable does not mean zero." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
 <h2>{% translate "Summary of matching pledges" %}</h2>
@@ -42,7 +42,7 @@
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
-<label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <label for="financial-export-timezone">{% translate "Export timezone" %}</label><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <p>{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
 <button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>

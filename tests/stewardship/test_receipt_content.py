@@ -59,7 +59,7 @@ def test_required_facts_and_optional_separate_block(testing):
         "Annual census",
         "+12025550100",
         "https://example.org/",
-        "November 1, 2026 at 01:30:00 AM EDT",
+        "November 1, 2026 at 1:30 AM EDT",
         "Parish-authored thanks.",
     ):
         assert value in result.html and value in result.text
@@ -77,8 +77,8 @@ def test_repeated_dst_hour_has_explicit_distinct_abbreviation():
     """Stored instants disambiguate the two occurrences of the same local hour."""
     first = render()
     second = render(submitted_at=datetime(2026, 11, 1, 6, 30, tzinfo=UTC))
-    assert "01:30:00 AM EDT" in first.text
-    assert "01:30:00 AM EST" in second.text
+    assert "1:30 AM EDT" in first.text
+    assert "1:30 AM EST" in second.text
 
 
 @pytest.mark.parametrize("part", ["subject", "html", "text"])

@@ -15,6 +15,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.presentation import out_of
 
@@ -168,9 +169,8 @@ class ParticipationDocument:
     @property
     def as_of_label(self):
         """Localize instants only; graph calendar dates stay in campaign time."""
-        zone = ZoneInfo(self.browser_timezone)
-        source = self.source_as_of.astimezone(zone).isoformat(timespec="seconds")
-        requested = self.requested_at.astimezone(zone).isoformat(timespec="seconds")
+        source = dates.format_instant(self.source_as_of, self.browser_timezone)
+        requested = dates.format_instant(self.requested_at, self.browser_timezone)
         return (
             f"Source #{self.source_generation:,} as of {source}; "
             f"submission cutoff {self.submission_watermark:,}\n"
@@ -215,6 +215,7 @@ def participation_table(document):
 def participation_csv(document, output):
     """Write complete exact values with repeated pinned metadata, never page slices."""
     rows = participation_table(document)
+    zone = ZoneInfo(document.browser_timezone)
     headings = [
         "date",
         "scope",
@@ -233,9 +234,9 @@ def participation_csv(document, output):
         "campaign_timezone": document.campaign_timezone,
         "browser_timezone": document.browser_timezone,
         "input_source_generation": document.source_generation,
-        "input_source_as_of": document.source_as_of.astimezone(UTC).isoformat(),
+        "input_source_as_of": document.source_as_of.astimezone(zone),
         "submission_watermark": document.submission_watermark,
-        "requested_at": document.requested_at.astimezone(UTC).isoformat(),
+        "requested_at": document.requested_at.astimezone(zone),
     }
     # A newline-neutral wrapper gives canonical CRLF on every developer host.
     # Detach it so this function never closes the caller-owned artifact stream.
@@ -245,6 +246,13 @@ def participation_csv(document, output):
         writer.writerow(headings + list(metadata))
         trailer = [csv_cell(value) for value in metadata.values()]
         for row in rows:
+            # ISO timestamps in the stated browser_timezone, like the metadata.
+            if row["source_as_of"] is not None:
+                row = row | {
+                    "source_as_of": datetime.fromisoformat(
+                        row["source_as_of"]
+                    ).astimezone(zone)
+                }
             writer.writerow([csv_cell(row[key]) for key in headings] + trailer)
         wrapper.flush()
     finally:

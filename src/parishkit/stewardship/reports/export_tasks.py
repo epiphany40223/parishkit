@@ -20,6 +20,7 @@ from parishkit.stewardship.jobs.ownership import database_now, lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import dates
 
 from .artifacts import write_artifact
 from .charts import render_participation
@@ -234,9 +235,16 @@ def _execute(execution, *, store, root, general=None):
         authorize(store, request.requester_id, request=request)
         admit_campaign(request.campaign_id, mutating=True)
 
-    with CampaignReadGuard(
-        [request.campaign_id], authorize=authorize_render, abort=_abort_render_worker
-    ) as guard:
+    # PDF dates use the parish format of the configuration this export was
+    # requested under; CSV (ISO) and XLSX (native cells) do not depend on it.
+    with (
+        dates.using(request.configuration.parish.date_format),
+        CampaignReadGuard(
+            [request.campaign_id],
+            authorize=authorize_render,
+            abort=_abort_render_worker,
+        ) as guard,
+    ):
         document = load_document(request, general=general)
 
         def render(stream):

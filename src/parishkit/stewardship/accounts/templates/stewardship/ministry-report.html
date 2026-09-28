@@ -4,7 +4,7 @@
 <h1>{% translate "Ministry requests" %}</h1>
 <p><a href="{% url 'admin:ministry_report_campaigns' %}">{% translate "Choose a retained campaign" %}</a></p>
 <p>{{ metadata.name }} — {% translate "Source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
-<p>{% translate "Ages as of" %} {{ metadata.report_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish timezone. Displayed times use your browser timezone when scripts are available; otherwise UTC." %}</p>
+<p>{% translate "Ages as of" %} {{ metadata.report_date|parish_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish timezone. Displayed times use your browser timezone when scripts are available; otherwise UTC." %}</p>
 <p>{% translate "Current counts exclude cancelled and superseded requests. Inactive Ministries retain their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Follow up these requests: assignment, contact attempts, notes and outcomes" %}</a></p>
 {% if ministry_id %}<p><a href="{{ summary_url }}">{% translate "All authorized Ministries" %}</a></p>{% endif %}
@@ -45,7 +45,7 @@
 <form data-submit-waits method="post" action="{% url 'admin:ministry_export' campaign_id %}">{% csrf_token %}
 {% for key,value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="ministry" value="{{ ministry_id|default_if_none:'' }}"><input type="hidden" name="action" value="{{ action|default:'summary' }}"><input type="hidden" name="request_key" value="{{ export_key }}">
-<label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <label for="ministry-export-timezone">{% translate "Export timezone" %}</label><select id="ministry-export-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue complete export" %}</button></form></section>
 {% if not ministry_id %}<section aria-labelledby="ministry-packet-heading"><h2 id="ministry-packet-heading">{% translate "Follow-up packet" %}</h2>
@@ -59,7 +59,7 @@
 {% endfor %}</fieldset>
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Packet options" %}</legend>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Also include resolved and withdrawn requests" %}</label>
-<label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>
+<label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>{% include 'stewardship/export-dates-help.html' %}
 <label for="ministry-packet-timezone">{% translate "Packet timezone" %}</label><select id="ministry-packet-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 </fieldset>
 <button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue follow-up packet" %}</button></form></section>{% endif %}

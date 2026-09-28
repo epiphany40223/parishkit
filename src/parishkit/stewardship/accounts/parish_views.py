@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import timezone_names, typed
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 
@@ -30,7 +31,16 @@ from .request_patch import build_candidate
 from .sessions import authenticated_admin
 
 SALT = "stewardship-parish-profile-preview-v1"
-PROFILE_FIELDS = ("name", "website", "timezone", "phone", "online_giving_url")
+PROFILE_FIELDS = (
+    "name",
+    "website",
+    "timezone",
+    "phone",
+    "online_giving_url",
+    "date_format",
+)
+# Values an older canonical document omits; unset means the default.
+DEFAULTS = {"date_format": dates.DEFAULT}
 
 
 class PhoneField(forms.CharField):
@@ -86,6 +96,17 @@ class ParishForm(forms.Form):
             "can link to it with the online_giving_url placeholder."
         ),
     )
+    date_format = forms.ChoiceField(
+        label=_("Date format"),
+        choices=dates.CHOICES,
+        required=False,
+        help_text=_(
+            "How dates appear on Admin and Family pages, in emails and in PDF "
+            "reports. US styles use a 12-hour clock; European and ISO styles a "
+            "24-hour clock. Spreadsheets use each viewer's own Excel date "
+            "format, and CSV files always use ISO 8601 (2027-01-31)."
+        ),
+    )
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
@@ -96,6 +117,10 @@ class ParishForm(forms.Form):
         self.fields["timezone"].choices = [
             (name, name) for name in sorted(timezone_names())
         ]
+
+    def clean_date_format(self):
+        """A blank choice (an older form post) keeps the default style."""
+        return self.cleaned_data["date_format"] or dates.DEFAULT
 
     def clean_online_giving_url(self):
         """Accept only the HTTPS, credential-free links the configuration stores."""
@@ -146,7 +171,9 @@ def _form_page(request, configuration, form, *, status=200):
 
 
 def _shown(name, value):
-    """Preview a telephone change the way people will read it."""
+    """Preview telephone and date-format changes the way people will read them."""
+    if name == "date_format":
+        return dict(dates.CHOICES).get(value, value)
     return phone(value) if name == "phone" else value
 
 
@@ -162,7 +189,7 @@ def _preview(request, service, actor):
     values = {
         name: form.cleaned_data[name]
         for name in PROFILE_FIELDS
-        if form.cleaned_data[name] != record["values"].get(name, "")
+        if form.cleaned_data[name] != record["values"].get(name, DEFAULTS.get(name, ""))
     }
     if "online_giving_url" in values:
         # None removes the optional key; see request_patch's parish update.
@@ -200,7 +227,9 @@ def _preview(request, service, actor):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    "before": _shown(name, record["values"].get(name, "")),
+                    "before": _shown(
+                        name, record["values"].get(name, DEFAULTS.get(name, ""))
+                    ),
                     "after": _shown(name, value or ""),
                 }
                 for name, value in values.items()
@@ -232,7 +261,9 @@ def parish_settings(request):
             filters(request.GET, allowed=set())
             configuration = editable_configuration(service)
             initial = {
-                name: _profile(configuration)["values"].get(name, "")
+                name: _profile(configuration)["values"].get(
+                    name, DEFAULTS.get(name, "")
+                )
                 for name in PROFILE_FIELDS
             }
             initial["base_digest"] = configuration.active_configuration.digest

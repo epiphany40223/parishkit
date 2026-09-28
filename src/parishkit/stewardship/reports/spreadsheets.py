@@ -1,11 +1,14 @@
 """Typed, formula-free participation workbooks over the shared frozen document."""
 
+from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
+from .information_rendering import xlsx_cell
 from .participation import participation_table
 
 
@@ -48,15 +51,22 @@ def participation_xlsx(document, output):
             value = row[heading]
             if heading == "date":
                 value = document.days[index - 2].local_date
+            elif heading == "source_as_of" and value is not None:
+                # In the stated display zone; xlsx_cell writes a native cell.
+                value = datetime.fromisoformat(value).astimezone(
+                    ZoneInfo(document.browser_timezone)
+                )
             elif heading == "pledge_usd" and value is not None:
                 amount = Decimal(value)
                 value = amount if len(amount.as_tuple().digits) <= 15 else value
+            if isinstance(value, date):
+                # Excel's built-in date (14) and date-time (22) formats.
+                xlsx_cell(sheet, index, column, value)
+                continue
             cell = _cell(
                 sheet, index, column, "Unavailable" if value is None else value
             )
-            if heading == "date":
-                cell.number_format = "yyyy-mm-dd"
-            elif heading == "pledge_usd" and isinstance(value, Decimal):
+            if heading == "pledge_usd" and isinstance(value, Decimal):
                 cell.number_format = '"$"#,##0.00'
             elif type(value) is int:
                 cell.number_format = "#,##0"

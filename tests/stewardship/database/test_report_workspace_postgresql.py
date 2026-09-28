@@ -184,8 +184,13 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert b"sort=date_desc" in page_one and b"inactive=yes" in page_one
         _, page_two = read(browser, path + options + "&page=2")
         assert b'rel="prev"' in page_two and b'rel="next"' in page_two
-        days_one = re.findall(rb"<td>(2026-10-\d\d)</td>", page_one)
-        days_two = re.findall(rb"<td>(2026-10-\d\d)</td>", page_two)
+        # Table dates use the compact parish style ("Oct 31, 2026").
+        days_one = [
+            int(day) for day in re.findall(rb"<td>Oct (\d+), 2026</td>", page_one)
+        ]
+        days_two = [
+            int(day) for day in re.findall(rb"<td>Oct (\d+), 2026</td>", page_two)
+        ]
         assert len(days_one) == len(days_two) == 2
         assert days_one + days_two == sorted(days_one + days_two, reverse=True)
         # An unrelated discovery result must never change this report's guard.

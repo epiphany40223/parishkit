@@ -8,6 +8,8 @@ from django.utils.translation import gettext as _
 
 from parishkit.stewardship.campaigns.domain import Money, Percentage
 
+from . import dates
+
 
 def campaign_year(values):
     """One campaign-year meaning for Admin previews, page blocks and share labels.
@@ -166,22 +168,18 @@ def instant(value):
     return value.astimezone(UTC).isoformat()
 
 
-def parish_date(value):
-    """A campaign-local calendar date is never shifted into the browser timezone."""
+def parish_date(value, style=None):
+    """A campaign-local calendar date is never shifted into the browser timezone.
+
+    ``style`` is the parish ``date_format`` code; request rendering leaves it
+    unset and uses the request's parish setting (see :mod:`.dates`).
+    """
     if type(value) is not date:
         raise ValueError("Campaign date formatting requires a calendar date.")
-    return value.strftime("%B") + f" {value.day}, {value.year}"
+    return dates.format_date(value, style)
 
 
-def parish_instant(value, timezone):
+def parish_instant(value, timezone, style=None):
     """Show an instant in the campaign's time zone, e.g. "September 28, 2026 at
     7:15 AM EDT", so every Family and Admin sees the same wall-clock time."""
-    from zoneinfo import ZoneInfo
-
-    local = value.astimezone(ZoneInfo(timezone))
-    hour = local.hour % 12 or 12
-    meridiem = "AM" if local.hour < 12 else "PM"
-    return (
-        f"{parish_date(local.date())} at {hour}:{local.minute:02d} {meridiem} "
-        f"{local.tzname()}"
-    )
+    return dates.format_instant(value, timezone, style)

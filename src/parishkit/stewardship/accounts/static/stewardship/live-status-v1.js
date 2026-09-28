@@ -50,16 +50,8 @@
   }
 
   function localize(scope) {
-    // Same formatting as ui-v1.js applies at page load.
-    if (typeof Intl === "undefined") return;
-    const format = new Intl.DateTimeFormat("en-US", {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", timeZoneName: "short"
-    });
-    scope.querySelectorAll("time[data-local-instant]").forEach((node) => {
-      const date = new Date(node.dateTime);
-      if (Number.isFinite(date.getTime())) node.textContent = format.format(date);
-    });
+    // Same parish date format as ui-v1.js applies at page load.
+    if (window.ParishDates) window.ParishDates.localize(scope);
   }
 
   function elapsed() {

@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from django import forms
 from django.forms import BaseFormSet, formset_factory
-from django.utils.dateformat import format as date_format
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -15,6 +14,7 @@ from parishkit.stewardship.campaigns.configuration import (
     schedule_values,
 )
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.web.presentation import parish_date
 
 from . import field_tips
 from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
@@ -333,7 +333,7 @@ class ScheduleSet(BaseFormSet):
     def window_text(self):
         """The campaign dates in words, for instructions and date errors."""
         start, end = self.window
-        return f"{date_format(start, 'F j, Y')} – {date_format(end, 'F j, Y')}"
+        return f"{parish_date(start)} – {parish_date(end)}"
 
     @property
     def timezone(self):

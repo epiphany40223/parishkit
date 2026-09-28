@@ -115,6 +115,11 @@ def _stored_projections(snapshot):
                     {"online_giving_url": parish.online_giving_url}
                     if parish.online_giving_url is not None
                     else {}
+                )
+                | (
+                    {"date_format": parish.date_format}
+                    if parish.date_format is not None
+                    else {}
                 ),
             }
         ],
@@ -491,6 +496,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
                 icon_logo_id=values["branding"]["icon"],
                 favicon_id=values["branding"]["favicon"],
                 online_giving_url=values.get("online_giving_url"),
+                date_format=values.get("date_format"),
                 **attribution,
             )
         for record in document["sections"].get("integrations", []):

@@ -145,6 +145,7 @@ def test_normalization_matches_zero_and_multiple_integration_rows(db, integratio
         ("phone", "2025550123"),
         ("website", "file:///tmp/a"),
         ("online_giving_url", "http://give.example.org/"),
+        ("date_format", "dd/mm/yyyy"),
     ],
 )
 def test_parish_shape_constraints_apply_to_raw_inserts(db, field, value):
@@ -170,6 +171,7 @@ def test_parish_shape_constraints_apply_to_raw_inserts(db, field, value):
         "phone": "parish_us_phone",
         "website": "parish_website_scheme",
         "online_giving_url": "parish_online_giving_https",
+        "date_format": "parish_date_format",
     }[field]
     with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
         Parish.objects.create(**values)
@@ -226,6 +228,25 @@ def test_optional_giving_url_projects_and_verifies_both_ways(db):
     assert second.parish.online_giving_url == giving
     rebuilt = _stored_projections(second)["parish"][0]
     assert rebuilt == document["sections"]["parish"][0]
+
+
+def test_optional_date_format_projects_and_verifies_both_ways(db):
+    """Unset and chosen date formats rebuild the exact canonical parish record."""
+    from parishkit.stewardship.accounts.configuration_snapshots import (
+        _stored_projections,
+    )
+
+    version = configuration_version()
+    first = prepare(version)
+    assert first.parish.date_format is None
+    assert "date_format" not in _stored_projections(first)["parish"][0]["values"]
+    document = successor_document(version)
+    document["sections"]["parish"][0]["values"]["date_format"] = "eu_dot"
+    second = prepare(configuration_version(document))
+    assert second.parish.date_format == "eu_dot"
+    assert (
+        _stored_projections(second)["parish"][0] == (document["sections"]["parish"][0])
+    )
 
 
 def test_successor_preserves_immutable_history(db):

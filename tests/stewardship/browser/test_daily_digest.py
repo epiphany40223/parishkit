@@ -24,14 +24,15 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
     slider.focus()
     page.keyboard.press("Home")
     values = page.locator("[data-digest-values]")
-    assert "2026-10-31" in values.inner_text()
+    # Campaign dates use the compact parish style (default US).
+    assert "Oct 31, 2026" in values.inner_text()
     assert "1 out of 1,234 (0.1%)" in values.inner_text()
     assert "$1,234.56" in values.inner_text()
     assert slider.get_attribute("aria-valuetext") == values.inner_text()
     image.scroll_into_view_if_needed()
     bounds = image.bounding_box()
     image.hover(position={"x": bounds["width"] * 0.80, "y": bounds["height"] * 0.45})
-    assert "2026-11-02" in values.inner_text()
+    assert "Nov 2, 2026" in values.inner_text()
     assert "$3,234.56" in image.get_attribute("title")
     assert not errors
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
