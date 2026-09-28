@@ -224,3 +224,39 @@ def test_blank_key_keeps_the_settings_preview(working):
     assert response.status_code == 200
     assert b'name="preview"' in response.content
     assert not SecretReplacementRequest.objects.exists()
+
+
+def test_stale_key_save_page_says_nothing_was_done(working, monkeypatch):
+    """A browser save refused for a stale sign-in explains itself plainly.
+
+    The key is never kept for after the step-up (secrets are not stored), so
+    the page says nothing was done and the key must be entered again.
+    """
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.sessions.database_now",
+        lambda: timezone.now() + timedelta(minutes=6),
+    )
+    browser, store = working["browser"], working["service"].store
+    page = browser.get(URL)
+    assert not page.context["fresh"]
+    fields = {
+        "action": "preview",
+        "base_digest": store.active().digest,
+        "organization_id": "12345",
+        "intent": hidden(page, "intent"),
+        "candidate": CANDIDATE.decode(),
+        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+    }
+    with identity("pk_stewardship_web"):
+        response = browser.post(
+            URL,
+            fields,
+            HTTP_ACCEPT="text/html,*/*;q=0.8",
+            HTTP_SEC_FETCH_MODE="navigate",
+        )
+    assert response.status_code == 403
+    assert b"Confirm with Google" in response.content
+    assert b"Nothing was done or sent." in response.content
+    assert b"enter it again after you return" in response.content
+    assert CANDIDATE not in response.content
+    assert not SecretReplacementRequest.objects.exists()

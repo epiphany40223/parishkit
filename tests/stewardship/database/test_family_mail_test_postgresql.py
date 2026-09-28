@@ -1243,3 +1243,77 @@ def test_scheduler_hints_a_prepared_family_test_message_under_its_grants(
             handlers={DISPATCH: delivery_handler(harness.service.store, scheduler=True)}
         )
     assert [hint.run_id for hint in hints] == [message.task_id]
+
+
+PAGE = {"HTTP_ACCEPT": "text/html,*/*;q=0.8", "HTTP_SEC_FETCH_MODE": "navigate"}
+
+
+def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
+    """A stale sign-in is explained before and after Send; nothing is lost.
+
+    The page says a Google confirmation is needed before offering Send. A
+    submit that still arrives stale says nothing was sent and keeps the
+    reviewed DUIDs server-side, so after the step-up the same review returns
+    for the Admin to confirm; a real send then shows a one-time confirmation.
+    """
+    harness, browser, path, sample = family_test
+    page = review(browser, path, [1])
+    assert page.context["fresh"] and b"Send these Family tests" in page.content
+    token = page.context["confirm"]["preview"].value()
+    age_session(timedelta(minutes=10))
+    try:
+        page = review(browser, path, [1])
+        assert not page.context["fresh"]
+        assert page.context["signed_in_minutes"] >= 10
+        assert b"Confirm with Google" in page.content
+        assert b"Send these Family tests" not in page.content
+        # The old signed review still reaches the server, stale: refused and
+        # explained, with the DUIDs kept for after the step-up.
+        with web_login():
+            refused = browser.post(
+                path,
+                {
+                    "action": "confirm",
+                    "preview": token,
+                    "acknowledge": "on",
+                    "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+                },
+                **PAGE,
+            )
+        assert refused.status_code == 403
+        assert b"Nothing was done or sent." in refused.content
+        assert b"will be shown again when you return" in refused.content
+        assert not FamilyMailTest.objects.exists()
+    finally:
+        # The Google step-up refreshes this same session's sign-in time.
+        age_session(-timedelta(minutes=10))
+    # Another template's page leaves the saved selection for its own page.
+    other = path.replace(path.split("/")[-2], str(uuid4()))
+    with web_login():
+        assert browser.get(other).status_code != 200
+        page = browser.get(path)
+    assert page.status_code == 200
+    assert page.context["restored"] and page.context["fresh"]
+    assert [row["duid"] for row in page.context["families"]] == [1]
+    assert page.context["sendable"] and page.context["sent"] is None
+    token = page.context["confirm"]["preview"].value()
+    # The restore is used once; a later visit starts empty.
+    with web_login():
+        assert not browser.get(path).context["restored"]
+    with web_login():
+        response = post(
+            browser, path, {"action": "confirm", "preview": token, "acknowledge": "on"}
+        )
+        assert response.status_code == 302
+        page = browser.get(path)
+    assert page.context["sent"] == 1 and page.context["refresh"]
+    assert b"status-refresh-v1.js" in page.content
+    assert str(page.context["items"][0]["label"]).startswith("Queued")
+    with web_login():
+        # The confirmation stays while the test is still on its way...
+        assert browser.get(path).context["sent"] == 1
+        # ...and a POST response (here an invalid review) never auto-reloads,
+        # since reloading it would resubmit the form.
+        invalid = post(browser, path, {"action": "preview", "families": "x"})
+    assert invalid.status_code == 400
+    assert b"status-refresh-v1.js" not in invalid.content
