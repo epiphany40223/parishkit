@@ -4,8 +4,9 @@ name: CI
 # main run only the light validate job (temporary, to stay within the free
 # plan's 20 concurrent jobs; see issue #158). A manual dispatch runs the
 # full suite on any ref, and releases require that full run on the tagged
-# commit. Never let skipped draft jobs satisfy the always-running aggregate
-# merge gates.
+# commit. Ready PRs skip the heavy job groups their changed paths cannot
+# affect (parishkit.stewardship.quality_paths); the aggregate gates accept only
+# that intentional skip, never a draft, failed, cancelled or unexpected skip.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
@@ -26,10 +27,18 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The complete non-database suite adds a few minutes when shards are skipped.
+    timeout-minutes: 25
+    outputs:
+      postgresql: ${{ steps.paths.outputs.postgresql }}
+      browser: ${{ steps.paths.outputs.browser }}
+      compose: ${{ steps.paths.outputs.compose }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # The pull request test merge commit and its base-branch parent.
+          fetch-depth: 2
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -41,6 +50,12 @@ jobs:
         run: |
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
+
+      - name: Classify changed paths
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+        run: python -m parishkit.stewardship.quality_paths --event "$EVENT" --output "$GITHUB_OUTPUT"
 
       - name: Ruff check
         run: python -m ruff check .
@@ -66,7 +81,14 @@ jobs:
           tests/stewardship/test_financial_report.py
           tests/stewardship/test_log_rows.py
           tests/stewardship/test_smoke.py
+          tests/stewardship/test_quality_paths.py
           --require-no-skips -q
+
+      # Shard one normally runs the complete non-database suite, which includes
+      # the contract tests that read docs, workflows and deployment files.
+      - name: Complete non-database suite
+        if: ${{ steps.paths.outputs.postgresql == 'false' }}
+        run: python -m pytest tests --ds=parishkit.stewardship.settings.test -p no:cacheprovider -q
 
       - name: Migration drift
         env:
@@ -75,7 +97,7 @@ jobs:
 
   stewardship-compose-core:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.compose != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -114,7 +136,7 @@ jobs:
 
   stewardship-operational:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.compose != 'false') }}
     runs-on: ubuntu-latest
     # Two runners with two provider modes each: the freed runner slots let
     # the PostgreSQL partitions spread wider within the 20-job plan limit.
@@ -152,7 +174,7 @@ jobs:
 
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:
-    needs: [stewardship-compose-core, stewardship-operational]
+    needs: [validate, stewardship-compose-core, stewardship-operational]
     if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -161,14 +183,25 @@ jobs:
         env:
           CORE_RESULT: ${{ needs.stewardship-compose-core.result }}
           OPERATIONAL_RESULT: ${{ needs.stewardship-operational.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PATH_RUN: ${{ needs.validate.outputs.compose }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           echo 'Full validation requires a ready PR, successful preflight, and all container scenarios.'
+          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
+            test "$DRAFT" = false && test "$PATH_RUN" = false &&
+            test "$CORE_RESULT" = skipped && test "$OPERATIONAL_RESULT" = skipped; then
+            echo 'No changed path can affect these checks; skipped intentionally.'
+            echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"
+            exit 0
+          fi
           test "$CORE_RESULT" = success
           test "$OPERATIONAL_RESULT" = success
 
   stewardship-browser-engine:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.browser != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -201,7 +234,7 @@ jobs:
 
   # Preserve the protected check name, including failed/cancelled matrix work.
   stewardship-browser:
-    needs: stewardship-browser-engine
+    needs: [validate, stewardship-browser-engine]
     if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -209,13 +242,24 @@ jobs:
       - name: Require every browser engine
         env:
           BROWSER_RESULT: ${{ needs.stewardship-browser-engine.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PATH_RUN: ${{ needs.validate.outputs.browser }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           echo 'Full validation requires a ready PR, successful preflight, and every browser engine.'
+          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
+            test "$DRAFT" = false && test "$PATH_RUN" = false &&
+            test "$BROWSER_RESULT" = skipped; then
+            echo 'No changed path can affect these checks; skipped intentionally.'
+            echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"
+            exit 0
+          fi
           test "$BROWSER_RESULT" = success
 
   stewardship-postgresql-shard:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.postgresql != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -267,34 +311,52 @@ jobs:
   # Preserve the required check name. Missing/failed/cancelled shards must make
   # this gate fail, rather than skipping it and accidentally permitting merge.
   stewardship-postgresql:
-    needs: stewardship-postgresql-shard
+    needs: [validate, stewardship-postgresql-shard]
     if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Require all database shards
+        id: gate
         env:
           SHARD_RESULT: ${{ needs.stewardship-postgresql-shard.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PATH_RUN: ${{ needs.validate.outputs.postgresql }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           echo 'Full validation requires a ready PR, successful preflight, and all database shards.'
+          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
+            test "$DRAFT" = false && test "$PATH_RUN" = false &&
+            test "$SHARD_RESULT" = skipped; then
+            echo 'No changed path can affect these checks; skipped intentionally.'
+            echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"
+            exit 0
+          fi
           test "$SHARD_RESULT" = success
       - uses: actions/checkout@v4
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
       - uses: actions/setup-python@v5
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
         with:
           python-version: "3.12"
           cache: pip
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
         run: |
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
       - name: Download this run's coverage evidence
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
         uses: actions/download-artifact@v5
         with:
           pattern: stewardship-coverage-*
           path: ${{ runner.temp }}/stewardship-shards
       - name: Scoped line and branch coverage
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
         run: python -m parishkit.stewardship.quality_ci combine --count 14 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
       - name: Retain combined coverage
+        if: ${{ steps.gate.outputs.intentional != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: stewardship-coverage-combined
