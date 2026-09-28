@@ -1317,3 +1317,12 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
         invalid = post(browser, path, {"action": "preview", "families": "x"})
     assert invalid.status_code == 400
     assert b"status-refresh-v1.js" not in invalid.content
+
+
+def test_testing_mode_explains_live_codes_and_offers_a_test_send(family_test):
+    """Admin pages that list live codes point to the chosen-Family test send."""
+    harness, browser, families, _ = family_test
+    campaign = harness.campaign.pk
+    settings_page = browser.get(f"/admin/campaign/{campaign}/settings").content
+    assert b"Try the Family form as a chosen Family" in settings_page
+    assert families.encode() in settings_page

@@ -103,6 +103,30 @@ class DirectoryQuery:
         }
 
 
+def testing_codes_context(campaign_id):
+    """Template context for the Testing-mode note about live Family codes.
+
+    In Testing mode the Family sign-in accepts only rehearsal credentials from
+    a chosen-Family test send, so a code copied from the directory is refused.
+    The note says so and links to that test send. The Family-facing denial
+    stays reason-free; only Admin and Staff pages explain it.
+    """
+    from parishkit.stewardship.accounts.campaign_family_test import (
+        chosen_family_test_url,
+    )
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    runtime = SystemConfiguration.objects.first()
+    if runtime is None or runtime.mode != "testing":
+        return {"testing_codes": False, "family_test_url": None}
+    campaign = Campaign.objects.filter(pk=campaign_id).first()
+    return {
+        "testing_codes": True,
+        "family_test_url": chosen_family_test_url(runtime, campaign),
+    }
+
+
 def address_lines(address):
     """Render known nonblank components without displaying Python null values."""
 

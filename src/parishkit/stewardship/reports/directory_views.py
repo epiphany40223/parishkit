@@ -26,7 +26,14 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.responses import campaign_response
 
-from .directories import PAGE_SIZE, REACH, REASONS, DirectoryQuery, directory_page
+from .directories import (
+    PAGE_SIZE,
+    REACH,
+    REASONS,
+    DirectoryQuery,
+    directory_page,
+    testing_codes_context,
+)
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -154,29 +161,34 @@ def directory(request, campaign_id, *, postal=False):
             except PermissionError:
                 mutable = False
             route = "admin:postal_directory" if postal else "admin:family_directory"
-            context = report | {
-                "postal_proportion": out_of(
-                    Percentage(report["postal_total"], report["active_total"])
-                ),
-                "campaign_id": campaign_id,
-                "postal": postal,
-                "query": query,
-                "query_fields": query.form_values(),
-                "report_url": reverse(route, args=(campaign_id,)),
-                "reasons": REASONS,
-                "reaches": REACH,
-                "unreachable_url": reverse(
-                    "admin:family_directory", args=(campaign_id,)
-                )
-                + "?reach=neither",
-                "mutable": mutable,
-                "request_key": uuid4(),
-                "export_timezones": sorted(timezone_names()),
-                "previous_page": query.page - 1 if query.page > 1 else None,
-                "next_page": query.page + 1
-                if query.page * PAGE_SIZE < report["total"]
-                else None,
-            }
+            testing = testing_codes_context(campaign_id)
+            context = (
+                report
+                | testing
+                | {
+                    "postal_proportion": out_of(
+                        Percentage(report["postal_total"], report["active_total"])
+                    ),
+                    "campaign_id": campaign_id,
+                    "postal": postal,
+                    "query": query,
+                    "query_fields": query.form_values(),
+                    "report_url": reverse(route, args=(campaign_id,)),
+                    "reasons": REASONS,
+                    "reaches": REACH,
+                    "unreachable_url": reverse(
+                        "admin:family_directory", args=(campaign_id,)
+                    )
+                    + "?reach=neither",
+                    "mutable": mutable,
+                    "request_key": uuid4(),
+                    "export_timezones": sorted(timezone_names()),
+                    "previous_page": query.page - 1 if query.page > 1 else None,
+                    "next_page": query.page + 1
+                    if query.page * PAGE_SIZE < report["total"]
+                    else None,
+                }
+            )
             return iter(
                 (
                     render_to_string(

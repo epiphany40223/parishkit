@@ -37,6 +37,13 @@ POSTAL_HEADINGS = (
     "Family code",
 )
 PRIVACY = "Sensitive: Family codes. Authorized recipients only."
+# In Testing mode the Family sign-in accepts only rehearsal credentials from a
+# chosen-Family test send, so a file of live codes says so in its details.
+TESTING_NOTE = (
+    "These are the live codes; they work only after go-live. To try the Family "
+    "form now, send yourself a test invitation (Campaign settings: Try the "
+    "Family form as a chosen Family)."
+)
 FILTER_LABELS = {
     "phone": ("Phone available", {"yes": "Yes", "no": "No"}),
     "response": ("Campaign response", {"yes": "Responded", "no": "Not yet responded"}),
@@ -144,9 +151,20 @@ def _filters(parameters):
 
 
 def directory_document(
-    payload, parameters, *, parish_name, captured_at, requested_at, timezone
+    payload,
+    parameters,
+    *,
+    parish_name,
+    captured_at,
+    requested_at,
+    timezone,
+    testing=False,
 ):
-    """Preserve the capture; add codes before detaching within the worker's guard."""
+    """Preserve the capture; add codes before detaching within the worker's guard.
+
+    ``testing`` adds the note that live codes work only after go-live; it is a
+    report detail (PDF footer, XLSX information sheet), never a CSV row.
+    """
     if payload["total"] != len(payload["rows"]):
         raise ValueError("Directory export requires the complete matching result.")
     zone = ZoneInfo(timezone)
@@ -219,6 +237,7 @@ def directory_document(
         ),
         ("Filters applied", _filters(parameters)),
         ("Privacy", PRIVACY),
+        *((("Testing mode", TESTING_NOTE),) if testing else ()),
     )
     return DirectoryDocument(
         metadata=metadata,

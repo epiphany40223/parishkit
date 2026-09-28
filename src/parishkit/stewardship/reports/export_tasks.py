@@ -7,6 +7,7 @@ from pathlib import Path
 
 from django.db import connection
 
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.campaigns.work_locks import (
@@ -171,6 +172,7 @@ def load_document(request, *, general=None):
             captured_at=snapshot.created_at,
             requested_at=request.created_at,
             timezone=request.browser_timezone,
+            testing=SystemConfiguration.objects.filter(mode="testing").exists(),
         )
     if request.report == "additional_information":
         from .information_documents import information_document

@@ -41,6 +41,7 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .campaign_family_test import chosen_family_test_url
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_preview import describe_changes
 from .content_forms import default_content
@@ -214,6 +215,7 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             "campaign": campaign,
             "form": form,
             "editable": editable,
+            "family_test_url": chosen_family_test_url(configuration, campaign),
             "production_progress_available": campaign is not None
             and configuration.current_campaign_id == campaign.pk
             and configuration.mode == "production"
