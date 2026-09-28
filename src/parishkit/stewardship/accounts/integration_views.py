@@ -8,6 +8,7 @@ from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
@@ -16,7 +17,10 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
-from parishkit.stewardship.source.refresh_status import full_refresh_status
+from parishkit.stewardship.source.refresh_status import (
+    full_refresh_status,
+    refresh_schedule,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -30,7 +34,7 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .handoff_discovery import public_handoff
-from .integration_credentials import save_credential, summary
+from .integration_credentials import dismiss, save_credential, summary
 from .integration_forms import (
     LABELS,
     CredentialForm,
@@ -160,8 +164,14 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "configured": configured,
             "removable": configured and target in OPTIONAL_INTEGRATIONS,
             "configuration": configuration,
-            "full_refresh": (full_refresh_status() if target == "parishsoft" else None),
+            "full_refresh": (
+                full_refresh_status(refresh_schedule(configuration), timezone.now())
+                if target == "parishsoft"
+                else None
+            ),
             "status_url": reverse("admin:integration_status", args=[target]),
+            # The ParishSoft page offers the manual full refresh directly.
+            "refresh_key": uuid4() if target == "parishsoft" else None,
         },
         status=status,
     )
@@ -577,10 +587,42 @@ def integration_status(request, target):
             request,
             "stewardship/integration-status.html",
             {
+                "target": target,
                 "summary": latest,
                 "pending": pending,
                 "follow_url": reverse("admin:integration_settings", args=[target]),
             },
+        )
+        return _checked(request, service, response)
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["POST"])
+def dismiss_credential_result(request, target):
+    """Hide a finished key change's status line for every Administrator.
+
+    One CSRF-protected POST under the Configure capability; the dismissal is
+    recorded as an audit event in its own transaction, then the settings page
+    is shown again. An out-of-date request dismisses nothing.
+    """
+    try:
+        filters(request.GET, allowed=set())
+        service = runtime()
+        actor = principal(request, service)
+        if target not in ROTATING_TARGETS or target not in LABELS:
+            raise LookupError("Integration is unavailable.")
+        request_id = UUID(request.POST.get("request_id", ""))
+        configuration = editable_configuration(service)
+        dismiss(
+            target,
+            _optional(configuration, target) or _unset(target),
+            request_id,
+            actor_id=actor.identity,
+            parish_id=configuration.active_configuration.parish.pk,
+        )
+        response = HttpResponseRedirect(
+            reverse("admin:integration_settings", args=[target])
         )
         return _checked(request, service, response)
     except ERRORS as error:

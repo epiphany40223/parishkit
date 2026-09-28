@@ -38,10 +38,10 @@ def test_other_integrations_are_untouched():
     assert _retain_unused_time("email", settings, {}) is settings
 
 
-def test_finished_key_changes_stop_showing_after_a_day():
-    """A settled result is recent for a day, then drops off the page."""
+def test_finished_key_changes_stop_showing_after_an_hour():
+    """A settled result is recent for an hour, then drops off the page."""
     now = timezone.now()
-    recent = SimpleNamespace(updated_at=now - timedelta(hours=2))
-    old = SimpleNamespace(updated_at=now - timedelta(days=2))
+    recent = SimpleNamespace(updated_at=now - timedelta(minutes=50))
+    old = SimpleNamespace(updated_at=now - timedelta(minutes=70))
     assert not credentials._settled_long_ago(recent)
     assert credentials._settled_long_ago(old)

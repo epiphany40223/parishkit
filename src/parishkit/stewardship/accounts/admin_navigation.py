@@ -162,6 +162,7 @@ NON_PAGES = frozenset(
         "daily_digest_chart",
         "daily_digest_download",
         "delivery_refusal_clear",
+        "dismiss_credential_result",
         "delivery_resolve",
         "exact_export_cancel",
         "exact_export_create",

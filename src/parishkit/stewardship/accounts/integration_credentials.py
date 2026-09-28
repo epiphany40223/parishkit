@@ -16,9 +16,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID, uuid5
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.schemas import Action, ActorKind
+from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
@@ -86,13 +90,47 @@ def _selection(row):
     return None if selection is None else _status(selection).state
 
 
-# How long a finished key change stays on its integration's settings page.
-RESULT_VISIBLE = timedelta(hours=24)
+# How long a finished key change stays on its integration's settings page,
+# unless an Administrator dismisses it sooner.
+RESULT_VISIBLE = timedelta(hours=1)
+# Finished outcomes an Administrator may dismiss; "pending" and "unselected"
+# still need attention, so they keep showing.
+DISMISSIBLE = ("updated", "failed")
 
 
 def _settled_long_ago(row):
     """True when a finished key change is older than the page shows it for."""
     return timezone.now() - row.updated_at > RESULT_VISIBLE
+
+
+def _dismissed(row):
+    """True once any Administrator dismissed this key change's status line."""
+    return AuditEvent.objects.filter(
+        event_type=Action.CREDENTIAL_RESULT_DISMISSED.value, subject_id=row.pk
+    ).exists()
+
+
+def dismiss(target, record, request_id, *, actor_id, parish_id):
+    """Hide a finished key change's status line for every Administrator.
+
+    The dismissal is an audit event about the request, so nothing else needs
+    to store it. Only the line the page currently shows can be dismissed, and
+    only when it is a finished outcome: a stale page, a change that has since
+    been superseded or one that still needs action records nothing.
+    """
+    with transaction.atomic():
+        latest = summary(target, record)
+        if latest is None or latest.request_id != request_id:
+            return
+        if latest.kind not in DISMISSIBLE:
+            return
+        record_action(
+            Action.CREDENTIAL_RESULT_DISMISSED,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=actor_id,
+            subject_id=request_id,
+            parish_id=parish_id,
+        )
 
 
 def summary(target, record):
@@ -108,12 +146,14 @@ def summary(target, record):
     )
     if row is None:
         return None
-    # A finished change is news for a day, not forever; its history stays on
-    # the details page and in the audit log. A key that is installed but not
-    # yet in use still needs action, so it keeps showing.
+    # A finished change is news for an hour (or until an Administrator
+    # dismisses it), not forever; its history stays on the details page and
+    # in the audit log. A key that is installed but not yet in use still
+    # needs action, so it keeps showing.
     in_use = record["values"]["credential_fingerprint"] == row.resulting_fingerprint
     needs_action = row.state == "applied" and not in_use
-    if row.state not in SECRET_PENDING and not needs_action and _settled_long_ago(row):
+    finished = row.state not in SECRET_PENDING and not needs_action
+    if finished and (_settled_long_ago(row) or _dismissed(row)):
         return None
     if row.state in SECRET_PENDING:
         return CredentialSummary(

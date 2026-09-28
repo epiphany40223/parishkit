@@ -16,6 +16,7 @@ from django import forms
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -26,6 +27,10 @@ from parishkit.stewardship.source.errors import (
     SourceScopeChanged,
 )
 from parishkit.stewardship.source.refresh_models import SourceRefreshRequest
+from parishkit.stewardship.source.refresh_status import (
+    full_refresh_status,
+    refresh_schedule,
+)
 from parishkit.stewardship.source.requests import TASK_TYPE, request_refresh
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -80,6 +85,11 @@ def _page(request, service):
         {
             "refreshed_at": refreshed_at,
             "pending": _pending(),
+            # The same full/incremental status the dashboard shows; this page
+            # is itself the "run a full refresh now" action, so no link.
+            "full_refresh": full_refresh_status(
+                refresh_schedule(configuration), timezone.now()
+            ),
             "request_key": uuid4(),
         },
     )

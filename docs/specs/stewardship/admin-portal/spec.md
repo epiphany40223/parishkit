@@ -444,8 +444,10 @@ previews still expire after fifteen minutes; confirming an expired or
 out-of-date preview is a correctable refusal ("This preview is out of date")
 that links back to the page that builds it, so one click starts a fresh review
 and nothing is saved in between. A finished key change (updated, failed,
-cancelled or expired) shows on its integration's page for 24 hours; one that is
-installed but not yet in use keeps showing until it is resolved. The history
+cancelled or expired) shows on its integration's page for one hour, and any
+Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
+one that is installed but not yet in use keeps showing until it is resolved.
+The history
 stays on the change's details page and in the audit log. The ParishSoft daily
 refresh time is shown only for the once-a-day frequency; for hourly and
 15-minute refreshes the stored time is kept unchanged and is not a change to
@@ -1118,7 +1120,9 @@ closes the task with an audit event.
 
 ## Manual ParishSoft refresh
 
-Admins may request an immediate full refresh from a confirmation dialog. The
+Admins may request an immediate full refresh from a confirmation dialog, or
+with the "Run a full refresh now" button on the ParishSoft settings page and in
+the Admin home page's refresh notice (same capability and CSRF rules). The
 action inserts a durable task and returns immediately to its status page. If a
 poll is running, no concurrent poll starts; one manual full refresh may be
 queued to follow it. Repeated clicks return/link to the existing queued run.

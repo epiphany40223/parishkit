@@ -1,8 +1,21 @@
 {% load i18n stewardship %}{% comment %}
-  The last full ParishSoft load, shared by the Admin home page and the
-  ParishSoft settings page. ``status`` is source.refresh_status.FullRefreshStatus;
-  ``can_view_task`` is true only for users who may open background task pages.
+  ParishSoft refresh health, shared by the Admin home, the ParishSoft settings
+  page and the refresh page. ``status`` is source.refresh_status.FullRefreshStatus.
+  ``can_view_task`` allows the link to a failed run's details. ``can_refresh``
+  (Administrators only) plus a fresh ``refresh_key`` offer a one-click manual
+  full refresh, posted to the refresh page's own action with its admission and
+  CSRF rules; ``on_refresh_page`` suppresses it where that page is the action.
+  Without a failure the button shows only with ``idle_action`` (the ParishSoft
+  page); the Admin home page already has its own "Refresh now" link.
+  A failed full reload is described separately from the 15-minute incremental
+  updates, which keep Family and Member changes arriving (#219).
 {% endcomment %}<p>{% translate "Last full ParishSoft refresh:" %}
-  {% if status.succeeded_at %}<time datetime="{{ status.succeeded_at|instant }}" data-local-instant>{{ status.succeeded_at|instant }}</time>{% else %}{% translate "none yet" %}{% endif %}{% if status.running %} — {% translate "a full refresh is running now" %}{% endif %}
+  {% if status.succeeded_at %}<time datetime="{{ status.succeeded_at|instant }}" data-local-instant>{{ status.succeeded_at|instant }}</time>{% else %}{% translate "none yet" %}{% endif %}{% if status.running %} — {% translate "a full refresh is running now" %}{% endif %}.{% if status.delta_succeeded_at and status.frequency != "quarter_hour" %} {% translate "Last 15-minute update:" %} <time datetime="{{ status.delta_succeeded_at|instant }}" data-local-instant>{{ status.delta_succeeded_at|instant }}</time>.{% endif %}{% if status.next_full_at %} {% translate "Next scheduled full refresh:" %} <time datetime="{{ status.next_full_at|instant }}" data-local-instant>{{ status.next_full_at|instant }}</time>.{% endif %}
 </p>
-{% if status.failed_at %}<p class="notice notice-error">{% translate "The most recent full refresh, at" %} <time datetime="{{ status.failed_at|instant }}" data-local-instant>{{ status.failed_at|instant }}</time>, {% translate "did not finish. The data shown is from the last successful refresh." %}{% if status.failed_task_id and can_view_task %} <a href="{% url 'admin:background_task_page' status.failed_task_id %}">{% translate "See what went wrong" %}</a>{% endif %}</p>{% endif %}
+{% if status.failed_at %}<div class="notice notice-error" role="status">
+  <p>{% if status.frequency == "daily" %}{% translate "The nightly full ParishSoft reload at" %}{% else %}{% translate "The most recent full ParishSoft reload, at" %}{% endif %} <time datetime="{{ status.failed_at|instant }}" data-local-instant>{{ status.failed_at|instant }}</time>, {% translate "did not finish." %}{% if status.failed_task_id and can_view_task %} <a href="{% url 'admin:background_task_page' status.failed_task_id %}">{% translate "See what went wrong" %}</a>{% endif %}</p>
+  {% if status.deltas_healthy is True %}<p>{% translate "The 15-minute updates are working, so Family and Member changes keep arriving." %}</p>
+  {% elif status.deltas_healthy is False %}<p>{% translate "The 15-minute updates are also failing, so recent ParishSoft changes are not arriving." %}</p>{% endif %}
+  <p>{% translate "Ministry rosters, ministries and giving are only reloaded by a full refresh, so changes to them since the last successful full refresh appear after the next one" %}{% if status.next_full_at %} ({% translate "scheduled for" %} <time datetime="{{ status.next_full_at|instant }}" data-local-instant>{{ status.next_full_at|instant }}</time>){% endif %}.</p>
+  {% include "stewardship/full-refresh-action.html" %}
+</div>{% elif idle_action %}{% include "stewardship/full-refresh-action.html" %}{% endif %}
