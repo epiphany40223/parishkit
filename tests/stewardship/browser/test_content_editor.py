@@ -176,3 +176,79 @@ def test_pasted_lines_become_paragraphs(page, component_origin):
     assert sanitize_html(source) == (
         "<p>Dear Alex:</p><p>First line<br>second line</p><p>Thanks</p>"
     )
+
+
+def test_generated_plain_text_is_shown_read_only_and_never_silently_dropped(
+    page, component_origin
+):
+    """Checked: read-only server preview. Edit: unchecks and keeps the text."""
+    from parishkit.stewardship.web.content import prepare_content
+
+    posted = []
+
+    def generate(route):
+        """Answer like the server's plain-text preview endpoint."""
+        html = parse_qs(route.request.post_data)["html"][0]
+        route.fulfill(json={"text": prepare_content(html).text})
+
+    page.route("**/admin/content/plain-text", generate)
+    page.goto(component_origin + "/content-settings")
+    box = page.locator('input[name="generate_text"]')
+    text = page.locator('textarea[name="text"]')
+    assert box.is_checked()
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value === "
+        "'Hello Sample Family'"
+    )
+    assert not text.is_editable()
+    assert page.get_by_text("Generated from the HTML version").is_visible()
+    # Editing the visual content refreshes the generated preview.
+    caret_to_end(page)
+    page.keyboard.press("Enter")
+    page.keyboard.type("Second paragraph")
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value === "
+        "'Hello Sample Family\\n\\nSecond paragraph'"
+    )
+    # "Edit plain text" unchecks generation and keeps the generated text.
+    page.get_by_role("button", name="Edit plain text").click()
+    assert not box.is_checked() and text.is_editable()
+    assert text.input_value() == "Hello Sample Family\n\nSecond paragraph"
+    text.press("End")
+    text.type(" (edited)")
+
+    def capture(route):
+        """Record the posted form instead of saving it."""
+        if route.request.method == "POST":
+            posted.append(parse_qs(route.request.post_data, keep_blank_values=True))
+            route.fulfill(status=200, content_type="text/html", body="<p>Saved</p>")
+        else:
+            route.continue_()
+
+    page.route(component_origin + "/content-settings", capture)
+    with page.expect_response(lambda response: response.request.method == "POST"):
+        page.get_by_role("button", name="Preview changes").click()
+    assert "generate_text" not in posted[0]
+    # Browsers submit a textarea's line breaks as CRLF.
+    assert posted[0]["text"][0].replace("\r\n", "\n") == (
+        "Hello Sample Family\n\nSecond paragraph (edited)"
+    )
+
+
+def test_typing_into_generated_text_switches_to_editing(page, component_origin):
+    """A keystroke in the read-only preview unchecks generation, keeping text."""
+    page.route(
+        "**/admin/content/plain-text",
+        lambda route: route.fulfill(json={"text": "Hello Sample Family"}),
+    )
+    page.goto(component_origin + "/content-settings")
+    text = page.locator('textarea[name="text"]')
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
+    )
+    text.click()
+    text.press("End")
+    page.keyboard.press("x")
+    assert not page.locator('input[name="generate_text"]').is_checked()
+    assert text.is_editable()
+    assert text.input_value().startswith("Hello Sample Family")

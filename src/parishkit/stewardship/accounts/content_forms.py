@@ -153,6 +153,26 @@ class ContentForm(forms.Form):
             prepared = prepare_content(
                 values["html"], text=None if values["generate_text"] else values["text"]
             )
+            if (
+                values["generate_text"]
+                and values["text"].strip()
+                # Browsers submit a textarea's line breaks as CRLF.
+                and values["text"].replace("\r\n", "\n") != prepared.text
+            ):
+                # Never silently drop typed plain text in favour of generated.
+                self.add_error(
+                    "text",
+                    forms.ValidationError(
+                        _(
+                            "This plain text differs from the text generated from "
+                            "the HTML version, and “Generate plain text from HTML” "
+                            "is checked. Uncheck it to keep your plain text, or "
+                            "clear the plain text to use the generated version."
+                        ),
+                        code="text_conflict",
+                    ),
+                )
+                return values
             validate_template(prepared.html)
             validate_template(prepared.text)
             if self.kind == "email":
@@ -422,3 +442,13 @@ def revision_patch(document, campaign, previous, values):
                 }
             )
     return patch, affected
+
+
+def text_is_generated(values):
+    """Whether saved content's plain text is exactly what its HTML generates.
+
+    Editors open such content with "Generate plain text from HTML" checked;
+    hand-written plain text opens with it unchecked, so a save never replaces
+    it without the Admin choosing to.
+    """
+    return values is None or prepare_content(values["html"]).text == values["text"]

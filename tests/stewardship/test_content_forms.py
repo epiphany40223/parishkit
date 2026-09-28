@@ -129,6 +129,31 @@ def test_generated_text_problem_names_the_generator_and_the_fix(slot):
     assert "uncheck “Generate plain text from HTML”" in messages[1]
 
 
+def test_checked_generation_refuses_typed_plain_text_instead_of_dropping_it():
+    """Typed text that differs from the generated text is never silently lost."""
+    data = fields(html="<p>Hello</p>", generate_text="on")
+    form = ContentForm(data | {"text": "My own words"}, kind="page")
+    assert not form.is_valid()
+    assert form.errors.as_data()["text"][0].code == "text_conflict"
+    # Blank, or exactly the generated text (a read-only preview), is fine.
+    for text in ("", "Hello", "A\r\n\r\nB"):
+        if "A" in text:
+            data = data | {"html": "<p>A</p><p>B</p>"}
+        assert ContentForm(data | {"text": text}, kind="page").is_valid()
+    # Unchecked, the typed text is kept.
+    kept = ContentForm(data | {"generate_text": "", "text": "Mine"}, kind="page")
+    assert kept.is_valid() and kept.cleaned_data["prepared"].text == "Mine"
+
+
+def test_editors_open_with_generation_matching_the_saved_text():
+    """Hand-written plain text opens unchecked, so no save discards it."""
+    from parishkit.stewardship.accounts.content_forms import text_is_generated
+
+    assert text_is_generated(None)
+    assert text_is_generated({"html": "<p>Hi</p>", "text": "Hi"})
+    assert not text_is_generated({"html": "<p>Hi</p>", "text": "Hello"})
+
+
 @pytest.mark.parametrize("slot", ["initial", "reminder"])
 def test_generated_family_text_keeps_the_link_target(slot):
     """Generated plain text writes the link as "label: URL", keeping the link."""

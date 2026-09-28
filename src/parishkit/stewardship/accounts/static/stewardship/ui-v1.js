@@ -726,7 +726,12 @@
     form.querySelector("[data-html-source]").open = false;
     // Enter starts a <p> rather than a <div> where the browser supports it.
     try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch { /* optional */ }
-    const sync = () => { source.value = normalizedSource(editor); };
+    const sync = () => {
+      source.value = normalizedSource(editor);
+      // Programmatic value changes fire no input event; tell the plain-text
+      // preview below that the HTML changed.
+      form.dispatchEvent(new Event("stewardship:html-changed"));
+    };
     editor.addEventListener("input", sync);
     source.addEventListener("input", () => { visual.hidden = true; });
     const selectedRange = () => {
@@ -799,6 +804,78 @@
     editor.addEventListener("click", (event) => {
       if (event.target.closest("a")) event.preventDefault();
     });
+  });
+
+  // "Generate plain text from HTML": while it is checked the plain-text field
+  // is read-only and shows the server's own generated text for the current
+  // HTML, so the Admin sees exactly what a save stores. "Edit plain text" (or
+  // unchecking the box) keeps that text and makes it editable; typed text is
+  // never replaced unless the Admin checks the box again. A checked box
+  // submits no plain text (the field is disabled just for the submission), so
+  // a slightly stale preview cannot conflict with the server's generation;
+  // without this script the server refuses typed text that would be dropped.
+  document.querySelectorAll("[data-plain-text]").forEach((panel) => {
+    const form = panel.closest("form");
+    const box = panel.querySelector('input[name="generate_text"]');
+    const text = panel.querySelector('textarea[name="text"]');
+    const source = form?.querySelector('textarea[name="html"]');
+    const note = panel.querySelector("[data-generated-note]");
+    const unavailable = panel.querySelector("[data-generated-unavailable]");
+    const csrf = form?.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!form || !box || !text || !source || !note || !unavailable || !csrf) return;
+    let timer = null;
+    let controller = null;
+    const refresh = async () => {
+      if (!box.checked) return;
+      controller?.abort();
+      controller = new AbortController();
+      const request = controller;
+      try {
+        const response = await fetch(panel.dataset.plainTextUrl, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"},
+          body: new URLSearchParams({html: source.value}), signal: request.signal
+        });
+        if (!response.ok) throw new Error("preview unavailable");
+        const data = await response.json();
+        if (typeof data.text !== "string") throw new Error("preview unavailable");
+        if (box.checked && controller === request) {
+          text.value = data.text;
+          unavailable.hidden = true;
+        }
+      } catch (error) {
+        if (error.name !== "AbortError") unavailable.hidden = !box.checked;
+      }
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 400);
+    };
+    const show = () => {
+      text.readOnly = box.checked;
+      note.hidden = !box.checked;
+      if (!box.checked) unavailable.hidden = true;
+    };
+    const edit = () => {
+      box.checked = false;
+      show();
+      text.focus();
+    };
+    box.addEventListener("change", () => { show(); if (box.checked) refresh(); });
+    panel.querySelector("[data-edit-plain-text]")?.addEventListener("click", edit);
+    // Typing into the read-only generated text means "let me edit it".
+    text.addEventListener("keydown", (event) => {
+      if (!box.checked || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.length === 1 || ["Backspace", "Delete", "Enter"].includes(event.key)) {
+        edit();
+      }
+    });
+    source.addEventListener("input", schedule);
+    form.addEventListener("stewardship:html-changed", schedule);
+    form.addEventListener("submit", () => { if (box.checked) text.disabled = true; });
+    window.addEventListener("pageshow", () => { text.disabled = false; });
+    show();
+    refresh();
   });
 
   // Presence is observational: these requests never count as user activity.

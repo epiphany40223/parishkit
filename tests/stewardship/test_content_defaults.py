@@ -198,10 +198,10 @@ def test_ministry_instructions_match_the_family_form_controls():
 
 @pytest.mark.parametrize("kind,slot", SLOTS)
 def test_initial_values_start_an_unsaved_editor(kind, slot):
-    """Pages start with generated text; emails with the explicit alternative."""
+    """Every default starts with generated plain text (links as "label: URL")."""
     initial = default_initial(kind, slot)
     assert initial["html"] == default_data(kind, slot)["html"]
-    assert initial["generate_text"] is (kind == "page")
+    assert initial["generate_text"] is True
     assert ("subject" in initial) is (kind == "email")
 
 
