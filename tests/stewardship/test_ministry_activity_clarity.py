@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts import ministry_views
 from parishkit.stewardship.accounts.ministry_views import campaign_ministries_url
 from parishkit.stewardship.web.tables import paginate
 
@@ -73,3 +74,12 @@ def test_listing_links_campaign_column_and_intro():
     assert "In current campaign" in html
     assert "This page turns Ministries on or off for parishioners." in html
     assert html.count(f'href="{URL}"') == 3
+
+
+def test_only_activation_of_excluded_ministries_needs_the_note():
+    """Inactivation, or no current campaign, never shows the inclusion note."""
+    rows = [{"duid": 1, "included": True}, {"duid": 2, "included": False}]
+    url = "/admin/campaigns/x/settings#ministry-selections"
+    assert ministry_views.not_included(rows, True, url) == [rows[1]]
+    assert ministry_views.not_included(rows, False, url) == []
+    assert ministry_views.not_included(rows, True, None) == []
