@@ -354,6 +354,11 @@ admin_patterns = [
         name="schedule_settings",
     ),
     path(
+        "content/plain-text",
+        content_views.plain_text_preview,
+        name="content_plain_text",
+    ),
+    path(
         "campaign/<uuid:campaign_id>/content",
         content_views.content_settings,
         name="content_catalog",

@@ -256,8 +256,8 @@ def email_text(html):
 def default_data(kind, slot):
     """Return editor form data for one slot's default, as a browser would post it.
 
-    Pages use the editor's own generated plain text. Emails carry the explicit
-    link-preserving plain text, so ``generate_text`` is off for them.
+    Every default uses the editor's own generated plain text, which writes
+    each link as "label: URL", so emails keep their links in both versions.
     """
     if kind == "page":
         return {"html": PAGES[slot], "generate_text": "on", "text": ""}
@@ -266,7 +266,8 @@ def default_data(kind, slot):
         return {
             "subject": email.subject,
             "html": email.html,
-            "text": email_text(email.html),
+            "generate_text": "on",
+            "text": "",
         }
     raise LookupError("Unknown content kind.")
 

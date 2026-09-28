@@ -24,7 +24,7 @@ def fields(**changes):
     return {
         "base_digest": "a" * 64,
         "html": "<p>Hello {{ family_name }}</p>",
-        "text": "Edited plain text",
+        "text": "",
         "generate_text": "on",
         **changes,
     }
@@ -47,6 +47,7 @@ def test_content_sanitized_and_plain_text_independent(generate):
         fields(
             generate_text="on" if generate else "",
             html='<p onclick="alert(1)">Hi</p><script>steal()</script>',
+            text="" if generate else "Edited plain text",
         ),
         kind="page",
     )
@@ -93,8 +94,64 @@ def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
         )
     form = ContentForm(payload, kind="email", slot=slot)
     assert not form.is_valid()
-    assert "both body versions" in str(form.errors)
-    assert form.errors.as_data()["__all__"][0].code == "family_access"
+    expected = {
+        "html": "The HTML version is missing {{ family_url }}.",
+        "text": "The plain-text version is missing {{ family_url }}.",
+        "code_subject": "The email subject contains {{ family_code }}.",
+        "link_subject": "The email subject contains {{ family_url }}.",
+    }[defect]
+    assert expected in str(form.errors)
+    assert {error.code for error in form.errors.as_data()["__all__"]} == {
+        "family_access"
+    }
+
+
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+def test_generated_text_problem_names_the_generator_and_the_fix(slot):
+    """A placeholder lost only from generated text says how to fix it."""
+    form = ContentForm(
+        fields(
+            subject="Invitation",
+            # A link without the Family link, so neither version has it.
+            html="<p>{{ family_code }}</p>",
+            text="",
+            generate_text="on",
+        ),
+        kind="email",
+        slot=slot,
+    )
+    assert not form.is_valid()
+    messages = [str(error.message) for error in form.errors.as_data()["__all__"]]
+    assert messages[0].startswith("The HTML version is missing {{ family_url }}.")
+    assert messages[1].startswith(
+        "The plain text generated from the HTML version is missing {{ family_url }}."
+    )
+    assert "uncheck “Generate plain text from HTML”" in messages[1]
+
+
+def test_checked_generation_refuses_typed_plain_text_instead_of_dropping_it():
+    """Typed text that differs from the generated text is never silently lost."""
+    data = fields(html="<p>Hello</p>", generate_text="on")
+    form = ContentForm(data | {"text": "My own words"}, kind="page")
+    assert not form.is_valid()
+    assert form.errors.as_data()["text"][0].code == "text_conflict"
+    # Blank, or exactly the generated text (a read-only preview), is fine.
+    for text in ("", "Hello", "A\r\n\r\nB"):
+        if "A" in text:
+            data = data | {"html": "<p>A</p><p>B</p>"}
+        assert ContentForm(data | {"text": text}, kind="page").is_valid()
+    # Unchecked, the typed text is kept.
+    kept = ContentForm(data | {"generate_text": "", "text": "Mine"}, kind="page")
+    assert kept.is_valid() and kept.cleaned_data["prepared"].text == "Mine"
+
+
+def test_editors_open_with_generation_matching_the_saved_text():
+    """Hand-written plain text opens unchecked, so no save discards it."""
+    from parishkit.stewardship.accounts.content_forms import text_is_generated
+
+    assert text_is_generated(None)
+    assert text_is_generated({"html": "<p>Hi</p>", "text": "Hi"})
+    assert not text_is_generated({"html": "<p>Hi</p>", "text": "Hello"})
 
 
 @pytest.mark.parametrize("slot", ["initial", "reminder"])

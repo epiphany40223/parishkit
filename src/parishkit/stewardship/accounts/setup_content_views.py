@@ -23,6 +23,7 @@ from .content_forms import (
     matches_default,
     page_slots,
     sample_render,
+    text_is_generated,
 )
 from .setup_content import (
     FILL_ALL,
@@ -250,7 +251,7 @@ def setup_content_edit(request, kind, slot):
             for name, value in (previous or {}).items()
             if name in SetupContentForm.base_fields
         }
-        initial["generate_text"] = previous is None
+        initial["generate_text"] = text_is_generated(previous)
         if start:
             initial = default_initial(kind, slot)
         form = SetupContentForm(

@@ -775,7 +775,12 @@ that browser editors write become paragraphs, `<b>`/`<i>` become
 breaks; already-sanitized content is unchanged. The visual editor starts new
 paragraphs as `<p>` and keeps the line breaks of pasted plain text. Generated
 plain text separates paragraphs with a blank line, starts list items with a
-hyphen (or a number), and writes each link as `label: URL`. Previews and
+hyphen (or a number), and writes each link as `label: URL`. While
+"Generate plain text from HTML" is checked, the editor shows the server's
+generated plain text read-only; editing it (or "Edit plain text") unchecks
+the box and keeps the text, a saved revision whose plain text was edited
+opens unchecked, and the server refuses typed plain text that differs from
+the generated text while the box is checked instead of silently dropping it. Previews and
 setup email tests fill Family placeholders with realistic but plainly
 fictional values (the "Sample" household, "Alex and Sam Sample", a code in the
 live format and links on the reserved `.invalid` domain). Every outgoing
@@ -800,7 +805,9 @@ Unknown placeholders are validation failures, not empty text.
 Initial invitations and reminders require the code and secure-link placeholders
 in each body alternative, including generated plaintext. Those credential
 placeholders are not allowed in subjects. Authoring, configuration validation
-and background preparation enforce the same rule; generated plaintext keeps the
+and background preparation enforce the same rule, and the editors name which
+version (subject, HTML, typed or generated plain text) lacks or wrongly holds
+which placeholder or reserved marker; generated plaintext keeps the
 secure link as `label: URL`, and an author can still edit it. Testing subject
 presentation reserves its mandatory mode prefix and shortens only
 non-credential content.

@@ -4,16 +4,21 @@ from uuid import uuid4
 
 from django.core import signing
 from django.db import DatabaseError
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.content import PLACEHOLDERS, sanitize_html
+from parishkit.stewardship.web.content import (
+    PLACEHOLDERS,
+    prepare_content,
+    sanitize_html,
+)
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
@@ -32,6 +37,7 @@ from .content_forms import (
     page_slots,
     revision_patch,
     sample_render,
+    text_is_generated,
 )
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
@@ -318,7 +324,11 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                     default_initial(kind, slot)
                     if start
                     else (previous["values"] if previous else {})
-                    | {"generate_text": previous is None}
+                    | {
+                        "generate_text": text_is_generated(
+                            previous["values"] if previous else None
+                        )
+                    }
                 ) | {"base_digest": configuration.active_configuration.digest}
                 form = ContentForm(
                     request.POST if request.method == "POST" else None,
@@ -368,3 +378,38 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         signing.BadSignature,
     ) as error:
         return error_response(error)
+
+
+@require_POST
+def plain_text_preview(request):
+    """Return the plain text the server generates from posted HTML; nothing saves.
+
+    Both content editors (setup and campaign) show this read-only while
+    "Generate plain text from HTML" is checked, so an Admin sees exactly the
+    plain text a save would store. Only the HTML field (and the CSRF token)
+    is accepted, from a currently authorized Administrator.
+    """
+    try:
+        if (
+            set(request.POST) - {"html", "csrfmiddlewaretoken"}
+            or len(request.POST.getlist("html")) != 1
+        ):
+            raise ValueError("Only one HTML value is accepted.")
+        service = runtime()
+        if not allows(
+            authenticated_admin(request, store=service.store, read_only=True),
+            Capability.CONFIGURE,
+        ):
+            raise PermissionError("Content access was revoked.")
+        text = prepare_content(request.POST["html"]).text
+    except (
+        ConfigError,
+        DatabaseError,
+        LimiterUnavailable,
+        PermissionError,
+        ValueError,
+    ) as error:
+        return error_response(error)
+    response = JsonResponse({"text": text})
+    response["Cache-Control"] = "no-store"
+    return response

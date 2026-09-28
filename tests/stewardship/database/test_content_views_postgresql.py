@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from django.test import Client
 
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -394,3 +395,22 @@ def test_stale_content_form_says_to_reload(auth_service, google):
     stale = post(browser, path, values(store) | {"base_digest": "0" * 64})
     assert stale.status_code == 409
     assert "another tab" in stale.json()["refusal"]["message"]
+
+
+def test_plain_text_preview_is_generated_by_the_server_for_admins(auth_service, google):
+    """The editors' preview uses the server generator; nothing else is accepted."""
+    browser, _ = signed_in()
+    path = "/admin/content/plain-text"
+    response = post(
+        browser, path, {"html": '<p>Hi <a href="https://example.org/">there</a></p>'}
+    )
+    assert response.status_code == 200, response.content
+    assert response.json() == {"text": "Hi there: https://example.org/"}
+    assert response["Cache-Control"] == "no-store"
+    assert post(browser, path, {"html": "x", "other": "y"}).status_code == 400
+    assert browser.get(path).status_code == 405
+    # A signed-out browser (or a missing CSRF token) is refused.
+    assert Client(enforce_csrf_checks=True).post(path, {"html": "x"}).status_code in {
+        403,
+        302,
+    }

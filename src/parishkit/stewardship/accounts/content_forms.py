@@ -10,10 +10,10 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.web.content import (
     MAX_TEXT_BYTES,
     PLACEHOLDERS,
+    family_email_problems,
     prepare_content,
     render_template,
     validate_admin_digest_content,
-    validate_family_email,
     validate_receipt_content,
     validate_template,
 )
@@ -67,6 +67,45 @@ def page_slots(campaign):
     return {slot: label for slot, label in PAGE_LABELS.items() if slot not in excluded}
 
 
+PART_LABELS = {
+    "subject": _("The email subject"),
+    "html": _("The HTML version"),
+    "text": _("The plain-text version"),
+    "generated": _("The plain text generated from the HTML version"),
+}
+
+
+def family_access_message(part, problem, names, *, generated):
+    """One specific, fixable sentence for a broken invitation/reminder part.
+
+    Names which version has which problem; when the generated plain text is
+    the one missing a placeholder, says how to fix that (placeholders only in
+    a link's address are kept as "label: URL", so usually the HTML version
+    lacks it too; otherwise uncheck generation and edit the plain text).
+    """
+    label = PART_LABELS["generated" if part == "text" and generated else part]
+    listed = " and ".join("{{ " + name + " }}" for name in names)
+    if problem == "credential":
+        return _(
+            "%(part)s contains %(names)s. Access codes and links belong only in "
+            "the email body; remove them from the subject."
+        ) % {"part": label, "names": listed}
+    if problem == "reserved":
+        return _(
+            "%(part)s contains a reserved system marker. Remove it and use the "
+            "documented placeholders instead."
+        ) % {"part": label}
+    fix = (
+        _(
+            " Add it to the HTML version as visible text or as a link, or uncheck "
+            "“Generate plain text from HTML” and add it to the plain text."
+        )
+        if part == "text" and generated
+        else _(" Add it where the Family should see it.")
+    )
+    return _("%(part)s is missing %(names)s.") % {"part": label, "names": listed} + fix
+
+
 class ContentForm(forms.Form):
     """HTML is sanitized before preview; plaintext can be generated or edited."""
 
@@ -114,6 +153,26 @@ class ContentForm(forms.Form):
             prepared = prepare_content(
                 values["html"], text=None if values["generate_text"] else values["text"]
             )
+            if (
+                values["generate_text"]
+                and values["text"].strip()
+                # Browsers submit a textarea's line breaks as CRLF.
+                and values["text"].replace("\r\n", "\n") != prepared.text
+            ):
+                # Never silently drop typed plain text in favour of generated.
+                self.add_error(
+                    "text",
+                    forms.ValidationError(
+                        _(
+                            "This plain text differs from the text generated from "
+                            "the HTML version, and “Generate plain text from HTML” "
+                            "is checked. Uncheck it to keep your plain text, or "
+                            "clear the plain text to use the generated version."
+                        ),
+                        code="text_conflict",
+                    ),
+                )
+                return values
             validate_template(prepared.html)
             validate_template(prepared.text)
             if self.kind == "email":
@@ -139,21 +198,20 @@ class ContentForm(forms.Form):
             )
             return values
         if self.kind == "email" and self.slot in {"initial", "reminder"}:
-            try:
-                validate_family_email(values["subject"], prepared.html, prepared.text)
-            except ValueError:
+            problems = family_email_problems(
+                values["subject"], prepared.html, prepared.text
+            )
+            for part, problem, names in problems:
                 self.add_error(
                     None,
                     forms.ValidationError(
-                        _(
-                            "Initial invitations and reminders require "
-                            "{{ family_code }} and {{ family_url }} in both body "
-                            "versions, and neither in the subject. Do not use "
-                            "reserved system markers."
+                        family_access_message(
+                            part, problem, names, generated=values["generate_text"]
                         ),
                         code="family_access",
                     ),
                 )
+            if problems:
                 return values
         values["prepared"] = prepared
         return values
@@ -384,3 +442,13 @@ def revision_patch(document, campaign, previous, values):
                 }
             )
     return patch, affected
+
+
+def text_is_generated(values):
+    """Whether saved content's plain text is exactly what its HTML generates.
+
+    Editors open such content with "Generate plain text from HTML" checked;
+    hand-written plain text opens with it unchecked, so a save never replaces
+    it without the Admin choosing to.
+    """
+    return values is None or prepare_content(values["html"]).text == values["text"]
