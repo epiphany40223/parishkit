@@ -35,6 +35,9 @@ def summary(actor, configuration, now):
         # Only an Administrator may request a manual refresh; the link is
         # offered to nobody else.
         "can_refresh": allows(actor, Capability.CONFIGURE),
+        # The failure notice links to the failed task only for users who may
+        # open background task pages; others see the notice alone.
+        "can_view_task": allows(actor, Capability.BACKGROUND_WORK),
     }
     if campaign is not None:
         result["next_mail"] = (

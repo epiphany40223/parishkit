@@ -5,7 +5,10 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
-from parishkit.parishsoft_pagination import IncompleteSourceCollection
+from parishkit.parishsoft_pagination import (
+    IncompleteSourceCollection,
+    ShiftedSourceScan,
+)
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import (
     InvalidSourceResponse,
@@ -43,6 +46,23 @@ def test_source_safety_failures_keep_specific_value_free_classification(kind, ev
     )
     assert decision.event is event and not decision.retry and not decision.contention
     assert "PRIVATE" not in repr(decision)
+
+
+def test_shifted_scan_is_a_retryable_provider_failure():
+    """A scan that moved mid-read is retried, not reported as invalid data."""
+    for error in (
+        ShiftedSourceScan("PRIVATE"),
+        RetryError("PRIVATE", ShiftedSourceScan("PRIVATE")),
+    ):
+        decision = classify_read_failure(error, has_source_claim=True)
+        assert decision.retry and not decision.contention
+        assert decision.event is Event.SOURCE_PROVIDER_FAILED
+        assert "PRIVATE" not in repr(decision)
+    # Other incomplete collections remain permanent invalid-data failures.
+    decision = classify_read_failure(
+        IncompleteSourceCollection("PRIVATE"), has_source_claim=True
+    )
+    assert not decision.retry and decision.event is Event.SOURCE_INVALID
 
 
 @pytest.mark.parametrize(

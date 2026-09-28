@@ -1,7 +1,8 @@
 {% load i18n stewardship %}{% comment %}
   The last full ParishSoft load, shared by the Admin home page and the
-  ParishSoft settings page. ``status`` is source.refresh_status.FullRefreshStatus.
+  ParishSoft settings page. ``status`` is source.refresh_status.FullRefreshStatus;
+  ``can_view_task`` is true only for users who may open background task pages.
 {% endcomment %}<p>{% translate "Last full ParishSoft refresh:" %}
   {% if status.succeeded_at %}<time datetime="{{ status.succeeded_at|instant }}" data-local-instant>{{ status.succeeded_at|instant }}</time>{% else %}{% translate "none yet" %}{% endif %}{% if status.running %} — {% translate "a full refresh is running now" %}{% endif %}
 </p>
-{% if status.failed_at %}<p class="notice notice-error">{% translate "The most recent full refresh, at" %} <time datetime="{{ status.failed_at|instant }}" data-local-instant>{{ status.failed_at|instant }}</time>, {% translate "did not finish. The data shown is from the last successful refresh. See Background work for details." %}</p>{% endif %}
+{% if status.failed_at %}<p class="notice notice-error">{% translate "The most recent full refresh, at" %} <time datetime="{{ status.failed_at|instant }}" data-local-instant>{{ status.failed_at|instant }}</time>, {% translate "did not finish. The data shown is from the last successful refresh." %}{% if status.failed_task_id and can_view_task %} <a href="{% url 'admin:background_task_page' status.failed_task_id %}">{% translate "See what went wrong" %}</a>{% endif %}</p>{% endif %}

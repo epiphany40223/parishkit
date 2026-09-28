@@ -7,6 +7,7 @@ import pytest
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     PageContract,
+    ShiftedSourceScan,
     read_pages,
 )
 
@@ -132,6 +133,44 @@ def test_duplicate_identity_across_pages_or_differing_is_rejected(second):
     """A dict-comprehension overwrite cannot hide duplicate provider records."""
     with pytest.raises(IncompleteSourceCollection, match="repeats"):
         load({1: records(1, 2), 2: second})
+
+
+def test_repeat_from_an_earlier_page_is_a_retryable_shifted_scan():
+    """Unstable provider ordering can list one row on two pages (and skip another).
+
+    Observed on the validation deployment: a full load failed once with this
+    and passed on five immediate re-runs, so callers may retry the whole read.
+    """
+    with pytest.raises(ShiftedSourceScan, match="repeats"):
+        load({1: records(1, 2), 2: records(2, 3)})
+
+
+def test_differing_same_page_repeat_is_not_a_shifted_scan():
+    """Two different rows sharing an identity on one page is invalid data."""
+    with pytest.raises(IncompleteSourceCollection, match="repeats") as raised:
+        load({1: records(1, 2), 2: [{"id": 3, "value": 1}, {"id": 3, "value": 2}]})
+    assert not isinstance(raised.value, ShiftedSourceScan)
+
+
+def test_total_changing_mid_read_is_a_shifted_scan():
+    """Records added or removed between page requests invalidate only this scan."""
+    with pytest.raises(ShiftedSourceScan, match="total changed"):
+        load(
+            {
+                1: envelope(records(1, 2)),
+                2: envelope(records(3, 4), total=4, page=2),
+            },
+            contract=ENVELOPE,
+        )
+
+
+def test_total_changing_during_zero_origin_probe_is_a_shifted_scan():
+    """Member search probes positions 0 and 1; a moved total there is transient."""
+    contract = replace(ZERO, total_field="total", ordinal_field="row")
+    first = [{"id": value, "total": 2, "row": value} for value in (1, 2)]
+    second = [{"id": value, "total": 3, "row": value} for value in (1, 2)]
+    with pytest.raises(ShiftedSourceScan, match="total changed"):
+        load({0: first, 1: second}, contract=contract)
 
 
 def test_identical_same_page_repeat_is_kept_once():
