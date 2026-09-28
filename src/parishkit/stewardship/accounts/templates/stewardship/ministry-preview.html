@@ -12,6 +12,8 @@
   <h2>{% translate "Nothing to change" %}</h2>
   {% endif %}
   {% if unchanged %}<p>{% if new_active %}{% translate "Already active, left as they are:" %}{% else %}{% translate "Already inactive, left as they are:" %}{% endif %} {% for ministry in unchanged %}{{ ministry.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% if not_included %}<div class="notice" role="note"><p>{% translate "Activation doesn’t add Ministries to the campaign. These are not in the current campaign:" %} {% for ministry in not_included %}{{ ministry.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+  <p>{% translate "To include them, use" %} <a href="{{ campaign_url }}">{% translate "Campaign settings → Ministry selections" %}</a>.</p></div>{% endif %}
   <p>{% translate "No participation records or earlier campaign responses will be deleted. Campaign Ministry selection is unchanged." %}</p>
 </section>
 {% if preview %}<form method="post" action="{% url 'admin:ministries' %}">

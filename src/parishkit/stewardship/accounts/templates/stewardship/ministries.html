@@ -2,7 +2,8 @@
 {% block title %}{% translate "Ministry activity" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministry activity" %}</h1>
-<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved. Campaign selection is managed separately, in Campaign settings." %}</p>
+<p>{% translate "This page turns Ministries on or off for parishioners." %} {% if campaign_url %}{% translate "To choose which Ministries are in this campaign, use" %} <a href="{{ campaign_url }}">{% translate "Campaign settings → Ministry selections" %}</a>.{% else %}{% translate "To choose which Ministries are in a campaign, use Campaign settings → Ministry selections." %}{% endif %}</p>
+<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved." %}</p>
 {% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}
 <form method="get" class="filter-bar">
   <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>
@@ -33,7 +34,7 @@
       <th scope="col">{% translate "Ministry" %}</th>
       <th scope="col" class="numeric">{% translate "DUID" %}</th>
       <th scope="col">{% translate "Activity" %}</th>
-      <th scope="col">{% translate "Current campaign" %}</th>
+      <th scope="col">{% translate "In current campaign" %}</th>
     </tr></thead>
     <tbody>
     {% for ministry in table.rows %}<tr>
@@ -41,7 +42,7 @@
       <th scope="row">{{ ministry.name }}</th>
       <td class="numeric">{{ ministry.duid|duid }}</td>
       <td>{% if ministry.active %}<span class="status-badge status-badge-on">{% translate "Active" %}</span>{% else %}<span class="status-badge">{% translate "Inactive" %}</span>{% endif %}</td>
-      <td>{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
+      <td>{% if campaign_url %}<a href="{{ campaign_url }}">{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</a>{% elif ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
     </tr>{% empty %}<tr><td colspan="5">{% translate "No Ministries match these filters." %}</td></tr>{% endfor %}
     </tbody>
   </table>

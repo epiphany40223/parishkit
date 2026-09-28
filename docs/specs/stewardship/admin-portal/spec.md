@@ -488,6 +488,12 @@ request of at most 100 Ministries, applied atomically, and selected Ministries
 already in the requested state are listed and left alone. A pending save is
 not presented as applied.
 
+Activity and campaign inclusion are separate settings, and this screen changes
+only activity. It says so in one sentence and links its "In current campaign"
+column to Campaign settings → Ministry selections. When a bulk preview includes
+Ministries that are not in the current campaign, the preview names them, says
+that activation does not add them to the campaign and links to the same place.
+
 ParishSoft's Ministry catalog does not supply a reliable active/inactive flag.
 Catalog entries default to locally active unless an Admin has marked them
 inactive. The parish-wide override is keyed by ParishSoft organization and

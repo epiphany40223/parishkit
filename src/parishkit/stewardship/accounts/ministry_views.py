@@ -7,6 +7,7 @@ from django.core import signing
 from django.core.paginator import InvalidPage
 from django.db import DatabaseError, transaction
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_safe
 
@@ -120,6 +121,21 @@ def _state(service):
     return configuration, current, activity, catalog
 
 
+def campaign_ministries_url(configuration):
+    """Campaign settings' Ministry selections for the current campaign, or None.
+
+    Activity (offered to parishioners at all) and inclusion in the current
+    campaign are separate settings; this page changes only activity, so it
+    points Admins at the place that changes inclusion.
+    """
+    if configuration.current_campaign_id is None:
+        return None
+    return (
+        reverse("admin:campaign_settings", args=[configuration.current_campaign_id])
+        + "#ministry-selections"
+    )
+
+
 def _preview(request, service, principal):
     """Sign one exact bulk intent for confirmation; a preview changes nothing.
 
@@ -198,11 +214,18 @@ def _preview(request, service, principal):
         if patch
         else None
     )
+    campaign_url = campaign_ministries_url(configuration)
     return render(
         request,
         "stewardship/ministry-preview.html",
         {
             "changing": changing,
+            # Selected Ministries that activation will not add to the campaign;
+            # without a current campaign there is nothing to include them in.
+            "not_included": [row for row in rows if not row["included"]]
+            if campaign_url
+            else [],
+            "campaign_url": campaign_url,
             "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,
             "preview": token,
@@ -236,6 +259,7 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
             "state": state,
             "notice": notice,
             "parish_name": configuration.active_configuration.parish.name,
+            "campaign_url": campaign_ministries_url(configuration),
         },
         status=status,
     )
