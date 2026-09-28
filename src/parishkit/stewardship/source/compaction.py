@@ -7,6 +7,7 @@ readers through lazy queries. Only explicit normalized source tables are targets
 
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.expressions import RawSQL
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -17,6 +18,38 @@ from .snapshot_models import SourceCompactionBatch, SourceSnapshot, SourceSnapsh
 from .snapshots import _admit, _current
 from .version_models import ENTITY_MODELS
 
+# Snapshots still named by live state that may read their corpus later, even
+# though no pin exists: an archived campaign's population, token generations and
+# production token preparations, pending activation catch-up, ministry overlays,
+# recipient refusal resolutions, pending fact demands and setup evidence. These
+# tables hold few rows, so protecting everything they name retains few corpora.
+# Provenance-only references (refresh attempts, fact sets, chair reconciliation)
+# are deliberately absent: fact builds pin what they read, and the others keep
+# their own copies of what they need.
+# The union is wrapped so NULLs are filtered once: the candidate query uses NOT
+# IN, and a single NULL there would silently exclude every snapshot.
+LIVE_REFERENCES = (
+    "SELECT id FROM ("
+    "SELECT source_snapshot_id AS id FROM stewardship_campaign_credentials "
+    "WHERE source_snapshot_id IS NOT NULL "
+    "UNION SELECT source_snapshot_id FROM stewardship_family_token_generation "
+    "UNION SELECT source_snapshot_id FROM stewardship_production_tokens "
+    "UNION SELECT source_snapshot_id FROM stewardship_activation_catchup "
+    "WHERE source_snapshot_id IS NOT NULL "
+    "UNION SELECT source_snapshot_id FROM stewardship_assignment_overlay "
+    "UNION SELECT source_snapshot_id FROM stewardship_recipient_resolution "
+    "UNION SELECT requested_source_id FROM stewardship_fact_demand "
+    "WHERE requested_source_id IS NOT NULL "
+    "UNION SELECT snapshot_id FROM stewardship_setup_completion "
+    "UNION SELECT snapshot_id FROM stewardship_setup_source_result "
+    "UNION SELECT snapshot_id FROM stewardship_chair_seed_evidence"
+    ") AS live WHERE id IS NOT NULL"
+)
+
+# One snapshot per batch keeps each deleting transaction to a few seconds; a
+# refresh run then clears at most this many before it starts loading.
+BATCHES_PER_REFRESH = 20
+
 
 def _live_pins(now):
     """Only expiring form-input pins can lapse without explicit parent release."""
@@ -26,8 +59,22 @@ def _live_pins(now):
 
 
 def _select_compaction(current, now, limit):
-    """Skip active readers and recheck late pins after winning each candidate lock."""
+    """Skip active readers and recheck late pins after winning each candidate lock.
+
+    A superseded snapshot whose content digest equals the current snapshot's
+    is redundant even inside the recent window: most 15-minute refreshes find
+    no change, and the current corpus reproduces exactly the same content.
+    Such a snapshot still yields to pins, live references and daily anchors.
+    """
     recent, _ = retention_cutoffs(now)
+    current_digest = (
+        SourceSnapshot.objects.filter(pk=current.snapshot_id)
+        .values_list("content_digest", flat=True)
+        .first()
+    )
+    eligible = Q(promoted_at__lt=recent)
+    if current_digest:
+        eligible |= Q(content_digest=current_digest)
     anchors = retention_anchors(
         SourceSnapshot.objects.filter(state="promoted", promoted_at__lt=recent)
         .values_list("id", "promoted_at", "generation")
@@ -37,10 +84,11 @@ def _select_compaction(current, now, limit):
     pins = _live_pins(now).filter(snapshot_id=OuterRef("id"))
     candidates = list(
         SourceSnapshot.objects.filter(
-            state="promoted", compacted_at__isnull=True, promoted_at__lt=recent
+            eligible, state="promoted", compacted_at__isnull=True
         )
         .exclude(pk=current.snapshot_id)
         .exclude(pk__in=anchors)
+        .exclude(pk__in=RawSQL(LIVE_REFERENCES, ()))
         .filter(~Exists(pins))
         .order_by("promoted_at", "generation")
         .select_for_update(skip_locked=True)[:limit]
@@ -131,3 +179,56 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
         )
         verify_source(claim)
         return evidence
+
+
+def _admit_compaction(action, snapshot):
+    """Retention runs only as compaction, and never during restore review."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    return (
+        action == "compact"
+        and not SystemConfiguration.objects.filter(
+            restore_review_required=True
+        ).exists()
+    )
+
+
+def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
+    """Reclaim bounded old corpora under a compaction lease, then release it.
+
+    Called by a running refresh task before it acquires its own refresh lease
+    (the SQL guards require a live compaction lease on a running task). Each
+    batch is its own short transaction outside the global work lock, so Admin
+    pages and delivery never wait behind retention. Retention is housekeeping:
+    any failure here is logged and never fails the refresh that just promoted.
+    """
+    from .leases import acquire_source, release_source
+
+    try:
+        with execution.effect():
+            claim = acquire_source(
+                task_id=execution.claim.run_id,
+                task_fence=execution.claim.fence,
+                worker_id=execution.claim.worker_id,
+                phase="compaction",
+            )
+        try:
+            with execution.maintain_source(claim):
+                for _ in range(batches):
+                    execution.check()
+                    batch = compact_source(
+                        claim,
+                        admit=_admit_compaction,
+                        snapshot_limit=1,
+                        payload_limit=1000,
+                    )
+                    if not (batch.snapshot_count or batch.payload_count):
+                        break
+        finally:
+            with execution.effect():
+                release_source(claim)
+    except Exception as error:
+        # Classified without exception text; the next refresh retries.
+        from parishkit.stewardship.observability import Event, emit_failure
+
+        emit_failure(error, event=Event.SOURCE_RETENTION_SKIPPED)

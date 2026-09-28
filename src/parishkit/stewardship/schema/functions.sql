@@ -8532,8 +8532,19 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF TG_OP = 'DELETE' THEN
+        -- The worker may delete only an expired setup's exact membership, or
+        -- the membership of a snapshot already marked compacted while it owns
+        -- the live compaction lease (the snapshot guard admits that mark only
+        -- for an unpinned, non-current manifest).
         IF current_user='pk_stewardship_worker'
            AND NOT public.stewardship_setup_disposable_snapshot_v1(OLD.snapshot_id)
+           AND NOT (snapshot.compacted_at IS NOT NULL AND EXISTS (
+               SELECT 1 FROM public.stewardship_source_lease l
+               JOIN public.stewardship_task_run t ON t.id=l.owner_id
+               WHERE l.phase='compaction' AND l.expires_at > clock_timestamp()
+                 AND t.state='running' AND t.fence=l.task_fence
+                 AND t.worker_id=l.worker_id
+                 AND t.lease_expires_at > clock_timestamp()))
         THEN
             RAISE EXCEPTION 'Worker deletion requires exact expired setup membership'
                 USING ERRCODE='23514';
@@ -8606,15 +8617,15 @@ BEGIN
         RAISE EXCEPTION 'Source payload versions are immutable' USING ERRCODE='23514';
     END IF;
     IF TG_OP = 'DELETE' THEN
-        IF current_user='pk_stewardship_worker' THEN
-            IF NOT public.stewardship_setup_disposable_payload_v1(
-                substring(TG_TABLE_NAME from length('stewardship_source_')+1), OLD.id)
-            THEN
-                RAISE EXCEPTION 'Worker deletion requires exact expired setup payload'
-                    USING ERRCODE='23514';
-            END IF;
+        IF current_user='pk_stewardship_worker'
+           AND public.stewardship_setup_disposable_payload_v1(
+               substring(TG_TABLE_NAME from length('stewardship_source_')+1), OLD.id)
+        THEN
             RETURN OLD;
         END IF;
+        -- Anyone else, the worker included, deletes an unreferenced payload
+        -- version only while a live compaction lease owns source cleanup; the
+        -- payload's own foreign keys still refuse any referenced version.
         IF NOT EXISTS (SELECT 1 FROM public.stewardship_source_lease l
             JOIN public.stewardship_task_run t ON t.id=l.owner_id
             WHERE l.phase='compaction' AND l.expires_at > clock_timestamp()

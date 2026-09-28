@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.source.retention_policy import (
+    RECENT_RETENTION,
     retention_anchors,
     retention_cutoffs,
 )
@@ -21,8 +22,8 @@ def stamps(*instants):
 def test_retains_all_recent_and_latest_utc_daily_then_monthly_anchors():
     """Array order never changes retained historical source truth."""
     rows = stamps(
-        NOW - timedelta(days=1),
-        NOW - timedelta(days=1, hours=1),
+        NOW - timedelta(hours=1),
+        NOW - timedelta(hours=2),
         datetime(2026, 1, 1, 1, tzinfo=UTC),
         datetime(2026, 1, 1, 23, tzinfo=UTC),
         datetime(2026, 1, 2, 1, tzinfo=UTC),
@@ -36,8 +37,8 @@ def test_retains_all_recent_and_latest_utc_daily_then_monthly_anchors():
 
 
 def test_exact_recent_cutoff_and_generation_tie_breaking():
-    """The exact 90-day instant is retained; older daily ties use generation."""
-    cutoff = NOW - timedelta(days=90)
+    """The exact recent cutoff is retained; older daily ties use generation."""
+    cutoff = NOW - RECENT_RETENTION
     rows = stamps(
         cutoff, cutoff, cutoff - timedelta(days=1), cutoff - timedelta(days=1)
     )
@@ -48,7 +49,7 @@ def test_calendar_year_cutoff_and_leap_day():
     """One year is a calendar boundary, not an assumed fixed 365-day duration."""
     instant = datetime(2024, 2, 29, 12, tzinfo=UTC)
     recent, yearly = retention_cutoffs(instant)
-    assert recent == instant - timedelta(days=90)
+    assert recent == instant - RECENT_RETENTION
     assert yearly == datetime(2023, 2, 28, 12, tzinfo=UTC)
     boundary = NOW.replace(year=NOW.year - 1)
     rows = stamps(
@@ -89,3 +90,11 @@ def test_anchor_metadata_must_be_valid(row):
     """Malformed persisted input cannot silently select a destructive target set."""
     with pytest.raises(ValueError, match="metadata"):
         retention_anchors([row], now=NOW)
+
+
+def test_frequent_polls_older_than_the_recent_window_collapse_to_one_daily_anchor():
+    """A day of 15-minute refreshes keeps one corpus once it leaves the window."""
+    start = datetime(2026, 9, 10, tzinfo=UTC)
+    rows = stamps(*(start + timedelta(minutes=15 * index) for index in range(96)))
+    assert retention_anchors(rows, now=NOW) == {rows[-1][0]}
+    assert timedelta(hours=24) >= RECENT_RETENTION

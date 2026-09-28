@@ -30,6 +30,7 @@ SOURCE_READ = frozenset(
         "stewardship_family_token_generation",
         "stewardship_recipient_refusal",
         "stewardship_recipient_resolution",
+        "stewardship_source_compaction",
     }
 )
 
@@ -49,6 +50,7 @@ SOURCE_APPEND = frozenset(
         "stewardship_family_token",
         "stewardship_campaign_credentials",
         "stewardship_recipient_resolution",
+        "stewardship_source_compaction",
     }
 )
 
