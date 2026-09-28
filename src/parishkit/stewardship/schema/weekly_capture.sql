@@ -15,7 +15,8 @@ WITH selected AS MATERIALIZED (
 ), items AS MATERIALIZED (
     SELECT i.id,s.campaign_sequence,s.submitted_at,f.family_duid,i.disposition,
         CASE WHEN i.disposition='current_actionable' THEN i.text ELSE NULL END AS text,
-        COALESCE(NULLIF(btrim(p.canonical::jsonb->>'mailingName'),''),
+        COALESCE(NULLIF(btrim(p.canonical::jsonb->>'lastName'),''),
+            NULLIF(btrim(p.canonical::jsonb->>'mailingName'),''),
             NULLIF(btrim(concat_ws(' ',
                 NULLIF(btrim(p.canonical::jsonb->>'firstName'),''),
                 NULLIF(btrim(p.canonical::jsonb->>'lastName'),''))),''),'Family')

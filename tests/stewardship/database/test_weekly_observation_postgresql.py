@@ -128,7 +128,7 @@ def test_current_source_changes_never_drop_a_submitted_item(
         data.member_contactinfos.clear()
         data.ministry_type_memberships.clear()
     else:
-        data.families[1]["mailingName"] = "Changed household"
+        data.families[1]["lastName"] = "Changed household"
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     with task_login(ServiceRole.WORKER, exact=True):

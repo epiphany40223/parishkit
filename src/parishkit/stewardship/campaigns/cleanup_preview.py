@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from django.db.models import Count
 
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.version_models import SnapshotFamily
 
 from .cleanup_catalog import (
@@ -87,12 +88,7 @@ def cleanup_families(campaign_id, *, source_id, window):
             source_key__in=[str(family.family_duid) for family in rows],
         ).select_related("payload"):
             value = row.payload.payload
-            names[int(row.source_key)] = (
-                value.get("mailingName")
-                or " ".join(
-                    value.get(field) or "" for field in ("firstName", "lastName")
-                ).strip()
-            )
+            names[int(row.source_key)] = family_display_name(value)
     return [
         {"duid": row.family_duid, "name": names.get(row.family_duid, "")}
         for row in rows
