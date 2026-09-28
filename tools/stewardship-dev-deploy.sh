@@ -103,8 +103,10 @@ probe=(docker compose -f "$services/compose-initial.json" -p "$project")
 completed=$("${probe[@]}" exec -T postgres psql -U pk_stewardship_operator \
     -d stewardship -Atc "SELECT EXISTS (SELECT 1 FROM stewardship_setup_completion)" \
     2>/dev/null || true)
+# ConfigFiles can list several comma-separated files; the first is the one
+# the project was last brought up with.
 running=$(docker compose ls --all --format json |
-    jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles' | tr , '\n' | head -1)
+    jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles | split(",")[0]')
 case "$completed" in
     t)
         compose="$services/compose.json"
@@ -122,7 +124,14 @@ esac
 dc=(docker compose -f "$compose" -p "$project")
 # Profiled services are the one-shot offline commands; everything else is
 # an online service this deploy must leave running.
-mapfile -t wanted < <("${dc[@]}" config --services | grep -vxE 'postgres|valkey')
+services_list=$("${dc[@]}" config --services)
+mapfile -t wanted < <(printf '%s\n' "$services_list" | grep -vxE 'postgres|valkey')
+if [ "${#wanted[@]}" -eq 0 ] || [ -z "${wanted[0]}" ]; then
+    # Nothing has been stopped yet; an empty list would stop everything and
+    # start nothing.
+    echo "$(basename "$compose") lists no online services; refusing to deploy." >&2
+    exit 1
+fi
 online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey' || true)
 step "Project ${project} will run $(basename "$compose") (setup complete: ${completed})"
 [ -z "$running" ] || [ "$running" = "$compose" ] ||
@@ -163,9 +172,13 @@ step "Starting every online service"
 # caddy last, as first installation does: it fronts web, so the site returns
 # only once everything behind it is up.
 mapfile -t first < <(printf '%s\n' "${wanted[@]}" | grep -vx caddy || true)
-[ "${#first[@]}" -eq 0 ] || "${dc[@]}" up --detach --wait "${first[@]}" 2>&1 | quiet
+# A service that never turns healthy fails `up --wait`; keep going so caddy
+# still starts and the check below names exactly what is wrong.
+if [ "${#first[@]}" -gt 0 ]; then
+    "${dc[@]}" up --detach --wait "${first[@]}" 2>&1 | quiet || true
+fi
 if printf '%s\n' "${wanted[@]}" | grep -qx caddy; then
-    "${dc[@]}" up --detach --wait caddy 2>&1 | quiet
+    "${dc[@]}" up --detach --wait caddy 2>&1 | quiet || true
 fi
 
 # Just-started services can report an incomplete dependency observation for a
