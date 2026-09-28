@@ -109,3 +109,32 @@ def test_primary_address_nulls_and_unavailable_state(address, expected, label):
         },
     )
     assert label in html and ">None<" not in html
+
+
+@pytest.mark.parametrize("testing", [False, True])
+def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(testing):
+    """Live rows link to the Family sign-in with the code only in the fragment.
+
+    A fragment never reaches the server or its logs. In Testing mode live codes
+    are refused, so the note replaces the links; rows without a code never link.
+    """
+    from uuid import UUID
+
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 2,
+            "testing_codes": testing,
+            "rows": [
+                {"family_name": "Example", "family_duid": 1, "code": "ABCD-EFGH"},
+                {"family_name": "Codeless", "family_duid": 2, "code": None},
+            ],
+            "query": DirectoryQuery(),
+        },
+    )
+    link = 'href="/#code=ABCD-EFGH" target="_blank" rel="noopener" data-open-form>'
+    assert html.count(link) == (0 if testing else 1)
+    assert ("data-open-form-notice" in html) is not testing
+    assert ("appear next to the codes once the campaign is live" in html) is testing

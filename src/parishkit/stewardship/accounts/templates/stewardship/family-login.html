@@ -1,11 +1,14 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends 'stewardship/base.html' %}{% load i18n static %}
 {% block footer %}{% endblock %}
 {% comment %}
   The first page a Family sees: only the title, the code entry and any short
   instructions the parish configured. Contact details live on the
   access-denied page, where a Family who is stuck actually needs them.
+  The script prefills the code from a #code= fragment when staff open a
+  Family's form from the Admin directory; the page works without it.
 {% endcomment %}
 {% block title %}{{ login_title|default:_("Family login") }}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/family-login-v1.js' %}" defer></script>{% endblock %}
 {% block content %}<section class="flow panel">
   <h1>{{ login_title|default:_("Family login") }}</h1>
   {% if login_help %}<div class="content-block">{{ login_help|safe }}</div>{% endif %}

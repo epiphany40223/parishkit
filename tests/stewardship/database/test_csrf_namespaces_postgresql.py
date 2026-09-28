@@ -66,6 +66,31 @@ def test_admin_page_token_survives_family_login(family_service, google):
     assert logout.status_code == 302
 
 
+def test_admin_session_survives_opening_a_family_form(family_service, google):
+    """Staff open a Family's form in a new tab; both sessions then coexist.
+
+    The directory's "Open form" link lands on the Family sign-in with the code
+    in the fragment, so the sign-in itself is the ordinary code POST. Admin
+    pages keep answering with the Admin cookie, Family pages with the Family
+    cookie, and a second Family sign-in replaces only the Family session.
+    """
+    client = Client(enforce_csrf_checks=True)
+    admin_login(client)
+    admin_cookie = client.cookies["pk_admin"].value
+    _, response = login(family_service.code, client)
+    assert response.status_code == 302 and response["Location"] == "/family/"
+    assert client.get("/family/").status_code == 200
+    assert client.get("/admin/").status_code == 200
+    assert client.cookies["pk_admin"].value == admin_cookie
+    _, response = login(family_service.code, client)
+    assert response.status_code == 302
+    assert FamilySession.objects.count() == 2
+    assert FamilySession.objects.filter(revoked_at__isnull=True).count() == 1
+    assert client.cookies["pk_admin"].value == admin_cookie
+    assert client.get("/admin/").status_code == 200
+    assert client.get("/family/").status_code == 200
+
+
 def test_login_still_rotates_its_own_namespace_token(family_service, google):
     """A pre-login token cannot be replayed after sign-in within one namespace."""
     client = Client(enforce_csrf_checks=True)
