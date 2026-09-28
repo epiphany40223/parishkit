@@ -19,7 +19,7 @@ from parishkit.stewardship.responses.models import (
     Submission,
     SubmissionReceiptOccurrence,
 )
-from parishkit.stewardship.source import snapshots
+from parishkit.stewardship.source import compaction, snapshots
 from parishkit.stewardship.source.compaction import compact_source
 from parishkit.stewardship.source.leases import acquire_source, release_source
 from parishkit.stewardship.source.models import SourceCurrent, SourceSnapshotPin
@@ -221,6 +221,14 @@ def test_compaction_waits_for_final_form_pin_lifetime(request, monkeypatch, fini
         promote(anchor, claim, harness.campaign, harness.rings)
     current, claim = prepare(response_source())
     promote(current, claim, harness.campaign, harness.rings)
+    # The campaign fixture's credential/token rows still name the original
+    # snapshot, which retention's live-reference rule would protect. Clear that
+    # rule here so this test isolates the form-baseline pin lifetime.
+    monkeypatch.setattr(
+        compaction,
+        "LIVE_REFERENCES",
+        "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
+    )
     claim = acquire_source(**running_source_task(), phase="compaction")
     ready = Queue()
 

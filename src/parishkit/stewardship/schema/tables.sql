@@ -1215,6 +1215,7 @@ CREATE TABLE public.stewardship_operational_log (
         'task_started','task_completed',
         'task_failed','fact_drift','unstructured_log_suppressed','authentication_limits_weakened',
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
+        'source_retention_skipped',
         'source_tenant_mismatch','source_destructive_change',
         'source_refresh_held','source_credential_failed','source_provider_failed',
         'mail_provider_failed',

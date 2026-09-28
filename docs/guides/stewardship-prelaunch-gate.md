@@ -258,14 +258,14 @@ function. The paged Family form then made the financial guard require a
 share method for a positive pledge whenever any are offered (one function
 body; Functions digest only). Source snapshot retention (#190) then let the
 worker delete compacted membership rows and unreferenced payload versions
-while it owns a live compaction lease (two guard bodies; Functions digest
-only). Regenerated from a fresh install, the current baseline is:
+while it owns a live compaction lease (two guard bodies), and admitted the
+`source_retention_skipped` operational event (one CHECK constraint). Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 221 | `bbc9571a` |
 | Columns | 2445 | `9c812290` |
-| Constraints | 3378 | `544f9af1` |
+| Constraints | 3378 | `56c4de9b` |
 | Indexes | 1002 | `84be1b66` |
 | Functions | 597 | `fe4655db` |
 | Triggers | 551 | `30b4c2c2` |
