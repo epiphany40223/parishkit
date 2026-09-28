@@ -325,3 +325,24 @@ def test_wheel_includes_frozen_schema_catalog(tmp_path):
     with ZipFile(next(tmp_path.glob("*.whl"))) as wheel:
         payload = wheel.read("parishkit/stewardship/accounts/timezone_names_v1.txt")
     assert hashlib.sha256(payload).hexdigest() == _TIMEZONE_NAMES_SHA256
+
+
+@pytest.mark.parametrize(
+    "value,valid",
+    [
+        ("https://giving.example.org/app/giving/Parish-1?tab=home", True),
+        ("https://giving.example.org/give#top", True),
+        ("https://user:private-secret@giving.example.org/", False),
+        ("http://giving.example.org/?tab=home", False),
+    ],
+)
+def test_online_giving_link_allows_query_but_not_credentials(value, valid):
+    """Giving providers need query parameters; credentials and plain HTTP stay out."""
+    document = configuration_document()
+    document["sections"]["parish"][0]["values"]["online_giving_url"] = value
+    if valid:
+        assert configuration_version(document).document() == document
+    else:
+        with pytest.raises(ConfigError) as error:
+            configuration_version(document)
+        assert "private-secret" not in str(error.value)

@@ -66,7 +66,7 @@ def _validate_v1_sections(document):
     typed(parish["website"], "url")
     # Optional and absent when unset; Families are only ever sent to HTTPS.
     if "online_giving_url" in parish:
-        typed(parish["online_giving_url"], "url")
+        typed(parish["online_giving_url"], "link")
         if not parish["online_giving_url"].lower().startswith("https://"):
             invalid()
     text(parish["timezone"])

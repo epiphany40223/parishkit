@@ -58,14 +58,20 @@ def text(value, maximum=254):
 
 def typed(value, kind):
     """Check canonical public metadata, including credential-free HTTP(S) URLs."""
-    text(value, 2048 if kind == "url" else 254)
+    text(value, 2048 if kind in {"url", "link"} else 254)
     try:
         if kind == "email":
             EmailValidator()(value)
-        elif kind == "url":
+        elif kind in {"url", "link"}:
             URLValidator(schemes=["https", "http"])(value)
             parsed = urlsplit(value)
-            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            if parsed.username or parsed.password:
+                invalid()
+            # "url" (e.g. the parish website) also refuses a query or fragment
+            # so tokens cannot hide in stored identity URLs. A "link" is a
+            # destination Families are sent to (e.g. online giving), and real
+            # giving providers need query parameters such as "?tab=home".
+            if kind == "url" and (parsed.query or parsed.fragment):
                 invalid()
         elif kind == "uuid" and str(UUID(value)) != value:
             invalid()
