@@ -276,8 +276,14 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
         try:
             with execution.maintain_source(claim):
                 # Fact generations first: their source pins release only under
-                # this live compaction lease, freeing the snapshots below.
-                _compact_superseded_facts(execution)
+                # this live compaction lease, freeing the snapshots below. A
+                # fact cleanup failure (for example an outdated pin guard)
+                # must not stop snapshot retention, which still reclaims
+                # every snapshot no pin protects.
+                try:
+                    _compact_superseded_facts(execution)
+                except Exception as error:
+                    _skipped(error)
                 for _ in range(batches):
                     execution.check()
                     batch = compact_source(
@@ -292,7 +298,15 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
             with execution.effect():
                 release_source(claim)
     except Exception as error:
-        # Classified without exception text; the next refresh retries.
-        from parishkit.stewardship.observability import Event, emit_failure
+        _skipped(error)
 
-        emit_failure(error, event=Event.SOURCE_RETENTION_SKIPPED)
+
+def _skipped(error):
+    """Log a classified retention failure without exception text; next run retries.
+
+    This goes to the worker's structured log (level ERROR, message
+    source_retention_skipped) only, not to stewardship_operational_log.
+    """
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    emit_failure(error, event=Event.SOURCE_RETENTION_SKIPPED)

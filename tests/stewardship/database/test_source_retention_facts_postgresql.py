@@ -9,7 +9,7 @@ reclaimed nothing and the database kept growing.
 from dataclasses import replace
 
 import pytest
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from parishkit.stewardship.reports.facts import publish_fact_set
 from parishkit.stewardship.reports.models import CampaignDailyFactSet
@@ -205,3 +205,49 @@ def test_fact_compaction_never_takes_the_global_work_lock(tmp_path, monkeypatch)
         release_source(claim)
     assert removed == [history[0][1].pk]
     assert probed and not any(probed)
+
+
+def test_fact_cleanup_failure_does_not_stop_snapshot_retention(tmp_path, monkeypatch):
+    """An outdated pin guard failed fact cleanup and silently skipped everything.
+
+    On the validation deployment an empty in-place SQL left the old pin guard
+    installed, so every fact pin release raised, and because fact cleanup ran
+    first inside the same handler, no snapshot batch ever ran. Fact cleanup
+    failures are now logged on their own and snapshot retention continues.
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceCompactionBatch
+
+    inputs, owner, first = fact_fixture(tmp_path)
+    monkeypatch.setattr(
+        compaction,
+        "LIVE_REFERENCES",
+        "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
+    )
+    history = [refresh_with_facts(inputs, owner, watermark) for watermark in (2, 3)]
+    skipped = []
+
+    def refuse(execution, limit=200):
+        """Simulate the old pin guard refusing the worker's fact pin release."""
+        raise IntegrityError(
+            "Worker may release only unused response comparison inputs"
+        )
+
+    from parishkit.stewardship import observability
+
+    monkeypatch.setattr(compaction, "_compact_superseded_facts", refuse)
+    monkeypatch.setattr(
+        observability,
+        "emit_failure",
+        lambda error, *, event: skipped.append((type(error), event)),
+    )
+    compaction.compact_before_refresh(_Execution())
+    assert skipped == [(IntegrityError, observability.Event.SOURCE_RETENTION_SKIPPED)]
+    # The fixture's first snapshot has no fact pin, so it is reclaimed; the
+    # fact-pinned ones stay until fact cleanup succeeds.
+    assert SourceCompactionBatch.objects.exists()
+    assert SourceSnapshot.objects.get(pk=first.pk).compacted_at is not None
+    assert all(
+        SourceSnapshot.objects.get(pk=snapshot.pk).compacted_at is None
+        for snapshot, _ in history
+    )
+    assert SourceMutationLease.objects.get().phase == "idle"
