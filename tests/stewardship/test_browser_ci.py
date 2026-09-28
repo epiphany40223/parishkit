@@ -322,7 +322,7 @@ def test_browser_workflow_contract():
     )
     gate = jobs["stewardship-browser"]
     assert gate["needs"] == "stewardship-browser-engine"
-    assert gate["if"] == "${{ always() }}"
+    assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert len(gate["steps"]) == 1
     assert gate["steps"][0]["env"] == {
         "BROWSER_RESULT": "${{ needs.stewardship-browser-engine.result }}"
@@ -352,13 +352,15 @@ def test_ci_cancels_only_superseded_pr_heads():
             ]
         },
         "push": {"branches": ["main"]},
+        "workflow_dispatch": None,
     }
     assert workflow["concurrency"] == {
         "group": (
-            "${{ github.workflow }}-"
-            "${{ github.event.pull_request.number || github.run_id }}"
+            "${{ github.workflow }}-${{ github.event_name }}-"
+            "${{ github.event.pull_request.number || "
+            "(github.event_name == 'push' && github.ref) || github.run_id }}"
         ),
-        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+        "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' }}",
     }
 
 

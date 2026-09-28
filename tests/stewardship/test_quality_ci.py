@@ -61,12 +61,13 @@ def test_fast_feedback_precedes_full_candidate_suites():
     ):
         assert jobs[name]["needs"] == "validate"
         assert jobs[name]["if"] == (
-            "${{ github.event_name == 'push' || "
-            "github.event.pull_request.draft == false }}"
+            "${{ github.event_name == 'workflow_dispatch' || "
+            "(github.event_name == 'pull_request' && "
+            "github.event.pull_request.draft == false) }}"
         )
     for name in ("stewardship-compose", "stewardship-postgresql"):
         gate = jobs[name]
-        assert gate["if"] == "${{ always() }}"
+        assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
         check = gate["steps"][0]
         for results in itertools.product(
             ("success", "failure", "cancelled", "skipped"), repeat=len(check["env"])

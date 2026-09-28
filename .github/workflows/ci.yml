@@ -1,21 +1,27 @@
 name: CI
 
-# Drafts get fast feedback; ready candidates and landed main get the full suite.
-# Never let skipped draft jobs satisfy the always-running aggregate merge gates.
+# Drafts get fast feedback; ready PR candidates get the full suite. Pushes to
+# main run only the light validate job (temporary, to stay within the free
+# plan's 20 concurrent jobs; see issue #158). A manual dispatch runs the
+# full suite on any ref, and releases require that full run on the tagged
+# commit. Never let skipped draft jobs satisfy the always-running aggregate
+# merge gates.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# Superseded PR heads cannot satisfy the final-head gate. Stop spending runner
-# time on them; main events keep unique, uncancelled groups.
+# Superseded PR heads cannot satisfy the final-head gate, and an older main
+# push is superseded by a newer one, so stop spending runner time on them.
+# Manual full runs (release evidence) keep unique, uncancelled groups.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   validate:
@@ -69,7 +75,7 @@ jobs:
 
   stewardship-compose-core:
     needs: validate
-    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -108,7 +114,7 @@ jobs:
 
   stewardship-operational:
     needs: validate
-    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -142,7 +148,7 @@ jobs:
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:
     needs: [stewardship-compose-core, stewardship-operational]
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -157,7 +163,7 @@ jobs:
 
   stewardship-browser-engine:
     needs: validate
-    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -191,7 +197,7 @@ jobs:
   # Preserve the protected check name, including failed/cancelled matrix work.
   stewardship-browser:
     needs: stewardship-browser-engine
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -204,7 +210,7 @@ jobs:
 
   stewardship-postgresql-shard:
     needs: validate
-    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -257,7 +263,7 @@ jobs:
   # this gate fail, rather than skipping it and accidentally permitting merge.
   stewardship-postgresql:
     needs: stewardship-postgresql-shard
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

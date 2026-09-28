@@ -16,8 +16,12 @@ context: the queue formerly retested against its then-current merge base. PR
 checks use [GitHub's test merge](https://github.com/actions/checkout#checkout-pull-request-head-commit-instead-of-merge-commit)
 when checking out a `pull_request` event, but do
 not automatically rerun for every later change to `main`. The repository does
-not currently require branches to be up to date. Post-merge main CI is the final
-landed-result check; concurrent independent PRs can therefore introduce an
+not currently require branches to be up to date. Pushes to `main` currently run
+only the light `validate` job (a temporary pre-launch measure tracked in
+[#158](https://github.com/epiphany40223/parishkit/issues/158)); the full suite
+runs on ready PRs and on a manual `workflow_dispatch`, which a release requires
+for its tagged commit. Until #158 is resolved nothing runs the full suite on
+the landed result automatically, so concurrent independent PRs can introduce an
 integration regression after their individual checks passed. Keep stewardship
 increments serial and inspect base drift before merging; refresh and revalidate
 when intervening changes affect the increment. Do not represent auto-merge as

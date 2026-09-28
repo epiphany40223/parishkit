@@ -6,11 +6,12 @@ on:
       - "v*"
 
 jobs:
-  # Every commit on main already passed CI's full, sharded validation (lint,
-  # every PostgreSQL shard with combined coverage floors, migration drift, the
-  # container, runtime and browser scenarios). Rerunning that suite serially
-  # here took over two hours, so the release instead requires that commit's
-  # successful main CI run, then packages exactly that commit.
+  # CI's full, sharded validation (lint, every PostgreSQL shard with combined
+  # coverage floors, migration drift, the container, runtime and browser
+  # scenarios) is the release evidence. Rerunning that suite serially here took
+  # over two hours, so the release instead requires a successful full CI run of
+  # the tagged commit (dispatched by hand while main pushes run light CI; see
+  # #158), then packages exactly that commit.
   validate-build:
     runs-on: ubuntu-latest
     # Covers waiting for a just-merged commit's CI run to finish.
@@ -51,39 +52,40 @@ jobs:
           test "v${version}" = "${GITHUB_REF_NAME}"
           echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"
 
-      - name: Require the release commit's successful main CI run
+      - name: Require the release commit's successful full CI run
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
         run: |
-          # Only a push to main runs CI's full suite on exactly this commit; a
-          # pull request run tested a different (pre-merge) commit. Poll while
-          # that run is queued or in progress. Refuse a failed run, and a
-          # commit main CI never ran on (for example one inside a merged
-          # branch): tag the merge commit on main instead.
+          # Pushes to main run only light validation for now (issue
+          # #158), so a release needs a manually dispatched full CI run
+          # on exactly this commit: `gh workflow run ci.yml --ref main` while
+          # the tagged commit is main's head. A pull request run tested a
+          # different (pre-merge) commit. Poll while that run is queued or in
+          # progress; refuse a failed run or a commit with no full run.
           for attempt in $(seq 1 80); do
             state="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
-              --event push --branch main --commit "${RELEASE_COMMIT}" --limit 1 \
+              --event workflow_dispatch --commit "${RELEASE_COMMIT}" --limit 1 \
               --json status,conclusion --jq '.[] | "\(.status) \(.conclusion)"')"
             case "${state}" in
               "completed success")
-                echo "Main CI passed for ${RELEASE_COMMIT}."
+                echo "Full CI passed for ${RELEASE_COMMIT}."
                 exit 0 ;;
               completed*)
-                echo "::error::Main CI for ${RELEASE_COMMIT} did not pass (${state}); fix main and tag a passing commit."
+                echo "::error::Full CI for ${RELEASE_COMMIT} did not pass (${state}); fix main and tag a passing commit."
                 exit 1 ;;
               "")
                 # A just-merged commit's run can take a moment to appear.
                 if test "${attempt}" -ge 5; then
-                  echo "::error::No main CI run exists for ${RELEASE_COMMIT}; tag a commit that main CI ran on."
+                  echo "::error::No full CI run exists for ${RELEASE_COMMIT}; run gh workflow run ci.yml --ref main while it is main's head, then re-run this release."
                   exit 1
                 fi ;;
               *)
-                echo "Main CI for ${RELEASE_COMMIT}: ${state}; waiting." ;;
+                echo "Full CI for ${RELEASE_COMMIT}: ${state}; waiting." ;;
             esac
             sleep 60
           done
-          echo "::error::Timed out waiting for main CI on ${RELEASE_COMMIT}."
+          echo "::error::Timed out waiting for full CI on ${RELEASE_COMMIT}."
           exit 1
 
       - name: Build artifacts
