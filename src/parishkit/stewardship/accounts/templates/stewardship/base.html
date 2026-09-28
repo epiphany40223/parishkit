@@ -23,6 +23,6 @@
     {% block content %}{% endblock %}
   </main>
   {% if admin_chrome %}</div>{% endif %}
-  <footer class="site-footer"><p>{% translate "Stewardship and census" %}</p></footer>
+  {% block footer %}<footer class="site-footer"><p>{% translate "Stewardship and census" %}</p></footer>{% endblock %}
 </body>
 </html>
