@@ -155,3 +155,53 @@ def test_worker_login_compacts_superseded_facts(tmp_path, monkeypatch):
     assert list(CampaignDailyFactSet.objects.values_list("pk", flat=True)) == [
         history[1][1].pk
     ]
+
+
+def test_fact_compaction_never_takes_the_global_work_lock(tmp_path, monkeypatch):
+    """Retention must not enter the refresh handler's work-lock effect scope."""
+    from parishkit.stewardship.reports import retention
+
+    inputs, owner, _ = fact_fixture(tmp_path)
+    monkeypatch.setattr(
+        compaction,
+        "LIVE_REFERENCES",
+        "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
+    )
+    history = [refresh_with_facts(inputs, owner, watermark) for watermark in (2, 3)]
+    original = retention.compact_facts
+    probed = []
+
+    def probe(*args, **kwargs):
+        """Check this backend's advisory locks inside the deleting transaction."""
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() "
+                "AND locktype='advisory' AND classid=736220 AND objid=1 AND granted)"
+            )
+            probed.append(cursor.fetchone()[0])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(retention, "compact_facts", probe)
+
+    class NoEffect(_Execution):
+        """A refresh's effect scope takes the work lock; retention must avoid it."""
+
+        def effect(self):
+            """Fail loudly if retention enters the handler's effect scope."""
+            raise AssertionError("retention entered the work-lock effect scope")
+
+    execution = NoEffect()
+    claim = acquire_source(
+        task_id=execution.claim.run_id,
+        task_fence=execution.claim.fence,
+        worker_id=execution.claim.worker_id,
+        phase="compaction",
+    )
+    try:
+        removed = compaction._compact_superseded_facts(execution)
+    finally:
+        release_source(claim)
+    assert removed == [history[0][1].pk]
+    assert probed and not any(probed)

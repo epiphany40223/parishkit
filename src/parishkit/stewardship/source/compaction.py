@@ -216,7 +216,12 @@ def _compact_superseded_facts(execution, limit=200):
     from parishkit.stewardship.reports.models import CampaignDailyFactSet
     from parishkit.stewardship.reports.retention import compact_facts
 
-    with execution.effect():
+    # Plain transactions, not execution.effect(): the refresh handler's effect
+    # scope is the global work lock, and retention must never hold it.
+    # compact_facts takes its own task-claim, campaign, source and generation
+    # locks in the same order fact builds use.
+    execution.check()
+    with transaction.atomic():
         if SystemConfiguration.objects.filter(restore_review_required=True).exists():
             return []
         campaigns = list(
@@ -226,7 +231,8 @@ def _compact_superseded_facts(execution, limit=200):
         )
     removed = []
     for campaign_id in campaigns:
-        with execution.effect():
+        execution.check()
+        with transaction.atomic():
             removed += compact_facts(
                 campaign_id,
                 execution.claim,
