@@ -1,7 +1,7 @@
 """Protected weekly report links retain current Admin authority through closure."""
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET
 
@@ -13,7 +13,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
@@ -54,7 +53,10 @@ def snapshot(request, snapshot_id, *, item_id=None):
 
         def audit(outcome):
             """Journal opaque access, never Family text or recipient addresses."""
-            with work_transaction():
+            # An audit append takes no row locks, so it need not join the
+            # writers' work order; waiting there stalled report pages behind
+            # every source promotion and installer.
+            with transaction.atomic():
                 current = SystemConfiguration.objects.select_related(
                     "active_configuration__parish"
                 ).get()

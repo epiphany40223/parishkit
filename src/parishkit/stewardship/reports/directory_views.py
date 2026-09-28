@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -20,7 +20,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
@@ -45,7 +44,10 @@ def _principal(request, store, *, read_only=False):
 
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
     """Record scope/count, never names, codes, search strings or viewed contacts."""
-    with work_transaction():
+    # An audit append takes no row locks, so it need not join the
+    # writers' work order; waiting there stalled report pages behind
+    # every source promotion and installer.
+    with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
         ).get()

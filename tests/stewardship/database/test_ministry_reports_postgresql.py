@@ -3,11 +3,13 @@
 import json
 from uuid import uuid4
 
+import psycopg
 import pytest
 from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import MinistryQuery, ministry_page
 
@@ -477,3 +479,38 @@ def test_legacy_timezone_alias_submits_and_reports(monkeypatch, request):
     assert [row["duid"] for row in page(harness)["summaries"]] == [4, 9]
     rows = page(harness, ministry=9, start="2000-01-01", end="2099-12-31")["rows"]
     assert rows
+
+
+def test_report_pages_never_wait_behind_the_work_lock(response_service, google):
+    """A source promotion or installer holding the work lock blocks no report.
+
+    Report pages read under their campaign read guard; their access audit is
+    an append that needs no place in the writers' order. Another session holds
+    the work-order lock throughout, and the short statement timeout turns any
+    regression into a fast failure instead of a hang.
+    """
+    harness = setup(response_service)
+    browser, _ = signed_in()
+    settings = connection.settings_dict
+    before = AuditContext.objects.count()
+    with psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        dbname=settings["NAME"],
+        autocommit=True,
+    ) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
+        with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '3s'")
+        try:
+            response, body = read(
+                browser, f"/admin/reports/{harness.campaign.pk}/ministries/"
+            )
+            assert response.status_code == 200 and b"Food pantry" in body
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET statement_timeout")
+    # The view was still audited: started and succeeded.
+    assert AuditContext.objects.count() >= before + 2

@@ -1039,6 +1039,12 @@ a five-minute total download deadline, configurable with finite maxima.
 Database/proxy/application timeouts must enforce these lifetimes; inactivity
 timeouts alone do not bound a slow continuous transfer.
 
+A guarded report page's own access audit (started, then succeeded or failed)
+is an append-only record that takes no row locks, so it commits in its own
+short transaction outside the common work-order lock; a writer holding that
+lock, such as a source promotion or an installer, therefore never delays a
+report page.
+
 Guarded file downloads use a dedicated bounded connection pool and admission
 limit, defaulting to four simultaneous downloads across the entire deployment,
 not four per process or replica. Acquire capacity before opening a guarded
