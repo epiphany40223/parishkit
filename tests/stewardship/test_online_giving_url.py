@@ -64,7 +64,11 @@ def test_forms_accept_blank_or_https_and_reject_http(form_type):
     assert blank.is_valid(), blank.errors
     assert blank.cleaned_data["online_giving_url"] == ""
     assert form_type(profile(online_giving_url=GIVING)).is_valid()
-    for bad in ("http://give.example.org/", "https://give.example.org/?id=1"):
+    # Giving providers need query parameters, e.g. "?tab=home".
+    assert form_type(
+        profile(online_giving_url="https://give.example.org/app?tab=home")
+    ).is_valid()
+    for bad in ("http://give.example.org/", "https://u:p@give.example.org/"):
         assert not form_type(profile(online_giving_url=bad)).is_valid()
 
 

@@ -98,19 +98,19 @@ class ParishForm(forms.Form):
         ]
 
     def clean_online_giving_url(self):
-        """Accept only the HTTPS, credential-free URLs the configuration stores."""
+        """Accept only the HTTPS, credential-free links the configuration stores."""
         value = self.cleaned_data["online_giving_url"]
         if not value:
             return ""
         try:
-            typed(value, "url")
+            typed(value, "link")
             if not value.lower().startswith("https://"):
                 raise ConfigError("Online giving requires HTTPS.")
         except ConfigError:
             raise forms.ValidationError(
                 _(
-                    "Use an https:// address without credentials, a “?” part or "
-                    "a “#” part."
+                    "Use an https:// address without a user name or password, "
+                    "for example https://giving.example.org/parish?tab=home."
                 )
             ) from None
         return value
