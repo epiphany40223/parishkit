@@ -1,7 +1,7 @@
 {% load i18n %}
 {{ form.non_field_errors }}{{ form.base_digest }}{{ form.base_digest.errors }}
 {% for field in form.general_fields %}<div>{{ field.as_field_group }}</div>{% endfor %}
-<fieldset data-campaign-module="id_ministry"><legend>{% translate "Ministry selections" %}</legend>
+<fieldset id="ministry-selections" data-campaign-module="id_ministry"><legend>{% translate "Ministry selections" %}</legend>
 <p>{% translate "Only locally active Ministries are offered for a new selection. Inactivating a Ministry later does not change this structural selection." %}</p>
 {{ form.ministry_duids.as_field_group }}</fieldset>
 <fieldset data-campaign-module="id_financial_enabled"><legend>{% translate "Financial periods and funds" %}</legend>
