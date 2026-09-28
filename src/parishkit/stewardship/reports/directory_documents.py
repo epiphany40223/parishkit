@@ -20,7 +20,6 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.family_names import (
     family_heads_name,
-    name_series,
 )
 from parishkit.stewardship.web.presentation import phone as format_phone
 
@@ -101,22 +100,9 @@ def mailable(address):
 
 
 def head_names(heads):
-    """The Family heads' names as one natural phrase.
-
-    Heads sharing a surname read "Aaron and Isabelle Williams"; otherwise
-    "Aaron Williams and Isabelle Smith". Heads captured before first and last
-    names were kept separately use their full display name.
-    """
-    split = [(_clean(head.get("first")), _clean(head.get("last"))) for head in heads]
-    surnames = {last for _, last in split}
-    if (
-        heads
-        and all("first" in head and "last" in head for head in heads)
-        and len(surnames) == 1
-        and "" not in surnames
-    ):
-        return f"{name_series([first for first, _ in split])} {surnames.pop()}".strip()
-    return name_series([_clean(head.get("name")) for head in heads])
+    """The Family heads' names as one natural phrase ("Aaron and Isabelle
+    Williams"), or "" without heads; see ``family_heads_name``."""
+    return family_heads_name("", heads, surname_first=False)
 
 
 def _zip(address):
