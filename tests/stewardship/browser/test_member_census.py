@@ -48,9 +48,8 @@ def test_complete_member_controls_review_and_atomic_payload(
             ),
         )
     ).to_be_visible()
-    expect(
-        show(page, page.get_by_text("Relationship: Head", exact=True))
-    ).to_be_visible()
+    # ParishSoft's internal relationship ("Head") is not shown to Families.
+    expect(page.get_by_text("Relationship:", exact=False)).to_have_count(0)
     for name, value in [
         ("prefix", "Dr."),
         ("nickname", "Al"),

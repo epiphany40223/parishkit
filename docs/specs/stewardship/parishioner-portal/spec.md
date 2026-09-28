@@ -187,8 +187,9 @@ campaign mail and is still sent.
 
 ## Existing Member census
 
-Every Member is clearly delineated with name and relationship context. For a
-non-terminal Member, census fields are:
+Every Member is clearly delineated by name. ParishSoft's household
+relationship ("Head", "Spouse") is an internal parish designation and is not
+shown to Families. For a non-terminal Member, census fields are:
 
 - first and last name, required;
 - prefix, middle name, suffix, nickname, and maiden name, optional;
