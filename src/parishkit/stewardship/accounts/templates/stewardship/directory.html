@@ -42,7 +42,7 @@
 <td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 <td>{% if row.reason == 'deliverable' %}{% translate "Yes" %}{% else %}<span title="{{ row.reason_label }}">{% translate "No" %}</span> <small>({{ row.reason_label }})</small>{% endif %}</td>
 <td>{% if row.responded %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
-<td><details><summary>{% translate "Contact details for" %} {{ row.family_name }}</summary>
+<td class="contact-details"><details><summary>{% translate "Contact details for" %} {{ row.family_name }}</summary>
 <dl><dt>{% translate "Envelope number" %}</dt><dd>{{ row.envelope|default_if_none:'Unavailable' }}</dd>
 <dt>{% translate "Active Family heads" %}</dt><dd>{% for head in row.heads %}{{ head.name }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No active head" %}{% endfor %}</dd>
 <dt>{% translate "Family and active Member phones" %}</dt><dd>{% for phone in row.phones %}{{ phone.owner }} — {{ phone.kind }}: {{ phone.value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No phone available" %}{% endfor %}</dd>
