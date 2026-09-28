@@ -998,6 +998,20 @@
       }
     });
   }
+  function periodYears(period) {
+    // "2026", or "2026–2027" for a period that spans two calendar years.
+    const [first, last] = [period.start.slice(0, 4), period.end.slice(0, 4)];
+    return first === last ? first : first + "–" + last;
+  }
+  function installment(cents, frequency) {
+    // Each payment's amount, and whether it is exact: $6,000 monthly is
+    // exactly $500, but $1,000.01 monthly is only about $83.33.
+    const periods = form.financial.frequencies[frequency];
+    if (cents === null || !periods) return null;
+    return {amount: moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)),
+      exact: cents % periods === 0,
+      unit: ({weekly: "week", monthly: "month", quarterly: "quarter", annual: "year"})[frequency]};
+  }
   function financialSource(parent) {
     const value = form.financial;
     node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
@@ -1007,11 +1021,13 @@
     node("p", value.upcoming.start > form.today ?
       "This pledge does not take effect before " + start + "." :
       "This stewardship period began on " + start + ".", parent);
-    node("p", "Parish records for " + value.comparison.label + ": pledge " + value.pledge.display +
-      "; contributions " + value.contributions.display + ".", parent);
-    if (value.observed_at) node("p", "Giving records last refreshed " +
-      (dates ? dates.instant(new Date(value.observed_at)) : value.observed_at) +
-      ". Contributions through " + (dates ? dates.date(value.through_date) : value.through_date) + ".", parent);
+    // One sentence of giving history; the prior pledge amount and the
+    // records' refresh time repeated it, so they are not shown.
+    if (value.contributions.available && value.through_date) {
+      node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
+        ", you have contributed " + value.contributions.display + " towards your " +
+        periodYears(value.comparison) + " pledge.", parent);
+    }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
     if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});
@@ -1108,11 +1124,12 @@
         error.hidden = !error.textContent;
         input.setAttribute("aria-invalid", String(showErrors && !input.checkValidity()));
       }
-      approximation.textContent = cents !== null && periods ?
-        "Approximately " + moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)) +
-        " per " + ({weekly: "week", monthly: "month", quarterly: "quarter", annual: "year"})[frequency.value] +
-        ". The annual total remains " + moneyDisplay(cents) + "; the final payment may differ slightly." :
-        "Enter a pledge and select a frequency to see the approximate installment.";
+      const each = installment(cents, frequency.value);
+      approximation.textContent = !each ?
+        "Enter a pledge and select a frequency to see the amount of each payment." : each.exact ?
+        each.amount + " per " + each.unit + "." :
+        "Approximately " + each.amount + " per " + each.unit + ". The annual total remains " +
+        moneyDisplay(cents) + "; the final payment may differ slightly.";
     };
     annual.addEventListener("input", () => {
       answers.financial.annual_pledge = annual.value; setConditional(); validate(false);
@@ -1210,18 +1227,20 @@
     const panel = node("section", null, parent, {class: "panel"});
     node("h3", "Financial stewardship", panel);
     editControl(panel, "Financial stewardship", "financial-section");
-    financialSource(panel);
+    if (form.financial.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", panel, {class: "changed"});
     const financial = submittedFinancial();
     if (financial.cannot_give) {
       node("p", "Because of financial limitations, I/we cannot contribute financially at this time.", panel, {class: "changed"});
       return;
     }
-    const cents = moneyCents(financial.annual_pledge), frequency = financial.frequency;
-    node("p", "Your annual pledge: " + moneyDisplay(cents), panel, {class: "changed"});
-    const periods = form.financial.frequencies[frequency];
-    node("p", periods ? "Approximate " + frequency + " installment: " +
-      moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)) +
-      ". The annual total is authoritative; the final payment may differ slightly." : "No frequency selected (zero pledge).", panel);
+    const cents = moneyCents(financial.annual_pledge), each = installment(cents, financial.frequency);
+    node("p", "Your " + form.financial.year_label + " pledge: " + moneyDisplay(cents) + (!each ? "" : each.exact ?
+      " (" + each.amount + " per " + each.unit + ")" :
+      " (approximately " + each.amount + " per " + each.unit + "; the final payment may differ slightly)"),
+      panel, {class: "changed"});
+    const dates = window.ParishDates, start = form.financial.upcoming.start;
+    const starts = node("p", "This pledge starts on ", panel);
+    node("strong", dates ? dates.date(start) : start, starts);
     const list = node("ul", null, panel);
     form.financial.options.filter((option) => option.id in financial.shares).forEach((option) => {
       node("li", financialLabel(option) + (option.free_text ? ": " + financial.shares[option.id] : ""), list);
@@ -1738,7 +1757,6 @@
     if (history.state?.familyPage !== "review") history.pushState({familyPage: "review"}, "");
     block("review", root);
     const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
-    node("p", "Nothing is saved until you select “" + submitLabel + "”.", root);
     familySummary();
     if (answers.cannot_attend) {
       const welcome = node("section", null, root, {class: "panel"});

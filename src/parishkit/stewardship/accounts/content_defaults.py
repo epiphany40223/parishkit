@@ -171,8 +171,6 @@ PAGES = {
     "review": (
         "<p>Please review your household’s answers below. You can go back to any "
         "section to make changes.</p>"
-        "<p><strong>Nothing is sent to {{ parish_name }} until you select the "
-        "Submit button at the bottom of this page.</strong></p>"
     ),
     "thank_you": (
         "<p>Thank you for taking the time to complete {{ parish_name }}’s "

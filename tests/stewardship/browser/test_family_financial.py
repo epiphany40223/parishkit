@@ -1,5 +1,6 @@
 """Actual mobile financial editor/review/rebase without draft or provider writes."""
 
+import re
 from copy import deepcopy
 
 import pytest
@@ -217,10 +218,12 @@ def test_financial_modules_mobile_final_only_and_accessible(
         page, component_origin, financial_form(census=census, ministry=ministry), submit
     )
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("")
-    # Family pages show whole-dollar amounts without cents (#256).
-    expect(page.get_by_text("Parish records for", exact=False)).to_contain_text(
-        "pledge $1,200;"
-    )
+    # One sentence of giving history, in whole dollars (#256); the prior
+    # pledge and the refresh time are not repeated (#267).
+    history = page.get_by_text("you have contributed", exact=False)
+    expect(history).to_contain_text("you have contributed $500 towards your")
+    assert "Parish records for" not in page.locator("main").inner_text()
+    assert "Giving records last refreshed" not in page.locator("main").inner_text()
     show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
     show(page, page.get_by_label("Pledge frequency")).select_option("monthly")
     expect(page.locator("#financial-installment")).to_contain_text("$83.33")
@@ -238,9 +241,14 @@ def test_financial_modules_mobile_final_only_and_accessible(
     )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     review(page)
-    expect(
-        show(page, page.get_by_text("Your annual pledge: $1,000.01", exact=True))
-    ).to_be_visible()
+    pledge_line = page.get_by_text(
+        re.compile(r"^Your \S+ pledge: \$1,000\.01 \(approximately \$83\.33 per month;")
+    )
+    expect(show(page, pledge_line)).to_be_visible()
+    starts = page.get_by_text("This pledge starts on", exact=False)
+    expect(starts.locator("strong")).to_be_visible()
+    for gone in ("Upcoming stewardship period", "Nothing is saved", "Parish records"):
+        assert gone not in page.locator("main").inner_text()
     page.get_by_role("button", name="Back to edit").click()
     assert not submissions
     expect(page.get_by_label("Details for I will share another way")).to_have_value(
@@ -340,7 +348,7 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     expect(page.get_by_label("We will send a check", exact=True)).to_be_checked()
     review(page)
     expect(
-        show(page, page.get_by_text("Your annual pledge: $25", exact=True))
+        show(page, page.get_by_text(re.compile(r"^Your \S+ pledge: \$25[ (]")))
     ).to_be_visible()
 
 
@@ -469,3 +477,38 @@ def test_financial_only_uses_private_effective_count(
     expect(
         show(page, page.get_by_label(label + " will send a check", exact=True))
     ).to_be_visible()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_exact_payments_are_not_called_approximate(page, component_origin, width):
+    """$6,000 monthly is exactly $500; only uneven splits say "Approximately"."""
+    page.set_viewport_size({"width": width, "height": 900})
+    begin(page, component_origin, financial_form(), None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("6000")
+    page.get_by_label("Pledge frequency").select_option("monthly")
+    installment = page.locator("#financial-installment")
+    expect(installment).to_have_text("$500 per month.")
+    page.get_by_label("Annual pledge (USD)").fill("1000.01")
+    page.get_by_label("Annual pledge (USD)").dispatch_event("input")
+    expect(installment).to_contain_text("Approximately $83.33 per month.")
+    expect(installment).to_contain_text("the final payment may differ slightly")
+    page.get_by_label("Annual pledge (USD)").fill("6000")
+    page.get_by_label("Annual pledge (USD)").dispatch_event("input")
+    page.get_by_label("I will send a check", exact=True).check()
+    review(page)
+    expect(
+        page.get_by_text(re.compile(r"^Your \S+ pledge: \$6,000 \(\$500 per month\)$"))
+    ).to_be_visible()
+    # Fields and their lines don't overlap: each starts below the previous.
+    page.get_by_role("button", name="Back to edit").click()
+    show(page, page.get_by_label("Annual pledge (USD)"))
+    boxes = [
+        page.locator(selector).bounding_box()
+        for selector in (
+            "#financial-annual_pledge",
+            "#financial-frequency",
+            "#financial-installment",
+        )
+    ]
+    for above, below in zip(boxes, boxes[1:], strict=False):
+        assert above["y"] + above["height"] + 8 <= below["y"]

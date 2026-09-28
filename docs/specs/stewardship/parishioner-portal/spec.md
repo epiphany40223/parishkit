@@ -298,21 +298,29 @@ with the response and are never written to ParishSoft.
 
 ## Financial stewardship
 
-When enabled, the page shows read-only aggregates from the latest promoted
-snapshot and configured funds:
+When enabled, the page shows one read-only sentence of giving history from the
+latest promoted snapshot and configured funds: "As of *date*, you have
+contributed *amount* towards your *comparison year* pledge." The prior pledge
+amount and the records' refresh time are not repeated. Money on Family pages
+omits zero cents ("$1,200").
 
-- prior/current-period Family pledge; and
-- current-period contributions through the displayed data-as-of timestamp.
-
-Unavailable or incomplete upstream data displays "Unavailable" with an as-of
-warning, never `$0.00`. Individual contribution transactions are not shown.
+Unavailable or incomplete upstream data says so instead, never `$0.00`.
+Individual contribution transactions are not shown.
 
 The Family must enter an annual upcoming-period pledge. `$0.00` is valid. For a
 positive pledge, select exactly one frequency: weekly, monthly, quarterly, or
 annual, and at least one share method whenever any are offered; both are
-required, in the browser and by server validation. The UI divides by 52, 12, 4, or 1 using decimal arithmetic and displays
-an approximate two-decimal installment; annual total remains authoritative and
-the page notes the final payment may differ slightly.
+required, in the browser and by server validation. The UI divides by 52, 12, 4,
+or 1 using decimal arithmetic and shows each payment's amount. When the pledge
+divides evenly ($6,000 monthly) it is stated plainly ("$500 per month");
+otherwise it is "Approximately" a two-decimal amount, the annual total remains
+authoritative, and the page notes the final payment may differ slightly.
+
+Review shows the financial answer as "Your *year* pledge: *amount*", followed in
+parentheses by the payment amount under the same exact-or-approximate rule, and
+then "This pledge starts on **start date**" with the date in bold. It does not
+repeat the giving history, and neither Review nor its default text adds a
+"nothing is sent until Submit" prompt.
 
 The configured upcoming start date is prominent, with text that the pledge does
 not take effect before it. If campaign and period overlap, the Admin-confirmed

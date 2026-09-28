@@ -423,6 +423,11 @@ main nav.family-track { display: block; margin: 0; }
    other answers. */
 label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .financial-pledge { border: 0; padding: 0; margin: 0; background: none; }
+/* Room between the pledge, frequency and per-payment lines, so a focused
+   field's outline doesn't run into the line above or below it. */
+.financial-pledge input, .financial-pledge select { margin-block-end: .75rem; }
+.financial-pledge label { display: block; margin-block-start: 1rem; }
+#financial-installment { margin-block: .75rem 1rem; }
 .talents-panel > label { display: block; }
 /* Locked choices read as unavailable through color that still meets
    contrast (never opacity), a dashed outline and a not-allowed cursor. */
