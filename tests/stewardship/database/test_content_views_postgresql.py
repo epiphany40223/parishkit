@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from django.test import Client
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -401,11 +402,34 @@ def test_plain_text_preview_is_generated_by_the_server_for_admins(auth_service, 
     """The editors' preview uses the server generator; nothing else is accepted."""
     browser, _ = signed_in()
     path = "/admin/content/plain-text"
+    session = PortalSession.objects.get(revoked_at__isnull=True)
     response = post(
         browser, path, {"html": '<p>Hi <a href="https://example.org/">there</a></p>'}
     )
     assert response.status_code == 200, response.content
-    assert response.json() == {"text": "Hi there: https://example.org/"}
+    assert response.json() == {
+        "html": '<p>Hi <a href="https://example.org/" rel="noopener noreferrer">'
+        "there</a></p>",
+        "text": "Hi there: https://example.org/",
+        "removed": [],
+    }
+    # The live visual editor redraws only from the sanitized HTML and reports
+    # what was removed; the raw source is never echoed back.
+    unsafe = post(
+        browser, path, {"html": '<script>x()</script><p onclick="y()">Hello</p>'}
+    ).json()
+    assert unsafe == {
+        "html": "<p>Hello</p>",
+        "text": "Hello",
+        "removed": ["<script> element and its content", "onclick attribute"],
+    }
+    # Oversized source is refused like any other bounded content.
+    assert post(browser, path, {"html": "x" * (128 * 1024 + 1)}).status_code == 400
+    # Live previews fire while an Admin types; they never renew the idle session.
+    assert (
+        PortalSession.objects.get(pk=session.pk).last_activity_at
+        == session.last_activity_at
+    )
     assert response["Cache-Control"] == "no-store"
     assert post(browser, path, {"html": "x", "other": "y"}).status_code == 400
     assert browser.get(path).status_code == 405

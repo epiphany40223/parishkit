@@ -309,6 +309,8 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
 [hidden] { display: none !important; }
 .content-editor { min-height: 12rem; overflow-wrap: anywhere; }
+/* While the HTML source is being re-sanitized, the visual pane dims but stays visible. */
+[data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 

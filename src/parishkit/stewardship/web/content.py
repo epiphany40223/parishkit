@@ -94,14 +94,22 @@ _MARKUP = re.compile(r"<[A-Za-z!/?]")
 _BR = ("br", [], [])
 
 
+# Elements whose content is dropped along with the tag, and allowed link
+# schemes; removed_markup reports against the same policy.
+_DROPPED_WITH_CONTENT = frozenset(
+    {"script", "style", "iframe", "object", "svg", "math"}
+)
+_LINK_SCHEMES = frozenset({"https", "http", "mailto", "tel"})
+
+
 def _clean(value, tags):
     """The one nh3 policy: no images, styles, forms, handlers or unsafe schemes."""
     return nh3.clean(
         value,
         tags=tags,
         attributes={"a": {"href", "title"}},
-        url_schemes={"https", "http", "mailto", "tel"},
-        clean_content_tags={"script", "style", "iframe", "object", "svg", "math"},
+        url_schemes=set(_LINK_SCHEMES),
+        clean_content_tags=set(_DROPPED_WITH_CONTENT),
         link_rel="noopener noreferrer",
         strip_comments=True,
     )
@@ -358,6 +366,74 @@ class _PlainText(HTMLParser):
             target = re.sub(r"^(mailto|tel):", "", href)
             if href and target != label:
                 self.parts.append(": " + href if label else href)
+
+
+_SCHEME = re.compile(r"^\s*([a-z][a-z0-9+.-]*):", re.IGNORECASE)
+
+
+class _Markup(HTMLParser):
+    """Record the raw tags, attributes and comments of unsanitized input.
+
+    Only parsed, never rendered: this reports what the sanitizer will drop.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+        self.comments = False
+        # Depth inside an element dropped with its content: its descendants
+        # vanish with it, so they are not reported separately.
+        self.dropped = 0
+
+    def handle_starttag(self, tag, attrs):
+        if not self.dropped:
+            self.tags.append((tag, attrs))
+        if tag in _DROPPED_WITH_CONTENT:
+            self.dropped += 1
+
+    def handle_endtag(self, tag):
+        if tag in _DROPPED_WITH_CONTENT and self.dropped:
+            self.dropped -= 1
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.dropped:
+            self.tags.append((tag, attrs))
+
+    def handle_comment(self, data):
+        self.comments = True
+
+
+def removed_markup(value):
+    """Describe, in plain words, the markup that sanitize_html drops from value.
+
+    The live visual editor shows this beside the sanitized preview, so an
+    Admin who pastes HTML knows why an element, attribute or link vanished.
+    Structure-preserving rewrites (div to paragraph, b to strong) are not
+    removals and are not reported. The result is sorted and bounded.
+    """
+    parser = _Markup()
+    parser.feed(bounded_text(value))
+    parser.close()
+    kept = TAGS | _WRAPPERS | _RENAMES.keys()
+    removed = set()
+    for tag, attrs in parser.tags:
+        if tag not in kept:
+            removed.add(
+                f"<{tag}> element and its content"
+                if tag in _DROPPED_WITH_CONTENT
+                else f"<{tag}> element"
+            )
+            continue
+        for name, attribute in attrs:
+            if tag == "a" and name in {"href", "title", "rel"}:
+                scheme = _SCHEME.match(attribute or "") if name == "href" else None
+                if scheme and scheme.group(1).lower() not in _LINK_SCHEMES:
+                    removed.add(f"{scheme.group(1).lower()}: link target")
+                continue
+            removed.add(f"{name} attribute")
+    if parser.comments:
+        removed.add("HTML comments")
+    return sorted(removed)[:20]
 
 
 @dataclass(frozen=True)

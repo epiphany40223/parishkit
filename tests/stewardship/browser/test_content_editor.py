@@ -252,3 +252,134 @@ def test_typing_into_generated_text_switches_to_editing(page, component_origin):
     assert not page.locator('input[name="generate_text"]').is_checked()
     assert text.is_editable()
     assert text.input_value().startswith("Hello Sample Family")
+
+
+def serve_preview(route):
+    """Answer like the server's content preview: sanitized HTML, text, removals."""
+    from parishkit.stewardship.web.content import prepare_content, removed_markup
+
+    html = parse_qs(route.request.post_data, keep_blank_values=True)["html"][0]
+    prepared = prepare_content(html)
+    route.fulfill(
+        json={
+            "html": prepared.html,
+            "text": prepared.text,
+            "removed": removed_markup(html),
+        }
+    )
+
+
+def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_origin):
+    """The pane stays visible, redraws from sanitized HTML and never runs script."""
+    requests = []
+
+    def preview(route):
+        """Count requests: one shared request serves both live previews."""
+        requests.append(route.request.post_data)
+        serve_preview(route)
+
+    page.route("**/admin/content/plain-text", preview)
+    page.goto(component_origin + "/content-settings")
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
+    )
+    requests.clear()
+    visual = page.locator("[data-visual-content]")
+    editor = page.locator("[data-content-editor]")
+    page.get_by_text("HTML source", exact=True).click()
+    page.locator('textarea[name="html"]').fill(
+        "<script>window.__pwned = true</script>"
+        '<p onclick="window.__pwned = true">Hello <b>Alex</b></p>'
+        '<img src="x" onerror="window.__pwned = true">'
+    )
+    # While the server re-sanitizes, the pane dims but stays visible.
+    assert visual.is_visible()
+    assert visual.get_attribute("aria-busy") == "true"
+    assert editor.get_attribute("contenteditable") == "false"
+    page.wait_for_function(
+        "() => document.querySelector('[data-visual-content]')"
+        ".getAttribute('aria-busy') === 'false'"
+    )
+    assert visual.is_visible()
+    assert editor.get_attribute("contenteditable") == "true"
+    assert editor.inner_html() == "<p>Hello <strong>Alex</strong></p>"
+    assert editor.locator("script, img, [onclick]").count() == 0
+    assert page.evaluate("() => window.__pwned") is None
+    notice = page.locator("[data-visual-removed]")
+    assert notice.is_visible()
+    for removed in (
+        "<img> element",
+        "<script> element and its content",
+        "onclick attribute",
+    ):
+        assert removed in notice.inner_text()
+    # A removed element's own attributes are not listed separately.
+    assert "onerror" not in notice.inner_text()
+    # The same single response also refreshed the generated plain text.
+    assert page.locator('textarea[name="text"]').input_value() == "Hello Alex"
+    assert len(requests) == 1
+    # Clean source clears the removal notice.
+    page.locator('textarea[name="html"]').fill("<p>Hello again</p>")
+    page.wait_for_function(
+        "() => document.querySelector('[data-content-editor]').textContent"
+        " === 'Hello again'"
+    )
+    assert not notice.is_visible()
+
+
+def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
+    page, component_origin
+):
+    """A failed preview explains itself; the stale pane cannot be edited."""
+    page.route("**/admin/content/plain-text", lambda route: route.fulfill(status=503))
+    page.goto(component_origin + "/content-settings")
+    page.get_by_text("HTML source", exact=True).click()
+    page.locator('textarea[name="html"]').fill("<p>Changed</p>")
+    unavailable = page.locator("[data-visual-unavailable]")
+    unavailable.wait_for()
+    assert page.locator("[data-visual-content]").is_visible()
+    editor = page.locator("[data-content-editor]")
+    assert editor.get_attribute("contenteditable") == "false"
+    assert editor.inner_text() == "Hello Sample Family"
+    assert page.locator("[data-visual-updating]").is_hidden()
+
+
+def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_origin):
+    """Typing after a request was sent invalidates it; only current answers apply."""
+    held = []
+
+    def hold_first(route):
+        """Keep the first source request unanswered; answer the rest normally."""
+        html = parse_qs(route.request.post_data, keep_blank_values=True)["html"][0]
+        if html == "<p>First</p>" and not held:
+            held.append(route)
+        else:
+            serve_preview(route)
+
+    page.route("**/admin/content/plain-text", hold_first)
+    page.goto(component_origin + "/content-settings")
+    page.wait_for_function(
+        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
+    )
+    page.get_by_text("HTML source", exact=True).click()
+    source = page.locator('textarea[name="html"]')
+    source.fill("<p>First</p>")
+    page.wait_for_timeout(1000)  # let the 800 ms debounce send the request
+    assert held, "the first source request should be pending"
+    # Newer source arrives while the first request is still unanswered.
+    source.fill("<p>Second</p>")
+    editor = page.locator("[data-content-editor]")
+    bold = page.get_by_role("button", name="Bold", exact=True)
+    assert bold.is_disabled()
+    held[0].fulfill(json={"html": "<p>First</p>", "text": "First", "removed": []})
+    page.wait_for_timeout(200)
+    # The stale answer was ignored: the pane stayed locked and unchanged.
+    assert editor.get_attribute("contenteditable") == "false"
+    assert "First" not in editor.inner_text()
+    page.wait_for_function(
+        "() => document.querySelector('[data-content-editor]').textContent === 'Second'"
+    )
+    assert editor.get_attribute("contenteditable") == "true"
+    assert bold.is_enabled()
+    assert source.input_value() == "<p>Second</p>"
+    assert page.locator('textarea[name="text"]').input_value() == "Second"

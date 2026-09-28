@@ -20,6 +20,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     prepare_content,
+    removed_markup,
     sanitize_html,
 )
 from parishkit.stewardship.web.contracts import filters
@@ -391,12 +392,15 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
 
 @require_POST
 def plain_text_preview(request):
-    """Return the plain text the server generates from posted HTML; nothing saves.
+    """Return what the server makes of posted HTML source; nothing saves.
 
-    Both content editors (setup and campaign) show this read-only while
-    "Generate plain text from HTML" is checked, so an Admin sees exactly the
-    plain text a save would store. Only the HTML field (and the CSRF token)
-    is accepted, from a currently authorized Administrator.
+    One response serves both live previews in the content editors (setup and
+    campaign): the sanitized HTML the visual editor redraws from, the plain
+    text shown read-only while "Generate plain text from HTML" is checked, and
+    a plain-language list of markup the sanitizer removed. The browser never
+    renders the raw source itself. Only the HTML field (and the CSRF token)
+    is accepted, from a currently authorized Administrator, and the read-only
+    authorization never renews the idle session.
     """
     try:
         if (
@@ -410,7 +414,9 @@ def plain_text_preview(request):
             Capability.CONFIGURE,
         ):
             raise PermissionError("Content access was revoked.")
-        text = prepare_content(request.POST["html"]).text
+        source = request.POST["html"]
+        prepared = prepare_content(source)
+        removed = removed_markup(source)
     except (
         ConfigError,
         DatabaseError,
@@ -419,6 +425,8 @@ def plain_text_preview(request):
         ValueError,
     ) as error:
         return error_response(error)
-    response = JsonResponse({"text": text})
+    response = JsonResponse(
+        {"html": prepared.html, "text": prepared.text, "removed": removed}
+    )
     response["Cache-Control"] = "no-store"
     return response
