@@ -112,6 +112,9 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "ministry",
         # The sign-in help is one generic sentence (#206).
         "login_help",
+        # Appended after the receipt email body, which already names the
+        # parish; this block carries only the contact sentence.
+        "submission_confirmation",
     }
 
 

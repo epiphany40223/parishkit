@@ -152,10 +152,9 @@ PAGES = {
         "office at {{ parish_phone }} or email {{ parish_email }}, and we’ll "
         "help.</p>"
     ),
+    # Appended to every receipt email after the "confirmation" email body,
+    # which already thanks the Family, so this block adds only what follows.
     "submission_confirmation": (
-        "<p>Thank you for completing {{ parish_name }}’s {{ campaign_name }} for "
-        "the {{ family_name }} household. This email confirms that we received "
-        "your submission.</p>"
         f"<p>If anything needs to change, please contact {_CONTACT}.</p>"
     ),
 }
