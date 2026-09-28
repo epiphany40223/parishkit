@@ -1866,17 +1866,22 @@
       }
     });
   }
-  document.getElementById("family-start").addEventListener("click", async (event) => {
+  const start = document.getElementById("family-start");
+  async function begin() {
+    // Load the Family's form. Production waits for "Begin reviewing"; Testing
+    // opens it at once, since the Testing banner is the only mode notice.
     if (busy) return;
-    busy = true; event.target.disabled = true;
+    busy = true; start.disabled = true;
     try {
       const result = await send("/family/form", {});
       if (!result || finished) return;
       if (result.form) { say(""); accept(result.form, false); }
       else say("The campaign form is not available. Please try again later.");
     } catch { say("The campaign form could not be loaded. Please try again."); }
-    finally { busy = false; event.target.disabled = false; }
-  });
+    finally { busy = false; start.disabled = false; }
+  }
+  start.addEventListener("click", begin);
+  if (testing) begin();
   cancel.addEventListener("submit", (event) => {
     if (dirty() && !window.confirm("Discard your unsubmitted changes and sign out?")) {
       event.preventDefault(); return;

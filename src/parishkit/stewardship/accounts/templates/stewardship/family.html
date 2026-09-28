@@ -9,9 +9,10 @@
   {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
   <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
   <div id="family-flow" data-testing="{{ testing|yesno:'true,false' }}">
-    <div class="panel" id="family-entry">
-      {% if testing %}<p>{% translate "This is a test. Test answers will not count as your response and will be deleted before the live campaign opens, so you will need to respond again then." %}</p>{% endif %}
-      <button type="button" id="family-start">{% if testing %}{% translate "Continue with test" %}{% else %}{% translate "Begin reviewing our information" %}{% endif %}</button>
+    {% comment %}Testing has no entry page: the form opens straight away and the
+    Testing banner above is the mode notice (family-v1.js starts it).{% endcomment %}
+    <div class="panel" id="family-entry"{% if testing %} hidden{% endif %}>
+      <button type="button" id="family-start">{% translate "Begin reviewing our information" %}</button>
     </div>
   </div>
   <form method="post" action="{% url 'family:logout' %}" id="family-cancel">{% csrf_token %}<button type="submit" class="button-secondary">{% translate "Cancel and sign out" %}</button></form>

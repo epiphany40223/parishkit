@@ -215,7 +215,7 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
 
 
 def test_testing_submits_without_acknowledgment_checkboxes(page, component_origin):
-    """The Testing banner is the only mode notice; no checkbox gates entry or Submit."""
+    """The Testing banner is the only mode notice: no entry page, no checkboxes."""
     submissions = []
 
     def submit(route):
@@ -224,9 +224,11 @@ def test_testing_submits_without_acknowledgment_checkboxes(page, component_origi
 
     attempts = prepare(page, component_origin, testing=True, submit=submit)
     expect(page.get_by_text("Testing mode:", exact=False).first).to_be_visible()
-    assert page.locator("main input[type=checkbox]:visible").count() == 0
-    page.get_by_role("button", name="Continue with test").click()
+    # The form opens straight away, without an entry page or a button to press.
     expect(page.locator("[data-step-link]").first).to_be_attached()
+    expect(page.locator("#family-entry")).to_be_hidden()
+    assert page.get_by_text("Test answers will not count").count() == 0
+    assert page.locator("#testing-entry-ack, #testing-submit-ack").count() == 0
     assert attempts[0].post_data_json == {}
     review(page)
     assert page.locator("#family-confirmation input[type=checkbox]").count() == 0

@@ -22,7 +22,7 @@ These pages reveal no Family information. In Production, lifecycle state and
 the resolved boundaries govern access. In Testing, the one current `draft`
 campaign is treated as active solely for portal gating while the current instant
 falls inside its resolved interval; before/after pages still apply outside that
-interval, and the Testing interstitial and banner below remain mandatory.
+interval, and the Testing banner below remains mandatory.
 Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
@@ -415,12 +415,9 @@ submission.
 During Testing mode every otherwise eligible Family may use the portal during
 campaign dates through its current rehearsal-epoch code or token under the
 [credential policy](../architecture/spec.md#family-credential-security).
-Production credentials are not accepted in Testing. Immediately after successful authentication and
-before any household data is displayed, an interstitial states that this is a
-test, answers will be permanently deleted before launch, the response will not
-count, and the Family will need to respond again in Production. The user
-chooses **Continue with test** or signs out; no acknowledgment checkbox is
-required.
+Production credentials are not accepted in Testing. Testing has no entry page
+or interstitial: after successful authentication the form opens straight away,
+and the Testing banner (below) is the only mode notice.
 
 Every form step has a persistent, non-color-only Testing banner repeating that
 answers are disposable, and the final button reads **Submit test response**.
