@@ -404,10 +404,10 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     store = workspace.store
     browser, _ = signed_in()
     assert b"Off-site backups are not set up" in browser.get("/admin/").content
-    assert (
-        b"Off-site backups (Google Drive)"
-        in browser.get("/admin/configuration/integrations").content
-    )
+    # The Integrations list links to the setup page even before it's set up.
+    index = browser.get("/admin/configuration/integrations").content
+    assert b"Off-site backups (Google Drive)" in index
+    assert f'href="{URL}">Set up off-site backups</a>'.encode() in index
     page = browser.get(URL)
     assert page.status_code == 200
     assert b"Google Drive folder link" in page.content
@@ -451,6 +451,8 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     )
     home = browser.get("/admin/")
     assert b"Off-site backups" in home.content
+    index = browser.get("/admin/configuration/integrations").content
+    assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
     preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))

@@ -4,7 +4,8 @@
 <h1>{% translate "Integrations" %}</h1>
 {% aboutpage "integrations" %}<p>{% translate "These are applied settings. A connection check does not prove email or notification delivery." %}</p>{% endaboutpage %}
 <ul>{% for integration in integrations %}<li>
-{% if integration.configured %}<a href="{% url 'admin:integration_settings' integration.target %}">{{ integration.label }}</a>
+{% if integration.target == 'backup' %}{% url 'admin:integration_settings' integration.target as backup_url %}{% if integration.configured %}<a href="{{ backup_url }}">{{ integration.label }}</a> — {% translate "Configured." %} <a href="{{ backup_url }}">{% translate "Change" %}</a>{% else %}{{ integration.label }} — {% translate "Not set up." %} <a href="{{ backup_url }}">{% translate "Set up off-site backups" %}</a>{% endif %}
+{% elif integration.configured %}<a href="{% url 'admin:integration_settings' integration.target %}">{{ integration.label }}</a>
 {% elif integration.target == 'slack' %}{{ integration.label }} — {% translate "Not set up." %} <a href="{% url 'admin:integration_settings' integration.target %}">{% translate "Set up Slack" %}</a>
 {% else %}{{ integration.label }} — {% translate "Not configured" %}{% endif %}
 </li>{% endfor %}</ul>
