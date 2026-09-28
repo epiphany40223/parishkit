@@ -392,3 +392,24 @@ def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
         browser.get("/admin/configuration/credentials/" + str(uuid4())).status_code
         == 404
     )
+
+
+def test_credential_status_follows_live_and_never_renews_idle(
+    auth_service, google, handoff
+):
+    """The self-updating status page is a passive read: polling it cannot keep
+    an otherwise idle login alive, and it stays pending until installed."""
+    browser, _ = signed_in()
+    token = hidden(browser.get(REPLACE), "intent")
+    response = post(browser, REPLACE, {"intent": token, "candidate": SECRET})
+    assert response.status_code == 302
+    session = PortalSession.objects.get(revoked_at__isnull=True)
+    activity = session.last_activity_at
+    for _ in range(3):
+        progress = browser.get(response["Location"])
+        assert progress.status_code == 200
+        assert b'data-live-status="credential"' in progress.content
+        assert b"data-live-pending" in progress.content
+        assert b"live-status-v1.js" in progress.content
+    session.refresh_from_db()
+    assert session.last_activity_at == activity

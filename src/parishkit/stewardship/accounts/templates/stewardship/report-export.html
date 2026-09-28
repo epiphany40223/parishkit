@@ -1,17 +1,18 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
 {% block title %}{{ report_title|default:"Participation export" }}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{{ report_title|default:"Participation export" }}</h1>
 {% comment %}
-  The live region is what ui-v1.js refreshes in place while the export is
+  The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
   login session). When the file becomes ready while the page watches, the
   download starts once by itself. Without script, Refresh status reloads.
 {% endcomment %}
-<section class="panel export-live" data-export-live data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-export-pending{% endif %}>
+<section class="panel export-live" aria-live="polite" data-live-status="export" data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-live-pending{% endif %}>
 {% if status.state == 'ready' %}
   <p class="export-state export-state-ready" role="status">{% translate "Your file is ready." %}</p>
-  <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-export-download>{% csrf_token %}<button type="submit" class="button-large">{% translate "Download export" %}</button></form>
+  <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit>{% csrf_token %}<button type="submit" class="button-large">{% translate "Download export" %}</button></form>
   <p class="help">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 {% elif status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %}
   <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
@@ -33,7 +34,7 @@
 {% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
 </section>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
-<p><a href="{% url 'admin:report_export' job.pk %}" data-export-refresh>{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports, cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
 <details><summary>{% translate "Details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>

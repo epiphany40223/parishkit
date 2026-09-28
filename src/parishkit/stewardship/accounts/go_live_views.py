@@ -176,6 +176,12 @@ def cleanup_status(request, campaign_id, request_id):
         context["completion"] = Percentage(
             status.processed_count, status.inventory_total
         )
+        # The page follows itself (live-status-v1.js) until cleanup settles.
+        context["live_pending"] = status.state in {
+            "cleanup_queued",
+            "cleanup_running",
+            "cleanup_retry_wait",
+        } or (context["cancelling"] and status.state != "cancelled")
         response = render(request, "stewardship/go-live-cleanup.html", context)
         return _checked(request, service, response)
     except ObjectDoesNotExist:

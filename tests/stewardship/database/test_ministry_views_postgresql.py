@@ -61,7 +61,7 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     pending = browser.get(response["Location"]).content
     assert b"Applying" in pending
     # A pending status page reloads itself until the installer finishes.
-    assert b"status-refresh-v1.js" in pending
+    assert b"data-live-pending" in pending
     assert not MinistryActivity.objects.exists()
     receipt = install_request(
         auth_service.store, request_id=request.pk, correlation_id=uuid4()
@@ -69,7 +69,7 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     assert receipt.state == "applied"
     applied = browser.get(response["Location"]).content
     assert b"Applied" in applied
-    assert b"status-refresh-v1.js" not in applied
+    assert b"data-live-pending" not in applied
     runtime = SystemConfiguration.objects.get()
     policy = MinistryActivity.objects.get(
         configuration_id=runtime.active_configuration_id

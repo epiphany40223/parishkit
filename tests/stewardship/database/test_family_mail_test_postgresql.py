@@ -1307,7 +1307,7 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
         assert response.status_code == 302
         page = browser.get(path)
     assert page.context["sent"] == 1 and page.context["refresh"]
-    assert b"status-refresh-v1.js" in page.content
+    assert b'data-live-status="family-tests" data-live-pending' in page.content
     assert str(page.context["items"][0]["label"]).startswith("Queued")
     with web_login():
         # The confirmation stays while the test is still on its way...
@@ -1316,7 +1316,7 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
         # since reloading it would resubmit the form.
         invalid = post(browser, path, {"action": "preview", "families": "x"})
     assert invalid.status_code == 400
-    assert b"status-refresh-v1.js" not in invalid.content
+    assert b"live-status-v1.js" not in invalid.content
 
 
 def test_testing_mode_explains_live_codes_and_offers_a_test_send(family_test):

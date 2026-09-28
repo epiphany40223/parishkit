@@ -1,9 +1,11 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Background task details" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Background task details" %}</h1>
 <p>{{ task.name }}{% if task.name != task.type %} (<code>{{ task.type }}</code>){% endif %} — {{ task.id }}</p>
-<section class="panel"><h2>{% translate "Current status" %}</h2>
+<section class="panel" aria-live="polite" data-live-status="task" data-live-state="{{ task.state }}"{% if task.state == 'queued' or task.state == 'running' or task.state == 'retry_wait' or task.state == 'abandoned' %} data-live-pending{% endif %}><h2>{% translate "Current status" %}</h2>
+{% if task.state == 'queued' or task.state == 'running' or task.state == 'retry_wait' or task.state == 'abandoned' %}{% translate "Still working…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% elif task.state == 'succeeded' %}<p class="live-done"><strong>{% translate "Finished successfully." %}</strong></p>{% elif task.state == 'failed' %}<p class="notice notice-error live-failed" role="alert">{% translate "This task failed. Its details are below." %}</p>{% elif task.state == 'cancelled' %}<p><strong>{% translate "This task was cancelled." %}</strong></p>{% endif %}
 <p>{% translate "State:" %} {{ task.state|capfirst }} · {% translate "Phase:" %} {{ task.progress.phase|capfirst }}</p>
 <p>{% translate "Attempt:" %} {{ task.attempt|number }} · {% translate "Retry sequence:" %} {{ task.retry_sequence|number }}</p>
 <p>{% translate "Initiator ID:" %} {{ task.initiator_id|default:_("System") }}</p>

@@ -1335,7 +1335,7 @@ def component_origin():
         ("information-export-v1.js", "application/javascript"),
         ("users-v1.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
-        ("status-refresh-v1.js", "application/javascript"),
+        ("live-status-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),

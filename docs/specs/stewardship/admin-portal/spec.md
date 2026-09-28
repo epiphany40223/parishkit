@@ -333,6 +333,18 @@ The distinct Family activity-keepalive behavior is defined by the
 [session policy](../architecture/spec.md#identity-and-session-security); it does
 not affect presence semantics or carry form answers.
 
+Every Admin page that follows background work (configuration changes,
+credential replacement, Testing cleanup, Family link preparation, chosen-Family
+tests, background task details, integration key changes and report exports)
+updates itself: while the work is queued or running it shows a worded running
+indicator and re-reads its passive status, backing off from 2 to 10 seconds
+and pausing while the tab is hidden; it states success or failure prominently
+when the work finishes and then stops. These status reads are passive like the
+indicator polling above, and a page never reloads itself through a view that
+counts as activity, so an open page cannot keep an idle login alive. The page
+never replaces a control the Admin is using and never re-sends a form; its
+manual refresh link remains for browsers without JavaScript.
+
 ## Parish and integration configuration
 
 Only Admins may view/edit configuration. Required values cannot be cleared.

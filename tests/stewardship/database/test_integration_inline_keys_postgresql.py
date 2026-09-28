@@ -260,3 +260,56 @@ def test_stale_key_save_page_says_nothing_was_done(working, monkeypatch):
     assert b"enter it again after you return" in response.content
     assert CANDIDATE not in response.content
     assert not SecretReplacementRequest.objects.exists()
+
+
+def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
+    working, monkeypatch
+):
+    """The settings page follows installation through a passive fragment.
+
+    Reloading the settings page itself would count as activity, so an open
+    page would keep an idle login alive forever. The fragment it polls never
+    renews idle time, stays pending until installation finishes, then points
+    the page back at its settings once; a login left polling past the idle
+    window is refused like any other expired login.
+    """
+    from parishkit.stewardship.accounts import sessions
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    browser = working["browser"]
+    assert save(working).status_code == 302
+    page = browser.get(URL).content
+    assert b'data-live-url="' + URL.encode() + b'/status"' in page
+    assert b"data-reload-while-pending" not in page
+    session = PortalSession.objects.get(revoked_at__isnull=True)
+    activity = session.last_activity_at
+    for _ in range(3):
+        status = browser.get(URL + "/status")
+        assert status.status_code == 200
+        assert status["Cache-Control"] == "no-store"
+        assert b"data-live-pending" in status.content
+        assert b"<form" not in status.content
+    session.refresh_from_db()
+    assert session.last_activity_at == activity
+    with identity("pk_stewardship_credential_parishsoft"):
+        working["installer"].run_once()
+    with identity("pk_stewardship_worker"):
+        acknowledge_rotations(working["worker"], {})
+    with identity("pk_stewardship_credential_parishsoft"):
+        working["installer"].run_once()
+    row = SecretReplacementRequest.objects.get()
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert install(working, selection.pk).state == "applied"
+    finished = browser.get(URL + "/status").content
+    assert b"data-live-pending" not in finished
+    assert b'data-live-follow href="' + URL.encode() + b'"' in finished
+    # Polling never moved the idle deadline, so once the clock passes it the
+    # same poll is refused: an open page cannot keep an idle login alive.
+    session.refresh_from_db()
+    deadline = session.expires_at
+    monkeypatch.setattr(
+        sessions, "database_now", lambda: deadline + timedelta(seconds=1)
+    )
+    assert browser.get(URL + "/status").status_code != 200

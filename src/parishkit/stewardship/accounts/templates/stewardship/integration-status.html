@@ -1,0 +1,4 @@
+{% load i18n %}{% comment %}
+  Passive status fragment for live-status-v1.js: only the integration's
+  live region, never the settings form. Reading it never renews idle time.
+{% endcomment %}<div data-live-status="integration" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>

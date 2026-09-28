@@ -7,11 +7,13 @@ from django.core import signing
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
 from parishkit.stewardship.source.refresh_status import full_refresh_status
@@ -157,6 +159,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "removable": configured and target in OPTIONAL_INTEGRATIONS,
             "configuration": configuration,
             "full_refresh": (full_refresh_status() if target == "parishsoft" else None),
+            "status_url": reverse("admin:integration_status", args=[target]),
         },
         status=status,
     )
@@ -526,6 +529,42 @@ def replace_credential(request, target):
         return _checked(request, service, response)
     except SecretRequestConflict:
         return error_response(ValueError("Credential intake identity has changed."))
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["GET", "HEAD"])
+def integration_status(request, target):
+    """Passive credential status line that a settings page follows while pending.
+
+    live-status-v1.js re-reads this fragment instead of reloading the settings
+    page, whose ordinary view counts as activity: an open page must never keep
+    an otherwise idle login alive. When the change finishes, the fragment
+    points the page back at its settings view once.
+    """
+    try:
+        filters(request.GET, allowed=set())
+        service = runtime()
+        principal(request, service, passive=True)
+        if target not in ROTATING_TARGETS or target not in LABELS:
+            raise LookupError("Integration is unavailable.")
+        # One consistent snapshot without the writers' work lock, so polling
+        # never waits behind an installer or a source promotion.
+        with read_transaction():
+            configuration = editable_configuration(service)
+            record = _optional(configuration, target) or _unset(target)
+            latest = summary(target, record)
+        pending = latest is not None and latest.kind == "pending"
+        response = render(
+            request,
+            "stewardship/integration-status.html",
+            {
+                "summary": latest,
+                "pending": pending,
+                "follow_url": reverse("admin:integration_settings", args=[target]),
+            },
+        )
+        return _checked(request, service, response)
     except ERRORS as error:
         return error_response(error)
 

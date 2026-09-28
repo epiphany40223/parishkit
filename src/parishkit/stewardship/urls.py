@@ -336,6 +336,11 @@ admin_patterns = [
         name="integration_settings",
     ),
     path(
+        "configuration/integrations/<str:target>/status",
+        integration_views.integration_status,
+        name="integration_status",
+    ),
+    path(
         "configuration/integrations/<str:target>/credential",
         integration_views.replace_credential,
         name="replace_credential",

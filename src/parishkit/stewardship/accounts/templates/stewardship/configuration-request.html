@@ -1,15 +1,16 @@
 {% extends 'stewardship/base.html' %}{% load i18n static %}
 {% block title %}{% translate "Configuration change status" %}{% endblock %}
-{% block head %}{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %}<script src="{% static 'stewardship/status-refresh-v1.js' %}" defer></script>{% endif %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Configuration change status" %}</h1>
-<section class="panel" role="status" aria-live="polite">
+<section class="panel" role="status" aria-live="polite" data-live-status="configuration" data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
-  <h2>{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
+  <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
 {% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
-  <h2>{% translate "Not applied" %}</h2><p>{% translate "Review the current configuration before starting a new change." %}</p>
+  <h2 class="live-failed">{% translate "Not applied" %}</h2><p>{% translate "Review the current configuration before starting a new change." %}</p>
 {% else %}
-  <h2 data-status-refresh>{% translate "Applying your change…" %}</h2><p>{% translate "This usually takes a few seconds. This page updates by itself; the change is not saved until it says Applied." %}</p>
+  {% translate "Applying your change…" as running %}{% include 'stewardship/live-running.html' with message=running %}
+  <p>{% translate "This usually takes a few seconds. The change is not saved until this page says Applied." %}</p>
 {% endif %}
   <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
 </section>
