@@ -2011,8 +2011,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM public.stewardship_content_version
         WHERE configuration_id=NEW.id AND NOT (
             (kind='page' AND slot IN ('welcome', 'login_help', 'pre_start', 'post_end',
-                'census', 'member_census', 'ministry', 'financial', 'additional',
-                'review', 'thank_you', 'access_denied', 'submission_confirmation'))
+                'census', 'member_census', 'ministry', 'financial', 'closing',
+                'additional', 'review', 'thank_you', 'access_denied',
+                'submission_confirmation'))
             OR (kind='email' AND slot IN ('initial', 'reminder', 'confirmation',
                 'daily_digest', 'weekly_digest', 'critical_alert'))
         )) THEN

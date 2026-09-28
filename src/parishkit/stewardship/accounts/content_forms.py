@@ -32,6 +32,7 @@ PAGE_LABELS = {
     "member_census": _("Member census introduction"),
     "ministry": _("Ministry introduction"),
     "financial": _("Financial introduction"),
+    "closing": _("Closing page (after Financial; remove it to skip the page)"),
     "additional": _("Additional information prompt"),
     "review": _("Review and attestation introduction"),
     "thank_you": _("Thank You page"),
@@ -47,7 +48,16 @@ EMAIL_LABELS = {
     "critical_alert": _("Critical alert"),
 }
 LEGACY_PAGE_REFERENCES = frozenset(
-    {"welcome", "census", "ministry", "financial", "additional", "review", "thank_you"}
+    {
+        "welcome",
+        "census",
+        "ministry",
+        "financial",
+        "closing",
+        "additional",
+        "review",
+        "thank_you",
+    }
 )
 
 

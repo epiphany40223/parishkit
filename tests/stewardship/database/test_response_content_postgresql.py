@@ -298,3 +298,44 @@ def test_public_lifecycle_content_uses_only_public_substitutions(
         body = harness.client.get("/").content.decode()
         assert "Replacement lifecycle instructions" in body
         assert "Lifecycle instructions for" not in body
+
+
+def remove_content(harness, slot):
+    """Remove a selected page revision, as the editor's "remove" choice does."""
+    store = harness.service.store
+    version = store.active()
+    campaign = next(
+        row
+        for row in version.document()["sections"]["campaigns"]
+        if row["id"] == str(harness.campaign.pk)
+    )
+    old_id = campaign["values"]["content_versions"][slot]
+    versions = dict(campaign["values"]["content_versions"])
+    del versions[slot]
+    patch = [
+        {"operation": "remove", "section": "content", "id": old_id},
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": campaign["id"],
+            "values": {"content_versions": versions},
+        },
+    ]
+    assert change(store, version, uuid4(), patch).state == "applied"
+
+
+def test_closing_page_shows_only_with_visible_content(response_service):
+    """The optional closing page exists only while its content has text (#248)."""
+    harness = response_service
+    select_content(harness, "closing", "<h2>Protect the earth</h2><p>Recycle.</p>")
+    with web_login():
+        form = load_form(harness)
+    assert form["content"]["closing"] == "<h2>Protect the earth</h2><p>Recycle.</p>"
+    # Markup with no visible text would be an empty page; it is not sent.
+    select_content(harness, "closing", "<p> </p>")
+    with web_login():
+        assert "closing" not in load_form(harness)["content"]
+    select_content(harness, "closing", "<p>Walk or carpool.</p>")
+    remove_content(harness, "closing")
+    with web_login():
+        assert "closing" not in load_form(harness)["content"]

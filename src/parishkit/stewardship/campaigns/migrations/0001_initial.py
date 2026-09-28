@@ -3307,6 +3307,7 @@ class Migration(migrations.Migration):
                                         "members",
                                         "ministry",
                                         "financial",
+                                        "closing",
                                         "additional",
                                         "review",
                                     ),

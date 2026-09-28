@@ -114,6 +114,8 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "ministry",
         # The sign-in help is one generic sentence (#206).
         "login_help",
+        # A general reflection on caring for creation; it names no parish.
+        "closing",
         # Appended after the receipt email body, which already names the
         # parish; this block carries only the contact sentence.
         "submission_confirmation",
@@ -236,12 +238,13 @@ def test_default_content_selects_new_page_revisions_for_a_new_campaign():
     assert [
         (row["values"]["kind"], row["values"]["slot"]) for row in records
     ] == applicable_slots(values)
-    assert len(records) == 10 + 6
+    assert len(records) == 11 + 6
     assert all(matches_default(row["values"]) for row in records)
     assert versions == {
         row["values"]["slot"]: row["id"]
         for row in records
-        if row["values"]["slot"] in {"welcome", "census", "review", "thank_you"}
+        if row["values"]["slot"]
+        in {"welcome", "census", "closing", "review", "thank_you"}
         and row["values"]["kind"] == "page"
     }
     validate_content_records(

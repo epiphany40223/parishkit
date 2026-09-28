@@ -274,7 +274,7 @@ class CampaignForm(forms.Form):
                 "comparison_fund_duids": data["comparison_fund_duids"],
                 "overlap_confirmed": data["overlap_confirmed"],
             }
-        allowed_slots = {"welcome", "review", "thank_you", *modules}
+        allowed_slots = {"welcome", "closing", "review", "thank_you", *modules}
         if data["additional_information"]:
             allowed_slots.add("additional")
         return {

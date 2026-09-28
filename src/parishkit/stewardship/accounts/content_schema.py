@@ -34,6 +34,7 @@ PAGE_SLOTS = frozenset(
         "member_census",
         "ministry",
         "financial",
+        "closing",
         "additional",
         "review",
         "thank_you",

@@ -338,7 +338,7 @@ def test_reset_all_replaces_every_slot_only_when_confirmed(setup_http, monkeypat
         )
         assert all(matches_default(row["values"]) for row in rows.values())
         report = browser.get(done["Location"])
-        assert b"Reset 11 page(s) and 6 email(s)" in report.content
+        assert b"Reset 12 page(s) and 6 email(s)" in report.content
         # Everything already matches its default: a repeat replaces nothing.
         again = post(
             browser,
@@ -365,7 +365,7 @@ def test_fill_result_names_kept_customized_slots_and_badges(setup_http, monkeypa
         )
         assert "Reset to the default text" in report
         assert report.count("— Customized") == 1
-        assert report.count("— Default text") == 11 + 6 - 1
+        assert report.count("— Default text") == 12 + 6 - 1
         assert "— Empty" not in report
         # Without a fill result, the list shows only the badges.
         plain = browser.get(url).content.decode()
@@ -400,7 +400,7 @@ def test_saving_the_first_campaign_fills_every_applicable_slot(setup_http, monke
         # Census only, no additional-information prompt: 10 pages, 6 emails.
         rows = content_rows()
         pages = {step for step in rows if step.startswith("page_")}
-        assert len(pages) == 10 and "page_additional" not in pages
+        assert len(pages) == 11 and "page_additional" not in pages
         assert len(rows) - len(pages) == len(EMAILS)
         assert all(matches_default(row["values"]) for row in rows.values())
         for row in rows.values():
@@ -408,10 +408,10 @@ def test_saving_the_first_campaign_fills_every_applicable_slot(setup_http, monke
         # One version bump covers the campaign and all of its content.
         assert SetupAttempt.objects.get().version == attempt.version + 1
         assert saved["Location"] == (
-            "/admin/setup/content?filled_pages=10&filled_emails=6"
+            "/admin/setup/content?filled_pages=11&filled_emails=6"
         )
         listing = browser.get(saved["Location"])
-        assert b"Filled in the default text for 10 page(s)" in listing.content
+        assert b"Filled in the default text for 11 page(s)" in listing.content
         assert b"filled in automatically" in listing.content
         assert b"Fill in the default text for all" not in listing.content
 

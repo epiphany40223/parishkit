@@ -1551,6 +1551,17 @@
       const financial = addPage(editor, "financial", "Financial stewardship", "financial");
       financialEditor(financial.element, financial.validators);
     }
+    // The optional closing page has content only (no answers). The server
+    // sends it only when its text is non-empty, so an Admin removes the page
+    // by removing its content.
+    if (form.content.closing) {
+      const closing = addPage(editor, "closing", "Closing", "closing");
+      block("closing", closing.element);
+      // When the closing text opens with its own heading, keep "Closing"
+      // for screen readers and focus only, so no title shows twice.
+      const lead = closing.element.querySelector(".content-block")?.firstElementChild;
+      if (lead && /^H[1-6]$/.test(lead.tagName)) closing.element.querySelector("h3").classList.add("visually-hidden");
+    }
     if (form.additional_enabled) {
       const additional = addPage(editor, "additional", "Additional information", "additional");
       block("additional", additional.element);

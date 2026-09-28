@@ -70,7 +70,11 @@ def public_values(parish, campaign):
 
 def family_page_slots(configuration):
     """The same displayed slots control rendering and substitution dependencies."""
-    slots = {"welcome", "review", "thank_you"} | set(configuration["modules"])
+    # The optional closing page has no module; it shows whenever its content
+    # is selected and non-empty.
+    slots = {"welcome", "closing", "review", "thank_you"} | set(
+        configuration["modules"]
+    )
     if "census" in configuration["modules"]:
         slots.add("member_census")
     if configuration["additional_information"]:

@@ -212,6 +212,7 @@ def definition_digest(configuration):
                     "member_census",
                     "ministry",
                     "financial",
+                    "closing",
                     "review",
                     "thank_you",
                     "additional",

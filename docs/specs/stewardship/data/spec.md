@@ -761,7 +761,10 @@ Family login help, pre-start, post-end, Family census introduction, Member
 census introduction, Ministry introduction, financial introduction,
 additional-information prompt, review/attestation introduction, Thank You page,
 access-denied contact help, and submission-confirmation text. Empty optional
-slots render nothing.
+slots render nothing. The optional `closing` slot is a content-only Family page
+between Financial stewardship and Additional information; a campaign without
+closing content, or whose closing content has no visible text, has no closing
+step.
 
 The `submission_confirmation` block supplies parish-authored receipt-email
 content through [submission confirmation](../background-processing/spec.md#submission-confirmation),

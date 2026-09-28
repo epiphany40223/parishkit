@@ -1,5 +1,7 @@
 """A scoped browser projection: effective values only, never competing values."""
 
+import re
+from html import unescape
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
@@ -349,4 +351,14 @@ def _page_content(baseline, campaign, family, members, member_count, financial):
             financial_period=f"{start} – {end}",
         )
     slots = family_page_slots(campaign.values)
-    return render_pages(baseline.configuration_id, campaign, slots, substitutions)
+    pages = render_pages(baseline.configuration_id, campaign, slots, substitutions)
+    # An Admin skips the optional closing page by removing or emptying its
+    # content; markup with no visible text must not add an empty page.
+    if "closing" in pages and not _has_text(pages["closing"]):
+        del pages["closing"]
+    return pages
+
+
+def _has_text(html):
+    """True when rendered page HTML shows visible text, not only empty tags."""
+    return bool(unescape(re.sub(r"<[^>]*>", "", html)).strip())

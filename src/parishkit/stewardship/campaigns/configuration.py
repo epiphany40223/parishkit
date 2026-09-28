@@ -153,6 +153,7 @@ def campaign_values(values):
         "census",
         "ministry",
         "financial",
+        "closing",
         "additional",
         "review",
         "thank_you",
