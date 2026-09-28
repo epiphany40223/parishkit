@@ -1326,3 +1326,26 @@ def test_testing_mode_explains_live_codes_and_offers_a_test_send(family_test):
     settings_page = browser.get(f"/admin/campaign/{campaign}/settings").content
     assert b"Try the Family form as a chosen Family" in settings_page
     assert families.encode() in settings_page
+
+
+def test_reviewed_families_show_the_surname_and_heads(family_test):
+    """Each reviewed Family is named as in the Family codes directory (#232)."""
+    from parishkit.stewardship.source.family_names import family_display_name
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.version_models import SnapshotFamily
+
+    harness, browser, path, sample = family_test
+    current = SourceCurrent.objects.get(singleton=True)
+    values = (
+        SnapshotFamily.objects.select_related("payload")
+        .get(snapshot_id=current.snapshot_id, source_key="1")
+        .payload.payload
+    )
+    surname = family_display_name(values, "Family")
+    page = review(browser, path, [1, 999999])
+    known, unknown = page.context["families"]
+    assert known["duid"] == 1 and known["name"].startswith(surname)
+    if values.get("active_head_duids"):
+        assert known["name"].startswith(f"{surname}, ")
+    assert unknown["duid"] == 999999 and unknown["name"] == ""
+    assert known["name"].encode() in page.content

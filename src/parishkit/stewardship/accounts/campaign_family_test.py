@@ -7,7 +7,7 @@ Testing recipient. Web reads eligibility and writes tickets; it never sees a
 code, a link, rendered content or a recipient address.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID, uuid4, uuid5
 
 from django.urls import reverse
@@ -32,7 +32,12 @@ from parishkit.stewardship.jobs.family_mail_test_tasks import TASK_TYPE
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.source.family_names import (
+    family_display_name,
+    family_heads_name,
+)
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.version_models import SnapshotFamily, SnapshotMember
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import load_preview
 
@@ -53,6 +58,9 @@ class FamilyChoice:
     duid: int
     family_id: UUID | None
     reason: str
+    # "Squyres, Tracy and Jeff", shown so the Admin recognizes each Family.
+    # It is not part of the review binding: a renamed Family is the same one.
+    name: str = ""
 
     @property
     def eligible(self):
@@ -123,6 +131,49 @@ def _choice(duid, row, population, current):
     ):
         return FamilyChoice(duid, row.pk, "stale_source")
     return FamilyChoice(duid, row.pk, "eligible")
+
+
+def _family_names(current, duids):
+    """Name each requested Family from the current snapshot, in two queries.
+
+    Uses the Family codes directory's rule (``family_heads_name``): the
+    surname, then the active heads of household. A DUID missing from the
+    snapshot gets no name.
+    """
+    if current is None or current.snapshot_id is None or not duids:
+        return {}
+    families = {
+        int(row.source_key): row.payload.payload
+        for row in SnapshotFamily.objects.filter(
+            snapshot_id=current.snapshot_id,
+            source_key__in=[str(duid) for duid in duids],
+        ).select_related("payload")
+    }
+    head_keys = {
+        str(head)
+        for values in families.values()
+        for head in values.get("active_head_duids") or ()
+    }
+    members = {
+        row.source_key: row.payload.payload
+        for row in SnapshotMember.objects.filter(
+            snapshot_id=current.snapshot_id, source_key__in=head_keys
+        ).select_related("payload")
+    }
+    names = {}
+    for duid, values in families.items():
+        heads = []
+        for head in sorted(values.get("active_head_duids") or (), key=int):
+            member = members.get(str(head))
+            if member is None:
+                continue
+            first = (member.get("firstName") or "").strip()
+            last = (member.get("lastName") or "").strip()
+            heads.append(
+                {"first": first, "last": last, "name": f"{first} {last}".strip()}
+            )
+        names[duid] = family_heads_name(family_display_name(values, "Family"), heads)
+    return names
 
 
 def _template_in_schedule(campaign_id, revision_id):
@@ -228,6 +279,7 @@ def prepare(request, service, campaign_id, revision_id, duids=(), *, request_key
                 campaign=campaign, family_duid__in=duids
             )
         }
+        names = _family_names(current, duids)
         return FamilyTestPreview(
             campaign=campaign,
             template=template,
@@ -236,7 +288,11 @@ def prepare(request, service, campaign_id, revision_id, duids=(), *, request_key
             actor_id=actor.identity,
             epoch_id=None if epoch is None else epoch.pk,
             families=tuple(
-                _choice(duid, rows.get(duid), population, current) for duid in duids
+                replace(
+                    _choice(duid, rows.get(duid), population, current),
+                    name=names.get(duid, ""),
+                )
+                for duid in duids
             ),
             in_progress=in_progress_count(campaign_id),
             testing_recipient=runtime.testing_recipient,

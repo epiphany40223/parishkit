@@ -197,3 +197,11 @@ def test_held_ticket_is_skipped_at_claim_but_deferred_during_execution(monkeypat
     with pytest.raises(tasks.FamilyTestHeld):
         tasks.admit_test("safe_cancel", status)
     assert tasks.recover_test(SimpleNamespace(state="abandoned", attempt=1)) is None
+
+
+def test_family_name_is_shown_but_not_part_of_the_review_binding():
+    """A renamed Family is the same Family: its name never invalidates a review."""
+    named = intake.FamilyChoice(1, None, "unknown", name="Squyres, Tracy and Jeff")
+    assert named.name == "Squyres, Tracy and Jeff"
+    assert intake.FamilyChoice(1, None, "unknown").name == ""
+    assert intake._family_names(None, (1,)) == {}
