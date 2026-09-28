@@ -71,6 +71,13 @@ skips still fail. The PostgreSQL gate combines coverage only when the shards
 ran. `tests/stewardship/test_quality_paths.py` executes each gate's complete
 truth table.
 
+The branch ruleset's required status checks must name only jobs that report on
+every ready PR. A skipped job reports success to required checks, so required
+matrix jobs still pass on an intentional skip, but renaming a matrix entry
+leaves its old required context unreported and blocks every PR until the
+ruleset is updated. Update the ruleset in the same change that renames a
+required job or matrix value.
+
 ## Measured bottlenecks
 
 The successful PR #47 merge-group run `35243208902` measured PostgreSQL partition
