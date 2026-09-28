@@ -704,3 +704,26 @@ def test_native_page_filters_privately_and_denies_leaders(
         context["outcome"] for context in contexts
     }
     assert name.decode() not in str(contexts) and "1234" not in str(contexts)
+
+
+def test_cannot_contribute_is_reported_and_filterable(response_service):
+    """ "Cannot contribute financially" reads as such, never as a missing answer."""
+    harness = response_service
+    financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    with web_login():
+        pledge(
+            harness,
+            load_form(harness),
+            annual_pledge="",
+            frequency="",
+            shares={},
+            cannot_give=True,
+        )
+    page = report(harness)
+    row = page["rows"][0]
+    assert row["cannot_give"] is True and row["annual"].display == "$0.00"
+    assert row["frequency_label"] == "Cannot contribute"
+    assert page["summary"]["cannot_give"] == 1
+    assert report(harness, amount="cannot_give")["total"] == 1
+    assert report(harness, amount="nonzero")["total"] == 0

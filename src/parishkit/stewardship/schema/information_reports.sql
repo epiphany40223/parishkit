@@ -172,3 +172,112 @@ ALTER TABLE stewardship_export_request ADD CONSTRAINT export_information_snapsho
     FOREIGN KEY(information_snapshot_id) REFERENCES stewardship_information_export_snapshot(id)
     DEFERRABLE INITIALLY DEFERRED;
 CREATE INDEX export_information_snapshot ON stewardship_export_request(information_snapshot_id);
+
+-- Talents and limitations (#247): the new Family and Member answers, from each
+-- Family's currently effective live response. Members appear only when they
+-- chose a talent or cannot participate in ministries; Families only when they
+-- cannot attend Mass or prayer services. Filters are a closed vocabulary:
+-- `search` (name or Family DUID text) and `talent` ('any', 'cannot_serve',
+-- 'cannot_attend' or one talent option identity). Talent wording is resolved
+-- by the application from the campaign configuration.
+CREATE FUNCTION stewardship_talent_report_v1(campaign_uuid uuid, parameters jsonb)
+RETURNS jsonb LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE answer jsonb; bad boolean;
+    uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+BEGIN
+    -- Statements run in order, so each check relies only on earlier ones.
+    bad:=jsonb_typeof(parameters) IS DISTINCT FROM 'object';
+    IF NOT bad THEN
+        bad:=coalesce(NOT parameters ?& ARRAY['search','talent']
+            OR parameters-ARRAY['search','talent']<>'{}'::jsonb
+            OR jsonb_typeof(parameters->'search') IS DISTINCT FROM 'string'
+            OR jsonb_typeof(parameters->'talent') IS DISTINCT FROM 'string',true);
+    END IF;
+    IF NOT bad THEN
+        bad:=coalesce(length(parameters->>'search')>200
+            OR (parameters->>'talent' NOT IN ('any','cannot_serve','cannot_attend')
+                AND NOT parameters->>'talent' ~ uuid_text),true);
+    END IF;
+    IF bad THEN
+        RAISE EXCEPTION 'Invalid talent report parameters' USING ERRCODE='23514';
+    END IF;
+WITH selected AS MATERIALIZED (
+    SELECT c.id,cc.name,cc.values,sc.snapshot_id AS source_id
+    FROM stewardship_campaign c
+    JOIN stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
+    LEFT JOIN stewardship_source_current sc ON sc.singleton
+    WHERE c.id=campaign_uuid
+), responses AS MATERIALIZED (
+    SELECT s.id,s.submitted_at,s.answers,i.family_duid,
+        coalesce(nullif(btrim(p.canonical::jsonb->>'lastName'),''),
+            nullif(btrim(p.canonical::jsonb->>'mailingName'),''),
+            'Unavailable Family') AS family_name
+    FROM selected x
+    JOIN stewardship_family_campaign i ON i.campaign_id=x.id
+    JOIN stewardship_submission s ON s.id=i.effective_submission_id
+        AND s.mode='live' AND s.campaign_id=x.id
+    LEFT JOIN stewardship_snapshot_family m
+        ON m.snapshot_id=x.source_id AND m.source_key=i.family_duid::text
+    LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
+), people AS MATERIALIZED (
+    SELECT r.family_duid,r.family_name,r.submitted_at,g.grp,e.key AS member_key,
+        coalesce(e.value->'cannot_serve'='true'::jsonb,false) AS cannot_serve,
+        coalesce(e.value->'talents','{}'::jsonb) AS talents,
+        -- The Family's own corrected name first, then the parish record.
+        coalesce(nullif(btrim(concat_ws(' ',
+                nullif(btrim(r.answers->g.grp->e.key->>'first_name'),''),
+                nullif(btrim(r.answers->g.grp->e.key->>'last_name'),''))),''),
+            nullif(btrim(concat_ws(' ',
+                nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
+                nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),''),
+            'Unavailable name') AS member_name
+    FROM responses r
+    CROSS JOIN LATERAL (VALUES ('members'),('proposed_members')) g(grp)
+    CROSS JOIN LATERAL jsonb_each(coalesce(r.answers->'service'->g.grp,'{}'::jsonb)) e
+    CROSS JOIN selected x
+    LEFT JOIN stewardship_snapshot_member mm
+        ON g.grp='members' AND mm.snapshot_id=x.source_id AND mm.source_key=e.key
+    LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+    WHERE e.value->'cannot_serve'='true'::jsonb OR e.value->'talents'<>'{}'::jsonb
+), members AS MATERIALIZED (
+    SELECT * FROM people q
+    WHERE (parameters->>'search'=''
+            OR position(lower(parameters->>'search') IN lower(q.member_name))>0
+            OR position(lower(parameters->>'search') IN lower(q.family_name))>0
+            OR position(parameters->>'search' IN q.family_duid::text)>0)
+      AND (parameters->>'talent'='any'
+            OR (parameters->>'talent'='cannot_serve' AND q.cannot_serve)
+            OR q.talents ? (parameters->>'talent'))
+), families AS MATERIALIZED (
+    SELECT r.family_duid,r.family_name,r.submitted_at FROM responses r
+    WHERE r.answers->'cannot_attend'='true'::jsonb
+      AND parameters->>'talent' IN ('any','cannot_attend')
+      AND (parameters->>'search'=''
+            OR position(lower(parameters->>'search') IN lower(r.family_name))>0
+            OR position(parameters->>'search' IN r.family_duid::text)>0)
+)
+SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
+    ELSE jsonb_build_object(
+    'metadata',jsonb_build_object('id',x.id,'name',x.name,'source_id',x.source_id),
+    'summary',jsonb_build_object(
+        'members',(SELECT count(*) FROM members),
+        'cannot_serve',(SELECT count(*) FROM members WHERE cannot_serve),
+        'cannot_attend',(SELECT count(*) FROM families),
+        'talents',coalesce((SELECT jsonb_object_agg(k,n) FROM (
+            SELECT t.key AS k,count(*) AS n FROM members q
+            CROSS JOIN LATERAL jsonb_object_keys(q.talents) t(key) GROUP BY 1) d),
+            '{}'::jsonb)),
+    'members',coalesce((SELECT jsonb_agg(jsonb_build_object(
+            'family_name',family_name,'family_duid',family_duid,
+            'member_name',member_name,'proposed',grp='proposed_members',
+            'cannot_serve',cannot_serve,'talents',talents,'submitted_at',submitted_at)
+        ORDER BY lower(family_name),family_duid,lower(member_name),member_key)
+        FROM members),'[]'::jsonb),
+    'families',coalesce((SELECT jsonb_agg(jsonb_build_object(
+            'family_name',family_name,'family_duid',family_duid,
+            'submitted_at',submitted_at)
+        ORDER BY lower(family_name),family_duid) FROM families),'[]'::jsonb)) END
+INTO answer FROM (SELECT 1) one LEFT JOIN selected x ON true;
+    RETURN answer;
+END $$;

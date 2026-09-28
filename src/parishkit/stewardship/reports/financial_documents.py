@@ -143,6 +143,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Pledges by frequency", _counts(summary["frequencies"])),
         ("Pledges by share method", _counts(summary["shares"])),
         ("No share method chosen", f"{summary['no_share']:,}"),
+        ("Cannot contribute financially", f"{summary.get('cannot_give', 0):,}"),
         (
             "Filters and sort",
             json.dumps(parameters["filters"], ensure_ascii=False, sort_keys=True),

@@ -155,7 +155,11 @@ WITH selected AS MATERIALIZED (
                 ELSE s.answers->'proposed_members'->r.entity_key->>'first_name' END,
             CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'lastName'
                 ELSE s.answers->'proposed_members'->r.entity_key->>'last_name' END)),''),
-            'Unavailable Member') AS member_name
+            'Unavailable Member') AS member_name,
+        -- "Cannot participate in any ministries" (#247) explains a leave.
+        coalesce(s.answers#>ARRAY['service',
+            CASE WHEN r.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,
+            r.entity_key,'cannot_serve']='true'::jsonb,false) AS cannot_serve
     FROM requests r CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id
     LEFT JOIN stewardship_snapshot_member sm
@@ -190,6 +194,7 @@ WITH selected AS MATERIALIZED (
 ), detail AS (
     SELECT r.ordinal,r.id,r.version,r.ministry_duid,r.ministry_name,r.member_name,
         r.entity_kind,r.action,r.state,r.outcome,r.assignee_id,r.submitted_at,
+        r.cannot_serve,
         r.resolved_at,r.resolution_source_id IS NOT NULL AS source_resolved,
         r.revision=1 AS latest,
         r.state IN ('new','assigned','in_progress') AS open,

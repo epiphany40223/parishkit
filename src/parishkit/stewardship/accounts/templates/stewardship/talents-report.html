@@ -1,0 +1,42 @@
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Talents and limitations" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Talents and limitations" %}</h1>
+<p>{{ metadata.name }}</p>
+{% aboutpage "talents-report" %}<p>{% translate "Members who shared a talent or said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services. Each Family's current live response is used; a later submission replaces the earlier one, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
+<h2>{% translate "Summary" %}</h2>
+<dl>
+<dt>{% translate "Members listed" %}</dt><dd>{{ summary.members|number }}</dd>
+<dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
+<dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
+{% for label,count in summary.talents %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}
+</dl>
+<form method="post" action="{% url 'admin:talents_report' campaign_id %}">{% csrf_token %}
+<label for="talents-search">{% translate "Search name or Family DUID" %}</label><input id="talents-search" name="search" maxlength="200" value="{{ query.search }}">
+<label for="talents-filter">{% translate "Show" %}</label><select id="talents-filter" name="talent"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.talent == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.talent == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option>{% for key,label in talent_choices %}<option value="{{ key }}"{% if query.talent == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<button type="submit">{% translate "Apply filters" %}</button></form>
+<section aria-labelledby="talents-export-heading">
+<h2 id="talents-export-heading">{% translate "Download" %}</h2>
+<form method="post" action="{% url 'admin:talents_export' campaign_id %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<label for="talents-format">{% translate "Format" %}</label><select id="talents-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select>
+<label for="talents-timezone">{% translate "Timezone" %}</label><select id="talents-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<button type="submit">{% translate "Download with these filters" %}</button></form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+<h2>{% translate "Members" %}</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Members with talents or limitations' %}"><table>
+<caption>{% translate "Members with talents or limitations" %}</caption><thead><tr><th scope="col">{% translate "Member" %}</th><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Talents" %}</th><th scope="col">{% translate "Cannot participate in ministries" %}</th><th scope="col">{% translate "Latest response" %}</th></tr></thead><tbody>
+{% for row in members %}<tr>
+<th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
+<td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}</td>
+<td>{% for talent in row.talents %}{{ talent }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
+<td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+{% empty %}<tr><td colspan="5">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
+<h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families that cannot attend Mass or prayer services' %}"><table>
+<caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Family DUID" %}</th><th scope="col">{% translate "Latest response" %}</th></tr></thead><tbody>
+{% for row in families %}<tr><th scope="row">{{ row.family_name }}</th><td>{{ row.family_duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+{% empty %}<tr><td colspan="3">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
