@@ -139,8 +139,11 @@ by a Workspace administrator:
 
 The Backups page and the administration home show when a set was last
 copied. The scheduler raises the `backup_offsite_failed` operational incident
-(CRITICAL) when the newest copy attempt failed, and resolves it on the next
-successful copy or when off-site copies are turned off. The page names the
+(CRITICAL) when the newest copy attempt failed, or when a backup finished
+more than six hours ago and its copy recorded nothing (the copy was killed or
+lost its database connection before it could record an outcome). It resolves
+the incident on the next successful copy or when off-site copies are turned
+off. The page names the
 cause in plain language; the process log records only the category
 (`authorization` for a missing Drive scope, `api_disabled`, `not_found`,
 `permission`, `credential`, `verification`, `unavailable` or `unexpected`).

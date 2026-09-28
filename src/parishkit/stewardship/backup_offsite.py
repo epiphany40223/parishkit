@@ -26,6 +26,8 @@ import logging
 import time
 from contextlib import suppress
 
+from django.db import connection
+
 from parishkit.config import ConfigError
 
 from .backup import MANIFEST, SET_NAME
@@ -200,6 +202,12 @@ def _copy_pending(
     except (CryptographicError, ConfigError, OSError, DriveFailure):
         return _failed(folder_id, None, None, "credential")
     for directory in pending:
+        # Each upload can take hours and the connection would sit idle
+        # meanwhile; closing it first frees the slot and lets each outcome
+        # insert reconnect cleanly instead of failing on a dropped connection
+        # and recording nothing.
+        if not connection.in_atomic_block:
+            connection.close()
         digest = _digest(directory)
         if clock() >= deadline:
             # Out of time: the next run picks up the remaining sets.
