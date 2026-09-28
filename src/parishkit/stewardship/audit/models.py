@@ -82,3 +82,22 @@ class OperationalLog(ImmutableRecord):
                 name="operational_log_level",
             )
         ]
+
+
+class CriticalEventAcknowledgement(ImmutableRecord):
+    """An Administrator's shared acknowledgement of one CRITICAL log entry.
+
+    The Admin banner counts recent CRITICAL operational log rows that have no
+    acknowledgement, so acknowledging hides them for every Admin, while any
+    other CRITICAL row, including one committed after the acknowledgement by a
+    long-running transaction, still appears. Rows are append-only history; the
+    actor and time come from the record itself and its audit event.
+    """
+
+    log_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_critical_event_ack"
+        constraints = [
+            models.UniqueConstraint(fields=["log_id"], name="critical_ack_log")
+        ]

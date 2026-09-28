@@ -1,12 +1,12 @@
 """Capability-filtered Admin chrome; public/Family pages never query this context."""
 
-from datetime import timedelta
-
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDOW
+from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
@@ -103,8 +103,8 @@ def portal_chrome(request):
     now = getattr(request, "_stewardship_display_now", None) or database_now()
     counts = _background_counts(actor, now)
     parish = getattr(configuration.active_configuration, "parish", None)
-    critical_count, delivery_unknown = (
-        alert_counts(now - timedelta(hours=24)) if admin else (0, None)
+    critical, delivery_unknown = (
+        alert_counts(now - CRITICAL_WINDOW) if admin else ({}, None)
     )
     go_live = bool(
         campaign
@@ -144,7 +144,10 @@ def portal_chrome(request):
             "paused": bool(campaign and campaign.delivery_paused),
             "delivery_pause": delivery_pause,
             "go_live": go_live,
-            "critical_count": critical_count,
+            "critical_count": sum(critical.values()),
+            "critical_events": critical_summary(critical),
+            # The banner's System logs link filters from this UTC day onward.
+            "critical_since_day": (now - CRITICAL_WINDOW).date().isoformat(),
             "background": counts,
             "delivery_unknown": delivery_unknown,
             # Presence has its own passive endpoint. Do not repeat its current
@@ -205,6 +208,8 @@ def _setup_chrome(actor, configuration, session):
         "delivery_pause": None,
         "go_live": False,
         "critical_count": 0,
+        "critical_events": [],
+        "critical_since_day": None,
         "background": _background_counts(actor, now),
         "delivery_unknown": None,
         "presence_count": None,

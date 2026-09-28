@@ -303,6 +303,9 @@ def runtime_grants(role, *, target=None):
         # An Administrator's acknowledgement of a security event is one
         # append-only row; the event itself stays readable and immutable.
         tables["stewardship_policy_security_ack"] = {"SELECT", "INSERT"}
+        # Acknowledging the critical-events banner is likewise one append-only
+        # row read back by every Admin page's banner count.
+        tables["stewardship_critical_event_ack"] = {"SELECT", "INSERT"}
         columns["stewardship_ops_incident"] = {
             "UPDATE": {
                 "signal_level",

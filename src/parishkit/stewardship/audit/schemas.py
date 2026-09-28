@@ -80,6 +80,7 @@ class Action(StrEnum):
     PRESENCE_VIEWED = "family_presence_viewed"
     USERS_VIEWED = "portal_users_viewed"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
+    CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"

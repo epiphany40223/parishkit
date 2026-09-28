@@ -12,7 +12,15 @@
 <p>{% translate "Held messages" %}: {{ admin_chrome.delivery_pause.inventory.held|number }}. {% translate "Already submitting" %}: {{ admin_chrome.delivery_pause.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ admin_chrome.delivery_pause.inventory.unknown|number }}.</p>
 <a href="{{ admin_chrome.delivery_pause.url }}">{% translate "Review held message types and delivery controls" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
-{% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error" role="alert">{% translate "Critical events recorded in the past 24 hours:" %} {{ admin_chrome.critical_count|number }}. {% translate "Review the operator logs and urgent notifications." %}</aside>{% endif %}
+{% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error critical-events" role="alert">
+  <strong>{% translate "Critical problems in the past 24 hours" %}</strong>
+  <ul>{% for group in admin_chrome.critical_events %}<li>{{ group.label }}{% if group.count > 1 %} ({{ group.count|number }}×){% endif %}</li>{% endfor %}</ul>
+  <div class="actions">
+    <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes"><input type="hidden" name="source" value="operational">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}">{% endif %}<button type="submit" class="button-secondary">{% translate "View these events in System logs" %}</button></form>
+    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}">{% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button></form>
+  </div>
+  <p class="help">{% translate "Acknowledging hides this notice for every Administrator until a new critical problem is recorded. It is recorded in the audit log." %}</p>
+</aside>{% endif %}
 {% if not suppress_admin_session_chrome %}
 {% comment %}
   One shared inactivity warning for every Admin page, setup wizard included.
