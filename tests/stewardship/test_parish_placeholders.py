@@ -113,7 +113,7 @@ def test_sample_render_uses_the_configured_or_a_fictional_address():
     configured = sample_render(value, parish=parish, campaign=campaign()["values"])
     assert configured["html"] == "<p>office@example.org</p>"
     fictional = sample_render(value, parish=PARISH, campaign=campaign()["values"])
-    assert fictional["html"] == "<p>parish@example.invalid</p>"
+    assert fictional["html"] == "<p>office@parish.example.invalid</p>"
 
 
 def receipt(values, template=None):

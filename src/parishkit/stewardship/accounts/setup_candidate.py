@@ -14,7 +14,7 @@ from parishkit.config import ConfigError
 
 from .content_forms import LEGACY_PAGE_REFERENCES, page_slots
 from .policy_schema import validate_manual_operation
-from .provider_context import validated_context
+from .provider_context import validated_context, workspace_scope
 from .setup_configuration import build_setup_candidate
 from .setup_content_values import CONTENT_STEPS
 from .setup_forms import FORMS, validate_values
@@ -171,9 +171,9 @@ def _integrations(attempt_id, values, credentials):
         if target == "parishsoft":
             settings = {"organization_id": str(context["organization_id"])}
         elif target == "google_workspace":
-            if context != values["mail"] | {
-                "recipient": values["testing"]["testing_recipient"]
-            }:
+            if context != workspace_scope(
+                values["mail"], values["testing"]["testing_recipient"]
+            ):
                 raise ConfigError("Mail settings changed after credential staging.")
             settings = {"delegated_email": context["delegated_email"]}
         else:
@@ -195,9 +195,13 @@ def _integrations(attempt_id, values, credentials):
             "id": str(uuid5(attempt_id, "integration:email")),
             "values": {
                 "kind": "email",
-                "settings": {
-                    key: values["mail"][key] for key in ("sender", "reply_to")
-                },
+                "settings": {key: values["mail"][key] for key in ("sender", "reply_to")}
+                # Omitted when empty, so delivery falls back to the Parish name.
+                | (
+                    {"sender_name": values["mail"]["sender_name"]}
+                    if values["mail"].get("sender_name")
+                    else {}
+                ),
                 "credential_fingerprint": None,
             },
         }

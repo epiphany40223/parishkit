@@ -3,4 +3,11 @@
 {% if not schedules.has_templates %}<div class="notice"><p><strong>{% translate "No invitation or reminder emails are saved yet." %}</strong> {% translate "Every schedule sends a saved email, so there is nothing to schedule until one exists." %}</p>
 {% if templates_url %}<p><a href="{{ templates_url }}">{% translate "Create the emails with the page and email templates first" %}</a></p>{% endif %}</div>{% endif %}
 <p>{% translate "The blank last row adds a schedule: choose its mail type first, then fill in the fields it uses. Saving makes another blank row available. Every saved row must remain present or be explicitly marked for deletion; its mail type cannot change." %}</p>
-{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}
+<div data-schedule-rows>{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}</div>
+{% comment %}Progressive enhancement: ui-v1.js clones this empty row (its
+__prefix__ names become the next index) and reveals the button, so several new
+schedules can be saved in one submission. Without JavaScript the button stays
+hidden and each save offers one blank row, as before.{% endcomment %}
+<template data-schedule-template>{% include 'stewardship/schedule-row.html' with form=schedules.empty_form number=0 %}</template>
+<p class="schedule-add" data-schedule-add-row hidden><button type="button" class="button-secondary" data-schedule-add>{% translate "Add another schedule" %}</button></p>
+<p class="visually-hidden" role="status" data-schedule-status></p>

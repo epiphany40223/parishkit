@@ -9,13 +9,11 @@ and sanitization as text an Admin types, so a default can never bypass a
 content rule.
 
 Every email has an HTML body. Its plain-text alternative is derived from that
-HTML, except that each link is written out as "label: URL" first, because
-plain-text extraction otherwise drops an anchor's target. That keeps the
+HTML; the shared extraction writes each link as "label: URL", which keeps the
 required ``{{ family_url }}`` in both alternatives of invitations and
 reminders.
 """
 
-import re
 from dataclasses import dataclass
 
 from parishkit.stewardship.web.content import prepare_content
@@ -188,8 +186,10 @@ EMAILS = {
         "a way of life?</p>"
         "<p><em>Even if you choose to keep everything the same as last year, "
         "please submit your renewal so we can keep our parish records "
-        "accurate.</em> The commitment you make will be effective as of "
-        "{{ financial_start }}.</p>"
+        # Placeholders have no conditionals, and {{ financial_start }} is empty
+        # for a campaign without a financial period, so this names the
+        # campaign year, which always has a value.
+        "accurate.</em> The commitment you make is for {{ campaign_year }}.</p>"
         '<p><strong><a href="{{ family_url }}">Begin your household’s renewal'
         "</a></strong></p>" + _ALTERNATE_ACCESS + _SIGNATURE + _PHONE_TIP,
     ),
@@ -244,18 +244,13 @@ EMAILS = {
     ),
 }
 
-# A sanitized anchor whose href is exactly one placeholder or literal URL.
-_ANCHOR = re.compile(r'<a href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
-
 
 def email_text(html):
     """Plain-text alternative that keeps each link's target visible.
 
-    Sanitize first so the anchor shape is canonical, then write every link as
-    "label: target" before the normal HTML-to-text extraction.
+    The shared extraction already writes every link as "label: target".
     """
-    clean = prepare_content(html).html
-    return prepare_content(_ANCHOR.sub(r"\2: \1", clean)).text
+    return prepare_content(html).text
 
 
 def default_data(kind, slot):

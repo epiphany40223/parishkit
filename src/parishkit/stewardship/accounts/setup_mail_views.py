@@ -10,6 +10,8 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+
 from .authentication import runtime
 from .content_forms import EMAIL_LABELS
 from .setup_delivery_models import SetupMailDelivery
@@ -37,6 +39,7 @@ class SetupMailForm(forms.Form):
         label=_("Email sample"), choices=list(EMAIL_LABELS.items())
     )
     acknowledge_unknown = forms.BooleanField(
+        widget=ACKNOWLEDGMENT,
         required=False,
         label=_("The previous test may have arrived; I want to send another test."),
     )

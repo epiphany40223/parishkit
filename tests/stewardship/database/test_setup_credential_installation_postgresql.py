@@ -2,10 +2,13 @@
 
 # ruff: noqa: F811 -- imported fixtures are injected by pytest name.
 
+from datetime import timedelta
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
+from django.utils import timezone
 
 from parishkit.stewardship.accounts.credential_files import CredentialFiles
 from parishkit.stewardship.accounts.credential_installation import (
@@ -208,3 +211,68 @@ def test_live_initial_rollback_cannot_bypass_original_setup_owner(
                 staged.request_id, "awaiting_ack", "cleanup_pending", reason=reason
             )
         assert installer.run_once().state == "awaiting_ack"
+
+
+def age_setup_sign_in(hours=3):
+    """Make the setup session's Google sign-in hours old, as at a late Finish.
+
+    The session guard never lets an application role rewrite that instant, so
+    the fixture sets it directly with triggers suspended for this statement.
+    """
+    from parishkit.stewardship.accounts.setup_models import SetupAttempt
+
+    session_id = SetupAttempt.objects.get().session_id
+    with connection.cursor() as cursor:
+        cursor.execute("SET session_replication_role = replica")
+        try:
+            cursor.execute(
+                "UPDATE stewardship_portal_session SET authenticated_at="
+                "authenticated_at-make_interval(hours=>%s) WHERE id=%s",
+                [hours, session_id],
+            )
+        finally:
+            cursor.execute("SET session_replication_role = origin")
+
+
+@pytest.mark.parametrize("target", sorted(MATERIAL))
+def test_finish_long_after_setup_sign_in_still_installs_credentials(
+    setup_service, monkeypatch, tmp_path, target
+):
+    """A stale setup sign-in cannot strand every initial install at intake."""
+    _, _, installer = setup_installer(setup_service, monkeypatch, tmp_path, target)
+    age_setup_sign_in()
+    with target_login(target):
+        staged = stage_initial_credential(installer.files)
+        request = SecretReplacementRequest.objects.get(pk=staged.request_id)
+        assert request.reauthenticated_at < request.created_at - timedelta(hours=2)
+        assert installer.run_once().state == "awaiting_ack"
+
+
+def test_non_setup_sealed_intake_still_requires_fresh_authentication(
+    setup_service, monkeypatch, tmp_path
+):
+    """The exemption covers only the live setup's own sealed credential id."""
+    # A live frozen setup exists, but these requests are not its credential.
+    setup_installer(setup_service, monkeypatch, tmp_path, "slack")
+    stale = timezone.now() - timedelta(hours=3)
+    values = dict(
+        target="slack",
+        requested_by_id=uuid4(),
+        correlation_id=uuid4(),
+        reauthenticated_at=stale,
+        expires_at=timezone.now() + timedelta(minutes=5),
+        required_consumers=["worker"],
+    )
+    for login in (web_login, lambda: target_login("slack")):
+        identifier = uuid4()
+        with (
+            login(),
+            pytest.raises(DatabaseError, match="fresh authentication"),
+            transaction.atomic(),
+        ):
+            SecretReplacementRequest.objects.create(
+                id=identifier,
+                staging_reference=uuid4(),
+                actor_id=values["requested_by_id"],
+                **values,
+            )

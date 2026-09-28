@@ -461,3 +461,56 @@ def test_saved_mail_type_is_fixed_and_offers_only_its_own_emails():
         "time",
         "template_version",
     ]
+
+
+def new_rows(owner, saved, templates, rows):
+    """The saved rows plus several new rows, as "Add another schedule" posts."""
+    data = data_for(saved, total=len(saved) + len(rows))
+    for offset, fields in enumerate(rows):
+        for name in ("kind", "date", "time", "weekday", "template_version"):
+            value = fields.get(name, "")
+            if name == "template_version":
+                value = templates[fields["kind"]]["id"]
+            data[f"schedules-{len(saved) + offset}-{name}"] = value
+    return Schedules(
+        data,
+        prefix="schedules",
+        previous=saved,
+        templates=list(templates.values()),
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+
+
+def test_several_new_rows_save_together_and_are_validated_together():
+    """Rows added in the browser are ordinary formset rows: all or nothing."""
+    owner = campaign()
+    templates = emails(owner)
+    saved = [saved_row(owner, templates)]
+    rows = [
+        {"kind": "reminder", "date": "2026-10-10", "time": "09:00:00"},
+        {"kind": "reminder", "date": "2026-10-20", "time": "09:00:00"},
+        {"kind": "weekly_digest", "weekday": "0", "time": "08:00:00"},
+        {"kind": "daily_digest", "time": "07:00:00"},
+    ]
+    formset = new_rows(owner, saved, templates, rows)
+    assert formset.is_valid(), formset.errors
+    added = formset.patch()
+    assert [change["operation"] for change in added] == ["add"] * 4
+    assert [change["values"]["kind"] for change in added] == [
+        row["kind"] for row in rows
+    ]
+    assert len({change["id"] for change in added}) == 4
+    # A rule between the new rows refuses the whole submission.
+    rows[1]["date"] = "2026-10-10"
+    formset = new_rows(owner, saved, templates, rows)
+    assert not formset.is_valid()
+    assert formset.non_form_errors() == [
+        "Two emails to Families cannot be sent at the same date and time. Change "
+        "one of them."
+    ]
+    # Each new row's own mistakes are reported on that row's fields.
+    rows[1] = {"kind": "weekly_digest", "time": "08:00:00"}
+    formset = new_rows(owner, saved, templates, rows)
+    assert not formset.is_valid()
+    assert "weekday" in formset.forms[2].errors

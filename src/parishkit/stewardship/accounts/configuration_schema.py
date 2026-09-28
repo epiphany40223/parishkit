@@ -20,6 +20,7 @@ from parishkit.stewardship.schema_primitives import (
     timezone_names,
     typed,
 )
+from parishkit.stewardship.sender_name import clean_sender_name
 
 from . import source_cadence_schema
 from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
@@ -97,10 +98,19 @@ def _validate_v1_sections(document):
         seen.add(kind)
         settings = values["settings"]
         fields = INTEGRATION_FIELDS[kind]
-        if not isinstance(settings, dict) or set(settings) != set(fields):
+        # The email From name is optional and absent when unset.
+        optional = {"sender_name"} if kind == "email" else set()
+        if not isinstance(settings, dict) or set(settings) - optional != set(fields):
             invalid()
         for name, value_type in fields.items():
             typed(settings[name], value_type)
+        if "sender_name" in settings:
+            try:
+                name = clean_sender_name(settings["sender_name"])
+            except ValueError:
+                invalid()
+            if not name or name != settings["sender_name"]:
+                invalid()
         fingerprint = values["credential_fingerprint"]
         if fingerprint is not None and (
             type(fingerprint) is not str

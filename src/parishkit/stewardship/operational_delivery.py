@@ -17,6 +17,7 @@ from .family_delivery import _deliver_validated, delivery_settings
 from .jobs.operational_content import OperationalAlert, render_alert
 from .jobs.operational_payload import alert_payload, canonical_id, decode_alert
 from .jobs.outbox_validation import mailbox, recipients
+from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import DeliveryOutcome
 from .readiness_notification import _post_notification
@@ -82,7 +83,7 @@ class OperationalMail:
                 subject=content.subject,
                 sender=self.sender,
                 to=self.recipients,
-                html=content.html,
+                html=email_document(content.html),
                 text=content.text,
             )
         )

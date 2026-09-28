@@ -72,6 +72,42 @@
     if (event.persisted) [...submitting.keys()].forEach(release);
   });
 
+  // Required acknowledgments: a form's submit buttons stay disabled (muted by
+  // button:disabled) until every visible [data-acknowledgment] checkbox that
+  // belongs to it is checked. A hidden one (a setup test's "may have arrived"
+  // prompt before any doubt) does not count. This is progressive enhancement
+  // only: without JavaScript the buttons stay enabled and the server refuses a
+  // missing acknowledgment exactly as before. Real disabled is used, unlike
+  // the busy state above, because no submission should start at all; only
+  // buttons disabled here (data-acknowledgment-gated) are ever re-enabled, so
+  // a button the server or another script disabled (a pending test, setup
+  // that is not ready) stays disabled. formnovalidate buttons are never gated.
+  const gateAcknowledgments = (form) => {
+    if (!form) return;
+    const boxes = [...form.elements].filter((node) => node instanceof HTMLInputElement
+      && node.type === "checkbox" && node.hasAttribute("data-acknowledgment"));
+    if (!boxes.length) return;
+    const blocked = boxes.some((box) => !box.checked && !box.closest("[hidden]"));
+    submitControls(form).forEach((node) => {
+      if (node.formNoValidate) return;
+      if (blocked && !node.disabled) {
+        node.disabled = true;
+        node.setAttribute("data-acknowledgment-gated", "");
+      } else if (!blocked && node.hasAttribute("data-acknowledgment-gated")) {
+        node.disabled = false;
+        node.removeAttribute("data-acknowledgment-gated");
+      }
+    });
+  };
+  document.querySelectorAll("form").forEach((form) => {
+    gateAcknowledgments(form);
+    form.addEventListener("change", () => gateAcknowledgments(form));
+  });
+  // Back/forward navigation can restore checkbox state without a change event.
+  window.addEventListener("pageshow", () => {
+    document.querySelectorAll("form").forEach(gateAcknowledgments);
+  });
+
   // Readiness status is a passive GET, never the source-load idle-renewal
   // exception. No message content, key or answer is retained by this poller.
   document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
@@ -125,11 +161,16 @@
           button.hidden = true;
         }
         pending = data.pending;
+        // This poller owns the send button's pending state; take it back from
+        // the acknowledgment gate, then let the gate apply the new prompt.
+        button.removeAttribute("data-acknowledgment-gated");
         button.disabled = pending;
         uncertain.hidden = !data.unknown;
         acknowledgement.required = data.unknown;
+        gateAcknowledgments(acknowledgement.form);
       } catch {
         stopped = true;
+        button.removeAttribute("data-acknowledgment-gated");
         button.disabled = true;
         warning.hidden = false;
       } finally {
@@ -492,7 +533,7 @@
   // server reported an error on stays visible with its value, so the message
   // can be read and acted on. Without this script every field shows and the
   // server still explains any value that does not apply.
-  document.querySelectorAll("[data-schedule-row]").forEach((row) => {
+  const scheduleRow = (row) => {
     let rules;
     try { rules = JSON.parse(row.dataset.scheduleFields); } catch { return; }
     const kind = row.querySelector('[data-schedule-field="kind"] select');
@@ -519,6 +560,66 @@
     };
     kind.addEventListener("change", () => update(false));
     update(true);
+  };
+  document.querySelectorAll("[data-schedule-row]").forEach(scheduleRow);
+
+  // "Add another schedule" clones the formset's empty form (rendered in a
+  // <template> with __prefix__ names) as the next index and raises
+  // TOTAL_FORMS, so several new schedules save in one submission and the
+  // server validates them all together as before. Rows added here can be
+  // removed again before saving; later added rows are renumbered so the
+  // indexes stay contiguous. Without this script the button stays hidden and
+  // each save offers one blank row.
+  document.querySelectorAll("[data-schedule-template]").forEach((template) => {
+    const form = template.closest("form");
+    const total = form?.querySelector('input[name="schedules-TOTAL_FORMS"]');
+    const maximum = Number(form?.querySelector('input[name="schedules-MAX_NUM_FORMS"]')?.value);
+    const rows = form?.querySelector("[data-schedule-rows]");
+    const addRow = form?.querySelector("[data-schedule-add-row]");
+    const add = addRow?.querySelector("[data-schedule-add]");
+    const status = form?.querySelector("[data-schedule-status]");
+    if (!total || !rows || !add || !status) return;
+    const first = Number(total.value); // The server's rows keep their indexes.
+    const added = [];
+    const renumber = (row, index) => {
+      row.querySelectorAll("[name], [id], [for], [aria-describedby]").forEach((node) => {
+        ["name", "id", "for", "aria-describedby"].forEach((attribute) => {
+          const value = node.getAttribute(attribute);
+          if (value) node.setAttribute(attribute,
+            value.replace(/schedules-(?:\d+|__prefix__)-/g, `schedules-${index}-`));
+        });
+      });
+      row.querySelector("[data-schedule-number]").textContent =
+        (index + 1).toLocaleString("en-US");
+    };
+    const refresh = () => {
+      added.forEach((row, offset) => renumber(row, first + offset));
+      total.value = String(first + added.length);
+      add.disabled = Number.isFinite(maximum) && first + added.length >= maximum;
+    };
+    add.addEventListener("click", () => {
+      const row = template.content.firstElementChild.cloneNode(true);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button-secondary";
+      remove.textContent = "Remove this new schedule";
+      remove.addEventListener("click", () => {
+        added.splice(added.indexOf(row), 1);
+        row.remove();
+        refresh();
+        status.textContent = "New schedule removed.";
+        add.focus();
+      });
+      row.append(remove);
+      rows.append(row);
+      added.push(row);
+      refresh();
+      scheduleRow(row);
+      status.textContent = `Schedule ${row.querySelector("[data-schedule-number]")
+        .textContent} added. Choose its mail type.`;
+      row.querySelector('[data-schedule-field="kind"] select')?.focus();
+    });
+    addRow.hidden = false;
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list
@@ -539,6 +640,80 @@
     show();
   });
 
+  // Editable regions write one <div> per line in Chrome/WebKit (and a bare
+  // first line), <b>/<i> for bold/italic, and trailing <br> placeholders.
+  // The server allowlist has no <div>, so without this the lines would reach
+  // the sanitizer as one run-on paragraph. Normalize a detached copy (never
+  // the live editor, whose caret would jump) into <p> paragraphs: loose
+  // top-level text becomes a paragraph, two or more <br> in a row start a new
+  // paragraph, and blank lines are dropped (paragraph spacing replaces them).
+  // The server applies the same div-to-paragraph rule to pasted or older
+  // markup; this only makes the stored source match what the editor showed.
+  const inlineContent = (node) => node.nodeType === Node.TEXT_NODE
+    || (node.nodeType === Node.ELEMENT_NODE
+      && !["P", "H2", "H3", "UL", "OL", "BLOCKQUOTE", "DIV"].includes(node.nodeName));
+  const blank = (nodes) => nodes.every((node) => node.nodeName === "BR"
+    || (node.nodeType === Node.TEXT_NODE && !node.data.replace(/ /g, " ").trim()));
+  const retag = (node, tag) => {
+    const replacement = document.createElement(tag);
+    replacement.append(...node.childNodes);
+    node.replaceWith(replacement);
+    return replacement;
+  };
+  const paragraphs = (nodes) => {
+    // Split one line run at each group of 2+ <br>, trimming edge breaks.
+    const result = [];
+    let current = [];
+    let breaks = [];
+    const close = () => {
+      if (!blank(current)) {
+        const paragraph = document.createElement("p");
+        paragraph.append(...current);
+        result.push(paragraph);
+      }
+      current = [];
+    };
+    for (const node of nodes) {
+      if (node.nodeName === "BR") { breaks.push(node); continue; }
+      if (node.nodeType === Node.TEXT_NODE && !node.data.trim() && breaks.length) continue;
+      if (breaks.length >= 2) close();
+      else if (breaks.length && current.length) current.push(...breaks);
+      breaks = [];
+      current.push(node);
+    }
+    close();
+    return result;
+  };
+  const normalizedSource = (editor) => {
+    const copy = editor.cloneNode(true);
+    copy.querySelectorAll("b").forEach((node) => retag(node, "strong"));
+    copy.querySelectorAll("i").forEach((node) => retag(node, "em"));
+    // Innermost first, so a line <div> inside a wrapper <div> is seen first.
+    [...copy.querySelectorAll("div")].reverse().forEach((node) => {
+      if ([...node.children].some((child) => !inlineContent(child))) {
+        node.replaceWith(...node.childNodes);
+      } else {
+        retag(node, "p");
+      }
+    });
+    // A <p> holding a block (a list inserted mid-paragraph) is split around it.
+    const flow = (nodes) => {
+      const blocks = [];
+      let run = [];
+      for (const node of nodes) {
+        if (inlineContent(node)) { run.push(node); continue; }
+        blocks.push(...paragraphs(run));
+        run = [];
+        if (node.nodeName === "P") blocks.push(...flow([...node.childNodes]));
+        else blocks.push(node);
+      }
+      blocks.push(...paragraphs(run));
+      return blocks;
+    };
+    copy.replaceChildren(...flow([...copy.childNodes]));
+    return copy.innerHTML;
+  };
+
   // The visual editor starts with server-sanitized markup only. Raw source
   // edits never go through innerHTML: they must round-trip through the preview
   // sanitizer before returning to visual editing. Paste/drop are plain text.
@@ -549,7 +724,9 @@
     if (!visual || !editor || !source) return;
     visual.hidden = false;
     form.querySelector("[data-html-source]").open = false;
-    const sync = () => { source.value = editor.innerHTML; };
+    // Enter starts a <p> rather than a <div> where the browser supports it.
+    try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch { /* optional */ }
+    const sync = () => { source.value = normalizedSource(editor); };
     editor.addEventListener("input", sync);
     source.addEventListener("input", () => { visual.hidden = true; });
     const selectedRange = () => {
@@ -575,6 +752,17 @@
         target.appendChild(range.extractContents());
         if (!target.hasChildNodes()) target.appendChild(document.createElement("br"));
         range.insertNode(node);
+        // A new block never nests inside the paragraph or heading it was made
+        // in: split that line around it and drop any half left empty.
+        const host = node.parentElement;
+        if (tag !== "strong" && tag !== "em" && host !== editor
+            && host.parentElement === editor && /^(P|H2|H3|DIV)$/.test(host.nodeName)) {
+          const tail = host.cloneNode(false);
+          while (node.nextSibling) tail.append(node.nextSibling);
+          host.after(node);
+          node.after(tail);
+          [host, tail].forEach((part) => { if (blank([...part.childNodes])) part.remove(); });
+        }
         const selection = window.getSelection();
         range.selectNodeContents(target);
         selection.removeAllRanges();
@@ -588,10 +776,23 @@
       const range = selectedRange();
       if (!range || !event.clipboardData) return;
       range.deleteContents();
-      const text = document.createTextNode(event.clipboardData.getData("text/plain"));
-      range.insertNode(text);
-      range.setStartAfter(text);
+      // Keep the pasted text's lines: each line break becomes a <br> (a blank
+      // line, two of them, becomes a paragraph break when the source is
+      // normalized). Only text nodes and <br> are created, never parsed markup.
+      const fragment = document.createDocumentFragment();
+      event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").split("\n")
+        .forEach((line, index) => {
+          if (index) fragment.append(document.createElement("br"));
+          if (line) fragment.append(document.createTextNode(line));
+        });
+      const last = fragment.lastChild;
+      if (!last) return;
+      range.insertNode(fragment);
+      range.setStartAfter(last);
       range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
       sync();
     });
     editor.addEventListener("drop", (event) => { event.preventDefault(); });

@@ -16,6 +16,7 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.readiness_mail import ReadinessMail
+from parishkit.stewardship.sender_name import resolved_sender_name
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .content_forms import EMAIL_LABELS, sample_render
@@ -135,6 +136,17 @@ def request_sample(
                 key: credential.settings[key]
                 for key in ("sender", "reply_to", "recipient")
             },
+            sender_name=resolved_sender_name(
+                next(
+                    (
+                        row["values"]["settings"].get("sender_name")
+                        for row in sections.get("integrations", [])
+                        if row["values"]["kind"] == "email"
+                    ),
+                    None,
+                ),
+                document_parish({"sections": sections})["name"],
+            ),
             **rendered,
         )
         row = SetupMailDelivery(

@@ -10,6 +10,8 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+
 from .authentication import runtime
 from .setup_drafts import view_draft
 from .setup_mail_views import LABELS, _status_data, tested
@@ -27,6 +29,7 @@ class SetupNotificationForm(forms.Form):
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     request_key = forms.UUIDField(widget=forms.HiddenInput)
     acknowledge_unknown = forms.BooleanField(
+        widget=ACKNOWLEDGMENT,
         required=False,
         label=_("The previous test may have arrived; I want to send another test."),
     )

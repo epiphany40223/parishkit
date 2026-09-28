@@ -395,6 +395,7 @@ def test_maintained_operational_consumer_commits_before_private_transport(
         assert not connection.in_atomic_block
         assert candidate == b"synthetic-workspace"
         assert settings["sender"] == mail.sender
+        assert settings["sender_name"] == "Example Parish"
         assert 0 < seconds <= 30
         assert isinstance(mail, OperationalMail)
         assert OutboxMessage.objects.get(pk=recipient.outbox_id).state == "submitting"

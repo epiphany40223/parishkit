@@ -153,7 +153,7 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         assert stale.status_code == 409
         assert "another tab" in stale.json()["refusal"]["message"]
         preview = browser.get(url)
-        assert b"Hello Sample Family" in preview.content
+        assert b"<p>Hello Sample</p>" in preview.content
         assert b"Save and return to the content list" in preview.content
         assert (
             post(

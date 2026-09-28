@@ -285,16 +285,18 @@ def _preview(request, service, actor, target):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    # Show a choice's label ("Once an hour"), not its stored value.
+                    # Show a choice's label ("Once an hour"), not its stored
+                    # value. Optional settings (the From name) may be absent.
                     "before": dict(getattr(form.fields[name], "choices", ())).get(
-                        before[name], before[name]
+                        before.get(name, ""), before.get(name, "")
                     ),
                     "after": dict(getattr(form.fields[name], "choices", ())).get(
-                        value, value
+                        settings.get(name, ""), settings.get(name, "")
                     ),
                 }
-                for name, value in settings.items()
-                if before[name] != value
+                for name in form.fields
+                if name != "base_digest"
+                and before.get(name, "") != settings.get(name, "")
             ],
             "preview": sign_preview(
                 actor=actor,

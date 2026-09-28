@@ -50,12 +50,18 @@ def test_terminal_status_is_passive_and_never_resends(
 
     page.route(f"**/admin/setup/{delivery_channel}-test/status", respond)
     page.goto(component_origin + f"/setup-{delivery_channel}-test")
-    page.wait_for_function("() => !document.querySelector('[data-mail-send]').disabled")
+    page.wait_for_function(
+        "label => document.querySelector('[data-mail-state]').textContent === label",
+        arg=status(unknown=unknown)["items"][0]["label"],
+    )
     assert len(requests) == 1 and requests[0].method == "GET"
     assert requests[0].post_data is None
     checkbox = page.locator("[data-mail-uncertain] input")
+    send = page.locator("[data-mail-send]").first
     assert checkbox.evaluate("node => node.required") is unknown
     assert checkbox.is_visible() is unknown
+    # The uncertainty acknowledgment gates the send button until checked.
+    assert send.is_disabled() is unknown
     if unknown:
         assert not page.locator("[data-setup-mail] form").evaluate(
             "form => form.checkValidity()"
@@ -64,6 +70,7 @@ def test_terminal_status_is_passive_and_never_resends(
         assert page.locator("[data-setup-mail] form").evaluate(
             "form => form.checkValidity()"
         )
+        assert send.is_enabled()
     page.clock.fast_forward(60000)
     assert len(requests) == 1
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0

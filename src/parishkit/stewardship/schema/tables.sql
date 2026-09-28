@@ -1740,7 +1740,7 @@ CREATE TABLE public.stewardship_setup_draft_section (
     "values" jsonb NOT NULL,
     scrubbed_at timestamp with time zone,
     attempt_id uuid NOT NULL,
-    scope_digest character varying(64) GENERATED ALWAYS AS (encode(sha256(jsonb_send("values")), 'hex'::text)) STORED,
+    scope_digest character varying(64) GENERATED ALWAYS AS (encode(sha256(jsonb_send(("values" - 'sender_name'::text))), 'hex'::text)) STORED,
     CONSTRAINT setup_public_step CHECK (((step)::text = ANY ((ARRAY['parish'::character varying, 'branding'::character varying, 'access'::character varying, 'mail'::character varying, 'slack'::character varying, 'testing'::character varying, 'campaign'::character varying, 'schedules'::character varying, 'page_access_denied'::character varying, 'page_additional'::character varying, 'page_census'::character varying, 'page_financial'::character varying, 'page_login_help'::character varying, 'page_member_census'::character varying, 'page_ministry'::character varying, 'page_post_end'::character varying, 'page_pre_start'::character varying, 'page_review'::character varying, 'page_submission_confirmation'::character varying, 'page_thank_you'::character varying, 'page_welcome'::character varying, 'email_confirmation'::character varying, 'email_critical_alert'::character varying, 'email_daily_digest'::character varying, 'email_initial'::character varying, 'email_reminder'::character varying, 'email_weekly_digest'::character varying])::text[]))),
     CONSTRAINT setup_scrubbed_values_empty CHECK (((scrubbed_at IS NULL) OR ("values" = '{}'::jsonb))),
     CONSTRAINT stewardship_accounts_setupdraftsection_positive_version CHECK ((version >= 1)),

@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import form_action
@@ -75,10 +76,11 @@ class FamilyTestConfirmForm(forms.Form):
 
     preview = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     acknowledge = forms.BooleanField(
+        widget=ACKNOWLEDGMENT,
         label=_(
             "I understand that these real Families' names and codes will be sent "
             "to the Testing recipient."
-        )
+        ),
     )
 
 

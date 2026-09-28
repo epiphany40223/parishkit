@@ -19,6 +19,7 @@ from parishkit.stewardship.jobs.delivery_views import (
     _principal,
 )
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.security import private_response
 
 from .weekly_manual import request_manual_report
@@ -30,10 +31,11 @@ class ManualReportForm(forms.Form):
     command_id = forms.UUIDField(widget=forms.HiddenInput)
     configuration_id = forms.UUIDField(widget=forms.HiddenInput)
     acknowledge = forms.BooleanField(
+        widget=ACKNOWLEDGMENT,
         label=_(
             "Generate a new manual report, even if it repeats "
             "previously reported items."
-        )
+        ),
     )
 
 

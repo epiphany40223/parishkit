@@ -23,7 +23,9 @@
   color: var(--link, #155a8a); font-weight: 500; text-decoration: underline;
 }
 .setup-track { display: flex; gap: 3px; margin-block: .6rem .15rem; }
-.setup-track span { flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: #d3dbd9; }
+.setup-track span { position: relative; flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: #d3dbd9; }
+/* A taller invisible hover target for each segment's title, without changing layout. */
+.setup-track span::before { content: ""; position: absolute; inset: -.4rem -1.5px; }
 .setup-track .setup-track-done { background: var(--accent, #115e56); }
 .setup-track .setup-track-current { background: var(--gold, #b5862e); }
 .setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }

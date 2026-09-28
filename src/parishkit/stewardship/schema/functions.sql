@@ -900,7 +900,7 @@ BEGIN
         SELECT array_agg(key ORDER BY key) INTO keys
             FROM jsonb_object_keys(NEW.mail) key;
         IF keys IS DISTINCT FROM ARRAY['delivery_id','html','recipient','reply_to',
-                                      'sender','subject','text']
+                                      'sender','sender_name','subject','text']
            OR EXISTS (SELECT 1 FROM jsonb_each(NEW.mail) pair
                 WHERE jsonb_typeof(pair.value)<>'string')
            OR NEW.mail->>'delivery_id' IS DISTINCT FROM NEW.id::text
@@ -5483,12 +5483,38 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE setup_install boolean := false;
 BEGIN
     IF TG_TABLE_NAME='stewardship_secret_request' THEN
         IF NEW.required_consumers<>'[]'::jsonb
            AND NEW.reauthenticated_at<statement_timestamp()-interval '5 minutes' THEN
-            RAISE EXCEPTION 'Sealed intake requires fresh authentication'
-                USING ERRCODE='23514';
+            -- An initial setup install is inserted by its target installer when
+            -- setup finishes, long after the setup session's sign-in; it relies
+            -- on the live frozen setup instead (as the staged->testing guard
+            -- does). Its request id is the owner's sealed setup credential id,
+            -- and the install binding does not exist yet. The setup query is a
+            -- separate statement, run only for the installer: privileges are
+            -- checked for every table a statement names, even in an unused
+            -- branch, and other roles cannot read these setup tables.
+            IF NEW.target IN ('parishsoft','google_workspace','slack')
+               AND current_user='pk_stewardship_credential_'||NEW.target THEN
+                setup_install := EXISTS (
+                    SELECT 1 FROM public.stewardship_setup_sealed_credential credential
+                    JOIN public.stewardship_setup_attempt attempt
+                        ON attempt.id=credential.attempt_id
+                        AND attempt.owner_id=NEW.requested_by_id
+                    JOIN public.stewardship_setup_config_intent intent
+                        ON intent.attempt_id=credential.attempt_id
+                    JOIN public.stewardship_setup_readiness_binding ready
+                        ON ready.intent_id=intent.id
+                    WHERE credential.id=NEW.id AND credential.target=NEW.target
+                        AND credential.scrubbed_at IS NULL
+                        AND public.stewardship_setup_install_ready_live_v1(ready.id));
+            END IF;
+            IF NOT setup_install THEN
+                RAISE EXCEPTION 'Sealed intake requires fresh authentication'
+                    USING ERRCODE='23514';
+            END IF;
         END IF;
     ELSE
         IF NOT EXISTS(SELECT 1 FROM stewardship_secret_request
@@ -6722,7 +6748,7 @@ BEGIN
         WHEN 'branding' THEN ARRAY['bundle_id']
         WHEN 'access' THEN ARRAY['admin_addresses','ministry_addresses',
             'ministry_domains','staff_addresses','staff_domains']
-        WHEN 'mail' THEN ARRAY['delegated_email','reply_to','sender']
+        WHEN 'mail' THEN ARRAY['delegated_email','reply_to','sender','sender_name']
         WHEN 'slack' THEN ARRAY['channel_id','enabled']
         WHEN 'campaign' THEN ARRAY['campaign','source_result']
         WHEN 'testing' THEN ARRAY['testing_recipient']
@@ -7374,7 +7400,7 @@ BEGIN
         SELECT array_agg(key ORDER BY key) INTO keys
             FROM jsonb_object_keys(NEW.mail) key;
         IF keys IS DISTINCT FROM ARRAY['delivery_id','html','recipient','reply_to',
-                                      'sender','subject','text']
+                                      'sender','sender_name','subject','text']
            OR EXISTS (SELECT 1 FROM jsonb_each(NEW.mail) pair
                 WHERE jsonb_typeof(pair.value)<>'string')
            OR NEW.mail->>'delivery_id' IS DISTINCT FROM NEW.id::text

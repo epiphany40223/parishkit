@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import typed
+from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import setup_help
 from .parish_views import ParishForm
@@ -99,6 +100,7 @@ class SetupMailForm(forms.Form):
 
     delegated_email = forms.EmailField(label=_("Delegated mailbox"), max_length=254)
     sender = forms.EmailField(label=_("From address"), max_length=254)
+    sender_name = SenderNameField()
     reply_to = forms.EmailField(label=_("Reply-to address"), max_length=254)
 
     def __init__(self, *args, **kwargs):
@@ -217,6 +219,9 @@ def validate_values(step, values):
         # A parish step saved before the optional giving URL existed means
         # "not configured"; it is rewritten with the key on its next save.
         values = values | {"online_giving_url": ""}
+    if step == "mail" and "sender_name" not in values:
+        # Likewise a mail step saved before the optional From name existed.
+        values = values | {"sender_name": ""}
     form_type = FORMS[step]
     if set(values) != set(form_type.base_fields):
         raise ValueError("Invalid public setup fields.")

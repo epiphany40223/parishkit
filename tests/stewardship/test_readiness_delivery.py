@@ -10,6 +10,7 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.integration_candidates import GOOGLE_TOKEN_URI
+from parishkit.stewardship.mail_layout import NOTICE_STYLE
 from parishkit.stewardship.readiness_delivery import (
     DeliveryOutcome,
     _credentials,
@@ -49,9 +50,23 @@ def test_readiness_message_roundtrip_mime_and_mandatory_routing():
     assert message["Subject"] == "[TEST] Campaign preview"
     assert message["Message-ID"] == value.message()["Message-ID"]
     assert not message["Cc"] and not message["Bcc"]
-    for part in message.iter_parts():
-        assert "TEST" in part.get_content() and "fictional" in part.get_content()
+    text, html = message.iter_parts()
+    assert text.get_content().startswith("TEST — readiness sample")
+    assert "fictional" in text.get_content()
     assert SETTINGS["recipient"] not in repr(value)
+
+
+def test_readiness_html_has_one_small_notice_above_the_sample():
+    """No large TEST heading: one styled notice line, then the sample content."""
+    html = sample().message().get_body(("html",)).get_content()
+    notice = (
+        "Test message — sent only to test@example.org. "
+        "Names, links and codes in this sample are fictional."
+    )
+    assert f'<td style="{NOTICE_STYLE}">{notice}</td>' in html
+    assert "<h2" not in html and "readiness sample" not in html
+    assert html.index(notice) < html.index("Hello Sample Family.")
+    assert html.startswith("<!DOCTYPE html>")
 
 
 @pytest.mark.parametrize(

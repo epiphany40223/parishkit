@@ -13,7 +13,7 @@ from parishkit.stewardship.web.contracts import check_version
 from .handoff_discovery import public_handoff
 from .integration_candidates import slack_candidate, workspace_info
 from .metrics_credentials import credential_receipt
-from .provider_context import validated_context
+from .provider_context import validated_context, workspace_scope
 from .sessions import authenticated_admin, database_now, require_fresh
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupDraftSection
@@ -66,9 +66,9 @@ def _context(attempt, target, organization_id):
     if target == "google_workspace":
         if not {"mail", "testing"} <= sections.keys():
             raise ValueError("Save outgoing mail and Testing settings first.")
-        values = sections["mail"] | {
-            "recipient": sections["testing"]["testing_recipient"]
-        }
+        values = workspace_scope(
+            sections["mail"], sections["testing"]["testing_recipient"]
+        )
     else:
         if not sections.get("slack", {}).get("enabled"):
             raise ValueError("Enable and configure Slack first.")

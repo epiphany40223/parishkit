@@ -92,6 +92,8 @@ def test_installed_worker_commits_before_exactly_one_provider_call(
         check()
         assert OutboxMessage.objects.get().state == "submitting"
         assert value == KEY and settings["delegated_email"] == "sender@example.org"
+        # Read under the mail role: no From name is set, so the Parish name.
+        assert settings["sender_name"] == "Example Parish"
         calls.append(mail.recipients)
         return FamilyDeliveryResult(status, len(mail.recipients))
 

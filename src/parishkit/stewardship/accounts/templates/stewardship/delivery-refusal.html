@@ -20,7 +20,7 @@
   <label for="verification-note">{% translate "How did you verify that this mailbox now works?" %}</label>
   <textarea id="verification-note" name="note" maxlength="2000" required aria-describedby="evidence-help"></textarea>
   <p id="evidence-help" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
-  <label><input type="checkbox" name="verified" value="yes" required> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
+  <label><input type="checkbox" name="verified" value="yes" required data-acknowledgment> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
   <button type="submit">{% translate "Clear verified refusal" %}</button>
 </form>
 {% else %}<p>{% translate "Verification is unavailable. Current reconciled source data and an admitted campaign are required." %}</p>{% endif %}

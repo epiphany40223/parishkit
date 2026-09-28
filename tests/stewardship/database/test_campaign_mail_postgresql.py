@@ -168,8 +168,8 @@ def test_confirmation_sample_includes_fixed_facts_and_selected_optional_block(
     row, _ = queue((service, browser, path, credential))
     for body in (row.mail["html"], row.mail["text"]):
         assert "Submitted:" in body and "Questions:" in body
-        assert "Optional follow-up." in body and "Sample Family" in body
-        assert "sample-family" not in body
+        assert "Optional follow-up." in body and "Family: Sample" in body
+        assert "/access/" not in body
 
 
 def test_cancellation_winning_submission_recheck_settles_immediately(
@@ -355,6 +355,8 @@ def test_web_cannot_forge_provider_result_or_retarget_queued_mail(campaign_test)
                 )
     row.refresh_from_db()
     assert row.state == "queued" and row.mail["recipient"] == "test@example.org"
+    # No From name is configured, so the queued test uses the Parish name.
+    assert row.mail["sender_name"] == "Example Parish"
 
 
 @pytest.mark.parametrize("mutation", ["signature", "recipient", "duplicate", "expired"])

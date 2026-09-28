@@ -2,7 +2,9 @@
 Compact setup stepper: the current step and a completed count, a slim
 decorative track of every step, and the full ordered list in a collapsed
 disclosure. The list stays an <ol> with aria-current="step" and a text status
-per step, so color is never the only signal. ``stepper_open`` opens the list
+per step, so color is never the only signal. The track stays hidden from
+assistive technology (the list says the same); each segment's title gives
+mouse users the same step name and status on hover. ``stepper_open`` opens the list
 (the setup overview page).
 {% endcomment %}{% if wizard %}
 <nav class="setup-stepper" aria-labelledby="setup-stepper-heading">
@@ -12,7 +14,7 @@ per step, so color is never the only signal. ``stepper_open`` opens the list
 <p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
 <p class="setup-overview-link"><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
 </div>
-<div class="setup-track" aria-hidden="true">{% for step in wizard.steps %}<span class="setup-track-{{ step.state }}{% if step.current %} setup-track-current{% endif %}"></span>{% endfor %}</div>
+<div class="setup-track" aria-hidden="true">{% for step in wizard.steps %}<span class="setup-track-{{ step.state }}{% if step.current %} setup-track-current{% endif %}" title="{% blocktranslate trimmed with number=step.number total=wizard.total label=step.label %}Step {{ number }} of {{ total }}: {{ label }}{% endblocktranslate %} — {% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}"></span>{% endfor %}</div>
 <details class="setup-stepper-list"{% if stepper_open %} open{% endif %}>
 <summary>{% translate "All setup steps" %}</summary>
 <ol class="setup-steps">{% for step in wizard.steps %}
