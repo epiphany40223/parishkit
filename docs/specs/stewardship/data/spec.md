@@ -795,6 +795,14 @@ email's HTML alternative is wrapped, when the message is built, in one shared
 email-client-safe layout (a readable sans-serif font and a centered 600px
 column); test messages show one small notice line instead of a large TEST
 heading. Retained content and the plain-text alternative are unchanged.
+Content text rules (the sanitizer's canonical form and the placeholder
+contracts) apply to content being authored or changed. Revisions already in
+an applied configuration version were validated under the rules in force when
+they were applied and are integrity-checked by digest, so verifying applied
+history, and carrying an unchanged revision into a new candidate, never re-run
+today's text rules; a sanitizer improvement therefore cannot block later
+configuration changes. A configuration request that can never verify against
+the applied history fails with a visible reason instead of waiting forever.
 The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member
 of a template list. Without a selected template, use the built-in non-sensitive

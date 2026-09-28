@@ -19,6 +19,7 @@ from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .authority import ConfigurationVersion, parse_version
+from .configuration_errors import ConfigurationHistoryInvalid
 from .configuration_models import (
     AppliedConfigurationVersion,
     AppliedIntegration,
@@ -33,6 +34,7 @@ from .configuration_schema import (
 from .content_models import ContentVersion
 from .content_schema import SCHEMA as CONTENT_SCHEMA
 from .content_schema import remember_content
+from .content_trust import records_of, trusted_content
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
 from .ministry_activity import remember_records
 from .source_cadence_schema import SCHEMA as CADENCE_SCHEMA
@@ -204,6 +206,14 @@ def _hydrated_history(snapshot):
             yield row
 
 
+def _predecessor_content(digest):
+    """Exact content records of the applied predecessor, trusted for carry-over."""
+    if digest is None:
+        return {}
+    row = AppliedConfigurationVersion.objects.filter(digest=digest).first()
+    return records_of(row.canonical_document) if row is not None else {}
+
+
 def _load_history(digest):
     """Load only compact ancestry metadata, never the entire document corpus.
 
@@ -297,10 +307,13 @@ def verified_snapshot_version(snapshot, *, predecessor_digest):
     Installation/database errors propagate distinctly from invalid content.
     """
     try:
-        version = parse_version(
-            snapshot.canonical_document,
-            validate_sections=validator_for(snapshot.validation_schema),
-        )
+        # Applied history is verified by digest; its content was validated
+        # under the rules in force when it was applied (content_trust).
+        with trusted_content():
+            version = parse_version(
+                snapshot.canonical_document,
+                validate_sections=validator_for(snapshot.validation_schema),
+            )
         if (
             version.version_id == snapshot.pk
             and version.digest == snapshot.digest
@@ -401,7 +414,12 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
         actor_id is not None and not isinstance(actor_id, UUID)
     ):
         raise TypeError("Actor and correlation identifiers must be UUIDs.")
-    validated = parse_version(version.document(), validate_sections=validate_sections)
+    # Content carried unchanged from the applied predecessor keeps its
+    # applied validation; new or changed content meets today's rules.
+    with trusted_content(_predecessor_content(version.predecessor_digest)):
+        validated = parse_version(
+            version.document(), validate_sections=validate_sections
+        )
     if validated != version:
         raise ConfigError("Configuration metadata does not match its document.")
     if connection.in_atomic_block or not connection.get_autocommit():
@@ -419,7 +437,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
     if version.predecessor_digest is not None:
         predecessor = _load_history(version.predecessor_digest)
         if not _verify_history(predecessor, candidate=document):
-            raise ConfigError(
+            raise ConfigurationHistoryInvalid(
                 "Configuration predecessor or stable parish identity is invalid."
             )
     with correlation(correlation_id), transaction.atomic(durable=True):

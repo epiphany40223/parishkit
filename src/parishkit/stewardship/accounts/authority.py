@@ -23,6 +23,8 @@ import yaml
 from parishkit.config import ConfigError, load_yaml_config
 from parishkit.files import atomic_write_text
 
+from .content_trust import trusted_content
+
 SCHEMA_VERSION = 1
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _SECTIONS = frozenset(
@@ -222,7 +224,10 @@ class AuthorityStore:
             if metadata.st_size > 8_000_000:
                 raise ConfigError("configuration YAML exceeds input byte limit")
             data = load_yaml_config(path, required=True, reject_duplicate_keys=True)
-            version = parse_version(data, validate_sections=self.validate_sections)
+            # Stored versions were admitted by candidate or history
+            # validation; content text rules are not re-run (content_trust).
+            with trusted_content():
+                version = parse_version(data, validate_sections=self.validate_sections)
         except (ConfigError, OSError, UnicodeError):
             raise ConfigError(
                 "configuration version is unreadable or invalid"
@@ -275,9 +280,12 @@ class AuthorityStore:
 
     def write_version(self, version: ConfigurationVersion) -> None:
         """Publish a fully fsynced immutable file without replacing an existing ID."""
-        validated = parse_version(
-            version.document(), validate_sections=self.validate_sections
-        )
+        # Publishing persists an already-admitted candidate; its new content
+        # was held to current rules when the candidate was built.
+        with trusted_content():
+            validated = parse_version(
+                version.document(), validate_sections=self.validate_sections
+            )
         if validated != version:
             raise ConfigError(
                 "configuration metadata does not match its canonical document"

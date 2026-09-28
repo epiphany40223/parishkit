@@ -19,6 +19,8 @@ from parishkit.stewardship.web.content import (
     validate_template,
 )
 
+from .content_trust import is_trusted
+
 SCHEMA = "campaign-content-v5"
 REQUEST_SCHEMA = "campaign-content-patch-v5"
 RECOVERY_SCHEMA = "operator-recovery-content-v5"
@@ -75,6 +77,11 @@ def validate_content_records(document):
         if (kind == "page" or slot == "confirmation") and identity in selected:
             invalid()
         selected.add(identity)
+        if is_trusted(record):
+            # Already-applied, digest-verified text: today's text rules only
+            # govern authored or changed records (content_trust, #187).
+            content[record["id"]] = value
+            continue
         try:
             prepared = prepare_content(value["html"], text=value["text"])
             if prepared.html != value["html"] or prepared.text != value["text"]:
