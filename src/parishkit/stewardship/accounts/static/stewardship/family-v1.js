@@ -1059,7 +1059,7 @@
     const annual = node("input", null, pledge, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
     annual.value = answers.financial.annual_pledge;
-    const annualError = node("p", null, pledge, {id: "financial-annual-hint"});
+    const annualError = node("p", null, pledge, {id: "financial-annual-hint", class: "error"});
     // A disabled fieldset removes its controls from validation, so hidden
     // frequency and share fields can never block a zero pledge.
     const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": ""});
@@ -1094,7 +1094,7 @@
       node("option", label, frequency, {value: key});
     }
     frequency.value = answers.financial.frequency;
-    const frequencyError = node("p", null, conditional, {id: "financial-frequency-hint"});
+    const frequencyError = node("p", null, conditional, {id: "financial-frequency-hint", class: "error"});
     const approximation = node("p", null, conditional, {"aria-live": "polite", id: "financial-installment"});
     let showErrors = false;
     const validate = (show = true) => {
@@ -1126,7 +1126,7 @@
     validate(false);
     const shares = node("fieldset", null, conditional);
     node("legend", "How would you like to share? (choose at least one)", shares);
-    const sharesError = node("p", null, shares, {id: "financial-shares-error", hidden: ""});
+    const sharesError = node("p", null, shares, {id: "financial-shares-error", class: "error", hidden: ""});
     form.financial.options.forEach((option) => {
       const path = "financial.shares." + option.id, conflict = conflicts.get(path);
       if (conflict && conflict.choice === undefined) {
@@ -1488,6 +1488,7 @@
     // first page rather than leaving an empty screen.
     const page = pages.find((entry) => entry.key === key) || pages[0];
     currentPage = page.key;
+    navNote("");
     pages.forEach((entry) => { entry.element.hidden = entry !== page; });
     const index = pages.indexOf(page);
     session.dataset.presenceSection = page.presence;
@@ -1524,20 +1525,40 @@
       return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
     });
   }
+  function navNote(text) {
+    // Why Next or Review did not advance, shown right beside those buttons
+    // (the sticky bar on phones) and announced; an empty text hides it.
+    const note = root.querySelector("[data-nav-error]");
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = !text;
+  }
+  function questionName(input) {
+    // The question as the Family sees it: a checkbox or radio group's legend,
+    // otherwise the field's own label.
+    const legend = ["checkbox", "radio"].includes(input.type) &&
+      input.closest("fieldset")?.querySelector(":scope > legend");
+    const text = (legend || input.labels?.[0])?.textContent.trim();
+    return text ? "“" + text + "”" : "the highlighted question";
+  }
   function pageValid(page) {
     // Validate only this page before moving forward; the final Review step
     // still validates every page, so skipping ahead cannot bypass a check.
     const conflict = unresolvedConflict(page.element);
     if (conflict) {
-      say("Choose a value for every changed record on this page before continuing.");
+      navNote("Choose a value for every changed record on this page before continuing.");
       conflict.querySelector("input, button")?.focus();
       return false;
     }
     page.validators.forEach((validate) => validate());
     const invalid = [...page.element.querySelectorAll("input, select, textarea")].find(
       (input) => !input.disabled && !input.checkValidity());
-    if (invalid) { invalid.focus(); return false; }
-    say("");
+    if (invalid) {
+      navNote("Please answer " + questionName(invalid) + " before continuing.");
+      invalid.focus();
+      return false;
+    }
+    navNote("");
     return true;
   }
   function edit(target = null) {
@@ -1617,6 +1638,8 @@
       conflictChoice("additional", extra, additional.element);
     }
     const nav = node("div", null, editor, {class: "actions family-nav"});
+    node("p", null, nav, {class: "notice notice-error family-nav-error", role: "alert",
+      "data-nav-error": "", hidden: ""});
     const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
     back.addEventListener("click", () => {
       const index = pages.findIndex((page) => page.key === currentPage);
@@ -1638,10 +1661,21 @@
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
       reviewPointerDown = false;
+      // A first-time Family goes through every page before Review, so no
+      // section is skipped by jumping ahead; a returning Family (who already
+      // submitted once) may go straight to Review.
+      const unvisited = form.last_submitted_display ? null :
+        pages.find((page) => !visited.has(page.key));
+      if (unvisited) {
+        showPage(unvisited.key, {push: true});
+        navNote("Please go through each page before reviewing your response. " +
+          "This page hasn’t been viewed yet.");
+        return;
+      }
       const conflict = unresolvedConflict(editor);
       if (conflict) {
-        say("Choose a value for every changed record before reviewing your response.");
         showPage(pageOf(conflict), {focus: false});
+        navNote("Choose a value for every changed record before reviewing your response.");
         conflict.querySelector("input, button")?.focus();
         return;
       }
@@ -1656,6 +1690,11 @@
       } else {
         const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
         showPage(pageOf(invalid), {focus: false});
+        if (invalid) {
+          const title = pages.find((page) => page.key === currentPage)?.title;
+          navNote("Please answer " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") +
+            " before reviewing your response.");
+        }
         invalid?.focus();
       }
     });

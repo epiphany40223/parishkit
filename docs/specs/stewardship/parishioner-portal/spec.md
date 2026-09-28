@@ -88,12 +88,18 @@ when the absolute four-hour deadline cannot be extended.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors. A "Step N of M"
+current page and keeps the Family there with inline errors, focus on the first
+unanswered question, and a note beside the navigation buttons naming it
+("Please answer “How would you like to share?” before continuing."). A "Step N of M"
 line names the current step, and a segmented step bar like the setup wizard's
 has one button per step: each is named by its step, shows a "Step N of M"
-tooltip on hover or keyboard focus, and jumps to that page on click or tap. The
-Review segment checks every page, so the response cannot be completed until all
-steps are done. Browser Back/Forward move between pages. Every page shows the
+tooltip on hover or keyboard focus, and jumps to that page on click or tap.
+Review (the last segment, or Review response on the last page) first requires a
+Family that has not submitted before to have viewed every page: otherwise it
+opens the first page not yet viewed and says so. It then checks every page and,
+if an answer is missing, opens that page with the same note naming the
+question, so the response cannot be completed until all steps are done. A
+returning Family, who has submitted before, may go straight to Review. Browser Back/Forward move between pages. Every page shows the
 Family's name (for example "The Squyres Family") so the Family can confirm the
 right household is open; ParishSoft's mailing name and the session deadline are
 not shown. Browser history cannot resubmit or expose a completed form.

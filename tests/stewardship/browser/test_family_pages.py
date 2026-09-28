@@ -319,11 +319,23 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     assert step_text(page) == f"Step 2 of {total}: Family information"
     expect(second).to_have_attribute("aria-current", "step")
     expect(first).to_have_class("family-track-done family-tip-start")
-    # Review opens only once every page is complete: a required answer (the
-    # annual pledge) is still missing, so the Family is taken to it instead.
+    # Review first requires every page to have been viewed: the Family is
+    # taken to the first page not yet seen, with a note saying why.
+    note = page.locator("[data-nav-error]")
+    review_segment.click()
+    assert step_text(page) == f"Step 3 of {total}: Alex Sample"
+    expect(note).to_contain_text("Please go through each page")
+    expect(review_segment).not_to_have_attribute("aria-current", "step")
+    links = page.locator("[data-step-link]")
+    for index in range(links.count()):
+        links.nth(index).click()
+    # With every page seen, a missing required answer (the annual pledge)
+    # takes the Family to it, and the note names the question.
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
+    expect(note).to_contain_text("Annual pledge (USD)")
+    expect(note).to_be_visible()
     expect(review_segment).not_to_have_attribute("aria-current", "step")
 
 
@@ -529,3 +541,42 @@ def test_no_campaign_images_means_no_images(page, component_origin):
     begin(page, component_origin, paged_form(), None)
     expect(page.locator('[data-step-link="intro"]')).to_be_attached()
     expect(page.locator(".family-page img")).to_have_count(0)
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_blocked_next_says_which_question_needs_an_answer(
+    page, component_origin, width
+):
+    """Next on the financial page without a share method explains itself."""
+    page.set_viewport_size({"width": width, "height": 900})
+    form = paged_form()
+    form["additional_enabled"] = True
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("1200")
+    page.get_by_label("Pledge frequency (required)").select_option("monthly")
+    before = step_text(page)
+    next_page(page)
+    assert step_text(page) == before
+    note = page.locator("[data-nav-error]")
+    expect(note).to_be_visible()
+    expect(note).to_contain_text("How would you like to share?")
+    expect(page.locator("#financial-shares-error")).to_be_visible()
+    # The note sits with the (sticky) navigation, inside the viewport.
+    box = note.bounding_box()
+    assert box and box["y"] + box["height"] <= page.viewport_size["height"]
+    # Fixing the answer clears the note on the next attempt.
+    page.locator('#financial-section input[id^="financial-option-"]').first.check()
+    next_page(page)
+    expect(note).to_be_hidden()
+    assert step_text(page) != before
+
+
+def test_returning_family_may_go_straight_to_review(page, component_origin):
+    """Someone who already submitted doesn't have to revisit every page."""
+    form = paged_form()
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    page.locator("[data-step-review]").click()
+    expect(page.locator(".family-step")).to_contain_text("Review and submit")

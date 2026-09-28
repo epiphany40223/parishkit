@@ -44,9 +44,18 @@ def show(page, locator):
     return locator
 
 
+def visit_every_page(page):
+    """Open each form page once, as a Family must before Review."""
+    links = page.locator("[data-step-link]")
+    # The step bar is built once the form loads; count only after it exists.
+    expect(links.first).to_be_attached()
+    for index in range(links.count()):
+        links.nth(index).dispatch_event("click")
+
+
 def review(page):
-    """Go to the last form page and select Review response."""
-    page.locator("[data-step-link]").last.dispatch_event("click")
+    """Visit every form page, then select Review response on the last one."""
+    visit_every_page(page)
     page.get_by_role("button", name="Review response").click()
 
 

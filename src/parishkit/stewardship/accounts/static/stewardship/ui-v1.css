@@ -196,6 +196,8 @@ label:has(> input[type=checkbox], > input[type=radio]) > input { position: absol
 label.changed:has(> input[type=checkbox], > input[type=radio]) { padding-inline-start: 2.95rem; }
 label.changed:has(> input[type=checkbox], > input[type=radio]) > input { inset-inline-start: .75rem; }
 input[aria-invalid=true], textarea[aria-invalid=true], select[aria-invalid=true] { border: 2px solid var(--error-border); }
+/* A checkbox or radio group with an unanswered required choice. */
+fieldset:has(> input[aria-invalid=true]), fieldset:has(> label > input[aria-invalid=true]) { border: 2px solid var(--error-border); }
 
 /* Field sizing. A field is only as wide as its content needs: dates, times
    and numbers are short, dropdowns medium, free text wider, and long text
@@ -386,6 +388,8 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
+/* Why Next or Review didn't advance: a full-width line above the buttons. */
+.family-nav-error { flex: 1 1 100%; margin: 0; }
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }
