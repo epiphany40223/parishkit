@@ -33,10 +33,10 @@ def show(page, locator):
     """Open the Family form page that holds ``locator`` and return it.
 
     The form shows one page at a time; other pages stay in the DOM but hidden.
-    This uses the page's own step link (the "All steps" list), so it follows
-    the same code path as a Family jumping to a page. It dispatches the click
-    without opening the collapsed list on purpose: these tests exercise their
-    own behavior, and real navigation is covered in test_family_pages.py.
+    This uses the page's own step-bar segment, so it follows the same code path
+    as a Family jumping to a page. It dispatches the click directly: these tests
+    exercise their own behavior, and real navigation is covered in
+    test_family_pages.py.
     """
     key = locator.first.evaluate("e => e.closest('[data-page]')?.dataset.page || ''")
     if key and not locator.first.is_visible():
@@ -129,6 +129,7 @@ def form_payload(*, testing=False):
         "additional_max_length": 5000,
         "additional_information": "",
         "last_submitted_at": None,
+        "last_submitted_display": None,
         "content": {"thank_you": "<p>Thank you for helping our parish.</p>"},
     }
 

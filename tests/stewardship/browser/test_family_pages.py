@@ -76,11 +76,10 @@ def test_pages_navigate_with_buttons_steps_and_browser_history(
         assert page.evaluate(AXE) == []
         capture(page, f"{index + 1:02d}-{title.lower().replace(' ', '-')}")
         if index == 1:
-            # The information page names the household and labels the mailing
-            # name that used to appear alone in an unlabelled pane.
-            expect(
-                page.get_by_text("Parish mail is addressed to: Jeff Squyres")
-            ).to_be_visible()
+            # The household is named by the heading on every page; ParishSoft's
+            # one-person mailing name is not shown anywhere.
+            expect(page.get_by_text("Parish mail is addressed to")).to_have_count(0)
+            expect(page.get_by_text("Jeff Squyres")).to_have_count(0)
         if title == "Financial stewardship":
             # The annual pledge is required; zero is a valid answer.
             page.get_by_label("Annual pledge (USD)").fill("0")
@@ -94,8 +93,7 @@ def test_pages_navigate_with_buttons_steps_and_browser_history(
     assert step_text(page).endswith(titles[-1])
     page.get_by_role("button", name="Back", exact=True).click()
     assert step_text(page).endswith(titles[-2])
-    page.locator("details.family-steps > summary").click()
-    page.get_by_role("button", name="Welcome", exact=True).click()
+    page.locator('[data-step-link="intro"]').click()
     assert step_text(page) == f"Step 1 of {total}: Welcome"
     expect(page.get_by_role("button", name="Back", exact=True)).to_be_hidden()
     assert not errors
@@ -276,3 +274,88 @@ def test_enter_in_a_field_moves_to_the_next_page_not_review(page, component_orig
         page.get_by_role("heading", name="Financial stewardship", level=3)
     ).to_be_visible()
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
+
+
+def test_step_bar_names_each_step_and_jumps(page, component_origin):
+    """One segment per step plus Review; tooltips on focus; tap or click jumps."""
+    page.set_viewport_size({"width": 390, "height": 900})
+    begin(page, component_origin, paged_form(), None)
+    segments = page.locator(".family-track button")
+    titles = page.locator("[data-step-link]").evaluate_all(
+        "rows => rows.map(row => row.textContent)"
+    )
+    total = len(titles) + 1
+    expect(segments).to_have_count(total)
+    expect(page.locator(".family-steps")).to_have_count(0)
+    first = page.locator('[data-step-link="intro"]')
+    expect(first).to_have_attribute("aria-current", "step")
+    assert first.get_attribute("data-tip") == f"Step 1 of {total}: Welcome"
+    review_segment = page.locator("[data-step-review]")
+    assert review_segment.get_attribute("data-tip") == (
+        f"Step {total} of {total}: Review and submit"
+    )
+    # The tooltip text shows on keyboard focus, not only on hover.
+    second = page.locator('[data-step-link="household"]')
+    second.focus()
+    assert second.evaluate("e => getComputedStyle(e, '::after').display") == "block"
+    assert second.get_attribute("data-tip") == f"Step 2 of {total}: Family information"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # Every segment's tooltip stays inside a phone-width viewport.
+    for index in range(total):
+        segments.nth(index).focus()
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= window.innerWidth"
+        ), index
+    second.click()
+    assert step_text(page) == f"Step 2 of {total}: Family information"
+    expect(second).to_have_attribute("aria-current", "step")
+    expect(first).to_have_class("family-track-done family-tip-start")
+    # Review opens only once every page is complete: a required answer (the
+    # annual pledge) is still missing, so the Family is taken to it instead.
+    review_segment.click()
+    assert step_text(page).endswith(": Financial stewardship")
+    expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
+    expect(review_segment).not_to_have_attribute("aria-current", "step")
+
+
+def test_welcome_page_has_no_duplicate_heading_or_session_deadline(
+    page, component_origin
+):
+    """The welcome text brings its own heading; the session deadline is not shown."""
+    form = paged_form()
+    form["content"]["welcome"] = "<h2>Welcome to the renewal</h2><p>Hello.</p>"
+    begin(page, component_origin, form, None)
+    welcome = page.get_by_role("heading", name="Welcome", exact=True, level=3)
+    expect(welcome).to_have_class("visually-hidden")
+    expect(page.get_by_text("Session deadline")).to_have_count(0)
+    expect(page.locator(".family-submitted")).to_have_count(0)
+
+
+def test_returning_family_sees_when_they_last_submitted(page, component_origin):
+    """The welcome page tells a returning Family their last submission time."""
+    form = paged_form()
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    begin(page, component_origin, form, None)
+    banner = page.locator(".family-submitted")
+    expect(banner).to_have_text(
+        "You last submitted your renewal on September 28, 2026 at 7:15 AM EDT. "
+        "You can review, change and submit again as many times as you like; "
+        "your most recent submission is the one we use."
+    )
+    # It is information only: navigation continues normally.
+    next_page(page)
+    assert "Family information" in step_text(page)
+
+
+def test_review_page_step_bar_jumps_back_into_editing(page, component_origin):
+    """From Review, a page segment reopens that page with the answers intact."""
+    begin(page, component_origin, paged_form(), None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    review(page)
+    review_segment = page.locator("[data-step-review]")
+    expect(review_segment).to_have_attribute("aria-current", "step")
+    expect(page.locator("[data-step-link]")).to_have_count(0)
+    page.locator('[data-step-jump="financial"]').click()
+    assert step_text(page).endswith(": Financial stewardship")
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("0")

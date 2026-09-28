@@ -110,6 +110,8 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "census",
         "member_census",
         "ministry",
+        # The sign-in help is one generic sentence (#206).
+        "login_help",
     }
 
 

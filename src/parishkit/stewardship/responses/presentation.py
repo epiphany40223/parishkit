@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.web.presentation import parish_date
+from parishkit.stewardship.web.presentation import parish_date, parish_instant
 
 from .census import (
     ADDRESS_LIMITS,
@@ -182,8 +182,12 @@ def form_presentation(form):
         "additional_information": prior.answers["additional_information"]
         if prior and campaign.values["additional_information"]
         else "",
-        "last_submitted_at": prior.submitted_at.isoformat()
-        if prior and prior.mode == "live"
+        # The baseline's prior submission is already scoped to this session's
+        # mode and, in Testing, its rehearsal epoch; the welcome page banner
+        # tells a returning Family when they last submitted.
+        "last_submitted_at": prior.submitted_at.isoformat() if prior else None,
+        "last_submitted_display": parish_instant(prior.submitted_at, campaign.timezone)
+        if prior
         else None,
         "content": _page_content(
             baseline, campaign, family, members, member_count, form.inputs.financial

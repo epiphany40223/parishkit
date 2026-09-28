@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from django.utils.translation import gettext as _
+
 from parishkit.stewardship.accounts.configuration_installation import (
     coherent_configuration,
 )
@@ -91,3 +93,26 @@ def public_help(service, slot):
         return ""
     definition = configuration.current_campaign.active_configuration
     return _page(configuration, definition, slot, "").content
+
+
+def family_login_title(service):
+    """Title the Family sign-in page by what the current campaign collects.
+
+    Ministry and financial answers make it a stewardship renewal; household and
+    Member details make it a census. Without a current campaign (or when the
+    configuration cannot be read) the neutral "Family login" is used.
+    """
+    configuration = coherent_configuration(service.store)
+    campaign = configuration.current_campaign
+    if campaign is None:
+        return _("Family login")
+    modules = set(campaign.active_configuration.values["modules"])
+    stewardship = bool(modules & {"ministry", "financial"})
+    census = "census" in modules
+    if stewardship and census:
+        return _("Family stewardship and census login")
+    if census:
+        return _("Family census login")
+    if stewardship:
+        return _("Family stewardship login")
+    return _("Family login")

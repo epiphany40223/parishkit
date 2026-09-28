@@ -17,6 +17,8 @@
   // The editor is one form split into pages. `currentPage` names the visible
   // page across rebuilds; `pages` is rebuilt by every edit() call.
   let currentPage = null, pages = [];
+  // Pages opened at least once this visit; the step bar shows them as done.
+  const visited = new Set();
 
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
@@ -289,18 +291,68 @@
       form.family.mailingName || "Your Family";
   }
   function familySummary(parent = root) {
+    // The Family name is every page's heading, so this panel only carries the
+    // parish record details the census shows; without them there is no panel.
+    if (!form.household) return;
     const panel = node("div", null, parent, {class: "panel family-summary"});
-    node("p", familyTitle(), panel, {class: "family-name"});
-    // ParishSoft's "mailing name" is how parish mail is addressed. Label it:
-    // unlabelled, it read as an unexplained pane showing one Member's name.
-    if (form.family.mailingName) node("p", "Parish mail is addressed to: " + form.family.mailingName, panel);
-    if (form.household) {
-      node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
-      node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
-    }
-    if (form.last_submitted_at) {
-      node("p", "Last submitted: " + new Date(form.last_submitted_at).toLocaleString(), panel);
-    }
+    node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
+    node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
+  }
+  function submittedBanner(parent) {
+    // A returning Family learns when they last submitted and that submitting
+    // again is fine: the most recent submission is the one the parish uses.
+    if (!form.last_submitted_display) return;
+    node("p", "You last submitted your renewal on " + form.last_submitted_display +
+      ". You can review, change and submit again as many times as you like; " +
+      "your most recent submission is the one we use.", parent,
+      {class: "notice family-submitted", role: "status"});
+  }
+  function paintTrack(activeKey) {
+    // One segment per step, like the setup wizard's track. Each segment is a
+    // real button (keyboard and tap), named by its step; the visible tooltip
+    // repeats "Step N of M: title" on hover and keyboard focus.
+    const list = root.querySelector("[data-family-track]");
+    if (!list) return;
+    list.replaceChildren();
+    const total = pages.length + 1;
+    const steps = [...pages.map((page) => ({key: page.key, title: page.title})),
+      {key: "review", title: "Review and submit"}];
+    steps.forEach((step, index) => {
+      const item = node("li", null, list);
+      const state = step.key === activeKey ? "current" : visited.has(step.key) ? "done" : "todo";
+      const attributes = {type: "button", class: "family-track-" + state +
+        (index < total / 3 ? " family-tip-start" : index < 2 * total / 3 ? " family-tip-middle" : " family-tip-end"),
+        "data-tip": "Step " + (index + 1) + " of " + total + ": " + step.title};
+      // Editing pages are "links"; on the Review page they are "jumps" back
+      // into editing, which rebuilds the form first.
+      if (step.key === "review") attributes["data-step-review"] = "";
+      else attributes[activeKey === "review" ? "data-step-jump" : "data-step-link"] = step.key;
+      if (step.key === activeKey) attributes["aria-current"] = "step";
+      const button = node("button", null, item, attributes);
+      node("span", step.title, button, {class: "visually-hidden"});
+      button.addEventListener("click", () => {
+        if (busy || finished || step.key === activeKey) return;
+        const editing = Boolean(root.querySelector("[data-page]"));
+        if (step.key === "review") {
+          // Review validates every page; it opens only when all are complete.
+          root.querySelector("[data-page-review]")?.click();
+        } else if (editing) {
+          showPage(step.key, {push: true});
+        } else {
+          currentPage = step.key;
+          edit();
+          history.pushState({familyPage: currentPage}, "");
+        }
+      });
+    });
+  }
+  function stepHeader(parent) {
+    // "Step N of M: title" for everyone (phones have no hover), then the bar.
+    const step = node("p", "", parent, {class: "family-step", "data-family-step": "",
+      id: "family-step", "aria-live": "polite"});
+    const nav = node("nav", null, parent, {class: "family-track", "aria-label": "Response steps"});
+    node("ol", null, nav, {"data-family-track": ""});
+    return step;
   }
   function validateField(input, definition) {
     input.setCustomValidity("");
@@ -1196,14 +1248,10 @@
     pages.forEach((entry) => { entry.element.hidden = entry !== page; });
     const index = pages.indexOf(page);
     session.dataset.presenceSection = page.presence;
+    visited.add(page.key);
     const step = root.querySelector("[data-family-step]");
     if (step) step.textContent = "Step " + (index + 1) + " of " + (pages.length + 1) + ": " + page.title;
-    const bar = root.querySelector("[data-family-progress]");
-    if (bar) { bar.max = String(pages.length + 1); bar.value = String(index + 1); }
-    root.querySelectorAll("[data-step-link]").forEach((button) => {
-      if (button.dataset.stepLink === page.key) button.setAttribute("aria-current", "step");
-      else button.removeAttribute("aria-current");
-    });
+    paintTrack(page.key);
     root.querySelector("[data-page-back]").hidden = index === 0;
     root.querySelector("[data-page-next]").hidden = index === pages.length - 1;
     root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
@@ -1221,7 +1269,10 @@
     page.title = title;
     page.element.querySelector("h3").textContent = title;
     const link = root.querySelector('[data-step-link="' + key + '"]');
-    if (link) link.textContent = title;
+    if (link) {
+      link.querySelector("span").textContent = title;
+      link.dataset.tip = link.dataset.tip.replace(/:.*$/, ": " + title);
+    }
     if (currentPage === key) {
       const step = root.querySelector("[data-family-step]");
       if (step) step.textContent = step.textContent.replace(/:.*$/, ": " + title);
@@ -1252,9 +1303,7 @@
   function edit(target = null) {
     heading(familyTitle(), "welcome");
     pages = [];
-    const step = node("p", "", root, {class: "family-step", "data-family-step": "", "aria-live": "polite"});
-    step.id = "family-step";
-    node("progress", null, root, {"data-family-progress": "", "aria-labelledby": "family-step"});
+    stepHeader(root);
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
     let reviewPointerDown = false;
     editor.addEventListener("pointerdown", (event) => {
@@ -1264,8 +1313,11 @@
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
     const intro = addPage(editor, "intro", "Welcome", "welcome");
+    // The welcome text carries its own heading; keep "Welcome" only for
+    // screen readers and focus, so it isn't shown twice.
+    if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
+    submittedBanner(intro.element);
     block("welcome", intro.element);
-    if (!form.household) familySummary(intro.element);
     structuralConflicts(intro.element);
     if (form.household) {
       const household = addPage(editor, "household", "Family information", "census");
@@ -1304,16 +1356,6 @@
       extra.addEventListener("input", () => { answers.additional_information = extra.value; });
       conflictChoice("additional", extra, additional.element);
     }
-    // A compact list of every step, collapsed by default so phones see the
-    // page first. Jumping skips per-page checks; Review validates everything.
-    const steps = node("details", null, editor, {class: "family-steps"});
-    node("summary", "All steps", steps);
-    const list = node("ol", null, steps);
-    pages.forEach((page) => {
-      const button = node("button", page.title, node("li", null, list), {type: "button", "data-step-link": page.key});
-      button.addEventListener("click", () => { steps.open = false; showPage(page.key, {push: true}); });
-    });
-    node("li", "Review and submit", list);
     const nav = node("div", null, editor, {class: "actions family-nav"});
     const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
     back.addEventListener("click", () => {
@@ -1390,11 +1432,10 @@
   }
   function review() {
     heading(familyTitle(), "review");
-    const step = node("p", "Step " + (pages.length + 1) + " of " + (pages.length + 1) + ": Review and submit", root,
-      {class: "family-step", id: "family-step"});
-    step.setAttribute("aria-live", "polite");
-    node("progress", null, root, {max: String(pages.length + 1), value: String(pages.length + 1),
-      "aria-labelledby": "family-step"});
+    const step = stepHeader(root);
+    step.textContent = "Step " + (pages.length + 1) + " of " + (pages.length + 1) + ": Review and submit";
+    visited.add("review");
+    paintTrack("review");
     if (history.state?.familyPage !== "review") history.pushState({familyPage: "review"}, "");
     block("review", root);
     const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
