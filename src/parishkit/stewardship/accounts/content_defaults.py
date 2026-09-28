@@ -30,7 +30,7 @@ _ALTERNATE_ACCESS = (
     "<p>If the link above doesn’t work, go to {{ generic_family_url }} and enter "
     "your household’s code: <strong>{{ family_code }}</strong></p>"
 )
-_SIGNATURE = "<p>In gratitude,<br>The Stewardship Committee</p>"
+_SIGNATURE = "<p>In gratitude,<br>The Stewardship Team</p>"
 
 PAGES = {
     "welcome": (
@@ -40,10 +40,11 @@ PAGES = {
         "enough time” – but God gives us all the time we need. We must ask "
         "ourselves: “How do I choose to use my time?” Are <strong>worship"
         "</strong> and <strong>prayer</strong> part of my priorities? Please "
-        "consider these opportunities in the coming year:</p>"
+        "consider these opportunities and commit to them in {{ campaign_year }}:</p>"
         "<h3>Worship</h3>"
         "<ul><li>Receive the Eucharist</li>"
-        "<li>Attend Mass on Sundays and Holy Days</li>"
+        "<li>Attend Mass on Sundays</li>"
+        "<li>Attend Mass on Holy Days</li>"
         "<li>Watch Mass by livestream if you are homebound</li>"
         "<li>Attend daily Mass</li>"
         "<li>Go to Reconciliation</li></ul>"
@@ -54,7 +55,8 @@ PAGES = {
         "<li>Attend Eucharistic Adoration</li>"
         "<li>Pray the Rosary</li>"
         "<li>Pray for vocations</li>"
-        "<li>Pray the Stations of the Cross</li></ul>"
+        "<li>Pray the Stations of the Cross</li>"
+        "<li>Walk a labyrinth</li></ul>"
         "<h3>Group prayer</h3>"
         "<ul><li>Participate in a Bible study</li>"
         "<li>Pray with loved ones</li>"
@@ -98,7 +100,8 @@ PAGES = {
         "<p>Every skill, talent, and ability is a unique gift from God. Our call "
         "to serve is an invitation to discern <em>where</em> and <em>how</em> the "
         "Spirit is calling us. As our talents develop and circumstances change, "
-        "we listen to how God is calling us to use our gifts.</p>"
+        "we listen to how God is calling us to use our gifts. If you haven’t yet "
+        "explored your spiritual gifts, consider a spiritual gifts assessment.</p>"
         "<p>Please check the information below for accuracy. The parish office "
         "does its best to keep it up to date, so please understand if you see "
         "errors.</p>"
@@ -120,6 +123,16 @@ PAGES = {
         "<p>Your stewardship contributions support the ministries, programs, "
         "staff, and other operating expenses of {{ parish_name }}. Making an "
         "annual commitment helps the parish plan its budget.</p>"
+        "<ul><li>If you did not make a pledge last year, please consider doing so "
+        "this year. A pledge is made in good faith and may be increased or "
+        "decreased if your circumstances change.</li>"
+        "<li>If you give cash in the collection, please consider envelopes or "
+        "online giving so we can record your gifts.</li>"
+        "<li>If you already give regularly, thank you! If you are able, please "
+        "consider increasing your pledge by 1%, 3%, or 5%.</li></ul>"
+        "<p><strong>Other ways to give:</strong> ask your employer about matching "
+        "gifts. If you are 70½ or older, ask your tax advisor about a Qualified "
+        "Charitable Distribution from your IRA directly to {{ parish_name }}.</p>"
         "<p><strong>Please note:</strong> the commitment you make here covers "
         "{{ financial_start }} through {{ financial_end }}.</p>"
         "<p>Thank you for your generosity!</p>"
@@ -181,6 +194,14 @@ EMAILS = {
         "<p>Welcome to {{ parish_name }}’s <strong>online</strong> Stewardship "
         "Renewal for {{ campaign_year }}. Will you help us by making stewardship "
         "a way of life?</p>"
+        "<p>Even if you already attend Mass, give, and serve in ministries, please "
+        "make a {{ campaign_year }} commitment. A stewardship commitment is a "
+        "voluntary, annual promise, between you and God, to support our parish’s "
+        "mission. It turns giving from an afterthought into an intentional act of "
+        "faith, and it helps the parish plan its budget, ministries, and "
+        "outreach. Commitments can be adjusted if your circumstances change.</p>"
+        "<p>Please look for <strong>new</strong> ministries. They offer new ways "
+        "to serve our community.</p>"
         "<p><em>Even if you choose to keep everything the same as last year, "
         "please submit your renewal so we can keep our parish records "
         # Placeholders have no conditionals, and {{ financial_start }} is empty
@@ -197,7 +218,8 @@ EMAILS = {
         "{{ campaign_year }} Stewardship Renewal. After {{ campaign_end }}, the "
         "online renewal will no longer be available. Please help us by "
         "committing to stewardship as a way of life!</p>"
-        '<p><strong><a href="{{ family_url }}">Continue your household’s renewal'
+        '<p><strong><a href="{{ family_url }}">Complete your household’s '
+        "{{ campaign_year }} renewal"
         "</a></strong></p>" + _ALTERNATE_ACCESS + "<p><strong>On behalf of the "
         "Stewardship Team, thank you in advance for completing your "
         "{{ campaign_year }} {{ parish_name }} Stewardship Renewal!</strong></p>"
@@ -212,11 +234,13 @@ EMAILS = {
         "the {{ family_name }} household. This email confirms that we received "
         "your submission.</p>"
         "<p>On behalf of the Stewardship Team, we appreciate your commitment to "
-        "Worship, Serve, Share, and Protect. If you chose to use "
+        "<strong>devote time</strong> to worship and prayer, <strong>share your "
+        "talents</strong>, <strong>give your treasure</strong>, and <strong>protect "
+        "the earth</strong>. If you chose to use "
         "{{ parish_name }}’s online service to fulfill your {{ campaign_year }} "
         'pledge, <a href="{{ online_giving_url }}">please click here</a>.</p>'
         "<p>Thank you for your continued support of our community!</p>"
-        "<p>Peace in Christ,<br>The Stewardship Committee</p>",
+        "<p>Peace in Christ,<br>The Stewardship Team</p>",
     ),
     "daily_digest": DefaultEmail(
         "{{ campaign_name }}: daily progress report",

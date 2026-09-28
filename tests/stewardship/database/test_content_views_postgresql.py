@@ -305,7 +305,7 @@ def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     assert browser.get(catalog + "?start=default").status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests
     email = browser.get(catalog + "/email/reminder?start=default")
-    assert email.status_code == 200 and b"Continue your household" in email.content
+    assert email.status_code == 200 and b"Complete your household" in email.content
 
 
 def test_configured_content_editor_can_reset_to_the_default(auth_service, google):
