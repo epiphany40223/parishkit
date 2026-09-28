@@ -130,6 +130,12 @@ def add_dispatch_scheduler_reads(tables, columns):
     columns.setdefault("stewardship_outbox_message", {}).setdefault(
         "SELECT", set()
     ).update(METADATA_FIELDS)
+    # Family test and receipt hint admission checks that the Family is still
+    # eligible in the current source generation. Like active/email_eligible,
+    # these are eligibility flags, not recipients or answers.
+    columns.setdefault("stewardship_family_campaign", {}).setdefault(
+        "SELECT", set()
+    ).update({"source_generation", "portal_eligible"})
     add_receipt_reads(columns)
 
 

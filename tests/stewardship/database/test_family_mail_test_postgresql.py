@@ -1191,3 +1191,55 @@ def test_sample_page_survives_a_failing_family_link_query(family_test, monkeypat
         token = page.context["form"]["preview_token"].value()
         assert post(browser, sample, {"preview_token": token}).status_code == 302
     assert CampaignMailTest.objects.count() == 1
+
+
+def test_scheduler_hints_a_queued_family_test_under_its_own_grants(family_test):
+    """The scheduler routes a queued test without reading the Family's source.
+
+    The scheduler role may read only a few FamilyCampaign columns; the source
+    check (full Family row plus snapshot) belongs to the worker's claim and
+    preparation. Admitting the hint must not need it, or the test stays queued.
+    """
+    from parishkit.stewardship.jobs.scanning import collect_hints
+
+    harness, browser, path, _ = family_test
+    (ticket,), _ = request_tickets(browser, path, [1])
+    with (
+        campaign_clock(harness.campaign.active_configuration.starts_at),
+        task_login(ServiceRole.SCHEDULER, exact=True),
+    ):
+        hints, _ = collect_hints(
+            handlers={TASK_TYPE: family_test_handler(scheduler=True)}
+        )
+    assert [hint.run_id for hint in hints] == [ticket.task_id]
+
+
+def test_scheduler_hints_a_prepared_family_test_message_under_its_grants(
+    family_test, monkeypatch
+):
+    """After preparation, the outbox delivery hint also needs no private reads.
+
+    Its disposition rechecks the Family's current-generation eligibility, which
+    the scheduler may read as flags (never recipients or answers).
+    """
+    from parishkit.stewardship.jobs.family_mail_dispatch import (
+        TASK_TYPE as DISPATCH,
+    )
+    from parishkit.stewardship.jobs.outbox_dispatch import delivery_handler
+    from parishkit.stewardship.jobs.scanning import collect_hints
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.mail_authority",
+        lambda store: None,
+    )
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    with (
+        campaign_clock(harness.campaign.active_configuration.starts_at),
+        task_login(ServiceRole.SCHEDULER, exact=True),
+    ):
+        hints, _ = collect_hints(
+            handlers={DISPATCH: delivery_handler(harness.service.store, scheduler=True)}
+        )
+    assert [hint.run_id for hint in hints] == [message.task_id]
