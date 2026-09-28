@@ -291,7 +291,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `d0155245` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 601 | `8fafb172` |
+| Functions | 601 | `7bcc6332` |
 | Triggers | 553 | `32504824` |
 | Policies | 28 | `1c9c3b2d` |
 
