@@ -5,6 +5,7 @@ transport. This factory does not admit/start a service or read credential files;
 the isolated runtime must first validate mounts, database grants and secrets.
 """
 
+import functools
 import os
 from dataclasses import dataclass, field
 from threading import Event
@@ -150,8 +151,10 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
         from parishkit.stewardship.web import dates
 
         # Work that renders dates without an explicit parish style (option
-        # wording, export text) uses the active configuration's choice.
-        token = dates.use(active_date_format)
+        # wording, export text) uses the active configuration's choice. The
+        # lookup is cached for this one message: a digest formats a date per
+        # row, and each uncached call would query the configuration again.
+        token = dates.use(functools.cache(active_date_format))
         try:
             consume_hint(args, kwargs, service=service, handlers=registry, stop=stop)
         except Exception as error:

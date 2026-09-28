@@ -89,7 +89,7 @@ def test_csv_full_results_and_formula_safety(history):
     assert all(row["Staff notes"] == "'+Literal notes" for row in items)
     assert items[-1]["Submitted text"].endswith("FINAL TEXT MARKER")
     # CSV timestamps are ISO 8601 in the stated display time zone (#221).
-    assert items[-1]["Requested at"] == "2026-10-02 09:00"
+    assert items[-1]["Requested at"] == "2026-10-02 09:00:00-04:00"
     assert len(report.rows[0]) == len(HEADINGS)
 
 
@@ -139,7 +139,7 @@ def test_empty_reports_still_include_source_and_request_provenance():
     rows = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))
     assert len(rows) == 1 and rows[0]["Matching items"] == "0"
     assert rows[0]["Source reference"] == "source"
-    assert rows[0]["Requested at"] == "2026-10-02 09:00"
+    assert rows[0]["Requested at"] == "2026-10-02 09:00:00-04:00"
     assert report.item_count == 0 and not report.rows
 
 
