@@ -16,6 +16,7 @@ from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
+from .directories import testing_codes_context
 from .export_models import ExportRequest
 from .export_services import (
     ExportConflict,
@@ -191,7 +192,12 @@ def detail(request, request_id):
                     scope=job.parameters["population_scope"],
                     timezone=job.browser_timezone,
                 ).url(campaign_id)
-            context = {
+            testing = (
+                testing_codes_context(campaign_id)
+                if job.report in {"family_directory", "postal_outreach"}
+                else {}
+            )
+            context = testing | {
                 "job": job,
                 "status": state,
                 "mutable": mutable,

@@ -178,6 +178,10 @@ def directory_pdf(document, output):
                         va="top",
                     )
                 figure.text(0.05, 0.04, details["Privacy"], fontsize=9)
+                if "Testing mode" in details:
+                    figure.text(
+                        0.05, 0.065, visible_text(details["Testing mode"]), fontsize=8
+                    )
                 figure.text(
                     0.95,
                     0.04,

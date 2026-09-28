@@ -146,6 +146,26 @@ def families_link(runtime, campaign, revision_id):
     return reverse("admin:campaign_mail_families", args=[campaign.pk, revision_id])
 
 
+def chosen_family_test_url(runtime, campaign):
+    """The chosen-Family test send for the campaign's invitation, if offered.
+
+    In Testing mode the Family sign-in accepts only rehearsal credentials from
+    such a send, not the live codes the directory lists, so pages that show
+    live codes point here. None outside Testing or before an invitation
+    schedule names its email.
+    """
+    if runtime.mode != "testing" or campaign is None:
+        return None
+    revision = (
+        ScheduleDefinition.objects.filter(campaign_id=campaign.pk, kind="initial")
+        .values_list("current_revision__values__template_version", flat=True)
+        .first()
+    )
+    if not revision:
+        return None
+    return families_link(runtime, campaign, UUID(revision))
+
+
 def in_progress_count(campaign_id):
     """Queued tickets plus prepared messages not yet settled by the provider."""
     return FamilyMailTest.objects.filter(

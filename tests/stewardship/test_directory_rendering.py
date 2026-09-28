@@ -226,3 +226,64 @@ def test_captures_without_the_mailable_flag_use_the_same_rule():
     ]
     report = document(old, postal=True)
     assert report.excluded == 1 and len(report.rows) == 1
+
+
+def test_testing_note_is_a_report_detail_never_a_csv_row():
+    """Testing-mode files say live codes wait for go-live, outside the columns."""
+    payload = dict(
+        metadata=dict(
+            name="Annual campaign",
+            id="campaign",
+            source_id="source",
+            source_generation=1,
+            source_as_of=MOMENT.isoformat(),
+        ),
+        total=1,
+        rows=[item()],
+    )
+    parameters = {
+        "filters": {"search": "", "reason": "any", "phone": "any"},
+        "postal": False,
+        "exact": False,
+    }
+    common = dict(
+        parish_name="Sample Parish",
+        captured_at=MOMENT,
+        requested_at=MOMENT,
+        timezone="UTC",
+    )
+    testing = directory_document(payload, parameters, testing=True, **common)
+    live = directory_document(payload, parameters, **common)
+    assert "work only after go-live" in dict(testing.metadata)["Testing mode"]
+    assert "Testing mode" not in dict(live.metadata)
+    assert csv_rows(testing) == csv_rows(live)
+    output = io.BytesIO()
+    assert render_directory(testing, output, format="pdf")
+
+
+@pytest.mark.parametrize("mode,shown", [("testing", True), ("production", False)])
+def test_testing_codes_context_follows_the_mode(monkeypatch, mode, shown):
+    """The directory and export pages explain live codes only in Testing mode."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import campaign_family_test, runtime_models
+    from parishkit.stewardship.campaigns import models
+    from parishkit.stewardship.reports.directories import testing_codes_context
+
+    runtime = SimpleNamespace(mode=mode)
+    monkeypatch.setattr(
+        runtime_models.SystemConfiguration,
+        "objects",
+        SimpleNamespace(first=lambda: runtime),
+    )
+    monkeypatch.setattr(
+        models.Campaign,
+        "objects",
+        SimpleNamespace(filter=lambda **_: SimpleNamespace(first=lambda: "c")),
+    )
+    monkeypatch.setattr(
+        campaign_family_test, "chosen_family_test_url", lambda *_: "/test-send"
+    )
+    context = testing_codes_context("campaign")
+    assert context["testing_codes"] is shown
+    assert context["family_test_url"] == ("/test-send" if shown else None)
