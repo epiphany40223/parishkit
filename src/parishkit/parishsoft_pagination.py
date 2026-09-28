@@ -12,6 +12,17 @@ class IncompleteSourceCollection(ValueError):
     """A bounded read cannot prove a complete, continuous source collection."""
 
 
+class ShiftedSourceScan(IncompleteSourceCollection):
+    """The collection moved while its pages were read; a fresh scan may succeed.
+
+    ParishSoft pages lists by position. When its ordering is not stable between
+    page requests (or records change mid-scan), one record can appear on two
+    pages while another is skipped. Such a scan is still rejected, since it
+    cannot prove completeness, but it is transient: callers may retry the
+    whole read instead of treating the provider data as invalid.
+    """
+
+
 @dataclass(frozen=True)
 class PageContract:
     """Published field names and response shape, not caller-entered HTTP options."""
@@ -53,6 +64,9 @@ class _Collection:
             identity = self.identify(row)
             repeat = identity in page and page[identity] == row
             if identity in self.identities and not repeat:
+                if identity not in page:
+                    # Seen on an earlier page: the scan shifted between pages.
+                    raise ShiftedSourceScan("Source collection repeats an identity.")
                 raise IncompleteSourceCollection(
                     "Source collection repeats an identity."
                 )
@@ -61,9 +75,7 @@ class _Collection:
                 if type(total) is not int or not 1 <= total <= self.maximum:
                     raise IncompleteSourceCollection("Source total is unavailable.")
                 if self.expected_total is not None and total != self.expected_total:
-                    raise IncompleteSourceCollection(
-                        "Source total changed during read."
-                    )
+                    raise ShiftedSourceScan("Source total changed during read.")
                 self.expected_total = total
             if self.contract.ordinal_field is not None:
                 ordinal = row.get(self.contract.ordinal_field)
@@ -74,9 +86,7 @@ class _Collection:
                         raise IncompleteSourceCollection("Source first row is missing.")
                     self.ordinal_origin = ordinal
                 if ordinal != self.received + self.ordinal_origin:
-                    raise IncompleteSourceCollection(
-                        "Source row order is discontinuous."
-                    )
+                    raise ShiftedSourceScan("Source row order is discontinuous.")
             self.received += 1
             if repeat:
                 continue
@@ -87,9 +97,7 @@ class _Collection:
     def finish(self):
         """An empty next page is not sufficient if a declared total remains unmet."""
         if self.expected_total is not None and self.expected_total != self.received:
-            raise IncompleteSourceCollection(
-                "Source collection does not match its total."
-            )
+            raise ShiftedSourceScan("Source collection does not match its total.")
         return self.rows
 
 
@@ -145,6 +153,15 @@ def _probe(first, second, *, size, collection):
         return 2, 1, not second
     if first == second:
         return 2, 1, False
+    field = collection.contract.total_field
+    if field is not None and any(
+        type(row.get(field)) is int and row.get(field) != collection.expected_total
+        for row in second
+    ):
+        # The embedded total moved between the two probe requests: the
+        # collection changed mid-read, so this is a retryable shifted scan
+        # rather than an ambiguous probe.
+        raise ShiftedSourceScan("Source total changed during read.")
     first_ids = [collection.identify(row) for row in first]
     second_ids = [collection.identify(row) for row in second]
     if len(set(second_ids)) != len(second_ids):
@@ -225,7 +242,7 @@ def read_pages(
                 collection.expected_total is not None
                 and collection.expected_total != total
             ):
-                raise IncompleteSourceCollection("Source total changed during read.")
+                raise ShiftedSourceScan("Source total changed during read.")
             collection.expected_total = total
         else:
             rows = _array(response, page_size)

@@ -12,7 +12,10 @@ import requests
 from django.db import connection
 
 from parishkit.parishsoft import ParishSoftAPIError
-from parishkit.parishsoft_pagination import IncompleteSourceCollection
+from parishkit.parishsoft_pagination import (
+    IncompleteSourceCollection,
+    ShiftedSourceScan,
+)
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import InvalidSourceResponse, SourceTransportError
 from parishkit.retry import RetryError, TransientRetryError
@@ -73,6 +76,11 @@ def classify_read_failure(error, *, has_source_claim):
         return ReadFailure(False, False, Event.SOURCE_TENANT_MISMATCH)
     if isinstance(error, DestructiveSourceChange):
         return ReadFailure(False, False, Event.SOURCE_DESTRUCTIVE_CHANGE)
+    if isinstance(error, ShiftedSourceScan):
+        # The provider's paging moved mid-scan (validated 2026-09-28: the same
+        # full load failed once and passed on five immediate re-runs). Retry
+        # the whole read within the bounded provider-failure allowance.
+        return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED)
     if isinstance(
         error, (InvalidSourcePayload, IncompleteSourceCollection, InvalidSourceResponse)
     ):

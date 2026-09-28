@@ -7,6 +7,7 @@ import pytest
 from test_parishsoft_source import family, member, page
 from test_parishsoft_source import source as client_factory
 
+from parishkit.parishsoft_pagination import ShiftedSourceScan
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.corpus import KINDS
@@ -166,6 +167,21 @@ def test_wrong_tenant_retains_specific_classification_through_full_loader(tmp_pa
     with pytest.raises(SourceOrganizationMismatch):
         load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
     assert len(client.session.calls) == 1
+
+
+def test_shifted_scan_keeps_its_retryable_type_through_full_loader(
+    tmp_path, monkeypatch
+):
+    """The generic redactor must not turn a transient shifted scan into bad data."""
+    from parishkit.stewardship.source import loading
+
+    def shifted(*args, **kwargs):
+        raise ShiftedSourceScan("Source collection repeats an identity.")
+
+    monkeypatch.setattr(loading, "load_families_and_members", shifted)
+    client = client_factory(tmp_path, provider_pages())
+    with pytest.raises(ShiftedSourceScan):
+        load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
 
 
 @pytest.mark.parametrize("rows", [None, {}, [], [None], [{"organizationID": True}]])
