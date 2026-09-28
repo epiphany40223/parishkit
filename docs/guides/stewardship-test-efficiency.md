@@ -65,6 +65,26 @@ Measure the resulting GitHub jobs before claiming a speedup. Do not substitute a
 longer timeout for a performance fix, share mutable database rows/roles between
 concurrent cases, or waive coverage to reduce elapsed time.
 
+## Free-plan throughput (September 2026)
+
+The organization's free plan runs at most 20 jobs at once, and one full CI run
+was 24 jobs, twelve of them PostgreSQL partitions averaging 13.4–15.4 minutes
+(about 169 of 225 job-minutes). Local profiling of partition 7 found the time
+spread across real SQL work, per-case configuration installs and the
+per-test flush, with no single dominant setup cost. See
+[#158](https://github.com/epiphany40223/parishkit/issues/158).
+
+- Twelve partitions and their per-partition coverage receipts are unchanged,
+  but each CI job now runs three of them concurrently, each against its own
+  PostgreSQL/Valkey pair (roles stay cluster-isolated). Four jobs replace
+  twelve. The partitions mostly wait on PostgreSQL, so they share a runner
+  well; the per-partition deadline rises from 20 to 30 minutes and the job
+  limit from 25 to 40 minutes only to absorb that sharing, not to hide a
+  slower suite.
+- Transactional flushes no longer re-emit `post_migrate` (content types and
+  permissions, which no test reads), halving each flush.
+- One synthetic Google signing key is generated per session, not per test.
+
 ## Relevance and repeated-bootstrap audit
 
 Retain a test when it protects ParishKit behavior, a required integration

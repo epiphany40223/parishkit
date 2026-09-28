@@ -82,7 +82,11 @@ def test_ci_explicitly_requires_postgresql_verification():
     )
     shards = workflow["jobs"]["stewardship-postgresql-shard"]
     gate = workflow["jobs"]["stewardship-postgresql"]
-    indexes = shards["strategy"]["matrix"]["shard"]
+    indexes = [
+        entry[slot]
+        for entry in shards["strategy"]["matrix"]["include"]
+        for slot in ("first", "second", "third")
+    ]
     count = len(indexes)
     assert 1 <= count <= 32 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
@@ -95,16 +99,21 @@ def test_ci_explicitly_requires_postgresql_verification():
     # The behavioral gate test also executes failure/cancelled/skipped results;
     # explanatory output is not part of the protection contract.
     assert gate["steps"][0]["run"].strip().endswith('test "$SHARD_RESULT" = success')
-    assert shards["timeout-minutes"] == 25
+    assert shards["timeout-minutes"] == 40
     assert gate["timeout-minutes"] == 10
     assert any(
-        "quality_ci shard --index ${{ matrix.shard }} --count " + str(count) + " "
+        'quality_ci shard --index "$index" --count ' + str(count) + " "
         in step.get("run", "")
         for step in shards["steps"]
     )
-    assert shards["services"]["postgres"]["env"]["POSTGRES_INITDB_ARGS"] == (
-        "--set=log_min_error_statement=panic"
-    )
+    # Each concurrent partition has its own cluster: SQL roles are cluster-wide.
+    for slot in (1, 2, 3):
+        postgres = shards["services"][f"postgres-{slot}"]
+        assert postgres["env"]["POSTGRES_INITDB_ARGS"] == (
+            "--set=log_min_error_statement=panic"
+        )
+        assert postgres["ports"] == [f"{55431 + slot}:5432"]
+        assert shards["services"][f"valkey-{slot}"]["ports"] == [f"{56378 + slot}:6379"]
 
 
 def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():

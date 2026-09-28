@@ -24,7 +24,8 @@ from .quality import FLOOR, coverage_percentages, load_scope
 from .quality_sharding import partition, tree_digest
 
 DATABASE_TESTS = "tests/stewardship/database"
-SHARD_TIMEOUT = 20 * 60
+# Three partitions share one CI runner, so allow for their contention.
+SHARD_TIMEOUT = 30 * 60
 # The per-test stack dump only diagnoses a hang; SHARD_TIMEOUT is what fails
 # one. Keep it well above the longest legitimate case and well below the shard
 # deadline, or it can never fire first. The contract test derives that lower
