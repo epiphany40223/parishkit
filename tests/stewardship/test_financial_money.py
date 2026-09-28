@@ -87,3 +87,18 @@ def test_complete_empty_and_incomplete_observations_are_not_equivalent():
     assert source_total(["private-invalid-value"], available=False).cents is None
     with pytest.raises(TypeError, match="availability"):
         source_total([], available=1)
+
+
+@pytest.mark.parametrize(
+    "cents,expected",
+    [
+        (None, "Unavailable"),
+        (0, "$0"),
+        (120000, "$1,200"),
+        (100001, "$1,000.01"),
+        (-500, "-$5"),
+    ],
+)
+def test_family_display_drops_zero_cents(cents, expected):
+    """Family pages show whole dollars without ".00"; other amounts keep cents."""
+    assert MoneyAmount(cents).family_display == expected

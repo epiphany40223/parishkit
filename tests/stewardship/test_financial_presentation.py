@@ -42,7 +42,7 @@ def test_first_and_repeat_financial_presentation_does_not_prefill_comparison(ava
     )
     form = financial_presentation(inputs, None, parish_name="Sample Parish")
     assert form["answers"] == {"annual_pledge": "", "frequency": "", "shares": {}}
-    assert form["pledge"]["display"] == ("$1,200.00" if available else "Unavailable")
+    assert form["pledge"]["display"] == ("$1,200" if available else "Unavailable")
     assert form["observed_at"] == ("2026-10-15T04:00:00+00:00" if available else None)
     previous = {"annual_pledge": "0.00", "frequency": "", "shares": {OTHER: "Gift"}}
     form = financial_presentation(

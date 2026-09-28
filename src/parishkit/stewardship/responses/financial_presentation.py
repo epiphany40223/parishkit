@@ -91,9 +91,9 @@ def financial_presentation(inputs, prior, *, parish_name):
             ),
         },
         "year_label": definition.year_label,
-        "pledge": inputs.pledge.document() | {"display": inputs.pledge.display},
+        "pledge": inputs.pledge.document() | {"display": inputs.pledge.family_display},
         "contributions": inputs.contributions.document()
-        | {"display": inputs.contributions.display},
+        | {"display": inputs.contributions.family_display},
         "observed_at": inputs.observation.observed_at.isoformat()
         if inputs.observation
         else None,

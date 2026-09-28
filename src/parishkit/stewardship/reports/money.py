@@ -50,6 +50,15 @@ class MoneyAmount:
         whole, fraction = divmod(abs(self.cents), 100)
         return f"{'-' if self.cents < 0 else ''}${whole:,}.{fraction:02d}"
 
+    @property
+    def family_display(self):
+        """Like ``display``, but whole-dollar amounts drop ".00" (Family pages).
+
+        Staff reports keep the uniform two-decimal ``display``.
+        """
+        text = self.display
+        return text[:-3] if self.available and self.cents % 100 == 0 else text
+
     def document(self):
         """Expose availability separately from a safe string, never a JSON float."""
         return {"available": self.available, "amount": self.canonical}
