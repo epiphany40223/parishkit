@@ -120,15 +120,36 @@
   const submitControls = (form) => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
     && node.type === "submit");
+  // Forms marked data-submit-waits (export queueing) can legitimately wait
+  // on the server for a minute or two, e.g. behind a ParishSoft refresh's
+  // final step. They stay busy much longer and say so visibly, instead of
+  // silently re-enabling after ten seconds, which looked like nothing happened.
+  const waitNotes = new Map();
+  const slowTimers = new Map();
   const release = (form) => {
     window.clearTimeout(submitting.get(form));
     submitting.delete(form);
+    // A form released early (page restored from the back/forward cache) must
+    // not later show a stale "Still working" note.
+    window.clearTimeout(slowTimers.get(form));
+    slowTimers.delete(form);
     form.removeAttribute("aria-busy");
     submitControls(form).forEach((node) => {
       node.classList.remove("is-busy");
       node.removeAttribute("aria-disabled");
     });
     if (!submitting.size) busyStatus.textContent = "";
+  };
+  const waitNote = (form, submitter, text) => {
+    let note = waitNotes.get(form);
+    if (!note) {
+      note = document.createElement("p");
+      note.className = "help submit-wait";
+      note.setAttribute("role", "status");
+      (submitter || form).insertAdjacentElement("afterend", note);
+      waitNotes.set(form, note);
+    }
+    note.textContent = text;
   };
   document.addEventListener("submit", (event) => {
     const form = event.target;
@@ -139,10 +160,32 @@
     submitControls(form).forEach((node) => node.setAttribute("aria-disabled", "true"));
     event.submitter?.classList.add("is-busy");
     busyStatus.textContent = "Working…";
-    submitting.set(form, window.setTimeout(() => release(form), 10000));
+    if (!form.hasAttribute("data-submit-waits")) {
+      submitting.set(form, window.setTimeout(() => release(form), 10000));
+      return;
+    }
+    const submitter = event.submitter;
+    slowTimers.set(form, window.setTimeout(() => waitNote(form, submitter,
+      "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open."), 5000));
+    submitting.set(form, window.setTimeout(() => {
+      release(form);
+      waitNote(form, submitter,
+        "No response from the server yet. Your export may still have been queued; check Background work, or try again.");
+    }, 180000));
   });
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted) [...submitting.keys()].forEach(release);
+    if (!event.persisted) return;
+    [...submitting.keys()].forEach(release);
+    waitNotes.forEach((note) => note.remove());
+    waitNotes.clear();
+    // A page restored from the back/forward cache still carries the one-time
+    // request_key it was rendered with. Reusing it for a different export
+    // (another format) would be refused as an already-bound request, so give
+    // each restored form a fresh key; a genuine retry of the same submission
+    // still reuses the key it was sent with.
+    document.querySelectorAll('input[type="hidden"][name="request_key"]').forEach((input) => {
+      if (window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
+    });
   });
 
   // Required acknowledgments: a form's submit buttons stay disabled (muted by

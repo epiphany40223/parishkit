@@ -26,6 +26,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.storage import StaleRecordError
@@ -144,12 +145,7 @@ def _names(configuration, rows):
         snapshot_id=current.snapshot_id, source_key__in=duids
     ).select_related("payload"):
         value = record.payload.payload
-        result[int(record.source_key)] = (
-            value.get("mailingName")
-            or " ".join(
-                str(value.get(name) or "") for name in ("firstName", "lastName")
-            ).strip()
-        )
+        result[int(record.source_key)] = family_display_name(value)
     return result
 
 

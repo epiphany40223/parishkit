@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.web.presentation import parish_date, parish_instant
 
 from .census import (
@@ -297,7 +298,7 @@ def _page_content(baseline, campaign, family, members, member_count, financial):
     """
     substitutions = public_substitutions(baseline.configuration.parish, campaign)
     substitutions.update(
-        family_name=family.get("mailingName") or family.get("lastName") or "",
+        family_name=family_display_name(family),
         family_member_names=", ".join(member["display_name"] for member in members),
         family_url="/family/",
         pronoun=household_pronoun(member_count),

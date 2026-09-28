@@ -173,6 +173,9 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     with web_login():
         pledge(harness, load_form(harness), shares={CHECK: ""})
     name = report(harness)["rows"][0]["family_name"].encode()
+    # Pages must not show the Family's row; the bare surname ("Example")
+    # also appears in unrelated page text.
+    row = b'<th scope="row">' + name + b"<br>"
     browser, login = signed_in()
     assert login.status_code == 302
     actor = user("admin@example.org").pk
@@ -202,7 +205,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 ):
                     rejected = post(browser, route + "export", fields | invalid)
                     assert rejected.status_code == 400
-                    assert name not in rejected.content
+                    assert row not in rejected.content
                     assert rejected["Cache-Control"] == "no-store"
                 # Filters are refused where a query string sent them, and another
                 # campaign is indistinguishable from none.
@@ -228,7 +231,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             )
             assert response.status_code == 200
             assert b"Financial stewardship export" in body
-            assert b"Matching Families" in body and name not in body
+            assert b"Matching Families" in body and row not in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(
                 request.task_id,

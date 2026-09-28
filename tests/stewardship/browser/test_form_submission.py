@@ -115,3 +115,65 @@ def test_back_forward_cache_restore_and_script_owned_forms(page, component_origi
     first.click()
     assert first.get_attribute("aria-disabled") is None
     assert len(requests) == 1
+
+
+OLD_KEY = "11111111-1111-4111-8111-111111111111"
+
+
+def test_waiting_forms_stay_busy_and_explain_a_slow_server(page, component_origin):
+    """Export queueing may wait behind a refresh; it must never look ignored.
+
+    A data-submit-waits form stays busy far past the ordinary ten seconds, says
+    "Still working" after a few seconds, and only after three minutes gives up
+    with a visible message. A page restored from the back/forward cache gets a
+    fresh one-time request key, so a second export is not refused as a reuse.
+    """
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/setup-parish")
+    page.evaluate(PROBE, "/export-probe")
+    page.evaluate(
+        """(key) => {
+        const form = document.querySelector('#probe');
+        form.setAttribute('data-submit-waits', '');
+        const input = document.createElement('input');
+        Object.assign(input, {type: 'hidden', name: 'request_key', value: key});
+        form.append(input);
+    }""",
+        OLD_KEY,
+    )
+    served = answered(page, "**/export-probe")
+    first = page.get_by_role("button", name="First")
+    first.click()
+    page.wait_for_timeout(300)
+    assert len(served) == 1
+    page.clock.fast_forward(6_000)
+    assert page.get_by_text("Still working").count() == 1
+    page.clock.fast_forward(60_000)
+    assert first.get_attribute("aria-disabled") == "true"
+    page.clock.fast_forward(120_000)
+    assert first.get_attribute("aria-disabled") is None
+    assert page.get_by_text("No response from the server yet").count() == 1
+    page.evaluate(
+        "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
+    )
+    key = page.locator('#probe input[name="request_key"]').input_value()
+    assert key != OLD_KEY and len(key) == 36
+    assert page.get_by_text("No response from the server yet").count() == 0
+
+
+def test_restored_waiting_form_shows_no_stale_wait_note(page, component_origin):
+    """A back/forward-cache restore before five seconds leaves no "Still working"."""
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/setup-parish")
+    page.evaluate(PROBE, "/export-probe")
+    page.evaluate(
+        "() => document.querySelector('#probe').setAttribute('data-submit-waits', '')"
+    )
+    answered(page, "**/export-probe")
+    page.get_by_role("button", name="First").click()
+    page.wait_for_timeout(300)
+    page.evaluate(
+        "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
+    )
+    page.clock.fast_forward(10_000)
+    assert page.get_by_text("Still working").count() == 0

@@ -195,6 +195,14 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 post(browser, route + "export", fields)["Location"]
                 == response["Location"]
             )
+            # The same one-time key reused for another format (a page back
+            # from the browser cache) is refused clearly, and queues nothing.
+            other = "pdf" if format != "pdf" else "csv"
+            before = ExportRequest.objects.count()
+            reused = post(browser, route + "export", fields | {"format": other})
+            assert reused.status_code == 409
+            assert b"already used for a different export" in reused.content
+            assert ExportRequest.objects.count() == before
             job_route = response["Location"]
             with CaptureQueriesContext(connection) as queries:
                 response, body = read(browser, job_route)
@@ -257,7 +265,7 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
         assert regenerated.directory_snapshot_id == first.directory_snapshot_id
         assert (
             regenerated.directory_snapshot.document["rows"][0]["family_name"]
-            == "Household Example"
+            == "Example"
         )
 
 
@@ -400,7 +408,7 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
-        assert b"They are not in the mail-merge file." in body
+        assert b"not in the mail-merge file." in body
         response = post(browser, route + "export", fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -422,6 +430,6 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     assert response.status_code == 200
     lines = body.decode().splitlines()
     assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
-    assert len(lines) == 2 and lines[1].startswith("1,Household Example,")
+    assert len(lines) == 2 and lines[1].startswith("1,Example,")
     assert "40000" in lines[1] and harness.code in lines[1]
     assert request.directory_snapshot.row_count == 3

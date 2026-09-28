@@ -64,7 +64,8 @@ WITH selected AS MATERIALIZED (
     JOIN stewardship_source_address p ON p.id=m.payload_id
 ), base AS MATERIALIZED (
     SELECT f.source_key,f.source_key::bigint AS family_duid,i.id AS family_id,
-        coalesce(nullif(btrim(f.value->>'mailingName'),''),
+        coalesce(nullif(btrim(f.value->>'lastName'),''),
+            nullif(btrim(f.value->>'mailingName'),''),
             nullif(btrim(concat_ws(' ',f.value->>'firstName',f.value->>'lastName')),''),
             'Family') AS family_name,
         concat_ws(' ',f.value->>'firstName',f.value->>'lastName') AS search_name,

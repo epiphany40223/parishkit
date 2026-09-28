@@ -619,6 +619,9 @@ def test_native_page_filters_privately_and_denies_leaders(
     with web_login():
         pledge(harness, load_form(harness), shares={CHECK: ""})
     name = report(harness)["rows"][0]["family_name"].encode()
+    # The surname alone ("Example") also appears in unrelated page text, so
+    # match the Family's row header rather than the bare name.
+    name = b'<th scope="row">' + name + b"<br>"
     route = f"/admin/reports/{harness.campaign.pk}/financial/"
     browser, login = signed_in()
     assert login.status_code == 302

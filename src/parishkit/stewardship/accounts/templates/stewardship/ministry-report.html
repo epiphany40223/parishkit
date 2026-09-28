@@ -42,7 +42,7 @@
 <p>{% translate "All matching results, not just this page:" %} {{ total|number }}. {% if ministry_id %}{% if action == 'join' %}{% translate "Prospective joiners" %}{% else %}{% translate "Requested leavers" %}{% endif %} — {% translate "Ministry DUID" %} {{ ministry_id|duid }}.{% else %}{% translate "Authorized Ministry summary." %}{% endif %}</p>
 <p class="notice">{% translate "Sensitive parish information. Download only to a trusted device and share only with authorized recipients. Contacts and publication flags are captured from the source snapshot; current access is checked again at download." %}</p>
 {% if not mutable %}<p class="notice">{% translate "Campaign work is gated; new exports are unavailable. Existing authorized read-only reports remain available." %}</p>{% endif %}
-<form method="post" action="{% url 'admin:ministry_export' campaign_id %}">{% csrf_token %}
+<form data-submit-waits method="post" action="{% url 'admin:ministry_export' campaign_id %}">{% csrf_token %}
 {% for key,value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="ministry" value="{{ ministry_id|default_if_none:'' }}"><input type="hidden" name="action" value="{{ action|default:'summary' }}"><input type="hidden" name="request_key" value="{{ export_key }}">
 <label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>

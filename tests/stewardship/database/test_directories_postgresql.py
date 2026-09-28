@@ -51,7 +51,7 @@ def test_native_directory_code_filters_contacts_and_response(
     result = page(harness)
     assert result["total"] == result["active_total"] == 1
     item = result["rows"][0]
-    assert item["family_name"] == "Household Example"
+    assert item["family_name"] == "Example"
     assert item["code"] == harness.code
     assert item["address"]["primaryAddress1"] == "1 Example Street"
     assert item["phones"][0]["value"] == "202-555-0123"
@@ -82,7 +82,23 @@ def test_native_directory_code_filters_contacts_and_response(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
         assert response.status_code == 200 and harness.code.encode() in body
-        assert b"Household Example" in body and b"Do not show this private" not in body
+        assert b"<td>Example</td>" in body and b"Do not show this private" not in body
+        # Simplified columns: DUID on its own, Yes/No values, no retired rows.
+        for text in (
+            b"ParishSoft DUID",
+            b"Campaign email deliverable",
+            b"<td>1</td>",
+            b"<td>Yes</td>",
+        ):
+            assert text in body
+        for text in (
+            b"Separate home and mailing addresses",
+            b"Eligible email:",
+            b"<td>Not yet responded</td>",
+            b"Can&#x27;t be reached by email or mail",
+        ):
+            assert text not in body
+        assert b'class="family-code"' in body
         assert response["Cache-Control"] == "no-store"
         assert f'href="{route}"'.encode() in body
         assert f'href="/admin/reports/{harness.campaign.pk}/postal/"'.encode() in body
@@ -366,7 +382,7 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
                 browser, f"/admin/reports/{harness.campaign.pk}/families/"
             )
         assert response.status_code == 200
-        assert b"Household Example" in body and b"Successor" not in body
+        assert b"<td>Example</td>" in body and b"Successor" not in body
 
 
 def test_directory_unavailability_and_invalid_filters_are_private(
@@ -445,8 +461,9 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     route = f"/admin/reports/{harness.campaign.pk}/families/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route + "?reach=neither")
-        assert response.status_code == 200 and b"Household Example" in body
-        assert b"no campaign mail can reach" in body
+        assert response.status_code == 200 and b"<td>Example</td>" in body
+        assert b'value="neither" selected' in body
+        assert b"no campaign mail can reach" not in body
         # Only Testing mode explains that live codes wait for go-live.
         mode = SystemConfiguration.objects.values_list("mode", flat=True).get()
         assert (b"work only after go-live" in body) is (mode == "testing")
@@ -456,3 +473,17 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     assert (
         b"Reaching every Family" in home and (route + "?reach=neither").encode() in home
     )
+
+
+def test_family_name_is_the_surname_not_a_first_name_mailing_name(
+    live_response_service,
+):
+    """A mailing name holding one person's given name never names the Family."""
+    harness = live_response_service
+    data = response_source()
+    data.families[1]["mailingName"] = "Anna"
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    report = page(harness)
+    assert [row["family_name"] for row in report["rows"]] == ["Example"]
+    assert page(harness, search="Anna")["total"] == 0
