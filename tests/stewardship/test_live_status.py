@@ -106,7 +106,7 @@ def task(state):
     [
         ("queued", True, "Still working"),
         ("running", True, "Still working"),
-        ("retry_wait", True, "Still working"),
+        ("retry_wait", True, "Waiting to try again"),
         ("succeeded", False, "Finished successfully"),
         ("failed", False, "This task failed"),
         ("cancelled", False, "This task was cancelled"),

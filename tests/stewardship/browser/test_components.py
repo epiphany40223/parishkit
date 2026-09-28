@@ -962,3 +962,13 @@ def test_web_only_page_editor_has_no_plain_text_panel(page, component_origin):
     assert page.locator('input[name="generate_text"]').count() == 0
     editor.fill("Welcome edit")
     assert "Welcome edit" in page.locator('textarea[name="html"]').input_value()
+
+
+def test_refresh_task_page_says_what_it_is_doing(page, component_origin):
+    """A refresh run names its kind, its step, its count and why it restarted."""
+    page.goto(component_origin + "/background-task")
+    visible(page.get_by_text("Full refresh", exact=True))
+    visible(page.get_by_text("Downloading from ParishSoft…"))
+    visible(page.get_by_text("1,000 of 4,000 records checked"))
+    visible(page.get_by_text("server restarted", exact=False))
+    assert page.get_by_text("Waiting for progress details").count() == 0

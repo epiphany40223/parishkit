@@ -32,6 +32,13 @@ from parishkit.stewardship.web.tables import window_table
 
 from .models import NONTERMINAL_STATES, TASK_STATES, TaskRun
 from .ownership import database_now
+from .task_wording import (
+    REFRESH,
+    phase_words,
+    refresh_kinds,
+    refresh_label,
+    retry_reason,
+)
 
 
 def _error(code, status):
@@ -279,8 +286,14 @@ def background_page(request):
     if result.status_code != 200:
         return result
     work = json.loads(result.content)
+    # One query labels every refresh on this page as full or 15-minute.
+    kinds = refresh_kinds(
+        task["root_id"] for task in work["tasks"] if task["type"] == REFRESH
+    )
     for task in work["tasks"]:
         _named(task)
+        task["refresh_label"] = refresh_label(task, kinds)
+        task["phase_text"] = phase_words(task["type"], task["progress"]["phase"])
         progress = task["progress"]
         progress["display"] = Percentage(progress["current"], progress["total"])
     # _read already validated every query value, so the filters can be
@@ -321,12 +334,18 @@ def task_page(request, task_id):
         progress["display"] = Percentage(progress["current"], progress["total"])
     following = request.GET.copy()
     following["page"] = str(work["page"] + 1)
+    task = work["task"]
+    kinds = refresh_kinds([task["root_id"]]) if task["type"] == REFRESH else {}
     response = render(
         request,
         "stewardship/background-task.html",
         {
             "work": work,
-            "task": work["task"],
+            "task": task,
+            "refresh_label": refresh_label(task, kinds),
+            "is_refresh": task["type"] == REFRESH,
+            "phase_text": phase_words(task["type"], task["progress"]["phase"]),
+            "retry_text": retry_reason(task),
             "export_cleanup_retry_key": str(uuid4())
             if work["task"]["type"] == "report_export_cleanup"
             and work["task"]["state"] == "failed"

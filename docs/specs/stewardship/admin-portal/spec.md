@@ -1206,6 +1206,24 @@ action inserts a durable task and returns immediately to its status page. If a
 poll is running, no concurrent poll starts; one manual full refresh may be
 queued to follow it. Repeated clicks return/link to the existing queued run.
 
+The refresh page and the "Run a full refresh now" button say that a full
+refresh re-reads everything (including Ministry rosters and giving) and usually
+takes a few minutes, while the automatic 15-minute updates read only the
+Families ParishSoft reports as changed. A refresh run's background task page,
+and its row in the background-work list, name the run as a "Full refresh" or a
+"15-minute update" from its request kind, and describe the current phase in
+words ("Downloading from ParishSoft", "Saving the downloaded records",
+"Checking the new data", "Making the new data current"). The download phase has
+no count, so while a refresh is downloading the page says so instead of a bare
+wait message; other steps without a count keep the general message. Counts are
+labeled as records checked, since every refresh places every record into a
+complete new copy and reuses unchanged records. A run that is still pending
+or running after a restart explains why, from its newest restart event: an unexpected stop (for example a
+server restart, recorded as an expired lease) or a temporary problem (a
+retryable failure), with the attempt number. A finished run shows no such
+notice; its history table still lists every attempt. Other background tasks get the
+same retry explanation and a phase in words.
+
 ## Follow-up workflows
 
 Additional-information items show Family, DUID, text, submission time, needed

@@ -1128,6 +1128,13 @@ def component_origin():
             "/background-task",
             "background-task",
             {
+                # What task_page adds for a refresh run (jobs/task_wording.py).
+                "is_refresh": True,
+                "refresh_label": "Full refresh",
+                "phase_text": "Downloading from ParishSoft",
+                "retry_text": "An earlier attempt stopped unexpectedly (for "
+                "example, the server restarted), so this work started again "
+                "automatically.",
                 "task": {
                     "id": uuid4(),
                     "type": "source_refresh",
