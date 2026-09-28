@@ -3,6 +3,7 @@
 from datetime import date
 
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
+from parishkit.stewardship.web.presentation import phone as format_phone
 
 
 def document_parish(document):
@@ -43,7 +44,7 @@ def campaign_values(*, parish, campaign):
     return {
         "parish_name": parish["name"],
         "parish_website": parish["website"],
-        "parish_phone": parish["phone"],
+        "parish_phone": format_phone(parish["phone"]),
         "parish_email": parish.get("email", ""),
         "online_giving_url": giving_url(parish),
         "campaign_name": campaign["name"],

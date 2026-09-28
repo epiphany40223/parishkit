@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.presentation import out_of
+from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import address_lines
 from .ministries import OUTCOMES, STATES
@@ -149,7 +150,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 value["value"] for value in item["emails"] or [] if value.get("value")
             )
             phones = "\n".join(
-                f"{key}: {value}"
+                f"{key}: {format_phone(value)}"
                 for key, value in sorted((item["phones"] or {}).items())
                 if value
             )

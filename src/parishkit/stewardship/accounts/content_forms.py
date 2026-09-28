@@ -18,6 +18,7 @@ from parishkit.stewardship.web.content import (
     validate_template,
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
+from parishkit.stewardship.web.presentation import phone as format_phone
 from parishkit.stewardship.web.refusals import UserFacingError
 
 from .content_defaults import default_data
@@ -328,7 +329,7 @@ def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=
     substitutions = {
         "parish_name": parish["name"],
         "parish_website": parish.get("website") or SAMPLE_PARISH["website"],
-        "parish_phone": parish.get("phone") or SAMPLE_PARISH["phone"],
+        "parish_phone": format_phone(parish.get("phone") or SAMPLE_PARISH["phone"]),
         "parish_email": parish.get("email") or SAMPLE_PARISH["email"],
         "online_giving_url": parish.get("online_giving_url")
         or parish.get("website")

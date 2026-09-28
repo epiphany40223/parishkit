@@ -188,7 +188,7 @@ def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
         "New",
         "member@example.org",
         "2026-09-19",
-        "home: 202-555-0123",
+        "home: +1 (202) 555-0123",
         "",
         "",
     )

@@ -30,8 +30,8 @@ PARISH = {
     ),
     "phone": _(
         "The parish office's main telephone number, shown to Families who need "
-        "help. Use +1 followed by the ten-digit US number, for example "
-        "+12125551234."
+        "help. Enter the ten-digit US number any common way, for example "
+        "(212) 555-1234; it is shown as +1 (212) 555-1234."
     ),
     "online_giving_url": _(
         "Optional. The web page where Families can give online, for example "

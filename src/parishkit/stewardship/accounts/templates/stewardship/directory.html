@@ -42,7 +42,7 @@
 <td><details><summary>{% translate "Contact details for" %} {{ row.family_name }}</summary>
 <dl><dt>{% translate "Envelope number" %}</dt><dd>{{ row.envelope|default_if_none:'Unavailable' }}</dd>
 <dt>{% translate "Active Family heads" %}</dt><dd>{% for head in row.heads %}{{ head.name }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No active head" %}{% endfor %}</dd>
-<dt>{% translate "Family and active Member phones" %}</dt><dd>{% for phone in row.phones %}{{ phone.owner }} — {{ phone.kind }}: {{ phone.value }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No phone available" %}{% endfor %}</dd>
+<dt>{% translate "Family and active Member phones" %}</dt><dd>{% for phone in row.phones %}{{ phone.owner }} — {{ phone.kind }}: {{ phone.value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No phone available" %}{% endfor %}</dd>
 <dt>{% translate "Known primary address" %}</dt><dd>{% for line in row.address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% if row.address %}{% translate "No address supplied" %}{% else %}{% translate "Unavailable" %}{% endif %}{% endfor %}</dd>
 <dt>{% translate "Separate home and mailing addresses" %}</dt><dd>{% translate "Not distinguished by the current source data. Do not assume that the primary address serves both purposes." %}</dd></dl></details></td></tr>
 {% empty %}<tr><td colspan="5">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>

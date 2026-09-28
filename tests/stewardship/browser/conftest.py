@@ -1320,6 +1320,7 @@ def component_origin():
         ("report-v1.js", "application/javascript"),
         ("information-export-v1.js", "application/javascript"),
         ("users-v1.js", "application/javascript"),
+        ("phone-v1.js", "application/javascript"),
         ("status-refresh-v1.js", "application/javascript"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
