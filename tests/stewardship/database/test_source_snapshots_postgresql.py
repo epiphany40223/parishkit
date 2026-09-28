@@ -1,7 +1,9 @@
 """Real staged-corpus validation, deduplication and all-or-nothing source truth."""
 
+from itertools import batched
+
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditContext
@@ -14,6 +16,7 @@ from parishkit.stewardship.source.snapshot_models import (
     SourceSnapshotPin,
 )
 from parishkit.stewardship.source.snapshots import (
+    PROMOTION_STATEMENT_SECONDS,
     begin_snapshot,
     finish_snapshot,
     promote_snapshot,
@@ -46,7 +49,11 @@ def prepared(corpus=None, claim=None):
     claim = claim or acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=100, admit=permit)
     for kind, entities in corpus.items():
-        stage_entities(snapshot.pk, claim, kind=kind, entities=entities, admit=permit)
+        # Staging accepts bounded batches, as the real refresh sends them.
+        for batch in batched(entities.items(), 500) if entities else [()]:
+            stage_entities(
+                snapshot.pk, claim, kind=kind, entities=dict(batch), admit=permit
+            )
     snapshot = finish_snapshot(
         snapshot.pk,
         claim,
@@ -233,3 +240,62 @@ def test_current_and_protected_corpora_cannot_be_marked_compacted():
             version=F("version") + 1, compacted_at=_now()
         )
     assert reconstruct_snapshot() == source_corpus()
+
+
+def estimated_rows(table, snapshot_id):
+    """The planner's row estimate for one snapshot's membership scan."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"EXPLAIN (FORMAT JSON) SELECT * FROM {table} WHERE snapshot_id=%s",
+            [snapshot_id],
+        )
+        return cursor.fetchone()[0][0]["Plan"]["Plan Rows"]
+
+
+def test_ready_snapshot_is_planned_from_its_own_statistics():
+    """Promotion must not plan a new snapshot from statistics that predate it.
+
+    On a live host the statistics usually describe only earlier snapshots
+    until autovacuum catches up. The planner then estimates one row for the
+    new snapshot and chooses nested loops that are quadratic at a real
+    parish's size, all while promotion holds the global work-order lock.
+    """
+    first, claim = prepared()
+    publish(first, claim)
+    release_source(claim)
+    tables = [membership._meta.db_table for _, membership in ENTITY_MODELS.values()]
+    with connection.cursor() as cursor:
+        cursor.execute("ANALYZE " + ", ".join(tables))
+    corpus = source_corpus()
+    corpus["member"].update(
+        {
+            str(100 + index): {"name": "Member", "family_key": "1"}
+            for index in range(2000)
+        }
+    )
+    second, claim = prepared(corpus)
+    member_table = ENTITY_MODELS["member"][1]._meta.db_table
+    assert estimated_rows(member_table, second.pk) > 1000
+
+
+def statement_timeout_ms():
+    """The session's current statement timeout in milliseconds, as text."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT setting FROM pg_settings WHERE name='statement_timeout'")
+        return cursor.fetchone()[0]
+
+
+def test_promotion_bounds_each_statement_under_the_work_lock():
+    """One pathological statement fails the attempt instead of stalling others."""
+    snapshot, claim = prepared()
+    seen = []
+
+    def reconcile(value):
+        """Observe the limit in force for the promotion's own statements."""
+        seen.append(statement_timeout_ms())
+        return True
+
+    publish(snapshot, claim, reconcile=reconcile)
+    assert seen == [str(PROMOTION_STATEMENT_SECONDS * 1000)]
+    # SET LOCAL ends with the promotion's transaction.
+    assert statement_timeout_ms() == "0"

@@ -5626,3 +5626,29 @@ REVOKE ALL ON FUNCTION public.stewardship_recovery_replacement_v1() FROM PUBLIC;
 -- web retains row-lock authority, not direct token-state/gate mutation.
 REVOKE ALL ON FUNCTION public.stewardship_token_campaign_effects_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_token_gate_release_v1() FROM PUBLIC;
+-- A staged snapshot's membership rows are committed in batches before the
+-- snapshot is marked ready. Validation, promotion and reconciliation then read
+-- them by snapshot_id, and promotion does so while holding the global
+-- work-order lock. With statistics that predate the new snapshot the planner
+-- estimates one row per scan and picks nested loops that are quadratic at a
+-- real parish's size; one refresh ran for tens of minutes and stalled every
+-- other service behind the lock. Refresh the membership statistics as the
+-- schema owner the moment staging completes, so runtime roles never need
+-- ANALYZE or MAINTAIN authority and no caller can invoke it directly.
+CREATE FUNCTION public.stewardship_source_snapshot_statistics_v1() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    ANALYZE public.stewardship_snapshot_family, public.stewardship_snapshot_member,
+        public.stewardship_snapshot_contact, public.stewardship_snapshot_address,
+        public.stewardship_snapshot_ministry, public.stewardship_snapshot_roster,
+        public.stewardship_snapshot_fund, public.stewardship_snapshot_pledge,
+        public.stewardship_snapshot_contribution;
+    RETURN NULL;
+END $$;
+CREATE TRIGGER stewardship_source_snapshot_statistics_v1 AFTER UPDATE OF state
+    ON public.stewardship_source_snapshot FOR EACH ROW
+    WHEN (OLD.state = 'staging' AND NEW.state = 'ready')
+    EXECUTE FUNCTION public.stewardship_source_snapshot_statistics_v1();
+REVOKE ALL ON FUNCTION public.stewardship_source_snapshot_statistics_v1() FROM PUBLIC;

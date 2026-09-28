@@ -21,6 +21,10 @@ from .leases import _now, verify_source
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .version_models import ENTITY_MODELS
 
+# Per-statement bound for source promotion, which runs under the global
+# work-order lock. Generous next to the seconds real promotions take.
+PROMOTION_STATEMENT_SECONDS = 120
+
 RELATIONSHIPS = {
     "member": {"family_key": "family"},
     "roster": {"member_key": "member", "ministry_key": "ministry"},
@@ -248,6 +252,14 @@ def promote_snapshot(snapshot_id, claim, *, admit, reconcile):
     change, leaving the validated staging corpus available for a safe retry.
     """
     with transaction.atomic():
+        # Promotion holds the global work-order lock, so one pathological
+        # statement would stall the scheduler, installers and every other
+        # owner behind it. Normal statements here take seconds; bound each one
+        # so a bad plan fails this attempt (which retries) instead.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SET LOCAL statement_timeout = '{PROMOTION_STATEMENT_SECONDS}s'"
+            )
         verify_source(claim)
         current = _current()
         snapshot = SourceSnapshot.objects.select_for_update().get(pk=snapshot_id)
