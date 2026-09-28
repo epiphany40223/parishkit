@@ -480,7 +480,11 @@ cycle. It also runs on initial setup and manual request. Scheduled refreshes
 never overlap: the mutation lease serializes execution and a waiting full load
 absorbs later requests. The Admin home page and the ParishSoft settings page
 show the last successful full refresh, a newer failed one, and whether one is
-running. It uses shared
+running. A failure notice links to the failed run's task details and
+disappears once a later full refresh succeeds. A scan that shifted between
+pages (a record repeated from an earlier page, or a total or row order that
+changed mid-read) is retried within the bounded provider-failure allowance
+rather than reported as invalid data. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
 of the sole current campaign while it is `draft`, `scheduled`, `active`, or

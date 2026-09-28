@@ -12,7 +12,7 @@
 <h1>{{ label }}</h1>
 {% if not configured %}<p>{% translate "Slack is not set up. To send operational alerts to a Slack channel, enter the channel ID and paste the Slack app's bot token below, then select Save. The token is checked with Slack before it is used." %}</p>{% endif %}
 <div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>
-{% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh %}</section>{% endif %}
+{% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh can_view_task=True %}</section>{% endif %}
 {% if pending %}
 <p>{% translate "This page updates by itself. You can leave it; the change finishes in the background." %}</p>
 {% else %}

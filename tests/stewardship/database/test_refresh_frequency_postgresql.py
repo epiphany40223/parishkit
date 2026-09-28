@@ -113,3 +113,5 @@ def test_full_refresh_status_reports_success_then_a_later_failure(tmp_path):
     failing.transition("permanent_failure")
     status = full_refresh_status()
     assert status.failed_at is not None and status.failed_at > status.succeeded_at
+    # The banner links straight to the failed run's task page.
+    assert status.failed_task_id == failing.claim.run_id
