@@ -1,6 +1,7 @@
 """Real disposable Valkey, signed synthetic Google tokens and durable policy."""
 
 import os
+from functools import cache
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -91,12 +92,20 @@ def auth_service(tmp_path, settings, real_limiter):
 OMIT = object()
 
 
+@cache
+def _signing_key():
+    """One synthetic RSA key per session: generating 2048-bit keys per test
+    cost about 0.1 s each, and tests only need some valid Google signing key.
+    """
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
 @pytest.fixture
 def google(monkeypatch):
     """Keep JWT verification; replace only external certificate and exchange I/O."""
     from allauth.socialaccount.internal import jwtkit
 
-    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private = _signing_key()
     monkeypatch.setattr(
         jwtkit, "fetch_key", lambda *args: ("RS256", private.public_key())
     )
