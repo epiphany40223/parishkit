@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.presentation import campaign_year
+from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .information_rendering import (
     FORMAT_NOTE,
@@ -89,7 +90,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
             values = [row.get("value") for row in item["emails"] or []]
         else:
             values = [
-                f"{label}: {value}" if value else None
+                f"{label}: {format_phone(value)}" if value else None
                 for label, value in (item["phones"] or {}).items()
             ]
         return "\n".join(value for value in values if value)

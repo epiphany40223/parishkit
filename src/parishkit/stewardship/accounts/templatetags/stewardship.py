@@ -5,7 +5,16 @@ from django import template
 from parishkit.stewardship.web import presentation
 
 register = template.Library()
-for name in ("number", "duid", "usd", "percentage", "out_of", "instant", "parish_date"):
+for name in (
+    "number",
+    "duid",
+    "phone",
+    "usd",
+    "percentage",
+    "out_of",
+    "instant",
+    "parish_date",
+):
     register.filter(name, getattr(presentation, name))
 
 

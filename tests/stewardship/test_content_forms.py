@@ -314,7 +314,7 @@ def test_parish_and_civil_date_placeholders_use_campaign_values():
         campaign=owner,
     )
     assert rendered["text"] == (
-        "https://example.org/ +12125550100 October 1, 2026 October 31, 2026 "
+        "https://example.org/ +1 (212) 555-0100 October 1, 2026 October 31, 2026 "
         "America/New_York 2027 January 1, 2027 December 31, 2027"
     )
 

@@ -359,7 +359,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
             )
             if format == "csv":
                 assert b"Not published" in body and b"valid@example.org" not in body
-                assert b"1960-01-01" not in body and b"202-555-0123" in body
+                assert b"1960-01-01" not in body and b"+1 (202) 555-0123" in body
     from parishkit.stewardship.reports import export_services
 
     with work_transaction():

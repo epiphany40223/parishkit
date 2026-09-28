@@ -9,6 +9,7 @@ from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.setup_forms import initial_values
 from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
+from parishkit.stewardship.web.presentation import phone
 
 from ..test_setup_forms import VALUES
 from . import auth_builders
@@ -115,7 +116,10 @@ def test_original_browser_saves_and_revisits_public_steps(setup_http, google):
             for value in values.values():
                 for item in value if isinstance(value, list) else [value]:
                     if isinstance(item, str) and item:
-                        assert html.escape(item).encode() in revisit.content, item
+                        # Telephone numbers are stored as E.164 and shown in
+                        # the "+1 (212) 555-1234" display format.
+                        shown = phone(item) if item.startswith("+1") else item
+                        assert html.escape(shown).encode() in revisit.content, item
         assert dict(SetupDraftSection.objects.values_list("step", "values")) == VALUES
     assert not Parish.objects.exists()
 

@@ -13,6 +13,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import timezone_names, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.presentation import parse_us_phone, phone
 
 from .admin_editing import (
     confirm,
@@ -32,6 +33,37 @@ SALT = "stewardship-parish-profile-preview-v1"
 PROFILE_FIELDS = ("name", "website", "timezone", "phone", "online_giving_url")
 
 
+class PhoneField(forms.CharField):
+    """A US telephone typed any common way, stored as canonical E.164.
+
+    The configuration keeps "+12125551234"; people read and type
+    "+1 (212) 555-1234", "(212) 555-1234" or "212-555-1234".
+    """
+
+    def __init__(self, **kwargs):
+        """Leave room for punctuation while bounding the typed text."""
+        kwargs.setdefault(
+            "widget", forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"})
+        )
+        super().__init__(max_length=32, **kwargs)
+
+    def prepare_value(self, value):
+        """Show stored and re-displayed values in the familiar grouping."""
+        return phone(value) if value else value
+
+    def clean(self, value):
+        """Normalize to E.164, or explain the accepted forms."""
+        value = super().clean(value)
+        if not value:
+            return value
+        try:
+            return parse_us_phone(value)
+        except ValueError:
+            raise forms.ValidationError(
+                _("Enter a ten-digit US telephone number, such as (212) 555-1234.")
+            ) from None
+
+
 class ParishForm(forms.Form):
     """The profile form cannot modify branding, runtime mode or campaign snapshots."""
 
@@ -40,14 +72,9 @@ class ParishForm(forms.Form):
         label=_("Parish website"), max_length=2048, assume_scheme="https"
     )
     timezone = forms.ChoiceField(label=_("Parish timezone"))
-    phone = forms.RegexField(
+    phone = PhoneField(
         label=_("Parish telephone"),
-        regex=r"^\+1[2-9][0-9]{2}[2-9][0-9]{6}$",
-        max_length=12,
-        help_text=_(
-            "Use +1 followed by the ten-digit US number, such as +12125551234."
-        ),
-        widget=forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"}),
+        help_text=_("The ten-digit US number, such as (212) 555-1234."),
     )
     online_giving_url = forms.URLField(
         label=_("Online giving URL"),
@@ -118,6 +145,11 @@ def _form_page(request, configuration, form, *, status=200):
     return response
 
 
+def _shown(name, value):
+    """Preview a telephone change the way people will read it."""
+    return phone(value) if name == "phone" else value
+
+
 def _preview(request, service, actor):
     """Validate the full resulting document and show only changed profile values."""
     configuration = editable_configuration(service)
@@ -168,8 +200,8 @@ def _preview(request, service, actor):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    "before": record["values"].get(name, ""),
-                    "after": value or "",
+                    "before": _shown(name, record["values"].get(name, "")),
+                    "after": _shown(name, value or ""),
                 }
                 for name, value in values.items()
             ],

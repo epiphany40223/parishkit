@@ -9,6 +9,7 @@ from django.db import DatabaseError
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.content_forms import LEGACY_PAGE_REFERENCES
 from parishkit.stewardship.responses.models import Submission
+from parishkit.stewardship.web.presentation import phone
 
 from ..content_factory import content
 from .campaign_builders import campaign_clock, change
@@ -157,7 +158,10 @@ def test_displayed_public_substitution_change_requires_review(
             return
         assert result.status_code == 409, result.content
         fresh = result.json()["form"]
-        assert value in fresh["content"]["review"]
+        # Telephone placeholders render in the display grouping, not E.164.
+        assert (phone(value) if field == "phone" else value) in fresh["content"][
+            "review"
+        ]
         assert not Submission.objects.exists()
         assert (
             post(

@@ -160,7 +160,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         assert b"Not published" in body and b"valid@example.org" not in body
-        assert b"202-555-0123" in body and b"1960-01-01" not in body
+        assert b"+1 (202) 555-0123" in body and b"1960-01-01" not in body
         assert search(browser, root + "leave/", {"ministry": "4"})[0].status_code == 403
         assert browser.post(route, {"search": "Private"}).status_code == 403
         response, body = search(browser, route, {"ministry": "9", "search": "Example"})

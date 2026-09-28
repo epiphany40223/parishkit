@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.web.presentation import phone as format_phone
+
 from .directories import REASONS, address_lines
 
 HEADINGS = (
@@ -124,8 +126,8 @@ def directory_document(
                 str(item["envelope"] or ""),
                 "; ".join(head["name"] for head in item["heads"]),
                 "\n".join(
-                    f"{phone['owner']} — {phone['kind']}: {phone['value']}"
-                    for phone in item["phones"]
+                    f"{row['owner']} — {row['kind']}: {format_phone(row['value'])}"
+                    for row in item["phones"]
                 ),
                 *(str(address.get(field) or "") for field in ADDRESS_FIELDS),
                 "Known primary address"

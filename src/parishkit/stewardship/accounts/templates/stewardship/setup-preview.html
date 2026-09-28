@@ -8,7 +8,7 @@
 <p class="notice">{% translate "Testing mode. This is a read-only preview of temporary settings, not configured or active service. All samples are fictional; no email is sent." %}</p>
 {% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <section class="panel"><h2>{% translate "Parish and campaign" %}</h2>
-<p>{{ parish.name }} — {{ campaign.name }}</p><p>{{ parish.website }} — {{ parish.phone }}</p>{% if parish.online_giving_url %}<p>{% translate "Online giving" %}: {{ parish.online_giving_url }}</p>{% endif %}
+<p>{{ parish.name }} — {{ campaign.name }}</p><p>{{ parish.website }} — {{ parish.phone|phone }}</p>{% if parish.online_giving_url %}<p>{% translate "Online giving" %}: {{ parish.online_giving_url }}</p>{% endif %}
 <p>{{ campaign.start_date }} – {{ campaign.end_date }} ({{ campaign.timezone }})</p>
 <p>{% translate "Enabled modules" %}: {{ campaign.modules|join:', ' }}</p>
 <p>{% translate "All test emails go to" %}: {{ testing_recipient }}</p>

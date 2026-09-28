@@ -103,7 +103,7 @@ def test_directory_xlsx_and_pdf_share_complete_columns_and_report_identity():
     lines = "\n".join(information_lines(report))
     assert "Manual code: ABCDEFGH" in lines
     assert "Primary ZIP extension: 1234" in lines and "Family-code directory" in lines
-    assert "Second Head" in lines and "202-555-0123" in lines
+    assert "Second Head" in lines and "+1 (202) 555-0123" in lines
     output = io.BytesIO()
     assert render_information(report, output, format="pdf") > 0
     assert output.getvalue().startswith(b"%PDF")
