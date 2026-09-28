@@ -1,6 +1,7 @@
 """Path-based CI skipping must only ever skip work a change cannot affect."""
 
 import itertools
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -123,14 +124,54 @@ def test_coverage_combination_runs_only_when_shards_ran():
         assert step["if"] == "${{ steps.gate.outputs.intentional != 'true' }}"
 
 
+MOUNTS = paths.compose_mounts(ROOT)
+NONE = dict.fromkeys(paths.GROUPS, False)
+
+
+def test_compose_mounts_come_from_the_development_tests_service():
+    """The mounts are read from the Compose file, including the whole test tree."""
+    assert MOUNTS is not None
+    for mount in (
+        "src",
+        "tests",
+        "deploy/stewardship",
+        "docs/specs/stewardship",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "tools/prepare-release.py",
+    ):
+        assert mount in MOUNTS
+    assert all(not mount.startswith(("/", "..")) for mount in MOUNTS)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["", "services: {}\n", "services:\n  tests:\n    volumes: [a:b]\n", "{"],
+)
+def test_unreadable_compose_mounts_run_compose(tmp_path, text):
+    """A missing or unexpected Compose file can only make compose run."""
+    target = tmp_path / paths.COMPOSE_DEVELOPMENT
+    target.parent.mkdir(parents=True)
+    target.write_text(text)
+    assert paths.compose_mounts(tmp_path) is None
+    assert paths.compose_mounts(tmp_path / "missing") is None
+    assert paths.classify(["docs/guides/a.md"], None)["compose"] is True
+
+
 @pytest.mark.parametrize(
     "changed,expected",
     [
-        # Documentation-only: every heavy group may skip.
-        (["docs/guides/a.md", "CLAUDE.md"], dict.fromkeys(paths.GROUPS, False)),
+        # Unmounted documentation: every heavy group may skip.
+        (["docs/guides/a.md", "CLAUDE.md"], NONE),
+        ([".github/ISSUE_TEMPLATE/bug.md", "LICENSE"], NONE),
+        # Documentation or workflows the in-image suite reads run compose.
         (
-            [".github/workflows/release.yml", "docs/x.md"],
-            dict.fromkeys(paths.GROUPS, False),
+            ["docs/specs/stewardship/spec.md"],
+            {"postgresql": False, "browser": False, "compose": True},
+        ),
+        (
+            [".github/workflows/release.yml"],
+            {"postgresql": False, "browser": False, "compose": True},
         ),
         # The CI workflow itself always runs everything.
         ([".github/workflows/ci.yml"], ALL),
@@ -143,25 +184,25 @@ def test_coverage_combination_runs_only_when_shards_ran():
         (["README.md"], ALL),
         (["tests/stewardship/conftest.py"], ALL),
         (["unknown-top-level-file"], ALL),
-        # Browser-only tests need only the browser engines.
+        # Browser tests also run in the image (collection parity).
         (
             ["tests/stewardship/browser/test_x.py"],
-            {"postgresql": False, "browser": True, "compose": False},
+            {"postgresql": False, "browser": True, "compose": True},
         ),
-        # Database-only tests need only the shards.
+        # Database tests run in the shards and in the image.
         (
             ["tests/stewardship/database/test_x.py"],
-            {"postgresql": True, "browser": False, "compose": False},
+            {"postgresql": True, "browser": False, "compose": True},
         ),
         # Deployment files need only the container scenarios.
         (
             ["deploy/stewardship/Dockerfile"],
             {"postgresql": False, "browser": False, "compose": True},
         ),
-        # Tools, wrappers and non-stewardship tests need no heavy group.
+        # Tools, wrappers and non-stewardship tests: the image runs them too.
         (
             ["tools/x.sh", "scripts/y/run.py", "tests/test_config.py"],
-            dict.fromkeys(paths.GROUPS, False),
+            {"postgresql": False, "browser": False, "compose": True},
         ),
         # A mixed change runs the union of its needs.
         (
@@ -175,7 +216,62 @@ def test_coverage_combination_runs_only_when_shards_ran():
 )
 def test_classify(changed, expected):
     """Skip a group only when every changed path is on its explicit list."""
-    assert paths.classify(changed) == expected
+    assert paths.classify(changed, MOUNTS) == expected
+
+
+def fake_git(parents, diff):
+    """Stub git: answer the parent query and the diff, recording each call."""
+    calls = []
+
+    def run(root, *args):
+        """Return the canned answer for one git query."""
+        calls.append(args)
+        return parents if args[0] == "rev-list" else diff
+
+    run.calls = calls
+    return run
+
+
+def test_changed_paths_diffs_the_test_merge_commit_against_its_base():
+    """A two-parent HEAD is GitHub's test merge; its first parent is the base."""
+    git = fake_git(["merge base head"], ["docs/guide.md"])
+    assert paths.changed_paths(Path("."), git) == ["docs/guide.md"]
+    assert git.calls == [
+        ("rev-list", "--parents", "-n", "1", "HEAD"),
+        ("diff", "--name-only", "--no-renames", "HEAD^1", "HEAD"),
+    ]
+    assert paths.decide("pull_request", ROOT, git) == NONE
+
+
+@pytest.mark.parametrize(
+    "parents",
+    [None, [], ["single parent"], ["octopus a b c"], ["merge base head", "x"]],
+)
+def test_anything_but_a_two_parent_merge_runs_everything(parents):
+    """A single-parent HEAD would diff only its last commit, so never skip."""
+    git = fake_git(parents, ["docs/guide.md"])
+    assert paths.changed_paths(Path("."), git) is None
+    assert paths.decide("pull_request", ROOT, git) == ALL
+
+
+def test_a_failed_diff_runs_everything():
+    """A git failure after the parent check never skips work."""
+    assert paths.decide("pull_request", ROOT, fake_git(["m b h"], None)) == ALL
+
+
+def test_other_events_never_consult_git():
+    """Pushes, dispatches and anything else always run every group."""
+    git = fake_git(["m b h"], ["docs/guide.md"])
+    for event in ("workflow_dispatch", "push", "merge_group"):
+        assert paths.decide(event, ROOT, git) == ALL
+    assert git.calls == []
+
+
+def test_missing_git_runs_everything(tmp_path, monkeypatch):
+    """The slim application image has no git; that must not skip anything."""
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert paths.run_git(tmp_path, "status") is None
+    assert paths.decide("pull_request", tmp_path) == ALL
 
 
 def git(root, *args):
@@ -188,37 +284,39 @@ def git(root, *args):
     )
 
 
-def test_decide_reads_the_test_merge_commit_diff(tmp_path):
-    """The merge commit's first parent is the base; its diff is the PR."""
+# The application image deliberately has no git, and compose-core runs the
+# complete suite inside it without --require-no-skips; validate runs this on
+# the host with --require-no-skips, where git is always present.
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_real_git_merge_commit_diff(tmp_path):
+    """End to end against real git: the merge diff, then a single-parent HEAD."""
     git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "base.py").write_text("base\n")
     git(tmp_path, "add", ".")
     git(tmp_path, "commit", "-q", "-m", "base")
     git(tmp_path, "checkout", "-q", "-b", "topic")
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "guide.md").write_text("guide\n")
+    (tmp_path / "docs" / "one.md").write_text("one\n")
     git(tmp_path, "add", ".")
-    git(tmp_path, "commit", "-q", "-m", "docs")
+    git(tmp_path, "commit", "-q", "-m", "first")
+    (tmp_path / "docs" / "two.md").write_text("two\n")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "second")
+    # On the topic head itself (single parent) the last commit alone would
+    # look like the whole change; the classifier must refuse to skip.
+    assert paths.changed_paths(tmp_path) is None
     git(tmp_path, "checkout", "-q", "main")
     (tmp_path / "other.py").write_text("other\n")
     git(tmp_path, "add", ".")
     git(tmp_path, "commit", "-q", "-m", "main moved on")
     git(tmp_path, "merge", "-q", "--no-ff", "-m", "test merge", "topic")
-    assert paths.changed_paths(tmp_path) == ["docs/guide.md"]
-    assert paths.decide("pull_request", tmp_path) == dict.fromkeys(paths.GROUPS, False)
-    # Pushes, dispatches and anything else always run every group.
-    assert paths.decide("workflow_dispatch", tmp_path) == ALL
-    assert paths.decide("push", tmp_path) == ALL
-
-
-def test_a_failed_diff_runs_everything(tmp_path):
-    """A shallow or broken checkout without a parent never skips work."""
-    git(tmp_path, "init", "-q", "-b", "main")
-    (tmp_path / "only.md").write_text("x\n")
-    git(tmp_path, "add", ".")
-    git(tmp_path, "commit", "-q", "-m", "root")
-    assert paths.changed_paths(tmp_path) is None
-    assert paths.decide("pull_request", tmp_path) == ALL
+    assert paths.changed_paths(tmp_path) == ["docs/one.md", "docs/two.md"]
+    # This throwaway tree has no Compose file, so compose must run.
+    assert paths.decide("pull_request", tmp_path) == {
+        "postgresql": False,
+        "browser": False,
+        "compose": True,
+    }
 
 
 def test_main_writes_step_outputs(tmp_path, monkeypatch, capsys):

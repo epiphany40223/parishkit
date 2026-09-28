@@ -41,14 +41,20 @@ against its base-branch parent and exports one `true`/`false` output per group:
 | --- | --- | --- |
 | `postgresql` | database shards | documentation, browser tests, tools, scripts, non-stewardship tests, `deploy/` |
 | `browser` | browser engines | documentation, database tests, tools, scripts, non-stewardship tests, `deploy/` |
-| `compose` | compose core, operational scenarios | documentation, browser tests, database tests, tools, scripts, non-stewardship tests |
+| `compose` | compose core, operational scenarios | documentation the development `tests` service does not mount |
 
 Documentation means `docs/`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`,
-`.pymarkdown.json`, issue templates and workflows other than `ci.yml`. Changing
-`ci.yml`, application source, requirements, `pyproject.toml`, `README.md` (an
-image input), stewardship test infrastructure or any unlisted path runs every
-group, as do an empty or failed diff, `workflow_dispatch` runs, and `main`
-pushes. A false positive only costs runner time; a false negative could merge
+`.pymarkdown.json`, issue templates and workflows other than `ci.yml`.
+Compose-core runs the complete suite inside the image over the paths that
+`deploy/stewardship/compose.development.yaml` bind-mounts into its `tests`
+service (all of `tests/`, selected scripts and tools, the stewardship specs,
+plans and development docs, and both workflows). The classifier reads those
+mounts from the Compose file, so any change under them runs the compose group;
+if the file cannot be read, compose runs. Changing `ci.yml`, application
+source, requirements, `pyproject.toml`, `README.md` (an image input),
+stewardship test infrastructure or any unlisted path runs every group, as do
+an empty or failed diff, a checked-out commit that is not GitHub's two-parent
+test merge, `workflow_dispatch` runs, and `main` pushes. A false positive only costs runner time; a false negative could merge
 an untested change, so new rules must err toward running.
 
 Several non-database tests read documentation, workflows and deployment files,
