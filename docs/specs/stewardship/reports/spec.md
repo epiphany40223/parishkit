@@ -258,9 +258,15 @@ source for the weekly Admin digest.
 
 **Access:** Admin and Staff.
 
-List active Families with display name, Family DUID, manual code, current email
-eligibility/deliverability, and response status. Search supports full/partial
-case-insensitive last/family name and DUID. Exact canonicalized-code search uses
+List active Families with name, Family DUID, manual code, current email
+eligibility/deliverability, and response status. The name is the Family's
+surname followed by its heads of household, so same-surname Families can be
+told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
+head whose surname differs from the Family's is shown in full ("Smith, Anna and
+John Jones"); without heads it is just the surname. The default order is
+surname, then that whole name, then DUID. Search supports full/partial
+case-insensitive match of that name (so a head's first name finds the Family),
+DUID and address. Exact canonicalized-code search uses
 a separate CSRF-protected POST body and never places the candidate in a URL or
 query string. The code
 is directly visible to Admin and Staff; there is no per-row reveal action,
@@ -285,7 +291,8 @@ carries no private value. The page, the postal page and the Admin home page
 show how many Families no campaign mail can reach, linking to that list.
 
 CSV, XLSX, and PDF exports are one header row plus one row per Family, with
-exactly the columns Family, Family heads, ParishSoft DUID and Family code. The
+exactly the columns Family (the same surname-and-heads name as the page),
+ParishSoft DUID and Family code. The
 list filtered to Families no campaign mail can reach adds Phone numbers for
 follow-up calls. Report details (parish, campaign, capture time, Families in
 the file, filters applied and the privacy line "Sensitive: Family codes.
@@ -305,7 +312,8 @@ only a keyed fingerprint when correlation is operationally necessary.
 
 The UI labels this report **Families without deliverable email**. It lists every
 current active registered Family lacking a deliverable eligible-head email,
-sorted by Family name then DUID. This population is the complement of the
+sorted as the [Family code lookup](#family-code-lookup) is. This population is
+the complement of the
 deliverable-email statistics card, not of the syntactic eligible-email card.
 Filters/search include name, DUID, address, phone presence, and reason (no head,
 no address, invalid address, or all otherwise eligible addresses permanently

@@ -106,11 +106,27 @@ WITH selected AS MATERIALIZED (
         WHERE e->'valid'='true'::jsonb
     ) recipients
 ), rows AS MATERIALIZED (
-    SELECT *,CASE WHEN email_deliverable THEN 'deliverable'
+    SELECT b.*,CASE WHEN email_deliverable THEN 'deliverable'
         WHEN head_count=0 THEN 'no_head' WHEN address_count=0 THEN 'no_address'
         WHEN NOT email_eligible THEN 'invalid_address'
-        ELSE 'provider_refused' END AS reason
-    FROM base
+        ELSE 'provider_refused' END AS reason,
+        -- The Family as shown (family_names.family_heads_name): the surname,
+        -- then the heads' first names ("A", "A and B", "A, B and C"), a head
+        -- of another surname in full. Search matches it and same-surname
+        -- Families sort by it; the page computes it again for display.
+        family_name||coalesce(', '||(SELECT CASE WHEN cardinality(a)<3
+                THEN array_to_string(a,' and ')
+                ELSE array_to_string(a[1:cardinality(a)-1],', ')||' and '||a[cardinality(a)] END
+            FROM (SELECT array_agg(p.part ORDER BY h.head::bigint) FILTER (WHERE p.part<>'')
+                FROM family_source f
+                CROSS JOIN LATERAL jsonb_array_elements_text(f.value->'active_head_duids') h(head)
+                JOIN members m ON m.source_key=h.head
+                CROSS JOIN LATERAL (SELECT CASE
+                    WHEN btrim(coalesce(m.value->>'lastName',''))=b.family_name
+                    THEN btrim(coalesce(m.value->>'firstName',''))
+                    ELSE btrim(concat_ws(' ',m.value->>'firstName',m.value->>'lastName')) END) p(part)
+                WHERE f.source_key=b.source_key) x(a)),'') AS display_name
+    FROM base b
 ), filtered AS MATERIALIZED (
     SELECT r.* FROM rows r CROSS JOIN options o
     WHERE (NOT (parameters->>'postal')::boolean OR NOT email_deliverable)
@@ -129,7 +145,7 @@ WITH selected AS MATERIALIZED (
           WHEN 'mail' THEN NOT email_deliverable AND mailable
           WHEN 'neither' THEN NOT email_deliverable AND NOT mailable
           ELSE true END
-      AND (o.f->>'search'='' OR position(lower(o.f->>'search') IN lower(family_name))>0
+      AND (o.f->>'search'='' OR position(lower(o.f->>'search') IN lower(display_name))>0
           OR position(lower(o.f->>'search') IN lower(search_name))>0
           OR position(o.f->>'search' IN family_duid::text)>0
           OR EXISTS(SELECT 1 FROM addresses a
@@ -137,9 +153,12 @@ WITH selected AS MATERIALIZED (
               WHERE a.source_key='family:'||r.source_key||':primary'
               AND position(lower(o.f->>'search') IN lower(v.value))>0))
 ), ordered AS (
+    -- Surname first, then the whole shown name, then the DUID.
     SELECT r.*,row_number() OVER (ORDER BY
         CASE WHEN o.f->>'sort'='name' THEN lower(family_name) END,
+        CASE WHEN o.f->>'sort'='name' THEN lower(display_name) END,
         CASE WHEN o.f->>'sort'='name_desc' THEN lower(family_name) END DESC,
+        CASE WHEN o.f->>'sort'='name_desc' THEN lower(display_name) END DESC,
         family_duid) AS ordinal
     FROM filtered r CROSS JOIN options o
 ), page AS MATERIALIZED (
@@ -178,7 +197,7 @@ SELECT jsonb_build_object('metadata',to_jsonb(s),
     'unreachable_total',(SELECT count(*) FROM rows
         WHERE NOT email_deliverable AND NOT mailable),
     'rows',coalesce((SELECT jsonb_agg(
-        to_jsonb(p)-ARRAY['ordinal','head_count','address_count','search_name','source_key']
+        to_jsonb(p)-ARRAY['ordinal','head_count','address_count','search_name','source_key','display_name']
         ORDER BY ordinal) FROM details p),'[]'::jsonb)) INTO answer FROM source s;
     -- END DIRECTORY SELECTION
     RETURN answer;

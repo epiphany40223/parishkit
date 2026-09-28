@@ -31,7 +31,9 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.goto(component_origin + "/family-directory")
     visible(page.get_by_text("ABCDEFGH", exact=True))
     assert page.locator("Family").count() == 0
-    page.get_by_text("Contact details for Example <Family>", exact=True).click()
+    page.get_by_text(
+        "Contact details for Example <Family>, Example Head", exact=True
+    ).click()
     visible(page.get_by_text("Example Head", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label("Search Family name, DUID or address")

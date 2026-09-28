@@ -18,9 +18,9 @@ from .information_rendering import information_xlsx, pdf_font, visible_text
 PAGE_LINES = 32
 LINE_WIDTH = 124
 # Character widths of the Family-code table's columns (monospaced PDF text).
+# Family holds the surname and the heads of household on one line.
 COLUMN_WIDTHS = {
-    "Family": 30,
-    "Family heads": 36,
+    "Family": 68,
     "ParishSoft DUID": 15,
     "Family code": 14,
     "Phone numbers": 45,

@@ -5,9 +5,10 @@ word processor can use it directly. Report details (parish, campaign, capture
 time, filters and the privacy note) are not columns: they go in the PDF header
 and footer and in the XLSX "Report information" sheet.
 
-- The Family-code directory lists Family, Family heads, ParishSoft DUID and
-  Family code. When it is filtered to Families that no campaign mail can reach
-  (reach "neither"), it adds their phone numbers for follow-up calls.
+- The Family-code directory lists Family (the surname, then the heads of
+  household: "Squyres, Tracy and Jeff"), ParishSoft DUID and Family code. When
+  it is filtered to Families that no campaign mail can reach (reach
+  "neither"), it adds their phone numbers for follow-up calls.
 - The postal export is a mail merge for envelope labels and cover letters. It
   includes only Families with a usable mailing address; the rest are counted
   so staff can follow up.
@@ -17,11 +18,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.source.family_names import (
+    family_heads_name,
+    name_series,
+)
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import REACH, REASONS
 
-CODE_HEADINGS = ("Family", "Family heads", "ParishSoft DUID", "Family code")
+CODE_HEADINGS = ("Family", "ParishSoft DUID", "Family code")
 PHONE_HEADING = "Phone numbers"
 POSTAL_HEADINGS = (
     "ParishSoft DUID",
@@ -95,14 +100,6 @@ def mailable(address):
     )
 
 
-def _series(parts):
-    """Join names naturally: "A", "A and B", "A, B and C"."""
-    parts = [part for part in parts if part]
-    if len(parts) < 3:
-        return " and ".join(parts)
-    return ", ".join(parts[:-1]) + " and " + parts[-1]
-
-
 def head_names(heads):
     """The Family heads' names as one natural phrase.
 
@@ -118,8 +115,8 @@ def head_names(heads):
         and len(surnames) == 1
         and "" not in surnames
     ):
-        return f"{_series([first for first, _ in split])} {surnames.pop()}".strip()
-    return _series([_clean(head.get("name")) for head in heads])
+        return f"{name_series([first for first, _ in split])} {surnames.pop()}".strip()
+    return name_series([_clean(head.get("name")) for head in heads])
 
 
 def _zip(address):
@@ -210,8 +207,7 @@ def directory_document(
         headings = CODE_HEADINGS + ((PHONE_HEADING,) if phones else ())
         for item in payload["rows"]:
             row = (
-                item["family_name"],
-                head_names(item["heads"]),
+                family_heads_name(item["family_name"], item["heads"]),
                 str(item["family_duid"]),
                 item["code"] or "",
             )

@@ -17,6 +17,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 )
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.source.family_names import family_heads_name
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 
@@ -190,7 +191,12 @@ def selection_parameters(campaign_id, query, *, postal, mac):
 
 
 def add_codes(campaign_id, rows, *, general):
-    """Decrypt only the selected identities under the caller's key/read barriers."""
+    """Decrypt only the selected identities under the caller's key/read barriers.
+
+    Also adds each row's presentation values: the reason label, the address
+    lines and ``display_name``, the surname followed by the heads of household
+    (the same string the SQL selection searched and ordered by).
+    """
     identities = {
         str(row.pk): row
         for row in FamilyCampaign.objects.filter(
@@ -209,6 +215,7 @@ def add_codes(campaign_id, rows, *, general):
         )
         row["reason_label"] = REASONS[row["reason"]]
         row["address_lines"] = address_lines(row["address"])
+        row["display_name"] = family_heads_name(row["family_name"], row["heads"])
 
 
 def directory_page(campaign_id, query, *, postal, general, mac):
