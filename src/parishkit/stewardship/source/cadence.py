@@ -83,3 +83,26 @@ def due_slots(*, now, timezone, nightly_time, scope_fingerprint, frequency="dail
         )
         result.append(RefreshSlot(cause, due, key, uuid5(SLOT_NAMESPACE, key)))
     return tuple(result)
+
+
+def next_full_at(*, now, timezone, nightly_time, frequency="daily"):
+    """When the next scheduled full refresh falls due, for the Admin banner.
+
+    Mirrors ``due_slots``: "daily" uses the next local ``nightly_time``
+    (DST-resolved), the others the next UTC hour or quarter hour. It only
+    informs Admins; scheduling itself never reads this.
+    """
+    if frequency not in FREQUENCIES:
+        raise ValueError("Unknown full-refresh frequency.")
+    now = now.astimezone(UTC)
+    if frequency == "hourly":
+        return now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    if frequency == "quarter_hour":
+        start = now.replace(minute=now.minute // 15 * 15, second=0, microsecond=0)
+        return start + timedelta(minutes=15)
+    wall = time.fromisoformat(nightly_time)
+    day = now.astimezone(ZoneInfo(timezone)).date()
+    due = resolve_local(datetime.combine(day, wall), timezone)
+    if due <= now:
+        due = resolve_local(datetime.combine(day + timedelta(days=1), wall), timezone)
+    return due

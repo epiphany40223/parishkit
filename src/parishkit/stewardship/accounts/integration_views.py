@@ -8,6 +8,7 @@ from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
@@ -16,7 +17,10 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
-from parishkit.stewardship.source.refresh_status import full_refresh_status
+from parishkit.stewardship.source.refresh_status import (
+    full_refresh_status,
+    refresh_schedule,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -160,8 +164,14 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "configured": configured,
             "removable": configured and target in OPTIONAL_INTEGRATIONS,
             "configuration": configuration,
-            "full_refresh": (full_refresh_status() if target == "parishsoft" else None),
+            "full_refresh": (
+                full_refresh_status(refresh_schedule(configuration), timezone.now())
+                if target == "parishsoft"
+                else None
+            ),
             "status_url": reverse("admin:integration_status", args=[target]),
+            # The ParishSoft page offers the manual full refresh directly.
+            "refresh_key": uuid4() if target == "parishsoft" else None,
         },
         status=status,
     )

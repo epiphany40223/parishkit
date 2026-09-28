@@ -1118,7 +1118,9 @@ closes the task with an audit event.
 
 ## Manual ParishSoft refresh
 
-Admins may request an immediate full refresh from a confirmation dialog. The
+Admins may request an immediate full refresh from a confirmation dialog, or
+with the "Run a full refresh now" button on the ParishSoft settings page and in
+the Admin home page's refresh notice (same capability and CSRF rules). The
 action inserts a durable task and returns immediately to its status page. If a
 poll is running, no concurrent poll starts; one manual full refresh may be
 queued to follow it. Repeated clicks return/link to the existing queued run.

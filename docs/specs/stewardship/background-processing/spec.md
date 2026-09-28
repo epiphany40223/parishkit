@@ -478,10 +478,15 @@ Admin-configurable local time (the default, at 2:00 a.m.), once an hour on the
 UTC hour, or every 15 minutes on UTC quarter hours, when it replaces the delta
 cycle. It also runs on initial setup and manual request. Scheduled refreshes
 never overlap: the mutation lease serializes execution and a waiting full load
-absorbs later requests. The Admin home page and the ParishSoft settings page
-show the last successful full refresh, a newer failed one, and whether one is
-running. A failure notice links to the failed run's task details and
-disappears once a later full refresh succeeds. A scan that shifted between
+absorbs later requests. The Admin home page, the ParishSoft settings page and
+the manual refresh page show the last successful full refresh, a newer failed
+one, whether one is running, the last 15-minute update and when the next
+scheduled full refresh is due. A failure notice links to the failed run's task
+details, says whether the 15-minute updates are still succeeding, says that
+Ministry rosters, Ministries and giving wait for the next full refresh, and
+disappears once a later full refresh succeeds. Admins who may change the
+configuration also get a "Run a full refresh now" button there, which submits
+the [manual refresh](../admin-portal/spec.md#manual-parishsoft-refresh). A scan that shifted between
 pages (a record repeated from an earlier page, or a total or row order that
 changed mid-read) is retried within the bounded provider-failure allowance
 rather than reported as invalid data. It uses shared
