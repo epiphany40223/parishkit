@@ -39,6 +39,14 @@ def add_fact_grants(tables, columns, *, worker):
         tables["stewardship_fact_build_receipt"].add("INSERT")
         tables.setdefault("stewardship_daily_fact", set()).update({"SELECT", "INSERT"})
         tables["stewardship_fact_pointer"].update({"INSERT", "UPDATE"})
+        # Source retention deletes superseded, unused fact generations (SQL
+        # guards admit only stewardship_fact_disposable ones) so their source
+        # input pins stop protecting every refreshed snapshot.
+        tables["stewardship_daily_fact_set"].add("DELETE")
+        tables["stewardship_daily_fact"].add("DELETE")
+        tables.setdefault("stewardship_fact_compaction", set()).update(
+            {"SELECT", "INSERT"}
+        )
         columns["stewardship_submission"]["SELECT"].update(
             {"family_id", "submitted_at", "annual_pledge"}
         )

@@ -8971,6 +8971,25 @@ BEGIN
     -- A boolean AND does not prevent PostgreSQL privilege checks on subqueries.
     IF current_user='pk_stewardship_worker' THEN
       IF TG_OP='DELETE' THEN
+        -- Source retention deletes a superseded, disposable fact generation
+        -- and then releases its now-orphaned source input pin, only while it
+        -- owns the live compaction lease. The fact rows' own guards admit
+        -- only stewardship_fact_disposable generations.
+        IF OLD.parent_kind='facts'
+           AND NOT EXISTS (SELECT 1 FROM public.stewardship_daily_fact_set
+               WHERE id=OLD.parent_id)
+           AND EXISTS (SELECT 1 FROM public.stewardship_source_lease l
+               JOIN public.stewardship_task_run t ON t.id=l.owner_id
+               WHERE l.phase='compaction' AND l.expires_at > clock_timestamp()
+                 AND t.state='running' AND t.fence=l.task_fence
+                 AND t.worker_id=l.worker_id
+                 AND t.lease_expires_at > clock_timestamp())
+        THEN
+            -- Same snapshot row lock as every other pin release.
+            PERFORM 1 FROM stewardship_source_snapshot WHERE id=OLD.snapshot_id
+                FOR UPDATE;
+            RETURN OLD;
+        END IF;
         IF OLD.parent_kind <> 'submission'
            OR NOT public.stewardship_response_source_owner_v1(
                (SELECT snapshot_id FROM public.stewardship_source_current))

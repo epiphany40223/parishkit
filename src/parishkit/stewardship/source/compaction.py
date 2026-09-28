@@ -58,6 +58,25 @@ def _live_pins(now):
     )
 
 
+def _rejected_corpora(limit):
+    """Rejected staging never became source truth; its memberships are waste.
+
+    Select rejected manifests that still own membership rows in any entity
+    table (a load can fail after staging only some kinds).
+    """
+    owned = " UNION ALL ".join(
+        f"SELECT 1 FROM {membership._meta.db_table} m WHERE m.snapshot_id=s.id"
+        for _, membership in ENTITY_MODELS.values()
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id FROM stewardship_source_snapshot s WHERE s.state='rejected' "
+            f"AND EXISTS ({owned}) ORDER BY s.created_at, s.id LIMIT %s",
+            (limit,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def _select_compaction(current, now, limit):
     """Skip active readers and recheck late pins after winning each candidate lock.
 
@@ -152,8 +171,10 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
             snapshot.version += 1
             snapshot.actor_id = claim.worker_id
             snapshot.save()
+        # Rejected manifests keep their state; only their memberships go.
+        rejected = _rejected_corpora(snapshot_limit)
         memberships, payloads = _delete_corpora(
-            [row.pk for row in candidates], payload_limit
+            [row.pk for row in candidates] + rejected, payload_limit
         )
         evidence = SourceCompactionBatch.objects.create(
             task_id=claim.task_id,
@@ -161,7 +182,7 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
             cutoff_at=now,
             recent_cutoff=recent,
             yearly_cutoff=yearly,
-            snapshot_count=len(candidates),
+            snapshot_count=len(candidates) + len(rejected),
             membership_count=memberships,
             payload_count=payloads,
             actor_id=claim.worker_id,
@@ -179,6 +200,40 @@ def compact_source(claim, *, admit, snapshot_limit=50, payload_limit=500):
         )
         verify_source(claim)
         return evidence
+
+
+def _compact_superseded_facts(execution, limit=200):
+    """Delete superseded, unused report fact generations in every campaign.
+
+    Every refresh rebuilds report facts, and each generation pins its source
+    snapshot with no expiry until fact compaction deletes it. v1 scheduled no
+    fact compaction, so those pins protected every refreshed snapshot forever.
+    compact_facts deletes only generations SQL reports disposable (a newer
+    ready generation exists and no pointer, verification, export, digest, pin
+    or demand still uses them) and releases exactly their source pins.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.reports.models import CampaignDailyFactSet
+    from parishkit.stewardship.reports.retention import compact_facts
+
+    with execution.effect():
+        if SystemConfiguration.objects.filter(restore_review_required=True).exists():
+            return []
+        campaigns = list(
+            CampaignDailyFactSet.objects.order_by()
+            .values_list("campaign_id", flat=True)
+            .distinct()
+        )
+    removed = []
+    for campaign_id in campaigns:
+        with execution.effect():
+            removed += compact_facts(
+                campaign_id,
+                execution.claim,
+                admit=lambda action, inputs: action == "compact",
+                limit=limit,
+            )
+    return removed
 
 
 def _admit_compaction(action, snapshot):
@@ -214,6 +269,9 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
             )
         try:
             with execution.maintain_source(claim):
+                # Fact generations first: their source pins release only under
+                # this live compaction lease, freeing the snapshots below.
+                _compact_superseded_facts(execution)
                 for _ in range(batches):
                     execution.check()
                     batch = compact_source(

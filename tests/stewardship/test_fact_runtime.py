@@ -48,6 +48,13 @@ def test_fact_grants_separate_scheduler_metadata_from_calculation_writes(worker)
     assert ("annual_pledge" in columns["stewardship_submission"]["SELECT"]) == worker
     assert "answers" not in columns["stewardship_submission"]["SELECT"]
     assert "claimed_task_id" not in columns["stewardship_fact_demand"]["UPDATE"]
-    assert not any("DELETE" in permissions for permissions in tables.values())
+    # Only the worker deletes, and only the fact generation tables source
+    # retention cleans up (SQL admits disposable generations alone).
+    deletable = {
+        name for name, permissions in tables.items() if "DELETE" in permissions
+    }
+    assert deletable == (
+        {"stewardship_daily_fact_set", "stewardship_daily_fact"} if worker else set()
+    )
     assert ("INSERT" in tables["stewardship_fact_verification_request"]) != worker
     assert ("INSERT" in tables["stewardship_fact_verification_result"]) == worker
