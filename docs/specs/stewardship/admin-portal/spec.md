@@ -1170,9 +1170,17 @@ Only Admins access the combined log screen. It supports:
   correlation, text, date range, and level filters;
 - full-text search over approved indexed fields, never credentials;
 - before/after detail for audit events;
-- a plain-language explanation beside each entry's stored type, and an actor
-  column that names portal users by address, background worker processes as
-  "Background worker", and any other identity as a service or former user;
+- a plain-language explanation beside each entry's stored type. Every type the
+  application defines has one (a guard test enforces it for the audit and
+  operational vocabularies and for types written directly by code and SQL
+  triggers). Types built from a prefix and a state, such as
+  `config_request_applied`, read as a sentence plus the state in words;
+- an actor column that names portal users by address and background worker
+  processes as "Background worker". Other audit actors are named by the actor
+  kind their entry recorded (a Family, the system itself or the server
+  operator), and any remaining identity as a service or former user;
+- recorded detail shown with each field named in words, such as "Lag
+  microseconds", while exports keep the stored field names;
 - a "Show related entries" action that filters by the entry's correlation
   identifier, and a link from each task entry to its background task page; and
 - text or structured JSONL export of the filtered result.

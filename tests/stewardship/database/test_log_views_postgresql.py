@@ -107,7 +107,7 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         # DEBUG is hidden until chosen; audit records appear beside diagnostics.
         assert set(levels(response)) == {"info", "warning", "error", "critical"}
         assert audit_entries(response) >= 2 and "admin_login" in body
-        assert "task_failed" in body and "<dt>outcome</dt><dd>failed</dd>" in body
+        assert "task_failed" in body and "<dt>Outcome</dt><dd>failed</dd>" in body
         # The signed-in Administrator is named on screen for their own login.
         assert "admin@example.org" in body
         # Identifiers never travel in a URL. The refusal explains where filters

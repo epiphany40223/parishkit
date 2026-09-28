@@ -158,6 +158,7 @@ def _load(query, *, size=None):
                 "campaign_reference",
                 "subject_id",
                 "auditcontext__context",
+                "auditcontext__actor_kind",
             )
         ]
     # The same size bounds each source's read, so the merge is the true next page.
