@@ -59,3 +59,47 @@ def test_malformed_values_are_refused(values):
     """Unknown sizes and malformed page numbers are client errors."""
     with pytest.raises(ValueError):
         paginate(ROWS, values)
+
+
+def test_window_table_links_without_a_known_total():
+    """A PageWindow page shows neighbours and sizes but never invents a total."""
+    from parishkit.stewardship.web.contracts import PageWindow
+    from parishkit.stewardship.web.tables import WINDOW_SIZES, window_table
+
+    table = window_table(
+        PageWindow(2, 25), list(range(25)), True, carry=[("state", "all")]
+    )
+    assert (table.count, table.pages) == (None, None)
+    assert (table.first_index, table.last_index) == (26, 50)
+    assert table.previous_query == "state=all&size=25&page=1"
+    assert table.next_query == "state=all&size=25&page=3"
+    assert [value for value, _, _ in table.size_choices] == [
+        str(size) for size in WINDOW_SIZES
+    ]
+    last = window_table(PageWindow(3, 25), [1, 2], False)
+    assert last.next_query is None and last.last_index == 52
+
+
+def test_window_table_lists_a_nonstandard_accepted_size():
+    """An older URL's size stays visible instead of silently changing."""
+    from parishkit.stewardship.web.contracts import PageWindow
+    from parishkit.stewardship.web.tables import window_table
+
+    table = window_table(PageWindow(1, 7), [], False)
+    assert ("7", "7", True) in table.size_choices
+    assert table.first_index == 0 and table.next_query is None
+
+
+def test_window_navigator_omits_total_and_page_count():
+    """The shared navigator must not print "of N" for windowed tables."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.contracts import PageWindow
+    from parishkit.stewardship.web.tables import window_table
+
+    html = render_to_string(
+        "stewardship/table-navigator.html",
+        {"table": window_table(PageWindow(1, 25), [1, 2], True), "label": "Pages"},
+    )
+    assert "Showing 1–2" in html and " of " not in html
+    assert 'rel="next"' in html and "max=" not in html
