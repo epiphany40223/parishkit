@@ -18,6 +18,11 @@ must be allowed to share the checkout and runtime directory.
 
 BuildKit is the supported build path; do not set `DOCKER_BUILDKIT=0` or rely on
 the [deprecated legacy builder](https://docs.docker.com/engine/deprecated/#legacy-builder-for-linux-images).
+The Dockerfile deliberately has no `# syntax=` directive: it uses only
+instructions BuildKit's built-in frontend supports, so a build never pulls a
+frontend image from Docker Hub (one fewer network and rate-limit dependency on
+the production host). Add a pinned directive only if a future instruction
+needs a newer frontend.
 The checked baseline uses Docker 29.7.2, Buildx 0.36.0-desktop.1, and Compose
 5.3.1. Compatibility with older Docker/Compose versions is not a project
 requirement; no legacy JSON-output adapters are provided. Update tooling to
