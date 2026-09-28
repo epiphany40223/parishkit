@@ -34,7 +34,7 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .handoff_discovery import public_handoff
-from .integration_credentials import save_credential, summary
+from .integration_credentials import dismiss, save_credential, summary
 from .integration_forms import (
     LABELS,
     CredentialForm,
@@ -587,10 +587,42 @@ def integration_status(request, target):
             request,
             "stewardship/integration-status.html",
             {
+                "target": target,
                 "summary": latest,
                 "pending": pending,
                 "follow_url": reverse("admin:integration_settings", args=[target]),
             },
+        )
+        return _checked(request, service, response)
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["POST"])
+def dismiss_credential_result(request, target):
+    """Hide a finished key change's status line for every Administrator.
+
+    One CSRF-protected POST under the Configure capability; the dismissal is
+    recorded as an audit event in its own transaction, then the settings page
+    is shown again. An out-of-date request dismisses nothing.
+    """
+    try:
+        filters(request.GET, allowed=set())
+        service = runtime()
+        actor = principal(request, service)
+        if target not in ROTATING_TARGETS or target not in LABELS:
+            raise LookupError("Integration is unavailable.")
+        request_id = UUID(request.POST.get("request_id", ""))
+        configuration = editable_configuration(service)
+        dismiss(
+            target,
+            _optional(configuration, target) or _unset(target),
+            request_id,
+            actor_id=actor.identity,
+            parish_id=configuration.active_configuration.parish.pk,
+        )
+        response = HttpResponseRedirect(
+            reverse("admin:integration_settings", args=[target])
         )
         return _checked(request, service, response)
     except ERRORS as error:

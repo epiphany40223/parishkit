@@ -1,5 +1,6 @@
 """A key saved on its settings page installs and switches with no server step."""
 
+import re
 from dataclasses import replace
 from datetime import timedelta
 from types import MappingProxyType
@@ -8,13 +9,18 @@ from uuid import uuid4
 import pytest
 from django.utils import timezone
 
+from parishkit.stewardship.accounts import integration_credentials as credentials
 from parishkit.stewardship.accounts.configuration_errors import (
     ConfigurationReadinessUnavailable,
 )
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.credential_files import CredentialFiles
 from parishkit.stewardship.accounts.credential_installation import CredentialInstaller
-from parishkit.stewardship.accounts.integration_credentials import selection_key
+from parishkit.stewardship.accounts.integration_credentials import (
+    CredentialSummary,
+    selection_key,
+    summary,
+)
 from parishkit.stewardship.accounts.key_files import (
     file_fingerprint,
     read_private,
@@ -22,6 +28,7 @@ from parishkit.stewardship.accounts.key_files import (
 )
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
@@ -313,3 +320,77 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
         sessions, "database_now", lambda: deadline + timedelta(seconds=1)
     )
     assert browser.get(URL + "/status").status_code != 200
+
+
+def rejected(value):
+    """Save a key the provider refuses; return its failed request row."""
+    assert save(value, candidate=b"synthetic-wrong-key").status_code == 302
+    with identity("pk_stewardship_credential_parishsoft"):
+        value["installer"].run_once()
+        value["installer"].run_once()
+    row = SecretReplacementRequest.objects.get()
+    install(
+        value,
+        ConfigurationChangeRequest.objects.get(request_key=selection_key(row.pk)).pk,
+    )
+    return row
+
+
+def test_dismissing_a_finished_key_change_hides_it_for_everyone(working):
+    """Dismiss is one CSRF-checked POST recorded in the audit log."""
+    row = rejected(working)
+    browser = working["browser"]
+    page = browser.get(URL).content.decode()
+    assert f'name="request_id" value="{row.pk}"' in page
+    # Without the CSRF token nothing is recorded.
+    refused = browser.post(URL + "/dismiss", {"request_id": str(row.pk)})
+    assert refused.status_code == 403
+    # A stale or foreign request identity dismisses nothing.
+    with identity("pk_stewardship_web"):
+        response = post(browser, URL + "/dismiss", {"request_id": str(uuid4())})
+    assert response.status_code == 302 and response["Location"] == URL
+    assert b"ParishSoft did not accept" in browser.get(URL).content
+    with identity("pk_stewardship_web"):
+        response = post(browser, URL + "/dismiss", {"request_id": str(row.pk)})
+    assert response.status_code == 302 and response["Location"] == URL
+    event = AuditEvent.objects.get(event_type="credential_result_dismissed")
+    assert event.subject_id == row.pk
+    # The dismissal is about the request, not the Administrator who made it.
+    assert summary("parishsoft", _record(working)) is None
+    assert b"ParishSoft did not accept" not in browser.get(URL).content
+
+
+def test_finished_key_change_expires_after_an_hour(working, monkeypatch):
+    """Without a dismissal the line drops off an hour after the change."""
+    row = rejected(working)
+    assert summary("parishsoft", _record(working)).kind == "failed"
+    later = row.updated_at + timedelta(minutes=61)
+    monkeypatch.setattr(credentials.timezone, "now", lambda: later)
+    assert summary("parishsoft", _record(working)) is None
+
+
+def test_a_key_that_still_needs_action_cannot_be_dismissed(working, monkeypatch):
+    """An installed key that is not yet in use keeps its line and its link."""
+    row = rejected(working)
+    unselected = CredentialSummary("unselected", timezone.now(), "", row.pk)
+    monkeypatch.setattr(credentials, "summary", lambda target, record: unselected)
+    credentials.dismiss(
+        "parishsoft", _record(working), row.pk, actor_id=None, parish_id=None
+    )
+    assert not AuditEvent.objects.filter(
+        event_type="credential_result_dismissed"
+    ).exists()
+
+
+def test_parishsoft_page_offers_a_one_click_full_refresh(working):
+    """The settings page posts to the manual refresh with a fresh request key."""
+    page = working["browser"].get(URL).content.decode()
+    assert 'action="/admin/source/refresh"' in page
+    assert re.search(r'name="request_key" value="[0-9a-f-]{36}"', page)
+    assert "Run a full refresh now" in page
+
+
+def _record(value):
+    """The applied ParishSoft integration record."""
+    document = value["service"].store.active().document()
+    return document["sections"]["integrations"][0]
