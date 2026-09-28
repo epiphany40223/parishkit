@@ -278,20 +278,23 @@ def test_worker_login_compacts_without_the_global_work_lock(history, monkeypatch
 
     from .test_background_grants_postgresql import task_login
 
-    original = compaction._delete_corpora
+    original = compaction._reclaim_memberships
     probed = []
 
-    def delete(identifiers, payload_limit):
+    def delete(*args, **kwargs):
         """Probe this backend's advisory locks inside the deleting transaction."""
-        with connections["default"].cursor() as cursor:
-            cursor.execute(
-                "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() "
-                "AND locktype='advisory' AND classid=736220 AND objid=1 AND granted)"
-            )
-            probed.append(cursor.fetchone()[0])
-        return original(identifiers, payload_limit)
+        with transaction.atomic():
+            count = original(*args, **kwargs)
+            with connections["default"].cursor() as cursor:
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() "
+                    "AND locktype='advisory' AND classid=736220 AND objid=1 "
+                    "AND granted)"
+                )
+                probed.append(cursor.fetchone()[0])
+        return count
 
-    monkeypatch.setattr(compaction, "_delete_corpora", delete)
+    monkeypatch.setattr(compaction, "_reclaim_memberships", delete)
     task = running_source_task()
     with task_login(ServiceRole.WORKER, exact=True):
         with connections["default"].cursor() as cursor:
@@ -303,7 +306,7 @@ def test_worker_login_compacts_without_the_global_work_lock(history, monkeypatch
         finally:
             release_source(claim)
     assert (result.snapshot_count, result.membership_count) == (1, 9)
-    assert probed == [False]
+    assert probed and not any(probed)
 
 
 class _Execution:
@@ -390,3 +393,84 @@ def test_a_null_live_reference_cannot_disable_retention(history, monkeypatch):
         "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
     )
     assert cleanup().snapshot_count == 1
+
+
+def _heartbeat_can_lock(task_id):
+    """Try the heartbeat's row locks from another connection, as renew_once does.
+
+    renew_once waits at most two seconds for this task's row and the source
+    lease row; a retention transaction that held either would kill the task.
+    """
+    from django.db import OperationalError
+
+    def attempt():
+        """Take both rows FOR UPDATE with a short lock timeout, then release."""
+        try:
+            with transaction.atomic(), connections["default"].cursor() as cursor:
+                cursor.execute("SET LOCAL lock_timeout = '1s'")
+                cursor.execute(
+                    "SELECT id FROM stewardship_task_run WHERE id=%s FOR UPDATE",
+                    [task_id],
+                )
+                cursor.execute("SELECT id FROM stewardship_source_lease FOR UPDATE")
+            return True
+        except OperationalError:
+            return False
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(attempt).result(timeout=10)
+
+
+def test_deletion_chunks_never_hold_the_task_or_lease_row(history, monkeypatch):
+    """A slow or large chunk can never block the heartbeat.
+
+    On the validation deployment one batch held the task row while deleting
+    a whole corpus, the heartbeat timed out on it, and the refresh died.
+    """
+    task = running_source_task()
+    observed = []
+    for name in ("_reclaim_memberships", "_reclaim_payloads"):
+        original = getattr(compaction, name)
+
+        def contended(*args, _original=original, _name=name, **kwargs):
+            """Hold the chunk's transaction open while the heartbeat competes."""
+            with transaction.atomic():
+                count = _original(*args, **kwargs)
+                if count:
+                    observed.append((_name, _heartbeat_can_lock(task["task_id"])))
+            return count
+
+        monkeypatch.setattr(compaction, name, contended)
+    claim = acquire_source(**task, phase="compaction")
+    try:
+        result = compact_source(claim, admit=permit)
+    finally:
+        release_source(claim)
+    assert (result.snapshot_count, result.membership_count, result.payload_count) == (
+        1,
+        9,
+        1,
+    )
+    assert observed == [("_reclaim_memberships", True), ("_reclaim_payloads", True)]
+
+
+def test_spent_budget_marks_now_and_the_next_run_reclaims(history):
+    """A run out of time leaves deletion to the next run and loses nothing."""
+    from time import monotonic
+
+    first = cleanup(deadline=monotonic() - 1)
+    assert (first.snapshot_count, first.membership_count, first.payload_count) == (
+        1,
+        0,
+        0,
+    )
+    with pytest.raises(InvalidSourcePayload, match="unavailable"):
+        reconstruct_snapshot(history[0].pk)
+    again = cleanup()
+    assert (again.snapshot_count, again.membership_count, again.payload_count) == (
+        0,
+        9,
+        1,
+    )

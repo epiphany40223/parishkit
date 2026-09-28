@@ -265,7 +265,9 @@ its ParishSoft surname before its free-text mailing name (directory,
 financial, information and weekly observation; Functions digest only).
 The retention fix then let the worker release a deleted fact generation's
 orphaned source pin under that lease (one guard body; Functions digest
-only). Regenerated from a fresh install, the current baseline is:
+only). Retention then let the worker delete rejected staging memberships
+under that lease too (one guard body; Functions digest only). Regenerated
+from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -273,7 +275,7 @@ only). Regenerated from a fresh install, the current baseline is:
 | Columns | 2445 | `9c812290` |
 | Constraints | 3378 | `56c4de9b` |
 | Indexes | 1002 | `84be1b66` |
-| Functions | 597 | `25f66c70` |
+| Functions | 597 | `9eb29e34` |
 | Triggers | 551 | `30b4c2c2` |
 | Policies | 28 | `1c9c3b2d` |
 
