@@ -72,12 +72,27 @@ CREATE TABLE "stewardship_backup_drive_probe" (
 );
 CREATE INDEX "backup_probe_pending" ON "stewardship_backup_drive_probe" ("created_at") WHERE ((state)::text = 'pending'::text);
 
+-- SECURITY DEFINER (never callable directly) so an insert is compared with the
+-- applied Workspace settings, which the inserting web role cannot choose.
 CREATE FUNCTION stewardship_backup_probe_guard_v1()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'pg_temp' AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
         IF NEW.state <> 'pending' OR NEW.completed_at IS NOT NULL THEN
             RAISE EXCEPTION 'A backup access check starts pending' USING ERRCODE='23514';
+        END IF;
+        -- The installer impersonates the subject with the Workspace key, so a
+        -- check may only name the applied delegated mailbox user: a web
+        -- process cannot make the installer act as any other domain user.
+        IF NEW.subject IS DISTINCT FROM (
+            SELECT workspace.settings->>'delegated_email'
+            FROM public.stewardship_system_configuration runtime
+            JOIN public.stewardship_applied_integration workspace
+                ON workspace.configuration_id=runtime.active_configuration_id
+                AND workspace.kind='google_workspace'
+        ) THEN
+            RAISE EXCEPTION 'A backup access check uses the applied Workspace mailbox user' USING ERRCODE='23514';
         END IF;
         NEW.created_at := statement_timestamp();
         RETURN NEW;
@@ -90,6 +105,7 @@ BEGIN
     NEW.completed_at := statement_timestamp();
     RETURN NEW;
 END $$;
+REVOKE ALL ON FUNCTION stewardship_backup_probe_guard_v1() FROM PUBLIC;
 CREATE TRIGGER stewardship_backup_probe_guard_v1
 BEFORE INSERT OR UPDATE OR DELETE ON stewardship_backup_drive_probe
 FOR EACH ROW EXECUTE FUNCTION stewardship_backup_probe_guard_v1();
