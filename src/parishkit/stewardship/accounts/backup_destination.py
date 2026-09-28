@@ -81,6 +81,16 @@ class ProbeStatus:
     kind: str  # "pending", "succeeded", "failed" or "unanswered"
     message: str
     at: datetime
+    # The link of the folder that was tested, so the page can show it and
+    # keep it in the folder field for Save, and when the test was requested.
+    folder_url: str = ""
+    requested_at: datetime | None = None
+    folder_id: str = ""
+
+
+def folder_link(folder_id):
+    """The canonical Google Drive link for one folder ID."""
+    return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
 def latest_probe(actor_id, now):
@@ -94,6 +104,7 @@ def latest_probe(actor_id, now):
     )
     if row is None:
         return None
+    folder_url = folder_link(row.folder_id)
     if row.state == "succeeded":
         return ProbeStatus(
             "succeeded",
@@ -102,6 +113,9 @@ def latest_probe(actor_id, now):
                 "removed again."
             ),
             row.completed_at,
+            folder_url,
+            row.created_at,
+            row.folder_id,
         )
     # The installer never runs a check older than PROBE_WAIT, so a pending
     # one past it is final in all but its recorded close.
@@ -109,13 +123,30 @@ def latest_probe(actor_id, now):
         row.state == "pending" and now - row.created_at > PROBE_WAIT
     ):
         return ProbeStatus(
-            "unanswered", DriveFailure("unanswered").message, row.created_at
+            "unanswered",
+            DriveFailure("unanswered").message,
+            row.created_at,
+            folder_url,
+            row.created_at,
+            row.folder_id,
         )
     if row.state == "failed":
         return ProbeStatus(
-            "failed", DriveFailure(row.failure_kind).message, row.completed_at
+            "failed",
+            DriveFailure(row.failure_kind).message,
+            row.completed_at,
+            folder_url,
+            row.created_at,
+            row.folder_id,
         )
-    return ProbeStatus("pending", _("Checking access to the folder…"), row.created_at)
+    return ProbeStatus(
+        "pending",
+        _("Checking access to the folder…"),
+        row.created_at,
+        folder_url,
+        row.created_at,
+        row.folder_id,
+    )
 
 
 def request_probe(actor_id, folder_id, subject):

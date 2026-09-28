@@ -20,7 +20,11 @@ from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import backup_health
-from parishkit.stewardship.jobs.backup_models import BackupDriveProbe, BackupUpload
+from parishkit.stewardship.jobs.backup_models import (
+    BackupDriveProbe,
+    BackupRun,
+    BackupUpload,
+)
 from parishkit.stewardship.jobs.operational_content import IncidentKind
 from parishkit.stewardship.jobs.operational_models import OperationalIncident
 from parishkit.stewardship.jobs.ownership import database_now
@@ -50,7 +54,8 @@ def offsite(tmp_path, monkeypatch):
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
     monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
-    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session: drive)
+    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, tag: drive)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: drive.tag)
     monkeypatch.setattr(
         backup_offsite, "RuntimeLayout", lambda c: SimpleNamespace(credential=str)
     )
@@ -64,8 +69,12 @@ def offsite(tmp_path, monkeypatch):
 
 
 def copy(offsite):
-    """Copy under the real backup identity, never sleeping between retries."""
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+    """Copy under the real backup identity, never sleeping between retries.
+
+    The copy closes its idle connection before uploading, so the test role
+    must survive a reconnect.
+    """
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
         return copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: None,
@@ -170,7 +179,7 @@ def test_a_slow_upload_holds_no_lock_the_portals_need(offsite, monkeypatch):
 def test_the_whole_copy_is_bounded_in_time(offsite):
     """Past the copy's deadline no set is started; the outcome is recorded."""
     ticks = iter([0, backup_offsite.COPY_SECONDS + 1])
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: None,
@@ -195,6 +204,75 @@ def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite):
     assert copy(offsite)["state"] == "uploaded"
     observe()
     assert episode() is None
+
+
+def new_set(offsite, name):
+    """Add one more complete local set and return its directory."""
+    directory = offsite.directory.with_name(name)
+    directory.mkdir(mode=0o700)
+    for file in SEALED_FILES:
+        (directory / file).write_bytes(name.encode() + b" " + file.encode())
+    return directory
+
+
+def record_run(directory):
+    """Record the completed backup run for one local set, as the backup does."""
+    with transaction.atomic():
+        started = database_now()
+    run = BackupRun.objects.create(
+        started_at=started,
+        database_bytes=1,
+        files_bytes=1,
+        manifest_digest=backup_offsite._digest(directory),
+        recipient_fingerprint="c" * 16,
+        application_version="test",
+    )
+    run.refresh_from_db()
+    return run
+
+
+def test_a_copy_that_records_nothing_still_alerts(offsite):
+    """A copy killed before recording an outcome is noticed after the grace.
+
+    The newest row stays the previous "uploaded", so without this rule the
+    pages would keep showing that success and nothing would alert.
+    """
+    assert copy(offsite)["state"] == "uploaded"
+    # The next backup completes, but its copy dies before recording anything.
+    newer = new_set(offsite, "20260928T020000Z")
+    run = record_run(newer)
+    grace = backup_health.OFFSITE_GRACE
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
+    # Once the next copy records that set's outcome, the silence is over.
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+
+
+def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypatch):
+    """An older set copied in the same run does not hide the newest one.
+
+    Two sets are pending; the first uploads and records its row, then the
+    process dies uploading the second. The newest row is a fresh "uploaded",
+    but it names the older set, so the newest backup still counts as failing.
+    """
+    newest = new_set(offsite, "20260928T020000Z")
+    run = record_run(newest)
+    upload = offsite.drive.upload
+
+    def killed(path, name, parent, **kwargs):
+        """The process stops (e.g. the container is killed) mid-upload."""
+        if path.parent == newest:
+            raise SystemExit(137)
+        return upload(path, name, parent, **kwargs)
+
+    monkeypatch.setattr(offsite.drive, "upload", killed)
+    with pytest.raises(SystemExit):
+        copy(offsite)
+    rows = BackupUpload.objects.values_list("state", "set_name")
+    assert list(rows) == [("uploaded", offsite.directory.name)]
+    grace = backup_health.OFFSITE_GRACE
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
 
 
 def test_an_unexpected_failure_is_still_recorded_and_alerted(offsite, monkeypatch):
@@ -302,6 +380,12 @@ def workspace(monkeypatch, request):
     return request.getfixturevalue("auth_service")
 
 
+def database_now_sql():
+    """The database's current time, read in its own transaction."""
+    with transaction.atomic():
+        return database_now()
+
+
 def apply(store, response):
     """Install the queued configuration change the web just recorded."""
     assert response.status_code == 302, response.content
@@ -326,10 +410,10 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     store = workspace.store
     browser, _ = signed_in()
     assert b"Off-site backups are not set up" in browser.get("/admin/").content
-    assert (
-        b"Off-site backups (Google Drive)"
-        in browser.get("/admin/configuration/integrations").content
-    )
+    # The Integrations list links to the setup page even before it's set up.
+    index = browser.get("/admin/configuration/integrations").content
+    assert b"Off-site backups (Google Drive)" in index
+    assert f'href="{URL}">Set up off-site backups</a>'.encode() in index
     page = browser.get(URL)
     assert page.status_code == 200
     assert b"Google Drive folder link" in page.content
@@ -344,6 +428,16 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert (probe.folder_id, probe.subject) == (FOLDER, "mail@example.org")
     status = browser.get(URL + "/status")
     assert status.status_code == 200 and b"Checking access" in status.content
+    # After Test access, the tested folder stays in the field for Save and is
+    # named beside the result, whether the check is pending, passed or failed.
+    tested = browser.get(URL).content
+    assert f'value="{LINK}"'.encode() in tested
+    assert b"Folder tested:" in tested
+    BackupDriveProbe.objects.filter(pk=probe.pk).update(
+        state="failed", failure_kind="permission", completed_at=database_now_sql()
+    )
+    failed = browser.get(URL).content
+    assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
     assert post(browser, URL, {"action": "test", "target": "x"}).status_code == 400
     preview = hidden(
         post(
@@ -373,6 +467,8 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     )
     home = browser.get("/admin/")
     assert b"Off-site backups" in home.content
+    index = browser.get("/admin/configuration/integrations").content
+    assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
     preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))

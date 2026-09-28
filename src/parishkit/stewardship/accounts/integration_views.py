@@ -130,15 +130,22 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     record = _optional(configuration, target)
     configured = record is not None
     record = record or _unset(target)
-    form = (
-        form
-        if form is not None
-        else IntegrationForm(
-            target,
-            initial=record["values"]["settings"]
-            | {"base_digest": configuration.active_configuration.digest},
-        )
-    )
+    backup = _backup_context(request, configuration) if target == "backup" else {}
+    initial = record["values"]["settings"] | {
+        "base_digest": configuration.active_configuration.digest
+    }
+    probe = backup.get("probe")
+    if (
+        probe is not None
+        and probe.requested_at > _applied_at()
+        and probe.folder_id != _saved_folder_id(initial.get("target"))
+    ):
+        # Keep a folder the Administrator tested since the settings were last
+        # applied in the field, so Save applies it without pasting the link
+        # again. The saved link stays as written when it is that same folder,
+        # and after a Save the applied folder shows instead.
+        initial["target"] = probe.folder_url
+    form = form if form is not None else IntegrationForm(target, initial=initial)
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -178,13 +185,39 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "status_url": reverse("admin:integration_status", args=[target]),
             # The ParishSoft page offers the manual full refresh directly.
             "refresh_key": uuid4() if target == "parishsoft" else None,
-            **(_backup_context(request, configuration) if target == "backup" else {}),
+            **backup,
         },
         status=status,
     )
     if status == 400:
         response.stewardship_safe_error = True
     return response
+
+
+def _applied_at():
+    """When the applied configuration version was created.
+
+    Other runtime-row updates (mode changes, restore holds) don't count as a
+    settings change, so this reads the version, not the runtime row.
+    """
+    from datetime import UTC, datetime
+
+    from .runtime_models import SystemConfiguration
+
+    created = SystemConfiguration.objects.values_list(
+        "active_configuration__created_at", flat=True
+    ).first()
+    return created or datetime.min.replace(tzinfo=UTC)
+
+
+def _saved_folder_id(link):
+    """The Drive folder ID in a saved folder link, or None."""
+    from parishkit.stewardship.backup_drive import folder_id_from_url
+
+    try:
+        return folder_id_from_url(link or "")
+    except ValueError:
+        return None
 
 
 def _backup_context(request, configuration):

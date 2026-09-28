@@ -23,6 +23,10 @@ from .ownership import database_now
 
 # The specification's window: a successful backup is required every 24 hours.
 REQUIRED_WITHIN = timedelta(hours=24)
+# A completed backup's off-site copy must record an outcome within this long.
+# The copy stops starting work after four hours (backup_offsite.COPY_SECONDS),
+# so a longer silence means it was killed or lost its database connection.
+OFFSITE_GRACE = timedelta(hours=6)
 
 
 def needs_backup_observation():
@@ -63,19 +67,40 @@ def backup_overdue(instant):
     return instant - latest > REQUIRED_WITHIN
 
 
-def offsite_failing():
-    """True while the newest off-site copy outcome is a failure.
+def offsite_failing(instant=None):
+    """True while off-site copies are failing, or have silently stopped.
 
     The backup profile records one outcome per attempted set, and "disabled"
     when the destination is removed, so an old failure stops counting once a
-    later copy succeeds or copies are turned off.
+    later copy succeeds or copies are turned off. A copy that is killed, or
+    loses its database connection, before recording anything leaves an older
+    set's "uploaded" row as the newest: so once copies have started, the
+    newest backup counts as failing when it completed more than
+    ``OFFSITE_GRACE`` ago and no outcome names its set. Keying on the set,
+    not on timestamps, also catches a catch-up run that copied an older set
+    and was then killed during the newest one.
     """
     newest = (
         BackupUpload.objects.order_by("-created_at")
-        .values_list("state", flat=True)
+        .values_list("state", "created_at")
         .first()
     )
-    return newest == "failed"
+    if newest is None or newest[0] == "disabled":
+        return False
+    if newest[0] == "failed":
+        return True
+    latest_run = (
+        BackupRun.objects.order_by("-completed_at")
+        .values_list("completed_at", "manifest_digest")
+        .first()
+    )
+    if latest_run is None:
+        return False
+    instant = database_now() if instant is None else instant
+    return (
+        instant - latest_run[0] > OFFSITE_GRACE
+        and not BackupUpload.objects.filter(manifest_digest=latest_run[1]).exists()
+    )
 
 
 def observe_backup_health():
