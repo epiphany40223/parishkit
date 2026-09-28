@@ -3,6 +3,14 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+# Every promoted snapshot stays reconstructable this long. Refreshes run as
+# often as every 15 minutes and each promoted snapshot keeps a full membership
+# set, so a long window (originally 90 days) grows the database by close to
+# a gigabyte a day. Readers of an older corpus are protected by pins and live
+# references (compaction.py), not by this window; it only needs to cover work
+# that started against a just-superseded snapshot.
+RECENT_RETENTION = timedelta(hours=6)
+
 
 def retention_cutoffs(now):
     """Use UTC instants and a calendar year; February 29 maps to February 28."""
@@ -13,7 +21,7 @@ def retention_cutoffs(now):
         yearly = now.replace(year=now.year - 1)
     except ValueError:
         yearly = now.replace(year=now.year - 1, day=28)
-    return now - timedelta(days=90), yearly
+    return now - RECENT_RETENTION, yearly
 
 
 def retention_anchors(stamps, *, now):

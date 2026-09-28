@@ -362,15 +362,16 @@ all derived current indexes in one database transaction. A failed or rejected
 load never exposes a partial corpus.
 
 Source compaction uses UTC cutoff instants and never compacts the current
-snapshot or a snapshot protected by a submission baseline/effective version,
+snapshot, a snapshot still named by live campaign, credential, activation,
+recipient, fact-demand or setup state, or a snapshot protected by a submission baseline/effective version,
 pinned report or digest, unexpired Family form baseline, reconciliation/publication record, audit reference,
 campaign boundary anchor, restore/delivery hold, or explicit operator hold.
 Those snapshots and their membership/payload rows remain fully reconstructable
 for the lifetime of the protecting record. Among otherwise unprotected
 promoted snapshots, the system retains:
 
-- every reconstructable snapshot for 90 days after promotion;
-- after 90 days through one year, the latest promoted snapshot in each UTC
+- every reconstructable snapshot for six hours after promotion;
+- after six hours through one year, the latest promoted snapshot in each UTC
   calendar day; and
 - after one year, the latest promoted snapshot in each UTC calendar month
   indefinitely.

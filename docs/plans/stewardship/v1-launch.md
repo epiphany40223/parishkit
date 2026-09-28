@@ -67,7 +67,7 @@ require. Their task IDs stay unchecked in the checklists.
 | --- | --- | --- | --- | --- |
 | 1 | Exceptional campaign purge | DAT-09.02, ADM-10.01–.06, BG-11.01–.05, OPS-07.04, the purge portion of DAT-09.04 | None; purge is exceptional. No purge entry point is exposed. | No fixed date |
 | 2 | Automated restore release, closed-campaign reopen, archive/unarchive and Return to Testing | OPS-06.01–.06, ADM-06.01, .03, .04, .05, BG-02.03 (restore/reopen token preparation), BG-07.04 | Manual restore runbook (below). Archive and Return to Testing are needed only before the *next* campaign. | Before the 2027 campaign is prepared |
-| 3 | Retention and compaction jobs | OPS-07.01–.05, DAT-09.03 | Disk growth over one campaign is small. Operators watch disk use; expired export files may be cleaned by hand if needed. | Before the 2027 campaign |
+| 3 | Retention and compaction jobs | OPS-07.01–.05, DAT-09.03 | Source snapshot compaction is in v1 (#190): 15-minute refreshes grew the database by close to a gigabyte a day. Other disk growth over one campaign is small; operators watch disk use, and expired export files may be cleaned by hand if needed. | Before the 2027 campaign |
 | 4 | Release-pipeline extras and key rotation | OPS-09.06, the SBOM, provenance and multi-architecture portions of OPS-09.03, ARC-06.06 | Single-architecture image built from a tagged commit. Keys are generated at install and not rotated during v1. | Before the 2027 campaign |
 
 ### Manual restore for v1 (replaces item 2)

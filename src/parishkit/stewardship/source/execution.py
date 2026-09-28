@@ -22,6 +22,7 @@ from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import verify_refresh_attempt
+from .compaction import compact_before_refresh
 from .credentials import SourceCredential
 from .failures import settle_failed_read
 from .fallback import request_full_fallback
@@ -220,6 +221,11 @@ def _execute(execution, *, credential_path, reconcile):
             if request is None:
                 return
             credential = SourceCredential.read(credential_path)
+            # Reclaim corpora the previous refreshes superseded before taking
+            # this refresh's own lease. At this point every earlier provider
+            # request's safety deadline has long passed, so the compaction
+            # lease is available; retention never fails the refresh.
+            compact_before_refresh(execution)
             with execution.effect():
                 claim = acquire_source(
                     task_id=execution.claim.run_id,

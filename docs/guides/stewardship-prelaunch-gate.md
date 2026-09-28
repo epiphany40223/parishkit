@@ -256,8 +256,10 @@ table, `stewardship_critical_event_ack` (one row per acknowledged CRITICAL
 log entry, unique by log reference), with its immutability trigger and
 function. The paged Family form then made the financial guard require a
 share method for a positive pledge whenever any are offered (one function
-body; Functions digest only). Regenerated from a fresh install, the current
-baseline is:
+body; Functions digest only). Source snapshot retention (#190) then let the
+worker delete compacted membership rows and unreferenced payload versions
+while it owns a live compaction lease (two guard bodies; Functions digest
+only). Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -265,7 +267,7 @@ baseline is:
 | Columns | 2445 | `9c812290` |
 | Constraints | 3378 | `544f9af1` |
 | Indexes | 1002 | `84be1b66` |
-| Functions | 597 | `17c31947` |
+| Functions | 597 | `fe4655db` |
 | Triggers | 551 | `30b4c2c2` |
 | Policies | 28 | `1c9c3b2d` |
 
@@ -292,8 +294,10 @@ requires.
   provenance or vulnerability scanning; release-pipeline extras are deferred.
 - Provider smoke checks against real providers are human-run; normal CI stays
   fake-backed.
-- Retention and compaction jobs, exceptional purge and ParishSoft write-back
-  are not in v1; write-back is the first post-launch work.
+- Exceptional purge and ParishSoft write-back are not in v1; write-back is the
+  first post-launch work. Of the retention jobs, only source snapshot
+  compaction runs in v1 (#190); fact, export-file and other retention stays
+  deferred.
 - The validation deployment may use real read-only ParishSoft data, real
   Google login and Testing-routed real mail before the gate, as the launch
   scope authorizes.
