@@ -20,7 +20,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import out_of
@@ -65,6 +65,7 @@ def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
 
 def _error(campaign_id, *, postal, status):
     """Render fixed recovery text without reflecting private input or DB failures."""
+    debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/directory-error.html",

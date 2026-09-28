@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
+from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
@@ -43,6 +44,7 @@ def _error(
     request, *, campaign_id=None, request_id=None, exact_id=None, status=409, busy=False
 ):
     """Fixed-text recovery never reflects a submitted value or internal failure."""
+    debug_swallowed("report request refused")
     # No request context processors: a database outage must not trigger another
     # database query while rendering its recovery response.
     response = HttpResponse(

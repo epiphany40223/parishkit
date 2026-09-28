@@ -16,7 +16,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
@@ -62,6 +62,7 @@ def _principal(request, store, *, read_only=False):
 
 def _error(campaign_id, *, request_id=None, status=400):
     """No private form/exception values or database-dependent context processors."""
+    debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/ministry-followup-error.html",

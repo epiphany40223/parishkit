@@ -24,6 +24,7 @@ from parishkit.stewardship.web.contracts import (
     expected_version,
     filters,
 )
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 
 from .authentication import denial, runtime
@@ -61,7 +62,7 @@ def family_codes(request, campaign_id):
             return response
         configuration = SystemConfiguration.objects.get()
         if configuration.restore_review_required:
-            return denial(status=503, retry=5)
+            return report_unavailable()
         with transaction.atomic():
             record_action(
                 Action.FAMILY_CODES_VIEWED,
@@ -157,7 +158,7 @@ def family_codes(request, campaign_id):
         TypeError,
         ValueError,
     ):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     finally:
         # Once returned, the stream owns terminal audit; all earlier exits,
         # including unexpected serializer exceptions, finish here instead.

@@ -20,6 +20,7 @@ from parishkit.stewardship.jobs.delivery_views import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
 from .weekly_manual import request_manual_report
@@ -94,6 +95,6 @@ def request_report(request, campaign_id):
     except DatabaseError as error:
         return _database_error(error)
     except (ConfigError, LimiterUnavailable, StorageInvariantError):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Manual report command is already bound.\n", status=409)

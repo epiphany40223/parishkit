@@ -21,6 +21,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
@@ -73,7 +74,7 @@ def index(request):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except SAFE_FAILURES:
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid report filters.\n", status=400)
 
@@ -196,9 +197,9 @@ def participation(request, campaign_id, *, fact_set_id=None):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (StatisticsUnavailable, FactUnavailable, StorageInvariantError):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except SAFE_FAILURES:
-        return denial(status=503, retry=5)
+        return report_unavailable()
     except ValueError:
         return private_response("Invalid report filters.\n", status=400)
     finally:

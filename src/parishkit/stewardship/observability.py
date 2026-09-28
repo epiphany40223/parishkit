@@ -3,6 +3,7 @@
 import copy
 import logging
 import os
+import sys
 import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -196,6 +197,19 @@ def debug_logging_enabled() -> bool:
     data only; it is off unless the variable is exactly "1".
     """
     return os.environ.get(DEBUG_LOGGING_VARIABLE) == "1"
+
+
+def debug_swallowed(message: str) -> None:
+    """Debug-log the exception being handled where a view hides its detail.
+
+    Views that turn a failure into a closed, generic response (a denial or a
+    "temporarily unavailable" page) otherwise leave no trace of what failed.
+    Call this from inside the ``except`` block; outside one, or with debug
+    logging off, it does nothing.
+    """
+    error = sys.exc_info()[1]
+    if error is not None and debug_logging_enabled():
+        logging.getLogger("parishkit.stewardship.debug").debug(message, exc_info=error)
 
 
 def _debug_details(record: logging.LogRecord) -> dict:

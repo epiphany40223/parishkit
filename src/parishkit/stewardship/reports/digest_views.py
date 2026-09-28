@@ -15,6 +15,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
@@ -151,7 +152,7 @@ def snapshot(request, snapshot_id, *, representation="html"):
         StatisticsUnavailable,
         StorageInvariantError,
     ):
-        return denial(status=503, retry=5)
+        return report_unavailable()
     finally:
         if finish is not None and not handed_off:
             finish(False)
