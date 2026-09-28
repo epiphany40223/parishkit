@@ -355,6 +355,20 @@ table shows how many rows are selected and enables its action buttons only
 while at least one is. The server validates every submitted selection, so the
 controls also work without script.
 
+### Page help
+
+Admin pages put the task first and keep explanation one deliberate click
+away, without removing any of it. A page leads with its heading, at most a
+short introduction, safety notices (such as Testing mode) and the form.
+Longer explanation of how the page behaves (how a credential is kept, how
+mail schedules work, the placeholder reference) sits in an "About this page"
+panel: a disclosure that starts open, and that each browser remembers closed,
+per page type, once an Admin closes it. Only that open or closed choice is
+stored in the browser; without script or browser storage the panel stays
+open. Help under a field is a short hint; longer field explanations belong in
+the About panel or a click-to-open field tip, never in hover-only tooltips,
+which touch and keyboard users cannot reach.
+
 ## Background indicators
 
 Admins have two always-visible indicators:

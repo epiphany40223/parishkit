@@ -50,6 +50,7 @@ sections:
     "Navigation and home": [ADM-03]
     "Admin navigation": [ADM-03]
     "Admin tables": [ADM-03]
+    "Page help": [ADM-03]
     "Background indicators": [ADM-03]
     "Parish and integration configuration": [ADM-03, ARC-06]
     "Ministry activity management": [ADM-03, DAT-05, FAM-05]

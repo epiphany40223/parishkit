@@ -7,7 +7,8 @@
 <p class="setup-intro">{% translate "Send one fictional sample email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test. Once Google accepts it, Continue takes you to the next step." %}</p>
 <p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
-<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>
+{% aboutpage "setup-mail" %}<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>
+<p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>{% endaboutpage %}
 <div data-setup-mail data-mail-status-url="{% url 'admin:setup_mail_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
 <form method="post" id="setup-test">{% csrf_token %}
@@ -19,7 +20,6 @@
 {% if tested %}<p><button class="button-secondary" data-mail-send type="submit" {% if pending %}disabled{% endif %}>{% translate "Send another test" %}</button></p>{% endif %}
 </form>
 <p data-mail-status-error hidden role="status">{% translate "Status is unavailable or setup changed. Reload this page to check the current test before sending another." %}</p>
-<p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>
 <h2>{% translate "Recent tests" %}</h2>
 <ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
 <time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state role="status">{{ item.label }}</span>

@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n static %}
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
 {% comment %}
   One form holds the integration's settings and, for integrations with a key,
   an optional write-only field for a replacement key. Saving a key installs it
@@ -11,6 +11,7 @@
 <p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
 {% if not configured %}<p>{% translate "Slack is not set up. To send operational alerts to a Slack channel, enter the channel ID and paste the Slack app's bot token below, then select Save. The token is checked with Slack before it is used." %}</p>{% endif %}
+{% aboutpage "integration-settings" %}<p>{% translate "Saving settings without a new key shows you the changes to confirm first. Saving a new key checks it with the provider, then switches to it automatically; if the check fails, the current key stays in use." %}</p>{% endaboutpage %}
 <div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>
 {% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh can_view_task=True can_refresh=True refresh_key=refresh_key idle_action=True %}</section>{% endif %}
 {% if pending %}
@@ -27,6 +28,5 @@
 {% if removable %}<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="remove">
 <p>{% translate "Remove Slack to stop sending alerts to Slack. You can set it up again later." %}</p>
 <button type="submit" class="button-secondary">{% translate "Remove Slack" %}</button></form>{% endif %}
-<p class="help">{% translate "Saving settings without a new key shows you the changes to confirm first. Saving a new key checks it with the provider, then switches to it automatically; if the check fails, the current key stays in use." %}</p>
 {% endif %}
 {% endblock %}
