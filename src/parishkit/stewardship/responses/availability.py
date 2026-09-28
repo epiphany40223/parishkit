@@ -112,16 +112,21 @@ def family_portal_title(service):
 
 
 def family_login_title(service):
-    """Title the Family sign-in page by what the current campaign collects.
+    """Title the Family sign-in page "<campaign name> login".
 
-    Ministry and financial answers make it a stewardship renewal; household and
-    Member details make it a census. Without a current campaign (or when the
-    configuration cannot be read) the neutral "Family login" is used.
+    Admins set the campaign name in Campaign settings, so the sign-in page
+    matches the form's own title (``family_portal_title``). A campaign without
+    a name falls back to what it collects: Ministry and financial answers make
+    it a stewardship renewal, household and Member details a census. Without a
+    current campaign the neutral "Family login" is used.
     """
     configuration = coherent_configuration(service.store)
     campaign = configuration.current_campaign
     if campaign is None:
         return _("Family login")
+    name = campaign.active_configuration.name
+    if name:
+        return _("%(name)s login") % {"name": name}
     modules = set(campaign.active_configuration.values["modules"])
     stewardship = bool(modules & {"ministry", "financial"})
     census = "census" in modules
