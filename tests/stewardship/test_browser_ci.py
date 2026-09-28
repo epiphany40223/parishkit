@@ -16,6 +16,8 @@ from parishkit.stewardship.quality_ci import environment
 from parishkit.stewardship.quality_pytest import BROWSER_DISCOVERY, BrowserSelection
 from parishkit.stewardship.quality_sharding import BROWSER_ENGINES, browser_partition
 
+from .test_quality_paths import assert_gate_truth_table
+
 ROOT = Path(__file__).resolve().parents[2]
 BROWSER_DIRECTORY = "tests/stewardship/browser"
 CASES = [(f"opaque-{index}", engine) for index, engine in enumerate(BROWSER_ENGINES)]
@@ -321,20 +323,17 @@ def test_browser_workflow_contract():
         'python -m parishkit.stewardship.quality_browser --engine "$BROWSER_ENGINE"'
     )
     gate = jobs["stewardship-browser"]
-    assert gate["needs"] == "stewardship-browser-engine"
+    assert gate["needs"] == ["validate", "stewardship-browser-engine"]
     assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert len(gate["steps"]) == 1
     assert gate["steps"][0]["env"] == {
-        "BROWSER_RESULT": "${{ needs.stewardship-browser-engine.result }}"
+        "BROWSER_RESULT": "${{ needs.stewardship-browser-engine.result }}",
+        "VALIDATE_RESULT": "${{ needs.validate.result }}",
+        "PATH_RUN": "${{ needs.validate.outputs.browser }}",
+        "EVENT": "${{ github.event_name }}",
+        "DRAFT": "${{ github.event.pull_request.draft }}",
     }
-    for result in ("success", "failure", "cancelled", "skipped", ""):
-        completed = subprocess.run(
-            ["sh", "-c", gate["steps"][0]["run"]],
-            env={"BROWSER_RESULT": result},
-            check=False,
-            timeout=5,
-        )
-        assert (completed.returncode == 0) is (result == "success")
+    assert_gate_truth_table(gate["steps"][0], ("BROWSER_RESULT",))
 
 
 def test_ci_cancels_only_superseded_pr_heads():

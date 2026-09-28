@@ -87,10 +87,14 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert 1 <= count <= 32 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
-    assert gate["needs"] == "stewardship-postgresql-shard"
+    assert gate["needs"] == ["validate", "stewardship-postgresql-shard"]
     assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert gate["steps"][0]["env"] == {
-        "SHARD_RESULT": "${{ needs.stewardship-postgresql-shard.result }}"
+        "SHARD_RESULT": "${{ needs.stewardship-postgresql-shard.result }}",
+        "VALIDATE_RESULT": "${{ needs.validate.result }}",
+        "PATH_RUN": "${{ needs.validate.outputs.postgresql }}",
+        "EVENT": "${{ github.event_name }}",
+        "DRAFT": "${{ github.event.pull_request.draft }}",
     }
     # The behavioral gate test also executes failure/cancelled/skipped results;
     # explanatory output is not part of the protection contract.
@@ -108,19 +112,29 @@ def test_ci_explicitly_requires_postgresql_verification():
 
 
 def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():
-    """Preflight runs explicit fast modules, never a third complete baseline."""
+    """Preflight runs explicit fast modules, never a third complete baseline.
+
+    The only complete non-database run in preflight replaces shard one's
+    baseline when path classification skips the shards, so it never runs
+    alongside that baseline.
+    """
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    commands = [
-        shlex.split(step["run"])
+    steps = [
+        step
         for step in workflow["jobs"]["validate"]["steps"]
         if "pytest" in step.get("run", "")
     ]
+    replacement = [step for step in steps if "if" in step]
+    assert [step["if"] for step in replacement] == [
+        "${{ steps.paths.outputs.postgresql == 'false' }}"
+    ]
+    commands = [shlex.split(step["run"]) for step in steps if "if" not in step]
     assert len(commands) == 1
     command = commands[0]
     assert command[:3] == ["python", "-m", "pytest"]
     assert command[-2:] == ["--require-no-skips", "-q"]
     paths = command[3:-2]
-    assert 1 <= len(paths) <= 10
+    assert 1 <= len(paths) <= 12
     assert all(
         path.startswith("tests/stewardship/test_") and path.endswith(".py")
         for path in paths
@@ -206,26 +220,27 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
     }
     assert actual == expected, collected.stdout + collected.stderr
     gate = jobs["stewardship-compose"]
-    assert gate["needs"] == ["stewardship-compose-core", "stewardship-operational"]
-    assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
-    assert gate["steps"] == [
-        {
-            "name": "Require all container scenarios",
-            "env": {
-                "CORE_RESULT": "${{ needs.stewardship-compose-core.result }}",
-                "OPERATIONAL_RESULT": "${{ needs.stewardship-operational.result }}",
-            },
-            "run": "\n".join(
-                [
-                    "echo 'Full validation requires a ready PR, successful preflight, "
-                    "and all container scenarios.'",
-                    'test "$CORE_RESULT" = success',
-                    'test "$OPERATIONAL_RESULT" = success',
-                    "",
-                ]
-            ),
-        }
+    assert gate["needs"] == [
+        "validate",
+        "stewardship-compose-core",
+        "stewardship-operational",
     ]
+    assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
+    (step,) = gate["steps"]
+    assert step["name"] == "Require all container scenarios"
+    assert step["env"] == {
+        "CORE_RESULT": "${{ needs.stewardship-compose-core.result }}",
+        "OPERATIONAL_RESULT": "${{ needs.stewardship-operational.result }}",
+        "VALIDATE_RESULT": "${{ needs.validate.result }}",
+        "PATH_RUN": "${{ needs.validate.outputs.compose }}",
+        "EVENT": "${{ github.event_name }}",
+        "DRAFT": "${{ github.event.pull_request.draft }}",
+    }
+    assert (
+        step["run"]
+        .strip()
+        .endswith('test "$CORE_RESULT" = success\ntest "$OPERATIONAL_RESULT" = success')
+    )
 
 
 @pytest.mark.parametrize(

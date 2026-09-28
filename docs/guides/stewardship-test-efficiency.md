@@ -27,6 +27,50 @@ increments serial and inspect base drift before merging; refresh and revalidate
 when intervening changes affect the increment. Do not represent auto-merge as
 restoring the removed queue guarantee.
 
+## Path-based job skipping
+
+A full run costs about 225 runner minutes, three quarters of it in the
+PostgreSQL shards (see
+[#158](https://github.com/epiphany40223/parishkit/issues/158)). A ready PR
+therefore skips each heavy job group that none of its changed paths can
+affect. The `validate` job's "Classify changed paths" step
+(`parishkit.stewardship.quality_paths`) diffs GitHub's test merge commit
+against its base-branch parent and exports one `true`/`false` output per group:
+
+| Group | Jobs | Skipped when every changed path is in |
+| --- | --- | --- |
+| `postgresql` | database shards | documentation, browser tests, tools, scripts, non-stewardship tests, `deploy/` |
+| `browser` | browser engines | documentation, database tests, tools, scripts, non-stewardship tests, `deploy/` |
+| `compose` | compose core, operational scenarios | documentation the development `tests` service does not mount |
+
+Documentation means `docs/`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`,
+`.pymarkdown.json`, issue templates and workflows other than `ci.yml`.
+Compose-core runs the complete suite inside the image over the paths that
+`deploy/stewardship/compose.development.yaml` bind-mounts into its `tests`
+service (all of `tests/`, selected scripts and tools, the stewardship specs,
+plans and development docs, and both workflows). The classifier reads those
+mounts from the Compose file, so any change under them runs the compose group;
+if the file cannot be read, compose runs. Changing `ci.yml`, application
+source, requirements, `pyproject.toml`, `README.md` (an image input),
+stewardship test infrastructure or any unlisted path runs every group, as do
+an empty or failed diff, a checked-out commit that is not GitHub's two-parent
+test merge, `workflow_dispatch` runs, and `main` pushes. A false positive only costs runner time; a false negative could merge
+an untested change, so new rules must err toward running.
+
+Several non-database tests read documentation, workflows and deployment files,
+and shard one normally runs that complete non-database suite. When the
+`postgresql` group is skipped, `validate` runs it instead ("Complete
+non-database suite").
+
+The protected gates (`stewardship-postgresql`, `stewardship-browser`,
+`stewardship-compose`) pass on full success, or on an intentional skip only:
+successful preflight, a ready (non-draft) `pull_request`, the group's
+classification `false`, and every job in the group `skipped`. Drafts, failed or
+skipped preflight, missing classification, failures, cancellations and partial
+skips still fail. The PostgreSQL gate combines coverage only when the shards
+ran. `tests/stewardship/test_quality_paths.py` executes each gate's complete
+truth table.
+
 ## Measured bottlenecks
 
 The successful PR #47 merge-group run `35243208902` measured PostgreSQL partition
