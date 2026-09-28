@@ -13,8 +13,10 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
 from parishkit.stewardship.jobs.backup_models import BackupDriveProbe, BackupUpload
 
-# An Admin's own recent check is shown on the page for this long.
-PROBE_SHOWN_FOR = timedelta(hours=1)
+# A finished check (passed, failed or unanswered) is shown on the page for at
+# most this long after it finished, and not at all once settings have been
+# applied after it; a pending one shows until it finishes or PROBE_WAIT ends.
+PROBE_SHOWN_FOR = timedelta(minutes=10)
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,9 @@ class ProbeStatus:
     folder_url: str = ""
     requested_at: datetime | None = None
     folder_id: str = ""
+    # Whether the saved backup folder changed after this check was requested
+    # (the Administrator saved a folder since testing).
+    saved_after: bool = False
 
 
 def folder_link(folder_id):
@@ -94,15 +99,27 @@ def folder_link(folder_id):
 
 
 def latest_probe(actor_id, now):
-    """The actor's newest access check within the last hour, or None."""
+    """The actor's newest access check while it is still worth showing, or None.
+
+    Only the newest check counts: a new "Test access" replaces the previous
+    result, and an older one never shows in its place. A pending check shows
+    until it finishes or ``PROBE_WAIT`` ends. A finished one (passed, failed,
+    or unanswered) shows for ``PROBE_SHOWN_FOR`` after it finished, and
+    disappears once the tested folder has been saved as the backup folder
+    after the test. Other configuration changes don't hide it.
+    """
     row = (
         BackupDriveProbe.objects.filter(
-            requested_by_id=actor_id, created_at__gte=now - PROBE_SHOWN_FOR
+            requested_by_id=actor_id,
+            created_at__gte=now - PROBE_WAIT - PROBE_SHOWN_FOR,
         )
         .order_by("-created_at")
         .first()
     )
     if row is None:
+        return None
+    current, saved_after = saved_folder_since(row.created_at)
+    if not _still_shown(row, now, saved_after and current == row.folder_id):
         return None
     folder_url = folder_link(row.folder_id)
     if row.state == "succeeded":
@@ -116,6 +133,7 @@ def latest_probe(actor_id, now):
             folder_url,
             row.created_at,
             row.folder_id,
+            saved_after,
         )
     # The installer never runs a check older than PROBE_WAIT, so a pending
     # one past it is final in all but its recorded close.
@@ -129,6 +147,7 @@ def latest_probe(actor_id, now):
             folder_url,
             row.created_at,
             row.folder_id,
+            saved_after,
         )
     if row.state == "failed":
         return ProbeStatus(
@@ -138,6 +157,7 @@ def latest_probe(actor_id, now):
             folder_url,
             row.created_at,
             row.folder_id,
+            saved_after,
         )
     return ProbeStatus(
         "pending",
@@ -146,7 +166,77 @@ def latest_probe(actor_id, now):
         folder_url,
         row.created_at,
         row.folder_id,
+        saved_after,
     )
+
+
+def _still_shown(row, now, saved):
+    """Whether one check's result still belongs on the page (see latest_probe).
+
+    ``saved`` means the tested folder was saved as the backup folder after
+    the test was requested.
+    """
+    expired = now - row.created_at > PROBE_WAIT
+    if row.state == "pending" and not expired:
+        return True
+    if saved:
+        return False
+    # An unanswered check, whether the installer closed it or not, ended when
+    # PROBE_WAIT ran out; the others ended when they completed.
+    if row.state == "pending" or row.failure_kind == "unanswered":
+        finished = row.created_at + PROBE_WAIT
+    else:
+        finished = row.completed_at
+    return now - finished <= PROBE_SHOWN_FOR
+
+
+def _backup_folder(document):
+    """The backup folder ID saved in one configuration document, or None."""
+    from parishkit.stewardship.backup_drive import folder_id_from_url
+
+    for record in document["sections"].get("integrations", []):
+        if record["values"]["kind"] == "backup":
+            try:
+                return folder_id_from_url(record["values"]["settings"]["target"])
+            except (ValueError, KeyError, TypeError):
+                return None
+    return None
+
+
+def saved_folder_since(since):
+    """Return ``(current_folder_id, changed)`` for the saved backup folder.
+
+    ``changed`` says whether any configuration applied after ``since``
+    changed the backup folder. It walks back only through the versions
+    applied since then (a few minutes' worth), comparing each with its
+    predecessor, so unrelated configuration changes don't count.
+    """
+    from .configuration_models import AppliedConfigurationVersion
+    from .runtime_models import SystemConfiguration
+
+    active = SystemConfiguration.objects.values_list(
+        "active_configuration_id", flat=True
+    ).first()
+    version = (
+        AppliedConfigurationVersion.objects.filter(pk=active)
+        .only("created_at", "canonical_document", "predecessor_id")
+        .first()
+        if active
+        else None
+    )
+    current = _backup_folder(version.canonical_document) if version else None
+    folder = current
+    while version is not None and version.created_at > since:
+        previous = (
+            AppliedConfigurationVersion.objects.filter(pk=version.predecessor_id)
+            .only("created_at", "canonical_document", "predecessor_id")
+            .first()
+        )
+        earlier = _backup_folder(previous.canonical_document) if previous else None
+        if earlier != folder:
+            return current, True
+        version, folder = previous, earlier
+    return current, False
 
 
 def request_probe(actor_id, folder_id, subject):
