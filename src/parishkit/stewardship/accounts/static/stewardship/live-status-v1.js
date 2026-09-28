@@ -99,8 +99,17 @@
       && active.matches("input, select, textarea, button, [contenteditable]"));
   }
 
+  // The markup last adopted, so an unchanged poll leaves the live region
+  // alone: rebuilding it would make screen readers repeat the same status.
+  let lastMarkup = region.innerHTML;
+
   function adopt(fresh) {
     // Keep the region element (and its live announcement); replace what it says.
+    if (fresh.innerHTML === lastMarkup
+        && fresh.hasAttribute("data-live-pending") === region.hasAttribute("data-live-pending")) {
+      return;
+    }
+    lastMarkup = fresh.innerHTML;
     region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
     region.toggleAttribute("data-live-pending", fresh.hasAttribute("data-live-pending"));
     const state = fresh.getAttribute("data-live-state");
@@ -132,7 +141,7 @@
         cache: "no-store",
         headers: { Accept: "text/html" }
       });
-      if ([401, 403, 404].includes(response.status)) {
+      if ([401, 403, 404].includes(response.status) || response.redirected) {
         // Signed out or no longer allowed: retrying cannot help.
         stop("Couldn't check status. Refresh the page or sign in again.");
         return;

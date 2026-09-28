@@ -154,6 +154,9 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     assert "method:" not in source
     assert "location.reload" not in source
     assert "if (busy()) {" in source
+    # An unchanged poll must not rebuild the live region (no repeated
+    # announcements), and the ticking elapsed time stays out of it.
+    assert "fresh.innerHTML === lastMarkup" in source
 
 
 def cleanup(state, *, cancelling=False):
@@ -198,3 +201,13 @@ def test_testing_cleanup_follows_until_complete_or_failed(state, live, text):
     html = cleanup(state)
     assert pending(html, "cleanup") is live
     assert text in html
+
+
+def test_running_indicator_hides_the_ticking_elapsed_time_from_screen_readers():
+    """Only the stable running message is announced, not a per-second clock."""
+    html = render_to_string(
+        "stewardship/live-running.html",
+        {"message": "Working", "since": datetime(2026, 9, 28, 2, tzinfo=UTC)},
+    )
+    assert '<span class="live-since" aria-hidden="true">' in html
+    assert "Working" in html

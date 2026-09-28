@@ -1,4 +1,5 @@
 {% load i18n %}{% comment %}
   Running indicator for a live status region (live-status-v1.js). Text, not
-  only the spinner, says the work is still going; "since" is optional.
-{% endcomment %}<p class="live-running"><span class="live-spinner" aria-hidden="true"></span><strong>{% if message %}{{ message }}{% else %}{% translate "Working…" %}{% endif %}</strong>{% if since %} <span class="live-since">({% translate "started" %} <time data-local-instant data-live-since datetime="{{ since|date:'c' }}">{{ since|date:'c' }}</time>)</span>{% endif %}<br><span class="help">{% translate "This page updates by itself when the work finishes." %}</span></p>
+  only the spinner, says the work is still going; "since" is optional and
+  hidden from screen readers because it changes every second.
+{% endcomment %}<p class="live-running"><span class="live-spinner" aria-hidden="true"></span><strong>{% if message %}{{ message }}{% else %}{% translate "Working…" %}{% endif %}</strong>{% if since %} <span class="live-since" aria-hidden="true">({% translate "started" %} <time data-local-instant data-live-since datetime="{{ since|date:'c' }}">{{ since|date:'c' }}</time>)</span>{% endif %}<br><span class="help">{% translate "This page updates by itself when the work finishes." %}</span></p>
