@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from django import forms
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError
+from django.db import DatabaseError, IntegrityError
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
@@ -13,6 +13,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.jobs.delivery_views import (
     _command_scope,
     _database_error,
@@ -40,6 +41,38 @@ class ManualReportForm(forms.Form):
     )
 
 
+def _has_weekly_schedule(campaign_id):
+    """The manual report is a weekly digest; SQL refuses one without a schedule.
+
+    Checking first lets the page explain the missing prerequisite instead of
+    showing the generic delivery refusal the database guard would produce.
+    """
+    return ScheduleDefinition.objects.filter(
+        campaign_id=campaign_id,
+        kind="weekly_digest",
+        current_revision_id__isnull=False,
+    ).exists()
+
+
+def _blocked(request, campaign, reason, status):
+    """Explain why no manual report can be queued, and where to fix it."""
+    response = render(
+        request,
+        "stewardship/weekly-manual.html",
+        {"form": None, "campaign": campaign, "blocker": reason},
+        status=status,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def _guard_refused(error):
+    """Whether the database guard (not an outage) refused the manual request."""
+    return isinstance(error, IntegrityError) and getattr(
+        error.__cause__, "sqlstate", None
+    ) in {"23514", "23505"}
+
+
 @require_http_methods(["GET", "POST"])
 def request_report(request, campaign_id):
     """Keep the current session lock through command commit and reject stale forms."""
@@ -60,6 +93,9 @@ def request_report(request, campaign_id):
             )
         ):
             return private_response("Invalid manual report request.\n", status=400)
+        campaign = runtime_row.current_campaign
+        if not _has_weekly_schedule(campaign_id):
+            return _blocked(request, campaign, "no_schedule", 409)
         form = ManualReportForm(
             request.POST if request.method == "POST" else None,
             initial={
@@ -83,7 +119,7 @@ def request_report(request, campaign_id):
                 "stewardship/weekly-manual.html",
                 {
                     "form": form,
-                    "campaign": runtime_row.current_campaign,
+                    "campaign": campaign,
                     "mode": runtime_row.mode,
                 },
                 status=400 if request.method == "POST" else 200,
@@ -93,6 +129,11 @@ def request_report(request, campaign_id):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except DatabaseError as error:
+        if _guard_refused(error):
+            # A digest already in progress or awaiting review, or a scope that
+            # changed since the form opened: explain rather than show the
+            # generic delivery refusal.
+            return _blocked(request, None, "refused", 409)
         return _database_error(error)
     except (ConfigError, LimiterUnavailable, StorageInvariantError):
         return report_unavailable()
