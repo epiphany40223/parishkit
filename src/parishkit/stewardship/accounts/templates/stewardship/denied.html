@@ -23,5 +23,3 @@
   {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
   <p><a href="{{ retry_path }}">{% if kind == "code" %}{% translate "Try another Family code" %}{% elif kind == "link" %}{% translate "Enter your Family code instead" %}{% else %}{% translate "Try signing in again" %}{% endif %}</a></p>
 </section>{% endblock %}
-{# Family denials show no product footer; Admin sign-in denials keep it. #}
-{% block footer %}{% if retry_path == "/admin/login" %}{{ block.super }}{% endif %}{% endblock %}
