@@ -232,7 +232,12 @@ content work then made Ministry packets capture the financial period for the
 shared campaign-year rule, which changed one function body, and added the
 optional Parish online giving URL: a nullable `stewardship_parish` column, its
 HTTPS check constraint and the setup-draft guard's Parish-step key list.
-Regenerated from a fresh install, the current baseline is:
+The source refresh fix then added one owner-run trigger and its function that
+refresh the snapshot membership statistics when a staged snapshot becomes
+ready, so promotion under the work-order lock never plans a new snapshot from
+statistics that predate it. The ParishSoft refresh-frequency work also changed
+the refresh tick guard's function body. Regenerated from a fresh install, the current
+baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
@@ -240,8 +245,8 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2440 | `e0c6b643` |
 | Constraints | 3372 | `5c14425f` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 595 | `443281f3` |
-| Triggers | 549 | `c2e50957` |
+| Functions | 596 | `9d0b7f79` |
+| Triggers | 550 | `d0c71f08` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A
