@@ -31,6 +31,16 @@ from parishkit.stewardship.accounts.integration_forms import (
             {"sender": "mail@example.org", "reply_to": "staff@example.org"},
         ),
         ("slack", {"channel_id": "C123"}, {"channel_id": "C123"}),
+        (
+            "backup",
+            {
+                "target": "https://drive.google.com/drive/u/0/folders/"
+                "1AbCdEfGhIjKlMnOpQrStUv?usp=sharing"
+            },
+            {
+                "target": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv"
+            },
+        ),
     ],
 )
 def test_public_values_use_exact_yaml_types(target, values, expected):
@@ -47,6 +57,7 @@ def test_public_values_use_exact_yaml_types(target, values, expected):
         ("parishsoft", {"organization_id": 2**31}),
         ("slack", {"channel_id": "https://example.org/private"}),
         ("google_workspace", {"delegated_email": "invalid"}),
+        ("backup", {"target": "https://docs.google.com/document/d/1AbCdEfGhIjKl"}),
     ],
 )
 def test_invalid_public_values_cannot_form_patch(target, values):

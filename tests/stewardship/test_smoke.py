@@ -439,3 +439,78 @@ def test_the_parser_admits_only_the_smoke_options(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         main(["smoke", "--config", "c.yaml", "--image", "private-image"])
     assert "private-image" not in capsys.readouterr().err
+
+
+def backup_args(tmp_path, **changed):
+    """A backup-profile deployment document and the off-site smoke options."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = consumer(
+        tmp_path, ServiceRole.BACKUP_WORKER, google_workspace=b"service-account"
+    )
+    path = tmp_path / "backup.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    return configuration, SimpleNamespace(
+        config=str(path),
+        target="backup_drive",
+        organization_id=None,
+        delegated_email="mail@example.org",
+        send_to=None,
+        channel_id=None,
+        folder_link="https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv",
+        send=None,
+        **changed,
+    )
+
+
+def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, capsys):
+    """The off-site check runs as the backup profile; --send copies one set."""
+    from parishkit.stewardship import backup_drive
+    from parishkit.stewardship.backup_offsite import SEALED_FILES
+
+    from .drive_fakes import FakeDrive
+
+    drive = FakeDrive("1AbCdEfGhIjKlMnOpQrStUv")
+    sessions = []
+    monkeypatch.setattr(
+        backup_drive,
+        "workspace_session",
+        lambda value, subject: sessions.append((value, subject)),
+    )
+    monkeypatch.setattr(backup_drive, "DriveClient", lambda session: drive)
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    configuration, args = backup_args(tmp_path)
+    assert smoke.execute_smoke(args) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "accepted": True,
+        "copied_set": None,
+        "target": "backup_drive",
+    }
+    assert sessions == [(b"service-account", "mail@example.org")]
+    backups = private_directory(configuration.paths["backups"], create=True)
+    directory = backups / "20260927T020000Z"
+    directory.mkdir(mode=0o700)
+    for name in SEALED_FILES:
+        (directory / name).write_bytes(b"sealed")
+    assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
+    assert json.loads(capsys.readouterr().out)["copied_set"] == directory.name
+    assert drive.sets() == [directory.name]
+    drive.can_add = False
+    assert smoke.execute_smoke(args) == 0
+    assert json.loads(capsys.readouterr().out)["reason"] == "permission"
+
+
+def test_backup_drive_runs_only_in_the_backup_profile(tmp_path, monkeypatch, capsys):
+    """Another profile has no Workspace key to read; the check is refused."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = _service_config(configuration_at(tmp_path), ServiceRole.WORKER)
+    path = tmp_path / "service.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    _, args = backup_args(tmp_path / "other")
+    args.config = str(path)
+    assert smoke.execute_smoke(args) == 2
+    assert "smoke check refused" in capsys.readouterr().err

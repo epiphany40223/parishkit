@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  Off-site backup status region. The Backups settings page shows it inside a
+  live region; while an access check is pending, live-status-v1.js re-reads
+  this passive fragment (reading it never renews idle time).
+{% endcomment %}<div data-live-status="integration" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% include 'stewardship/backup-status-lines.html' %}</div>

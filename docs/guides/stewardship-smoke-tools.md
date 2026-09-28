@@ -23,10 +23,14 @@ deployed consumer and reads only the credential that consumer already mounts:
 | `google_workspace` | `mail-dispatch` | The service account can act as the delegated mailbox (`--delegated-email`) and authenticate to Gmail SMTP | `--send-to ADDRESS` sends one fixed plain-text message |
 | `slack` | `worker` (Slack-configured) | The bot token authenticates | `--channel-id ID --send` posts one fixed message |
 | `google_oauth` | `web` | The OAuth client document has the expected shape; prints the redirect URI to register | none; the human signs in |
+| `backup_drive` | `backup-worker` (`docker compose run`) | The Workspace key, acting as `--delegated-email` with the Drive scope, can write to and trash in the folder at `--folder-link` | `--send` uploads the newest complete local backup set |
 
 The result is one JSON line, `{"target": ..., "credential": "valid" |
 "invalid" | "unavailable", "sent": true | false}` (plus `redirect_uri` for
-the OAuth client), and exit `0`; any failure is one generic line on standard
+the OAuth client), and exit `0`; `backup_drive` instead prints
+`{"target": "backup_drive", "accepted": true, "copied_set": ...}` or
+`"accepted": false` with a `reason` category and its plain-language
+`message`; any failure is one generic line on standard
 error and exit `2`, with only a failure classification in the process log,
 never the exception text. No token, key,
 address or provider error text is printed.

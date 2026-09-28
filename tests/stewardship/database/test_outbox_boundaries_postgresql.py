@@ -495,12 +495,16 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
 def test_future_owners_have_no_runtime_grant_bundle():
     """Unimplemented operational owners cannot acquire generic fallback authority.
 
-    The backup identity now has exactly its own record and no outbox table.
+    The backup identity now has exactly its own records (the run and its
+    off-site copy outcomes) and no outbox table.
     """
     with pytest.raises(ConfigError, match="not implemented"):
         runtime_grants(ServiceRole.TOKEN_KEY_ROTATION)
     tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
-    assert tables == {"stewardship_backup_run": {"SELECT", "INSERT"}}
+    assert tables == {
+        "stewardship_backup_run": {"SELECT", "INSERT"},
+        "stewardship_backup_upload": {"SELECT", "INSERT"},
+    }
     assert columns == {}
 
 

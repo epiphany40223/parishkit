@@ -77,6 +77,22 @@ def summary(actor, configuration, now):
             actor, Capability.FAMILY_CODES
         ):
             result["unreachable"] = unreachable_families(campaign.pk)
+    if allows(actor, Capability.CONFIGURE):
+        from .backup_destination import offsite_status
+
+        kinds = {
+            record["values"]["kind"]
+            for record in configuration.active_configuration.canonical_document[
+                "sections"
+            ].get("integrations", [])
+        }
+        # Read copy outcomes only when off-site copies are set up, so the
+        # page's query budget is unchanged otherwise; until then the page
+        # invites the Administrator to set them up.
+        if "backup" in kinds:
+            result["offsite"] = offsite_status()
+        else:
+            result["offsite_unset"] = True
     if "administrator" in actor.roles:
         from .security_events import open_events
 

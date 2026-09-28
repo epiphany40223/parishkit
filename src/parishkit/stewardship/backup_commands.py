@@ -109,6 +109,9 @@ def _backup(config):
             BackupRun.objects.create(**facts)
 
         manifest = run_backup(configuration, record=record)
+    # The off-site copy runs after the lease: it reads only the finished set
+    # and appends its outcome, so a slow upload never holds offline work back.
+    offsite = _copy_offsite(configuration)
     # The manifest digest is what the operator records off the host and
     # compares at restore, since the sealed files alone prove no origin.
     return {
@@ -117,7 +120,24 @@ def _backup(config):
         "files_bytes": manifest["files"]["plaintext_bytes"],
         "recipient_fingerprint": manifest["recipient_fingerprint"],
         "manifest_digest": recorded["manifest_digest"],
+        "offsite": offsite,
     }
+
+
+def _copy_offsite(configuration):
+    """Copy the new set off-site; a failure never undoes the local backup.
+
+    Drive failures are recorded and categorized by ``copy_offsite`` itself;
+    anything unexpected is logged by category here and reported as failed,
+    and the scheduler's alert and the next run take it from there.
+    """
+    from .backup_offsite import copy_offsite
+
+    try:
+        return copy_offsite(configuration)
+    except Exception as error:
+        emit_failure(error, event=Event.TASK_FAILED)
+        return {"state": "failed", "failure_kind": "unexpected"}
 
 
 def execute_backup_command(args):

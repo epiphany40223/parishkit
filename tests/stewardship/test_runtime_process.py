@@ -228,6 +228,10 @@ def test_credential_service_publishes_only_after_admission(
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_notifications.run_pending", slack_send
     )
+    probes = Mock()
+    monkeypatch.setattr(
+        "parishkit.stewardship.backup_probes.run_pending_probes", probes
+    )
     stage_initial = Mock()
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_credential_installation.stage_initial_credential",
@@ -266,9 +270,12 @@ def test_credential_service_publishes_only_after_admission(
             relay.assert_not_called()
         if target == "google_workspace":
             mail_relay.assert_called_once_with(installer.files.private)
+            # Off-site backup access checks use this key and its egress.
+            probes.assert_called_once_with(installer.files.path, check=lease.check)
             assert lease.check.call_count == 3
         else:
             mail_relay.assert_not_called()
+            probes.assert_not_called()
         if target == "slack":
             slack_send.assert_called_once_with(
                 installer.files.private, check=lease.check

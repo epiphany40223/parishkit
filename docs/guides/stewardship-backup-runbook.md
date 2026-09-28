@@ -79,10 +79,73 @@ kept. A failed run leaves its directory without a manifest for inspection;
 it never counts toward the thirty and is not removed, so delete it by hand
 once the cause is understood.
 
-Copy the `backups/` directory off the host after each run, with `rsync` or
-`rclone` from the same cron job to the parish's off-host storage; the sealed
-files are safe to store anywhere, and the manifest holds no secret. The
-application does not transfer anything itself.
+Get a copy of every set off the host, either with the application's
+[off-site copies to Google Drive](#off-site-copies-to-google-drive) or with
+`rsync` or `rclone` from the same cron job to the parish's own off-host
+storage; the sealed files are safe to store anywhere, and the manifest holds
+no secret.
+
+## Off-site copies to Google Drive
+
+An Administrator can turn on off-site copies from the portal: Integrations,
+then **Off-site backups (Google Drive)**. After each successful backup, the
+same `backup-worker` run uploads the new set's three files (the two sealed
+files and `manifest.json`, never anything unencrypted) into a subfolder named
+like the set, inside the Drive folder the Administrator chose. It then keeps
+the newest thirty such subfolders and moves older ones to the Drive trash; it
+never touches a file or folder it did not create. The run's JSON line gains
+an `offsite` field (`uploaded`, `failed` with a category, or
+`not_configured`), and a failed copy never fails the backup itself: the local
+set is recorded as usual, and the next run copies any of the three newest
+sets not yet in the folder.
+
+The copy never blocks the Admin or Family portals: it runs only in this
+one-shot profile, after the backup has released its startup lease, and
+outside any database transaction, so it holds no work-order or row lock
+while files are in flight. Every request has a timeout, retries are
+bounded, and no new set or retry starts after four hours; a slow or failed
+copy only records its outcome for the pages and the alert below.
+
+The copy acts as the Google Workspace mail integration's delegated mailbox
+user, through the same service account key, so Google needs one-time setup
+by a Workspace administrator:
+
+1. In the Google Cloud project that owns the service account, enable the
+   **Google Drive API**.
+2. In the Google Admin console, under Security → Access and data control →
+   API controls → Manage domain-wide delegation, edit the service account's
+   client ID and add the scope `https://www.googleapis.com/auth/drive`
+   alongside `https://mail.google.com/`. Changes can take several minutes
+   to take effect.
+3. Create the backup folder, preferably in a **shared drive** so it does not
+   belong to one person, and add the delegated mailbox user to that shared
+   drive as **Content manager** (a My Drive folder owned by that user also
+   works).
+4. In the portal, paste the folder's link, select **Test access**, and save
+   once the test succeeds. The test writes one small file and trashes it
+   again, as the delegated user; the Google Workspace credential installer
+   runs it, since the web application has no key and no network access.
+
+The Backups page and the administration home show when a set was last
+copied. The scheduler raises the `backup_offsite_failed` operational incident
+(CRITICAL) when the newest copy attempt failed, and resolves it on the next
+successful copy or when off-site copies are turned off. The page names the
+cause in plain language; the process log records only the category
+(`authorization` for a missing Drive scope, `api_disabled`, `not_found`,
+`permission`, `credential`, `verification`, `unavailable` or `unexpected`).
+
+To check the setup by hand from the host, run the smoke check in the backup
+profile; `--send` also uploads the newest complete local set:
+
+```text
+docker compose ... run --rm --entrypoint pk-stewardship backup-worker \
+  smoke --config SERVICE_CONFIG --target backup_drive \
+  --delegated-email ADDRESS --folder-link LINK [--send]
+```
+
+`SERVICE_CONFIG` is the `backup-worker` service configuration the Compose
+file already passes to the profile. The
+[smoke tools guide](stewardship-smoke-tools.md) describes its output.
 
 ## Checking
 
@@ -111,7 +174,8 @@ file, a root user, a writable root filesystem or an extra or writable
 mount), so rerender with `retarget-image` if the Compose file was edited
 by hand.
 Fix the cause, run it again, and
-confirm the off-host copy holds the newest set's three files. The
+confirm the off-host copy holds the newest set's three files (for Google
+Drive, the Backups page shows the newest copied set). The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this checklist was checked against the code.
 

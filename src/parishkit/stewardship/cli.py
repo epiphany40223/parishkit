@@ -45,6 +45,7 @@ _COMMAND_OPTIONS = {
         "delegated_email",
         "send_to",
         "channel_id",
+        "folder_link",
         "send",
     },
     "database-roles": {"config", "confirm_deployment"},
@@ -118,6 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "delegated-email",
         "send-to",
         "channel-id",
+        "folder-link",
         "samples",
         "concurrency",
     ):
@@ -126,7 +128,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--send",
         action="store_true",
         default=None,
-        help="smoke only: post the one fixed Slack message after a valid check",
+        help=(
+            "smoke only: post the one fixed Slack message, or copy the newest "
+            "backup set to the Drive folder, after a valid check"
+        ),
     )
     parser.add_argument(
         "--bind-all-interfaces",

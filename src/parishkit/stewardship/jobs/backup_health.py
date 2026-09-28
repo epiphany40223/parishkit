@@ -14,7 +14,7 @@ from datetime import timedelta
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
-from .backup_models import BackupRun
+from .backup_models import BackupRun, BackupUpload
 from .operational_content import IncidentKind, IncidentLevel
 from .operational_models import OperationalIncident
 from .operational_sources import configured_policy
@@ -32,9 +32,17 @@ def needs_backup_observation():
     the first overdue night itself; both reads are single rows under the
     collector's work order.
     """
-    return OperationalIncident.objects.filter(
-        kind=IncidentKind.BACKUP_RPO_BREACH, resolved_at__isnull=True
-    ).exists() or backup_overdue(database_now())
+    return (
+        OperationalIncident.objects.filter(
+            kind__in=[
+                IncidentKind.BACKUP_RPO_BREACH,
+                IncidentKind.BACKUP_OFFSITE_FAILED,
+            ],
+            resolved_at__isnull=True,
+        ).exists()
+        or backup_overdue(database_now())
+        or offsite_failing()
+    )
 
 
 def production_mode():
@@ -55,6 +63,21 @@ def backup_overdue(instant):
     return instant - latest > REQUIRED_WITHIN
 
 
+def offsite_failing():
+    """True while the newest off-site copy outcome is a failure.
+
+    The backup profile records one outcome per attempted set, and "disabled"
+    when the destination is removed, so an old failure stops counting once a
+    later copy succeeds or copies are turned off.
+    """
+    newest = (
+        BackupUpload.objects.order_by("-created_at")
+        .values_list("state", flat=True)
+        .first()
+    )
+    return newest == "failed"
+
+
 def observe_backup_health():
     """Open or resolve the overdue-backup episode from the newest recorded run."""
     require_work_order()
@@ -66,3 +89,11 @@ def observe_backup_health():
         )
     else:
         record_recovery(IncidentKind.BACKUP_RPO_BREACH)
+    if offsite_failing():
+        record_observation(
+            IncidentKind.BACKUP_OFFSITE_FAILED,
+            IncidentLevel.CRITICAL,
+            policy=configured_policy(),
+        )
+    else:
+        record_recovery(IncidentKind.BACKUP_OFFSITE_FAILED)

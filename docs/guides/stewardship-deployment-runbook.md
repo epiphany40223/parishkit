@@ -61,7 +61,10 @@ Collect, outside the runtime root and outside the repository:
   delegated address). The
   [README's Google setup](../../README.md#google-cloud-and-google-workspace)
   walks through the Cloud project, the service account, the delegation and
-  the delegated user; stewardship needs only the Gmail scope above.
+  the delegated user; stewardship needs only the Gmail scope above, plus
+  `https://www.googleapis.com/auth/drive` if the optional
+  [off-site backup copies](stewardship-backup-runbook.md#off-site-copies-to-google-drive)
+  are turned on.
 - A newly generated deployment UUID, recorded where the operators keep it.
   Every offline command that confirms the deployment takes the same UUID.
   Each installation, including a reinstall from scratch, gets a new UUID; a

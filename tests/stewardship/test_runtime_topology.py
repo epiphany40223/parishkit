@@ -102,6 +102,8 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
             assert mounts[configuration.paths["credentials"]] is True
             assert mounts[configuration.paths["backups"]] is False
             assert service["command"][0] == "backup"
+            # Egress carries the off-site copies to Google Drive.
+            assert set(service["networks"]) == {"backend", "application-egress"}
         if name in {
             "bootstrap",
             "migration",

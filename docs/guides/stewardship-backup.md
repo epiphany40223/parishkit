@@ -38,8 +38,21 @@ admit a configured deployment when a backup completed within that window.
 `retarget-image` re-renders every generated document, so a release whose
 renderer changed reaches a deployment through the same command.
 
-Off-host copying is the operator's cron job over the sealed files, as the
-runbook says; the application transfers nothing.
+Off-host copying is either the operator's own cron job over the sealed
+files or the optional
+[copy to Google Drive](stewardship-backup-runbook.md#off-site-copies-to-google-drive)
+that the same `backup-worker` run makes after a successful backup, as the
+Google Workspace delegated user. That copy uploads only the sealed files and
+the manifest, records each outcome in `stewardship_backup_upload`, and raises
+`backup_offsite_failed` while the newest attempt has failed. The profile
+reaches Google through the application egress network, even when off-site
+copies are off (the Compose file does not change with configuration). That
+widens the trust boundary: the profile reads every database row and the
+whole credentials tree, and before this it had no network route out. The
+v1 scope accepts this; restricting its egress to Google's API hosts is
+later hardening. The Google
+Workspace credential installer answers the Administrator's "Test access"
+checks, because the web application has neither the key nor egress.
 
 ## Design
 

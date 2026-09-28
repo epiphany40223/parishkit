@@ -6,8 +6,10 @@ trees, each sealed to the human-held recipient key, and a plaintext manifest
 naming sizes, digests, durations and the key, never contents. Only a completed
 run records a row; the scheduler reads the newest row to alert when a backup
 is overdue, and the offline upgrade commands read it as the verified-backup
-evidence a configured deployment requires. Copying the directory off the host
-is the operator's cron job, as the backup runbook says. The reduced scope,
+evidence a configured deployment requires. Copying the sets off the host is
+the operator's cron job or, when an Administrator configured a Google Drive
+folder, :mod:`.backup_offsite` after each run, as the backup runbook says.
+The reduced scope,
 and what it defers, is the v1 launch scope's.
 """
 

@@ -330,6 +330,8 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 bind(path, read_only=ro)
                 for path, ro in backup_targets(selected).items()
             ]
+            # The off-site copy uploads the sealed set to Google Drive.
+            service["networks"]["application-egress"] = {}
         else:
             service["command"] = [
                 "runtime",

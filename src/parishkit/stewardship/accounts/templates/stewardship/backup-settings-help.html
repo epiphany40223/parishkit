@@ -1,0 +1,14 @@
+{% load i18n %}{% comment %}
+  Plain-language setup help for off-site backup copies. The same steps are in
+  the backup runbook; keep them in step.
+{% endcomment %}<p>{% translate "Every backup is encrypted on the server and can only be opened with the backup decryption key you keep. Off-site copies put those encrypted files in a Google Drive folder too, so a lost or damaged server does not lose the backups." %}</p>
+{% if not workspace_configured %}<p class="notice notice-error">{% translate "Set up Google Workspace mail first: off-site copies use the same Google service account and delegated mailbox user." %}</p>{% endif %}
+<details class="panel"><summary>{% translate "One-time setup in Google (for your Google Workspace administrator)" %}</summary>
+<ol>
+<li>{% translate "In the Google Cloud project that owns the service account used for mail, enable the Google Drive API (APIs & Services → Library → Google Drive API → Enable)." %}</li>
+<li>{% translate "In the Google Admin console, open Security → Access and data control → API controls → Manage domain-wide delegation. Edit the service account's client ID and add this scope next to the existing mail scope:" %} <code>https://www.googleapis.com/auth/drive</code></li>
+<li>{% translate "Create a folder for the backups, preferably in a shared drive so it does not belong to one person's account. Add the delegated mailbox user shown on the Google Workspace mail page as a member of that shared drive with Content manager access." %}</li>
+<li>{% translate "Open the folder, copy its link from the address bar, paste it below, then select Test access. When the test succeeds, select Save." %}</li>
+</ol>
+<p>{% translate "Changes to domain-wide delegation can take several minutes to take effect." %}</p>
+</details>

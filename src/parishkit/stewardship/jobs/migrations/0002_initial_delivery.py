@@ -300,6 +300,7 @@ class Migration(migrations.Migration):
                                         "publication_ambiguous",
                                         "production_cleanup_failed",
                                         "backup_rpo_breach",
+                                        "backup_offsite_failed",
                                         "purge_inconsistency",
                                         "purge_cleanup_failed",
                                     )

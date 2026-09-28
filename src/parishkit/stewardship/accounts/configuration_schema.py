@@ -111,12 +111,30 @@ def _validate_v1_sections(document):
                 invalid()
             if not name or name != settings["sender_name"]:
                 invalid()
+        if kind == "backup":
+            _drive_folder(settings["target"])
         fingerprint = values["credential_fingerprint"]
         if fingerprint is not None and (
             type(fingerprint) is not str
             or re.fullmatch(FINGERPRINT_PATTERN, fingerprint) is None
         ):
             invalid()
+
+
+def _drive_folder(target):
+    """Admit only the canonical Drive folder link the off-site copy can use.
+
+    No stored configuration has ever held a ``backup`` record, so this
+    tightening changes no historical document's meaning.
+    """
+    from parishkit.stewardship.backup_drive import folder_id_from_url
+
+    try:
+        folder = folder_id_from_url(target)
+    except ValueError:
+        invalid()
+    if target != f"https://drive.google.com/drive/folders/{folder}":
+        invalid()
 
 
 # A historical row chooses its validator, not the currently emitted schema.

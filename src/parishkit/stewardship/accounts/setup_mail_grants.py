@@ -109,6 +109,10 @@ def add_setup_mail_cleanup_grants(tables, columns, *, read_payload=False):
 def extend_workspace_permissions(tables, metadata):
     """The target reads no rendered mail, Family records or foreign staged secrets."""
     tables["stewardship_setup_mail_exchange"] = {"SELECT", "UPDATE"}
+    # It alone holds the Workspace key and egress, so it runs the Admin's
+    # "Test access" check of the off-site backup folder; its guard allows only
+    # completing a pending check once.
+    tables["stewardship_backup_drive_probe"] = {"SELECT", "UPDATE"}
     tables["stewardship_setup_sealed_credential"] = {"SELECT"}
     for table, names in (
         ("stewardship_setup_attempt", ATTEMPT_COLUMNS | {"version"}),

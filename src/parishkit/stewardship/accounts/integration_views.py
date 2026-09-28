@@ -57,6 +57,12 @@ CREDENTIAL_SALT = "stewardship-integration-credential-v1"
 INLINE_INTENT_SECONDS = 3600
 
 
+# Integrations an Administrator may add or remove from the settings page:
+# Slack with its first key, and the off-site backup folder, which has no key
+# of its own (it uses the Google Workspace key).
+REMOVABLE = OPTIONAL_INTEGRATIONS | {"backup"}
+
+
 class IntegrationUnavailable(Exception):
     """Missing installer public discovery is availability, not invalid form input."""
 
@@ -94,7 +100,7 @@ def _selected(configuration, target):
 
 def _optional(configuration, target):
     """Return the record, or None for an optional integration not yet set up."""
-    if target in OPTIONAL_INTEGRATIONS and target not in _records(configuration):
+    if target in REMOVABLE and target not in _records(configuration):
         return None
     return _selected(configuration, target)
 
@@ -162,7 +168,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "summary": latest,
             "pending": pending,
             "configured": configured,
-            "removable": configured and target in OPTIONAL_INTEGRATIONS,
+            "removable": configured and target in REMOVABLE,
             "configuration": configuration,
             "full_refresh": (
                 full_refresh_status(refresh_schedule(configuration), timezone.now())
@@ -172,12 +178,63 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "status_url": reverse("admin:integration_status", args=[target]),
             # The ParishSoft page offers the manual full refresh directly.
             "refresh_key": uuid4() if target == "parishsoft" else None,
+            **(_backup_context(request, configuration) if target == "backup" else {}),
         },
         status=status,
     )
     if status == 400:
         response.stewardship_safe_error = True
     return response
+
+
+def _backup_context(request, configuration):
+    """Off-site copy status and the viewer's latest access check."""
+    from django.utils import timezone
+
+    from .backup_destination import latest_probe, offsite_status
+
+    # The page's clock is enough to judge a minutes-long wait for display.
+    probe = latest_probe(request.portal_session.principal_id, timezone.now())
+    return {
+        "offsite": offsite_status(),
+        "probe": probe,
+        "pending": probe is not None and probe.kind == "pending",
+        "workspace_configured": "google_workspace" in _records(configuration),
+    }
+
+
+def _test_access(request, configuration, actor):
+    """Queue a "Test access" check of the entered (or saved) Drive folder.
+
+    The check runs as the Google Workspace delegated mailbox user, which is
+    the identity the backup copies use, so it proves exactly what they need.
+    """
+    from parishkit.stewardship.backup_drive import folder_id_from_url
+
+    from .backup_destination import request_probe
+
+    if set(request.POST) - {
+        "action",
+        "csrfmiddlewaretoken",
+        "target",
+        "base_digest",
+    } or any(len(values) != 1 for _, values in request.POST.lists()):
+        raise ValueError("Invalid configuration action or fields.")
+    records = _records(configuration)
+    if "google_workspace" not in records:
+        raise ValueError("Set up Google Workspace mail first.")
+    entered = request.POST.get("target", "").strip()
+    if not entered and "backup" not in records:
+        raise ValueError("Enter the Google Drive folder link first.")
+    folder = folder_id_from_url(
+        entered or records["backup"]["values"]["settings"]["target"]
+    )
+    request_probe(
+        actor.identity,
+        folder,
+        records["google_workspace"]["values"]["settings"]["delegated_email"],
+    )
+    return HttpResponseRedirect(request.path)
 
 
 def _inline_credential_form(configuration, request, target):
@@ -275,9 +332,9 @@ def _save(request, service, configuration, actor, target):
 def _preview(request, service, actor, target):
     """Prepare public settings while preserving the applied credential receipt."""
     configuration = editable_configuration(service)
-    if _optional(configuration, target) is None:
+    if _optional(configuration, target) is None and target != "backup":
         raise ValueError("Paste the key to set up this integration.")
-    record = _selected(configuration, target)
+    record = _optional(configuration, target) or _unset(target)
     form = IntegrationForm(target, request.POST)
     if not form.is_valid():
         return _page(request, configuration, target, form=form, status=400)
@@ -296,6 +353,18 @@ def _preview(request, service, actor, target):
             "section": "integrations",
             "id": record["id"],
             "values": {"settings": settings},
+        }
+        if record["id"] is not None
+        else {
+            # The off-site folder is added by settings alone; it has no key.
+            "operation": "add",
+            "section": "integrations",
+            "id": str(uuid4()),
+            "values": {
+                "kind": target,
+                "settings": settings,
+                "credential_fingerprint": None,
+            },
         }
     ]
     base = service.store.active()
@@ -346,7 +415,7 @@ def _remove(request, service, configuration, actor, target):
         len(values) != 1 for _, values in request.POST.lists()
     ):
         raise ValueError("Invalid configuration action or fields.")
-    if target not in OPTIONAL_INTEGRATIONS:
+    if target not in REMOVABLE:
         raise LookupError("Integration is unavailable.")
     record = _selected(configuration, target)
     patch = [{"operation": "remove", "section": "integrations", "id": record["id"]}]
@@ -402,6 +471,12 @@ def integration_settings(request, target=None):
             )
         elif request.method == "POST" and request.POST.get("action") == "remove":
             response = _remove(request, service, configuration, actor, target)
+        elif (
+            request.method == "POST"
+            and request.POST.get("action") == "test"
+            and target == "backup"
+        ):
+            response = _test_access(request, configuration, actor)
         elif request.method == "POST":
             _optional(configuration, target)
             fields = set(IntegrationForm(target).fields)
@@ -574,6 +649,19 @@ def integration_status(request, target):
         filters(request.GET, allowed=set())
         service = runtime()
         principal(request, service, passive=True)
+        if target == "backup":
+            with read_transaction():
+                configuration = editable_configuration(service)
+                context = _backup_context(request, configuration)
+            response = render(
+                request,
+                "stewardship/backup-status.html",
+                context
+                | {
+                    "follow_url": reverse("admin:integration_settings", args=[target]),
+                },
+            )
+            return _checked(request, service, response)
         if target not in ROTATING_TARGETS or target not in LABELS:
             raise LookupError("Integration is unavailable.")
         # One consistent snapshot without the writers' work lock, so polling

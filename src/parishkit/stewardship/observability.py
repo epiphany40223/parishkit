@@ -62,6 +62,8 @@ class FailureKind(StrEnum):
     # reviewed startup_rejected event as categories instead.
     BACKUP_DUMP = "backup_dump_failed"
     BACKUP_REQUIRED = "upgrade_backup_required"
+    # A set was taken but not copied to the off-site Drive folder.
+    BACKUP_OFFSITE = "backup_offsite_failed"
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(
