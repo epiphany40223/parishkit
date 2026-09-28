@@ -37,7 +37,7 @@ from django.views.decorators.http import (
 )
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.security import login_denial
@@ -449,13 +449,15 @@ def index(request):
         principal = authenticated_admin(request, store=service.store, activity=True)
         if principal is None:
             return HttpResponseRedirect("/admin/login")
-        with work_transaction():
+        # A read-only snapshot, not the writers' work lock: the dashboard only
+        # observes, and must not wait behind a source promotion or installer.
+        with read_transaction():
             config = coherent_configuration(service.store)
             if config.restore_review_required:
                 return denial(status=503, retry=5)
             data = summary(principal, config, database_now())
             # Presentation only: this exact projection is already verified and
-            # captured with the summary under the work transaction. Rendering
+            # captured with the summary in the same snapshot. Rendering
             # happens after release; chrome must use that observation, not
             # independently choose a newer projection for the same response.
             request._stewardship_display_configuration = config

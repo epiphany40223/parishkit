@@ -1092,6 +1092,21 @@ semantics, never reopening reads. Buffered bytes already sent to a client
 cannot be recalled; this guarantee prevents reads of partially deleted data,
 not retention of previously downloaded reports.
 
+### Admin page snapshots
+
+The common work-order lock orders writers so that lifecycle, task, source and
+configuration transactions cannot deadlock. A plain Admin page read (GET or
+HEAD) takes no row locks and does not join that order: it observes one
+`REPEATABLE READ READ ONLY` snapshot, so configuration, policy projections and
+the promoted source pointer are seen together as their writers committed them,
+and a long writer such as a source promotion or an installer never blocks an
+Admin page. Any write inside the snapshot fails closed. Previews that sign a
+request, confirmations and mutations keep the work-order lock; access audits
+of page views do not, and commit in their own short transaction after the
+snapshot. Campaign-detail reads still use the
+[campaign read guards](#campaign-read-guards) above; the snapshot replaces
+neither. A read whose helpers require the work order keeps the lock.
+
 ## Effective-value merge
 
 The value displayed on a repeat Family visit is computed from the immutable

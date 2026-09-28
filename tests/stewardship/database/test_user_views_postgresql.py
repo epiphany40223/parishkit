@@ -3,9 +3,9 @@
 import re
 from uuid import UUID, uuid4
 
+import psycopg
 import pytest
 from django.db import connection
-from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
@@ -227,18 +227,33 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
     admin = PortalUser.objects.get(email="admin@example.org")
     genuine, observed = user_views.confirmed_seeded, []
 
+    settings = connection.settings_dict
+
     def disabling(configuration):
-        """Observe as usual, then lose the identity before the recheck."""
+        """Observe as usual while another session disables the identity.
+
+        The observation is a read-only snapshot, so the demotion arrives the
+        way a real one does: committed by a separate connection.
+        """
         observed.append(configuration.pk)
-        PortalUser.objects.filter(pk=admin.pk).update(
-            disabled=True, version=F("version") + 1
-        )
+        with psycopg.connect(
+            host=settings["HOST"],
+            port=settings["PORT"],
+            user=settings["USER"],
+            password=settings["PASSWORD"],
+            dbname=settings["NAME"],
+        ) as other:
+            other.execute(
+                "UPDATE stewardship_portal_user SET disabled=true, "
+                "version=version+1 WHERE id=%s",
+                [admin.pk],
+            )
         return genuine(configuration)
 
     monkeypatch.setattr(user_views, "confirmed_seeded", disabling)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
-    # The observation ran, under the lock, before the identity was lost.
+    # The observation ran, in its snapshot, before the identity was lost.
     assert len(observed) == 1
     assert response.status_code == 403
     assert b"admin@example.org" not in response.content

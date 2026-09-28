@@ -9,7 +9,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
@@ -118,12 +118,13 @@ def chair_relationships(document):
 
 @require_safe
 def users(request):
-    """Observe under the lock, render outside it, then recheck and audit.
+    """Observe one snapshot, render outside it, then recheck and audit.
 
-    The work lock keeps the applied policy, the source overlays and the Google
-    identities one coherent observation; separate READ COMMITTED statements could
-    pair a newly activated rule with an older overlay. That lock also serializes
-    the whole system's admissions, so only the observation runs inside it.
+    One read-only snapshot keeps the applied policy, the source overlays and the
+    Google identities one coherent observation; separate READ COMMITTED
+    statements could pair a newly activated rule with an older overlay. It
+    takes no work-order lock, so the page never waits behind a source promotion
+    or installer, and only the observation runs inside it.
     Shaping and rendering happen after release, and only then does a short
     transaction recheck current access and record the view: a response that
     failed to render, or whose reader was revoked meanwhile, never leaves a
@@ -139,7 +140,7 @@ def users(request):
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         # The page takes no parameters, so an address never reaches a URL or log.
         filters(request.GET, allowed=set())
-        with work_transaction():
+        with read_transaction():
             configuration = editable_configuration(service)
             records = configuration.active_configuration.canonical_document[
                 "sections"
