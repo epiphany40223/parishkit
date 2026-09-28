@@ -19,11 +19,6 @@
   let currentPage = null, pages = [];
   // Pages opened at least once this visit; the step bar shows them as done.
   const visited = new Set();
-  // Parish intro texts the Family expanded with "Read more"; edit() rebuilds
-  // the pages on many answers, and an expanded intro should stay expanded.
-  const expanded = new Set();
-  // Intros shorter than this many characters are shown in full.
-  const READ_MORE_LENGTH = 300;
 
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
@@ -42,33 +37,6 @@
     // Only the owning server's render_template output is HTML. Every answer,
     // label and error elsewhere in this file is assigned through textContent.
     element.innerHTML = form.content[slot];
-    readMore(element, slot);
-  }
-  function readMore(element, slot) {
-    // Long parish-written intros show their opening (any leading headings
-    // and the first paragraph) and hide the rest behind "Read more", so each
-    // page's first question stays near the top on a phone. Short text, or
-    // text with nothing after its first paragraph, is shown as written.
-    const lead = [...element.children].find((child) => !/^H[1-6]$/.test(child.tagName));
-    if (!lead || element.textContent.trim().length < READ_MORE_LENGTH) return;
-    const rest = [];
-    for (let next = lead.nextSibling; next; next = next.nextSibling) rest.push(next);
-    const more = node("div", null, null, {id: "family-" + slot + "-more", class: "read-more"});
-    more.append(...rest);
-    if (!more.textContent.trim()) { element.append(...rest); return; }
-    element.append(more);
-    const toggle = node("button", null, element, {type: "button", class: "read-more-toggle",
-      "aria-controls": more.id});
-    const paint = () => {
-      more.hidden = !expanded.has(slot);
-      toggle.setAttribute("aria-expanded", String(expanded.has(slot)));
-      toggle.textContent = expanded.has(slot) ? "Show less" : "Read more";
-    };
-    toggle.addEventListener("click", () => {
-      if (!expanded.delete(slot)) expanded.add(slot);
-      paint();
-    });
-    paint();
   }
   function tipLabel(text, id, tip, parent) {
     // A label with an "i" help button beside it (ui-v1.js toggletips). The

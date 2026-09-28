@@ -100,9 +100,8 @@ not shown. Browser history cannot resubmit or expose a completed form.
 
 Pages are action-first, because many Families answer on a phone. The Back/Next
 bar (Back to edit/Submit on Review) is sticky at the bottom of the screen, so
-the next action is always one tap away. Parish-written intro text longer than a
-few lines shows its heading and first paragraph with a "Read more" button that
-reveals the rest; an expanded intro stays expanded for the rest of the visit.
+the next action is always one tap away. Parish-written text is always shown in
+full, exactly as the Administrator wrote it, with no "Read more" collapse.
 Occasional field help (phone formats, death-date review, the email opt-out)
 sits behind a small "i" toggletip beside the label, which opens on click, tap,
 Enter or Space, never on hover, and closes with Escape or a click elsewhere.
