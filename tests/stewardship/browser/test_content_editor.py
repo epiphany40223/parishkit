@@ -10,6 +10,8 @@ from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.web.content import sanitize_html
 from parishkit.stewardship.web.security import CSP
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -201,7 +203,7 @@ def test_generated_plain_text_is_shown_read_only_and_never_silently_dropped(
         "'Hello Sample Family'"
     )
     assert not text.is_editable()
-    assert page.get_by_text("Generated from the HTML version").is_visible()
+    visible(page.get_by_text("Generated from the HTML version"))
     # Editing the visual content refreshes the generated preview.
     caret_to_end(page)
     page.keyboard.press("Enter")
@@ -293,20 +295,20 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
         '<img src="x" onerror="window.__pwned = true">'
     )
     # While the server re-sanitizes, the pane dims but stays visible.
-    assert visual.is_visible()
+    visible(visual)
     assert visual.get_attribute("aria-busy") == "true"
     assert editor.get_attribute("contenteditable") == "false"
     page.wait_for_function(
         "() => document.querySelector('[data-visual-content]')"
         ".getAttribute('aria-busy') === 'false'"
     )
-    assert visual.is_visible()
+    visible(visual)
     assert editor.get_attribute("contenteditable") == "true"
     assert editor.inner_html() == "<p>Hello <strong>Alex</strong></p>"
     assert editor.locator("script, img, [onclick]").count() == 0
     assert page.evaluate("() => window.__pwned") is None
     notice = page.locator("[data-visual-removed]")
-    assert notice.is_visible()
+    visible(notice)
     for removed in (
         "<img> element",
         "<script> element and its content",
@@ -337,7 +339,7 @@ def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
     page.locator('textarea[name="html"]').fill("<p>Changed</p>")
     unavailable = page.locator("[data-visual-unavailable]")
     unavailable.wait_for()
-    assert page.locator("[data-visual-content]").is_visible()
+    visible(page.locator("[data-visual-content]"))
     editor = page.locator("[data-content-editor]")
     assert editor.get_attribute("contenteditable") == "false"
     assert editor.inner_text() == "Hello Sample Family"

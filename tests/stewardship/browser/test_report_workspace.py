@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -14,7 +16,7 @@ def test_report_chart_scope_export_controls_and_accessibility(
     """Inspect exact facts without changing scope, then validate native export forms."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/participation")
-    assert page.get_by_role("status").filter(has_text="Updating").is_visible()
+    visible(page.get_by_role("status").filter(has_text="Updating"))
     slider = page.get_by_role("slider", name="Inspect campaign date")
     slider.focus()
     page.keyboard.press("Home")
@@ -53,19 +55,17 @@ def test_report_and_exports_work_without_scripts(browser_engine, component_origi
         page = context.new_page()
         page.goto(component_origin + "/participation")
         assert "$3,234.56" in page.locator("table").inner_text()
-        assert page.get_by_role("button", name="Apply report options").is_visible()
-        assert page.get_by_role("button", name="Generate export").is_visible()
-        assert page.get_by_role(
-            "button", name="Queue current-input export"
-        ).is_visible()
+        visible(page.get_by_role("button", name="Apply report options"))
+        visible(page.get_by_role("button", name="Generate export"))
+        visible(page.get_by_role("button", name="Queue current-input export"))
         assert page.locator("[data-digest-controls]").is_hidden()
         page.goto(component_origin + "/report-export")
-        assert page.get_by_role("button", name="Download export").is_visible()
+        visible(page.get_by_role("button", name="Download export"))
         page.goto(component_origin + "/report-exact")
-        assert page.get_by_role("button", name="Cancel export").is_visible()
-        assert page.get_by_role("link", name="Refresh status").is_visible()
+        visible(page.get_by_role("button", name="Cancel export"))
+        visible(page.get_by_role("link", name="Refresh status"))
         page.goto(component_origin + "/report-export-expired")
-        assert page.get_by_role("button", name="Regenerate expired file").is_visible()
+        visible(page.get_by_role("button", name="Regenerate expired file"))
     finally:
         context.close()
 
@@ -114,19 +114,17 @@ def test_export_status_updates_itself_and_downloads_once(page, component_origin)
 
     page.route("**/download", download)
     page.goto(component_origin + "/report-export-pending")
-    assert page.get_by_text("Preparing your file").is_visible()
+    visible(page.get_by_text("Preparing your file"))
     assert not page.get_by_text("Requester reference").is_visible()
     page.locator("[data-export-state=ready]").wait_for()
     page.wait_for_timeout(500)
     assert downloads == ["POST"]
-    assert page.get_by_role("button", name="Download export").is_visible()
+    visible(page.get_by_role("button", name="Download export"))
     assert set(reads) == {"GET"}
 
 
 def test_failed_export_explains_itself_with_retry(page, component_origin):
     """A failed export says so in plain words and offers Retry, without polling."""
     page.goto(component_origin + "/report-export-failed")
-    assert (
-        page.get_by_role("alert").filter(has_text="could not be created").is_visible()
-    )
-    assert page.get_by_role("button", name="Retry export").is_visible()
+    visible(page.get_by_role("alert").filter(has_text="could not be created"))
+    visible(page.get_by_role("button", name="Retry export"))

@@ -48,8 +48,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
 
       - name: Classify changed paths
         id: paths
@@ -112,8 +112,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
 
       - name: Build development application image
         run: docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
@@ -153,8 +153,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
       - name: Build development application image
         run: docker build -f deploy/stewardship/Dockerfile -t parishkit-stewardship:development .
       - name: Validate isolated development and production scenarios
@@ -223,8 +223,8 @@ jobs:
           cache-dependency-path: tests/stewardship/browser/package-lock.json
       - name: Install component test dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt -r requirements/stewardship-browser.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt -r requirements/stewardship-browser.txt
           npm ci --ignore-scripts --prefix tests/stewardship/browser
           python -m playwright install --with-deps "$BROWSER_ENGINE"
       - name: Responsive, keyboard, accessibility, and session component checks
@@ -296,8 +296,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
       - name: Measure isolated database partition
         run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 14 --output "$RUNNER_TEMP/stewardship-shard"
       - name: Retain successful shard evidence
@@ -344,8 +344,8 @@ jobs:
       - name: Install dependencies
         if: ${{ steps.gate.outputs.intentional != 'true' }}
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
       - name: Download this run's coverage evidence
         if: ${{ steps.gate.outputs.intentional != 'true' }}
         uses: actions/download-artifact@v5

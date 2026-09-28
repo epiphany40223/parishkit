@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -21,7 +23,7 @@ def test_staff_queue_detail_history_and_accessibility(
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "disposition"
-    assert page.get_by_role("button", name="Next page").is_visible()
+    visible(page.get_by_role("button", name="Next page"))
     assert page.locator("form").evaluate_all(
         "nodes => nodes.every(node => node.method === 'post')"
     )
@@ -51,22 +53,26 @@ def test_staff_queue_detail_history_and_accessibility(
         == "Called; awaiting a response."
     )
     assert page.get_by_label("Follow-up completed", exact=True).is_checked()
-    assert page.get_by_label("If clearing completion", exact=False).is_visible()
-    assert page.get_by_role("link", name="Open the replacement request").is_visible()
-    assert page.get_by_role("heading", name="Staff edit history").is_visible()
-    assert page.get_by_text(
-        "This correction is resolved in the weekly digest workflow. "
-        "Resolution does not necessarily mean an email was delivered.",
-        exact=True,
-    ).is_visible()
+    visible(page.get_by_label("If clearing completion", exact=False))
+    visible(page.get_by_role("link", name="Open the replacement request"))
+    visible(page.get_by_role("heading", name="Staff edit history"))
+    visible(
+        page.get_by_text(
+            "This correction is resolved in the weekly digest workflow. "
+            "Resolution does not necessarily mean an email was delivered.",
+            exact=True,
+        )
+    )
     assert page.get_by_text("A correction has been delivered", exact=False).count() == 0
     assert page.locator("our").count() == 0
     page.goto(component_origin + "/information-unresolved")
-    assert page.get_by_text(
-        "This change is visible to the weekly digest correction workflow; "
-        "the old request is no longer actionable.",
-        exact=True,
-    ).is_visible()
+    visible(
+        page.get_by_text(
+            "This change is visible to the weekly digest correction workflow; "
+            "the old request is no longer actionable.",
+            exact=True,
+        )
+    )
     page.goto(component_origin + "/information-gated")
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
     page.goto(component_origin + "/information-queue-gated")
@@ -101,7 +107,7 @@ def test_staff_native_workflow_without_scripts(browser_engine, component_origin)
         page = context.new_page()
         export_post(page, component_origin)
         page.goto(component_origin + "/information")
-        assert page.get_by_role("button", name="Apply filters").is_visible()
+        visible(page.get_by_role("button", name="Apply filters"))
         page.goto(component_origin + "/information-item")
         page.get_by_label("Follow-up completed", exact=True).uncheck()
         page.get_by_label("If clearing completion", exact=False).check()

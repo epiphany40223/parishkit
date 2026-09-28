@@ -78,6 +78,22 @@ leaves its old required context unreported and blocks every PR until the
 ruleset is updated. Update the ruleset in the same change that renames a
 required job or matrix value.
 
+## Transient infrastructure failures
+
+Hosted runners occasionally fail a dependency install with "no matching
+distribution" for a pin that exists on PyPI, or with "Connection broken:
+IncompleteRead". Every CI pip install therefore goes through
+`tools/ci-pip-install.sh`, which adds pip's own `--retries 5 --timeout 60` and
+retries the whole install up to three times, 20 seconds apart. A genuine
+resolution conflict fails every attempt and still fails the job. Changing the
+wrapper runs every job group, like changing `ci.yml`.
+
+Browser assertions that follow a navigation, a disclosure or a script render
+use the auto-waiting `visible()` helper in `tests/stewardship/browser/waits.py`
+(Playwright's `expect(...).to_be_visible()`), not an immediate
+`assert locator.is_visible()`, which raced on slower engines. Negative
+visibility checks stay immediate so they still prove an element never shows.
+
 ## Measured bottlenecks
 
 The successful PR #47 merge-group run `35243208902` measured PostgreSQL partition

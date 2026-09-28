@@ -6,6 +6,8 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -164,9 +166,9 @@ def test_ticks_autosave_in_order_and_adopt_the_applied_digest(page, component_or
     # With scripts the review button is not how roles change.
     assert leader.get_by_role("button", name="Review role change").is_hidden()
     leader.get_by_label("Ministry leader").uncheck()
-    assert leader.get_by_text("Applying", exact=False).is_visible()
+    visible(leader.get_by_text("Applying", exact=False))
     leader.get_by_label("Administrator").check()
-    assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
+    visible(leader.get_by_text("Queued — not saved", exact=True))
     # A change of mind back to the confirmed value drops the queued intent.
     leader.get_by_label("Administrator").uncheck()
     assert leader.get_by_text("Queued — not saved", exact=True).count() == 0
@@ -210,13 +212,11 @@ def test_a_refusal_pauses_the_queue_and_leaving_warns(page, component_origin):
     refused.wait_for()
     assert not leader.get_by_label("Administrator").is_checked()
     leader.get_by_label("Staff").uncheck()
-    assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
+    visible(leader.get_by_text("Queued — not saved", exact=True))
     # The refusal for one role survives a queued change to another.
-    assert refused.is_visible()
+    visible(refused)
     assert len(sent) == 1
-    assert page.get_by_role(
-        "button", name="Continue with the remaining changes"
-    ).is_visible()
+    visible(page.get_by_role("button", name="Continue with the remaining changes"))
     page.on("dialog", lambda dialog: dialog.dismiss())
     with page.expect_event("dialog") as warned:
         page.close(run_before_unload=True)
@@ -235,7 +235,7 @@ def test_a_conflict_shows_current_rules_and_retries_selected_intents_afresh(
     panel = page.get_by_role("alert")
     panel.get_by_text("now: staff", exact=False).wait_for()
     # The row itself says the change was not applied.
-    assert leader.get_by_text("Not saved: the rules changed", exact=False).is_visible()
+    visible(leader.get_by_text("Not saved: the rules changed", exact=False))
     # A newer change while the view is open joins the same ordered list.
     leader.get_by_label("Ministry leader").uncheck()
     assert panel.get_by_role("listitem").count() == 2
@@ -263,7 +263,7 @@ def test_a_conflict_shows_current_rules_and_retries_selected_intents_afresh(
     # The discarded withdrawal shows the current rules' value, and an untouched
     # row was reconciled with the current rules as well.
     assert not leader.get_by_label("Ministry leader").is_checked()
-    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    visible(leader.get_by_text("Change discarded", exact=True))
     admin = page.get_by_role("row", name="admin@example.org", exact=False)
     assert admin.get_by_label("Staff").is_checked()
 
@@ -286,13 +286,13 @@ def test_discarding_a_conflict_restores_current_rules(page, component_origin):
     page.get_by_role("button", name="Discard all").wait_for()
     # Once read, the current rules differ from the withdrawal, so it is
     # preselected for retry beside them.
-    assert panel.get_by_text(
-        "now: administrator, ministry_leader, staff", exact=False
-    ).is_visible()
+    visible(
+        panel.get_by_text("now: administrator, ministry_leader, staff", exact=False)
+    )
     assert panel.get_by_role("checkbox").is_checked()
     page.get_by_role("button", name="Discard all").click()
     assert leader.get_by_label("Staff").is_checked()
-    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    visible(leader.get_by_text("Change discarded", exact=True))
     # Every control now shows the current rules, not the page's first render.
     assert leader.get_by_label("Administrator").is_checked()
     # Later changes go against the refreshed digest.
@@ -337,7 +337,7 @@ def test_a_failed_request_pauses_and_a_stale_base_failure_opens_the_conflict(
     leader.get_by_label("Staff").uncheck()
     leader.get_by_text("Not saved: the change failed", exact=False).wait_for()
     leader.get_by_label("Administrator").check()
-    assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
+    visible(leader.get_by_text("Queued — not saved", exact=True))
     assert len(sent) == 1
     page.get_by_role("button", name="Continue with the remaining changes").click()
     # A newer click on the in-flight control while it awaits activation
@@ -348,7 +348,7 @@ def test_a_failed_request_pauses_and_a_stale_base_failure_opens_the_conflict(
     page.get_by_role("button", name="Retry selected against current rules").wait_for()
     assert len(sent) == 2 and sent[1]["role"] == "administrator"
     assert panel.get_by_role("listitem").count() == 1
-    assert panel.get_by_text("withdraw Administrator", exact=False).is_visible()
+    visible(panel.get_by_text("withdraw Administrator", exact=False))
     # The withdrawal already matches the current rules, so it is not preselected.
     assert not panel.get_by_role("checkbox").is_checked()
 
@@ -360,11 +360,11 @@ def test_an_unanswered_request_is_kept_uncertain_with_its_key(page, component_or
     leader = leader_row(page, component_origin)
     leader.get_by_label("Staff").uncheck()
     leader.get_by_text("Not confirmed", exact=False).wait_for(timeout=15000)
-    assert page.get_by_role("button", name="Try again").is_visible()
+    visible(page.get_by_role("button", name="Try again"))
     assert len(sent) == 4 and len({item["request_key"] for item in sent}) == 1
     # Nothing further is sent while the outcome is unknown.
     leader.get_by_label("Administrator").check()
-    assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
+    visible(leader.get_by_text("Queued — not saved", exact=True))
     assert len(sent) == 4
     outage.clear()
     page.get_by_role("button", name="Try again").click()
@@ -379,7 +379,7 @@ def test_unreadable_outcomes_pause_and_resume_the_same_request(page, component_o
     leader = leader_row(page, component_origin)
     leader.get_by_label("Staff").uncheck()
     page.get_by_role("button", name="Try again").wait_for(timeout=15000)
-    assert leader.get_by_text("Reconnecting", exact=False).is_visible()
+    visible(leader.get_by_text("Reconnecting", exact=False))
     assert len(sent) == 1 and len(polled) == 5
     page.get_by_role("button", name="Try again").click()
     leader.get_by_text("Applied", exact=True).wait_for()
@@ -397,7 +397,7 @@ def test_the_pause_panel_discards_or_continues(page, component_origin):
     leader.get_by_label("Staff").uncheck()
     page.get_by_role("button", name="Discard the remaining changes").click()
     assert leader.get_by_label("Staff").is_checked()
-    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    visible(leader.get_by_text("Change discarded", exact=True))
     assert page.get_by_role("alert").is_hidden()
     # A refusal with nothing else waiting offers a plain Continue.
     leader.get_by_label("Administrator").click()
@@ -480,7 +480,7 @@ def test_a_removed_target_cannot_be_retried_and_its_controls_are_disabled(
     page.get_by_role("button", name="Retry selected against current rules").click()
     assert len(sent) == 1
     assert leader.get_by_label("Staff").is_disabled()
-    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    visible(leader.get_by_text("Change discarded", exact=True))
 
 
 def test_a_conflict_on_a_later_intent_leaves_the_applied_one_alone(
@@ -495,5 +495,5 @@ def test_a_conflict_on_a_later_intent_leaves_the_applied_one_alone(
     leader.get_by_label("Administrator").check()
     page.get_by_role("button", name="Retry selected against current rules").wait_for()
     assert leader.get_by_text("Applied", exact=True).count() == 1
-    assert leader.get_by_text("Not saved: the rules changed", exact=False).is_visible()
+    visible(leader.get_by_text("Not saved: the rules changed", exact=False))
     assert len(sent) == 2 and sent[1]["base_digest"] == applied_digest("request-1")

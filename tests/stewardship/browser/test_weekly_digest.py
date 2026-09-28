@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -19,7 +21,7 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
     page.get_by_role(
         "link", name="Open full captured request and current status"
     ).click()
-    assert page.get_by_role("heading", name="Full text at capture").is_visible()
+    visible(page.get_by_role("heading", name="Full text at capture"))
     # The Family DUID is an identifier, shown without grouping.
     assert "1234567" in page.locator("main").inner_text()
     assert "1,234,567" not in page.locator("main").inner_text()
@@ -43,14 +45,12 @@ def test_weekly_report_remains_usable_without_scripts(browser_engine, component_
     try:
         page = context.new_page()
         page.goto(component_origin + "/weekly-digest")
-        assert page.get_by_role("link", name="Next page").is_visible()
+        visible(page.get_by_role("link", name="Next page"))
         page.get_by_role(
             "link", name="Open full captured request and current status"
         ).click()
-        assert page.get_by_role("heading", name="Full text at capture").is_visible()
-        assert page.get_by_role(
-            "link", name="Return to this weekly report"
-        ).is_visible()
+        visible(page.get_by_role("heading", name="Full text at capture"))
+        visible(page.get_by_role("link", name="Return to this weekly report"))
     finally:
         context.close()
 
@@ -68,7 +68,7 @@ def test_manual_report_requires_accessible_explicit_confirmation(
     page.keyboard.press("Space")
     assert confirmation.is_checked()
     assert page.locator("form.panel").evaluate("form => form.checkValidity()")
-    assert page.get_by_role("button", name="Queue new manual report").is_visible()
+    visible(page.get_by_role("button", name="Queue new manual report"))
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.evaluate(axe_source)
     assert (

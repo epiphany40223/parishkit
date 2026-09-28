@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -36,7 +38,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/portal-users")
     # A deliberate denial is labelled, never left looking like an empty accident.
     blocked = page.get_by_role("row", name="blocked@example.org", exact=False)
-    assert blocked.get_by_text("Explicit deny", exact=True).is_visible()
+    visible(blocked.get_by_text("Explicit deny", exact=True))
     # Google verified that person's attempt; being refused is not a sign-in.
     assert blocked.get_by_text("None on record", exact=True).count() == 1
     assert blocked.locator("time").count() == 0
@@ -56,7 +58,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     used = page.get_by_role("row", name="workspace.example Staff", exact=False).first
     assert used.get_by_role("cell", name="1", exact=True).count() == 1
     leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
-    assert leader.get_by_text("replaces its domain rule", exact=False).is_visible()
+    visible(leader.get_by_text("replaces its domain rule", exact=False))
     # Policy still grants the address; the warning says this identity cannot use it.
     assert leader.get_by_text("is disabled and cannot sign in", exact=False).count()
     assert leader.get_by_role("cell", name="Staff, Ministry leader", exact=True).count()
@@ -94,7 +96,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
 
     # The review page states before and after, the expansion and the reach.
     page.goto(component_origin + "/portal-users-preview")
-    assert page.get_by_text("High-impact expansion", exact=False).is_visible()
+    visible(page.get_by_text("High-impact expansion", exact=False))
     assert page.get_by_text(
         "Configured roles after this change: Administrator, Staff"
     ).count()
@@ -104,7 +106,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/portal-users-preview-deny")
     assert page.get_by_text("none: an explicit deny", exact=False).count()
     page.goto(component_origin + "/portal-users-preview-remove")
-    assert page.get_by_text("This rule will be removed.", exact=False).is_visible()
+    visible(page.get_by_text("This rule will be removed.", exact=False))
     assert page.get_by_text(
         "0 recorded Google accounts are authorized through this rule", exact=False
     ).count()
@@ -123,7 +125,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
         == 0
     )
     page.goto(component_origin + "/portal-users-minimal")
-    assert page.get_by_text("No hosted-domain rules.", exact=True).is_visible()
+    visible(page.get_by_text("No hosted-domain rules.", exact=True))
     assert (
         page.get_by_role("region", name="Ministry assignments", exact=False).count()
         == 0

@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -48,9 +50,7 @@ def test_snapshot_retains_all_values_without_scripts(browser_engine, component_o
         page.goto(component_origin + "/daily-digest")
         assert page.locator("tbody tr").count() == 3
         assert "$3,234.56" in page.locator("table").inner_text()
-        assert page.get_by_role(
-            "link", name="Download the original chart (PNG)"
-        ).is_visible()
+        visible(page.get_by_role("link", name="Download the original chart (PNG)"))
         assert page.locator("[data-digest-controls]").is_hidden()
     finally:
         context.close()

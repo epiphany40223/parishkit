@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -69,16 +71,16 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("button", name="Previous page").count() == 1
     # Unproven giving is explained and shown as unavailable, never as zero.
     page.goto(component_origin + "/financial-unproven")
-    assert page.get_by_text("Unavailable does not mean zero", exact=False).is_visible()
+    visible(page.get_by_text("Unavailable does not mean zero", exact=False))
     assert page.get_by_role("cell", name="Unavailable", exact=True).count() == 2
     assert page.get_by_role("cell", name="$0.00", exact=True).count() == 1
     assert page.get_by_text("Status unavailable", exact=False).count() >= 1
     assert page.get_by_text("None chosen", exact=True).count() == 1
     page.goto(component_origin + "/financial-empty")
-    assert page.get_by_text("No matching pledges.", exact=True).is_visible()
+    visible(page.get_by_text("No matching pledges.", exact=True))
     # Past the last page the count still stands, so the text must not deny it.
     page.goto(component_origin + "/financial-beyond")
-    assert page.get_by_text("past the last matching pledge", exact=False).is_visible()
+    visible(page.get_by_text("past the last matching pledge", exact=False))
     assert page.get_by_text("No matching pledges.", exact=True).count() == 0
     assert page.get_by_role("button", name="Previous page").count() == 1
     # A refused filter explains the money format and offers a way back.

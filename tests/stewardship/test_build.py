@@ -14,6 +14,12 @@ INSTALL_COMMANDS = [
     "python -m pip install -r requirements/stewardship-build.txt",
     "python -m pip install --no-build-isolation -r requirements.txt",
 ]
+# CI runs the same ordered installs through a bounded retry wrapper, so a
+# transient index or network fault on one runner does not fail the job.
+CI_INSTALL_COMMANDS = [
+    command.replace("python -m pip install ", "tools/ci-pip-install.sh ")
+    for command in INSTALL_COMMANDS
+]
 BUILD_INPUTS = (
     "README.md",
     "pyproject.toml",
@@ -182,7 +188,21 @@ def test_ci_installs_locked_backend_before_editable_project(workflow, job):
         for step in definition["jobs"][job]["steps"]
         if step.get("name") == "Install dependencies"
     )
-    assert install["run"].strip().splitlines() == INSTALL_COMMANDS
+    assert install["run"].strip().splitlines() == CI_INSTALL_COMMANDS
+
+
+def test_ci_pip_wrapper_retries_the_same_install():
+    """The wrapper only retries pip install with the caller's arguments."""
+    script = ROOT / "tools/ci-pip-install.sh"
+    text = script.read_text()
+    assert os.access(script, os.X_OK)
+    assert 'python -m pip install --retries 5 --timeout 60 "$@"' in text
+    assert "attempts=3" in text
+    for workflow in ("ci.yml", "release.yml"):
+        assert (
+            "python -m pip install"
+            not in (ROOT / ".github/workflows" / workflow).read_text()
+        )
 
 
 def test_release_build_uses_installed_locked_tools():

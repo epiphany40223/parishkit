@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -36,7 +38,7 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "activity"
-    assert page.get_by_role("button", name="Next page").is_visible()
+    visible(page.get_by_role("button", name="Next page"))
 
 
 def test_ministry_search_without_scripts(browser_engine, component_origin):

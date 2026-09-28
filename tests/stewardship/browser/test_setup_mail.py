@@ -3,6 +3,7 @@
 import pytest
 
 from .conftest import NOW
+from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -138,6 +139,6 @@ def test_accepted_email_test_offers_continue_and_another_send(page, component_or
     """After acceptance the primary action is Continue; sending again is secondary."""
     page.goto(component_origin + "/setup-mail-test-done")
     row = page.locator(".setup-actions")
-    assert row.get_by_role("link", name="Continue").is_visible()
+    visible(row.get_by_role("link", name="Continue"))
     assert row.locator("button").count() == 0
-    assert page.get_by_role("button", name="Send another test").is_visible()
+    visible(page.get_by_role("button", name="Send another test"))

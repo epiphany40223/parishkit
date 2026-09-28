@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -39,7 +41,7 @@ def test_followup_mobile_keyboard_and_accessibility(
         )
     page.goto(component_origin + "/followup-queue")
     assert page.get_by_text("Example <Member>", exact=True).count() == 1
-    assert page.get_by_label("Select Example <Member>").is_visible()
+    visible(page.get_by_label("Select Example <Member>"))
     search = page.get_by_label("Search Member or Ministry name")
     search.focus()
     page.keyboard.press("Tab")
@@ -47,7 +49,7 @@ def test_followup_mobile_keyboard_and_accessibility(
     # Bulk assignment needs one Ministry's assignees; otherwise it explains why.
     page.goto(component_origin + "/followup-all")
     assert page.get_by_role("button", name="Assign selected").count() == 0
-    assert page.get_by_text("Choose one Ministry above", exact=False).is_visible()
+    visible(page.get_by_text("Choose one Ministry above", exact=False))
     page.goto(component_origin + "/followup-item")
     assert page.get_by_text("Left a <private> voicemail", exact=True).count() == 2
     assert page.get_by_text("No <answer>", exact=False).count() == 1
@@ -60,7 +62,7 @@ def test_followup_mobile_keyboard_and_accessibility(
     # Closed outcomes are permanent: history remains, the form does not.
     page.goto(component_origin + "/followup-closed")
     assert page.get_by_role("button", name="Save follow-up").count() == 0
-    assert page.get_by_text("Closed outcomes are permanent", exact=False).is_visible()
+    visible(page.get_by_text("Closed outcomes are permanent", exact=False))
     for path, control in (
         ("/followup-item-gated", "Save follow-up"),
         ("/followup-gated", "Assign selected"),

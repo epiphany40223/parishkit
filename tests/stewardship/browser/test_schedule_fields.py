@@ -5,6 +5,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
+from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -49,7 +50,7 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-schedules-mail")
-    assert page.get_by_role("heading", name="How mail schedules work").is_visible()
+    visible(page.get_by_role("heading", name="How mail schedules work"))
     assert "October 1, 2026 – October 31, 2026" in page.inner_text("main")
     # The saved initial invitation keeps its fixed type and its own fields.
     assert page.locator('[name="schedules-0-kind"]').is_disabled()
@@ -110,7 +111,7 @@ def test_a_reported_field_stays_visible_until_the_type_changes(
     page.goto(component_origin + "/setup-schedules-error")
     prefix = "schedules-0-"
     weekday = group(page, "weekday", prefix)
-    assert weekday.is_visible()
+    visible(weekday)
     assert "leave it at Not weekly" in weekday.inner_text()
     assert page.locator(f'[name="{prefix}weekday"]').input_value() == "0"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

@@ -2,6 +2,8 @@
 
 import pytest
 
+from .waits import visible
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -39,9 +41,7 @@ def test_pause_resume_and_resolution_accessibility(
         )
     page.get_by_label("Submission receipts", exact=False).check()
     page.get_by_label("Resolution", exact=True).select_option("cancel")
-    assert page.get_by_role(
-        "button", name="Confirm held-message resolution"
-    ).is_visible()
+    visible(page.get_by_role("button", name="Confirm held-message resolution"))
 
 
 def test_closed_resolution_without_javascript(browser_engine, component_origin):
@@ -53,9 +53,7 @@ def test_closed_resolution_without_javascript(browser_engine, component_origin):
         page.get_by_label("Weekly Admin reports", exact=False).check()
         page.get_by_label("Resolution", exact=True).select_option("cancel")
         page.get_by_label("Reason", exact=True).fill("Cancel after staff review")
-        assert page.get_by_role(
-            "button", name="Preview held-message resolution"
-        ).is_visible()
+        visible(page.get_by_role("button", name="Preview held-message resolution"))
         assert page.locator('form input[name="preview"]').get_attribute("value")
     finally:
         context.close()
