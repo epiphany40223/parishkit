@@ -498,8 +498,11 @@ use. **Test access** queues a check that the Google Workspace credential
 installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate
-someone else); the page follows the result with the passive live-status pattern and explains
-each failure in plain language. The folder that was tested stays in the
+someone else); the page follows the result with the passive live-status
+pattern and explains each failure in plain language. A pending check shows
+until it finishes; a finished result shows for up to ten minutes and
+disappears as soon as the tested folder is saved after it (other
+configuration changes don't hide it). The folder that was tested stays in the
 folder field and is named beside the result, so the Administrator can save it
 without pasting the link again. The Integrations list always links to this
 page: "Set up off-site backups" before it is configured, and "Change" after.

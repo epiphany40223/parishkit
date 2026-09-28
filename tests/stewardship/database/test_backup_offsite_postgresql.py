@@ -1,5 +1,6 @@
 """Off-site backup copies: recorded outcomes, access checks, alerts and the web."""
 
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -8,7 +9,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship import backup_offsite, backup_probes
-from parishkit.stewardship.accounts import key_files
+from parishkit.stewardship.accounts import backup_destination, key_files
 from parishkit.stewardship.accounts.backup_destination import (
     latest_probe,
     offsite_status,
@@ -16,6 +17,7 @@ from parishkit.stewardship.accounts.backup_destination import (
 )
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.backup_drive import PROBE_WAIT
 from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -438,6 +440,7 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     )
     failed = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
+    assert b"Test access:" in failed
     assert post(browser, URL, {"action": "test", "target": "x"}).status_code == 400
     preview = hidden(
         post(
@@ -452,6 +455,8 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
         "preview",
     )
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
+    # Saving the tested folder clears the earlier Test access result.
+    assert b"Test access:" not in browser.get(URL).content
     assert backups(store) == [
         {
             "kind": "backup",
@@ -543,3 +548,89 @@ def test_the_probe_guard_is_a_non_callable_definer():
             definer, configuration, executable = cursor.fetchone()
             assert definer and not executable
             assert configuration == ["search_path=pg_catalog, public, pg_temp"]
+
+
+def finished_probe(actor, state, failure=None, folder=FOLDER):
+    """One access check the installer completed with ``state``."""
+    probe = request_probe(actor, folder, "mail@example.org")
+    BackupDriveProbe.objects.filter(pk=probe.pk).update(
+        state=state, failure_kind=failure, completed_at=database_now_sql()
+    )
+    probe.refresh_from_db()
+    return probe
+
+
+def test_access_check_results_show_only_briefly(workspace, monkeypatch):
+    """Pending shows until it resolves; results go after ten minutes or Save."""
+    shown = backup_destination.PROBE_SHOWN_FOR
+    tick = timedelta(microseconds=1)
+    saved = [(None, False)]
+    monkeypatch.setattr(
+        backup_destination, "saved_folder_since", lambda since: saved[0]
+    )
+
+    def kind(actor, now):
+        """The shown result's kind at ``now``, or None when hidden."""
+        status = latest_probe(actor, now)
+        return status and status.kind
+
+    actor = uuid4()
+    probe = request_probe(actor, FOLDER, "mail@example.org")
+    probe.refresh_from_db()
+    created = probe.created_at
+    # Pending: shown until PROBE_WAIT, then as unanswered for ten minutes.
+    assert kind(actor, created + PROBE_WAIT / 2) == "pending"
+    assert kind(actor, created + PROBE_WAIT + shown) == "unanswered"
+    assert kind(actor, created + PROBE_WAIT + shown + tick) is None
+    # A closed "unanswered" check also ended at PROBE_WAIT, not at its close.
+    actor = uuid4()
+    probe = finished_probe(actor, "failed", "unanswered")
+    assert kind(actor, probe.created_at + PROBE_WAIT + shown) == "unanswered"
+    assert kind(actor, probe.created_at + PROBE_WAIT + shown + tick) is None
+    for state, failure in (("succeeded", None), ("failed", "permission")):
+        # Checks are append-only, so each case uses its own Administrator.
+        actor = uuid4()
+        done = finished_probe(actor, state, failure).completed_at
+        saved[0] = (None, False)
+        assert kind(actor, done + shown) == state
+        assert kind(actor, done + shown + tick) is None
+        # An unrelated configuration change keeps it...
+        saved[0] = (FOLDER, False)
+        assert kind(actor, done + shown / 2) == state
+        # ...and so does saving a different folder after the test...
+        saved[0] = ("0OtherFolder12345", True)
+        assert kind(actor, done + shown / 2) == state
+        # ...but saving the tested folder after the test hides it at once.
+        saved[0] = (FOLDER, True)
+        assert kind(actor, done + shown / 2) is None
+    # Only the newest check counts: a hidden newer one never lets an older,
+    # otherwise visible, result show instead.
+    actor = uuid4()
+    finished_probe(actor, "failed", "permission", folder="0OtherFolder12345")
+    done = finished_probe(actor, "succeeded").completed_at
+    saved[0] = (FOLDER, True)
+    assert kind(actor, done + shown / 2) is None
+
+
+def test_saving_a_folder_counts_only_backup_folder_changes(workspace):
+    """Real versions: a save after the test counts; later ones don't."""
+    store = workspace.store
+    browser, _ = signed_in()
+    other = "0OtherFolder12345"
+    before = database_now_sql()
+    preview = hidden(
+        post(
+            browser,
+            URL,
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "target": f"https://drive.google.com/drive/folders/{other}",
+            },
+        ),
+        "preview",
+    )
+    apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
+    after = database_now_sql()
+    assert backup_destination.saved_folder_since(before) == (other, True)
+    assert backup_destination.saved_folder_since(after) == (other, False)

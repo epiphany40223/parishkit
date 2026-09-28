@@ -137,13 +137,14 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     probe = backup.get("probe")
     if (
         probe is not None
-        and probe.requested_at > _applied_at()
+        and not probe.saved_after
         and probe.folder_id != _saved_folder_id(initial.get("target"))
     ):
-        # Keep a folder the Administrator tested since the settings were last
-        # applied in the field, so Save applies it without pasting the link
+        # Keep the tested folder in the field while its result is on the page
+        # (latest_probe's window), so Save applies it without pasting the link
         # again. The saved link stays as written when it is that same folder,
-        # and after a Save the applied folder shows instead.
+        # and once any backup folder has been saved since the test, the saved
+        # folder shows instead.
         initial["target"] = probe.folder_url
     form = form if form is not None else IntegrationForm(target, initial=initial)
     latest = summary(target, record) if target in ROTATING_TARGETS else None
@@ -194,22 +195,6 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     return response
 
 
-def _applied_at():
-    """When the applied configuration version was created.
-
-    Other runtime-row updates (mode changes, restore holds) don't count as a
-    settings change, so this reads the version, not the runtime row.
-    """
-    from datetime import UTC, datetime
-
-    from .runtime_models import SystemConfiguration
-
-    created = SystemConfiguration.objects.values_list(
-        "active_configuration__created_at", flat=True
-    ).first()
-    return created or datetime.min.replace(tzinfo=UTC)
-
-
 def _saved_folder_id(link):
     """The Drive folder ID in a saved folder link, or None."""
     from parishkit.stewardship.backup_drive import folder_id_from_url
@@ -222,12 +207,16 @@ def _saved_folder_id(link):
 
 def _backup_context(request, configuration):
     """Off-site copy status and the viewer's latest access check."""
-    from django.utils import timezone
+    from django.db import transaction
+
+    from parishkit.stewardship.jobs.ownership import database_now
 
     from .backup_destination import latest_probe, offsite_status
 
-    # The page's clock is enough to judge a minutes-long wait for display.
-    probe = latest_probe(request.portal_session.principal_id, timezone.now())
+    # The window is judged on the database's clock, which also stamped the
+    # check, so clock skew between servers can't hide a fresh result.
+    with transaction.atomic():
+        probe = latest_probe(request.portal_session.principal_id, database_now())
     return {
         "offsite": offsite_status(),
         "probe": probe,
