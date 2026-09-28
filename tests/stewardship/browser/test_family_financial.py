@@ -397,6 +397,9 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
             ),
         ).check()
     elif changed == "removed":
+        # The required confirmation has its own error line (the note names
+        # the first problem, the now-empty share group).
+        expect(page.locator(f"#financial-removed-{OTHER}-error")).to_be_visible()
         # Confirmation removes its own control immediately; click, rather than
         # waiting for a checked state on a control that must no longer exist.
         show(
@@ -405,6 +408,8 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         # A positive pledge still needs a share method once the old one is gone.
         show(page, page.locator(f"#financial-option-{CHECK}")).check()
     else:
+        expect(page.locator(f"#financial-discard-{OTHER}-error")).to_be_visible()
+        expect(page.locator("[data-nav-error]")).to_contain_text("Discard this note")
         show(
             page, page.get_by_label("Discard this note and keep the selected method")
         ).click()
@@ -512,3 +517,35 @@ def test_exact_payments_are_not_called_approximate(page, component_origin, width
     ]
     for above, below in zip(boxes, boxes[1:], strict=False):
         assert above["y"] + above["height"] + 8 <= below["y"]
+
+
+def test_uneven_weekly_payments_are_approximate(page, component_origin):
+    """$1,000 a year weekly doesn't divide evenly, so it says "Approximately"."""
+    begin(page, component_origin, financial_form(), None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("1000")
+    page.get_by_label("Pledge frequency").select_option("weekly")
+    installment = page.locator("#financial-installment")
+    expect(installment).to_contain_text("Approximately $19.23 per week.")
+    page.get_by_label("I will send a check", exact=True).check()
+    review(page)
+    expect(
+        page.get_by_text(
+            re.compile(r"^Your \S+ pledge: \$1,000 \(approximately \$19\.23 per week;")
+        )
+    ).to_be_visible()
+
+
+def test_zero_pledge_has_no_start_date_and_history_names_the_year(
+    page, component_origin
+):
+    """No start date for $0; without a prior pledge, giving is "in <year>"."""
+    form = financial_form()
+    form["financial"]["pledge"] = {"available": True, "amount": "0.00", "display": "$0"}
+    begin(page, component_origin, form, None)
+    history = page.get_by_text("you have contributed", exact=False)
+    expect(history).to_contain_text(re.compile(r"you have contributed \$500 in \d{4}"))
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    review(page)
+    expect(page.get_by_text(re.compile(r"^Your \S+ pledge: \$0$"))).to_be_visible()
+    assert page.get_by_text("This pledge starts on", exact=False).count() == 0
+    assert page.get_by_text("This pledge began on", exact=False).count() == 0

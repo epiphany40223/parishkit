@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -325,6 +326,11 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     review_segment.click()
     assert step_text(page) == f"Step 3 of {total}: Alex Sample"
     expect(note).to_contain_text("Please go through each page")
+    # The note also describes the focused heading, as the alert may be missed.
+    heading = page.locator("h3:focus")
+    expect(heading).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
     expect(review_segment).not_to_have_attribute("aria-current", "step")
     links = page.locator("[data-step-link]")
     for index in range(links.count()):
@@ -334,7 +340,7 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
-    expect(note).to_contain_text("Annual pledge (USD)")
+    expect(note).to_contain_text("“Annual pledge” on the “Financial stewardship” page")
     expect(note).to_be_visible()
     expect(review_segment).not_to_have_attribute("aria-current", "step")
 
@@ -559,8 +565,20 @@ def test_blocked_next_says_which_question_needs_an_answer(
     assert step_text(page) == before
     note = page.locator("[data-nav-error]")
     expect(note).to_be_visible()
-    expect(note).to_contain_text("How would you like to share?")
+    expect(note).to_have_text("Please check “How would you like to share?”.")
     expect(page.locator("#financial-shares-error")).to_be_visible()
+    focused = page.locator(":focus")
+    expect(focused).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
+    # Only the share group is outlined in red, not the whole pledge section.
+    for selector in (".financial-pledge", "#financial-section"):
+        width = page.locator(selector).evaluate(
+            "e => getComputedStyle(e).borderTopWidth"
+        )
+        assert width in ("0px", "1px"), (selector, width)
+    group = page.locator("fieldset.choice-group")
+    assert group.evaluate("e => getComputedStyle(e).borderTopWidth") == "2px"
     # The note sits with the (sticky) navigation, inside the viewport.
     box = note.bounding_box()
     assert box and box["y"] + box["height"] <= page.viewport_size["height"]
@@ -569,6 +587,7 @@ def test_blocked_next_says_which_question_needs_an_answer(
     next_page(page)
     expect(note).to_be_hidden()
     assert step_text(page) != before
+    assert page.locator('[aria-describedby~="family-nav-error"]').count() == 0
 
 
 def test_returning_family_may_go_straight_to_review(page, component_origin):
@@ -580,3 +599,39 @@ def test_returning_family_may_go_straight_to_review(page, component_origin):
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     page.locator("[data-step-review]").click()
     expect(page.locator(".family-step")).to_contain_text("Review and submit")
+
+
+def test_member_section_is_not_outlined_by_an_invalid_field(page, component_origin):
+    """A Member's own invalid field doesn't draw a red box around the section."""
+    begin(page, component_origin, paged_form(), None)
+    first = show(page, page.get_by_label("First name (required)").first)
+    first.fill("")
+    next_page(page)
+    expect(page.locator("[data-nav-error]")).to_contain_text("First name")
+    section = page.locator("fieldset.member-section:visible").first
+    assert section.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
+
+
+def test_blocked_review_names_a_question_on_another_page(page, component_origin):
+    """An added Member's missing name stops Review and names that page."""
+    begin(page, component_origin, paged_form(), None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    add = show(
+        page,
+        page.get_by_role("button", name="Add a household member", include_hidden=True),
+    )
+    add.click()
+    key = page.locator(":focus").evaluate("e => e.closest('[data-page]').dataset.page")
+    # Every page has been seen; go to another page and ask for Review.
+    links = page.locator("[data-step-link]")
+    for index in range(links.count()):
+        links.nth(index).click()
+    page.locator('[data-step-link="intro"]').click()
+    page.locator("[data-step-review]").click()
+    expect(page.locator(f'[data-page="{key}"]')).to_be_visible()
+    note = page.locator("[data-nav-error]")
+    expect(note).to_contain_text("First name")
+    expect(note).to_contain_text("page")
+    expect(page.locator(":focus")).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )

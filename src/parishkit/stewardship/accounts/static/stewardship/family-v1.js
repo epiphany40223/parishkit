@@ -23,6 +23,12 @@
   // Pages opened at least once this visit; the step bar shows them as done.
   const visited = new Set();
 
+  function pushPage(state, title) {
+    // Record a page change for Back/Forward. Browsers throttle history calls
+    // (WebKit allows 100 per 10 seconds) and throw beyond that; losing one
+    // history entry must never stop the page from rendering.
+    try { history.pushState(state, title); } catch { /* throttled: keep going */ }
+  }
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
     if (text !== null) element.textContent = text;
@@ -381,7 +387,7 @@
         } else {
           currentPage = step.key;
           edit();
-          history.pushState({familyPage: currentPage}, "");
+          pushPage({familyPage: currentPage}, "");
         }
       });
     });
@@ -617,7 +623,7 @@
       input.addEventListener("blur", (event) => {
         // Revealing an error during a button's mousedown can move that button
         // before mouseup, swallowing the click. Review validates after click.
-        if (!deferValidation() && event.relatedTarget?.type !== "submit") validate();
+        if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate();
       });
       if (input.tagName === "SELECT") input.addEventListener("change", validate);
       update();
@@ -1012,6 +1018,15 @@
       exact: cents % periods === 0,
       unit: ({weekly: "week", monthly: "month", quarterly: "quarter", annual: "year"})[frequency]};
   }
+  function requiredCheck(box, parent, text, validators) {
+    // A required confirmation checkbox with its own inline error line.
+    const error = node("p", null, parent, {id: box.id + "-error", class: "error", hidden: ""});
+    validators.push(() => {
+      error.textContent = box.checked ? "" : text;
+      error.hidden = box.checked;
+      box.setAttribute("aria-invalid", String(!box.checked));
+    });
+  }
   function financialSource(parent) {
     const value = form.financial;
     node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
@@ -1024,15 +1039,18 @@
     // One sentence of giving history; the prior pledge amount and the
     // records' refresh time repeated it, so they are not shown.
     if (value.contributions.available && value.through_date) {
+      // "towards your <year> pledge" only when there was one to give towards.
+      const pledged = value.pledge.available && Number(value.pledge.amount) > 0;
       node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
-        ", you have contributed " + value.contributions.display + " towards your " +
-        periodYears(value.comparison) + " pledge.", parent);
+        ", you have contributed " + value.contributions.display + (pledged ?
+          " towards your " + periodYears(value.comparison) + " pledge." :
+          " in " + periodYears(value.comparison) + "."), parent);
     }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
     if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});
   }
-  function financialEditor(parent, validators) {
+  function financialEditor(parent, validators, deferValidation = () => false) {
     const removed = conflicts.get("financial.removed");
     if (removed && removed.choice === undefined) {
       const group = node("fieldset", null, parent, {"data-conflict": "financial.removed"});
@@ -1135,13 +1153,16 @@
       answers.financial.annual_pledge = annual.value; setConditional(); validate(false);
     });
     frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(false); });
-    annual.addEventListener("blur", () => validate());
+    annual.addEventListener("blur", (event) => {
+      // As for Member fields: Next and Review validate after their click.
+      if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate();
+    });
     frequency.addEventListener("change", () => validate());
     validators.push(() => validate());
     conflictChoice("financial.annual_pledge", annual, pledge);
     conflictChoice("financial.frequency", frequency, conditional);
     validate(false);
-    const shares = node("fieldset", null, conditional);
+    const shares = node("fieldset", null, conditional, {class: "choice-group"});
     node("legend", "How would you like to share? (choose at least one)", shares);
     const sharesError = node("p", null, shares, {id: "financial-shares-error", class: "error", hidden: ""});
     form.financial.options.forEach((option) => {
@@ -1167,9 +1188,12 @@
         // A draft configuration can change an option's text requirement.
         // Never erase a previously entered note without an explicit choice.
         node("p", "This method no longer accepts details. Your note: " + answers.financial.shares[option.id], shares);
-        const label = node("label", null, shares);
-        const discard = node("input", null, label, {type: "checkbox", required: ""});
+        const discardId = "financial-discard-" + option.id;
+        const label = node("label", null, shares, {for: discardId});
+        const discard = node("input", null, label, {type: "checkbox", required: "", id: discardId,
+          "aria-describedby": discardId + "-error"});
         label.append(document.createTextNode(" Discard this note and keep the selected method"));
+        requiredCheck(discard, shares, "Check this box to discard the note, or choose a different method.", validators);
         discard.addEventListener("change", () => {
           if (discard.checked) { answers.financial.shares[option.id] = ""; edit(); }
         });
@@ -1202,14 +1226,18 @@
       const option = form.financial.unavailable_options.find((row) => row.id === id);
       node("p", "A previously selected method is no longer available: " + (option ? financialLabel(option) : "Unavailable method") +
         (answers.financial.shares[id] ? ". Your note: " + answers.financial.shares[id] : ""), shares);
-      const label = node("label", null, shares);
-      const remove = node("input", null, label, {type: "checkbox", required: "", id: "financial-removed-" + id});
+      const label = node("label", null, shares, {for: "financial-removed-" + id});
+      const remove = node("input", null, label, {type: "checkbox", required: "", id: "financial-removed-" + id,
+        "aria-describedby": "financial-removed-" + id + "-error"});
       label.append(document.createTextNode(" Remove this unavailable method before continuing"));
+      requiredCheck(remove, shares, "Check this box to remove the unavailable method.", validators);
       remove.addEventListener("change", () => {
         if (remove.checked) { delete answers.financial.shares[id]; conflicts.delete("financial.shares." + id); edit(); }
       });
     });
     const firstShare = shares.querySelector('input[type="checkbox"][id^="financial-option-"]');
+    // Its error is about the whole group, so a blocked Next names the legend.
+    if (firstShare) firstShare.dataset.groupCheck = "";
     const validateShares = () => {
       if (!firstShare) return;
       const offered = form.financial.options.some((option) => option.id in answers.financial.shares);
@@ -1238,9 +1266,12 @@
       " (" + each.amount + " per " + each.unit + ")" :
       " (approximately " + each.amount + " per " + each.unit + "; the final payment may differ slightly)"),
       panel, {class: "changed"});
-    const dates = window.ParishDates, start = form.financial.upcoming.start;
-    const starts = node("p", "This pledge starts on ", panel);
-    node("strong", dates ? dates.date(start) : start, starts);
+    if (cents > 0) {
+      // A positive pledge's start date, in bold; "began" once it has passed.
+      const dates = window.ParishDates, start = form.financial.upcoming.start;
+      const starts = node("p", start > form.today ? "This pledge starts on " : "This pledge began on ", panel);
+      node("strong", dates ? dates.date(start) : start, starts);
+    }
     const list = node("ul", null, panel);
     form.financial.options.filter((option) => option.id in financial.shares).forEach((option) => {
       node("li", financialLabel(option) + (option.free_text ? ": " + financial.shares[option.id] : ""), list);
@@ -1518,7 +1549,7 @@
     root.querySelector("[data-page-back]").hidden = index === 0;
     root.querySelector("[data-page-next]").hidden = index === pages.length - 1;
     root.querySelector("[data-page-review]").hidden = index !== pages.length - 1;
-    if (push) history.pushState({familyPage: page.key}, "");
+    if (push) pushPage({familyPage: page.key}, "");
     if (focus) focusTop(page.element.querySelector("h3"));
   }
   function retitle(key, title) {
@@ -1544,36 +1575,48 @@
       return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
     });
   }
-  function navNote(text) {
+  function navNote(text, target = null) {
     // Why Next or Review did not advance, shown right beside those buttons
-    // (the sticky bar on phones) and announced; an empty text hides it.
+    // (the sticky bar on phones). A live alert is often dropped while focus
+    // moves, so the note also describes the element receiving focus; an
+    // empty text hides it and removes that description.
     const note = root.querySelector("[data-nav-error]");
     if (!note) return;
     note.textContent = text;
     note.hidden = !text;
+    root.querySelectorAll('[aria-describedby~="' + note.id + '"]').forEach((element) => {
+      const rest = element.getAttribute("aria-describedby").split(" ").filter((id) => id !== note.id);
+      if (rest.length) element.setAttribute("aria-describedby", rest.join(" "));
+      else element.removeAttribute("aria-describedby");
+    });
+    if (text && target) {
+      const ids = (target.getAttribute("aria-describedby") || "").split(" ").filter(Boolean);
+      target.setAttribute("aria-describedby", [...ids, note.id].join(" "));
+    }
   }
   function questionName(input) {
-    // The question as the Family sees it: a checkbox or radio group's legend,
-    // otherwise the field's own label.
-    const legend = ["checkbox", "radio"].includes(input.type) &&
+    // The question as the Family sees it: a share group's legend for its
+    // "choose at least one" check, otherwise the field's own label.
+    const legend = input.dataset.groupCheck !== undefined &&
       input.closest("fieldset")?.querySelector(":scope > legend");
     const text = (legend || input.labels?.[0])?.textContent.trim();
-    return text ? "“" + text + "”" : "the highlighted question";
+    return text ? "“" + text.replace(/\s*\(.*\)$/, "") + "”" : "the highlighted question";
   }
   function pageValid(page) {
     // Validate only this page before moving forward; the final Review step
     // still validates every page, so skipping ahead cannot bypass a check.
     const conflict = unresolvedConflict(page.element);
     if (conflict) {
-      navNote("Choose a value for every changed record on this page before continuing.");
-      conflict.querySelector("input, button")?.focus();
+      const control = conflict.querySelector("input, button");
+      navNote("Please choose a value for each changed record.", control);
+      control?.focus();
       return false;
     }
     page.validators.forEach((validate) => validate());
     const invalid = [...page.element.querySelectorAll("input, select, textarea")].find(
       (input) => !input.disabled && !input.checkValidity());
     if (invalid) {
-      navNote("Please answer " + questionName(invalid) + " before continuing.");
+      navNote("Please check " + questionName(invalid) + ".", invalid);
       invalid.focus();
       return false;
     }
@@ -1587,7 +1630,9 @@
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
     let reviewPointerDown = false;
     editor.addEventListener("pointerdown", (event) => {
-      reviewPointerDown = Boolean(event.target.closest('button[type="submit"]'));
+      // Any navigation button (Back, Next, Review): an error revealed on blur
+      // during its mousedown could move it before mouseup and lose the click.
+      reviewPointerDown = Boolean(event.target.closest('.family-nav button, button[type="submit"]'));
     }, true);
     editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
@@ -1633,7 +1678,7 @@
     if (form.financial || (removedFinancial && removedFinancial.choice === undefined)) {
       const financial = addPage(editor, "financial", "Financial stewardship", "financial",
         "financial");
-      financialEditor(financial.element, financial.validators);
+      financialEditor(financial.element, financial.validators, () => reviewPointerDown);
     }
     // The optional closing page has content only (no answers). The server
     // sends it only when its text is non-empty, so an Admin removes the page
@@ -1658,7 +1703,7 @@
     }
     const nav = node("div", null, editor, {class: "actions family-nav"});
     node("p", null, nav, {class: "notice notice-error family-nav-error", role: "alert",
-      "data-nav-error": "", hidden: ""});
+      id: "family-nav-error", "data-nav-error": "", hidden: ""});
     const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
     back.addEventListener("click", () => {
       const index = pages.findIndex((page) => page.key === currentPage);
@@ -1687,15 +1732,16 @@
         pages.find((page) => !visited.has(page.key));
       if (unvisited) {
         showPage(unvisited.key, {push: true});
-        navNote("Please go through each page before reviewing your response. " +
-          "This page hasn’t been viewed yet.");
+        navNote("Please go through each page before reviewing. This one is next.",
+          unvisited.element.querySelector("h3"));
         return;
       }
       const conflict = unresolvedConflict(editor);
       if (conflict) {
         showPage(pageOf(conflict), {focus: false});
-        navNote("Choose a value for every changed record before reviewing your response.");
-        conflict.querySelector("input, button")?.focus();
+        const control = conflict.querySelector("input, button");
+        navNote("Please choose a value for each changed record.", control);
+        control?.focus();
         return;
       }
       pages.forEach((page) => page.validators.forEach((validate) => validate()));
@@ -1711,8 +1757,8 @@
         showPage(pageOf(invalid), {focus: false});
         if (invalid) {
           const title = pages.find((page) => page.key === currentPage)?.title;
-          navNote("Please answer " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") +
-            " before reviewing your response.");
+          navNote("Please check " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") + ".",
+            invalid);
         }
         invalid?.focus();
       }
@@ -1728,7 +1774,7 @@
       const id = crypto.randomUUID();
       answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
       currentPage = "member-" + id;
-      history.pushState({familyPage: currentPage}, "");
+      pushPage({familyPage: currentPage}, "");
       edit("member-" + id + "-first_name");
     });
   }
@@ -1745,7 +1791,7 @@
     node("button", "Edit " + label, parent, {type: "button", "data-review-edit": ""}).addEventListener("click", () => {
       if (busy || finished) return;
       edit(target);
-      history.pushState({familyPage: currentPage}, "");
+      pushPage({familyPage: currentPage}, "");
     });
   }
   function review() {
@@ -1754,7 +1800,7 @@
     step.textContent = "Step " + (pages.length + 1) + " of " + (pages.length + 1) + ": Review and submit";
     visited.add("review");
     paintTrack("review");
-    if (history.state?.familyPage !== "review") history.pushState({familyPage: "review"}, "");
+    if (history.state?.familyPage !== "review") pushPage({familyPage: "review"}, "");
     block("review", root);
     const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
     familySummary();
@@ -1821,7 +1867,7 @@
     // whole Review page and its Submit button joins the form by id.
     const actions = node("div", null, root, {class: "actions family-nav"});
     const back = node("button", "Back to edit", actions, {type: "button", class: "button-secondary"});
-    back.addEventListener("click", () => { edit(); history.pushState({familyPage: currentPage}, ""); });
+    back.addEventListener("click", () => { edit(); pushPage({familyPage: currentPage}, ""); });
     const submit = node("button", submitLabel, actions, {type: "submit", form: confirmation.id});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1885,17 +1931,25 @@
     });
   }
   const start = document.getElementById("family-start");
+  const entry = document.getElementById("family-entry");
   async function begin() {
     // Load the Family's form. Production waits for "Begin reviewing"; Testing
     // opens it at once, since the Testing banner is the only mode notice.
     if (busy) return;
     busy = true; start.disabled = true;
+    const failed = (text) => {
+      // Testing opens the form without an entry panel; on failure show the
+      // panel with a retry button so the Family isn't left with nothing.
+      say(text);
+      entry.hidden = false;
+      if (testing) start.textContent = "Try again";
+    };
     try {
       const result = await send("/family/form", {});
       if (!result || finished) return;
       if (result.form) { say(""); accept(result.form, false); }
-      else say("The campaign form is not available. Please try again later.");
-    } catch { say("The campaign form could not be loaded. Please try again."); }
+      else failed("The campaign form is not available. Please try again later.");
+    } catch { failed("The campaign form could not be loaded. Please try again."); }
     finally { busy = false; start.disabled = false; }
   }
   start.addEventListener("click", begin);

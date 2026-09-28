@@ -90,7 +90,9 @@ Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
 current page and keeps the Family there with inline errors, focus on the first
 unanswered question, and a note beside the navigation buttons naming it
-("Please answer “How would you like to share?” before continuing."). A "Step N of M"
+("Please check “How would you like to share?”."), which also describes the
+focused field for assistive technology. Only a choice group (share methods) is
+outlined in red, never a whole section. A "Step N of M"
 line names the current step, and a segmented step bar like the setup wizard's
 has one button per step: each is named by its step, shows a "Step N of M"
 tooltip on hover or keyboard focus, and jumps to that page on click or tap.
@@ -300,7 +302,8 @@ with the response and are never written to ParishSoft.
 
 When enabled, the page shows one read-only sentence of giving history from the
 latest promoted snapshot and configured funds: "As of *date*, you have
-contributed *amount* towards your *comparison year* pledge." The prior pledge
+contributed *amount* towards your *comparison year* pledge", or "… *amount* in
+*comparison year*" when there was no prior pledge. The prior pledge
 amount and the records' refresh time are not repeated. Money on Family pages
 omits zero cents ("$1,200").
 
@@ -317,8 +320,9 @@ otherwise it is "Approximately" a two-decimal amount, the annual total remains
 authoritative, and the page notes the final payment may differ slightly.
 
 Review shows the financial answer as "Your *year* pledge: *amount*", followed in
-parentheses by the payment amount under the same exact-or-approximate rule, and
-then "This pledge starts on **start date**" with the date in bold. It does not
+parentheses by the payment amount under the same exact-or-approximate rule, and,
+for a positive pledge, "This pledge starts on **start date**" ("began on" once
+the period has started) with the date in bold. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 
@@ -425,7 +429,8 @@ campaign dates through its current rehearsal-epoch code or token under the
 [credential policy](../architecture/spec.md#family-credential-security).
 Production credentials are not accepted in Testing. Testing has no entry page
 or interstitial: after successful authentication the form opens straight away,
-and the Testing banner (below) is the only mode notice.
+and the Testing banner (below) is the only mode notice. If the form cannot be
+loaded, the page says so and offers **Try again**.
 
 Every form step has a persistent, non-color-only Testing banner repeating that
 answers are disposable, and the final button reads **Submit test response**.

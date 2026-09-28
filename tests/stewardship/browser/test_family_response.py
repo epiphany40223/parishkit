@@ -566,3 +566,29 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
         "Unsubmitted changes have not been saved"
         not in page.locator("main").inner_text()
     )
+
+
+def test_testing_form_load_failure_offers_a_retry(page, component_origin):
+    """Testing opens the form itself; a failed load shows a Try again button."""
+    page.clock.install(time=NOW)
+    attempts = []
+
+    def load(route):
+        """Fail the first automatic load, then return the form."""
+        attempts.append(route.request)
+        if len(attempts) == 1:
+            route.fulfill(status=503, body="unavailable", content_type="text/plain")
+        else:
+            route.fulfill(json={"form": form_payload(testing=True)})
+
+    page.route("**/family/form", load)
+    page.route(
+        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
+    )
+    page.goto(component_origin + "/family-testing")
+    retry = page.get_by_role("button", name="Try again")
+    expect(retry).to_be_visible()
+    expect(page.locator("#family-flow-message")).to_contain_text("could not be loaded")
+    retry.click()
+    expect(page.locator("[data-step-link]").first).to_be_attached()
+    assert len(attempts) == 2
