@@ -10,6 +10,10 @@
 // aria-live announcement reaches screen readers. The page's manual refresh
 // link remains the no-JavaScript fallback.
 //
+// Never disrupt the Admin: while a control inside the region has focus or has
+// been edited, the swap waits for the next check. Only the region is swapped;
+// the page itself is never reloaded, so a POST response is never re-sent.
+//
 // When the work finishes while the page is watching, a terminal region may
 // ask for one follow-up: an a[data-live-follow] link is opened, or a
 // form[data-live-autosubmit] (such as a ready download) is submitted once.
@@ -83,6 +87,18 @@
     attempt += 1;
   }
 
+  // Controls the Admin has typed into or changed since the last swap.
+  let edited = false;
+  region.addEventListener("input", () => { edited = true; });
+  region.addEventListener("change", () => { edited = true; });
+
+  function busy() {
+    // A focused or edited control inside the region must not be replaced.
+    const active = document.activeElement;
+    return edited || Boolean(active && active !== region && region.contains(active)
+      && active.matches("input, select, textarea, button, [contenteditable]"));
+  }
+
   function adopt(fresh) {
     // Keep the region element (and its live announcement); replace what it says.
     region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
@@ -127,6 +143,11 @@
         .find((node) => node.getAttribute("data-live-status") === name);
       if (!fresh) throw new Error("status region missing");
       say("");
+      if (busy()) {
+        // Wait for the Admin; check again later without replacing their input.
+        schedule();
+        return;
+      }
       adopt(fresh);
       if (region.hasAttribute("data-live-pending")) schedule();
       else finish();
