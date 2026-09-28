@@ -34,8 +34,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements/stewardship-build.txt
-          python -m pip install --no-build-isolation -r requirements.txt
+          tools/ci-pip-install.sh -r requirements/stewardship-build.txt
+          tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
 
       - name: Validate release tag
         id: tag

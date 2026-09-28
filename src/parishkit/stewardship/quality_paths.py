@@ -46,8 +46,9 @@ DOCUMENTATION = (
     ".github/workflows/*",
 )
 
-# The CI workflow decides what runs, so changing it must run everything.
-ALWAYS_RUN = (".github/workflows/ci.yml",)
+# The CI workflow decides what runs, and every job installs through the pip
+# retry wrapper, so changing either must run everything.
+ALWAYS_RUN = (".github/workflows/ci.yml", "tools/ci-pip-install.sh")
 
 # Browser-only and database-only tests, and non-stewardship tools, scripts and
 # their tests; all non-database tests among them run in validate's complete

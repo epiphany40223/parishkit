@@ -139,6 +139,7 @@ def test_compose_mounts_come_from_the_development_tests_service():
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
         "tools/prepare-release.py",
+        "tools/ci-pip-install.sh",
     ):
         assert mount in MOUNTS
     assert all(not mount.startswith(("/", "..")) for mount in MOUNTS)
@@ -176,6 +177,8 @@ def test_unreadable_compose_mounts_run_compose(tmp_path, text):
         # The CI workflow itself always runs everything.
         ([".github/workflows/ci.yml"], ALL),
         (["docs/a.md", ".github/workflows/ci.yml"], ALL),
+        # Every job installs through the pip retry wrapper.
+        (["tools/ci-pip-install.sh"], ALL),
         # Application, requirements and packaging changes run everything.
         (["src/parishkit/stewardship/views.py"], ALL),
         (["src/parishkit/stewardship/schema/functions.sql"], ALL),
