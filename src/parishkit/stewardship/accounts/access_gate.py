@@ -22,6 +22,10 @@ AUTH_ROUTES = frozenset(
         "/admin/oauth/start",
         "/admin/oauth/callback",
         "/admin/logout",
+        # The shared inactivity warning must work on every Admin page in every
+        # portal state; these views authenticate the session themselves.
+        "/admin/session/status",
+        "/admin/session/renew",
     }
 )
 

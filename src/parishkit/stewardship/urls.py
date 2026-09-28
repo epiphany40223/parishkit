@@ -31,6 +31,7 @@ from .accounts import (
     rule_autosave_views,
     schedule_views,
     security_event_views,
+    session_views,
     setup_branding_views,
     setup_campaign_views,
     setup_cancellation_views,
@@ -559,6 +560,8 @@ admin_patterns = [
         name="retry_export_cleanup",
     ),
     path("background/counts", job_views.task_counts, name="background_counts"),
+    path("session/status", session_views.session_status, name="session_status"),
+    path("session/renew", session_views.session_renew, name="session_renew"),
     path(
         "background/tasks/<uuid:task_id>",
         job_views.task_detail,

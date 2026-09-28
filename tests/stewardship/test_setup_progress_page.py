@@ -141,8 +141,9 @@ def test_progress_page_shows_the_right_parts_for_each_phase(phase):
             "collection_text": COLLECTION_TEXT,
         },
     )
-    assert "Idle deadline" not in html and "Absolute session deadline" not in html
-    assert "Inactivity limit" in html and "within 12 hours" in html
+    # The page lists no time limits; hidden instants only bound its polling.
+    assert "Inactivity limit" not in html and "12 hours" not in html
+    assert "30 minutes" not in html
     assert 'data-progress-deadline="idle_at"' in html
     assert "Families" in html and "Ministry rosters" in html
     records_hidden = "data-load-records hidden" in html

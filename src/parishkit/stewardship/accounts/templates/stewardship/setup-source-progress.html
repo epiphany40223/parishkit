@@ -15,7 +15,6 @@
 <p><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
 </div>
 <p class="setup-intro">{% translate "The system is reading your parish's Families, Members, Ministries and funds from ParishSoft with the API key you entered. It only reads; nothing in ParishSoft changes. A complete load takes several minutes, about ten for a parish of a few thousand Families. This page checks the load automatically every 15 seconds." %}</p>
-<p class="notice">{% translate "Keep this page open and visible while the load runs. It counts as activity for your sign-in only while it is open; closing or hiding it lets your setup time out after 30 minutes." %}</p>
 <section class="panel" data-setup-progress data-progress-now="{{ progress.server_now }}" data-progress-url="{% url 'admin:setup_source_progress' progress.task_id %}?format=json" data-progress-task="{{ progress.task_id }}" data-progress-active="{{ progress.active|yesno:'true,false' }}" data-progress-started="{{ progress.started_at|default:'' }}" data-progress-heartbeat="{{ progress.heartbeat_at|default:'' }}">
 <h2>{% translate "Current status" %}</h2>
 <p class="setup-progress-summary" data-progress-summary role="status" aria-live="polite">{% for key, text in summaries.items %}{% if key == status_key %}{{ text }}{% endif %}{% endfor %}</p>
@@ -38,7 +37,10 @@
 <p>{% translate "Last checked:" %} <time data-progress-checked data-local-instant datetime="{{ progress.server_now }}">{{ progress.server_now }}</time></p>
 <p data-progress-unavailable hidden role="status">{% translate "Progress is temporarily unavailable. Your setup's inactivity timer may not be renewed. Reload the page, or sign in again if needed." %}</p>
 <form method="post">{% csrf_token %}<button class="button-secondary" type="submit">{% translate "Check progress now" %}</button></form>
-{% include 'stewardship/setup-deadlines.html' with limits=progress live=True %}
+{% comment %}Hidden deadline instants: the polling script (ui-v1.js) stops renewing
+once the nearest passes and refreshes them from each progress response. The
+shared Admin inactivity dialog, not this page, warns before sign-out.{% endcomment %}
+<div hidden><time data-progress-deadline="idle_at" datetime="{{ progress.idle_at }}"></time><time data-progress-deadline="absolute_at" datetime="{{ progress.absolute_at }}"></time>{% if progress.watchdog_at %}<time data-progress-deadline="watchdog_at" datetime="{{ progress.watchdog_at }}"></time>{% endif %}</div>
 <details><summary>{% translate "Technical details" %}</summary>
 <p>{% translate "Task:" %} <span>{{ progress.task_id }}</span></p>
 <p>{% translate "State:" %} <span data-task-state>{{ progress.task_state }}</span></p>

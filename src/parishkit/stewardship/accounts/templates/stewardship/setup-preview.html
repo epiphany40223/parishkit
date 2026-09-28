@@ -6,7 +6,6 @@
 <h1>{% translate "First-campaign setup preview" %}</h1>
 <p class="setup-intro">{% translate "Review everything you entered below. If something is wrong, go back to its step in the list of steps above. When it all looks right, continue: the next steps send a test email (and a Slack test if Slack is on) to prove the connections work, then check readiness and finish setup." %}</p>
 <p class="notice">{% translate "Testing mode. This is a read-only preview of temporary settings, not configured or active service. All samples are fictional; no email is sent." %}</p>
-{% include 'stewardship/setup-deadlines.html' with limits=draft %}
 <section class="panel"><h2>{% translate "Parish and campaign" %}</h2>
 <p>{{ parish.name }} — {{ campaign.name }}</p><p>{{ parish.website }} — {{ parish.phone|phone }}</p>{% if parish.online_giving_url %}<p>{% translate "Online giving" %}: {{ parish.online_giving_url }}</p>{% endif %}
 <p>{{ campaign.start_date }} – {{ campaign.end_date }} ({{ campaign.timezone }})</p>

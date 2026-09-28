@@ -115,7 +115,6 @@
 .setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin-block: 0 1rem; }
 .setup-progress label { margin: 0; }
 .setup-progress progress { flex: 1 1 12rem; }
-.setup-deadlines dd > p { margin-block: 0 .5rem; }
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #465e68); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }
 @media (forced-colors: active) {

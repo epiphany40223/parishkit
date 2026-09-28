@@ -248,6 +248,9 @@ sealed-intake admission guard exempts a live frozen setup's own sealed
 credential from the five-minute fresh-authentication rule, as the testing
 transition already did, so finishing setup long after the sign-in still
 installs its credentials.
+The owner-approved 60-minute Admin inactivity limit then changed the idle
+interval in the setup, test-mail, delivery-control, go-live and Production
+guards that check a live Admin session (Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -256,7 +259,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2440 | `a87bd7ed` |
 | Constraints | 3372 | `5c14425f` |
 | Indexes | 999 | `9f55af14` |
-| Functions | 596 | `4f0f0f98` |
+| Functions | 596 | `ae5d200f` |
 | Triggers | 550 | `d0c71f08` |
 | Policies | 28 | `1c9c3b2d` |
 

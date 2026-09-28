@@ -76,7 +76,7 @@ BEGIN
        OR NOT EXISTS(SELECT 1 FROM public.stewardship_portal_session login
             WHERE login.id=NEW.session_id AND login.principal_id=NEW.actor_id
               AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
-              AND login.last_activity_at>clock_timestamp()-interval '30 minutes'
+              AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
               AND login.authenticated_at=NEW.authenticated_at
               AND login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp())
        OR NOT EXISTS(SELECT 1 FROM public.stewardship_production_event event

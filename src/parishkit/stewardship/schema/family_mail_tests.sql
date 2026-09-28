@@ -113,7 +113,7 @@ BEGIN
                 WHERE principal_id=NEW.requested_by_id AND revoked_at IS NULL
                     AND authenticated_at=NEW.reauthenticated_at AND expires_at>stamp
                     AND authenticated_at BETWEEN stamp-interval '5 minutes' AND stamp
-                    AND last_activity_at>stamp-interval '30 minutes')
+                    AND last_activity_at>stamp-interval '60 minutes')
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=NEW.task_id AND task.root_id=task.id
                     AND task.task_type='family_mail_test' AND task.state='queued'

@@ -337,9 +337,20 @@ short-lived keyed telemetry described above when its backing store is available;
 sampling never substitutes for that accounting. Every successful login remains
 individually audited with its session and actor attribution, without credentials.
 
-Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
+Admin sessions have a 60-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
-Both receive a visible warning before idle expiry. Privileged operations such
+Both receive a visible warning before idle expiry. On every Admin page,
+including the initial-setup wizard, one shared modal dialog opens five minutes
+before the session's nearer deadline with a live countdown. Its **Stay signed
+in** button is a CSRF-protected POST that counts as Admin activity and renews
+only the idle deadline (and therefore the setup attempt's, which follows the
+same session); it never extends the absolute lifetime, so when that limit is
+the nearer one the dialog says so and offers only signing in again. Before
+warning, when the tab becomes visible again, and periodically while the dialog
+is open, the page re-reads the deadlines from a passive status endpoint that
+renews nothing, so activity in another tab dismisses the warning. When the
+deadline passes the dialog reports that the Admin was signed out and links to
+sign-in. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes.
@@ -365,7 +376,7 @@ Passive presence heartbeat and ordinary background polling never refresh idle
 expiry. The sole setup exception is the first-Admin wizard's correlated staged-
 source-load progress page: while that exact TaskRun remains nonterminal, its
 CSRF-protected authenticated progress request may renew the bootstrap Admin's
-30-minute idle deadline at most once every five minutes, but only while the
+60-minute idle deadline at most once every five minutes, but only while the
 worker lease has a current valid heartbeat and for no more than two hours from
 TaskRun creation. It carries only the wizard/task correlation, verifies the
 same Admin/session server-side, and never extends the two-hour setup watchdog or

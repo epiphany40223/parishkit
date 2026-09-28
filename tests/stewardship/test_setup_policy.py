@@ -34,7 +34,7 @@ def test_visible_deadlines_are_independent_and_never_extended_by_progress():
         activity_at=NOW + timedelta(minutes=110),
         renewed_at=NOW + timedelta(minutes=110),
     )
-    assert observed.idle_at == NOW + timedelta(minutes=140)
+    assert observed.idle_at == NOW + timedelta(minutes=170)
     assert observed.watchdog_at == NOW + timedelta(hours=2)
     assert observed.absolute_at == NOW + timedelta(hours=12)
     assert (
@@ -45,10 +45,10 @@ def test_visible_deadlines_are_independent_and_never_extended_by_progress():
 
 @pytest.mark.parametrize(
     "elapsed,allowed",
-    [(0, False), (299, False), (300, True), (1799, True), (1800, False)],
+    [(0, False), (299, False), (300, True), (3599, True), (3600, False)],
 )
 def test_first_renewal_is_throttled_and_cannot_revive_idle_session(elapsed, allowed):
-    """Renewal starts at five minutes and cannot revive thirty-minute idle expiry."""
+    """Renewal starts at five minutes and cannot revive sixty-minute idle expiry."""
     observed = window()
     assert (
         observed.may_renew(
