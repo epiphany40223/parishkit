@@ -36,6 +36,8 @@ def task_runtime_grants(role):
     # The operational collection judges whether the required backup is overdue
     # from the newest completed run; the row holds sizes and digests only.
     tables["stewardship_backup_run"] = {"SELECT"}
+    # ...and whether the newest off-site copy of a set failed.
+    tables["stewardship_backup_upload"] = {"SELECT"}
     if role is ServiceRole.SCHEDULER:
         tables["stewardship_due_work_health"].add("INSERT")
     tables["stewardship_task_run"].add("INSERT")

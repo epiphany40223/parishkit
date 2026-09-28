@@ -475,6 +475,21 @@ refresh time is shown only for the once-a-day frequency; for hourly and
 15-minute refreshes the stored time is kept unchanged and is not a change to
 review.
 
+**Off-site backups (Google Drive)** is an optional integration with no key of
+its own: its one setting is a Google Drive folder link, stored in canonical
+`https://drive.google.com/drive/folders/<id>` form, and it is added, changed
+and removed through the same configuration-request path. It requires the
+Google Workspace mail integration, whose delegated user and key the copies
+use. **Test access** queues a check that the Google Workspace credential
+installer answers by writing and trashing one small file in the folder; the
+page follows the result with the passive live-status pattern and explains
+each failure in plain language. The page and the administration home show
+the last successful off-host copy; until the integration is added, the home
+page invites the Administrator to set it up, and the setup wizard's
+completion panel points to it. The copies themselves, their retention and
+their alert are defined by the
+[backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive).
+
 ### Ministry activity management
 
 Admins can mark a Ministry inactive or reactivate it through an Admin web

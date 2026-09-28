@@ -266,17 +266,23 @@ financial, information and weekly observation; Functions digest only).
 The retention fix then let the worker release a deleted fact generation's
 orphaned source pin under that lease (one guard body; Functions digest
 only). Retention then let the worker delete rejected staging memberships
-under that lease too (one guard body; Functions digest only). Regenerated
-from a fresh install, the current baseline is:
+under that lease too (one guard body; Functions digest only). Off-site backup copies
+to Google Drive (#197) then added two tables: the append-only
+`stewardship_backup_upload` (one row per copy outcome, sharing the backup
+record's immutability trigger) and `stewardship_backup_drive_probe` (queued
+"Test access" checks, with a guard function and trigger that admit only
+pending-to-final updates), and added `backup_offsite_failed` to the
+operational incident kinds (the kind constraint and the incident render
+function). Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
-| Relations | 221 | `bbc9571a` |
-| Columns | 2445 | `9c812290` |
-| Constraints | 3378 | `56c4de9b` |
-| Indexes | 1002 | `84be1b66` |
-| Functions | 597 | `9eb29e34` |
-| Triggers | 551 | `30b4c2c2` |
+| Relations | 223 | `5493b41e` |
+| Columns | 2460 | `c519d0e4` |
+| Constraints | 3397 | `96375006` |
+| Indexes | 1006 | `bd3148b3` |
+| Functions | 598 | `20b7b665` |
+| Triggers | 553 | `32504824` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A
@@ -293,7 +299,8 @@ requires.
   re-sending some Family links by hand.
 - The backup seals to a public key with anonymous encryption; origin is proved
   by the recorded manifest digest kept off the host, not by a host-held
-  signing key. The off-host copy is the operator's cron job. The private key
+  signing key. The off-host copy is the operator's cron job or the optional
+  copy to a Google Drive folder the Administrator configures. The private key
   is not rotated during v1.
 - The upgrade admission is a recorded backup within 24 hours standing in for
   verified restore evidence; automated upgrade readiness checks and

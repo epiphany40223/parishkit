@@ -14,6 +14,7 @@ LABELS = {
     "google_workspace": _("Google Workspace mail"),
     "email": _("Outgoing email addresses"),
     "slack": _("Slack notifications"),
+    "backup": _("Off-site backups (Google Drive)"),
 }
 
 
@@ -96,12 +97,33 @@ class IntegrationForm(forms.Form):
                 max_length=64,
                 help_text=_("Use the channel ID, not its name or a webhook URL."),
             )
+        elif target == "backup":
+            self.fields["target"] = forms.CharField(
+                label=_("Google Drive folder link"),
+                max_length=500,
+                help_text=_(
+                    "Open the folder in Google Drive and copy the link from the "
+                    "address bar (it contains /folders/). Each backup is copied "
+                    "there as its own folder of encrypted files; the newest 30 "
+                    "are kept."
+                ),
+            )
         else:
             raise ValueError("Unsupported integration form.")
         field_tips.shorten(
             self,
             {"full_refresh": _("Changes are also picked up every 15 minutes.")},
         )
+
+    def clean_target(self):
+        """Store one canonical folder link, whichever form the Admin pasted."""
+        from parishkit.stewardship.backup_drive import folder_id_from_url
+
+        try:
+            folder = folder_id_from_url(self.cleaned_data["target"])
+        except ValueError as error:
+            raise forms.ValidationError(str(error)) from None
+        return f"https://drive.google.com/drive/folders/{folder}"
 
     def public_settings(self):
         """Normalize exact YAML types after validation; never include the base field."""

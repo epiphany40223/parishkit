@@ -116,11 +116,15 @@ WEB_READ_TABLES = frozenset(
         "stewardship_audit_event",
         "stewardship_audit_context",
         "stewardship_operational_log",
+        # Off-site backup status and Drive access checks (Integrations page).
+        "stewardship_backup_upload",
+        "stewardship_backup_drive_probe",
     ]
 )
 
 WEB_INSERT_TABLES = frozenset(
     [
+        "stewardship_backup_drive_probe",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -280,8 +284,12 @@ def runtime_grants(role, *, target=None):
     if role is ServiceRole.BACKUP_WORKER:
         # The dump itself reads through the pg_read_all_data membership that
         # provisioning grants; the registry holds the one row it may write and
-        # read back (the database supplies the completion time).
-        return {"stewardship_backup_run": {"SELECT", "INSERT"}}, {}
+        # read back (the database supplies the completion time), and the
+        # off-site copy outcome it appends after each set.
+        return {
+            "stewardship_backup_run": {"SELECT", "INSERT"},
+            "stewardship_backup_upload": {"SELECT", "INSERT"},
+        }, {}
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(
             "This service's runtime database authority is not implemented."

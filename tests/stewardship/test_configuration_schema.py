@@ -23,7 +23,7 @@ def test_supported_integration_shapes(kind, fields):
         "settings": {
             name: {
                 "email": "staff@example.org",
-                "url": "https://backup.example.org/bucket",
+                "url": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn",
                 "text": "example-id",
             }[value_type]
             for name, value_type in fields.items()
@@ -31,6 +31,27 @@ def test_supported_integration_shapes(kind, fields):
         "credential_fingerprint": None,
     }
     assert configuration_version(document).document() == document
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://backup.example.org/bucket",
+        "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn?usp=sharing",
+        "1AbCdEfGhIjKlMn",
+        7,
+    ],
+)
+def test_backup_target_must_be_a_canonical_drive_folder_link(target):
+    """A YAML request cannot apply a destination the off-site copy cannot use."""
+    document = configuration_document()
+    document["sections"]["integrations"][0]["values"] = {
+        "kind": "backup",
+        "settings": {"target": target},
+        "credential_fingerprint": None,
+    }
+    with pytest.raises(ConfigError):
+        configuration_version(document)
 
 
 @pytest.mark.parametrize(

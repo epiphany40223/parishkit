@@ -398,7 +398,12 @@ reduces this section for the first live campaign: the
 one-shot profile that seals a `pg_dump` and the configuration and credentials
 trees to a human-held key, records each completed run, raises the overdue
 incident below, and admits configured upgrades behind a recent run; the
-off-host copy is the operator's, and the consistent manifests, isolated
+off-host copy is the operator's own job or the optional
+[copy to Google Drive](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)
+an Administrator configures in the portal (for which the backup profile, which
+reads the whole credentials tree and all database data, has application
+egress, a wider exfiltration surface the v1 scope accepts), and the
+consistent manifests, isolated
 backup-worker routing, purge-triggered backup, revalidation, escrow workflow
 and key rotation described here are deferred past the launch.
 

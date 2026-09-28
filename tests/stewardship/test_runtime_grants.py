@@ -179,9 +179,13 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
             )
             assert grants.get(table, set()) & writes == expected
             assert not set(columns.get(table, {})) & writes
-    # The backup identity writes only its own record; rotation stays reserved.
+    # The backup identity writes only its own records (the run and its
+    # off-site copy outcome); rotation stays reserved.
     assert runtime_grants(ServiceRole.BACKUP_WORKER) == (
-        {"stewardship_backup_run": {"SELECT", "INSERT"}},
+        {
+            "stewardship_backup_run": {"SELECT", "INSERT"},
+            "stewardship_backup_upload": {"SELECT", "INSERT"},
+        },
         {},
     )
     with pytest.raises(ConfigError):

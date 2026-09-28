@@ -37,6 +37,7 @@ class IncidentKind(StrEnum):
     PUBLICATION_AMBIGUOUS = "publication_ambiguous"
     PRODUCTION_CLEANUP_FAILED = "production_cleanup_failed"
     BACKUP_RPO_BREACH = "backup_rpo_breach"
+    BACKUP_OFFSITE_FAILED = "backup_offsite_failed"
     PURGE_INCONSISTENCY = "purge_inconsistency"
     PURGE_CLEANUP_FAILED = "purge_cleanup_failed"
 
@@ -77,6 +78,7 @@ TITLES = MappingProxyType(
         IncidentKind.PUBLICATION_AMBIGUOUS: "Parish data publication is uncertain",
         IncidentKind.PRODUCTION_CLEANUP_FAILED: "Campaign preparation cleanup failed",
         IncidentKind.BACKUP_RPO_BREACH: "Required backup is overdue",
+        IncidentKind.BACKUP_OFFSITE_FAILED: "Off-site backup copy failed",
         IncidentKind.PURGE_INCONSISTENCY: "Campaign purge is inconsistent",
         IncidentKind.PURGE_CLEANUP_FAILED: "Campaign purge cleanup failed",
     }

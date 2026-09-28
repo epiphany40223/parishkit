@@ -1,0 +1,12 @@
+{% load i18n %}{% comment %}
+  Off-site backup status lines: the viewer's latest access check and the
+  newest off-site copy outcome.
+{% endcomment %}{% if probe %}<p class="notice{% if probe.kind == 'failed' or probe.kind == 'unanswered' %} notice-error{% endif %}">
+  {% if probe.kind == 'pending' %}{% include 'stewardship/live-running.html' with message=probe.message %}{% else %}<strong>{% translate "Test access:" %}</strong> {{ probe.message }}{% endif %}
+</p>{% endif %}
+<p class="notice{% if offsite.kind == 'failed' %} notice-error{% endif %}">
+  {{ offsite.message }}
+  {% if offsite.at %}<time datetime="{{ offsite.at|date:'c' }}" data-local-instant>{{ offsite.at|date:'c' }}</time>{% endif %}
+  {% if offsite.kind != 'uploaded' and offsite.last_copy_at %}{% translate "Last successful copy:" %} <time datetime="{{ offsite.last_copy_at|date:'c' }}" data-local-instant>{{ offsite.last_copy_at|date:'c' }}</time>{% endif %}
+</p>
+{% if not pending and follow_url %}<a hidden data-live-follow href="{{ follow_url }}">{% translate "Reload settings" %}</a>{% endif %}

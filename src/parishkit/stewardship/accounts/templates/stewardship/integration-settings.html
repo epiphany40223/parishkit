@@ -10,22 +10,26 @@
 {% block content %}
 <p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
-{% if not configured %}<p>{% translate "Slack is not set up. To send operational alerts to a Slack channel, enter the channel ID and paste the Slack app's bot token below, then select Save. The token is checked with Slack before it is used." %}</p>{% endif %}
-{% aboutpage "integration-settings" %}<p>{% translate "Saving settings without a new key shows you the changes to confirm first. Saving a new key checks it with the provider, then switches to it automatically; if the check fails, the current key stays in use." %}</p>{% endaboutpage %}
-<div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>
+{% if target == 'backup' %}{% include 'stewardship/backup-settings-help.html' %}{% else %}{% if not configured %}<p>{% translate "Slack is not set up. To send operational alerts to a Slack channel, enter the channel ID and paste the Slack app's bot token below, then select Save. The token is checked with Slack before it is used." %}</p>{% endif %}
+{% aboutpage "integration-settings" %}<p>{% translate "Saving settings without a new key shows you the changes to confirm first. Saving a new key checks it with the provider, then switches to it automatically; if the check fails, the current key stays in use." %}</p>{% endaboutpage %}{% endif %}
+{% if target == 'backup' %}<div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% include 'stewardship/backup-status-lines.html' %}</div>{% else %}<div data-live-status="integration" data-live-url="{{ status_url }}" role="status" aria-live="polite"{% if pending %} data-live-pending{% endif %}>{% if pending %}{% translate "Installing the new key…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}{% include 'stewardship/integration-summary.html' %}</div>{% endif %}
 {% if full_refresh %}<section class="panel">{% include "stewardship/full-refresh-status.html" with status=full_refresh can_view_task=True can_refresh=True refresh_key=refresh_key idle_action=True %}</section>{% endif %}
-{% if pending %}
+{% if pending and target != 'backup' %}
 <p>{% translate "This page updates by itself. You can leave it; the change finishes in the background." %}</p>
 {% else %}
-<form method="post" class="panel" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="preview">
+<form method="post" class="panel" autocomplete="off">{% csrf_token %}{% if target != 'backup' %}<input type="hidden" name="action" value="preview">{% endif %}
 {{ form.as_div }}
 {% if credential %}
 {% if not fresh %}<p class="help">{% translate "For security, saving a new key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}</p>{% endif %}
 {{ credential.as_div }}
 {% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable. You can still change the other settings; ask your system administrator if this persists." %}</p>{% endif %}
-<button type="submit">{% translate "Save" %}</button>
+{% if target == 'backup' %}<div class="actions"><button type="submit" name="action" value="preview">{% translate "Save" %}</button>{% if workspace_configured %}<button type="submit" name="action" value="test" class="button-secondary">{% translate "Test access" %}</button>{% endif %}</div>
+{% else %}<button type="submit">{% translate "Save" %}</button>{% endif %}
 </form>
-{% if removable %}<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="remove">
+{% if removable and target == 'backup' %}<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="remove">
+<p>{% translate "Turn off off-site copies. Backups continue on the server; copies already in Google Drive are left there." %}</p>
+<button type="submit" class="button-secondary">{% translate "Turn off off-site copies" %}</button></form>
+{% elif removable %}<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="remove">
 <p>{% translate "Remove Slack to stop sending alerts to Slack. You can set it up again later." %}</p>
 <button type="submit" class="button-secondary">{% translate "Remove Slack" %}</button></form>{% endif %}
 {% endif %}

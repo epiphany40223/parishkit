@@ -29,6 +29,7 @@ BEGIN
       WHEN 'publication_ambiguous' THEN 'Parish data publication is uncertain'
       WHEN 'production_cleanup_failed' THEN 'Campaign preparation cleanup failed'
       WHEN 'backup_rpo_breach' THEN 'Required backup is overdue'
+      WHEN 'backup_offsite_failed' THEN 'Off-site backup copy failed'
       WHEN 'purge_inconsistency' THEN 'Campaign purge is inconsistent'
       WHEN 'purge_cleanup_failed' THEN 'Campaign purge cleanup failed'
     END;

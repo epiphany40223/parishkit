@@ -306,6 +306,10 @@ def serve_credential_installer(configuration, lease):
 
             lease.check()
             relay_pending(installer.files.private)
+            # Off-site backup "Test access" checks need this key and egress.
+            from .backup_probes import run_pending_probes
+
+            run_pending_probes(installer.files.path, check=lease.check)
         elif configuration.credential_target == "slack":
             from .accounts.setup_notifications import run_pending
 

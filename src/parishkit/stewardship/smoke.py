@@ -33,7 +33,7 @@ from .deployment import ServiceRole, load_deployment
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 
-TARGETS = {"parishsoft", "google_workspace", "slack", "google_oauth"}
+TARGETS = {"parishsoft", "google_workspace", "slack", "google_oauth", "backup_drive"}
 SUBJECT = "ParishKit Stewardship smoke test"
 SLACK_POST = "https://slack.com/api/chat.postMessage"
 
@@ -166,6 +166,48 @@ def check_google_oauth(configuration):
     }
 
 
+def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
+    """The backup profile can write to the off-site Drive folder.
+
+    Runs in the backup-worker container, which reads the installed Google
+    Workspace key through its read-only credentials tree. The check writes
+    one small file and trashes it; ``--send`` also copies the newest complete
+    local backup set, exactly as the backup command would.
+    """
+    from .backup_drive import (
+        DriveClient,
+        DriveFailure,
+        folder_id_from_url,
+        probe,
+        upload_set,
+        workspace_session,
+    )
+    from .backup_offsite import SEALED_FILES, _complete_sets
+    from .runtime_paths import explicit_path, private_directory
+
+    if configuration.service_role is not ServiceRole.BACKUP_WORKER:
+        raise ConfigError("Run the off-site backup check in the backup profile.")
+    folder = folder_id_from_url(folder_link or "")
+    value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
+    try:
+        client = DriveClient(
+            workspace_session(value, subject=normalized_email(delegated_email))
+        )
+        probe(client, folder)
+        copied = None
+        if send:
+            sets = _complete_sets(
+                private_directory(explicit_path(configuration.paths["backups"]))
+            )
+            if not sets:
+                raise ConfigError("There is no complete backup set to copy.")
+            upload_set(client, folder, sets[-1], SEALED_FILES)
+            copied = sets[-1].name
+    except DriveFailure as failure:
+        return {"accepted": False, "reason": failure.kind, "message": failure.message}
+    return {"accepted": True, "copied_set": copied}
+
+
 def _outcome(target, value, settings):
     """The installer's own classification of one check, word for word."""
     from .provider_check_worker import classify
@@ -184,7 +226,19 @@ def execute_smoke(args):
             ServiceRole.WEB,
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,
+            ServiceRole.BACKUP_WORKER,
         }:
+            raise ConfigError("Run the smoke check inside a deployed consumer.")
+        if args.target == "backup_drive":
+            result = check_backup_drive(
+                configuration,
+                delegated_email=args.delegated_email,
+                folder_link=args.folder_link,
+                send=bool(args.send),
+            )
+            print(json.dumps({"target": args.target, **result}, sort_keys=True))
+            return 0
+        if configuration.service_role is ServiceRole.BACKUP_WORKER:
             raise ConfigError("Run the smoke check inside a deployed consumer.")
         if args.target == "parishsoft":
             result = check_parishsoft(
