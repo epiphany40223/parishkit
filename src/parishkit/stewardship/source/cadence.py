@@ -11,6 +11,10 @@ from parishkit.stewardship.campaigns.intervals import resolve_local
 from .canonical import canonical_payload
 
 SLOT_NAMESPACE = UUID("ec9c1e19-b158-454d-96fd-1cfe6e721d11")
+# How often a scheduled full refresh runs. "daily" uses the configured local
+# time; the others use UTC hour or quarter-hour boundaries. The scheduled full
+# cause stays "nightly" in stored commands and slot identities.
+FREQUENCIES = ("daily", "hourly", "quarter_hour")
 
 
 @dataclass(frozen=True)
@@ -23,8 +27,11 @@ class RefreshSlot:
     command_id: UUID
 
 
-def due_slots(*, now, timezone, nightly_time, scope_fingerprint):
-    """Select the latest nightly and 15-minute slot, never an unbounded backlog.
+def due_slots(*, now, timezone, nightly_time, scope_fingerprint, frequency="daily"):
+    """Select the latest full-refresh and 15-minute slot, never an unbounded backlog.
+
+    ``frequency`` chooses the full refresh's slot: the latest local
+    ``nightly_time`` for "daily", else the latest UTC hour or quarter hour.
 
     Full comes first so a simultaneously due delta can coalesce into it. After
     downtime, one current coherent observation covers stale refresh slots;
@@ -41,6 +48,7 @@ def due_slots(*, now, timezone, nightly_time, scope_fingerprint):
         or re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", nightly_time) is None
         or type(scope_fingerprint) is not str
         or re.fullmatch(r"[0-9a-f]{64}", scope_fingerprint) is None
+        or frequency not in FREQUENCIES
     ):
         raise ValueError("Refresh scheduling requires canonical scope and time inputs.")
     now = now.astimezone(UTC)
@@ -53,8 +61,16 @@ def due_slots(*, now, timezone, nightly_time, scope_fingerprint):
             datetime.combine(day - timedelta(days=1), wall), timezone
         )
     delta = now.replace(minute=now.minute // 15 * 15, second=0, microsecond=0)
+    if frequency == "hourly":
+        nightly = now.replace(minute=0, second=0, microsecond=0)
+    elif frequency == "quarter_hour":
+        nightly = delta
+    slots = [("nightly", nightly)]
+    if frequency != "quarter_hour":
+        # A full refresh every quarter hour already covers each delta slot.
+        slots.append(("delta", delta))
     result = []
-    for cause, due in (("nightly", nightly), ("delta", delta)):
+    for cause, due in slots:
         _, key = canonical_payload(
             {
                 "schema": "source-refresh-slot-v1",

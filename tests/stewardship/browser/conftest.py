@@ -49,6 +49,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.security import CSP
 
 from ..campaign_factory import campaign, financial, schedule
@@ -311,6 +312,7 @@ def component_origin():
                 "credential": InlineCredentialForm(
                     "parishsoft", initial={"intent": "synthetic-intent"}
                 ),
+                "full_refresh": FullRefreshStatus(NOW, NOW, True),
                 "form": IntegrationForm(
                     "parishsoft",
                     initial={"organization_id": 12345, "base_digest": "a" * 64},

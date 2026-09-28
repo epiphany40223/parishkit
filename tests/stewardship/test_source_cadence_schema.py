@@ -144,3 +144,52 @@ def test_new_discriminators_retain_fingerprint_and_recovery_boundaries():
         base, recovery, candidate_id=uuid4(), request_schema=RECOVERY_SCHEMA
     )
     assert schema_for(restored.candidate.document()) == SCHEMA
+
+
+@pytest.mark.parametrize("frequency", ["daily", "hourly", "quarter_hour"])
+def test_full_refresh_frequency_is_public_cadence_not_credential_scope(frequency):
+    """A frequency alone selects the cadence schema and is never key scope."""
+    base = base_version()
+    patch = cadence_patch(base, "02:00")
+    patch[0]["values"]["settings"] = {
+        "organization_id": "12345",
+        "full_refresh": frequency,
+    }
+    assert default_schema(base, patch) == REQUEST_SCHEMA
+    candidate = build_candidate(base, patch, candidate_id=uuid4()).candidate
+    assert schema_for(candidate.document()) == SCHEMA
+    assert authentication_scope(
+        "parishsoft", integration_records(candidate.document())
+    ) == {"organization_id": 12345}
+
+
+@pytest.mark.parametrize("frequency", ["", "weekly", "Hourly", 15, None])
+def test_unknown_full_refresh_frequency_fails_before_persistence(frequency):
+    """Only the three offered frequencies can be stored."""
+    base = base_version()
+    patch = cadence_patch(base, "02:00")
+    patch[0]["values"]["settings"]["full_refresh"] = frequency
+    with pytest.raises(ConfigError):
+        build_candidate(base, patch, candidate_id=uuid4())
+
+
+def test_form_offers_three_frequencies_with_daily_default():
+    """An omitted choice keeps the documented once-a-day default."""
+    form = IntegrationForm(
+        "parishsoft", {"base_digest": "a" * 64, "organization_id": "12345"}
+    )
+    assert form.is_valid(), form.errors
+    assert form.public_settings()["full_refresh"] == "daily"
+    form = IntegrationForm(
+        "parishsoft",
+        {
+            "base_digest": "a" * 64,
+            "organization_id": "12345",
+            "full_refresh": "hourly",
+        },
+    )
+    assert form.is_valid() and form.public_settings()["full_refresh"] == "hourly"
+    assert not IntegrationForm(
+        "parishsoft",
+        {"base_digest": "a" * 64, "organization_id": "1", "full_refresh": "weekly"},
+    ).is_valid()

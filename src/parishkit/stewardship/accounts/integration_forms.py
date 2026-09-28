@@ -14,6 +14,14 @@ LABELS = {
 }
 
 
+# Stored values match source.cadence.FREQUENCIES.
+REFRESH_CHOICES = (
+    ("daily", _("Once a day")),
+    ("hourly", _("Once an hour")),
+    ("quarter_hour", _("Every 15 minutes")),
+)
+
+
 class IntegrationForm(forms.Form):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
 
@@ -31,16 +39,29 @@ class IntegrationForm(forms.Form):
                 min_value=1,
                 max_value=2**31 - 1,
             )
+            self.fields["full_refresh"] = forms.ChoiceField(
+                label=_("Full ParishSoft refresh"),
+                choices=REFRESH_CHOICES,
+                initial="daily",
+                required=False,
+                help_text=_(
+                    "How often to reload all Families, Members and ministries from "
+                    "ParishSoft. A full load takes a few minutes; changes made in "
+                    "ParishSoft between full loads are also picked up every 15 "
+                    "minutes. Refreshes never overlap: a refresh that comes due "
+                    "while another is running waits for it."
+                ),
+            )
             self.fields["nightly_time"] = forms.RegexField(
-                label=_("Nightly full refresh time"),
+                label=_("Daily refresh time"),
                 regex=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
                 initial="02:00",
                 required=False,
                 max_length=5,
                 widget=forms.TimeInput(format="%H:%M", attrs={"type": "time"}),
                 help_text=_(
-                    "Parish-local time; default 2:00 a.m. "
-                    "The next scheduler tick uses the applied setting."
+                    "Parish-local time for the once-a-day refresh; default 2:00 a.m. "
+                    "Not used for hourly or 15-minute refreshes."
                 ),
             )
         elif target == "google_workspace":
@@ -83,6 +104,10 @@ class IntegrationForm(forms.Form):
     def clean_nightly_time(self):
         """An omitted time retains the documented default, never browser-local time."""
         return self.cleaned_data["nightly_time"] or "02:00"
+
+    def clean_full_refresh(self):
+        """An omitted frequency keeps the documented once-a-day default."""
+        return self.cleaned_data["full_refresh"] or "daily"
 
 
 class WriteOnlyTextarea(forms.Textarea):

@@ -8,6 +8,7 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.source.refresh_status import full_refresh_status
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
 from .policy import Capability, allows
@@ -28,6 +29,7 @@ def summary(actor, configuration, now):
     result = {
         "campaign": campaign,
         "refreshed_at": refreshed_at,
+        "full_refresh": full_refresh_status(),
         # Only an Administrator may request a manual refresh; the link is
         # offered to nobody else.
         "can_refresh": allows(actor, Capability.CONFIGURE),

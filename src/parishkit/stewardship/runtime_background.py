@@ -13,6 +13,7 @@ from parishkit.config import ConfigError
 from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import parse_keyring, read_private
 from .deployment import ServiceRole
+from .service_boundaries import OPTIONAL_SECRETS
 
 
 @dataclass(frozen=True)
@@ -199,7 +200,13 @@ def configure_background(configuration, *, stop, heartbeat):
     }[role]
     if not required <= configuration.secrets.keys():
         raise ConfigError("Background credential mounts are incomplete.")
-    loaded = {name: read_private(path) for name, path in configuration.secrets.items()}
+    # Slack is optional: its folder is mounted before Slack is set up, and
+    # each Slack task reads the installed file only once the YAML selects it.
+    loaded = {
+        name: read_private(path)
+        for name, path in configuration.secrets.items()
+        if name not in OPTIONAL_SECRETS or path.exists()
+    }
     rings = {
         name: parse_keyring(loaded[name], name) for name in required - {"parishsoft"}
     }

@@ -197,12 +197,19 @@ def _credential_schema_v6(document):
     return "parish-integrations-v1"
 
 
+# An integration an Administrator may add after setup, with its first key.
+OPTIONAL_INTEGRATIONS = frozenset({"slack"})
+
+
 def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
     """A separate explicit format changes one integration's fingerprint.
 
     The same update may also carry that integration's public settings, so an
     Administrator can save a new key together with the settings it was checked
     against (such as a new ParishSoft organization ID) in one request.
+
+    Slack, the one optional integration, may instead be added by this format
+    with its first key, as ``kind``, ``settings`` and ``credential_fingerprint``.
 
     Parsing binds immutable intent, not installed-credential authority. The
     selection owner and installer verify target receipts/ACKs independently,
@@ -211,16 +218,26 @@ def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
     """
     if not isinstance(base, ConfigurationVersion):
         raise TypeError("An explicit configuration version is required.")
+    shapes = {
+        "update": (
+            {"credential_fingerprint"},
+            {"credential_fingerprint", "settings"},
+        ),
+        "add": ({"kind", "credential_fingerprint", "settings"},),
+    }
     if (
         type(patch) is not list
         or len(patch) != 1
         or type(patch[0]) is not dict
-        or patch[0].get("operation") != "update"
+        or patch[0].get("operation") not in shapes
         or patch[0].get("section") != "integrations"
         or type(patch[0].get("values")) is not dict
-        or set(patch[0]["values"])
-        not in ({"credential_fingerprint"}, {"credential_fingerprint", "settings"})
+        or set(patch[0]["values"]) not in shapes[patch[0]["operation"]]
         or patch[0]["values"]["credential_fingerprint"] is None
+        or (
+            patch[0]["operation"] == "add"
+            and patch[0]["values"]["kind"] not in OPTIONAL_INTEGRATIONS
+        )
     ):
         _invalid()
     result = _build_records(
@@ -297,7 +314,12 @@ def _build_records(
                 _invalid()
             if section == "integrations":
                 if action == "add":
-                    if values.get("credential_fingerprint") is not None:
+                    # Only the credential format may add an integration together
+                    # with its installed key; ordinary edits add none.
+                    if (
+                        values.get("credential_fingerprint") is not None
+                        and not credential_reference
+                    ):
                         _invalid()
                 elif "kind" in values or (
                     "credential_fingerprint" in values and not credential_reference
@@ -542,7 +564,7 @@ def default_schema(base, patch):
             and item.get("section") == "integrations"
             and type(item.get("values")) is dict
             and type(item["values"].get("settings")) is dict
-            and "nightly_time" in item["values"]["settings"]
+            and set(cadence.CADENCE_SETTINGS) & item["values"]["settings"].keys()
             for item in patch
         )
     ):

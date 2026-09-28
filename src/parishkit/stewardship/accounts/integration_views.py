@@ -14,6 +14,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
+from parishkit.stewardship.source.refresh_status import full_refresh_status
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -39,7 +40,7 @@ from .limiting import LimiterUnavailable
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
 from .privileged_actions import sealed_secret_request
-from .request_patch import build_candidate
+from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
 from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
@@ -85,6 +86,22 @@ def _selected(configuration, target):
     return record
 
 
+def _optional(configuration, target):
+    """Return the record, or None for an optional integration not yet set up."""
+    if target in OPTIONAL_INTEGRATIONS and target not in _records(configuration):
+        return None
+    return _selected(configuration, target)
+
+
+# A stand-in record so an optional integration's page renders before setup.
+def _unset(target):
+    """Describe an optional integration with no settings and no key."""
+    return {
+        "id": None,
+        "values": {"kind": target, "settings": {}, "credential_fingerprint": None},
+    }
+
+
 def _checked(request, service, response):
     """Repeat authorization before private settings or progress leave the process."""
     if not allows(
@@ -98,7 +115,9 @@ def _checked(request, service, response):
 
 def _page(request, configuration, target, *, form=None, credential=None, status=200):
     """Show editable settings, the optional new-key field and one status line."""
-    record = _selected(configuration, target)
+    record = _optional(configuration, target)
+    configured = record is not None
+    record = record or _unset(target)
     form = (
         form
         if form is not None
@@ -134,7 +153,10 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "label": LABELS[target],
             "summary": latest,
             "pending": pending,
+            "configured": configured,
+            "removable": configured and target in OPTIONAL_INTEGRATIONS,
             "configuration": configuration,
+            "full_refresh": (full_refresh_status() if target == "parishsoft" else None),
         },
         status=status,
     )
@@ -191,15 +213,18 @@ def _save(request, service, configuration, actor, target):
         raise PermissionError("Credential intent does not belong to this session.")
     if intent["base"] != configuration.active_configuration.digest:
         raise StaleRecordError("Integration settings changed.")
-    record = _selected(configuration, target)
+    record = _optional(configuration, target)
     settings = form.public_settings()
-    before = record["values"]["settings"]
-    if target == "parishsoft" and "nightly_time" not in before:
-        # The default refresh time is implied, not stored, in older settings.
-        if settings.get("nightly_time") == "02:00":
-            settings.pop("nightly_time")
-        else:
-            raise ValueError("Save the refresh time separately from a new key.")
+    before = record["values"]["settings"] if record is not None else settings
+    if target == "parishsoft":
+        # Refresh defaults are implied, not stored, in older settings. A key
+        # save never upgrades the settings schema: change the schedule first.
+        for name, default in (("nightly_time", "02:00"), ("full_refresh", "daily")):
+            if name in before:
+                continue
+            if settings.get(name) != default:
+                raise ValueError("Save the refresh schedule separately from a new key.")
+            settings.pop(name)
     from .key_files import MAX_FILE_BYTES
 
     value = credential.cleaned_data.pop("candidate").encode("utf-8")
@@ -223,6 +248,8 @@ def _save(request, service, configuration, actor, target):
 def _preview(request, service, actor, target):
     """Prepare public settings while preserving the applied credential receipt."""
     configuration = editable_configuration(service)
+    if _optional(configuration, target) is None:
+        raise ValueError("Paste the key to set up this integration.")
     record = _selected(configuration, target)
     form = IntegrationForm(target, request.POST)
     if not form.is_valid():
@@ -232,7 +259,7 @@ def _preview(request, service, actor, target):
     settings = form.public_settings()
     before = record["values"]["settings"]
     if target == "parishsoft":
-        before = {"nightly_time": "02:00"} | before
+        before = {"full_refresh": "daily", "nightly_time": "02:00"} | before
     if settings == before:
         form.add_error(None, _("No settings have changed."))
         return _page(request, configuration, target, form=form, status=400)
@@ -258,11 +285,56 @@ def _preview(request, service, actor, target):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    "before": before[name],
-                    "after": value,
+                    # Show a choice's label ("Once an hour"), not its stored value.
+                    "before": dict(getattr(form.fields[name], "choices", ())).get(
+                        before[name], before[name]
+                    ),
+                    "after": dict(getattr(form.fields[name], "choices", ())).get(
+                        value, value
+                    ),
                 }
                 for name, value in settings.items()
                 if before[name] != value
+            ],
+            "preview": sign_preview(
+                actor=actor,
+                configuration=configuration,
+                patch=patch,
+                salt=SALT + target,
+            ),
+        },
+    )
+
+
+def _remove(request, service, configuration, actor, target):
+    """Preview removing an optional integration; confirmation uses the usual path.
+
+    Removing Slack stops new Slack alerts at once. Its key file stays on the
+    server until it is replaced; setting Slack up again installs a new key.
+    """
+    if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
+        len(values) != 1 for _, values in request.POST.lists()
+    ):
+        raise ValueError("Invalid configuration action or fields.")
+    if target not in OPTIONAL_INTEGRATIONS:
+        raise LookupError("Integration is unavailable.")
+    record = _selected(configuration, target)
+    patch = [{"operation": "remove", "section": "integrations", "id": record["id"]}]
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise StaleRecordError("The applied configuration changed.")
+    # Refuse now, not at confirmation, if the schema would reject the removal.
+    build_candidate(base, patch, candidate_id=uuid4())
+    return render(
+        request,
+        "stewardship/integration-preview.html",
+        {
+            "target": target,
+            "label": LABELS[target],
+            "configuration": configuration,
+            "removing": True,
+            "changes": [
+                {"label": LABELS[target], "before": _("On"), "after": _("Removed")}
             ],
             "preview": sign_preview(
                 actor=actor,
@@ -297,8 +369,10 @@ def integration_settings(request, target=None):
                     ]
                 },
             )
+        elif request.method == "POST" and request.POST.get("action") == "remove":
+            response = _remove(request, service, configuration, actor, target)
         elif request.method == "POST":
-            _selected(configuration, target)
+            _optional(configuration, target)
             fields = set(IntegrationForm(target).fields)
             if target in ROTATING_TARGETS:
                 fields |= {"candidate", "intent"}
@@ -322,6 +396,8 @@ def integration_settings(request, target=None):
                 )
         else:
             filters(request.GET, allowed=set())
+            if target not in LABELS:
+                raise LookupError("Integration is unavailable.")
             response = _page(request, configuration, target)
         return _checked(request, service, response)
     except ERRORS as error:

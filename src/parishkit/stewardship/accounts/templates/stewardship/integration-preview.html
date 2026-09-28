@@ -2,7 +2,7 @@
 {% block title %}{% translate "Review integration changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review integration changes" %}: {{ label }}</h1>
-<div class="table-scroll"><table><caption>{% translate "Public settings only; credential fingerprint is unchanged" %}</caption>
+<div class="table-scroll"><table><caption>{% if removing %}{% translate "Removing this integration" %}{% else %}{% translate "Public settings only; credential fingerprint is unchanged" %}{% endif %}</caption>
 <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Current" %}</th><th scope="col">{% translate "Proposed" %}</th></tr></thead>
 <tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>
 <p>{% translate "This preview expires in fifteen minutes. Confirmation queues a versioned YAML change; it does not test the integration." %}</p>

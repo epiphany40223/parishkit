@@ -39,6 +39,9 @@ ALLOWED_SECRETS = {
 # so a running process reads the installer's renamed replacement on its next
 # task and can acknowledge it without the container being recreated.
 ROTATING_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+# Credentials a consumer mounts before they are installed; Slack is optional
+# and may be added after setup.
+OPTIONAL_SECRETS = frozenset({"slack"})
 
 
 def rotating_directories(configuration):

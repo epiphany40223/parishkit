@@ -197,3 +197,39 @@ def test_slack_scope_is_only_the_closed_channel_binding():
     records["slack"]["values"]["settings"]["url"] = "https://example.invalid/"
     with pytest.raises(ConfigError):
         authentication_scope("slack", records)
+
+
+def test_reference_format_adds_only_slack_with_its_first_key():
+    """Slack may be added with its first key; no other integration may be added."""
+    base = configuration_version()
+    for kind, allowed in (("slack", True), ("parishsoft", False)):
+        change = [
+            {
+                "operation": "add",
+                "section": "integrations",
+                "id": str(uuid4()),
+                "values": {
+                    "kind": kind,
+                    "settings": {"channel_id": "C123"},
+                    "credential_fingerprint": "b" * 64,
+                },
+            }
+        ]
+        if allowed:
+            build_candidate(
+                base,
+                change,
+                candidate_id=uuid4(),
+                request_schema=CREDENTIAL_REQUEST_SCHEMA,
+            )
+        else:
+            with pytest.raises(ConfigError):
+                build_candidate(
+                    base,
+                    change,
+                    candidate_id=uuid4(),
+                    request_schema=CREDENTIAL_REQUEST_SCHEMA,
+                )
+    # Ordinary patches still cannot add an integration with a key.
+    with pytest.raises(ConfigError):
+        build_candidate(base, change, candidate_id=uuid4())
