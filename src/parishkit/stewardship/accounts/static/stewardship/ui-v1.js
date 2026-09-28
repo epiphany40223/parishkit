@@ -16,6 +16,27 @@
     else if (typeof wide.addListener === "function") wide.addListener(syncMenu);
   }
 
+  // "About this page" panels ({% aboutpage %} in templatetags/stewardship.py)
+  // start open. Each browser remembers, per page type, whether an Admin
+  // closed one, so returning Admins see the task first. Only a "closed"
+  // marker is stored, and only after an Admin closes a panel: open is the
+  // default, so reopening removes the marker. (Browsers also fire "toggle"
+  // for panels that are open when parsed, which must not write anything.)
+  // Storage can be unavailable (private windows, blocked site data); the
+  // panel then just stays open.
+  document.querySelectorAll("details[data-about-page]").forEach((panel) => {
+    const key = `pk-about-page:${panel.dataset.aboutPage}`;
+    try {
+      if (window.localStorage.getItem(key) === "closed") panel.open = false;
+    } catch (error) { /* Keep the panel open. */ }
+    panel.addEventListener("toggle", () => {
+      try {
+        if (panel.open) window.localStorage.removeItem(key);
+        else window.localStorage.setItem(key, "closed");
+      } catch (error) { /* Nothing to remember without storage. */ }
+    });
+  });
+
   document.querySelectorAll("time[data-local-instant]").forEach((node) => {
     const date = new Date(node.dateTime);
     if (!Number.isFinite(date.getTime()) || typeof Intl === "undefined") return;

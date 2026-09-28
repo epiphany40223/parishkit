@@ -267,6 +267,14 @@ details { border: 1px solid var(--border); border-radius: var(--radius-small); b
 details[open] { padding-bottom: 1rem; }
 summary { display: list-item; min-height: 44px; padding-block: .6rem; color: var(--accent); font-weight: 600; cursor: pointer; }
 summary:hover { color: var(--accent-strong); }
+/* "About this page": a page's longer explanation, open by default and
+   remembered closed per page type (ui-v1.js). A soft accent surface keeps it
+   visibly secondary to the page's task. */
+details.about-page { background: var(--accent-soft); border-color: #bcd8d3; }
+details.about-page > summary::after { content: " \24D8" / ""; font-weight: 400; }
+.about-page-body > :first-child { margin-top: 0; }
+.about-page-body > :last-child { margin-bottom: 0; }
+.about-page-body .panel { box-shadow: none; }
 
 /* Tables */
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-block: 1.25rem; background: var(--paper); }
