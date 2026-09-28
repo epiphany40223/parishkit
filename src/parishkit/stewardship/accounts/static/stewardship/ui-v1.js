@@ -737,8 +737,9 @@
     const first = Number(total.value); // The server's rows keep their indexes.
     const added = [];
     const renumber = (row, index) => {
-      row.querySelectorAll("[name], [id], [for], [aria-describedby]").forEach((node) => {
-        ["name", "id", "for", "aria-describedby"].forEach((attribute) => {
+      // aria-controls: field toggletips point at their bubble's id.
+      row.querySelectorAll("[name], [id], [for], [aria-describedby], [aria-controls]").forEach((node) => {
+        ["name", "id", "for", "aria-describedby", "aria-controls"].forEach((attribute) => {
           const value = node.getAttribute(attribute);
           if (value) node.setAttribute(attribute,
             value.replace(/schedules-(?:\d+|__prefix__)-/g, `schedules-${index}-`));

@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
+from . import field_tips
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 
@@ -97,6 +98,10 @@ class IntegrationForm(forms.Form):
             )
         else:
             raise ValueError("Unsupported integration form.")
+        field_tips.shorten(
+            self,
+            {"full_refresh": _("Changes are also picked up every 15 minutes.")},
+        )
 
     def public_settings(self):
         """Normalize exact YAML types after validation; never include the base field."""
@@ -215,3 +220,6 @@ class InlineCredentialForm(forms.Form):
             ),
         )
         self.order_fields(["candidate", "intent"])
+        field_tips.shorten(
+            self, {"candidate": _("Leave blank to keep the current key.")}
+        )

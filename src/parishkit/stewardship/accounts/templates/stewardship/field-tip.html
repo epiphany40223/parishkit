@@ -1,0 +1,15 @@
+{% comment %}
+Django's field group (django/forms/field.html) with the field's long help in a
+toggletip beside its label; accounts/field_tips.py chooses which fields use it.
+A legend must stay the fieldset's first child, so a fieldset's tip follows it
+instead of sharing a .label-row. The bubble id matches the field's
+aria-describedby (TipBoundField).
+{% endcomment %}{% if field.use_fieldset %}
+  <fieldset{% if field.aria_describedby %} aria-describedby="{{ field.aria_describedby }}"{% endif %}>
+  {{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}
+{% else %}
+  <div class="label-row">{{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}</div>
+{% endif %}
+{% if field.help_text %}<div class="helptext"{% if field.auto_id %} id="{{ field.auto_id }}_helptext"{% endif %}>{{ field.help_text|safe }}</div>{% endif %}
+{{ field.errors }}
+{{ field }}{% if field.use_fieldset %}</fieldset>{% endif %}

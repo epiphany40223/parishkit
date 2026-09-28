@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 
+from . import field_tips
 from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 
@@ -275,6 +276,10 @@ class ScheduleForm(forms.Form):
             for row in emails
         ]
         kinds = {row["id"]: row["values"]["slot"] for row in emails}
+        field_tips.shorten(
+            self, {"template_version": _("Only emails of the chosen mail type fit.")}
+        )
+        # After shortening, so this warning always stays visible.
         if not schedulable(templates):
             self.fields["template_version"].help_text = NO_TEMPLATES
         selected = self.initial.get("template_version")
