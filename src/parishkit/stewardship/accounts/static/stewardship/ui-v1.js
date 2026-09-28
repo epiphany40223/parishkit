@@ -1051,6 +1051,17 @@
     refresh();
   });
 
+  // Header counters stop polling for good once the Admin session has ended
+  // (401/403): repeating a refused request every 30 seconds only fills the
+  // logs, and the inactivity dialog (session-v1.js) tells the Admin to sign in.
+  const headerPolls = [];
+  function stopHeaderPolls() {
+    while (headerPolls.length) window.clearInterval(headerPolls.pop());
+  }
+  function signedOut(response) {
+    return response.status === 401 || response.status === 403;
+  }
+
   // Presence is observational: these requests never count as user activity.
   // Timers skip hidden tabs and never overlap requests or catch up missed ticks.
   const presenceIndicator = document.querySelector("[data-presence-indicator]");
@@ -1063,6 +1074,7 @@
       const response = await fetch("/admin/presence?format=count", {
         credentials: "same-origin", cache: "no-store"
       });
+      if (signedOut(response)) { stopHeaderPolls(); throw new Error("Signed out"); }
       if (!response.ok) throw new Error("Presence unavailable");
       const result = await response.json();
       if (!Number.isSafeInteger(result.count) || result.count < 0) throw new Error("Invalid count");
@@ -1074,7 +1086,7 @@
   }
   if (presenceIndicator) {
     refreshPresence();
-    window.setInterval(refreshPresence, 30000);
+    headerPolls.push(window.setInterval(refreshPresence, 30000));
   }
 
   const backgroundIndicator = document.querySelector("[data-background-indicator]");
@@ -1087,6 +1099,7 @@
       const response = await fetch("/admin/background/counts", {
         credentials: "same-origin", cache: "no-store"
       });
+      if (signedOut(response)) { stopHeaderPolls(); throw new Error("Signed out"); }
       if (!response.ok) throw new Error("Background work unavailable");
       const result = await response.json();
       const values = ["queued", "running", "retry_wait", "abandoned", "active"].map(
@@ -1110,7 +1123,7 @@
       if (unavailable) unavailable.hidden = false;
     } finally { backgroundPending = false; }
   }
-  if (backgroundIndicator) window.setInterval(refreshBackground, 30000);
+  if (backgroundIndicator) headerPolls.push(window.setInterval(refreshBackground, 30000));
 
   // Admin pages use the shared inactivity dialog in session-v1.js instead.
   const session = document.querySelector("[data-family-session]");

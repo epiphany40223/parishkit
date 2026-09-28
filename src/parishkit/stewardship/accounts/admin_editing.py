@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from django.core import signing
 from django.core.paginator import InvalidPage
 from django.http import HttpResponseRedirect
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -25,6 +26,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
+from parishkit.stewardship.web.refusals import UserFacingDenied
 
 from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
@@ -48,9 +50,26 @@ def principal(
         activity=not passive and not read_only,
         read_only=read_only,
     )
+    if value is None:
+        # No current session (idle timeout, sign-out, revocation): say so,
+        # rather than implying the signed-in account lacks a capability.
+        raise signed_out()
     if not allows(value, capability):
         raise PermissionError(f"This page requires the {capability} capability.")
     return value
+
+
+def signed_out():
+    """The refusal for a request whose Admin session has ended."""
+    return UserFacingDenied(
+        _(
+            "Your sign-in has ended, for example after an hour without "
+            "activity or after signing out in another tab."
+        ),
+        fix=_("Sign in again to continue."),
+        link="/admin/login",
+        link_label=_("Sign in"),
+    )
 
 
 def editable_configuration(service):

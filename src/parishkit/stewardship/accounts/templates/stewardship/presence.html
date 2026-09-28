@@ -1,11 +1,12 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Active Families" %}{% endblock %}
+{% block title %}{% translate "Families on the form now" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Active Families" %}</h1>
-<p>{% translate "Visible Family sessions with a heartbeat in the last 90 seconds:" %} {{ presence.count|number }}</p>
+<h1>{% translate "Families on the form now" %}</h1>
+<p>{% translate "Families with the Family form open in their browser within the last 90 seconds:" %} {{ presence.count|number }}</p>
+<p>{% translate "A Family that signed in earlier but closed the form, or left it idle in a background tab, is not counted." %}</p>
 <p>{% translate "Presence does not extend a login. Closed, expired, or ineligible sessions are excluded. Multiple sessions may belong to one Family." %}</p>
 <p>{% translate "As of:" %} <time datetime="{{ presence.as_of|instant }}" data-local-instant>{{ presence.as_of|instant }} UTC</time></p>
-{% translate "Active Family pages" as navigator_label %}
+{% translate "Pages of Families on the form" as navigator_label %}
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="presence-table-caption"><table class="data-table"><caption id="presence-table-caption">{% translate "Recently visible Family sessions" %}</caption>
 <thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col" class="numeric">{% translate "DUID" %}</th><th scope="col">{% translate "Signed in" %}</th><th scope="col">{% translate "Last activity" %}</th><th scope="col">{% translate "Last heartbeat" %}</th><th scope="col">{% translate "Section" %}</th></tr></thead>
