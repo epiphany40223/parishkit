@@ -8,11 +8,13 @@ the database message is always in the middle of a batch.
 """
 
 import json
+import time
 from threading import Event
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.db import transaction
 
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
@@ -26,6 +28,7 @@ from parishkit.stewardship.jobs.dispatch import recover_hint
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxEvent
+from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
@@ -118,6 +121,23 @@ def task(message):
     return TaskRun.objects.get(pk=message.task_id)
 
 
+def wait_past(instant, circuit=None):
+    """Poll PostgreSQL's wall clock (and a limit hold) rather than sleep a guess.
+
+    ``instant`` is a deadline or ``not_before`` the database itself compares
+    with ``clock_timestamp()``; a fixed host sleep can end early on a slow or
+    loaded runner. ``circuit`` also waits out the worker's in-memory hold.
+    """
+    limit = time.monotonic() + 30
+    while True:
+        with transaction.atomic():
+            passed = database_now() > instant
+        if passed and (circuit is None or circuit.limit_remaining() == 0):
+            return
+        assert time.monotonic() < limit, "the deadline never passed"
+        Event().wait(0.05)
+
+
 def fast_limits(monkeypatch):
     """Sending-limit holds of one second, in both places they are read."""
     fast = {"daily": 1, "rate": 1, "message": 1}
@@ -171,7 +191,7 @@ def test_a_worker_crash_mid_batch_leaves_the_message_unknown(batch, monkeypatch)
         running = act(_status(task(message)), "heartbeat", lease_seconds=1)
         expire(running)
         # Recovery waits out the provider deadline before deciding.
-        Event().wait(3.1)
+        wait_past(message.provider_deadline)
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             assert recover_hint(
                 message.task_id,
@@ -203,7 +223,7 @@ def test_a_limit_mid_batch_defers_only_that_message(batch, monkeypatch):
         circuit = batch.owner.admit.keywords["circuit"]
         assert circuit.limit_remaining() > 0 and batch.session.process is None
         after, status = other(batch)
-        Event().wait(1.2)
+        wait_past(task(message).not_before, circuit)
         message = send(batch, message)
     assert status is Status.ACCEPTED
     assert message.state == "delivered" and message.attempt == 2
@@ -246,7 +266,7 @@ def test_a_temporary_refusal_mid_batch_is_retried_and_tracked(batch, monkeypatch
         assert TaskPhase(last_retry(message.task_id).phase) is not (
             TaskPhase.RECONCILING
         )
-        Event().wait(1.2)
+        wait_past(task(message).not_before)
         message = send(batch, message)
     assert message.state == "delivered" and message.attempt == 2
     # Refused once, then accepted once: two DATA commands, one acceptance.

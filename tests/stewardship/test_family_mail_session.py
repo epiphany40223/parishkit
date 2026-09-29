@@ -37,6 +37,7 @@ from parishkit.stewardship.family_delivery_worker import (
 from parishkit.stewardship.provider_checks import ProviderCheckOwnershipLost
 
 from .family_mail_session_fakes import (
+    CHILD_PATH,
     LIMIT,
     SETTINGS,
     FakeGmailHelpers,
@@ -744,17 +745,14 @@ os._exit(0)  # the mail worker dies without closing anything
 
 def test_a_helper_whose_parent_dies_quits_and_exits(gmail, tmp_path):
     """A dead mail worker leaves no helper behind: EOF ends it after a QUIT."""
-    from pathlib import Path
-
     script = tmp_path / "parent.py"
     script.write_text(PARENT)
-    root = str(Path(__file__).resolve().parents[2])
     output = subprocess.run(
         [sys.executable, str(script), str(gmail.directory)],
         capture_output=True,
         check=True,
         timeout=30,
-        env={"PYTHONPATH": os.pathsep.join([root, *(p for p in sys.path if p)])},
+        env={"PYTHONPATH": CHILD_PATH},
     ).stdout.split()
     assert output[0] == b"accepted"
     pid = int(output[1])

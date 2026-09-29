@@ -11,6 +11,11 @@ from parishkit.stewardship.family_delivery import FamilyDeliveryMail
 from parishkit.stewardship.family_delivery_process import FamilyMailSession
 
 SCRIPT = Path(__file__).with_name("fake_gmail_helper.py")
+# A child process imports only from the repository's own roots: the package
+# (src) and, for scripts that import the test fakes, the repository root.
+# Passing the parent's whole sys.path could let a stray module shadow them.
+ROOT = Path(__file__).resolve().parents[2]
+CHILD_PATH = os.pathsep.join([str(ROOT / "src"), str(ROOT)])
 SETTINGS = {
     "delegated_email": "mail@example.org",
     "sender": "office@example.org",
@@ -61,7 +66,7 @@ class FakeGmailHelpers:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             close_fds=True,
-            env={"PYTHONPATH": os.pathsep.join(path for path in sys.path if path)},
+            env={"PYTHONPATH": CHILD_PATH},
         )
 
     def session(self, **kwargs):
