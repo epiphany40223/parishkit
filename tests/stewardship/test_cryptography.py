@@ -184,3 +184,21 @@ def test_malformed_envelopes_are_bounded_and_private(value):
     ring = GeneralKeyring([Key("g1", "active", b"a" * 32)])
     with pytest.raises(CryptographicError, match="Invalid cryptographic envelope"):
         ring.decrypt(value, context=b"context")
+
+
+def test_sql_family_login_accepts_one_mac_per_possible_ring_key():
+    """The SQL code-MAC cap equals the largest ring, so rotation never locks out."""
+    from pathlib import Path
+
+    from parishkit.stewardship.accounts import cryptography
+
+    guards = (
+        Path(cryptography.__file__).parents[1] / "schema" / "guards.sql"
+    ).read_text()
+    login = guards[
+        guards.index("CREATE FUNCTION public.stewardship_family_login_v1(") :
+    ]
+    assert (
+        f"NOT BETWEEN 1 AND {cryptography.MAX_RING_KEYS} THEN"
+        in login[: login.index("END $$;")]
+    )

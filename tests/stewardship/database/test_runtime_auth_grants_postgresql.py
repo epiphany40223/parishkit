@@ -8,7 +8,7 @@ from django.db import connection
 from django.test import Client
 
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.runtime_grants import runtime_grants
+from parishkit.stewardship.runtime_grants import runtime_functions, runtime_grants
 
 from .role_grants import grant_runtime
 from .test_family_auth_postgresql import family_service, login  # noqa: F401
@@ -27,7 +27,9 @@ def web_login():
     try:
         with connection.cursor() as cursor:
             tables, columns = runtime_grants(ServiceRole.WEB)
-            grant_runtime(cursor, role, tables, columns)
+            grant_runtime(
+                cursor, role, tables, columns, runtime_functions(ServiceRole.WEB)
+            )
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         yield
     finally:

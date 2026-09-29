@@ -331,6 +331,13 @@ immutable, activity never moves into the future, disabling a portal user is
 one-way, and its email or hosted domain changes only with a re-verification
 stamped in the same transaction (two guard bodies and one new trigger;
 Functions and Triggers digests).
+The same review (M3) moved Family session creation into SQL: the SECURITY
+DEFINER `stewardship_family_login_v1` re-proves the presented code MACs or
+personal link token against the stored digests under the Family admission
+rules and creates the session itself, and web lost INSERT on
+`stewardship_family_session` for EXECUTE on that one function, and Family
+session activity can no longer be recorded in the future (one new function
+and one guard body; Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -339,7 +346,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 607 | `b8ed3450` |
+| Functions | 608 | `fb68052b` |
 | Triggers | 557 | `c9546d79` |
 | Policies | 28 | `1c9c3b2d` |
 

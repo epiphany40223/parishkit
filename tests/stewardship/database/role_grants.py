@@ -6,8 +6,11 @@ from django.db import transaction
 from psycopg import sql
 
 
-def grant_runtime(cursor, role_name, tables, columns):
+def grant_runtime(cursor, role_name, tables, columns, functions=()):
     """Group identical table grants, never merge or widen column privileges.
+
+    ``functions`` are the definer routine signatures from runtime_functions()
+    that the login may EXECUTE, as database-grants provisions them.
 
     Call only as the disposable schema owner, before switching session identity.
     Each caller still creates and destroys its own role, runs real admission and
@@ -41,5 +44,11 @@ def grant_runtime(cursor, role_name, tables, columns):
             cursor.execute(
                 sql.SQL("GRANT {} ON {} TO {}").format(
                     sql.SQL(", ").join(clauses), sql.Identifier("public", table), role
+                )
+            )
+        for function in sorted(functions):
+            cursor.execute(
+                sql.SQL("GRANT EXECUTE ON FUNCTION public.{} TO {}").format(
+                    sql.SQL(function), role
                 )
             )

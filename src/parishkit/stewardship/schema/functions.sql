@@ -3063,6 +3063,13 @@ CREATE FUNCTION public.stewardship_family_session_mutable_v1() RETURNS trigger
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
+                -- #306: activity renews the idle limit only up to this
+                -- statement's clock, never to a future instant.
+                IF NEW."last_activity_at" IS DISTINCT FROM OLD."last_activity_at"
+                   AND NEW."last_activity_at" > statement_timestamp() THEN
+                    RAISE EXCEPTION 'Session activity cannot be recorded in the future'
+                        USING ERRCODE = '23514';
+                END IF;
                 IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
                     RAISE EXCEPTION 'Every update must advance the record version'
                         USING ERRCODE = '23514';

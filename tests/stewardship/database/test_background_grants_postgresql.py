@@ -18,7 +18,11 @@ from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.scanning import collect_hints
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.jobs.storage import enqueue
-from parishkit.stewardship.runtime_grants import admit_columns, runtime_grants
+from parishkit.stewardship.runtime_grants import (
+    admit_columns,
+    runtime_functions,
+    runtime_grants,
+)
 
 from .campaign_builders import draft_campaign
 from .credential_builders import family_campaign
@@ -54,7 +58,7 @@ def task_login(service, *, reconnect=False, exact=True):
     try:
         tables, columns = runtime_grants(service)
         with connection.cursor() as cursor:
-            grant_runtime(cursor, name, tables, columns)
+            grant_runtime(cursor, name, tables, columns, runtime_functions(service))
             cursor.execute(sql.SQL("SET SESSION AUTHORIZATION {}").format(role))
         if reconnect:
             connection_created.connect(restrict_connection, weak=False)
