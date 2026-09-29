@@ -13,7 +13,7 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
@@ -91,7 +91,7 @@ def create_financial_export(
     else:
         filters = snapshot.parameters["filters"]
 
-    with work_transaction():
+    with export_transaction(campaign_id):
         admit()
         previous = ExportRequest.objects.filter(
             requester_id=user_id, request_key=request_key

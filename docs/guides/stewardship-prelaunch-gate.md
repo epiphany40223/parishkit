@@ -314,6 +314,11 @@ The #308 review then added `(created_at, id)` indexes on
 `stewardship_audit_event` and `stewardship_operational_log`, which System
 logs and its export read newest first, so no page sorts either whole table
 (Indexes digest only).
+Export admission (#147) then stopped taking the global work-order lock: it
+takes a per-campaign export lock, which the work gate, lifecycle transition,
+configuration activation and go-live gate paths also take (one new lock
+helper, one new trigger function and trigger, and eight guard bodies;
+Functions and Triggers digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -322,8 +327,8 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 603 | `5bd6449b` |
-| Triggers | 555 | `80f32975` |
+| Functions | 605 | `c90a82ce` |
+| Triggers | 556 | `a4816cd5` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

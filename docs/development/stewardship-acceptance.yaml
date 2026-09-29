@@ -39,6 +39,7 @@ sections:
     "Job, outbox, audit, and purge records": [DAT-07, DAT-09]
     "Campaign read guards": [DAT-09]
     "Admin page snapshots": [DAT-09]
+    "Export admission order": [DAT-09, BG-08]
     "Effective-value merge": [DAT-08]
     "Submission concurrency": [DAT-06, DAT-08]
     "ParishSoft refresh reconciliation": [DAT-03, DAT-08]

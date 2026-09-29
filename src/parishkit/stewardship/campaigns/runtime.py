@@ -18,7 +18,7 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 from .domain import CampaignState, SystemMode, UTCInterval
 from .lifecycle import Action, CampaignFacts, transition_target
 from .models import Campaign, CampaignTransition, RuntimeTransition
-from .work_locks import lock_work_order
+from .work_locks import lock_campaign_exports, lock_work_order
 
 
 def campaign_facts(campaign, runtime):
@@ -48,6 +48,9 @@ def campaign_transaction(campaign_id, *, correlation_id):
         transaction.atomic(durable=True),
     ):
         lock_work_order()
+        # Lifecycle, controls and purge gates can change export admission;
+        # order them with this campaign's exports before any row lock (#147).
+        lock_campaign_exports(campaign_id)
         runtime = SystemConfiguration.objects.select_for_update().get()
         campaign = (
             Campaign.objects.select_for_update(of=("self",))

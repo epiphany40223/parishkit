@@ -30,7 +30,7 @@ from .family_identity import collision_query
 from .lifecycle import CampaignWorkKind, campaign_work_admitted
 from .models import Campaign
 from .runtime import _now, campaign_facts
-from .work_locks import work_transaction
+from .work_locks import lock_campaign_exports, work_transaction
 
 
 def code_context(identifier):
@@ -210,6 +210,8 @@ def prepare_rehearsals(
 def invalidate_rehearsal(*, campaign_id, admit):
     """Go-live admission clears authority before any asynchronous cleanup starts."""
     with work_transaction():
+        # Closing the go-live gate stops this campaign's export admission.
+        lock_campaign_exports(campaign_id)
         campaign = Campaign.objects.get(pk=campaign_id)
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
