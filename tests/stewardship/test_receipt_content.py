@@ -200,10 +200,12 @@ def test_names_with_quotes_pass_the_delivery_check(testing, name):
 # A non-breaking space (U+00A0), an ampersand, a less-than sign and a double
 # quote: each is one the sanitizer could write differently than escape() does.
 AWKWARD_NAMES = ["Smith\u00a0Family", "Rose & Tom", "A <B> C", 'The "Big" Family']
+# Line endings an import could leave inside a name.
+BROKEN_NAMES = ["Smith\rFamily", "Smith\r\nFamily"]
 
 
 @pytest.mark.parametrize("testing", [False, True])
-@pytest.mark.parametrize("name", AWKWARD_NAMES)
+@pytest.mark.parametrize("name", AWKWARD_NAMES + BROKEN_NAMES)
 def test_awkward_names_are_delivered_end_to_end(monkeypatch, testing, name):
     """A receipt naming an awkward Family or parish passes every delivery check.
 
@@ -238,3 +240,12 @@ def test_awkward_names_are_delivered_end_to_end(monkeypatch, testing, name):
     mail = FamilyDeliveryMail.from_payload(mail.payload())
     outcome, seen = delivery(monkeypatch, mail=mail)
     assert outcome.status is FamilyDeliveryStatus.ACCEPTED and "data" in seen
+
+
+@pytest.mark.parametrize("name", BROKEN_NAMES)
+def test_text_html_normalizes_line_endings_like_the_sanitizer(name):
+    """CR and CRLF become LF, exactly as sanitizer output writes them."""
+    from parishkit.stewardship.web.content import sanitize_html, text_html
+
+    fragment = "<p>" + text_html(name) + "</p>"
+    assert fragment == sanitize_html(fragment) == "<p>Smith\nFamily</p>"

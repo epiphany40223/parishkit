@@ -303,9 +303,11 @@ def text_html(value):
 
     Server-built fragments (receipt facts, Testing banners) are compared
     against sanitizer output by the delivery check, so they must match it:
-    quotes stay literal, and a non-breaking space (common in names pasted
-    from word processors) is written as ``&nbsp;``.
+    quotes stay literal, a non-breaking space (common in names pasted from
+    word processors) is written as ``&nbsp;``, and CR or CRLF line endings
+    become LF, as the HTML parser normalizes them.
     """
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
     return escape(value, quote=False).replace("\u00a0", "&nbsp;")
 
 
