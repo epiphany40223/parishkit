@@ -170,6 +170,29 @@ def test_a_limit_refused_continuously_fails_visibly(
     assert len(calls) == 2 and message.state == "permanent_failure"
 
 
+def test_no_give_up_while_other_mail_is_accepted(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """A long limit run with any acceptance since it began is a draining queue."""
+    harness, path = dispatch_worker
+    calls = []
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP", timedelta(0))
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        Event().wait(1.1)
+        # Another Family's message is accepted while this one waits.
+        monkeypatch.setattr(family_mail_dispatch, "accepted_since", lambda _: True)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert len(calls) == 2 and message.state == "retry_wait"
+
+
 def test_limit_refusals_do_not_count_toward_the_attempt_budget(
     dispatch_worker,  # noqa: F811
     monkeypatch,
@@ -208,19 +231,22 @@ def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
     from parishkit.stewardship.jobs.family_mail_dispatch import limit_run
 
     t = [datetime(2026, 10, 3, hour, tzinfo=UTC) for hour in range(8)]
-    limited = {("r", 1), ("r", 2), ("r", 4), ("r", 5)}
+    # Pairs whose Task deferred in RECONCILING: the limit refusals. The last
+    # limit refusal (fence 5) gave up and failed, so its Task never deferred.
+    limited = {("r", 1), ("r", 2), ("r", 4)}
     outcome = [
         ("retry_unaccepted", "submitting", "r", 1, t[0]),  # limit
         ("retry_unaccepted", "submitting", "r", 2, t[1]),  # limit
         ("retry_unaccepted", "submitting", "r", 3, t[2]),  # other transient
         ("retry_unaccepted", "submitting", "r", 4, t[3]),  # limit
-        ("fail_unaccepted", "submitting", "r", 5, t[4]),  # limit (gave up)
+        ("retry_unaccepted", "submitting", "r", 6, t[4]),  # other transient
         ("retry_failed", "permanent_failure", None, None, t[5]),  # staff retry
     ]
     assert limit_run(outcome[:2], limited) == (2, t[0])
     assert limit_run(outcome[:3], limited) == (2, None)
-    assert limit_run(outcome[:5], limited) == (4, t[3])
-    assert limit_run(outcome, limited) == (4, None)
+    assert limit_run(outcome[:4], limited) == (3, t[3])
+    assert limit_run(outcome[:5], limited) == (3, None)
+    assert limit_run(outcome[:4] + outcome[5:], limited) == (3, None)
     # Submit events themselves (previous state pending) are not outcomes.
     assert limit_run([("submit", "pending", "r", 1, t[0])], limited) == (0, None)
 
@@ -349,3 +375,16 @@ def test_an_alert_at_a_limit_keeps_its_budget(routing, monkeypatch, limited):  #
             message.pk, execution.claim, result
         )
     assert status.state.value == ("retry_wait" if limited else "permanent_failure")
+
+
+def test_accepted_since_reads_real_acceptances(family_mail):  # noqa: F811
+    """The give-up guard sees an acceptance under the exact mail role."""
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        before = timezone.now() - timedelta(minutes=1)
+        submit(message, family_mail, FamilyDeliveryResult(Status.ACCEPTED, 1))
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+            assert family_mail_dispatch.accepted_since(before)
+            assert not family_mail_dispatch.accepted_since(
+                timezone.now() + timedelta(minutes=1)
+            )

@@ -4,7 +4,7 @@ import logging
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import F, Func, IntegerField, Sum
 from django.db.models.functions import Now
 
@@ -174,6 +174,13 @@ def limit_run(events, limited):
     return count, started
 
 
+def accepted_since(instant):
+    """Whether any message was accepted by the provider since ``instant``."""
+    return OutboxEvent.objects.filter(
+        previous_state="submitting", reason="smtp_accepted", created_at__gte=instant
+    ).exists()
+
+
 def budget_spent(message, result):
     """Whether this non-acceptance ends the message's automatic retries.
 
@@ -184,14 +191,26 @@ def budget_spent(message, result):
     count, started = limit_history(message)
     if result.limit is None:
         return message.attempt - count >= MAX_ATTEMPTS
-    if started is not None and database_now() - started > LIMIT_GIVE_UP:
-        LOG.critical(
+    if (
+        started is None
+        or database_now() - started <= LIMIT_GIVE_UP
+        # While other mail is still being accepted, the limit is real but
+        # partial (for example Google's cap is lower than ours): the queue is
+        # draining, so this message keeps waiting its turn. Scoped like the
+        # daily count, to the whole sending mailbox.
+        or accepted_since(started)
+    ):
+        return False
+    # Logged only once the failure commits, so a claim that turns out stale
+    # (and rolls back) never raises a false alarm.
+    transaction.on_commit(
+        lambda: LOG.critical(
             "Mail was refused at a Google sending limit for over %d hours and has "
             "failed; review the mail provider and retry it.",
             LIMIT_GIVE_UP // timedelta(hours=1),
         )
-        return True
-    return False
+    )
+    return True
 
 
 def bound_dispatch(status):
