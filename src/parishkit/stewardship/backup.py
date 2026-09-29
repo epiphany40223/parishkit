@@ -299,17 +299,16 @@ def retention_paused(names, now):
     ``MINIMUM_SETS`` still bounds what a persistent jump can remove.
     """
     times = sorted(set_started(name) for name in names)
-    paused = bool(times) and (
-        times[-1] > now + CLOCK_SKEW
-        or (len(times) > 1 and times[-1] - times[-2] > CLOCK_GAP)
-    )
-    if paused:
-        emit(
-            Event.TASK_FAILED,
-            level=logging.WARNING,
-            failure_kind=FailureKind.BACKUP_RETENTION_PAUSED,
-        )
-    return paused
+    if times and times[-1] > now + CLOCK_SKEW:
+        reason = FailureKind.BACKUP_RETENTION_FUTURE
+    elif len(times) > 1 and times[-1] - times[-2] > CLOCK_GAP:
+        reason = FailureKind.BACKUP_RETENTION_GAP
+    else:
+        return False
+    # The category names which check fired, so the operator knows whether
+    # to look for future-dated sets or at a jump (or a stop) in backups.
+    emit(Event.TASK_FAILED, level=logging.WARNING, failure_kind=reason)
+    return True
 
 
 def _prune(backups, now):

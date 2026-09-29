@@ -307,16 +307,16 @@ def put_sets(backups, names):
 
 
 @pytest.mark.parametrize(
-    ("taken", "now"),
+    ("taken", "now", "reason"),
     [
         # The clock jumped forward: the new set is days after the last one.
-        (NOW + timedelta(days=3), NOW + timedelta(days=3)),
+        (NOW + timedelta(days=3), NOW + timedelta(days=3), "gap"),
         # The clock went back: an existing set is dated after "now".
-        (None, NOW - timedelta(days=30)),
+        (None, NOW - timedelta(days=30), "future_set"),
     ],
 )
 def test_a_suspect_clock_pauses_host_retention(
-    deployment, taken, now, caplog, no_floor
+    deployment, taken, now, reason, caplog, no_floor
 ):
     """Nothing is pruned, and a WARNING names why, when the clock looks wrong."""
     backups = deployment.paths["backups"]
@@ -327,7 +327,7 @@ def test_a_suspect_clock_pauses_host_retention(
     assert any(
         record.levelname == "WARNING"
         and getattr(record, "extra", {}).get("failure_kind")
-        == "backup_retention_paused"
+        == f"backup_retention_paused_{reason}"
         for record in caplog.records
     )
 

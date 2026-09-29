@@ -770,3 +770,26 @@ def test_a_second_copy_waits_for_the_copy_lock(offsite):
         assert copy(offsite) == {"state": "busy"}
     assert not offsite.drive.sets()
     assert copy(offsite) == {"state": "uploaded", "sets": 1}
+
+
+def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypatch):
+    """A set whose run found the lock held is copied by the holder's re-scan."""
+    upload = backup_offsite.upload_set
+    later = offsite.directory.parent / "20260927T140000Z"
+
+    def upload_then_back_up(client, folder_id, directory, names):
+        """Upload, and meanwhile let another backup finish its set."""
+        result = upload(client, folder_id, directory, names)
+        if not later.exists():
+            later.mkdir(mode=0o700)
+            for name in SEALED_FILES:
+                (later / name).write_bytes(b"later " + name.encode())
+        return result
+
+    monkeypatch.setattr(backup_offsite, "upload_set", upload_then_back_up)
+    assert copy(offsite) == {"state": "uploaded", "sets": 2}
+    assert offsite.drive.sets() == [offsite.directory.name, later.name]
+    assert set(BackupUpload.objects.values_list("set_name", flat=True)) == {
+        offsite.directory.name,
+        later.name,
+    }

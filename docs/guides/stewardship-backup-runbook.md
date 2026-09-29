@@ -136,10 +136,16 @@ The host and Drive share one clock, so a clock that jumps would thin both
 at once. A run therefore prunes nothing when the newest set is more than
 two days after the one before it, or when a set is dated more than an hour
 after the current time. It logs a WARNING `task_failed` line whose
-`failure_kind` is `backup_retention_paused`; check the host clock (and
-whether backups stopped for days). The next run prunes normally once its
-set is close to the previous one, and the fourteen-set floor bounds what
-a clock that stays wrong can remove.
+`failure_kind` names the check that fired:
+`backup_retention_paused_gap` for the gap (the clock jumped forward, or
+backups stopped for days) and `backup_retention_paused_future_set` for a
+set dated after the clock. Check the host clock. After fixing a clock that
+ran ahead, move the future-dated sets (their names are later than the
+current UTC time) out of `backups/` on the host and out of the Drive
+folder, or delete them; until then every run pauses, since a set is still
+dated after the clock. Otherwise the next run prunes normally once its set
+is close to the previous one, and the fourteen-set floor bounds what a
+clock that stays wrong can remove.
 
 Get a copy of every set off the host, either with the application's
 [off-site copies to Google Drive](#off-site-copies-to-google-drive) or with
@@ -169,7 +175,10 @@ Drive keeps the day's newest verified copy, so each day in the window still
 has a set in each place. Only one run copies and prunes at a time: a run
 that finds another still copying (a lock file, `.offsite-copy.lock`, in
 `backups/`) leaves the copy to it, and its JSON line's `offsite` field says
-`busy`. Each subfolder is tagged
+`busy`; the run holding the lock looks for new sets once more after its
+uploads, so a set left to it this way is copied in the same run. The
+`smoke --target backup_drive --send` check takes the same lock and reports
+`busy` while a copy is running. Each subfolder is tagged
 with the deployment's identity, so two deployments pointed at the same folder
 (for example a validation server and production) each keep and prune only
 their own sets. Even so, give each deployment its own folder: a shared one

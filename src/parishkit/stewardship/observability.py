@@ -73,8 +73,11 @@ class FailureKind(StrEnum):
     BACKUP_OFFSITE = "backup_offsite_failed"
     # A backup sealed to a different public key than the previous run did.
     BACKUP_RECIPIENT_CHANGED = "backup_recipient_changed"
-    # Backup retention skipped a run because the clock looked wrong.
-    BACKUP_RETENTION_PAUSED = "backup_retention_paused"
+    # Backup retention skipped a run because the clock looked wrong: the
+    # newest set is days after the one before it, or a set is dated after
+    # the clock.
+    BACKUP_RETENTION_GAP = "backup_retention_paused_gap"
+    BACKUP_RETENTION_FUTURE = "backup_retention_paused_future_set"
 
 
 # The off-site copy's Drive failure categories, mirroring

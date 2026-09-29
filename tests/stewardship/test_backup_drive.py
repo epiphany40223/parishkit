@@ -298,7 +298,8 @@ def test_a_suspect_clock_pauses_drive_retention(caplog, no_floor):
     prune(drive, FOLDER, verified=verified(drive), now=NOW)
     assert drive.sets() == before
     assert any(
-        getattr(record, "extra", {}).get("failure_kind") == "backup_retention_paused"
+        getattr(record, "extra", {}).get("failure_kind")
+        == "backup_retention_paused_gap"
         for record in caplog.records
     )
 

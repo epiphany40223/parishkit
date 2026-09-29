@@ -182,7 +182,7 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         upload_set,
         workspace_session,
     )
-    from .backup_offsite import SEALED_FILES, _complete_sets
+    from .backup_offsite import SEALED_FILES, _complete_sets, _copy_lock
     from .runtime_paths import explicit_path, private_directory
 
     if configuration.service_role is not ServiceRole.BACKUP_WORKER:
@@ -196,12 +196,20 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         probe(client, folder)
         copied = None
         if send:
-            sets = _complete_sets(
-                private_directory(explicit_path(configuration.paths["backups"]))
-            )
+            backups = private_directory(explicit_path(configuration.paths["backups"]))
+            sets = _complete_sets(backups)
             if not sets:
                 raise ConfigError("There is no complete backup set to copy.")
-            upload_set(client, folder, sets[-1], SEALED_FILES)
+            # The backup's own copy may be writing this set's folder; never
+            # replace it mid-upload (upload_set trashes a mismatched folder).
+            with _copy_lock(backups) as held:
+                if not held:
+                    return {
+                        "accepted": False,
+                        "reason": "busy",
+                        "message": "A backup copy is running; try again later.",
+                    }
+                upload_set(client, folder, sets[-1], SEALED_FILES)
             copied = sets[-1].name
     except DriveFailure as failure:
         return {"accepted": False, "reason": failure.kind, "message": failure.message}

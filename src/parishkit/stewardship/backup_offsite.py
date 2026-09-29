@@ -201,8 +201,10 @@ def _copy_pending(configuration, folder_id, subject, **options):
     """Copy and prune under the host's copy lock.
 
     A run that finds the lock held leaves the copy to the run holding it and
-    reports ``busy``; any set it took is copied by that run's catch-up or the
-    next one.
+    reports ``busy``. The holder scans for new sets once more after its
+    uploads (``_copy_sets``), so a set whose own run reported ``busy`` while
+    the holder was uploading is copied then, within the holder's budget,
+    rather than twelve hours later by the next scheduled run.
     """
     backups = private_directory(explicit_path(configuration.paths["backups"]))
     with _copy_lock(backups) as held:
@@ -222,21 +224,32 @@ def _copy_sets(
     clock,
     deadline,
 ):
-    """Upload the newest sets not yet in this folder, oldest first, then prune."""
+    """Upload the newest sets not yet in this folder, oldest first, then prune.
+
+    After the first batch it scans once more and copies any set that became
+    pending meanwhile: a backup that finished while this run was uploading
+    found the copy lock held and left its set to this run. One re-scan is
+    enough, because a set completed after it takes the lock itself; the
+    re-scan's uploads share the same deadline.
+    """
     from .accounts.cryptography import CryptographicError
     from .accounts.key_files import read_private
     from .jobs.backup_models import BackupUpload
 
-    copied = set(
-        BackupUpload.objects.filter(state="uploaded", folder_id=folder_id).values_list(
-            "manifest_digest", flat=True
+    def pending_sets():
+        """The newest local sets with no recorded copy in this folder."""
+        copied = set(
+            BackupUpload.objects.filter(
+                state="uploaded", folder_id=folder_id
+            ).values_list("manifest_digest", flat=True)
         )
-    )
-    pending = [
-        directory
-        for directory in _complete_sets(backups)[-CATCH_UP_SETS:]
-        if _digest(directory) not in copied
-    ]
+        return [
+            directory
+            for directory in _complete_sets(backups)[-CATCH_UP_SETS:]
+            if _digest(directory) not in copied
+        ]
+
+    pending = pending_sets()
     if not pending:
         return {"state": "uploaded", "sets": 0}
     try:
@@ -249,42 +262,48 @@ def _copy_sets(
         del credential
     except (CryptographicError, ConfigError, OSError, DriveFailure):
         return _failed(folder_id, None, None, "credential")
-    for directory in pending:
-        # Each upload can take hours and the connection would sit idle
-        # meanwhile; closing it first frees the slot and lets each outcome
-        # insert reconnect cleanly instead of failing on a dropped connection
-        # and recording nothing.
-        if not connection.in_atomic_block:
-            connection.close()
-        digest = _digest(directory)
-        if (now := clock()) >= deadline:
-            # Out of time: the next run picks up the remaining sets. The row
-            # says "unavailable" (its categories are fixed by the schema), so
-            # the log line is what tells a stopped copy from a Drive outage.
-            log_timeout(
-                "drive_copy_budget",
-                limit_seconds=COPY_SECONDS,
-                elapsed_seconds=now - (deadline - COPY_SECONDS),
+    copied = 0
+    for batch in range(2):
+        if batch:
+            pending = pending_sets()
+        for directory in pending:
+            # Each upload can take hours and the connection would sit idle
+            # meanwhile; closing it first frees the slot and lets each
+            # outcome insert reconnect cleanly instead of failing on a
+            # dropped connection and recording nothing.
+            if not connection.in_atomic_block:
+                connection.close()
+            digest = _digest(directory)
+            if (now := clock()) >= deadline:
+                # Out of time: the next run picks up the remaining sets. The
+                # row says "unavailable" (its categories are fixed by the
+                # schema), so the log line is what tells a stopped copy from a
+                # Drive outage.
+                log_timeout(
+                    "drive_copy_budget",
+                    limit_seconds=COPY_SECONDS,
+                    elapsed_seconds=now - (deadline - COPY_SECONDS),
+                )
+                return _failed(folder_id, directory.name, digest, "unavailable")
+            try:
+                with_retries(
+                    lambda directory=directory: upload_set(
+                        client, folder_id, directory, SEALED_FILES
+                    ),
+                    sleep=sleep,
+                    deadline=deadline,
+                    clock=clock,
+                    budget_seconds=COPY_SECONDS,
+                )
+            except DriveFailure as failure:
+                return _failed(folder_id, directory.name, digest, failure.kind)
+            _record(
+                "uploaded",
+                set_name=directory.name,
+                manifest_digest=digest,
+                folder_id=folder_id,
             )
-            return _failed(folder_id, directory.name, digest, "unavailable")
-        try:
-            with_retries(
-                lambda directory=directory: upload_set(
-                    client, folder_id, directory, SEALED_FILES
-                ),
-                sleep=sleep,
-                deadline=deadline,
-                clock=clock,
-                budget_seconds=COPY_SECONDS,
-            )
-        except DriveFailure as failure:
-            return _failed(folder_id, directory.name, digest, failure.kind)
-        _record(
-            "uploaded",
-            set_name=directory.name,
-            manifest_digest=digest,
-            folder_id=folder_id,
-        )
+            copied += 1
     # Only sets with a recorded verified copy may be the ones Drive keeps.
     verified = set(
         BackupUpload.objects.filter(state="uploaded", folder_id=folder_id).values_list(
@@ -294,7 +313,7 @@ def _copy_sets(
     # Retention is best effort; the next successful run prunes again.
     with suppress(DriveFailure):
         prune(client, folder_id, verified=verified)
-    return {"state": "uploaded", "sets": len(pending)}
+    return {"state": "uploaded", "sets": copied}
 
 
 def _failed(folder_id, set_name, digest, kind):
