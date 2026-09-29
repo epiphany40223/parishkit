@@ -61,6 +61,7 @@ def _measure(operation, *, samples=20, query_limit=64):
 def test_reference_family_population_does_not_expand_interactive_queries(
     family_service,  # noqa: F811
     google,  # noqa: F811
+    monkeypatch,
 ):
     """Rehearsal admission stays bounded with 5,000 production identity overlays.
 
@@ -99,6 +100,17 @@ def test_reference_family_population_does_not_expand_interactive_queries(
     def admin_page():
         """Exercise the dashboard shell through current Google/policy session state."""
         assert admin.get("/admin/").status_code == 200
+
+    # Family and Admin pages read the Family maintenance switch, which caches
+    # its state for a few seconds of wall-clock time, so a slower run whose
+    # samples straddled that expiry counted one extra query in one sample
+    # (49 > 48 on CI). Hold the cache for the measurement and fill it first,
+    # so every sample counts the same.
+    from parishkit.stewardship.accounts import family_maintenance
+
+    monkeypatch.setattr(family_maintenance, "CACHE_SECONDS", 3600)
+    family_page()
+    admin_page()
 
     # The dashboard's security event panel is one fixed query on top of the
     # identity shell, present for every Administrator; the shell itself gives
