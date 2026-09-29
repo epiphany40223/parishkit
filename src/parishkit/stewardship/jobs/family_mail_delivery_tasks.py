@@ -1,6 +1,9 @@
 """Maintained MAIL-only Family consumer; no network work inside a transaction."""
 
+import itertools
 import logging
+import time
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from random import randint
@@ -8,7 +11,8 @@ from threading import Event, Lock
 from time import monotonic
 from uuid import uuid4
 
-from django.db import connection, connections
+from django.db import connection, connections, transaction
+from django.utils import timezone
 
 from parishkit.config import ConfigError
 from parishkit.logging import log_extra
@@ -20,6 +24,7 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
     ProviderHealth,
+    elapsed_ms,
 )
 from parishkit.stewardship.family_delivery_process import (
     FamilyMailSession,
@@ -55,7 +60,7 @@ from .family_mail_dispatch_recovery import (
     definitely_unsent,
     record_abandoned_submission,
 )
-from .models import TaskRunEvent
+from .models import TaskRun, TaskRunEvent
 from .ownership import database_now, lock_task_claim
 from .phases import TaskPhase
 from .queues import WorkQueue
@@ -392,6 +397,45 @@ def log_family_mail_transport(transport):
         LOG.info("Family mail uses one batched helper per mail worker.")
 
 
+# Numbers the one-message helpers this worker process starts, so their
+# statistics (#284) compare with a batched helper's helper_seq.
+_ONE_SHOT = itertools.count(1)
+
+
+def _waited(execution):
+    """``wait_ms``: how long the Task ran after it was due; {} if unknown.
+
+    Statistics never change behavior: this reads in its own savepoint, uses
+    no clock the outcome depends on, and gives up silently on any error.
+    """
+    try:
+        with transaction.atomic():
+            due = (
+                TaskRun.objects.only("not_before")
+                .get(pk=execution.claim.run_id)
+                .not_before
+            )
+        return {"wait_ms": max(0, round((timezone.now() - due).total_seconds() * 1000))}
+    except Exception:
+        return {}
+
+
+def _with_stats(result, stats):
+    """Attach worker-side send statistics; never let them affect the outcome.
+
+    ``stats`` joins the helper's own (phase times, connection use) with the
+    worker's: transport, helper numbering, ``wait_ms`` (the Task's due time
+    to execution), ``request_ms`` (execution to the helper request, which
+    includes preparation and the committed "submitting" state),
+    ``submit_ms`` (the whole helper call) and ``total_ms`` (execution to
+    outcome). Anything invalid is dropped, and the outcome settles as is.
+    """
+    try:
+        return replace(result, stats={**(result.stats or {}), **stats})
+    except Exception:
+        return result
+
+
 def _unavailable(execution):
     """A scheduler registration never grants private key or provider access."""
     raise PermissionError("Schedulers cannot submit Family mail.")
@@ -417,10 +461,12 @@ def _execute(
     """
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
+    started = time.monotonic()
     execution.progress(0, 0, phase=TaskPhase.PREPARING)
     submitted = False
     launched = False
     message = None
+    stats = {}
     try:
         with execution.effect():
             message = bound_dispatch(_status(lock_task_claim(execution.claim)))
@@ -448,6 +494,7 @@ def _execute(
                 # Display only: the From name is not part of any admission check.
                 sender_name = configured_sender_name(configuration_id)
                 recipients = len(message.render.routed_recipients)
+                stats.update(_waited(execution))
                 sent = circuit.daily_sends()
                 capped = over_daily_limit(message.purpose, sent, recipients)
                 bulk_capped = over_daily_limit("initial", sent)
@@ -521,20 +568,40 @@ def _execute(
             len(mail.recipients),
             health=ProviderHealth.UNOBSERVED,
         )
+        batched = session is not None and message.purpose not in {
+            "daily_digest",
+            "weekly_digest",
+        }
+        stats.update(
+            {"transport": "batched"}
+            if batched
+            else {
+                "transport": "per_message",
+                "helper_seq": next(_ONE_SHOT),
+                "helper_index": 1,
+            }
+        )
+        stats["request_ms"] = elapsed_ms(started)
         if remaining > 0:
             launched = True
             options = {
                 "seconds": min(30, remaining),
                 "check": lambda: _check(execution),
             }
-            if message.purpose == "weekly_digest":
-                result = submit_weekly(candidate, settings, mail, **options)
-            elif message.purpose == "daily_digest":
-                result = submit_digest(candidate, settings, mail, **options)
-            else:
-                result = submit_family(
-                    candidate, settings, mail, session=session, **options
-                )
+            calling = time.monotonic()
+            try:
+                if message.purpose == "weekly_digest":
+                    result = submit_weekly(candidate, settings, mail, **options)
+                elif message.purpose == "daily_digest":
+                    result = submit_digest(candidate, settings, mail, **options)
+                else:
+                    result = submit_family(
+                        candidate, settings, mail, session=session, **options
+                    )
+            finally:
+                stats["submit_ms"] = elapsed_ms(calling)
+                if batched:
+                    stats.update(session.take_stats())
     except ProviderCheckDrainFailure:
         raise
     except FamilyDeliveryHeld:
@@ -573,6 +640,8 @@ def _execute(
             len(mail.recipients),
             health=ProviderHealth.UNAVAILABLE,
         )
+    stats["total_ms"] = elapsed_ms(started)
+    result = _with_stats(result, stats)
     status = finish_submission(message.pk, execution.claim, result)
     if circuit.observe(result.health):
         if circuit.stopped:

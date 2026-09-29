@@ -7,6 +7,7 @@ import math
 import subprocess
 import sys
 import time
+import uuid
 from contextlib import suppress
 from threading import Event, Lock, Thread
 
@@ -18,8 +19,13 @@ from .family_delivery import (
     FamilyDeliveryStatus,
     ProviderHealth,
     delivery_settings,
+    elapsed_ms,
 )
-from .family_delivery_worker import SESSION_MESSAGES, SESSION_SECONDS
+from .family_delivery_worker import (
+    HELPER_IDLE_SECONDS,
+    SESSION_MESSAGES,
+    SESSION_SECONDS,
+)
 from .provider_checks import (
     ProviderCheckDrainFailure,
     ProviderCheckOwnershipLost,
@@ -248,6 +254,28 @@ class FamilyMailSession:
         # Retired helpers not yet reaped: (process, retired at, timeout hook).
         self.retiring = []
         self.reaper = None
+        # Send statistics (#284): helpers started so far (numbering them), the
+        # current helper's random id, the reason the last helper ended that no
+        # message has reported yet, and the last message's statistics.
+        self.helpers = 0
+        self.helper_id = ""
+        self.ended = None
+        self.last = {}
+
+    def take_stats(self):
+        """Return and forget the statistics of the last ``submit``.
+
+        Parent-side statistics: ``transport``, the helper's id, number and
+        this message's index in it, ``spawn_ms`` and ``helper_ms`` (request
+        to result), ``helper_end`` (why this message's outcome ended its
+        helper: limit, outage, systemic, unknown, kill), ``prev_helper_end``
+        (why the previous helper ended before this message: cap_messages,
+        cap_age, idle, key_change, exited, close, or an earlier message's
+        reason), ``helper_restart`` and the helper caps in effect.
+        """
+        with self.lock:
+            stats, self.last = self.last, {}
+        return stats
 
     def submit(self, value, settings, mail, *, count, seconds, check):
         """Submit one admitted mail payload; return a result or DeliveryOutcome.
@@ -259,44 +287,84 @@ class FamilyMailSession:
         """
         deadline = time.monotonic() + seconds
         with self.lock:
-            _check_owner(check)
-            candidate = base64.b64encode(value).decode("ascii")
-            key = hashlib.sha256(
-                json.dumps([candidate, settings], sort_keys=True).encode("utf-8")
-            ).digest()
-            self._rotate(key)
-            on_timeout = helper_timeout_recorder(
-                "family_delivery_worker", what="mail_helper", seconds=seconds
-            )
-            for _ in range(2):
-                # After a restart the dead helper was retired: spawn anew.
-                header = None
-                if self.process is None:
-                    try:
-                        self.process = self.spawn()
-                    except OSError:
-                        return DeliveryOutcome.NOT_SENT
-                    self.key, self.count = key, 0
-                    self.opened = self.used = self.clock()
-                    header = _line({"candidate": candidate, "settings": settings})
-                    self._start_reaper()
-                self.seq += 1
-                self.count += 1
-                request = _line({"seq": self.seq, "mail": mail})
-                outcome = self._exchange(
-                    header, request, count, deadline, check, on_timeout
+            stats = self.last = {
+                "transport": "batched",
+                "cap_helper_msgs": SESSION_MESSAGES,
+                "cap_helper_s": SESSION_SECONDS,
+                "cap_idle_s": PARENT_IDLE_SECONDS,
+                "cap_helper_idle_s": HELPER_IDLE_SECONDS,
+            }
+            try:
+                return self._submit(
+                    value, settings, mail, count, deadline, seconds, check, stats
                 )
-                if outcome is not _RESTART:
-                    self.used = self.clock()
-                    if not isinstance(outcome, FamilyDeliveryResult) or (
-                        outcome.limit is not None
-                        or outcome.health
-                        in (ProviderHealth.UNAVAILABLE, ProviderHealth.SYSTEMIC)
-                    ):
-                        self._retire()
-                    return outcome
-                self._retire()
-            return DeliveryOutcome.NOT_SENT
+            finally:
+                # A retirement caused by this message's own outcome is its
+                # helper_end, not the next message's prev_helper_end.
+                if self.ended is not None:
+                    stats["helper_end"], self.ended = self.ended, None
+
+    def _submit(self, value, settings, mail, count, deadline, seconds, check, stats):
+        """The body of ``submit``, under the session lock."""
+        _check_owner(check)
+        candidate = base64.b64encode(value).decode("ascii")
+        key = hashlib.sha256(
+            json.dumps([candidate, settings], sort_keys=True).encode("utf-8")
+        ).digest()
+        self._rotate(key)
+        if self.ended is not None:
+            stats["prev_helper_end"], self.ended = self.ended, None
+        on_timeout = helper_timeout_recorder(
+            "family_delivery_worker", what="mail_helper", seconds=seconds
+        )
+        for _ in range(2):
+            # After a restart the dead helper was retired: spawn anew.
+            header = None
+            if self.process is None:
+                started = time.monotonic()
+                try:
+                    self.process = self.spawn()
+                except OSError:
+                    return DeliveryOutcome.NOT_SENT
+                finally:
+                    # Present only when this message started a helper.
+                    stats["spawn_ms"] = stats.get("spawn_ms", 0) + elapsed_ms(started)
+                self.key, self.count = key, 0
+                self.opened = self.used = self.clock()
+                self.helpers += 1
+                self.helper_id = "h" + uuid.uuid4().hex[:12]
+                header = _line({"candidate": candidate, "settings": settings})
+                self._start_reaper()
+            self.seq += 1
+            self.count += 1
+            stats.update(
+                helper_id=self.helper_id,
+                helper_seq=self.helpers,
+                helper_index=self.count,
+            )
+            request = _line({"seq": self.seq, "mail": mail})
+            started = time.monotonic()
+            outcome = self._exchange(
+                header, request, count, deadline, check, on_timeout
+            )
+            stats["helper_ms"] = elapsed_ms(started)
+            if outcome is not _RESTART:
+                self.used = self.clock()
+                if not isinstance(outcome, FamilyDeliveryResult):
+                    self._retire("unknown")
+                elif outcome.limit is not None:
+                    self._retire("limit")
+                elif outcome.health is ProviderHealth.UNAVAILABLE:
+                    self._retire("outage")
+                elif outcome.health is ProviderHealth.SYSTEMIC:
+                    self._retire("systemic")
+                return outcome
+            # The helper ended before starting this message; a fresh one
+            # takes it. The restart is this message's, not a helper_end.
+            self._retire("restart")
+            self.ended = None
+            stats["helper_restart"] = True
+        return DeliveryOutcome.NOT_SENT
 
     def reap(self):
         """Reap retired helpers now, killing (and logging) any past their grace.
@@ -312,18 +380,24 @@ class FamilyMailSession:
     def _rotate(self, key):
         """Retire a helper that has ended, aged out, idled or has other context."""
         self._retire_stale()
-        if self.process is not None and (
-            key != self.key
-            or self.count >= SESSION_MESSAGES
-            or self.clock() - self.opened >= SESSION_SECONDS
-        ):
-            self._retire()
+        if self.process is None:
+            return
+        if key != self.key:
+            self._retire("key_change")
+        elif self.count >= SESSION_MESSAGES:
+            self._retire("cap_messages")
+        elif self.clock() - self.opened >= SESSION_SECONDS:
+            self._retire("cap_age")
 
-    def _retire(self):
-        """Send the current helper EOF (it QUITs and exits); reap it later."""
+    def _retire(self, reason):
+        """Send the current helper EOF (it QUITs and exits); reap it later.
+
+        ``reason`` is kept for the statistics of the message that reports it.
+        """
         process, self.process = self.process, None
         if process is None:
             return
+        self.ended = reason
         with suppress(Exception):
             process.stdin.close()
         self.retiring.append(
@@ -340,11 +414,12 @@ class FamilyMailSession:
 
     def _retire_stale(self):
         """Retire the current helper if it has exited or sat idle too long."""
-        if self.process is not None and (
-            self.process.poll() is not None
-            or self.clock() - self.used >= PARENT_IDLE_SECONDS
-        ):
-            self._retire()
+        if self.process is None:
+            return
+        if self.process.poll() is not None:
+            self._retire("exited")
+        elif self.clock() - self.used >= PARENT_IDLE_SECONDS:
+            self._retire("idle")
 
     def _reap(self, *, wait=False):
         """Retire a stale helper; reap, or kill and log, retired ones.
@@ -494,6 +569,7 @@ class FamilyMailSession:
         process, self.process = self.process, None
         if process is None:
             return
+        self.ended = "kill"
         _stop(process)
         thread.join(timeout=5)
         if thread.is_alive():
@@ -504,7 +580,7 @@ class FamilyMailSession:
     def close(self):
         """End every helper: EOF lets each QUIT; a laggard is killed and logged."""
         with self.lock:
-            self._retire()
+            self._retire("close")
             self._reap(wait=True)
 
 

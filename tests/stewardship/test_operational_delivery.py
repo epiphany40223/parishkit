@@ -310,7 +310,10 @@ def test_real_operational_helpers_reject_invalid_credentials_without_network(pur
     if purpose == "mail":
         assert (
             FamilyDeliveryResult.from_payload(
-                json.loads(result.stdout), recipient_count=1
+                # The helper's line is a wire result, with its send statistics.
+                json.loads(result.stdout),
+                recipient_count=1,
+                wire=True,
             ).status
             is FamilyDeliveryStatus.SYSTEMIC
         )

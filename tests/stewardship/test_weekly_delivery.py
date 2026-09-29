@@ -13,6 +13,7 @@ from parishkit.stewardship.digest_delivery import DigestDeliveryMail, deliver_di
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
+    send_stats,
 )
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.family_delivery_process import (
@@ -286,9 +287,12 @@ def test_real_helper_rejects_synthetic_credentials_without_network():
         timeout=10,
     )
     assert result.returncode == 0 and result.stderr == b""
-    assert (
-        json.loads(result.stdout) == FamilyDeliveryResult(Status.SYSTEMIC, 1).payload()
-    )
+    output = json.loads(result.stdout)
+    # The helper also reports its send statistics (#284): closed values only.
+    stats = send_stats(output.pop("stats"))
+    # The synthetic key fails to parse: no connection is ever attempted.
+    assert stats["token_refreshed"] is True and stats["conn_end"] == "token_failed"
+    assert output == FamilyDeliveryResult(Status.SYSTEMIC, 1).payload()
 
 
 def test_weekly_private_helper_has_no_orm_or_report_compiler_imports():

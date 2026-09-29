@@ -18,6 +18,7 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
     deliver_family,
+    send_stats,
 )
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus as Status,
@@ -332,9 +333,12 @@ def test_real_digest_helper_rejects_synthetic_credentials_without_network():
         timeout=10,
     )
     assert result.returncode == 0 and result.stderr == b""
-    assert (
-        json.loads(result.stdout) == FamilyDeliveryResult(Status.SYSTEMIC, 1).payload()
-    )
+    output = json.loads(result.stdout)
+    # The helper also reports its send statistics (#284): closed values only.
+    stats = send_stats(output.pop("stats"))
+    # The synthetic key fails to parse: no connection is ever attempted.
+    assert stats["token_refreshed"] is True and stats["conn_end"] == "token_failed"
+    assert output == FamilyDeliveryResult(Status.SYSTEMIC, 1).payload()
 
 
 def test_actual_shared_pipe_launch_has_fixed_digest_entrypoint(monkeypatch):

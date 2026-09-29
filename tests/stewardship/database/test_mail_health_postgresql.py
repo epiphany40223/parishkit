@@ -354,13 +354,14 @@ def test_mail_role_cannot_forge_or_read_operational_logs(mail_run):
 
 def test_invalid_result_cannot_enter_health_history(mail_run, monkeypatch):
     """Existing SQL guards prevent malformed evidence becoming historical poison."""
-    from parishkit.stewardship.jobs import family_mail_dispatch
+    from parishkit.stewardship.jobs import family_mail_results
 
     _, message, send = mail_run
-    original = family_mail_dispatch.result_evidence
+    # Settlement builds its evidence here (see settle_with_stats).
+    original = family_mail_results.result_evidence
     with monkeypatch.context() as patch:
         patch.setattr(
-            family_mail_dispatch,
+            family_mail_results,
             "result_evidence",
             lambda *args, **kwargs: replace(
                 original(*args, **kwargs), evidence_digest="a" * 64

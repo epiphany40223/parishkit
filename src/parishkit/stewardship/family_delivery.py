@@ -5,12 +5,13 @@ before invocation and enforce a finite process deadline. In particular, SMTP's
 Message-ID is correlation, not a contractual idempotent-send facility.
 """
 
+import logging
 import re
 import smtplib
 import ssl
 import time
 from contextlib import ExitStack, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from email import policy
 from enum import StrEnum
@@ -30,6 +31,8 @@ from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
 from .sender_name import apply_sender_name, clean_sender_name
 from .web.content import prepare_content, without_email_banner
+
+LOG = logging.getLogger(__name__)
 
 
 class FamilyDeliveryStatus(StrEnum):
@@ -80,6 +83,67 @@ SENDING_LIMITS = frozenset({"daily", "rate", "message"})
 CONNECTION_SECONDS = 300
 CONNECTION_MESSAGES = 50
 TOKEN_MARGIN = timedelta(minutes=5)
+
+# Send statistics (#284) follow exactly the rule that
+# stewardship_family_smtp_result_v1 enforces (schema/delivery.sql), so no
+# address, host name or provider prose can be kept: at most MAX_STATS keys,
+# each a lowercase identifier; values are booleans, non-negative integers of
+# at most 12 digits, a helper id, or one of the few closed words below for
+# its key. Numeric keys stay open so a new timing needs no schema change;
+# every word-valued key is closed.
+_STAT_KEY = re.compile(r"[a-z][a-z0-9_]{0,39}")
+_HELPER_ID = re.compile(r"h[0-9a-f]{12}")
+MAX_STATS = 48
+MAX_STAT_NUMBER = 999_999_999_999
+STAT_WORDS = {
+    "transport": frozenset({"batched", "per_message"}),
+    "limit": frozenset({"daily", "rate", "message"}),
+    "conn_replaced": frozenset({"cap_messages", "cap_age", "stale"}),
+    "conn_end": frozenset({"non_accepted", "connect_failed", "token_failed"}),
+    "helper_end": frozenset({"limit", "outage", "systemic", "unknown", "kill"}),
+    "prev_helper_end": frozenset(
+        {"cap_messages", "cap_age", "idle", "key_change", "exited", "close"}
+    ),
+}
+
+
+def send_stats(value):
+    """Validate one send-statistics mapping; raise ValueError otherwise."""
+    if type(value) is not dict or len(value) > MAX_STATS:
+        raise ValueError("Invalid send statistics.")
+    for key, item in value.items():
+        if type(key) is not str or not _STAT_KEY.fullmatch(key):
+            raise ValueError("Invalid send statistics key.")
+        if type(item) is bool or (type(item) is int and 0 <= item <= MAX_STAT_NUMBER):
+            continue
+        if type(item) is str and (
+            item in STAT_WORDS.get(key, ())
+            or (key == "helper_id" and _HELPER_ID.fullmatch(item))
+        ):
+            continue
+        raise ValueError("Invalid send statistics value.")
+    return dict(value)
+
+
+def usable_stats(value):
+    """``value`` validated, or None (with a warning) when it is not.
+
+    Statistics are observations, never evidence: an invalid one must never
+    turn an outcome, above all an accepted one, into a rejected result.
+    """
+    if value is None:
+        return None
+    try:
+        return send_stats(value)
+    except (ValueError, TypeError):
+        LOG.warning("Invalid mail send statistics were dropped.")
+        return None
+
+
+def elapsed_ms(started, ended=None):
+    """Whole milliseconds between two time.monotonic() readings."""
+    ended = time.monotonic() if ended is None else ended
+    return max(0, round((ended - started) * 1000))
 
 
 def sending_limit(reply, *, stage=""):
@@ -147,12 +211,20 @@ class FamilyDeliveryResult:
     transient: tuple[int, ...] = ()
     health: ProviderHealth | None = None
     # A Gmail sending limit ("daily" or "rate") that refused this attempt. It
-    # crosses the helper's output pipe but is never stored: durably the attempt
-    # is an ordinary definitive non-acceptance by a healthy provider.
+    # crosses the helper's output pipe but is never stored as evidence:
+    # durably the attempt is an ordinary definitive non-acceptance by a
+    # healthy provider. (The optional send statistics may name it for the
+    # send report; nothing that decides a retry or give-up reads them.)
     limit: str | None = None
+    # Send statistics (#284; see send_stats). They cross the pipe and are
+    # stored beside the evidence, but they are observations about timing,
+    # never part of the outcome: equal outcomes compare equal without them,
+    # and invalid ones are dropped rather than rejecting the result.
+    stats: dict | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self):
         """Reject malformed or contradictory outcomes at the process boundary."""
+        object.__setattr__(self, "stats", usable_stats(self.stats))
         if self.limit is not None and (
             self.limit not in SENDING_LIMITS
             or self.status is not FamilyDeliveryStatus.TRANSIENT
@@ -203,22 +275,28 @@ class FamilyDeliveryResult:
         }
 
     def wire_payload(self):
-        """The helper's output line: the stored result plus any sending limit."""
-        return self.payload() | ({"limit": self.limit} if self.limit else {})
+        """The helper's output line: the result plus any sending limit and stats."""
+        return (
+            self.payload()
+            | ({"limit": self.limit} if self.limit else {})
+            | ({"stats": self.stats} if self.stats is not None else {})
+        )
 
     @classmethod
     def from_payload(cls, value, *, recipient_count, wire=False):
         """Bind a closed helper result to the parent's exact envelope size.
 
-        ``wire`` admits the optional helper-only ``limit`` key; stored
-        evidence never carries it.
+        ``wire`` admits the optional helper-only ``limit`` and ``stats`` keys;
+        stored core evidence never carries them. Invalid statistics are
+        dropped (see usable_stats), never a reason to reject the result.
         """
         keys = {"status", "recipient_count", "permanent", "transient", "health"}
-        limit = None
-        if wire and type(value) is dict and "limit" in value:
+        limit = stats = None
+        if wire and type(value) is dict and {"limit", "stats"} & set(value):
             value = dict(value)
-            limit = value.pop("limit")
-            if type(limit) is not str:
+            limit = value.pop("limit", None)
+            stats = value.pop("stats", None)
+            if limit is not None and type(limit) is not str:
                 raise ValueError("Invalid Family delivery result payload.")
         if (
             type(value) is not dict
@@ -237,6 +315,7 @@ class FamilyDeliveryResult:
             tuple(value["transient"]),
             ProviderHealth(value["health"]),
             limit,
+            stats,
         )
 
 
@@ -361,7 +440,7 @@ def _reply(value):
     return value[0]
 
 
-def _submit(smtp, mail, sender_name=""):
+def _submit(smtp, mail, sender_name="", marks=None):
     """Preserve per-address refusals across DATA failure without resending a Family.
 
     Explicit MAIL/RCPT staging distinguishes pre-DATA connection loss (definitely
@@ -401,6 +480,8 @@ def _submit(smtp, mail, sender_name=""):
         )
         options = ["SMTPUTF8", "BODY=8BITMIME"] if international else []
         stage = "mail"
+        if marks is not None:
+            marks["mail"] = time.monotonic()
         reply = smtp.mail(mail.sender, options=options)
         if kind := sending_limit(reply, stage="mail"):
             return limited(kind)
@@ -428,6 +509,8 @@ def _submit(smtp, mail, sender_name=""):
                 else FamilyDeliveryStatus.PERMANENT
             )
         uncertain = True
+        if marks is not None:
+            marks["data"] = time.monotonic()
         try:
             reply = smtp.data(message)
             if kind := sending_limit(reply, stage="data"):
@@ -521,6 +604,9 @@ class SmtpSession:
     - Any result other than acceptance drops the connection, so the next
       message starts on a clean connection and SMTP transaction (a refused
       RCPT, a 421 or a broken DATA leave the old one in an unknown state).
+
+    Every result carries send statistics (see ``deliver``): how long each
+    phase took and how this message used the connection, never an address.
     """
 
     def __init__(
@@ -543,25 +629,80 @@ class SmtpSession:
         self.smtp = None
         self.opened = 0.0
         self.sent = 0
+        # Statistics: connections attempted so far (numbering them), messages
+        # on the current connection, when it opened, and this message's stats.
+        self.connections = 0
+        self.used = 0
+        self.opened_at = 0.0
+        self.stats = {}
 
     def deliver(self, mail):
-        """Submit one validated mail, reusing the open connection when it is fresh."""
+        """Submit one validated mail, reusing the open connection when it is fresh.
+
+        The result carries statistics. Phase times, in milliseconds, appear
+        only when the phase happened for this message: ``token_ms``,
+        ``connect_ms`` (TCP, TLS and EHLO), ``auth_ms``, ``envelope_ms``
+        (MAIL/RCPT) and ``data_ms``, then ``smtp_ms`` for all of it. So a
+        reused connection records no setup time, and percentiles describe
+        real work. ``conn_seq`` and ``conn_index`` name the connection this
+        message used (or tried to open) and its place on it; ``conn_age_ms``
+        is the age of a kept connection it reused. ``conn_replaced`` says
+        why a connection was replaced before this message (cap_messages,
+        cap_age, stale) and ``conn_end`` why it ended after it
+        (non_accepted, connect_failed, token_failed). The caps in effect
+        are recorded too.
+        """
+        started = time.monotonic()
+        stats = self.stats = {
+            "token_refreshed": False,
+            "cap_conn_msgs": CONNECTION_MESSAGES,
+            "cap_conn_s": CONNECTION_SECONDS,
+        }
         if self.smtp is not None and (
             self.sent >= CONNECTION_MESSAGES
             or self.clock() - self.opened >= CONNECTION_SECONDS
         ):
+            stats["conn_replaced"] = (
+                "cap_messages" if self.sent >= CONNECTION_MESSAGES else "cap_age"
+            )
             self.drop()
         reused = self.smtp is not None
+        if reused:
+            stats["conn_age_ms"] = elapsed_ms(self.opened_at, started)
         result = self._attempt(mail)
         if reused and result.status is FamilyDeliveryStatus.UNAVAILABLE:
             # Nothing was sent on the stale connection; try a fresh one once.
+            # The retry's connection is new: forget the old one's age, number
+            # and index, so they cannot describe the retry.
+            stats["conn_replaced"] = "stale"
+            reused = False
+            for key in ("conn_age_ms", "conn_seq", "conn_index"):
+                stats.pop(key, None)
             self.drop()
             result = self._attempt(mail)
+        stats["conn_reused"] = reused
         if result.status is FamilyDeliveryStatus.ACCEPTED:
             self.sent += 1
         else:
+            if self.smtp is not None:
+                stats["conn_end"] = "non_accepted"
+            elif "conn_seq" not in stats:
+                stats["conn_end"] = "token_failed"
+            elif "conn_index" not in stats:
+                stats["conn_end"] = "connect_failed"
             self.drop()
-        return result
+        if result.limit is not None:
+            stats["limit"] = result.limit
+        stats["smtp_ms"] = elapsed_ms(started)
+        try:
+            return replace(result, stats=stats)
+        except Exception:
+            # Statistics never change or reject an outcome.
+            return result
+
+    def _add(self, key, milliseconds):
+        """Add ``milliseconds`` to this message's ``key`` phase time."""
+        self.stats[key] = self.stats.get(key, 0) + milliseconds
 
     def _attempt(self, mail):
         """Open a connection when none is kept, then run one SMTP transaction."""
@@ -569,7 +710,21 @@ class SmtpSession:
             failure = self._connect(len(mail.recipients))
             if failure is not None:
                 return failure
-        return _submit(self.smtp, mail, self.settings.get("sender_name", ""))
+        self.used += 1
+        self.stats["conn_seq"] = self.connections
+        self.stats["conn_index"] = self.used
+        marks = {}
+        try:
+            return _submit(self.smtp, mail, self.settings.get("sender_name", ""), marks)
+        finally:
+            # MAIL/RCPT run until DATA starts (or the transaction ends).
+            ended = time.monotonic()
+            if "mail" in marks:
+                self._add(
+                    "envelope_ms", elapsed_ms(marks["mail"], marks.get("data", ended))
+                )
+            if "data" in marks:
+                self._add("data_ms", elapsed_ms(marks["data"], ended))
 
     def _token(self, count):
         """Keep a live token, or return the definitely-unsent result of failing.
@@ -581,6 +736,15 @@ class SmtpSession:
         if self.credentials is not None and not _expiring(self.credentials):
             return None
         self.credentials = None
+        self.stats["token_refreshed"] = True
+        started = time.monotonic()
+        try:
+            return self._exchange_token(count)
+        finally:
+            self._add("token_ms", elapsed_ms(started))
+
+    def _exchange_token(self, count):
+        """Fetch a new token; map a failure as ``_token`` describes."""
         try:
             with self.session_factory() as session:
                 self.credentials = _credentials(self.value, self.settings, session)
@@ -614,7 +778,12 @@ class SmtpSession:
         failure = self._token(count)
         if failure is not None:
             return failure
+        self.connections += 1
+        self.used = 0
+        self.stats["conn_seq"] = self.connections
         stack = ExitStack()
+        # The phase under way, so a failure is charged to the right one.
+        phase, started = "connect_ms", time.monotonic()
         try:
             smtp = stack.enter_context(
                 self.smtp_factory(
@@ -625,7 +794,10 @@ class SmtpSession:
                 )
             )
             failure = _handshake("ehlo", smtp.ehlo(), 250, count)
+            self._add(phase, elapsed_ms(started))
+            phase = None
             if failure is None:
+                phase, started = "auth_ms", time.monotonic()
                 reply = smtp.docmd(
                     "AUTH",
                     "XOAUTH2 "
@@ -634,11 +806,16 @@ class SmtpSession:
                     ),
                 )
                 failure = _handshake("auth", reply, 235, count)
+                self._add(phase, elapsed_ms(started))
+                phase = None
             if failure is None:
                 self.connection, self.smtp = stack, smtp
                 self.opened, self.sent = self.clock(), 0
+                self.opened_at = time.monotonic()
                 return None
         except Exception as error:
+            if phase is not None:
+                self._add(phase, elapsed_ms(started))
             kind = _limit_error(error)
             failure = (
                 _limited_result(kind, count)

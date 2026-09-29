@@ -28,7 +28,7 @@ from .family_mail_dispatch import (
     budget_spent,
     result_retry_seconds,
 )
-from .family_mail_results import result_evidence
+from .family_mail_results import settle_with_stats
 from .models import TaskRun
 from .operational_owner import OPERATIONAL
 from .outbox_models import OutboxMessage
@@ -239,20 +239,25 @@ def finish_submission(identifier, claim, result, owner=OPERATIONAL):
             current = bound_operational(_status(lock_task_claim(claim)), owner)
             return candidate is action and status.message_id == current.pk == message.pk
 
-        return change_message(
-            message_id=message.pk,
-            action=action,
-            command_id=uuid4(),
-            expected_version=message.version,
-            actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
-            admit=admit,
-            evidence=result_evidence(result, semantic_key=message.semantic_key),
-            **(
-                {"retry_seconds": result_retry_seconds(result, message.attempt)}
-                if action is DeliveryAction.RETRY_UNACCEPTED
-                else {}
+        # Statistics a database refuses are dropped, never the outcome.
+        return settle_with_stats(
+            lambda evidence: change_message(
+                message_id=message.pk,
+                action=action,
+                command_id=uuid4(),
+                expected_version=message.version,
+                actor_id=claim.worker_id,
+                correlation_id=claim.run_id,
+                admit=admit,
+                evidence=evidence,
+                **(
+                    {"retry_seconds": result_retry_seconds(result, message.attempt)}
+                    if action is DeliveryAction.RETRY_UNACCEPTED
+                    else {}
+                ),
             ),
+            result,
+            semantic_key=message.semantic_key,
         )
 
 
