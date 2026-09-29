@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from django.db import connection
+from django.db import connection, transaction
 
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 
@@ -169,7 +169,12 @@ def capture_statistics(campaign_id):
     """
     if not isinstance(campaign_id, UUID):
         raise ValueError("Statistics require a canonical campaign identity.")
-    with connection.cursor() as cursor:
+    # JIT compilation costs seconds at parish size and saves nothing, as in the
+    # report functions. SET LOCAL needs a transaction: savepoint=False joins the
+    # caller's guarded transaction unchanged, or opens one in autocommit, so
+    # the setting never outlives the caller's transaction.
+    with transaction.atomic(savepoint=False), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL jit = off")
         cursor.execute(CAPTURE, (campaign_id,))
         row = cursor.fetchone()
     if row is None:

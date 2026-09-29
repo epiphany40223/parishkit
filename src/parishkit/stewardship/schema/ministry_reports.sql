@@ -7,7 +7,12 @@ CREATE FUNCTION stewardship_ministry_report_v1(
     campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
     ministry_id integer DEFAULT NULL, request_action text DEFAULT 'join',
     page_limit integer DEFAULT NULL, page_offset integer DEFAULT 0
-) RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+) RETURNS jsonb LANGUAGE sql STABLE
+-- JIT compilation costs seconds per call at parish size and saves nothing
+-- here, as in the directory report. search_path stays first so the proconfig
+-- order matches an ALTER FUNCTION ... SET jit TO off on an installed database.
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
 WITH selected AS MATERIALIZED (
     SELECT c.id,cc.name,cc.timezone,cc.values,
         CASE WHEN c.state='archived' THEN cc.configuration_id

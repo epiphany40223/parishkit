@@ -3,7 +3,11 @@ CREATE FUNCTION stewardship_information_report_v1(
     campaign uuid, parameters jsonb, page_number integer DEFAULT NULL,
     item_uuid uuid DEFAULT NULL, page_size integer DEFAULT 50
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
-SET search_path TO pg_catalog,public,pg_temp AS $$
+-- JIT compilation costs seconds per call at parish size and saves nothing
+-- here, as in the directory report. search_path stays first so the proconfig
+-- order matches an ALTER FUNCTION ... SET jit TO off on an installed database.
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
 DECLARE f jsonb:=parameters->'filters'; answer jsonb;
 BEGIN
     IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
@@ -182,7 +186,9 @@ CREATE INDEX export_information_snapshot ON stewardship_export_request(informati
 -- by the application from the campaign configuration.
 CREATE FUNCTION stewardship_talent_report_v1(campaign_uuid uuid, parameters jsonb)
 RETURNS jsonb LANGUAGE plpgsql STABLE
-SET search_path TO pg_catalog,public,pg_temp AS $$
+-- JIT off, as in the information report above.
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
 DECLARE answer jsonb; bad boolean;
     uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 BEGIN

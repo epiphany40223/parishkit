@@ -23,6 +23,8 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.exports import csv_cell
 
+from .information_rendering import xlsx_cell
+
 OPTION = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 UNAVAILABLE = "Unavailable talent"
 MEMBER_HEADINGS = (
@@ -172,8 +174,10 @@ def talents_xlsx(result, zone):
         sheet.title = title
         for row_number, values in enumerate((headings, *rows), start=1):
             for column, value in enumerate(values, start=1):
-                # Literal text, so a parish-typed "=..." is never a formula.
-                sheet.cell(row_number, column, value).data_type = "s"
+                # The shared writer keeps text literal, so a parish-typed "=..."
+                # is never a formula, and escapes characters XLSX cannot hold,
+                # such as a vertical tab pasted into a ParishSoft name.
+                xlsx_cell(sheet, row_number, column, value)
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()

@@ -299,6 +299,9 @@ trigger (Constraints, Functions and Triggers digests).
 Review fixes (#270) then made the directory report function build names and
 email counts in set-based passes, trim names like the Python display, and
 run without JIT (one function body; Functions digest only).
+Report fixes (#322) then ran the financial, information, talent and
+ministry report functions without JIT too (four function settings;
+Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -307,7 +310,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `79351bb3` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 602 | `fa9e127d` |
+| Functions | 602 | `d1e0a64f` |
 | Triggers | 554 | `64154a74` |
 | Policies | 28 | `1c9c3b2d` |
 

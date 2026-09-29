@@ -20,7 +20,11 @@ CREATE FUNCTION stewardship_financial_report_v1(
     -- from the rows returned here; it is ignored for a complete result.
     campaign_uuid uuid, parameters jsonb, page_number integer, page_size integer
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
-SET search_path TO pg_catalog,public,pg_temp AS $$
+-- JIT compilation costs seconds per call at parish size and saves nothing
+-- here, as in the directory report. search_path stays first so the proconfig
+-- order matches an ALTER FUNCTION ... SET jit TO off on an installed database.
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
 DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
     answer jsonb; bad boolean;
     money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
