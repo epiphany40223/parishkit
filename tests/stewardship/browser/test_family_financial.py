@@ -17,7 +17,7 @@ from parishkit.stewardship.responses.financial_presentation import (
 from ..financial_factory import CAMPAIGN, configuration, cursor, record
 from ..test_financial_answers import CHECK, OTHER
 from .test_family_ministry import begin, ministry_form
-from .test_family_response import expect, review, show
+from .test_family_response import expect, review, show, unseen
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -221,7 +221,9 @@ def test_financial_modules_mobile_final_only_and_accessible(
     # One sentence of giving history, in whole dollars (#256); the prior
     # pledge and the refresh time are not repeated (#267).
     history = page.get_by_text("you have contributed", exact=False)
-    expect(history).to_contain_text("you have contributed $500 towards your")
+    expect(history).to_contain_text(
+        re.compile(r"you have contributed \$500 towards your \d{4} pledge of \$1,200\.")
+    )
     assert "Parish records for" not in page.locator("main").inner_text()
     assert "Giving records last refreshed" not in page.locator("main").inner_text()
     show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
@@ -390,6 +392,11 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
     if changed == "pledge":
+        # An unresolved conflict has no error line of its own, so the note
+        # beside the buttons still explains the block (#295).
+        expect(page.locator("[data-nav-error]")).to_have_text(
+            "Please choose a value for each changed record."
+        )
         show(
             page,
             page.get_by_role(
@@ -408,8 +415,9 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         # A positive pledge still needs a share method once the old one is gone.
         show(page, page.locator(f"#financial-option-{CHECK}")).check()
     else:
+        # Its own error line explains the block; no second visible note.
         expect(page.locator(f"#financial-discard-{OTHER}-error")).to_be_visible()
-        expect(page.locator("[data-nav-error]")).to_contain_text("Discard this note")
+        assert unseen(page.locator("[data-nav-error]"))
         show(
             page, page.get_by_label("Discard this note and keep the selected method")
         ).click()
@@ -561,7 +569,9 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
     pledge.fill("")
     review(page)
     expect(error).to_have_text("Enter an annual pledge.")
-    expect(page.locator("[data-nav-error]")).to_contain_text("“Annual pledge”")
+    # One notice: the inline line, not also a visible note by the buttons.
+    assert unseen(page.locator("[data-nav-error]"))
+    expect(pledge).to_be_focused()
     for value in ("abc", "1.001", "-5"):
         pledge.fill(value)
         pledge.blur()
@@ -571,3 +581,27 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
         pledge.blur()
         expect(error).to_have_text("Enter an annual pledge under $1,000,000,000.")
     assert "$0.00" not in page.locator("main").inner_text()
+
+
+def test_financial_page_reads_history_checkbox_period_then_pledge(
+    page, component_origin
+):
+    """#295: history, the checkbox, one period sentence, then the pledge field."""
+    begin(page, component_origin, financial_form(), None)
+    section = show(page, page.locator("#financial-section"))
+    text = section.inner_text()
+    order = [
+        "As of ",
+        "Because of financial limitations",
+        "This pledge is for the stewardship period of January 1, 2027 – "
+        "December 31, 2027. This form records your intention only. It does not "
+        "take a payment or request bank or card credentials.",
+        "Annual pledge (USD)",
+    ]
+    positions = [text.index(part) for part in order]
+    assert positions == sorted(positions), text
+    for gone in ("Upcoming stewardship period", "does not take effect", "began on"):
+        assert gone not in text
+    # The period sentence belongs to the pledge, so it hides with it.
+    page.get_by_label("Because of financial limitations", exact=False).check()
+    expect(page.get_by_text("This pledge is for the stewardship period")).to_be_hidden()

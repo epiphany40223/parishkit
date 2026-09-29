@@ -97,20 +97,28 @@ top-most bar, above the page title.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors, focus on the first
-unanswered question, and a note beside the navigation buttons naming it
-("Please check “How would you like to share?”."), which also describes the
-focused field for assistive technology. Only a choice group (share methods) is
-outlined in red, never a whole section. A "Step N of M"
-line names the current step, and a segmented step bar like the setup wizard's
-has one button per step: each is named by its step, shows a "Step N of M"
-tooltip on hover or keyboard focus, and jumps to that page on click or tap.
-Review (the last segment, or Review response on the last page) first requires a
-Family that has not submitted before to have viewed every page: otherwise it
-opens the first page not yet viewed and says so. It then checks every page and,
-if an answer is missing, opens that page with the same note naming the
-question, so the response cannot be completed until all steps are done. A
-returning Family, who has submitted before, may go straight to Review. Browser Back/Forward move between pages. Every page shows the
+current page and keeps the Family there with inline errors and focus on the
+first unanswered question, scrolled into view above the sticky navigation. Each
+problem is reported once: a question with its own visible error line (the red
+outline and message under it) gets no second notice. Only a problem with no
+error line of its own, such as an unresolved changed-record choice, gets a note
+beside the navigation buttons ("Please choose a value for each changed
+record."), which also describes the focused control for assistive technology.
+Only a choice group (share methods) is outlined in red, never a whole section.
+A "Step N of M" line names the current step, and a segmented step bar like the
+setup wizard's has one button per step: each is named by its step, shows a
+"Step N of M" tooltip on hover or keyboard focus, and jumps to that page on
+click or tap. Review (the last segment, or Review response on the last page)
+first requires a Family that has not submitted before to have viewed every
+page: otherwise it opens the first page not yet viewed and says so. It then
+checks every page and, if an answer is missing, opens that page and focuses
+the question, so the response cannot be completed until all steps are done.
+Because Review may change pages, its note always names the question and its
+page ("Please check “First name” on the “Alex Sample” page.") and describes the
+focused control; under the one-notice rule it is visible only when the question
+has no error line of its own, and otherwise is for screen readers only. A
+returning Family, who has submitted before, may go straight to Review. Browser
+Back/Forward move between pages. Every page shows the
 Family's name (for example "The Squyres Family") so the Family can confirm the
 right household is open; ParishSoft's mailing name and the session deadline are
 not shown. Browser history cannot resubmit or expose a completed form.
@@ -318,12 +326,22 @@ with the response and are never written to ParishSoft.
 
 ## Financial stewardship
 
-When enabled, the page shows one read-only sentence of giving history from the
-latest promoted snapshot and configured funds: "As of *date*, you have
-contributed *amount* towards your *comparison year* pledge", or "… *amount* in
-*comparison year*" when there was no prior pledge. The prior pledge
-amount and the records' refresh time are not repeated. Money on Family pages
-omits zero cents ("$1,200").
+When enabled, the page reads, below the Admin's Financial text:
+
+1. one read-only sentence of giving history from the latest promoted snapshot
+   and configured funds: "As of *date*, you have contributed *amount* towards
+   your *comparison year* pledge of *prior pledge*.", or "… *amount* in
+   *comparison year*." when there was no prior pledge. The records' refresh
+   time is not repeated;
+2. the "cannot contribute" checkbox (below);
+3. "This pledge is for the stewardship period of *start date* – *end date*.
+   This form records your intention only. It does not take a payment or
+   request bank or card credentials.", shown with the pledge fields and hidden
+   with them; and
+4. the Annual pledge (USD) field and the rest of the pledge.
+
+Dates use the parish date format. Money on Family pages omits zero cents
+("$1,200").
 
 Unavailable or incomplete upstream data says so instead, never `$0.00`.
 Individual contribution transactions are not shown.
@@ -344,10 +362,10 @@ the period has started) with the date in bold. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 
-The configured upcoming start date is prominent, with text that the pledge does
-not take effect before it. If campaign and period overlap, the Admin-confirmed
-configuration is displayed accurately rather than asserting the start is
-future.
+On the Financial page the configured upcoming period appears only in the "This
+pledge is for the stewardship period of …" sentence, which states its dates
+without claiming the start is in the future, so a campaign that overlaps its
+period is still displayed accurately.
 
 Share methods are a multi-select of campaign-versioned options. Default content
 is based on:
@@ -366,7 +384,18 @@ more. Proposed Members count, while terminal Members do not. The financial step
 remains available with the same validation when no Members remain; marking all
 Members terminal does not discard or clear the Family's pledge/share answers.
 With a zero (or not yet entered) pledge, the frequency and share-method fields
-are hidden, cleared and not required, and the form submits neither.
+are hidden, cleared and not required, and the form submits neither. Only an
+amount that is exactly zero clears them: while the amount is not yet a number
+(a half-typed "1," on the way to "1,200", or a cleared field being retyped)
+the fields and the Family’s answers stay as they are, and the amount is
+validated as usual.
+
+Typing the pledge and ticking share methods change the page in place: no
+control is rebuilt, the window does not scroll, and focus and the caret stay
+where the Family left them. A free-text method's details box appears under it
+without taking focus (which would raise a phone keyboard and scroll). Leaving
+the pledge field reveals only the pledge's own error, so an error line never
+appears above the share methods as the Family taps one.
 
 The Family may instead check "Because of financial limitations, I/we cannot
 contribute financially at this time." While checked, the pledge, frequency and

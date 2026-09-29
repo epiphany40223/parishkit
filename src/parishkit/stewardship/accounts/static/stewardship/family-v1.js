@@ -1141,27 +1141,30 @@
     });
   }
   function financialSource(parent) {
+    // The Family's giving history: one sentence, then any notice that the
+    // records are incomplete or changed while the Family was editing.
     const value = form.financial;
-    node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
-    // Calendar dates and instants use the parish date format (date-format-v1.js).
+    // Calendar dates use the parish date format (date-format-v1.js).
     const dates = window.ParishDates;
-    const start = dates ? dates.date(value.upcoming.start) : value.upcoming.start;
-    node("p", value.upcoming.start > form.today ?
-      "This pledge does not take effect before " + start + "." :
-      "This stewardship period began on " + start + ".", parent);
-    // One sentence of giving history; the prior pledge amount and the
-    // records' refresh time repeated it, so they are not shown.
     if (value.contributions.available && value.through_date) {
-      // "towards your <year> pledge" only when there was one to give towards.
+      // "towards your <year> pledge of $y" only when there was one to give
+      // towards; otherwise "in <year>".
       const pledged = value.pledge.available && Number(value.pledge.amount) > 0;
       node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
         ", you have contributed " + value.contributions.display + (pledged ?
-          " towards your " + periodYears(value.comparison) + " pledge." :
+          " towards your " + periodYears(value.comparison) + " pledge of " + value.pledge.display + "." :
           " in " + periodYears(value.comparison) + "."), parent);
     }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
     if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});
+  }
+  function pledgePeriod(parent) {
+    // Which period the pledge covers, merged with the "intention only" note.
+    const {start, end} = form.financial.upcoming, dates = window.ParishDates;
+    const day = (value) => dates ? dates.date(value) : value;
+    node("p", "This pledge is for the stewardship period of " + day(start) + " – " + day(end) +
+      ". This form records your intention only. It does not take a payment or request bank or card credentials.", parent);
   }
   function financialEditor(parent, validators, deferValidation = () => false) {
     const removed = conflicts.get("financial.removed");
@@ -1177,7 +1180,6 @@
     node("legend", "Financial stewardship", group, {class: "visually-hidden"});
     block("financial", group);
     financialSource(group);
-    node("p", "This form records your intention only. It does not take a payment or request bank or card credentials.", group);
     const unable = node("label", null, group, {for: "financial-cannot-give", class: "limitation"});
     const unableBox = node("input", null, unable, {type: "checkbox", id: "financial-cannot-give"});
     unableBox.checked = answers.financial.cannot_give;
@@ -1202,6 +1204,8 @@
     const pledge = node("fieldset", null, group, {class: "financial-pledge"});
     node("legend", "Your pledge", pledge, {class: "visually-hidden"});
     pledge.hidden = pledge.disabled = answers.financial.cannot_give;
+    // Inside the pledge fieldset, so it hides with the pledge it describes.
+    pledgePeriod(pledge);
     node("label", "Annual pledge (USD)", pledge, {for: "financial-annual_pledge"});
     const annual = node("input", null, pledge, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
@@ -1211,28 +1215,44 @@
     // frequency and share fields can never block a zero pledge.
     const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": ""});
     node("legend", "Pledge details", conditional, {class: "visually-hidden"});
-    let shown = pledgePositive();
+    // One function per share method that redraws its checkbox (and details
+    // box) from the answers, so they can change without a rebuild.
+    const shareSyncs = [];
+    // An amount that doesn't parse yet ("1," on the way to "1,200", or a
+    // cleared field being retyped) changes nothing: only a positive pledge
+    // shows the details and only an exact zero hides and clears them, so a
+    // Family's methods and notes survive typing a comma. A fresh form with
+    // no amount starts hidden unless it already carries details.
+    const pledged = () => moneyCents(annual.value);
+    let shown = pledgePositive() || (pledged() === null &&
+      Boolean(answers.financial.frequency || Object.keys(answers.financial.shares).length));
     const setConditional = () => {
-      const show = pledgePositive();
-      if (show !== shown) {
-        shown = show;
-        if (!show) {
-          // Clear hidden answers so a zero pledge never carries a stale
-          // frequency or share method into review or submission.
-          answers.financial.frequency = "";
-          answers.financial.shares = {};
-          ["financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
-            .forEach((path) => conflicts.delete(path));
+      // Show frequency and share methods only for a positive pledge. This
+      // runs on every keystroke, so it changes what it must in place: a
+      // rebuild (edit()) replaces the field being typed in, scrolls to the
+      // top and refocuses it, which flickered and jumped on iOS Safari (#295).
+      const cents = pledged(), show = cents === null ? shown : cents > 0;
+      if (shown && !show) {
+        // Clear hidden answers so a zero pledge never carries a stale
+        // frequency or share method into review or submission.
+        answers.financial.frequency = "";
+        answers.financial.shares = {};
+        const cleared = ["financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
+          .map((path) => conflicts.delete(path)).includes(true);
+        if (cleared || shares.querySelector('[id^="financial-discard-"], [id^="financial-removed-"]')) {
+          // Rare: a changed-record choice or an old note must leave the page
+          // too, so rebuild, keeping the caret where the Family is typing.
+          shown = show;
+          const caret = annual.selectionStart;
+          edit("financial-annual_pledge");
+          document.getElementById("financial-annual_pledge")?.setSelectionRange(caret, caret);
+          return;
         }
-        // Rebuild so the controls match the answers, keeping the caret in the
-        // pledge field the Family is typing in.
-        const caret = annual.selectionStart;
-        edit("financial-annual_pledge");
-        document.getElementById("financial-annual_pledge")?.setSelectionRange(caret, caret);
-        return;
+        frequency.value = "";
+        shareSyncs.forEach((sync) => sync());
       }
-      conditional.hidden = !show;
-      conditional.disabled = !show;
+      shown = show;
+      conditional.hidden = conditional.disabled = !show;
     };
     node("label", "Pledge frequency (required)", conditional, {for: "financial-frequency"});
     const frequency = node("select", null, conditional, {id: "financial-frequency", "aria-describedby": "financial-frequency-hint"});
@@ -1243,9 +1263,14 @@
     frequency.value = answers.financial.frequency;
     const frequencyError = node("p", null, conditional, {id: "financial-frequency-hint", class: "error"});
     const approximation = node("p", null, conditional, {"aria-live": "polite", id: "financial-installment"});
-    let showErrors = false;
-    const validate = (show = true) => {
-      showErrors ||= show;
+    // The controls whose errors are revealed. Leaving the pledge reveals only
+    // its own: flagging the untouched frequency then would insert an error
+    // line above the share methods just as the Family taps one, moving it
+    // from under their finger (#295). Next, Review and a frequency change
+    // reveal both.
+    const revealed = new Set();
+    const validate = (...reveal) => {
+      reveal.forEach((input) => revealed.add(input));
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
       // A blank pledge is asked for plainly, a well-formed amount that is too
       // large gets the limit, and anything else (text, three decimals, a
@@ -1257,9 +1282,9 @@
       frequency.required = cents !== null && cents > 0;
       frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
-        error.textContent = showErrors ? input.validationMessage : "";
+        error.textContent = revealed.has(input) ? input.validationMessage : "";
         error.hidden = !error.textContent;
-        input.setAttribute("aria-invalid", String(showErrors && !input.checkValidity()));
+        input.setAttribute("aria-invalid", String(revealed.has(input) && !input.checkValidity()));
       }
       const each = installment(cents, frequency.value);
       approximation.textContent = !each ?
@@ -1269,18 +1294,18 @@
         moneyDisplay(cents) + "; the final payment may differ slightly.";
     };
     annual.addEventListener("input", () => {
-      answers.financial.annual_pledge = annual.value; setConditional(); validate(false);
+      answers.financial.annual_pledge = annual.value; setConditional(); validate();
     });
-    frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(false); });
+    frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(); });
     annual.addEventListener("blur", (event) => {
       // As for Member fields: Next and Review validate after their click.
-      if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate();
+      if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate(annual);
     });
-    frequency.addEventListener("change", () => validate());
-    validators.push(() => validate());
+    frequency.addEventListener("change", () => validate(annual, frequency));
+    validators.push(() => validate(annual, frequency));
     conflictChoice("financial.annual_pledge", annual, pledge);
     conflictChoice("financial.frequency", frequency, conditional);
-    validate(false);
+    validate();
     const shares = node("fieldset", null, conditional, {class: "choice-group"});
     node("legend", "How would you like to share? (choose at least one)", shares);
     const sharesError = node("p", null, shares, {id: "financial-shares-error", class: "error", hidden: ""});
@@ -1303,7 +1328,8 @@
       checkbox.checked = option.id in answers.financial.shares;
       checkbox.disabled = Boolean(conflict && conflict.choice === undefined);
       wrapper.append(document.createTextNode(" " + financialLabel(option)));
-      if (!option.free_text && checkbox.checked && answers.financial.shares[option.id]) {
+      const stale = !option.free_text && checkbox.checked && Boolean(answers.financial.shares[option.id]);
+      if (stale) {
         // A draft configuration can change an option's text requirement.
         // Never erase a previously entered note without an explicit choice.
         node("p", "This method no longer accepts details. Your note: " + answers.financial.shares[option.id], shares);
@@ -1317,28 +1343,45 @@
           if (discard.checked) { answers.financial.shares[option.id] = ""; edit(); }
         });
       }
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) answers.financial.shares[option.id] = "";
-        else delete answers.financial.shares[option.id];
-        edit(); document.getElementById("financial-shares-" + option.id)?.focus();
-        if (!option.free_text || !checkbox.checked) document.getElementById("financial-option-" + option.id)?.focus();
-      });
-      if (option.free_text && checkbox.checked) {
+      // A free-text method's details box is always built and shown only
+      // while the method is ticked; disabled, it is never validated.
+      let sync = () => { checkbox.checked = option.id in answers.financial.shares; };
+      if (option.free_text) {
         const id = "financial-shares-" + option.id;
-        node("label", "Details for " + financialLabel(option), shares, {for: id});
-        const extra = node("textarea", null, shares, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
-        extra.value = answers.financial.shares[option.id];
-        extra.disabled = checkbox.disabled;
-        const error = node("p", null, shares, {id: id + "-hint"});
+        const details = node("div", null, shares);
+        node("label", "Details for " + financialLabel(option), details, {for: id});
+        const extra = node("textarea", null, details, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
+        const error = node("p", null, details, {id: id + "-hint", class: "error"});
         const validateText = () => {
           extra.setCustomValidity(extra.value.trim() ? "" : "Provide details for this share method.");
           error.textContent = extra.validationMessage; error.hidden = !error.textContent;
           extra.setAttribute("aria-invalid", String(!extra.checkValidity()));
         };
+        sync = () => {
+          checkbox.checked = option.id in answers.financial.shares;
+          details.hidden = !checkbox.checked;
+          extra.disabled = checkbox.disabled || !checkbox.checked;
+          extra.value = answers.financial.shares[option.id] ?? "";
+          // A newly ticked (or hidden) box starts without an error.
+          error.textContent = ""; error.hidden = true; extra.setAttribute("aria-invalid", "false");
+        };
         extra.addEventListener("input", () => { answers.financial.shares[option.id] = extra.value; validateText(); });
         extra.addEventListener("blur", validateText);
         validators.push(validateText);
       }
+      sync();
+      shareSyncs.push(sync);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) answers.financial.shares[option.id] = "";
+        else delete answers.financial.shares[option.id];
+        // An old note awaiting "Discard" goes with a rebuild; otherwise
+        // change in place, leaving focus and scroll alone (#295). Focus
+        // stays on the checkbox: moving it into the new details box would
+        // raise a phone's keyboard and scroll the page.
+        if (stale) { edit("financial-option-" + option.id); return; }
+        sync();
+        if (!sharesError.hidden) validateShares();
+      });
     });
     const offered = new Set(form.financial.options.map((option) => option.id));
     Object.keys(answers.financial.shares).filter((id) => !offered.has(id)).forEach((id) => {
@@ -1696,15 +1739,18 @@
       return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
     });
   }
-  function navNote(text, target = null) {
+  function navNote(text, target = null, quiet = false) {
     // Why Next or Review did not advance, shown right beside those buttons
     // (the sticky bar on phones). A live alert is often dropped while focus
     // moves, so the note also describes the element receiving focus; an
-    // empty text hides it and removes that description.
+    // empty text hides it and removes that description. A quiet note is for
+    // assistive technology only: sighted Families already see the field's
+    // own error line.
     const note = root.querySelector("[data-nav-error]");
     if (!note) return;
     note.textContent = text;
     note.hidden = !text;
+    note.classList.toggle("visually-hidden", Boolean(text && quiet));
     root.querySelectorAll('[aria-describedby~="' + note.id + '"]').forEach((element) => {
       const rest = element.getAttribute("aria-describedby").split(" ").filter((id) => id !== note.id);
       if (rest.length) element.setAttribute("aria-describedby", rest.join(" "));
@@ -1714,6 +1760,18 @@
       const ids = (target.getAttribute("aria-describedby") || "").split(" ").filter(Boolean);
       target.setAttribute("aria-describedby", [...ids, note.id].join(" "));
     }
+  }
+  function inlineError(control) {
+    // Whether the control already shows its own visible error line: an
+    // error line it names in aria-describedby, or its "-inline-error" line.
+    // Such a control needs no second note beside the navigation buttons;
+    // the red outline, that line and focus say enough (#295).
+    const ids = (control.getAttribute("aria-describedby") || "").split(" ").concat(control.id + "-inline-error");
+    return ids.some((id) => {
+      const line = id && id !== "family-nav-error" ? document.getElementById(id) : null;
+      return Boolean(line && (line.classList.contains("error") || id.endsWith("-error")) &&
+        line.textContent.trim() && line.getClientRects().length);
+    });
   }
   function questionName(input) {
     // The question as the Family sees it: a share group's legend for its
@@ -1737,7 +1795,7 @@
     const invalid = [...page.element.querySelectorAll("input, select, textarea")].find(
       (input) => !input.disabled && !input.checkValidity());
     if (invalid) {
-      navNote("Please check " + questionName(invalid) + ".", invalid);
+      navNote(inlineError(invalid) ? "" : "Please check " + questionName(invalid) + ".", invalid);
       invalid.focus();
       return false;
     }
@@ -1896,10 +1954,14 @@
       } else {
         const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
         showPage(pageOf(invalid), {focus: false});
+        // Review may have moved to another page, so the note always names
+        // the question and its page. Checked after showPage, so the invalid
+        // control's own error line is on screen: then the note is quiet (for
+        // screen readers only), so sighted Families see one notice.
         if (invalid) {
           const title = pages.find((page) => page.key === currentPage)?.title;
           navNote("Please check " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") + ".",
-            invalid);
+            invalid, inlineError(invalid));
         }
         invalid?.focus();
       }
