@@ -11,7 +11,7 @@ from PIL import Image
 from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
 from .test_family_ministry import begin, ministry_form
-from .test_family_response import expect, review, show
+from .test_family_response import expect, review, show, unseen
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -337,13 +337,16 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
         links.nth(index).click()
     # With every page seen, a missing required answer (the annual pledge)
     # takes the Family to it; its own error line explains it, so the note
-    # beside the buttons is not shown as well (#295).
+    # naming the question and page is for screen readers only (#295).
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
     error = page.locator("#financial-annual-hint")
     expect(error).to_have_text("Enter an annual pledge.")
-    expect(note).to_be_hidden()
+    assert unseen(note)
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_accessible_description(
+        re.compile("“Annual pledge” on the “Financial stewardship” page")
+    )
     expect(review_segment).not_to_have_attribute("aria-current", "step")
 
 
@@ -632,11 +635,16 @@ def test_blocked_review_opens_a_question_on_another_page(page, component_origin)
     page.locator('[data-step-link="intro"]').click()
     page.locator("[data-step-review]").click()
     expect(page.locator(f'[data-page="{key}"]')).to_be_visible()
-    # The focused name shows its own error line, so there is no second note.
+    # The focused name shows its own error line, so sighted Families see no
+    # second note; a screen reader still hears which page Review opened.
     focused = page.locator(":focus")
     expect(focused).to_have_id(re.compile(r"-first_name$"))
     expect(page.locator(f"#{focused.get_attribute('id')}-inline-error")).to_be_visible()
-    expect(page.locator("[data-nav-error]")).to_be_hidden()
+    assert unseen(page.locator("[data-nav-error]"))
+    title = page.locator(f'[data-page="{key}"] h3').inner_text()
+    expect(focused).to_have_accessible_description(
+        re.compile(f"“First name” on the “{re.escape(title)}” page")
+    )
 
 
 FIRST_CONTROL = """page => {

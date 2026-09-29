@@ -17,7 +17,7 @@ from parishkit.stewardship.responses.financial_presentation import (
 from ..financial_factory import CAMPAIGN, configuration, cursor, record
 from ..test_financial_answers import CHECK, OTHER
 from .test_family_ministry import begin, ministry_form
-from .test_family_response import expect, review, show
+from .test_family_response import expect, review, show, unseen
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -415,9 +415,9 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         # A positive pledge still needs a share method once the old one is gone.
         show(page, page.locator(f"#financial-option-{CHECK}")).check()
     else:
-        # Its own error line explains the block; no second note (#295).
+        # Its own error line explains the block; no second visible note.
         expect(page.locator(f"#financial-discard-{OTHER}-error")).to_be_visible()
-        expect(page.locator("[data-nav-error]")).to_be_hidden()
+        assert unseen(page.locator("[data-nav-error]"))
         show(
             page, page.get_by_label("Discard this note and keep the selected method")
         ).click()
@@ -569,8 +569,8 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
     pledge.fill("")
     review(page)
     expect(error).to_have_text("Enter an annual pledge.")
-    # One notice: the inline line, not also a note by the buttons (#295).
-    expect(page.locator("[data-nav-error]")).to_be_hidden()
+    # One notice: the inline line, not also a visible note by the buttons.
+    assert unseen(page.locator("[data-nav-error]"))
     expect(pledge).to_be_focused()
     for value in ("abc", "1.001", "-5"):
         pledge.fill(value)

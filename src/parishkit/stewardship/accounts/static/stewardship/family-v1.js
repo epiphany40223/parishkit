@@ -1735,15 +1735,18 @@
       return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
     });
   }
-  function navNote(text, target = null) {
+  function navNote(text, target = null, quiet = false) {
     // Why Next or Review did not advance, shown right beside those buttons
     // (the sticky bar on phones). A live alert is often dropped while focus
     // moves, so the note also describes the element receiving focus; an
-    // empty text hides it and removes that description.
+    // empty text hides it and removes that description. A quiet note is for
+    // assistive technology only: sighted Families already see the field's
+    // own error line.
     const note = root.querySelector("[data-nav-error]");
     if (!note) return;
     note.textContent = text;
     note.hidden = !text;
+    note.classList.toggle("visually-hidden", Boolean(text && quiet));
     root.querySelectorAll('[aria-describedby~="' + note.id + '"]').forEach((element) => {
       const rest = element.getAttribute("aria-describedby").split(" ").filter((id) => id !== note.id);
       if (rest.length) element.setAttribute("aria-describedby", rest.join(" "));
@@ -1947,12 +1950,14 @@
       } else {
         const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
         showPage(pageOf(invalid), {focus: false});
-        // Checked after showPage, so the invalid control's own error line is
-        // on screen; only a control without one gets the note.
-        if (invalid && !inlineError(invalid)) {
+        // Review may have moved to another page, so the note always names
+        // the question and its page. Checked after showPage, so the invalid
+        // control's own error line is on screen: then the note is quiet (for
+        // screen readers only), so sighted Families see one notice.
+        if (invalid) {
           const title = pages.find((page) => page.key === currentPage)?.title;
           navNote("Please check " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") + ".",
-            invalid);
+            invalid, inlineError(invalid));
         }
         invalid?.focus();
       }

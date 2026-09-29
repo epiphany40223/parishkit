@@ -393,6 +393,9 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 .family-nav-error { flex: 1 1 100%; margin: 0; }
 /* On a phone the note must not crowd out the form under the sticky bar. */
 @media (max-width: 40rem) { .family-nav-error { padding: .5rem .75rem; font-size: .9rem; } }
+/* A note for screen readers only (the field shows its own error line): the
+   note's flex, padding and border would otherwise undo .visually-hidden. */
+.family-nav-error.visually-hidden { flex: none; padding: 0; border: 0; }
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }

@@ -59,6 +59,12 @@ def review(page):
     page.get_by_role("button", name="Review response").click()
 
 
+def unseen(locator):
+    """True when sighted users cannot see ``locator``: hidden, or 1px and
+    clipped for screen readers only (#295)."""
+    return locator.evaluate("e => e.hidden || e.getBoundingClientRect().width <= 1")
+
+
 def member_field(form, name):
     """Select by stable field name, independent of presentation ordering."""
     return next(
