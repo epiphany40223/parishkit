@@ -104,6 +104,10 @@ def _maintenance_block():
 """
 
 
+# The one route that admits a request body larger than 6 MB (#346).
+HOSTED_FILE_UPLOAD = "/admin/files/upload"
+
+
 def render_caddy(configuration):
     """Keep private data out of access and error logs, including upstream failures.
 
@@ -116,6 +120,9 @@ def render_caddy(configuration):
     Static files keep fixed names (``ui-v1.js``), so they are sent with
     ``Cache-Control: no-cache``: browsers revalidate each use against the
     file server's ETag, and a mid-campaign fix reaches returning Families.
+    Hosted files (#346): only their upload route admits an 11 MB body (a
+    10 MB file plus form overhead), and Caddy buffers each served file so a
+    slow phone download never holds a web thread.
     """
     hostname = production_hostname(configuration)
     budget = configuration.runtime_budget
@@ -123,6 +130,14 @@ def render_caddy(configuration):
         configuration.runtime_network.web(index) + ":8000"
         for index in range(budget.replicas)
     )
+    transport = f"""            header_up -Forwarded
+            header_up -X-Real-IP
+            transport http {{
+                dial_timeout 5s
+                response_header_timeout {budget.proxy_timeout_seconds}s
+                read_timeout {budget.proxy_timeout_seconds}s
+                write_timeout {budget.proxy_timeout_seconds}s
+            }}"""
     return f"""{{
     admin off
     http_port 8080
@@ -170,7 +185,12 @@ def render_caddy(configuration):
     route {{
         @internal path /health/* /metrics /metrics/*
         respond @internal 404
-        request_body {{
+        @hosted_file_upload path {HOSTED_FILE_UPLOAD}
+        request_body @hosted_file_upload {{
+            max_size 11MB
+        }}
+        @ordinary_body not path {HOSTED_FILE_UPLOAD}
+        request_body @ordinary_body {{
             max_size 6MB
         }}
         handle_path /static/* {{
@@ -178,15 +198,13 @@ def render_caddy(configuration):
             root * /srv/static
             file_server
         }}
+        @hosted_file path /files/*
+        reverse_proxy @hosted_file {upstreams} {{
+            response_buffers 11MB
+{transport}
+        }}
         reverse_proxy {upstreams} {{
-            header_up -Forwarded
-            header_up -X-Real-IP
-            transport http {{
-                dial_timeout 5s
-                response_header_timeout {budget.proxy_timeout_seconds}s
-                read_timeout {budget.proxy_timeout_seconds}s
-                write_timeout {budget.proxy_timeout_seconds}s
-            }}
+{transport}
         }}
     }}
 {_maintenance_block()}}}
