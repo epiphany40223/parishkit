@@ -3,12 +3,14 @@
 import copy
 import logging
 import os
+import re
 import sys
 import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from enum import StrEnum
+from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
 from parishkit.logging import JsonLogFormatter, log_extra, setup_logging
@@ -227,6 +229,72 @@ def _debug_details(record: logging.LogRecord) -> dict:
     return details
 
 
+# Secret-bearing URL parts (#311). A Family personal link carries a working
+# sign-in token in its path ("/access/<token>"), and the Admin OAuth callback
+# carries its one-time "code" and "state" in the query string. Debug logging
+# keeps free text (Django's "Service Unavailable: /access/<token>" record, the
+# runserver request line, exception messages), so every formatted line is
+# scrubbed here rather than trusting each log call to remember.
+REDACTED = "[redacted]"
+# Query parameters whose values are credentials, scrubbed wherever they appear.
+SECRET_QUERY_NAMES = ("code", "state", "token")
+# Literal scrubbing accepts only credential-shaped values: at least eight
+# URL-safe characters. Shorter values are not credentials, and a value holding
+# quotes or other punctuation could otherwise match (and break) the JSON line.
+_SECRET_SHAPE = re.compile(r"[\w\-.~%+/=]{8,}", re.ASCII)
+# Values stop at quotes and backslashes so a match never spans a JSON escape,
+# which keeps the redacted JSONL line valid.
+_ACCESS_TOKEN = re.compile(r"(/access/)[^/?#&\s\"'\\]+")
+_QUERY_VALUE = re.compile(r"([?&][^=?&#\s\"'\\]+=)[^&#\s\"'\\]+")
+_REQUEST_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
+    "stewardship_request_secrets", default=()
+)
+
+
+def request_secrets(request) -> tuple[str, ...]:
+    """The literal secret values one request carries, longest first.
+
+    These are the personal-link token from an ``/access/`` path and the values
+    of ``SECRET_QUERY_NAMES``. Scrubbing them literally also catches a token
+    that reaches a log outside URL form, such as inside an exception message.
+    Anything that is not a Django request yields nothing.
+    """
+    path = getattr(request, "path_info", None)
+    values = []
+    if isinstance(path, str) and path.startswith("/access/"):
+        values.append(path.removeprefix("/access/").split("/")[0])
+    # Parse the raw query string rather than touching request.GET, whose
+    # field-count limit could raise here, ahead of the view's own handling.
+    meta = getattr(request, "META", None)
+    query = meta.get("QUERY_STRING", "") if isinstance(meta, dict) else ""
+    values.extend(
+        value for name, value in parse_qsl(query) if name in SECRET_QUERY_NAMES
+    )
+    return tuple(
+        sorted(
+            {value for value in values if _SECRET_SHAPE.fullmatch(value)},
+            key=len,
+            reverse=True,
+        )
+    )
+
+
+def redact_secrets(text: str, secrets: tuple[str, ...] = ()) -> str:
+    """Remove secret path segments and query values from any log text.
+
+    Replaces each literal ``secrets`` value, the segment after ``/access/``
+    and every query-string value, keeping the route and parameter names so
+    the log still shows what was hit (``/access/[redacted]``,
+    ``/admin/oauth/callback?code=[redacted]&state=[redacted]``). All query
+    values are redacted, not just known names, so a future secret-bearing
+    parameter cannot leak by default.
+    """
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    text = _ACCESS_TOKEN.sub(r"\g<1>" + REDACTED, text)
+    return _QUERY_VALUE.sub(r"\g<1>" + REDACTED, text)
+
+
 class SafeJsonFormatter(JsonLogFormatter):
     """Reuse ParishKit JSONL shape while dropping unsafe messages and context.
 
@@ -270,7 +338,15 @@ class SafeJsonFormatter(JsonLogFormatter):
             safe.extra["authentication_limits"] = list(context["authentication_limits"])
         if debug_logging_enabled():
             safe.extra["debug"] = _debug_details(record)
-        return super().format(safe)
+        # Last step, over the whole line: debug details carry free text, and
+        # Django's request records name the request that failed. The current
+        # request's secrets come from the middleware's context; a record
+        # logged after the middleware returned (django.request) carries its
+        # request instead.
+        secrets = _REQUEST_SECRETS.get() + request_secrets(
+            getattr(record, "request", None)
+        )
+        return redact_secrets(super().format(safe), secrets)
 
 
 def configure_logging(config: dict | None = None) -> None:
@@ -304,8 +380,14 @@ class CorrelationMiddleware:
 
     def __call__(self, request):
         """Restore context even when a downstream handler raises an exception."""
-        with correlation() as identifier:
-            request.correlation_id = identifier
-            response = self.get_response(request)
-            response["X-Correlation-ID"] = str(identifier)
-            return response
+        # Also expose this request's secrets to the formatter for the whole
+        # request, so a token logged in any form is scrubbed (#311).
+        secrets = _REQUEST_SECRETS.set(request_secrets(request))
+        try:
+            with correlation() as identifier:
+                request.correlation_id = identifier
+                response = self.get_response(request)
+                response["X-Correlation-ID"] = str(identifier)
+                return response
+        finally:
+            _REQUEST_SECRETS.reset(secrets)

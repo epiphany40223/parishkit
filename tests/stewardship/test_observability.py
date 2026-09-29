@@ -15,7 +15,10 @@ from parishkit.stewardship.observability import (
     SafeJsonFormatter,
     configure_logging,
     correlation,
+    debug_swallowed,
     emit,
+    redact_secrets,
+    request_secrets,
 )
 
 
@@ -256,3 +259,119 @@ def test_debug_logging_keeps_message_logger_and_traceback(monkeypatch):
     assert debug["logger"] == "synthetic.logger"
     assert debug["message"] == "load failed"
     assert "RuntimeError: synthetic-detail" in debug["exception"]
+
+
+TOKEN = "Synthetic-Link-Token_0123456789abcdef"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (f"/access/{TOKEN}", "/access/[redacted]"),
+        (
+            f"Service Unavailable: /access/{TOKEN}",
+            "Service Unavailable: /access/[redacted]",
+        ),
+        (
+            f'"GET /access/{TOKEN}?x=1 HTTP/1.1" 503',
+            '"GET /access/[redacted]?x=[redacted] HTTP/1.1" 503',
+        ),
+        (
+            "/admin/oauth/callback?code=4/0AbC-dEf&state=xyz#frag",
+            "/admin/oauth/callback?code=[redacted]&state=[redacted]#frag",
+        ),
+        ("/admin/login?next=/admin/", "/admin/login?next=[redacted]"),
+        # JSON-escaped text: a match stops at the escape, keeping JSON valid.
+        (f'{{"m": "/access/{TOKEN}\\"x"}}', '{"m": "/access/[redacted]\\"x"}'),
+        ("/admin/campaigns/", "/admin/campaigns/"),
+        ("no url here", "no url here"),
+    ],
+)
+def test_redact_secrets_keeps_route_and_drops_secret_values(text, expected):
+    """Paths keep their route and parameter names; secret values go."""
+    assert redact_secrets(text) == expected
+
+
+def test_redact_secrets_scrubs_literal_values_anywhere():
+    """A token outside URL form, as in an exception message, is still removed."""
+    assert (
+        redact_secrets(f"lookup failed for {TOKEN!r}", (TOKEN,))
+        == "lookup failed for '[redacted]'"
+    )
+
+
+def test_request_secrets_take_only_credential_shaped_values():
+    """The link token and secret query values count; short or odd values do not."""
+    from django.test import RequestFactory
+
+    factory = RequestFactory()
+    assert request_secrets(factory.get(f"/access/{TOKEN}")) == (TOKEN,)
+    callback = factory.get(
+        "/admin/oauth/callback",
+        {"code": "4/0AbCdEfGh", "state": "short", "next": "ignored-long-value"},
+    )
+    assert request_secrets(callback) == ("4/0AbCdEfGh",)
+    # Quotes or other punctuation could match JSON structure; never scrub them.
+    assert request_secrets(factory.get("/", {"code": '", "message'})) == ()
+    assert request_secrets(object()) == ()
+    assert request_secrets(None) == ()
+
+
+def test_django_request_record_never_writes_the_token(monkeypatch):
+    """Django's own error record names the path; the formatted line does not."""
+    from django.test import RequestFactory
+
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    request = RequestFactory().get(f"/access/{TOKEN}")
+    record = logging.LogRecord(
+        "django.request",
+        logging.ERROR,
+        "path",
+        1,
+        "Service Unavailable: %s",
+        (request.path,),
+        None,
+    )
+    record.request = request
+    output = SafeJsonFormatter().format(record)
+    assert TOKEN not in output
+    payload = json.loads(output)
+    assert payload["extra"]["debug"]["message"] == (
+        "Service Unavailable: /access/[redacted]"
+    )
+
+
+def test_middleware_scrubs_its_request_token_from_debug_tracebacks(monkeypatch):
+    """A token inside exception text, logged during the request, is scrubbed."""
+    from django.http import HttpResponse
+    from django.test import RequestFactory
+
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    formatter = SafeJsonFormatter()
+    lines = []
+
+    class Capture(logging.Handler):
+        """Keep formatted lines while the request's context is still active."""
+
+        def emit(self, record):
+            lines.append(formatter.format(record))
+
+    def view(request):
+        """Hide a failure whose message embeds the raw token."""
+        try:
+            raise ValueError(f"bad token {TOKEN}")
+        except ValueError:
+            debug_swallowed("link lookup failed")
+        return HttpResponse(status=503)
+
+    debug = logging.getLogger("parishkit.stewardship.debug")
+    handler = Capture()
+    monkeypatch.setattr(debug, "level", logging.DEBUG)
+    debug.addHandler(handler)
+    try:
+        CorrelationMiddleware(view)(RequestFactory().get(f"/access/{TOKEN}"))
+    finally:
+        debug.removeHandler(handler)
+    assert len(lines) == 1
+    assert TOKEN not in lines[0]
+    assert "ValueError: bad token [redacted]" in lines[0]

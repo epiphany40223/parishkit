@@ -192,6 +192,12 @@ The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
 segments and do not log cookies/query secrets or request bodies. Exact Family-
 code searches are POST-body-only and therefore never enter access-log URLs.
+Application logs hold the same line even with debug logging on: the shared log
+formatter scrubs every formatted line, replacing the `/access/` segment, every
+query-string value, and the current request's link token and OAuth
+`code`/`state` values wherever they appear (including exception text) with
+`[redacted]`, while keeping the route and parameter names, as in
+`/access/[redacted]`.
 Upload/body/time limits protect the app without blocking configured logo/export
 workflows. The official stock
 Caddy image is used without third-party rate-limit modules; coarse and specific
