@@ -219,6 +219,13 @@ observations and omit unknown gauges instead of starting another readiness probe
 Do not route traffic away merely because a campaign/business readiness gate closes.
 Runtime and proxy logs omit private request/header/query/error values; preserve
 structured status/correlation evidence instead of enabling raw credential logging.
+Every rendered service, `postgres`, `valkey` and `caddy` included, logs through
+Docker's `json-file` driver capped at five files of 10 MB each (`max-size: 10m`,
+`max-file: "5"`), so one noisy container keeps at most 50 MB and the whole
+deployment under 1 GB. `docker compose ... logs SERVICE` therefore reaches back
+only as far as those 50 MB; durable evidence is in the database. Docker applies
+the cap when it creates a container, so a deployment rendered before the cap
+gets it on the next `retarget-image` and `up`, which recreate the containers.
 Selected installer failures log `installer_request_failed`, using the durable
 request UUID as the correlation ID and a closed database, credential,
 configuration, filesystem or unexpected-failure category. A separate failed-pass
