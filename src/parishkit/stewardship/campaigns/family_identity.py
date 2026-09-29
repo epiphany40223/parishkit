@@ -79,6 +79,43 @@ def collision_query(digests):
     return query
 
 
+def _write_families(rows, fields):
+    """Write ``fields`` of locked FamilyCampaign rows with set-based UPDATEs.
+
+    This is Django's ``bulk_update`` without its per-row ``CASE WHEN`` per
+    field: building those expressions in Python took most of a source
+    promotion at parish scale (about 2,700 Families), and promotion holds the
+    global work-order lock, stalling every Family and Admin request (#147).
+    Each batch is one ``UPDATE ... FROM unnest(...)`` of the same columns and
+    values, so every row and statement trigger still fires. Values pass through
+    each field's own database preparation, keeping its write guards (for
+    example, UTCDateTimeField's refusal of naive instants).
+    """
+    columns = [FamilyCampaign._meta.get_field(name) for name in fields]
+    names = ",".join(field.column for field in columns)
+    arrays = ",".join(f"%s::{field.cast_db_type(connection)}[]" for field in columns)
+    assignments = ",".join(f"{field.column}=v.{field.column}" for field in columns)
+    statement = (
+        f"UPDATE {FamilyCampaign._meta.db_table} f SET {assignments} "
+        f"FROM unnest(%s::uuid[],{arrays}) AS v(id,{names}) WHERE f.id=v.id"
+    )
+    for start in range(0, len(rows), 1000):
+        batch = rows[start : start + 1000]
+        values = [[row.pk for row in batch]] + [
+            [
+                field.get_db_prep_save(getattr(row, field.attname), connection)
+                for row in batch
+            ]
+            for field in columns
+        ]
+        with connection.cursor() as cursor:
+            cursor.execute(statement, values)
+            if cursor.rowcount != len(batch):
+                raise StorageInvariantError(
+                    "Family identity rows changed unexpectedly."
+                )
+
+
 def _allocate(campaign_id, rows, general, mac):
     """At most eight batch-level retries; never a savepoint per Family."""
     pending = list(rows)
@@ -113,7 +150,7 @@ def _allocate(campaign_id, rows, general, mac):
                     )
                 # Identities exist first, still inside the caller's atomic source
                 # promotion. They become eligible only after code assignment.
-                FamilyCampaign.objects.bulk_update(
+                _write_families(
                     [item[0] for item in accepted],
                     ["code_ciphertext", "version", "actor_id", "correlation_id"],
                 )
@@ -294,7 +331,7 @@ def reconcile_families(
             row.version += 1
             row.actor_id, row.correlation_id = actor_id, correlation_id
             changed.append(row)
-        FamilyCampaign.objects.bulk_update(
+        _write_families(
             changed,
             [
                 *fields,
@@ -306,7 +343,6 @@ def reconcile_families(
                 "actor_id",
                 "correlation_id",
             ],
-            batch_size=500,
         )
         eligible = (
             FamilyCampaign.objects.filter(campaign=campaign, portal_eligible=True)
