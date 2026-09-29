@@ -307,6 +307,9 @@ time limit and a `timeout` context kind for them, and a guard trigger that
 lets the mail-dispatch and backup logins append only those entries (the
 operational event check, one function body and one new trigger function;
 Constraints, Functions and Triggers digests).
+The #306 schema review then let boundary audits record the two purge
+states, so a boundary skipped during a purge can settle (the same function
+body; Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -315,7 +318,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 603 | `66d3088b` |
+| Functions | 603 | `5bd6449b` |
 | Triggers | 555 | `80f32975` |
 | Policies | 28 | `1c9c3b2d` |
 

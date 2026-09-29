@@ -257,6 +257,8 @@ def sanitize(kind, values):
                 "active",
                 "closed",
                 "archived",
+                "purging",
+                "purge_cleanup_failed",
                 "purged",
             }
             safe[key] = value

@@ -5367,7 +5367,8 @@ BEGIN
         ELSIF key='kind' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('start','close') THEN RETURN false; END IF;
         ELSIF key IN ('before_state','after_state') THEN
-            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('draft','scheduled','active','closed','archived','purged') THEN RETURN false; END IF;
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('draft','scheduled','active','closed','archived',
+                'purging','purge_cleanup_failed','purged') THEN RETURN false; END IF;
         ELSIF key='field' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN (
                 'prefix','first_name','middle_name','last_name','suffix','nickname',

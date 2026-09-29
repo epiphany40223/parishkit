@@ -90,3 +90,23 @@ def test_sql_boundary_context_privacy_matches_python(key, value):
             [json.dumps(payload)],
         )
         assert cursor.fetchone()[0] is (key is None)
+
+
+@pytest.mark.parametrize("state", ["purging", "purge_cleanup_failed"])
+def test_a_boundary_skipped_during_a_purge_can_be_audited(state):
+    """Every campaign state is a valid boundary audit state (#306 review).
+
+    A boundary skipped while its campaign is purging records that state; a
+    refused audit would roll the skip back and leave the boundary unsettled.
+    """
+    from parishkit.stewardship.audit.schemas import ContextKind, sanitize
+
+    payload = context() | {"before_state": state, "after_state": state}
+    safe = sanitize(ContextKind.BOUNDARY, payload)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_safe_context_v1('boundary', %s::jsonb), "
+            "public.stewardship_safe_context_v1('boundary', %s::jsonb)",
+            [json.dumps(safe), json.dumps(safe | {"before_state": "purge"})],
+        )
+        assert cursor.fetchone() == (True, False)
