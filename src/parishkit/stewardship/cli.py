@@ -27,6 +27,7 @@ _COMMAND_OPTIONS = {
     "installer-healthcheck": set(),
     "health": {"config"},
     "load-check": {"config", "samples", "concurrency"},
+    "source-form-check": {"config"},
     "runtime": {"config"},
     "acknowledge-credential": {"config", "request_id"},
     "collect-static": {"destination"},
@@ -188,6 +189,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .load_check import execute_load_check
 
         return execute_load_check(args)
+    if args.command == "source-form-check":
+        from .source_form_check import execute_source_form_check
+
+        return execute_source_form_check(args)
     if args.command in {"backup", "backup-keygen", "backup-open"}:
         from .backup_commands import execute_backup_command
 

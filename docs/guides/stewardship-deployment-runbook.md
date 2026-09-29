@@ -287,6 +287,26 @@ output also times it under `invitation_run`, for information only. Run the
 check outside an upgrade. The [load check guide](stewardship-load-check.md)
 records its design.
 
+**ParishSoft values the form refuses.** One malformed Member value in
+ParishSoft (a name or other field over its length limit, a tab or line break,
+a birth date that is not a real date, an over-long email or phone) stops that
+whole Family's form from loading. Before launch, and after a large ParishSoft
+cleanup, list every such value for the current campaign's portal-eligible
+Families:
+
+```text
+docker compose ... exec -T web pk-stewardship source-form-check --config WEB_CONFIG > source-form-check.json
+```
+
+Like the load check it runs in the web container under the web database
+login, only reads, and needs a current campaign and promoted parish data,
+but not an open portal. It prints the Family DUID, Member DUID and field
+name of each refused value, never the value. Exit `0` (`"result":
+"clean"`) means none; exit `1` (`"result": "findings"`) means fix each listed
+field in ParishSoft, refresh the parish data and run it again; exit `2`
+means it was refused or failed, and the one-line error says which. A
+`member_record` finding means the Member record itself is unusable.
+
 **Not testable before activation.** Delivery pause and resume exist only for
 the Production campaign.
 
