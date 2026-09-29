@@ -504,6 +504,7 @@ def test_future_owners_have_no_runtime_grant_bundle():
     assert tables == {
         "stewardship_backup_run": {"SELECT", "INSERT"},
         "stewardship_backup_upload": {"SELECT", "INSERT"},
+        "stewardship_operational_log": {"INSERT"},
     }
     assert columns == {}
 

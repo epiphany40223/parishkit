@@ -9,7 +9,10 @@ from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
-from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
+from parishkit.stewardship.campaigns.read_guards import (
+    BACKGROUND_LIMITS,
+    CampaignReadGuard,
+)
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
@@ -239,10 +242,16 @@ def _execute(execution, *, store, root, general=None):
     # requested under; CSV (ISO) and XLSX (native cells) do not depend on it.
     with (
         dates.using(request.configuration.parish.date_format),
+        # Rendering stays inside the guard: its campaign barrier must outlast
+        # every file write, so the deadline still hard-stops the renderer.
+        # A background export gets the longer bounded budget, and the guard
+        # records what it stopped before the process ends (#293).
         CampaignReadGuard(
             [request.campaign_id],
             authorize=authorize_render,
             abort=_abort_render_worker,
+            limits=BACKGROUND_LIMITS,
+            timeout_task=execution.claim.run_id,
         ) as guard,
     ):
         document = load_document(request, general=general)

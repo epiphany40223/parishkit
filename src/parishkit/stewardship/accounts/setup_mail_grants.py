@@ -32,6 +32,10 @@ def mail_runtime_grants():
     tables["stewardship_task_event"].add("INSERT")
     tables["stewardship_audit_event"] = {"INSERT"}
     tables["stewardship_audit_context"] = {"INSERT"}
+    # A mail helper stopped at its deadline, or a mail task's lost lease, is
+    # recorded (#293). Insert only, and a trigger admits only timeout events
+    # from this login (stewardship_operational_log_writer_v1).
+    tables["stewardship_operational_log"] = {"INSERT"}
     tables["stewardship_secret_request"] = {"SELECT"}
     tables["stewardship_credential_consumer_ack"] = {"SELECT", "INSERT"}
     columns = {

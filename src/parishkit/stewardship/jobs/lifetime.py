@@ -9,6 +9,7 @@ finish its current safe unit, but must not start another external operation.
 
 from contextlib import contextmanager
 from threading import Event, RLock, Thread
+from time import monotonic
 
 from django.db import connection, connections, transaction
 
@@ -119,8 +120,10 @@ def _renewal_loop(execution, done):
         **previous,
         "OPTIONS": {**previous.get("OPTIONS", {}), "connect_timeout": 3},
     }
+    started = None
     try:
         while not done.wait(PULSE_SECONDS):
+            started = monotonic()
             try:
                 renew_once(execution)
             finally:
@@ -128,11 +131,37 @@ def _renewal_loop(execution, done):
             if execution.control.finished.is_set():
                 return
     except Exception as error:
+        # Stop new work first, then record a renewal stopped by its own SQL
+        # time limit (#293).
         execution.control.failed.set()
+        _record_renewal_timeout(execution, error, started)
         emit_failure(error)
     finally:
         connections.close_all()
         connection.settings_dict = previous
+
+
+# The renewal transaction's own SQL limits (see renew_once), by timeout kind.
+RENEWAL_LIMITS = {"lock_timeout": 2, "statement_timeout": 5}
+
+
+def _record_renewal_timeout(execution, error, started):
+    """Log a renewal that PostgreSQL stopped at its lock or statement limit."""
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.observability import Event
+
+    from .broker import sql_timeout_kind
+
+    kind = sql_timeout_kind(error)
+    if kind is None:
+        return
+    record_timeout(
+        Event.TASK_TIMED_OUT,
+        what=kind,
+        task_id=execution.claim.run_id,
+        limit_seconds=RENEWAL_LIMITS.get(kind),
+        elapsed_seconds=None if started is None else monotonic() - started,
+    )
 
 
 @contextmanager
@@ -168,11 +197,24 @@ def maintain_execution(execution, *, stop=None):
         yield
     finally:
         done.set()
+        draining = monotonic()
         if thread.ident is not None:
             thread.join(timeout=RENEWAL_DRAIN_SECONDS)
         control.active = False
         if thread.is_alive():
             control.failed.set()
+            # Say which task's renewal outlived the drain limit before this
+            # consumer is stopped (#293); new work is already refused.
+            from parishkit.stewardship.audit.timeouts import record_timeout
+            from parishkit.stewardship.observability import Event as LogEvent
+
+            record_timeout(
+                LogEvent.TASK_TIMED_OUT,
+                what="renewal_drain",
+                task_id=execution.claim.run_id,
+                limit_seconds=RENEWAL_DRAIN_SECONDS,
+                elapsed_seconds=monotonic() - draining,
+            )
             error = RenewalDrainFailure("Worker renewal did not drain in time.")
             emit_failure(error)
             raise error

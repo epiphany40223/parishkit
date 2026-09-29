@@ -342,6 +342,22 @@ def test_pre_refresh_retention_compacts_then_releases_the_lease(history):
     assert SourceMutationLease.objects.get().phase == "idle"
 
 
+def test_retention_stopped_by_its_budget_is_logged(history, monkeypatch):
+    """Reaching the time budget is expected and recorded as INFO (#293)."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    monkeypatch.setattr(compaction, "RETENTION_BUDGET_SECONDS", 0)
+    task = running_source_task()
+    compaction.compact_before_refresh(_Execution(task))
+    assert not SourceSnapshot.objects.filter(compacted_at__isnull=False).exists()
+    assert SourceMutationLease.objects.get().phase == "idle"
+    entry = OperationalLog.objects.get(event="work_budget_reached")
+    assert entry.level == "INFO"
+    assert entry.context["what"] == "retention_budget"
+    assert entry.context["task_id"] == str(task["task_id"])
+    assert entry.context["limit_seconds"] == 0
+
+
 def test_pre_refresh_retention_failure_never_fails_the_refresh(history, monkeypatch):
     """Retention is housekeeping: a failure is logged and the lease released."""
 

@@ -10,7 +10,13 @@ import time
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
-from .provider_checks import ProviderCheckDrainFailure, _check_owner, _exchange, _stop
+from .provider_checks import (
+    ProviderCheckDrainFailure,
+    _check_owner,
+    _exchange,
+    _stop,
+    helper_timeout_recorder,
+)
 from .readiness_delivery import DeliveryOutcome
 from .readiness_delivery_worker import MAX_INPUT
 from .readiness_mail import ReadinessMail
@@ -105,6 +111,7 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
     process = None
     _check_owner(check)
     deadline = time.monotonic() + seconds
+    on_timeout = helper_timeout_recorder(helper, what="mail_helper", seconds=seconds)
     try:
         try:
             process = subprocess.Popen(
@@ -123,7 +130,13 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
         except OSError:
             return DeliveryOutcome.NOT_SENT
         try:
-            output = _exchange(process, payload, deadline=deadline, check=check)
+            output = _exchange(
+                process,
+                payload,
+                deadline=deadline,
+                check=check,
+                on_timeout=on_timeout,
+            )
         except (OSError, CredentialValidationUnavailable):
             return DeliveryOutcome.UNKNOWN
         if process.returncode != 0:

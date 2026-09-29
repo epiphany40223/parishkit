@@ -5,6 +5,7 @@ import io
 import json
 import subprocess
 import sys
+import time
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -517,3 +518,35 @@ def test_invalid_deadline_is_rejected_before_spawn(seconds):
     """No coercion, unbounded wait or NaN deadline can disable forced drainage."""
     with pytest.raises(ValueError):
         invoke(seconds=seconds)
+
+
+def test_deadline_kill_is_logged_after_the_helper_is_killed(monkeypatch):
+    """The entry, written just after the kill, names the helper and its limit."""
+    from parishkit.stewardship.audit import timeouts
+
+    process = Process(returncode=None)
+
+    def communicate(*, input, timeout):
+        """Hold the pipe past the deadline, as a stuck provider would."""
+        process.inputs.append(input)
+        time.sleep(timeout)
+        raise subprocess.TimeoutExpired("synthetic", timeout)
+
+    process.communicate = communicate
+    killed_first = []
+    recorded = Mock(side_effect=lambda *a, **k: killed_first.append(process.killed))
+    monkeypatch.setattr(timeouts, "record_timeout", recorded)
+    monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
+    with pytest.raises(CredentialValidationUnavailable):
+        invoke(seconds=0.3)
+    assert process.killed and killed_first == [True]
+    call = recorded.call_args
+    assert call.kwargs["what"] == "provider_check"
+    assert call.kwargs["helper"] == "provider_check_worker"
+    assert call.kwargs["limit_seconds"] == 0.3
+    assert call.kwargs["elapsed_seconds"] >= 0.3
+    # Ownership loss is not a deadline stop and records nothing.
+    recorded.reset_mock()
+    with pytest.raises(parent.ProviderCheckOwnershipLost):
+        invoke(check=Mock(side_effect=PermissionError("lost")))
+    recorded.assert_not_called()

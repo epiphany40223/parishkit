@@ -47,6 +47,11 @@ class Event(StrEnum):
     HANDOFF_KEY_MISMATCH = "credential_handoff_key_mismatch"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
     AUTH_HEALTH_FAILED = "authentication_health_observation_failed"
+    # Work stopped by a time limit (#293): what was stopped, after how long.
+    TASK_TIMED_OUT = "task_timed_out"
+    HELPER_TIMED_OUT = "helper_timed_out"
+    WORK_BUDGET_REACHED = "work_budget_reached"
+    TASK_LEASE_LOST = "task_lease_lost"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -109,6 +114,26 @@ _correlation: ContextVar[UUID | None] = ContextVar(
 def current_correlation() -> UUID:
     """Reuse the bound request/task ID; create an ID for an unscoped operation."""
     return _correlation.get() or uuid4()
+
+
+_task: ContextVar[UUID | None] = ContextVar("stewardship_task", default=None)
+
+
+def current_task() -> UUID | None:
+    """The background task this code runs for, when a worker bound one."""
+    return _task.get()
+
+
+@contextmanager
+def task_scope(identifier: UUID):
+    """Bind the running task so deep helpers (mail, provider checks) can name it."""
+    if not isinstance(identifier, UUID):
+        raise ValueError("task scope must be an internal UUID")
+    token = _task.set(identifier)
+    try:
+        yield identifier
+    finally:
+        _task.reset(token)
 
 
 @contextmanager

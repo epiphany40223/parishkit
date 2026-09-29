@@ -23,3 +23,13 @@ def test_the_production_guard_runs_before_anything_changes():
         assert guard < text.index(step), step
     # The refusal names where a Production upgrade is described.
     assert "stewardship-deployment-runbook.md#upgrade" in text[refusal:]
+
+
+def test_the_writer_guard_check_runs_before_anything_changes():
+    """A host without the #293 writer guard is refused before any step."""
+    text = SCRIPT.read_text()
+    check = text.index("tgname='stewardship_operational_log_writer_v1'")
+    refusal = text.index('if [ "$guard" != 1 ]; then', check)
+    assert "exit 1" in text[refusal : text.index("\nfi\n", refusal)]
+    for step in ("docker build", "docker push", '"${dc[@]}" stop'):
+        assert check < text.index(step), step

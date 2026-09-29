@@ -342,6 +342,14 @@ def test_mail_role_cannot_forge_or_read_operational_logs(mail_run):
             ):
                 cursor.execute(statement)
             assert denied.value.__cause__.sqlstate == "42501"
+        # It may append only work stopped by a time limit (#293).
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO stewardship_operational_log "
+                "(id,correlation_id,event,level,schema,context) "
+                "VALUES(gen_random_uuid(),gen_random_uuid(),'helper_timed_out',"
+                "'ERROR','timeout','{\"what\":\"mail_helper\"}')"
+            )
 
 
 def test_invalid_result_cannot_enter_health_history(mail_run, monkeypatch):

@@ -55,7 +55,8 @@ class ReadLimits:
     def __post_init__(self):
         """Reject bools, infinities and budgets that defeat timeout/drain ordering."""
         maxima = {
-            "interactive_seconds": 120,
+            # Background tasks use a longer bounded budget than page views.
+            "interactive_seconds": 600,
             "download_seconds": 900,
             "lock_seconds": 30,
             "download_idle_seconds": 1200,
@@ -86,6 +87,19 @@ def campaign_lock_key(identifier):
 
 
 DEFAULT_LIMITS = ReadLimits()
+# The longest a deadline stop waits to log itself before aborting (#293).
+RECORD_SECONDS = 1
+# Background reads (report verification, export rendering) serve no waiting
+# browser, so they get a longer bounded budget than a page view.
+BACKGROUND_LIMITS = ReadLimits(interactive_seconds=300)
+
+
+def background_abort():
+    """A read-only background guard stops by cancelling its SQL, not the process.
+
+    The guard's deadline cancels and closes its connection; the task then fails
+    visibly instead of the whole worker process being killed (#287, #293).
+    """
 
 
 class DownloadPool:
@@ -122,7 +136,14 @@ class CampaignReadGuard:
     """
 
     def __init__(
-        self, campaigns, *, authorize, abort, pool=None, limits=DEFAULT_LIMITS
+        self,
+        campaigns,
+        *,
+        authorize,
+        abort,
+        pool=None,
+        limits=DEFAULT_LIMITS,
+        timeout_task=None,
     ):
         identifiers = tuple(campaigns)
         if not identifiers or any(not isinstance(value, UUID) for value in identifiers):
@@ -131,8 +152,13 @@ class CampaignReadGuard:
             raise TypeError(
                 "Fresh authorization and response-abort callbacks are required."
             )
+        if timeout_task is not None and not isinstance(timeout_task, UUID):
+            raise TypeError("A guarded task is named by its UUID.")
         self.campaigns = tuple(sorted(set(identifiers)))
         self.authorize, self.abort, self.pool = authorize, abort, pool
+        # The background task (if any) this read serves, named in the log
+        # entry written when the deadline stops it (#293).
+        self.timeout_task = timeout_task
         self.limits = pool.limits if pool else limits
         self.closed = Event()
         self.expired = Event()
@@ -158,7 +184,9 @@ class CampaignReadGuard:
             if self.pool
             else self.limits.interactive_seconds
         )
-        self.deadline = monotonic() + lifetime
+        self.started = monotonic()
+        self.lifetime = lifetime
+        self.deadline = self.started + lifetime
         try:
             if self.pool:
                 self.pool.acquire()
@@ -264,9 +292,27 @@ class CampaignReadGuard:
                 self._slot_owned = False
 
     def _expire(self):
-        """Hard deadline; the adapter must stop transport AND producer before return."""
+        """Hard deadline; the adapter must stop transport AND producer before return.
+
+        First record what the deadline stopped (#293), on a private connection
+        with the owning thread's login, since an abort may end this whole
+        process. The write waits at most RECORD_SECONDS, so a slow database
+        cannot hold the purge barrier past the deadline for long.
+        """
         self.expired.set()
         stopped = False
+        from parishkit.stewardship.audit.timeouts import record_timeout_within
+        from parishkit.stewardship.observability import Event
+
+        record_timeout_within(
+            RECORD_SECONDS,
+            Event.TASK_TIMED_OUT,
+            what="read_guard",
+            task_id=self.timeout_task,
+            limit_seconds=self.lifetime,
+            elapsed_seconds=monotonic() - self.started,
+            settings_dict=self.original.settings_dict,
+        )
         try:
             self.abort()
             stopped = True

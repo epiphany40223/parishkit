@@ -1,15 +1,23 @@
 """Daily checks exercise real task ownership and SQL roles, not a fake scheduler."""
 
+import time
 from dataclasses import replace
 from datetime import UTC, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, ProgrammingError, connection, transaction
+from django.db import (
+    DatabaseError,
+    IntegrityError,
+    ProgrammingError,
+    connection,
+    transaction,
+)
 
 from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
+from parishkit.stewardship.campaigns.read_guards import ReadLimits, ReadUnavailable
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -24,6 +32,7 @@ from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.jobs.storage import _status, enqueue, retry_failed
+from parishkit.stewardship.reports import verification_tasks
 from parishkit.stewardship.reports.facts import (
     begin_fact_set,
     fact_inputs,
@@ -53,6 +62,9 @@ from .test_source_snapshots_postgresql import permit
 from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+# A short guard deadline for proving what runs inside the verification read.
+SHORT_LIMITS = ReadLimits(interactive_seconds=2, lock_seconds=1)
 
 
 def ready():
@@ -297,9 +309,10 @@ def test_interruption_and_atomic_acknowledgment_can_retry_original_inputs(
 def test_recalculation_runs_after_the_bounded_read_guard_closes(response_service):
     """Verification recalculates outside any transaction (#287).
 
-    The read guard's deadline hard-stops the worker process, so a whole-campaign
-    recalculation inside it killed every attempt on real data. Only the database
-    loading may run in the guarded read; the calculation must not.
+    The read guard's deadline then hard-stopped the worker process, so a
+    whole-campaign recalculation inside it killed every attempt on real data.
+    Only the database loading may run in the guarded read; the calculation
+    must not.
     """
     from parishkit.stewardship.reports import materialization
 
@@ -313,10 +326,62 @@ def test_recalculation_runs_after_the_bounded_read_guard_closes(response_service
         observed.append(connection.in_atomic_block)
         return calculate(context)
 
-    with patch.object(materialization, "calculate_participation", outside_transaction):
+    def slow_outside_transaction(context):
+        """Outlast the patched guard deadline while recalculating."""
+        time.sleep(3)
+        return outside_transaction(context)
+
+    # A 2 s guard deadline with a recorded abort: a recalculation still inside
+    # the guard would outlast it and fire the abort.
+    aborted = Mock()
+    with (
+        patch.object(
+            materialization, "calculate_participation", slow_outside_transaction
+        ),
+        patch.object(verification_tasks, "BACKGROUND_LIMITS", SHORT_LIMITS),
+        patch.object(verification_tasks, "background_abort", aborted),
+    ):
         execute(root)
     assert observed == [False]
+    aborted.assert_not_called()
     assert FactVerificationResult.objects.get().outcome == "matched"
+    assert not OperationalLog.objects.filter(event="task_timed_out").exists()
+
+
+def test_a_verification_read_past_its_deadline_fails_visibly_and_is_logged(
+    response_service,
+):
+    """The deadline cancels the read, not the worker, and says so (#293)."""
+    ready()
+    root = produce(limit=1)[0]
+
+    def stuck_load(*args, **kwargs):
+        """Loading that outlasts the guard's deadline between statements.
+
+        (A single statement past the deadline is stopped by the guard's
+        statement timeout instead, which the broker records.)
+        """
+        time.sleep(4)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+
+    aborted = Mock()
+    with (
+        patch.object(verification_tasks, "load_verification", stuck_load),
+        patch.object(verification_tasks, "BACKGROUND_LIMITS", SHORT_LIMITS),
+        patch.object(verification_tasks, "background_abort", aborted),
+        pytest.raises((DatabaseError, ReadUnavailable)),
+    ):
+        execute(root)
+    aborted.assert_called_once_with()
+    assert not FactVerificationResult.objects.exists()
+    entry = OperationalLog.objects.get(event="task_timed_out")
+    assert entry.level == "ERROR" and entry.schema == "timeout"
+    assert entry.context["what"] == "read_guard"
+    assert entry.context["task_id"] == str(root)
+    assert entry.context["task_type"] == TASK_TYPE
+    assert entry.context["limit_seconds"] == 2
+    assert 2 <= entry.context["elapsed_seconds"] < 4
 
 
 def test_failed_or_unavailable_calculation_is_never_a_clean_result(response_service):

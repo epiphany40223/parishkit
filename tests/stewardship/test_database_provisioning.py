@@ -213,6 +213,7 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
     monkeypatch.setattr(provisioning, "_admit_existing_grants", lambda *args: None)
     monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -225,6 +226,23 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: False)
     with pytest.raises(ConfigError, match="before grants"):
         provisioning.provision_grants(configuration, uuid4())
+
+
+@pytest.mark.parametrize("installed", ["current", "older", "missing"])
+def test_grants_wait_for_the_operational_log_writer_guard(installed):
+    """Timeout-only log writers get INSERT only once this release's guard exists."""
+    row = {
+        "current": (provisioning._writer_guard_digest(),),
+        "older": ("0" * 32,),
+        "missing": None,
+    }[installed]
+    cursor = Cursor([row])
+    if installed == "current":
+        provisioning._admit_writer_guard(cursor)
+    else:
+        with pytest.raises(ConfigError, match="writer guard"):
+            provisioning._admit_writer_guard(cursor)
+    assert "stewardship_operational_log_writer_v1" in cursor.statements[0]
 
 
 @pytest.mark.parametrize(

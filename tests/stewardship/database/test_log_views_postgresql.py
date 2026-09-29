@@ -379,7 +379,9 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
     # Count only the reads the page itself makes: the two log tables, ordered,
     # and the one actor lookup by identifier set. Total statements also include
     # the session's throttled idle-activity update, which depends on timing,
-    # and sign-in's own reads of the portal user by primary key.
+    # sign-in's own reads of the portal user by primary key, and the Family
+    # maintenance banner's read of its latest switch event, which a
+    # process-wide cache of a few seconds skips or repeats depending on timing.
     reads = [
         Counter(
             table
@@ -392,6 +394,7 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
             if query["sql"].startswith("SELECT")
             and f'FROM "{table}"' in query["sql"]
             and ("ORDER BY" in query["sql"] or '"id" IN (' in query["sql"])
+            and "family_maintenance_" not in query["sql"]
         )
         for captured in (few, many)
     ]

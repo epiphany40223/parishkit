@@ -33,6 +33,7 @@ from .setup_admission import bound_attempt, require_live_setup
 from .setup_exchange import _live
 from .snapshot_models import SourceCurrent
 from .snapshots import begin_snapshot, finish_snapshot, stage_entities
+from .transport import source_timeout_recorder
 from .windows import RefreshWindow
 
 
@@ -108,7 +109,11 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
             connections.close_all()
 
     window = RefreshWindow(None, ())
-    session = BoundedSourceSession(before_request=before_request, check=execution.check)
+    session = BoundedSourceSession(
+        before_request=before_request,
+        check=execution.check,
+        on_timeout=source_timeout_recorder(execution),
+    )
     session.headers["x-api-key"] = credential.api_key
     try:
         client = CoherentParishSoftClient(
