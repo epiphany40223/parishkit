@@ -94,7 +94,7 @@ def test_missing_birth_requires_explicit_unknown_and_back_preserves_it(
     form = form_payload()
     member_field(form, "birth_date").update(value="", available=False)
     start(page, component_origin, form=form)
-    review(page)
+    assert not review(page)
     expect(page.locator("#member-3-birth_date")).to_be_focused()
     expect(
         show(page, page.locator("#member-3-birth_date-inline-error"))
@@ -118,7 +118,7 @@ def test_future_birth_and_language_other_are_validated_on_blur(page, component_o
     expect(page.locator("#member-3-birth_date-inline-error")).to_contain_text("future")
     show(page, page.locator("#member-3-birth_date")).fill("2000-01-01")
     show(page, page.locator("#member-3-language-choice")).select_option("other")
-    review(page)
+    assert not review(page)
     expect(page.locator("#member-3-language")).to_be_focused()
     show(page, page.locator("#member-3-language")).fill("Spanish")
     review(page)
@@ -132,7 +132,7 @@ def test_unavailable_required_choice_is_not_defaulted(page, component_origin, na
     form = form_payload()
     member_field(form, name).update(value="", available=False)
     start(page, component_origin, form=form)
-    review(page)
+    assert not review(page)
     expect(page.locator("#member-3-" + name)).to_be_focused()
     if name == "gender":
         show(page, page.locator("#member-3-gender")).select_option("Unspecified")
@@ -221,7 +221,7 @@ def test_short_national_phone_is_invalid_but_short_international_is_not(
 def test_empty_same_as_home_shows_an_inline_error(page, component_origin):
     start(page, component_origin)
     show(page, page.locator("#family-mailing_same_as_home")).check()
-    review(page)
+    assert not review(page)
     expect(page.locator("#family-mailing_same_as_home")).to_be_focused()
     expect(page.locator("#family-mailing_same_as_home-constraint")).to_contain_text(
         "Provide a home address"
@@ -285,6 +285,6 @@ def test_phone_json_text_is_invalid_and_distinct_from_a_real_phone(
     expect(
         show(page, page.locator("#member-3-home_phone-inline-error"))
     ).to_be_visible()
-    review(page)
+    assert not review(page)
     expect(page.locator("#member-3-home_phone")).to_be_focused()
     assert errors == []

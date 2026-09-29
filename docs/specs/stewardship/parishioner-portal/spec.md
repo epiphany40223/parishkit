@@ -108,16 +108,25 @@ Only a choice group (share methods) is outlined in red, never a whole section.
 A "Step N of M" line names the current step, and a segmented step bar like the
 setup wizard's has one button per step: each is named by its step, shows a
 "Step N of M" tooltip on hover or keyboard focus, and jumps to that page on
-click or tap. Review (the last segment, or Review response on the last page)
-first requires a Family that has not submitted before to have viewed every
-page: otherwise it opens the first page not yet viewed and says so. It then
-checks every page and, if an answer is missing, opens that page and focuses
-the question, so the response cannot be completed until all steps are done.
+click or tap. Every Family, first-time or returning, must view every page in
+the current visit before Review opens, so the bar never jumps ahead: segments
+up to and including the furthest page reached stay available (a Family can go
+back and then forward again to where it was), while later segments and "Review
+and submit" are marked unavailable (`aria-disabled`, described to assistive
+technology and in the tooltip as "Not available yet. Use Next to continue."),
+and activating them by pointer or keyboard only shows that same note beside
+the navigation buttons (a phone tap shows no tooltip), cleared by the next page
+change. Next moves forward one page at a time. The rule is enforced in the
+browser; the server does not track which pages were viewed. Once every page has
+been viewed, every segment is available. Testing and Production behave the same. Review (the last segment,
+or Review response on the last page) also requires every page to have been
+viewed: otherwise it opens the first page not yet viewed and says so. It then
+checks every page and, if an answer is missing, opens that page and focuses the
+question, so the response cannot be completed until all steps are done.
 Because Review may change pages, its note always names the question and its
 page ("Please check “First name” on the “Alex Sample” page.") and describes the
 focused control; under the one-notice rule it is visible only when the question
-has no error line of its own, and otherwise is for screen readers only. A
-returning Family, who has submitted before, may go straight to Review. Browser
+has no error line of its own, and otherwise is for screen readers only. Browser
 Back/Forward move between pages. Every page shows the
 Family's name (for example "The Squyres Family") so the Family can confirm the
 right household is open; ParishSoft's mailing name and the session deadline are

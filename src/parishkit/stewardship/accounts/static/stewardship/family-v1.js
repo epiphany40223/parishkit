@@ -20,8 +20,11 @@
   // The editor is one form split into pages. `currentPage` names the visible
   // page across rebuilds; `pages` is rebuilt by every edit() call.
   let currentPage = null, pages = [];
-  // Pages opened at least once this visit; the step bar shows them as done.
+  // Pages opened at least once this visit; the step bar shows them as done
+  // and lets the Family move freely among them, but never ahead of them.
   const visited = new Set();
+  // Said about a step-bar segment the Family has not reached yet (#330).
+  const LOCKED_STEP = "Not available yet. Use Next to continue.";
 
   function pushPage(state, title) {
     // Record a page change for Back/Forward. Browsers throttle history calls
@@ -390,6 +393,15 @@
     // One segment per step, like the setup wizard's track. Each segment is a
     // real button (keyboard and tap), named by its step; the visible tooltip
     // repeats "Step N of M: title" on hover and keyboard focus.
+    //
+    // Every Family, first-time or returning, goes through every page with Next
+    // before Review (#330). So a segment opens only up to the furthest page
+    // reached, and "Review and submit" only once every page is visited. Later
+    // segments stay focusable (so their tooltip still shows on focus) but are
+    // aria-disabled and described as unavailable. Activating one only says so
+    // beside the navigation buttons: a phone tap neither focuses nor hovers,
+    // so without that note the tap would seem to do nothing. The next page
+    // change clears it (showPage).
     const list = root.querySelector("[data-family-track]");
     if (!list) return;
     list.replaceChildren();
@@ -399,12 +411,20 @@
     list.classList.toggle("family-track-dense", total > 24);
     const steps = [...pages.map((page) => ({key: page.key, title: page.title})),
       {key: "review", title: "Review and submit"}];
+    const reached = pages.findLastIndex((page) => visited.has(page.key));
+    const everyPage = pages.every((page) => visited.has(page.key));
     steps.forEach((step, index) => {
       const item = node("li", null, list);
       const state = step.key === activeKey ? "current" : visited.has(step.key) ? "done" : "todo";
+      const open = step.key === activeKey || (step.key === "review" ? everyPage : index <= reached);
       const attributes = {type: "button", class: "family-track-" + state +
         (index < total / 3 ? " family-tip-start" : index < 2 * total / 3 ? " family-tip-middle" : " family-tip-end"),
-        "data-tip": "Step " + (index + 1) + " of " + total + ": " + step.title};
+        "data-tip": "Step " + (index + 1) + " of " + total + ": " + step.title +
+          (open ? "" : ". " + LOCKED_STEP)};
+      if (!open) {
+        attributes["aria-disabled"] = "true";
+        attributes["aria-describedby"] = "family-track-locked";
+      }
       // Editing pages are "links"; on the Review page they are "jumps" back
       // into editing, which rebuilds the form first.
       if (step.key === "review") attributes["data-step-review"] = "";
@@ -414,6 +434,7 @@
       node("span", step.title, button, {class: "visually-hidden"});
       button.addEventListener("click", () => {
         if (busy || finished || step.key === activeKey) return;
+        if (!open) return navNote(LOCKED_STEP);
         const editing = Boolean(root.querySelector("[data-page]"));
         if (step.key === "review") {
           // Review validates every page; it opens only when all are complete.
@@ -434,6 +455,10 @@
       id: "family-step", "aria-live": "polite"});
     const nav = node("nav", null, parent, {class: "family-track", "aria-label": "Response steps"});
     node("ol", null, nav, {"data-family-track": ""});
+    // Describes every not-yet-available segment to assistive technology; the
+    // visible tooltip says the same thing.
+    node("span", LOCKED_STEP, nav,
+      {id: "family-track-locked", hidden: ""});
     return step;
   }
   function validateField(input, definition) {
@@ -1721,12 +1746,13 @@
     // name being typed, so a new person's page stops saying "Household member".
     const page = pages.find((entry) => entry.key === key);
     if (!page || page.title === title) return;
+    const previous = page.title;
     page.title = title;
     page.element.querySelector("h3").textContent = title;
     const link = root.querySelector('[data-step-link="' + key + '"]');
     if (link) {
       link.querySelector("span").textContent = title;
-      link.dataset.tip = link.dataset.tip.replace(/:.*$/, ": " + title);
+      link.dataset.tip = link.dataset.tip.replace(": " + previous, ": " + title);
     }
     if (currentPage === key) {
       const step = root.querySelector("[data-family-step]");
@@ -1921,11 +1947,10 @@
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
       reviewPointerDown = false;
-      // A first-time Family goes through every page before Review, so no
-      // section is skipped by jumping ahead; a returning Family (who already
-      // submitted once) may go straight to Review.
-      const unvisited = form.last_submitted_display ? null :
-        pages.find((page) => !visited.has(page.key));
+      // Every Family, including one that submitted before, goes through every
+      // page before Review, so no section is skipped by jumping ahead (#330).
+      // The step bar already blocks jumps; this also covers browser history.
+      const unvisited = pages.find((page) => !visited.has(page.key));
       if (unvisited) {
         // Attach the note before focus moves, so the heading is announced
         // together with its description.

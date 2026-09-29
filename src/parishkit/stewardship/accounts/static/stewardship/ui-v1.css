@@ -422,6 +422,13 @@ main nav.family-track { display: block; margin: 0; }
 .family-track .family-tip-middle::after { left: 50%; transform: translateX(-50%); }
 .family-track .family-tip-end::after { inset-inline-end: 0; }
 .family-track button:hover::after, .family-track button:focus::after { display: block; }
+/* The tooltip is visual only: its text is already the segment's name (and,
+   when not yet available, its description), so an empty alternative keeps it
+   out of the accessible name. Browsers without alternative text for generated
+   content ignore the second declaration and keep the first. */
+.family-track button::after { content: attr(data-tip); content: attr(data-tip) / ""; }
+/* A step the Family has not reached yet (aria-disabled, #330): not the busy "progress" cursor. */
+.family-track button[aria-disabled=true] { cursor: not-allowed; }
 .family-submitted { margin-block: 0 1rem; }
 .financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
 /* Limitation checkboxes ("cannot attend", "cannot participate", "cannot

@@ -221,7 +221,7 @@ def test_death_date_error_maps_to_control_and_future_is_inline(page, component_o
     page.once("dialog", lambda dialog: dialog.accept())
     show(page, page.get_by_label("Household status")).select_option("deceased_status")
     show(page, page.get_by_label("Death date (optional)")).fill("2026-09-14")
-    review(page)
+    assert not review(page)
     expect(page.locator("#member-3-death_date-inline-error")).to_contain_text("future")
     show(page, page.get_by_label("Death date (optional)")).fill("1950-01-01")
     review(page)

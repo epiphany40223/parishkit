@@ -11,7 +11,14 @@ from PIL import Image
 from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
 from .test_family_ministry import begin, ministry_form
-from .test_family_response import expect, review, show, unseen
+from .test_family_response import (
+    expect,
+    locked,
+    review,
+    show,
+    unseen,
+    visit_every_page,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -162,6 +169,11 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
         route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, paged_form(), submit)
+    # Next checks each page it leaves, so go through every page with a valid
+    # pledge first; the incomplete answers are then left for Review to catch.
+    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual.fill("0")
+    visit_every_page(page)
     annual = show(page, page.get_by_label("Annual pledge (USD)"))
     annual.fill("1200")
     frequency = page.get_by_label("Pledge frequency (required)")
@@ -283,8 +295,11 @@ def test_enter_in_a_field_moves_to_the_next_page_not_review(page, component_orig
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
 
 
-def test_step_bar_names_each_step_and_jumps(page, component_origin):
-    """One segment per step plus Review; tooltips on focus; tap or click jumps."""
+LOCKED = ". Not available yet. Use Next to continue."
+
+
+def test_step_bar_names_each_step_and_never_jumps_ahead(page, component_origin):
+    """One segment per step plus Review; tooltips on focus; no jumping ahead (#330)."""
     page.set_viewport_size({"width": 390, "height": 900})
     begin(page, component_origin, paged_form(), None)
     segments = page.locator(".family-track button")
@@ -300,15 +315,34 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     first = page.locator('[data-step-link="intro"]')
     expect(first).to_have_attribute("aria-current", "step")
     assert first.get_attribute("data-tip") == f"Step 1 of {total}: Welcome"
+    assert not locked(first)
+    # Every later step, and Review, is not available yet: announced as
+    # unavailable, with a tooltip saying to use Next.
     review_segment = page.locator("[data-step-review]")
     assert review_segment.get_attribute("data-tip") == (
-        f"Step {total} of {total}: Review and submit"
+        f"Step {total} of {total}: Review and submit{LOCKED}"
     )
-    # The tooltip text shows on keyboard focus, not only on hover.
     second = page.locator('[data-step-link="household"]')
+    third = page.locator("[data-step-link]").nth(2)
+    for segment, name in (
+        (second, "Family information"),
+        (third, titles[2]),
+        (review_segment, "Review and submit"),
+    ):
+        expect(segment).to_have_attribute("aria-disabled", "true")
+        # The tooltip shown on focus stays out of the name, so the locked
+        # text is announced once, as the description.
+        segment.focus()
+        expect(segment).to_have_accessible_name(name)
+        expect(segment).to_have_accessible_description(
+            "Not available yet. Use Next to continue."
+        )
+    # The tooltip text shows on keyboard focus, not only on hover.
     second.focus()
     assert second.evaluate("e => getComputedStyle(e, '::after').display") == "block"
-    assert second.get_attribute("data-tip") == f"Step 2 of {total}: Family information"
+    assert second.get_attribute("data-tip") == (
+        f"Step 2 of {total}: Family information{LOCKED}"
+    )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     # Every segment's tooltip stays inside a phone-width viewport.
     for index in range(total):
@@ -316,28 +350,50 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"
         ), index
+    # Neither a click nor the keyboard moves ahead. Playwright treats an
+    # aria-disabled button as disabled, so the clicks are forced.
+    second.click(force=True)
+    second.focus()
+    page.keyboard.press("Enter")
+    page.keyboard.press(" ")
+    review_segment.click(force=True)
+    assert step_text(page) == f"Step 1 of {total}: Welcome"
+    # A tap shows no tooltip on a phone, so activating a locked segment says
+    # why beside the navigation buttons; the next page change clears it.
+    note = page.locator("[data-nav-error]")
+    expect(note).to_be_visible()
+    expect(note).to_have_text("Not available yet. Use Next to continue.")
+    # Next moves forward one page and opens that page's segment only.
+    next_page(page)
+    assert step_text(page) == f"Step 2 of {total}: Family information"
+    expect(note).to_be_hidden()
+    expect(second).to_have_attribute("aria-current", "step")
+    assert not locked(second)
+    assert second.get_attribute("data-tip") == f"Step 2 of {total}: Family information"
+    expect(first).to_have_class("family-track-done family-tip-start")
+    expect(third).to_have_attribute("aria-disabled", "true")
+    # Going back keeps the furthest page reached available, to return to.
+    first.click()
+    assert step_text(page) == f"Step 1 of {total}: Welcome"
+    assert not locked(second)
+    expect(third).to_have_attribute("aria-disabled", "true")
     second.click()
     assert step_text(page) == f"Step 2 of {total}: Family information"
-    expect(second).to_have_attribute("aria-current", "step")
-    expect(first).to_have_class("family-track-done family-tip-start")
-    # Review first requires every page to have been viewed: the Family is
-    # taken to the first page not yet seen, with a note saying why.
-    note = page.locator("[data-nav-error]")
-    review_segment.click()
-    assert step_text(page) == f"Step 3 of {total}: Alex Sample"
-    expect(note).to_contain_text("Please go through each page")
-    # The note also describes the focused heading, as the alert may be missed.
-    heading = page.locator("h3:focus")
-    expect(heading).to_have_attribute(
-        "aria-describedby", re.compile("family-nav-error")
-    )
-    expect(review_segment).not_to_have_attribute("aria-current", "step")
-    links = page.locator("[data-step-link]")
-    for index in range(links.count()):
-        links.nth(index).click()
-    # With every page seen, a missing required answer (the annual pledge)
-    # takes the Family to it; its own error line explains it, so the note
-    # naming the question and page is for screen readers only (#295).
+    # Once every page has been seen, every segment moves freely. Next checks
+    # each page it leaves, so the required pledge is answered on the way and
+    # cleared again afterwards for Review to catch.
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    visit_every_page(page)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("")
+    for index in range(total):
+        assert not locked(segments.nth(index)), index
+    first.click()
+    page.locator("[data-step-link]").last.click()
+    assert step_text(page) == f"Step {total - 1} of {total}: {titles[-1]}"
+    first.click()
+    # A missing required answer (the annual pledge) takes the Family to it;
+    # its own error line explains it, so the note naming the question and
+    # page is for screen readers only (#295).
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
@@ -348,6 +404,44 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
         re.compile("“Annual pledge” on the “Financial stewardship” page")
     )
     expect(review_segment).not_to_have_attribute("aria-current", "step")
+
+
+@pytest.mark.parametrize("returning", [False, True])
+def test_review_needs_every_page_even_from_browser_history(
+    page, component_origin, returning
+):
+    """No Family, first-time or returning, reaches Review with a page unseen (#330)."""
+    form = paged_form()
+    if returning:
+        form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+        form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    review_segment = page.locator("[data-step-review]")
+    expect(review_segment).to_have_attribute("aria-disabled", "true")
+    review_segment.click(force=True)
+    assert step_text(page).endswith(": Financial stewardship")
+    # A Review entry in browser history is checked the same way: the Family
+    # is taken to the first page not yet seen, with a note saying why.
+    page.evaluate(
+        """() => {
+          history.pushState({familyPage: "review"}, "");
+          history.pushState({familyPage: "financial"}, "");
+          history.back();
+        }"""
+    )
+    note = page.locator("[data-nav-error]")
+    expect(note).to_contain_text("Please go through each page")
+    assert step_text(page).endswith(": Additional information")
+    # The note also describes the focused heading, as the alert may be missed.
+    heading = page.locator("h3:focus")
+    expect(heading).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
+    expect(page.locator(".family-step")).not_to_contain_text("Review and submit")
+    # With every page seen, Review opens.
+    review_segment.click()
+    expect(page.locator(".family-step")).to_contain_text("Review and submit")
 
 
 def test_welcome_page_has_no_duplicate_heading_or_session_deadline(
@@ -481,7 +575,9 @@ def test_optional_closing_page_sits_between_financial_and_additional(
         "rows => rows.map(row => row.textContent)"
     )
     assert titles[-3:] == ["Financial stewardship", "Closing", "Additional information"]
-    page.locator('[data-step-link="closing"]').click()
+    # Next checks each page it leaves; the annual pledge is required.
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.locator('[data-page="closing"]'))
     # The parish text's own heading is the visible title; "Closing" stays for
     # screen readers and focus only.
     expect(page.get_by_role("heading", name="Protect the earth")).to_be_visible()
@@ -544,9 +640,9 @@ def test_campaign_banner_and_page_icons(page, component_origin, axe_source, widt
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     # Pages without an image slot set show none.
-    page.locator('[data-step-link="household"]').click()
+    next_page(page)
     expect(page.locator('[data-page="household"] img')).to_have_count(0)
-    page.locator('[data-step-link="financial"]').click()
+    show(page, page.locator('[data-page="financial"]'))
     expect(page.locator('[data-page="financial"] img.family-page-icon')).to_be_visible()
 
 
@@ -596,17 +692,6 @@ def test_blocked_next_says_which_question_needs_an_answer(
     assert page.locator('[aria-describedby~="family-nav-error"]').count() == 0
 
 
-def test_returning_family_may_go_straight_to_review(page, component_origin):
-    """Someone who already submitted doesn't have to revisit every page."""
-    form = paged_form()
-    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
-    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
-    begin(page, component_origin, form, None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
-    page.locator("[data-step-review]").click()
-    expect(page.locator(".family-step")).to_contain_text("Review and submit")
-
-
 def test_member_section_is_not_outlined_by_an_invalid_field(page, component_origin):
     """A Member's own invalid field doesn't draw a red box around the section."""
     begin(page, component_origin, paged_form(), None)
@@ -627,11 +712,14 @@ def test_blocked_review_opens_a_question_on_another_page(page, component_origin)
         page.get_by_role("button", name="Add a household member", include_hidden=True),
     )
     add.click()
-    key = page.locator(":focus").evaluate("e => e.closest('[data-page]').dataset.page")
-    # Every page has been seen; go to another page and ask for Review.
-    links = page.locator("[data-step-link]")
-    for index in range(links.count()):
-        links.nth(index).click()
+    name = page.locator("#" + page.locator(":focus").get_attribute("id"))
+    key = name.evaluate("e => e.closest('[data-page]').dataset.page")
+    # Next checks the page being left, so the new person needs a name to be
+    # passed; clear it again once every page has been seen.
+    name.fill("Jamie")
+    visit_every_page(page)
+    page.locator(f'[data-step-link="{key}"]').click()
+    name.fill("")
     page.locator('[data-step-link="intro"]').click()
     page.locator("[data-step-review]").click()
     expect(page.locator(f'[data-page="{key}"]')).to_be_visible()
@@ -668,7 +756,7 @@ def test_member_page_first_control_fits_a_phone(page, component_origin, census):
     key = page.locator("[data-step-link^=member-]").first.get_attribute(
         "data-step-link"
     )
-    page.locator(f'[data-step-link="{key}"]').click()
+    show(page, page.locator(f'[data-page="{key}"]'))
     found = page.locator(f'[data-page="{key}"]').evaluate(FIRST_CONTROL)
     # Visible without scrolling: above the sticky navigation, and so also
     # within the 844 px viewport.
@@ -761,7 +849,7 @@ def test_welcome_order_banner_notice_family_icon(
     else:
         assert welcome_heading.get_attribute("aria-describedby") is None
     # The notice belongs to the Welcome page only.
-    page.locator('[data-step-link="household"]').click()
+    next_page(page)
     expect(page.locator(".family-submitted")).to_be_hidden()
     page.locator('[data-step-link="intro"]').click()
     if submitted:
