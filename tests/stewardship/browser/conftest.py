@@ -23,7 +23,6 @@ from parishkit.stewardship.accounts.integration_credentials import (
     CredentialSummary,
 )
 from parishkit.stewardship.accounts.integration_forms import (
-    CredentialForm,
     InlineCredentialForm,
     IntegrationForm,
 )
@@ -369,15 +368,6 @@ def component_origin():
             },
         ),
         (
-            "/credential-replace",
-            "credential-replace",
-            {
-                "target": "parishsoft",
-                "label": "ParishSoft",
-                "form": CredentialForm(initial={"intent": "synthetic-intent"}),
-            },
-        ),
-        (
             "/credential-selection",
             "credential-selection",
             {
@@ -386,6 +376,9 @@ def component_origin():
                 "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
                 "preview": "synthetic-selection-intent",
                 "selected": False,
+                "changes": [
+                    {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
+                ],
             },
         ),
         (

@@ -486,7 +486,12 @@ staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it. Failure or expiry destroys sealed staging and leaves the old working
 credential installed. Slack is optional; its token and channel must be
 supplied/removed together. Non-secret integration setting changes use the YAML
-configuration-request path rather than the credential installer.
+configuration-request path rather than the credential installer. The ParishSoft
+organization ID can change only until the first ParishSoft data load. After
+that the page shows it read-only and refuses a different value, with or without
+a new key, in plain language: every refresh must read the organization whose
+data is loaded, and a refresh for another organization is refused as a tenant
+mismatch.
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
@@ -496,7 +501,12 @@ that links back to the page that builds it, so one click starts a fresh review
 and nothing is saved in between. A finished key change (updated, failed,
 cancelled or expired) shows on its integration's page for one hour, and any
 Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
-one that is installed but not yet in use keeps showing until it is resolved.
+one that is installed but not selected (its automatic switch failed) is an
+error, not news: it says what is stopped (ParishSoft refreshes, email or Slack
+alerts) and offers **Finish switching to the new key**, and it keeps showing
+until it is resolved; the Admin home page shows it too. Mail meanwhile waits
+without spending attempts; see the
+[credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 The history
 stays on the change's details page and in the audit log. The ParishSoft daily
 refresh time is shown only for the once-a-day frequency; for hourly and

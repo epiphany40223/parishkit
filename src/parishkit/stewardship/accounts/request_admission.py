@@ -96,6 +96,39 @@ def check_historical_additions(base_id, patch):
             )
 
 
+def historical_record_id(base_id, kind):
+    """The record ID an integration of ``kind`` had in ``base_id``'s history.
+
+    Integration identities must stay stable across history (see
+    ``check_historical_additions``), so an integration that was removed and
+    is added again (Slack, the off-site backup folder) must reuse its old
+    record ID. Returns None when the kind never existed.
+    """
+    quote = connection.ops.quote_name
+    versions, integrations = AppliedConfigurationVersion._meta, AppliedIntegration._meta
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""WITH RECURSIVE chain(id, predecessor_id) AS (
+                SELECT {quote(versions.pk.column)},
+                       {quote(versions.get_field("predecessor").column)}
+                FROM {quote(versions.db_table)}
+                WHERE {quote(versions.pk.column)} = %s
+                UNION
+                SELECT p.{quote(versions.pk.column)},
+                       p.{quote(versions.get_field("predecessor").column)}
+                FROM {quote(versions.db_table)} p
+                JOIN chain c ON p.{quote(versions.pk.column)} = c.predecessor_id
+            ) SELECT i.{quote(integrations.get_field("record_id").column)}
+              FROM chain c JOIN {quote(integrations.db_table)} i
+              ON i.{quote(integrations.get_field("configuration").column)} = c.id
+              WHERE i.{quote(integrations.get_field("kind").column)} = %s
+              LIMIT 1""",
+            [base_id, kind],
+        )
+        row = cursor.fetchone()
+    return None if row is None else str(row[0])
+
+
 def _history_join(model):
     """Build model-owned identifiers only; the selected base remains a parameter."""
     quote = connection.ops.quote_name

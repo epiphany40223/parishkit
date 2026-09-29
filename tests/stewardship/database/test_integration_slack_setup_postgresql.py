@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from types import MappingProxyType
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
@@ -22,6 +22,7 @@ from parishkit.stewardship.deployment import ServiceRole, load_deployment
 from parishkit.stewardship.runtime_grants import runtime_grants
 
 from .auth_builders import signed_in
+from .campaign_builders import change
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -32,6 +33,7 @@ from .test_integration_views_postgresql import INDEX, hidden, post
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = INDEX + "/slack"
 TOKEN = b"xoxb-synthetic-slack-token"
+AGAIN = b"xoxb-synthetic-second-slack-token"
 
 
 @pytest.fixture
@@ -72,7 +74,8 @@ def slack(request, monkeypatch, tmp_path, auth_service, google):
         "service": auth_service,
         "browser": browser,
         "installer": CredentialInstaller(
-            CredentialFiles(path, private), validate=lambda value: value == TOKEN
+            CredentialFiles(path, private),
+            validate=lambda value: value in {TOKEN, AGAIN},
         ),
         "worker": replace(
             deployment,
@@ -92,10 +95,9 @@ def records(value):
     }
 
 
-def test_slack_is_set_up_after_setup_and_can_be_removed(slack):
-    """One save adds Slack with its first token; removal takes it out again."""
+def add_slack(slack, token, channel="C0123ABC"):
+    """Save a channel with a token on the Slack page; return the key's request."""
     browser, store = slack["browser"], slack["service"].store
-    assert b"Set up Slack" in browser.get(INDEX).content
     page = browser.get(URL)
     assert page.status_code == 200 and b"Slack is not set up" in page.content
     with identity("pk_stewardship_web"):
@@ -105,48 +107,145 @@ def test_slack_is_set_up_after_setup_and_can_be_removed(slack):
             {
                 "action": "preview",
                 "base_digest": store.active().digest,
-                "channel_id": "C0123ABC",
+                "channel_id": channel,
                 "intent": hidden(page, "intent"),
-                "candidate": TOKEN.decode(),
+                "candidate": token.decode(),
             },
         )
     assert response.status_code == 302, response.content
-    row = SecretReplacementRequest.objects.get(target="slack")
-    assert row.expected_fingerprint is None
-    selection = ConfigurationChangeRequest.objects.get(
-        request_key=selection_key(row.pk)
-    )
-    assert selection.patch[0]["operation"] == "add"
+    return SecretReplacementRequest.objects.order_by("-created_at").first()
+
+
+def install_key(slack, row):
+    """Check, install and acknowledge a staged Slack key."""
     with identity("pk_stewardship_credential_slack"):
         assert slack["installer"].run_once().state == "awaiting_ack"
     with identity("pk_stewardship_worker"):
         assert acknowledge_rotations(slack["worker"], {}) == [row.pk]
     with identity("pk_stewardship_credential_slack"):
         assert slack["installer"].run_once().state == "applied"
+
+
+def apply(slack, request_id):
+    """Run the configuration installer once for one request."""
     with as_config_installer():
-        assert (
-            install_request(
-                store, request_id=selection.pk, correlation_id=uuid4()
-            ).state
-            == "applied"
+        return install_request(
+            slack["service"].store,
+            request_id=UUID(str(request_id)),
+            correlation_id=uuid4(),
         )
+
+
+def remove_slack(slack):
+    """Preview, confirm and apply Remove Slack."""
+    browser = slack["browser"]
+    preview_page = post(browser, URL, {"action": "remove"})
+    assert b"To set Slack up again later" in preview_page.content
+    preview = hidden(preview_page, "preview")
+    response = post(browser, URL, {"action": "confirm", "preview": preview})
+    assert response.status_code == 302
+    assert apply(slack, response["Location"].rsplit("/", 1)[-1]).state == "applied"
+    assert "slack" not in records(slack)
+
+
+def test_slack_is_set_up_removed_and_set_up_again(slack):
+    """One save adds Slack with its first token; removal takes it out again.
+
+    Setting it up again afterwards must work (#307 M2): the removed
+    integration's key file is still installed, so the new key names it as
+    its predecessor, and the page shows no stale status line in between.
+    """
+    browser = slack["browser"]
+    assert b"Set up Slack" in browser.get(INDEX).content
+    row = add_slack(slack, TOKEN)
+    assert row.expected_fingerprint is None
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert selection.patch[0]["operation"] == "add"
+    install_key(slack, row)
+    assert apply(slack, selection.pk).state == "applied"
     added = records(slack)["slack"]["values"]
     assert added["credential_fingerprint"] == file_fingerprint(TOKEN)
     assert added["settings"] == {"channel_id": "C0123ABC"}
     page = browser.get(URL).content
     assert b"Key updated." in page and b"Remove Slack" in page and TOKEN not in page
-    preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
-    response = post(browser, URL, {"action": "confirm", "preview": preview})
-    assert response.status_code == 302
-    removal = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+    remove_slack(slack)
+    # The old key cannot bring Slack back without a newly pasted, checked
+    # token (#338 review): its selection is refused and not offered.
+    select = f"/admin/configuration/credentials/{row.pk}/select"
+    count = ConfigurationChangeRequest.objects.count()
+    assert browser.get(select).status_code == 409
+    assert ConfigurationChangeRequest.objects.count() == count
+    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    assert select.encode() not in status
+    # Removed: no leftover "installed" line or dead Finish switching link.
+    page = browser.get(URL).content
+    assert b"Slack is not set up" in page
+    assert b"/select" not in page and b"switching to it did not" not in page
+    assert b"Key updated." not in page
+    # Set it up again, with a new token and channel.
+    again = add_slack(slack, AGAIN, channel="C0456DEF")
+    assert again.pk != row.pk
+    assert again.expected_fingerprint == file_fingerprint(TOKEN)
+    install_key(slack, again)
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(again.pk)
     )
-    with as_config_installer():
-        assert (
-            install_request(store, request_id=removal.pk, correlation_id=uuid4()).state
-            == "applied"
-        )
-    assert "slack" not in records(slack)
+    assert apply(slack, selection.pk).state == "applied"
+    readded = records(slack)["slack"]["values"]
+    assert readded["credential_fingerprint"] == file_fingerprint(AGAIN)
+    assert readded["settings"] == {"channel_id": "C0456DEF"}
+    page = browser.get(URL).content
+    assert b"Key updated." in page and b"Remove Slack" in page
+
+
+def test_a_failed_slack_add_can_finish_switching(slack):
+    """A Slack add whose own selection failed says so and re-adds on Finish.
+
+    The token is installed but Slack is not configured, so the page shows
+    the error line, and Finish switching repeats the whole add on the
+    current settings.
+    """
+    browser, store = slack["browser"], slack["service"].store
+    row = add_slack(slack, TOKEN)
+    install_key(slack, row)
+    base = store.active()
+    parish = base.document()["sections"]["parish"][0]
+    change(
+        store,
+        base,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Renamed first"},
+            }
+        ],
+    )
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    result = apply(slack, selection.pk)
+    assert result.state == "failed" and result.failure_code == "stale_base"
+    page = browser.get(URL).content
+    assert b"Slack alerts are not sent" in page
+    select = f"/admin/configuration/credentials/{row.pk}/select"
+    assert select.encode() in page
+    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    assert select.encode() in status
+    preview = hidden(browser.get(select), "preview")
+    with identity("pk_stewardship_web"):
+        response = post(browser, select, {"action": "confirm", "preview": preview})
+    assert response.status_code == 302, response.content
+    finish = response["Location"].rsplit("/", 1)[-1]
+    assert apply(slack, finish).state == "applied"
+    added = records(slack)["slack"]["values"]
+    assert added["credential_fingerprint"] == file_fingerprint(TOKEN)
+    assert added["settings"] == {"channel_id": "C0123ABC"}
+    assert b"Key updated." in browser.get(URL).content
 
 
 def test_settings_alone_cannot_set_up_slack(slack):

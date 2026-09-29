@@ -569,6 +569,27 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert backups(store) == []
     with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
         assert backup_health.destination_configured_since() is None
+    # Setting the folder up again reuses its stable record identity (#307).
+    preview = hidden(
+        post(
+            browser,
+            URL,
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "target": LINK,
+            },
+        ),
+        "preview",
+    )
+    apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
+    assert backups(store) == [
+        {
+            "kind": "backup",
+            "settings": {"target": LINK},
+            "credential_fingerprint": None,
+        }
+    ]
 
 
 def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch, caplog):

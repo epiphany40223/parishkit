@@ -29,7 +29,11 @@ from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 from parishkit.stewardship.storage import StaleRecordError
 
 from .configuration_requests import _status, record_request
-from .integration_selection import authentication_scope, integration_records
+from .integration_selection import (
+    NOT_KEY_SCOPE,
+    authentication_scope,
+    integration_records,
+)
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
 from .privileged_actions import sealed_secret_request
@@ -45,6 +49,14 @@ SELECTION_NAMESPACE = UUID("6f0f6c55-3e0b-4c43-9a71-5d2b1c6e7a10")
 PENDING_CONFIGURATION = ("staged", "validating", "prepared", "yaml_activated")
 # The installer and consumer have this long to finish before rollback.
 STAGING_LIFETIME = timedelta(hours=1)
+
+# What stops while a new key is installed but not selected: every consumer
+# compares the installed file with the selected fingerprint (#307 M1).
+STOPPED = {
+    "parishsoft": _("ParishSoft refreshes are stopped"),
+    "google_workspace": _("email is held and not sent"),
+    "slack": _("Slack alerts are not sent"),
+}
 
 FAILED = {
     "parishsoft": _(
@@ -78,16 +90,95 @@ def selection_key(request_id):
     return uuid5(SELECTION_NAMESPACE, str(request_id))
 
 
-def _selection(row):
-    """Return the linked selection request's latest state, if one was recorded."""
-    selection = (
-        ConfigurationChangeRequest.objects.filter(
-            actor_id=row.requested_by_id, request_key=selection_key(row.pk)
-        )
-        .select_related("base")
+def original_selection(row):
+    """The selection request the key's own save recorded, if there is one."""
+    return ConfigurationChangeRequest.objects.filter(
+        actor_id=row.requested_by_id, request_key=selection_key(row.pk)
+    ).first()
+
+
+def _switching(row):
+    """True while any configuration request selecting this key is still queued.
+
+    That is the save's own selection request or a later **Finish switching**
+    request, by any Administrator: each one sets the integration's
+    fingerprint to the key's.
+    """
+    requests = ConfigurationChangeRequest.objects.filter(
+        patch__contains=[
+            {"values": {"credential_fingerprint": row.resulting_fingerprint}}
+        ]
+    ).select_related("base")
+    return any(_status(request).state in PENDING_CONFIGURATION for request in requests)
+
+
+def leftover_key(target):
+    """The key file an unconfigured integration still has installed, or None.
+
+    Removing an integration (Slack) removes only its settings; the installed
+    file stays until a new key replaces it. That file is the latest key the
+    installer applied for the target.
+    """
+    return (
+        SecretReplacementRequest.objects.filter(target=target, state="applied")
+        .order_by("-created_at", "-pk")
+        .values_list("resulting_fingerprint", flat=True)
         .first()
     )
-    return None if selection is None else _status(selection).state
+
+
+def _was_selected(row):
+    """True once any applied configuration request selected this key."""
+    requests = ConfigurationChangeRequest.objects.filter(
+        patch__contains=[
+            {"values": {"credential_fingerprint": row.resulting_fingerprint}}
+        ]
+    ).select_related("base")
+    return any(_status(request).state == "applied" for request in requests)
+
+
+def switch_patch(row, records):
+    """The configuration patch that finishes switching to ``row``'s key.
+
+    It repeats the key's original selection on the current settings, so
+    **Finish switching** recovers from a selection that failed, for example
+    because another settings change was applied first. Only the key-scope
+    settings saved with the key (what the provider check used, such as the
+    Slack channel) are carried over, merged onto the current settings, so a
+    newer change to anything else (such as the refresh schedule) is kept.
+    When the save added the integration, the whole new record is added again,
+    unless the key was in use and the integration was removed since: a
+    removed integration comes back only with a newly pasted, checked key. A
+    key staged without a selection request selects its fingerprint alone.
+    """
+    original = original_selection(row)
+    item = original.patch[0] if original is not None else None
+    if item is not None and item["operation"] == "add":
+        if row.target in records:
+            raise StaleRecordError("This integration was set up again since.")
+        if _was_selected(row):
+            raise StaleRecordError("This integration was removed since.")
+        return [item]
+    record = records.get(row.target)
+    if record is None:
+        raise StaleRecordError("This integration is no longer configured.")
+    values = {"credential_fingerprint": row.resulting_fingerprint}
+    saved = item["values"].get("settings") if item is not None else None
+    if saved is not None:
+        current = record["values"]["settings"]
+        merged = current | {
+            name: value for name, value in saved.items() if name not in NOT_KEY_SCOPE
+        }
+        if merged != current:
+            values["settings"] = merged
+    return [
+        {
+            "operation": "update",
+            "section": "integrations",
+            "id": record["id"],
+            "values": values,
+        }
+    ]
 
 
 # How long a finished key change stays on its integration's settings page,
@@ -146,6 +237,16 @@ def summary(target, record):
     )
     if row is None:
         return None
+    if (
+        record["id"] is None
+        and row.state == "applied"
+        and not _switching(row)
+        and _was_selected(row)
+    ):
+        # The integration was removed after this key was in use (Remove
+        # Slack): nothing needs action, and the page offers setting it up
+        # again. A key whose own "add" never applied still shows below.
+        return None
     # A finished change is news for an hour (or until an Administrator
     # dismisses it), not forever; its history stays on the details page and
     # in the audit log. A key that is installed but not yet in use still
@@ -167,17 +268,24 @@ def summary(target, record):
             return CredentialSummary(
                 "updated", row.updated_at, _("Key updated."), row.pk
             )
-        if _selection(row) in PENDING_CONFIGURATION:
+        if _switching(row):
             return CredentialSummary(
                 "pending",
                 row.created_at,
                 _("The new key is installed. Switching to it now."),
                 row.pk,
             )
+        # The key is in place but nothing will select it: the automatic
+        # switch failed (or never existed). Consumers refuse the mismatch, so
+        # this needs action now, not later.
         return CredentialSummary(
             "unselected",
             row.updated_at,
-            _("The new key is installed but not yet in use."),
+            _(
+                "The new key is installed, but switching to it did not finish, "
+                "so %(stopped)s. Select Finish switching to the new key now."
+            )
+            % {"stopped": STOPPED[target]},
             row.pk,
         )
     if row.state == "expired":
@@ -189,6 +297,35 @@ def summary(target, record):
     else:
         message = FAILED[target]
     return CredentialSummary("failed", row.updated_at, message, row.pk)
+
+
+def unfinished_switches(configuration):
+    """Integrations whose new key is installed but whose switch did not finish.
+
+    The Admin home page lists these, because their consumers are stopped or
+    holding mail until an Administrator selects Finish switching, and nobody
+    may open the integration's own page for days. Normally one small query:
+    the latest key change per integration, all already in use.
+    """
+    records = integration_records(configuration.active_configuration.canonical_document)
+    latest = (
+        SecretReplacementRequest.objects.filter(target__in=STOPPED)
+        .order_by("target", "-created_at", "-pk")
+        .distinct("target")
+    )
+    stuck = []
+    for row in latest:
+        record = records.get(row.target)
+        if row.state != "applied" or (
+            record is not None
+            and record["values"]["credential_fingerprint"] == row.resulting_fingerprint
+        ):
+            continue
+        unset = {"id": None, "values": {"credential_fingerprint": None}}
+        line = summary(row.target, record or unset)
+        if line is not None and line.kind == "unselected":
+            stuck.append(row.target)
+    return stuck
 
 
 def save_credential(
@@ -204,7 +341,9 @@ def save_credential(
     than left to install without anything selecting it.
 
     ``record`` is None when adding Slack after setup: the selection request
-    then adds the integration record together with its first key.
+    then adds the integration record together with its first key. Removing
+    Slack leaves its last key file installed, so setting it up again replaces
+    that file: the new request names it as the predecessor.
     """
     require_fresh(request)
     records = integration_records(configuration.active_configuration.canonical_document)
@@ -213,11 +352,19 @@ def save_credential(
     if adding:
         if target not in OPTIONAL_INTEGRATIONS:
             raise LookupError("Integration is unavailable.")
-        # A retry of the same save derives the same new record identity.
+        # Setting up again reuses the removed integration's record identity,
+        # which history keeps stable; otherwise a retry of the same save
+        # derives the same new one.
+        from .request_admission import historical_record_id
+
         record = {
-            "id": str(uuid5(SELECTION_NAMESPACE, f"record:{identifier}")),
+            "id": historical_record_id(configuration.active_configuration.pk, target)
+            or str(uuid5(SELECTION_NAMESPACE, f"record:{identifier}")),
             "values": {"kind": target, "settings": {}, "credential_fingerprint": None},
         }
+        predecessor = leftover_key(target)
+    else:
+        predecessor = record["values"]["credential_fingerprint"]
     proposed = {**record, "values": {**record["values"], "settings": settings}}
     scope = authentication_scope(
         target,
@@ -235,7 +382,7 @@ def save_credential(
         target=target,
         staging_reference=UUID(intent["staging"]),
         staging_lifetime=STAGING_LIFETIME,
-        expected_fingerprint=record["values"]["credential_fingerprint"],
+        expected_fingerprint=predecessor,
         correlation_id=current_correlation(),
         sealed_candidate=sealed,
         candidate_fingerprint=fingerprint,

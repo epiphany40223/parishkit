@@ -137,29 +137,6 @@ def test_scope_refuses_noncanonical_or_out_of_range_organization(organization):
     }
     with pytest.raises(ConfigError):
         authentication_scope("parishsoft", records)
-    from types import SimpleNamespace
-
-    from parishkit.stewardship.accounts.integration_views import _context
-
-    configuration = SimpleNamespace(
-        testing_recipient="test@example.org",
-        active_configuration=SimpleNamespace(
-            canonical_document={
-                "sections": {
-                    "integrations": [
-                        {
-                            "values": {
-                                "kind": "parishsoft",
-                                "settings": {"organization_id": organization},
-                            }
-                        }
-                    ]
-                },
-            }
-        ),
-    )
-    with pytest.raises(ConfigError):
-        _context(configuration, "parishsoft")
 
 
 def test_workspace_scope_binds_mailbox_sender_and_reply_not_delivery_readiness():

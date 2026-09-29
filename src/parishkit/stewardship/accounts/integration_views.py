@@ -1,6 +1,5 @@
 """Admin integration settings and sealed replacement intake; no provider IO in web."""
 
-from datetime import timedelta
 from uuid import UUID, uuid4
 
 from django.core import signing
@@ -15,8 +14,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
-from parishkit.stewardship.observability import current_correlation
-from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
+from parishkit.stewardship.service_boundaries import ROTATING_TARGETS
 from parishkit.stewardship.source.refresh_status import (
     full_refresh_status,
     refresh_schedule,
@@ -37,15 +35,13 @@ from .handoff_discovery import public_handoff
 from .integration_credentials import dismiss, save_credential, summary
 from .integration_forms import (
     LABELS,
-    CredentialForm,
     InlineCredentialForm,
     IntegrationForm,
 )
-from .integration_selection import authentication_scope
+from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
-from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
-from .privileged_actions import sealed_secret_request
+from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
@@ -114,6 +110,12 @@ def _unset(target):
     }
 
 
+def _form(target, *args, **kwargs):
+    """The settings form, with ParishSoft's organization ID fixed once loaded."""
+    loaded = loaded_organization() if target == "parishsoft" else None
+    return IntegrationForm(target, *args, loaded_organization=loaded, **kwargs)
+
+
 def _checked(request, service, response):
     """Repeat authorization before private settings or progress leave the process."""
     if not allows(
@@ -146,7 +148,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         # and once any backup folder has been saved since the test, the saved
         # folder shows instead.
         initial["target"] = probe.folder_url
-    form = form if form is not None else IntegrationForm(target, initial=initial)
+    form = form if form is not None else _form(target, initial=initial)
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -293,7 +295,7 @@ def _save(request, service, configuration, actor, target):
     stale session gets the step-up page instead of a sealed request.
     """
     require_fresh(request)
-    form = IntegrationForm(target, request.POST)
+    form = _form(target, request.POST)
     credential = InlineCredentialForm(target, request.POST)
     if not (form.is_valid() and credential.is_valid()):
         credential = InlineCredentialForm(
@@ -357,7 +359,7 @@ def _preview(request, service, actor, target):
     if _optional(configuration, target) is None and target != "backup":
         raise ValueError("Paste the key to set up this integration.")
     record = _optional(configuration, target) or _unset(target)
-    form = IntegrationForm(target, request.POST)
+    form = _form(target, request.POST)
     if not form.is_valid():
         return _page(request, configuration, target, form=form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
@@ -379,9 +381,11 @@ def _preview(request, service, actor, target):
         if record["id"] is not None
         else {
             # The off-site folder is added by settings alone; it has no key.
+            # Adding it again after removal reuses its stable record ID.
             "operation": "add",
             "section": "integrations",
-            "id": str(uuid4()),
+            "id": historical_record_id(configuration.active_configuration.pk, target)
+            or str(uuid4()),
             "values": {
                 "kind": target,
                 "settings": settings,
@@ -528,33 +532,12 @@ def integration_settings(request, target=None):
                 raise LookupError("Integration is unavailable.")
             response = _page(request, configuration, target)
         return _checked(request, service, response)
+    except SecretRequestConflict:
+        # A reused page carrying a different key: correctable input, not an
+        # outage. The key itself is never echoed.
+        return error_response(ValueError("Credential intake identity has changed."))
     except ERRORS as error:
         return error_response(error)
-
-
-def _context(configuration, target):
-    """Bind a candidate to the exact currently applied public provider settings."""
-    records = _records(configuration)
-    _selected(configuration, target)
-    return authentication_scope(
-        target, records, recipient=configuration.testing_recipient
-    )
-
-
-def _credential_form(configuration, actor, target):
-    """One short-lived server-selected identity permits safe network retry."""
-    _handoff(target)
-    intent = signing.dumps(
-        {
-            "actor": str(actor.identity),
-            "target": target,
-            "base": configuration.active_configuration.digest,
-            "request": str(uuid4()),
-            "staging": str(uuid4()),
-        },
-        salt=CREDENTIAL_SALT,
-    )
-    return CredentialForm(initial={"intent": intent})
 
 
 def _handoff(target):
@@ -563,99 +546,6 @@ def _handoff(target):
         return public_handoff(target)
     except ConfigError:
         raise IntegrationUnavailable() from None
-
-
-def _stage(request, configuration, actor, target, form):
-    """Seal immediately; only ciphertext, fingerprint and public scope persist."""
-    intent = signing.loads(
-        form.cleaned_data["intent"], salt=CREDENTIAL_SALT, max_age=300
-    )
-    if intent["actor"] != str(actor.identity) or intent["target"] != target:
-        raise PermissionError("Credential intent does not belong to this session.")
-    if intent["base"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Integration settings changed.")
-    identifier = UUID(intent["request"])
-    value = form.cleaned_data.pop("candidate").encode("utf-8")
-    from .key_files import MAX_FILE_BYTES
-
-    if len(value) > MAX_FILE_BYTES:
-        raise ValueError("Credential exceeds its byte bound.")
-    sealed = _handoff(target).seal(identifier, value)
-    fingerprint = credential_receipt(value, target)
-    del value
-    receipt = sealed_secret_request(
-        request,
-        configuration_digest=intent["base"],
-        request_id=identifier,
-        target=target,
-        staging_reference=UUID(intent["staging"]),
-        staging_lifetime=timedelta(hours=1),
-        expected_fingerprint=_selected(configuration, target)["values"][
-            "credential_fingerprint"
-        ],
-        correlation_id=current_correlation(),
-        sealed_candidate=sealed,
-        candidate_fingerprint=fingerprint,
-        required_consumers=tuple(
-            role.value for role, names in ALLOWED_SECRETS.items() if target in names
-        ),
-        provider_settings=_context(configuration, target),
-    )
-    return HttpResponseRedirect(
-        f"/admin/configuration/credentials/{receipt.request_id}"
-    )
-
-
-@sensitive_post_parameters("candidate")
-@require_http_methods(["GET", "HEAD", "POST"])
-def replace_credential(request, target):
-    """Fresh Google authentication and CSRF precede private credential submission."""
-    try:
-        service = runtime()
-        actor = principal(request, service)
-        configuration = editable_configuration(service)
-        if target not in {"parishsoft", "google_workspace", "slack"}:
-            raise LookupError("Integration is unavailable.")
-        _context(configuration, target)
-        require_fresh(request)
-        if request.method == "POST":
-            if (
-                request.FILES
-                or set(request.POST) - {"candidate", "intent", "csrfmiddlewaretoken"}
-                or any(len(values) != 1 for _, values in request.POST.lists())
-            ):
-                raise ValueError("Invalid credential fields.")
-            form = CredentialForm(request.POST)
-            if form.is_valid():
-                return _checked(
-                    request,
-                    service,
-                    _stage(request, configuration, actor, target, form),
-                )
-            status = 400
-        else:
-            filters(request.GET, allowed=set())
-            form = _credential_form(configuration, actor, target)
-            status = 200
-        response = render(
-            request,
-            "stewardship/credential-replace.html",
-            {
-                "form": form,
-                "target": target,
-                "label": LABELS[target],
-                "breadcrumb_label": _("Replace %(label)s credential")
-                % {"label": LABELS[target]},
-            },
-            status=status,
-        )
-        if status == 400:
-            response.stewardship_safe_error = True
-        return _checked(request, service, response)
-    except SecretRequestConflict:
-        return error_response(ValueError("Credential intake identity has changed."))
-    except ERRORS as error:
-        return error_response(error)
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -739,6 +629,32 @@ def dismiss_credential_result(request, target):
         return error_response(error)
 
 
+def _selectable(configuration, receipt):
+    """Offer Finish switching only for the key the settings page says needs it.
+
+    An older key, or one whose integration was removed after it was in use,
+    is history: selecting it again would bring back a key nobody pasted or
+    checked just now (#338 review).
+    """
+    if receipt.state != "applied":
+        return False
+    from .secret_models import SecretReplacementRequest
+
+    target = (
+        SecretReplacementRequest.objects.filter(pk=receipt.request_id)
+        .values_list("target", flat=True)
+        .first()
+    )
+    if target not in ROTATING_TARGETS:
+        return False
+    latest = summary(target, _optional(configuration, target) or _unset(target))
+    return (
+        latest is not None
+        and latest.kind == "unselected"
+        and latest.request_id == receipt.request_id
+    )
+
+
 @require_http_methods(["GET", "HEAD"])
 def credential_status(request, request_id):
     """Passive actor-scoped progress does not extend an abandoned Admin session."""
@@ -746,7 +662,7 @@ def credential_status(request, request_id):
         filters(request.GET, allowed=set())
         service = runtime()
         actor = principal(request, service, passive=True)
-        editable_configuration(service)
+        configuration = editable_configuration(service)
         receipt = secret_request_status(request_id=request_id, actor_id=actor.identity)
         response = render(
             request,
@@ -754,6 +670,7 @@ def credential_status(request, request_id):
             {
                 "receipt": receipt,
                 "pending": receipt.state in SECRET_PENDING,
+                "selectable": _selectable(configuration, receipt),
             },
         )
         return _checked(request, service, response)

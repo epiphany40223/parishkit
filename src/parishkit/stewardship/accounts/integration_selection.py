@@ -5,7 +5,13 @@ adding/removing an integration remain their separate owning workflows; ordinary
 replacement of an existing reference must not nominate arbitrary fingerprints.
 """
 
+import logging
+from datetime import timedelta
+
+from django.utils import timezone
+
 from parishkit.config import ConfigError
+from parishkit.stewardship.observability import Event, FailureKind, emit
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 
 from .configuration_errors import ConfigurationReadinessUnavailable
@@ -19,6 +25,44 @@ from .secret_models import (
 )
 
 TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+# Integration settings a key is never checked against: refresh timing is
+# scheduling and the From name is presentation. Everything else in an
+# integration's settings is its key scope (see authentication_scope).
+NOT_KEY_SCOPE = frozenset({"nightly_time", "full_refresh", "sender_name"})
+
+
+class OrganizationLocked(ConfigError):
+    """The ParishSoft organization cannot change once its data is loaded."""
+
+
+def loaded_organization():
+    """The ParishSoft organization ID of the loaded data, or None before a load."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.values_list("organization_id", flat=True).first()
+
+
+def refuse_organization_change(before, after):
+    """Refuse a new ParishSoft organization ID once any data has been loaded.
+
+    ``before`` and ``after`` are integration records by kind. Every refresh
+    must read the organization whose data is loaded (``source.requests``),
+    so a changed ID would stop them all. The settings form refuses it too;
+    this check covers every path that records or installs a change.
+    """
+    if "parishsoft" not in before or "parishsoft" not in after:
+        return
+    old, new = (
+        records["parishsoft"]["values"]["settings"].get("organization_id")
+        for records in (before, after)
+    )
+    if old == new:
+        return
+    loaded = loaded_organization()
+    if loaded is not None and str(loaded) != new:
+        raise OrganizationLocked(
+            "The ParishSoft organization cannot change after data is loaded."
+        )
 
 
 class StaleCredentialReceipt(ConfigError):
@@ -37,9 +81,6 @@ def authentication_scope(target, records, *, recipient=None):
     """Match authentication inputs without treating an old recipient as readiness."""
     selected = dict(records[target]["values"]["settings"])
     if target == "parishsoft":
-        # Refresh timing is scheduling, not part of what a key is checked against.
-        selected.pop("nightly_time", None)
-        selected.pop("full_refresh", None)
         organization = selected.get("organization_id")
         if (
             not isinstance(organization, str)
@@ -50,7 +91,9 @@ def authentication_scope(target, records, *, recipient=None):
         selected["organization_id"] = int(organization)
         if str(selected["organization_id"]) != organization:
             raise ConfigError("A canonical organization ID is required.")
-    elif target == "google_workspace":
+    for name in NOT_KEY_SCOPE:
+        selected.pop(name, None)
+    if target == "google_workspace":
         email = records.get("email")
         if email is None:
             raise ConfigError("Outgoing email settings are unavailable.")
@@ -113,9 +156,11 @@ def validate_installation(document):
     )
     before = integration_records(previous.canonical_document)
     after = integration_records(document)
+    refuse_organization_change(before, after)
     # Initial setup adds its integrations under the setup readiness owner. After
     # setup (the predecessor already has ParishSoft), an integration added with
-    # its first key, such as Slack, needs a receipt that expected no key.
+    # its first key, such as Slack, needs a current receipt. Its predecessor is
+    # whatever key file an earlier removal left installed, not a setting.
     added = after.keys() - before.keys() if "parishsoft" in before else set()
     for target in TARGETS & ((before.keys() & after.keys()) | added):
         old = (
@@ -126,5 +171,66 @@ def validate_installation(document):
         proposed = after[target]["values"]["credential_fingerprint"]
         if old != proposed:
             receipt = current_receipt(target, proposed, after)
-            if receipt.expected_fingerprint != old:
+            if target in before and receipt.expected_fingerprint != old:
                 raise ConfigError("Credential replacement has a different predecessor.")
+
+
+# A key installed but not selected for this long is logged as an error by the
+# consumer that holds for it: the automatic switch takes about a minute, so
+# this is stuck, and held mail must not wait unnoticed (#338 review). The
+# log repeats at most hourly per key in each process.
+SWITCH_ALERT_AFTER = timedelta(minutes=15)
+SWITCH_ALERT_EVERY = timedelta(hours=1)
+# The last alert per key change, in this process. It holds one entry: only
+# the latest change of a target can be stuck at a time.
+_alerted = {}
+
+
+def switching(target, fingerprint):
+    """True while ``target``'s key is changing to the installed ``fingerprint``.
+
+    From the moment a credential installer renames a new key into place until
+    a configuration request selects its fingerprint, a consumer that compares
+    the file with the applied configuration sees a mismatch. That is not a
+    bad key: the change is still in progress, or it is installed and waits
+    for an Administrator to select **Finish switching to the new key** (for
+    example after its automatic selection failed). Consumers hold their work
+    and retry later instead of spending their attempts on it (#307 M1).
+    Any other mismatch is still a refusal.
+
+    A key that stays installed but unselected past ``SWITCH_ALERT_AFTER`` is
+    also logged as an ERROR, so held work is noticed even when nobody opens
+    the integration's page; the Admin home page shows it too.
+    """
+    latest = (
+        SecretReplacementRequest.objects.filter(target=target)
+        .order_by("-created_at", "-pk")
+        .values_list("pk", "state", "resulting_fingerprint", "updated_at")
+        .first()
+    )
+    if latest is None:
+        return False
+    identifier, state, installed, changed_at = latest
+    if state in SECRET_PENDING:
+        return True
+    if state != "applied" or installed != fingerprint:
+        return False
+    _alert_unfinished(identifier, changed_at)
+    return True
+
+
+def _alert_unfinished(identifier, installed_at):
+    """Log a long-unfinished key switch as an ERROR, at most hourly per key."""
+    now = timezone.now()
+    if now - installed_at < SWITCH_ALERT_AFTER:
+        return
+    last = _alerted.get(identifier)
+    if last is not None and now - last < SWITCH_ALERT_EVERY:
+        return
+    _alerted.clear()
+    _alerted[identifier] = now
+    emit(
+        Event.INSTALLER_REQUEST_FAILED,
+        level=logging.ERROR,
+        failure_kind=FailureKind.CREDENTIAL_SWITCH_UNFINISHED,
+    )

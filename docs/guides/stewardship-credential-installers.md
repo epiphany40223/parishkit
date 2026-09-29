@@ -188,8 +188,10 @@ in the same form as its settings. No server step is needed:
    shown again.
 2. The same web request records the configuration request that will select the
    new fingerprint, together with any changed settings the key was checked
-   against, such as a new organization ID. If that request cannot be recorded,
-   the staged key is cancelled.
+   against, such as a new Slack channel. (The ParishSoft organization ID can
+   change only before the first ParishSoft data load; see the
+   [Admin portal spec](../specs/stewardship/admin-portal/spec.md).) If that
+   request cannot be recorded, the staged key is cancelled.
 3. The target's installer checks the key with the provider, using exactly those
    settings, and renames it into place (`awaiting_ack`). A rejected key fails
    the request; the previous key stays in use.
@@ -204,10 +206,40 @@ in the same form as its settings. No server step is needed:
    progress, applies the new fingerprint and settings.
 
 The settings page shows one plain-language line about the latest change:
-checking, updated, not accepted (the previous key is still in use), or
-installed but not yet in use, with a link to finish the selection by hand.
-Request states and fingerprints are on the linked details page and in the
-audit log. A compose file generated before this change still mounts the single
+checking, switching, updated, or not accepted (the previous key is still in
+use). Request states and fingerprints are on the linked details page and in
+the audit log.
+
+Once the installer renames the new key into place, every consumer compares
+the file with the selected fingerprint, so the integration stops until the
+selection applies. If the selection fails for good (for example `stale_base`,
+when another settings change on the same base was applied first), the page
+shows an error saying what is stopped, with a **Finish switching to the new
+key** button. That page repeats the key's original selection on the current
+settings, and any fresh Administrator may confirm it. Only the key-scope
+settings saved with the key (what the provider checked it against, such as the
+organization ID or the Slack channel) are carried over, merged onto the current
+settings, so a newer change to anything else, such as the refresh schedule,
+is kept. The page lists every setting the switch would change. When the save
+added the integration, the whole new record is added again. A switch that would
+change the ParishSoft organization ID after the first data load is refused on
+that page, and the configuration installer refuses such a change from any path
+(`invalid_candidate`). Meanwhile
+Family and operational mail treat the mismatch as a hold, not a failure:
+while the latest Workspace key change is in progress, or installed with the
+file's fingerprint but not selected, a message is deferred in the
+`RECONCILING` phase without charging its attempt budget, like a sending-limit
+hold. The hold is not silent: the Admin home page shows the same error for
+every integration in this state, and once a key has been installed but
+unselected for 15 minutes the consumer holding for it logs
+`installer_request_failed` at ERROR with `failure_kind`
+`credential_switch_unfinished`, at most hourly per key in each process. That
+is the structured process log: the mail-dispatch login may write only timeout
+events to the operational log table, and widening that is a schema change.
+ParishSoft refreshes are refused (`SOURCE_CREDENTIAL_FAILED`) and run
+again on schedule after the switch. There is no stand-alone "replace
+credential" page any more: it staged a key with nothing to select it, which
+always ended in this state. A compose file generated before this change still mounts the single
 file; regenerate the compose files and recreate `worker` and `mail-dispatch`
 once to gain the directory mounts. Until then the operator command below still
 works. Only the default `credentials/<target>/credential` layout gets a
@@ -224,6 +256,18 @@ Slack's credential directory, even before Slack is set up, so `compose.json`
 and `compose-slack.json` now render the same mounts and no Compose switch is
 needed. Removing Slack is an ordinary previewed configuration change; new
 Slack alerts stop, and the old key file remains until Slack is set up again.
+After removal the page shows no key-change line, only "Slack is not set up".
+The old key cannot bring Slack back: selecting it again is refused and its
+details page no longer offers **Finish switching**, so Slack returns only with
+a newly pasted token that the provider checks. (The leftover file itself stays
+until then; only its installer may change the credential directory.)
+Setting Slack up again is the same one-step save: the new key names the
+leftover file as its predecessor (the latest applied key for the target), and
+the added record reuses Slack's earlier record ID, because integration
+identities stay stable across configuration history. The off-site backup
+folder reuses its record ID the same way when it is turned on again. If the
+add's own selection fails, the page shows the "switching did not finish" error
+above, and **Finish switching** repeats the whole add.
 
 ## Verification
 

@@ -362,11 +362,6 @@ admin_patterns = [
         name="dismiss_credential_result",
     ),
     path(
-        "configuration/integrations/<str:target>/credential",
-        integration_views.replace_credential,
-        name="replace_credential",
-    ),
-    path(
         "configuration/credentials/<uuid:request_id>",
         integration_views.credential_status,
         name="credential_status",

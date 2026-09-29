@@ -83,3 +83,21 @@ def test_candidate_is_write_only_even_when_another_field_is_invalid():
         form.is_valid()
         assert "SYNTHETIC-PRIVATE-CREDENTIAL" not in form.as_div()
         assert form.cleaned_data["candidate"] == "SYNTHETIC-PRIVATE-CREDENTIAL"
+
+
+def test_loaded_organization_is_read_only_and_cannot_change():
+    """Once ParishSoft data is loaded, only that organization ID validates."""
+    digest = {"base_digest": "a" * 64}
+    same = IntegrationForm(
+        "parishsoft", digest | {"organization_id": "123"}, loaded_organization=123
+    )
+    assert same.is_valid(), same.errors
+    assert same.fields["organization_id"].widget.attrs["readonly"] is True
+    other = IntegrationForm(
+        "parishsoft", digest | {"organization_id": "456"}, loaded_organization=123
+    )
+    assert not other.is_valid()
+    assert "Keep 123 here." in other.errors["organization_id"][0]
+    before = IntegrationForm("parishsoft", digest | {"organization_id": "456"})
+    assert before.is_valid(), before.errors
+    assert "readonly" not in before.fields["organization_id"].widget.attrs

@@ -259,10 +259,10 @@ before touching the credential or the source. For a destructive change, see
 1. Check ParishSoft's status and whether the API key still works: run the
    read-only smoke check inside `worker`
    (`smoke --target parishsoft --organization-id …`).
-2. If the key is invalid or the organization differs, do not replace it
-   blindly: confirm with the parish which organization is right, then replace
-   it as [Replacing a provider credential](#replacing-a-provider-credential)
-   below describes.
+2. If the key is invalid, do not replace it blindly: confirm with the parish
+   that the key belongs to the configured organization, then replace it as
+   [Replacing a provider credential](#replacing-a-provider-credential) below
+   describes. The organization ID itself cannot change after the first load.
 3. When the provider is back, use **Refresh now** on the home page
    (`/admin/source/refresh`) rather than waiting for the next scheduled run.
 
@@ -317,42 +317,33 @@ start of every refresh, so a forgotten override shows in its log.
 
 ## Replacing a provider credential
 
-A replacement is a timed, two-sided change: the installer checks and installs
-the new credential, and every service that uses it must then be recreated
-and acknowledge it, within one hour, or the previous working credential is
-restored.
+An Administrator replaces a key on the integration's own settings page. No
+server step is needed; the
+[credential installer guide](stewardship-credential-installers.md#replacing-an-integration-key-from-the-web)
+describes the design.
 
-1. In the portal, open **Integrations**, then the provider's **Replace
-   credential** page (`/admin/configuration/integrations/<target>/credential`),
-   after signing in with Google within the last five minutes. Submit the new
-   credential; it is sealed at once and never shown again. The isolated
-   installer checks connectivity first and sends no message.
-2. When the status page says the candidate passed and is installed, recreate
-   every consuming service (for the mailbox, `mail-dispatch`; for ParishSoft
-   and Slack, `worker`) with `up --detach --force-recreate`, using exactly one
-   Compose file (`compose.json`, or `compose-slack.json` when Slack is
-   configured) and the deployment's usual project name, never an overlay
-   combination.
-3. Acknowledge the credential inside each recreated service yourself; nothing
-   does it for you. Take the request UUID from the status page's **Request:**
-   line and run, for each consumer,
-   `docker compose ... exec -T <service> pk-stewardship acknowledge-credential --config <that service's configuration> --request-id <UUID>`.
-   Use `exec` into the running service, never `compose run`: a one-off
-   container cannot acknowledge. The
-   [credential installer guide](stewardship-credential-installers.md) and the
-   runtime guide's setup section describe the protocol.
-4. When the status page says every required consumer acknowledged, choose
-   **Review and select the acknowledged fingerprint**, so the integration's
-   configuration names the credential that is now installed. Until then the
-   credential cannot support normal work.
-5. Re-run the smoke check to confirm.
+1. Sign in with Google within the last five minutes, open **Integrations**,
+   then the provider's page (`/admin/configuration/integrations/<target>`).
+   Paste the new key in its field and select **Save**. The key is sealed at
+   once and never shown again.
+2. The page follows the change: "Checking and installing the new key", then
+   "Switching to it now", then "Key updated." The isolated installer checks
+   the key with the provider first and sends no message. A rejected key says
+   so, and the previous key stays in use.
+3. If the page (or the Admin home page) instead says in red that switching to
+   the new key did not finish, select **Finish switching to the new key** right
+   away and confirm. After 15 minutes in this state `mail-dispatch` also logs
+   `installer_request_failed` with `credential_switch_unfinished` at ERROR.
+   The new key is already installed, so until it is selected the integration
+   stops: ParishSoft refreshes are refused, and email waits (it is held, not
+   failed, and goes out once the switch finishes). This happens when another
+   settings change was applied first; **Finish switching** repeats the switch
+   on the current settings.
+4. Re-run the smoke check to confirm.
 
-If the status page instead says the replacement was not applied (it failed,
-or the hour ran out), the previous credential is restored and the candidate
-file removed. Recreate the same consumers again with
-`up --detach --force-recreate`, not a restart: a restarted container keeps the
-removed file's old mount and goes on failing. Then re-run the smoke check
-before trying again.
+Avoid replacing the Google Workspace or ParishSoft key while campaign mail is
+sending. The ParishSoft organization ID cannot change after the first
+ParishSoft data load.
 
 ## Pausing and resuming delivery
 

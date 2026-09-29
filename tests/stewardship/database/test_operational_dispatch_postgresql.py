@@ -545,3 +545,44 @@ def test_allocation_mode_is_historical_but_dispatch_content_uses_current_mode(
     message.refresh_from_db()
     assert message.mode == "testing"
     assert message.render.subject.startswith("[PRODUCTION] CRITICAL:")
+
+
+def test_operational_mail_holds_while_a_new_key_is_not_selected(
+    routing, tmp_path, monkeypatch
+):
+    """Staff alert mail waits, uncharged, for an installed but unselected key.
+
+    The same hold as Family mail (#307 M1, #338 review): the new Workspace key
+    is in place and acknowledged, but no configuration selects it yet.
+    """
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        preparation_attempts,
+    )
+
+    from .test_family_mail_worker_postgresql import NEXT_KEY, workspace_key_change
+
+    store, _, _, _ = routing
+    recipient = allocated(routing)[0]
+    path = tmp_path / "workspace"
+    write_private(path, NEXT_KEY)
+    workspace_key_change(b"synthetic-workspace", NEXT_KEY, installed=True)
+
+    def submit(*args, **kwargs):
+        pytest.fail("No mail is sent with a key that is not selected.")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_mail_tasks.submit_operational_mail",
+        submit,
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+        assert execute_hint(
+            recipient.outbox.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={"outbox_delivery": delivery_handler(store, credential_path=path)},
+        )
+    held = TaskRun.objects.get(pk=recipient.outbox.task_id)
+    assert held.state == "retry_wait" and held.phase == "reconciling"
+    assert preparation_attempts(_status(held)) == 0
+    outbox = OutboxMessage.objects.get(pk=recipient.outbox_id)
+    assert outbox.attempt == 0 and outbox.state in {"pending", "retry_wait"}

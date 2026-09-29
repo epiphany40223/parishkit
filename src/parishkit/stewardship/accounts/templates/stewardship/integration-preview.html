@@ -5,6 +5,7 @@
 <div class="table-scroll"><table><caption>{% if removing %}{% translate "Removing this integration" %}{% else %}{% translate "Settings only; the saved key is unchanged" %}{% endif %}</caption>
 <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Current" %}</th><th scope="col">{% translate "Proposed" %}</th></tr></thead>
 <tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>
+{% if removing and target == 'slack' %}<p>{% translate "After you confirm, Slack alerts stop. To set Slack up again later, open this page and save the channel ID with the app's bot token." %}</p>{% endif %}
 <p>{% translate "Confirm to save these settings. Saving does not test the connection." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 <button type="submit">{% translate "Confirm changes" %}</button></form>
