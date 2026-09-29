@@ -575,6 +575,27 @@ as the UI and rechecks it at submission. A stale form cannot create new actions
 for an inactive Ministry, and omission of hidden fields never cancels retained
 requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
+A Ministry's name never affects its visibility. ParishSoft names are stored as
+loaded and repaired only where they are shown: on the Family form, this screen,
+Campaign settings and first-campaign setup. A name the form can already show
+is used exactly as before, only trimmed, so valid labels and Family form
+digests never change because of this rule. An unusable name is repaired:
+whitespace (including tabs, newlines and non-breaking spaces) becomes single
+spaces, and control and other invisible characters are removed. That includes
+zero-width joiners and non-joiners and bidirectional marks, because they can
+hide or reorder text and the form refuses every such character. A name over
+the form's 512-character label limit is cut to fit, ending in an ellipsis. A
+blank or missing name shows as "Ministry" and its DUID, such as `Ministry 42`.
+One unusable name never makes the Family form unavailable.
+
+A repaired Ministry name writes a `source_ministry_name_repaired` warning to
+the process log, once per process for each Ministry and name. The warning
+carries only the Ministry DUID. It does not appear on the System logs page; a
+durable Admin notice is tracked in
+[#342](https://github.com/epiphany40223/parishkit/issues/342). Fund names on
+Campaign settings and first-campaign setup follow the same cleaning, with
+"Fund" and its DUID as the fallback, and are not logged.
+
 Local activity may be changed during a campaign without editing its structurally
 locked Ministry-selection set. Reactivating an excluded Ministry does not add
 it to that set. Historical administrative views retain their recorded inputs;

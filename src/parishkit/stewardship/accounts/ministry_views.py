@@ -12,6 +12,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.source.catalog_names import ministry_display_name
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
@@ -120,7 +121,10 @@ def _state(service):
     catalog = [
         {
             "duid": int(row.source_key),
-            "name": row.payload.payload["name"],
+            # Tolerates a blank, null or odd ParishSoft name (#341).
+            "name": ministry_display_name(
+                int(row.source_key), row.payload.payload.get("name")
+            ),
             "active": activity.get(int(row.source_key), {})
             .get("values", {})
             .get("active", True),

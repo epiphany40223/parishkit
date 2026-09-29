@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import phonenumbers
 
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
+from parishkit.stewardship.source.catalog_names import MAX_MINISTRY_LABEL
 
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
@@ -22,7 +23,7 @@ from .financial_inputs import FinancialInputs
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
-from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
+from .ministry import MinistryInputs
 from .service import TALENT_TEXT_LIMIT, talent_options
 
 FORM_SCHEMA = "family-response-v1"

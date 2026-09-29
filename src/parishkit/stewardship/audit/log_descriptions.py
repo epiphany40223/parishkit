@@ -137,6 +137,12 @@ DESCRIPTIONS = {
     "source_member_unusable": _(
         "A ParishSoft Member record could not be used and was left out."
     ),
+    # Process log only (once per process per Ministry and name); a durable
+    # Admin notice is tracked in #342.
+    "source_ministry_name_repaired": _(
+        "A ParishSoft Ministry name was blank, too long or held unusual "
+        "characters, so a cleaned-up name was shown instead."
+    ),
     "source_refresh_held": _(
         "A ParishSoft refresh was held back instead of replacing the current data."
     ),

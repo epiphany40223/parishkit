@@ -7,7 +7,11 @@ import pytest
 from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.responses.models import ProposedChange, Submission
+from parishkit.stewardship.responses.models import (
+    FamilyFormBaseline,
+    ProposedChange,
+    Submission,
+)
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from ..census_factory import member
@@ -462,3 +466,48 @@ def test_new_rehearsal_namespace_does_not_prefill_or_cancel_old_requests(
     assert second.prior_submission_id is None
     old = MinistryRequest.objects.get()
     assert old.submission_id == first.pk and old.state == "new"
+
+
+def test_renamed_visible_ministry_never_breaks_family_or_admin_pages(
+    response_service, google
+):
+    """#341: an unusable ParishSoft rename shows a safe name, never a 503.
+
+    Each refresh renames the campaign's current Ministry 4 and fund 9 alike.
+    The Family form still loads and offers the Ministry under a display-safe
+    label, and the Ministry activity page and campaign settings still render
+    both names.
+    """
+    from .auth_builders import signed_in
+
+    harness = response_service
+    start(harness)
+    admin, _ = signed_in()
+    for renamed, shown in (
+        ("   ", "Ministry 4"),
+        (None, "Ministry 4"),
+        ("Choir " + "x" * 600, "Choir " + "x" * 505 + "…"),
+        ("Choir\x07\x1b[2J\nLoft", "Choir[2J Loft"),
+    ):
+        data = ministry_source()
+        data.ministry_types[4]["name"] = renamed
+        data.funds[9]["name"] = renamed
+        snapshot, claim = prepare(data)
+        harness.snapshot = promote(snapshot, claim, harness.campaign, harness.rings)
+        form = load_form(harness)
+        assert {"id": 4, "name": shown} in form["ministries"]["options"]
+        # Repair is deterministic: reloading the same snapshot needs no review.
+        load_form(harness)
+        first, second = FamilyFormBaseline.objects.order_by("-created_at")[:2]
+        assert first.projection_digest == second.projection_digest
+        assert form["ministries"]["members"]["3"]["current"] == [4]
+        for url in (
+            "/admin/configuration/ministries",
+            f"/admin/campaign/{harness.campaign.pk}/settings",
+        ):
+            page = admin.get(url)
+            assert page.status_code == 200, url
+            assert shown.encode() in page.content, url
+        settings = admin.get(f"/admin/campaign/{harness.campaign.pk}/settings")
+        fund = "Fund 9" if shown == "Ministry 4" else shown
+        assert fund.encode() in settings.content

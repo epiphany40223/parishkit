@@ -39,6 +39,9 @@ class Event(StrEnum):
     SOURCE_TENANT_MISMATCH = "source_tenant_mismatch"
     SOURCE_DESTRUCTIVE_CHANGE = "source_destructive_change"
     SOURCE_MEMBER_UNUSABLE = "source_member_unusable"
+    # A ParishSoft Ministry name had to be repaired for display (#341); the
+    # line carries the Ministry's DUID only, never the name itself.
+    SOURCE_MINISTRY_NAME_REPAIRED = "source_ministry_name_repaired"
     SOURCE_HELD = "source_refresh_held"
     SOURCE_CREDENTIAL_FAILED = "source_credential_failed"
     SOURCE_PROVIDER_FAILED = "source_provider_failed"
@@ -170,6 +173,7 @@ def emit(
     timeout: str | None = None,
     limit_seconds: int | None = None,
     elapsed_seconds: int | None = None,
+    ministry_duid: int | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -182,6 +186,8 @@ def emit(
     ``drive_failure`` is an off-site copy's Drive category; ``timeout`` names
     the limit that stopped work, with that limit and the elapsed time in
     whole seconds. Each is a closed word or a number, never provider text.
+    ``ministry_duid`` is a source Ministry's positive integer DUID, only with
+    ``SOURCE_MINISTRY_NAME_REPAIRED``.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -217,6 +223,10 @@ def emit(
         for value in (limit_seconds, elapsed_seconds)
     ):
         raise ValueError("Timeout durations must be whole seconds.")
+    if ministry_duid is not None and (
+        event is not Event.SOURCE_MINISTRY_NAME_REPAIRED or not _duid(ministry_duid)
+    ):
+        raise ValueError("A Ministry DUID must be a positive source identity.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -232,6 +242,7 @@ def emit(
                 "timeout": timeout,
                 "limit_seconds": limit_seconds,
                 "elapsed_seconds": elapsed_seconds,
+                "ministry_duid": ministry_duid,
             }
         ),
     )
@@ -279,6 +290,11 @@ def installer_request(identifier):
         except Exception as error:
             emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
             raise
+
+
+def _duid(value):
+    """Whether a value is a positive signed-32-bit source identity (not a bool)."""
+    return type(value) is int and 0 < value < 2**31
 
 
 def _safe_percent(value):
@@ -506,6 +522,12 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _safe_percent(context.get("source_max_drop_percent"))
         ):
             safe.extra["source_max_drop_percent"] = context["source_max_drop_percent"]
+        if (
+            record.msg is Event.SOURCE_MINISTRY_NAME_REPAIRED
+            and isinstance(context, dict)
+            and _duid(context.get("ministry_duid"))
+        ):
+            safe.extra["ministry_duid"] = context["ministry_duid"]
         if debug_logging_enabled():
             # The debug details are the only free text in a line. Scrub each
             # value before serialization. The current request's secrets come

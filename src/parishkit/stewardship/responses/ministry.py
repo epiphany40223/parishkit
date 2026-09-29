@@ -1,12 +1,10 @@
 """Pure Ministry visibility, roster projection and complete-answer validation."""
 
-import unicodedata
 from dataclasses import dataclass
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.ministry_activity import active_ministries
-
-MAX_MINISTRY_LABEL = 512
+from parishkit.stewardship.source.catalog_names import ministry_display_name
 
 
 class InvalidMinistrySource(ValueError):
@@ -72,6 +70,7 @@ def ministry_inputs(
     policy document. Upstream's incidental active flag is not the local activity
     policy. Hidden labels and memberships never enter the returned projection.
     Multiple current roster roles reduce to one Member/Ministry membership.
+    Option labels are display-safe names from ``ministry_display_name``.
     """
     if (
         type(catalog) not in {list, tuple}
@@ -104,16 +103,9 @@ def ministry_inputs(
         _unavailable()
     options = []
     for identifier in visible:
-        name = indexed[identifier].get("name")
-        if type(name) is not str:
-            _unavailable()
-        name = unicodedata.normalize("NFC", name.strip())
-        if (
-            not name
-            or len(name) > MAX_MINISTRY_LABEL
-            or any(unicodedata.category(char).startswith("C") for char in name)
-        ):
-            _unavailable()
+        # A name ParishSoft staff made blank, overlong or odd is repaired for
+        # display (and logged by DUID) rather than failing every Family's form.
+        name = ministry_display_name(identifier, indexed[identifier].get("name"))
         options.append(MinistryOption(identifier, name))
     options.sort(key=lambda option: (option.name.casefold(), option.duid))
     memberships = {identifier: set() for identifier in member_duids}

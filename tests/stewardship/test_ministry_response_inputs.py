@@ -107,9 +107,6 @@ def test_hidden_unrepresentable_labels_do_not_invalidate_visible_projection():
         {"catalog": None},
         {"catalog": [{"id": True, "name": "Choir", "catalog_present": True}]},
         {"catalog": [{"id": 4, "name": "Choir", "catalog_present": False}]},
-        {"catalog": [{"id": 4, "name": "", "catalog_present": True}]},
-        {"catalog": [{"id": 4, "name": "x" * 513, "catalog_present": True}]},
-        {"catalog": [{"id": 4, "name": "bad\x00label", "catalog_present": True}]},
         {"member_duids": (True,)},
         {"member_duids": (3, 3)},
         {"selected_duids": [4, 4]},
@@ -127,6 +124,23 @@ def test_malformed_or_foreign_source_is_rejected_without_values(override):
     with pytest.raises(InvalidMinistrySource) as error:
         inputs(**override)
     assert str(error.value) == "The Ministry form inputs are unavailable."
+
+
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        ("", "Ministry 4"),
+        (None, "Ministry 4"),
+        ("x" * 513, "x" * 511 + "\u2026"),
+        ("bad\x00label", "badlabel"),
+        ("two\nlines", "two lines"),
+    ],
+)
+def test_unusable_visible_name_is_repaired_not_an_outage(name, shown):
+    """One odd catalog name still offers that Ministry under a safe label (#341)."""
+    catalog = [{"id": 4, "name": name, "catalog_present": True}]
+    projection = inputs(catalog=catalog, roster=[])
+    assert [(option.duid, option.name) for option in projection.options] == [(4, shown)]
 
 
 def test_complete_choices_allow_join_and_leave_without_roster_mutation():
