@@ -824,6 +824,11 @@ DECLARE c stewardship_campaign%ROWTYPE; prior stewardship_campaign_configuration
     proposed stewardship_campaign_configuration%ROWTYPE; i stewardship_campaign_config_intent%ROWTYPE;
 BEGIN
     IF NEW.active_configuration_id IS NOT DISTINCT FROM OLD.active_configuration_id OR OLD.current_campaign_id IS NULL THEN RETURN NEW; END IF;
+    -- A reopen's lifecycle transition later takes this campaign's export
+    -- lock; take it before the campaign row lock, as every transition does,
+    -- so an admitted export's commit-time key-share check cannot wait on
+    -- this row while this activation waits on that export (#147).
+    PERFORM stewardship_export_campaign_lock_v1(OLD.current_campaign_id,true);
     SELECT * INTO c FROM stewardship_campaign WHERE id=OLD.current_campaign_id FOR UPDATE;
     SELECT * INTO prior FROM stewardship_campaign_configuration WHERE id=c.active_configuration_id;
     SELECT * INTO proposed FROM stewardship_campaign_configuration WHERE configuration_id=NEW.active_configuration_id AND record_id=c.id;
@@ -1364,6 +1369,8 @@ DECLARE c stewardship_campaign%ROWTYPE; r stewardship_system_configuration%ROWTY
     instant timestamptz := stewardship_campaign_now_v1();
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    -- Lifecycle state is an export admission input (#147).
+    PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,true);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
     SELECT * INTO c FROM stewardship_campaign WHERE id=NEW.campaign_id FOR UPDATE;
     IF NOT FOUND OR c.version<>NEW.expected_version OR r.version<>NEW.expected_runtime_version
@@ -10203,6 +10210,8 @@ DECLARE c stewardship_campaign%ROWTYPE; r stewardship_system_configuration%ROWTY
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Work gate history cannot be deleted' USING ERRCODE='23514'; END IF;
+    -- A gate closes or reopens export admission for its campaign (#147).
+    PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,true);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
     SELECT * INTO c FROM stewardship_campaign WHERE id=NEW.campaign_id FOR UPDATE;
     IF NEW.actor_id IS NULL OR r.current_campaign_id IS NOT NULL OR r.mode<>'testing' OR r.restore_review_required THEN

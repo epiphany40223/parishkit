@@ -89,6 +89,31 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
                 WHERE k.campaign_id=c.id AND NOT k.go_live_gate))))
 $$;
 
+-- Export admission is ordered per campaign (736232), not behind every holder
+-- of the global work-order lock (736220,1) such as a source promotion (#147).
+-- Admission (transition=false) takes only its campaign's exclusive lock, and
+-- skips it inside a transaction that already holds the global lock, since
+-- that lock already excludes every transition. A transition that changes
+-- what stewardship_export_admitted_v1 reads for a campaign (transition=true)
+-- joins the global order first and then takes the same campaign lock, always
+-- in that order: it waits for every export already admitted there to commit,
+-- and a later admission waits for it and then sees its effect. Admission
+-- must take this lock before any row lock a transition may hold.
+CREATE FUNCTION public.stewardship_export_campaign_lock_v1(campaign_uuid uuid, transition boolean)
+RETURNS void LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF campaign_uuid IS NULL OR transition IS NULL THEN
+        RAISE EXCEPTION 'Export ordering requires a campaign' USING ERRCODE='23514';
+    END IF;
+    IF transition THEN
+        PERFORM pg_advisory_xact_lock(736220,1);
+    ELSIF EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'
+        AND classid=736220 AND objid=1 AND objsubid=2 AND mode='ExclusiveLock' AND granted) THEN
+        RETURN;
+    END IF;
+    PERFORM pg_advisory_xact_lock(736232,hashtext(campaign_uuid::text));
+END $$;
+
 CREATE FUNCTION public.stewardship_export_immutable_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
@@ -104,7 +129,7 @@ DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         financial stewardship_financial_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
-    PERFORM pg_advisory_xact_lock(736220,1);
+    PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
     SELECT EXISTS(SELECT 1 FROM stewardship_exact_export_resolution x
         JOIN stewardship_exact_export_request r ON r.id=x.request_id
         WHERE x.export_id=NEW.id AND x.fact_set_id=NEW.fact_set_id
@@ -336,3 +361,21 @@ CREATE TRIGGER export_immutable BEFORE UPDATE OR DELETE ON stewardship_export_cl
 FOR EACH ROW EXECUTE FUNCTION stewardship_export_immutable_v1();
 CREATE TRIGGER export_cleanup_insert BEFORE INSERT ON stewardship_export_cleanup
 FOR EACH ROW EXECUTE FUNCTION stewardship_export_cleanup_guard_v1();
+
+-- Closing the go-live gate stops export admission for its campaign, so it
+-- takes that campaign's transition lock: an export admitted before commits
+-- first, and one admitted after sees the gate (#147). The application owners
+-- (begin_transition, invalidate_rehearsal) take this lock before any row lock.
+-- An ad hoc UPDATE of go_live_gate already holds the credentials row when this
+-- trigger runs; export admission never locks that row, so this cannot deadlock
+-- with it, but such SQL should still join the global lock first.
+CREATE FUNCTION public.stewardship_export_go_live_gate_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NEW.go_live_gate AND NOT OLD.go_live_gate THEN
+        PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,true);
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER export_go_live_gate BEFORE UPDATE ON stewardship_campaign_credentials
+FOR EACH ROW EXECUTE FUNCTION stewardship_export_go_live_gate_v1();

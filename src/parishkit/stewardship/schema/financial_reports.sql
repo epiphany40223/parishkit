@@ -279,7 +279,7 @@ BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Financial export snapshots are immutable' USING ERRCODE='23514';
     END IF;
-    PERFORM pg_advisory_xact_lock(736220,1);
+    PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
     -- Administrators and Staff are exactly who hold financial detail; a
     -- Ministry leader never captures money, whatever the application asked.
     IF NOT stewardship_export_authorized_v1(NEW.actor_id)

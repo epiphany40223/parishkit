@@ -9,7 +9,10 @@ from parishkit.stewardship.accounts.policy import Capability, allows, current_pr
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    export_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.storage import enqueue, retry_failed
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -114,7 +117,7 @@ def create_export(
         raise ValueError("Unsupported participation export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    with work_transaction():
+    with export_transaction(campaign_id):
         authorize(store, user_id)
         admit_campaign(campaign_id, mutating=True)
         previous = ExportRequest.objects.filter(
@@ -212,8 +215,13 @@ def regenerate_export(store, user_id, request_id, *, request_key):
     The retained fact set (including its source, cutoff and campaign timezone
     configuration), format and browser timezone stay fixed. Presentation uses
     the current configuration; the old publication and audit remain immutable.
+    Like every export admission, it takes only its campaign's export lock; a
+    request's campaign never changes, so it is read before that lock.
     """
-    with work_transaction():
+    campaign_id = ExportRequest.objects.values_list("campaign_id", flat=True).get(
+        pk=request_id
+    )
+    with export_transaction(campaign_id):
         original = (
             ExportRequest.objects.select_related(
                 "directory_snapshot", "ministry_snapshot", "financial_snapshot"

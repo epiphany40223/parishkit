@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
@@ -60,7 +60,7 @@ def create_information_export(
         admit_campaign(campaign_id, mutating=True)
         return True
 
-    with work_transaction():
+    with export_transaction(campaign_id):
         admit()
         previous = ExportRequest.objects.filter(
             requester_id=user_id, request_key=request_key

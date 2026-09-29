@@ -31,7 +31,11 @@ from .production_models import (
 )
 from .production_states import ProductionAction, ProductionState, production_target
 from .rehearsals import invalidate_rehearsal, release_rehearsal_gate
-from .work_locks import require_work_order, work_transaction
+from .work_locks import (
+    lock_campaign_exports,
+    require_work_order,
+    work_transaction,
+)
 
 
 def _digest(value):
@@ -182,6 +186,9 @@ def begin_transition(
         if not isinstance(value, datetime) or timezone.is_naive(value):
             raise ValueError("Production acknowledgement requires aware timestamps.")
     with correlation(correlation_id), work_transaction():
+        # The go-live gate closes export admission (invalidate_rehearsal);
+        # take that campaign lock before these row locks (#147).
+        lock_campaign_exports(campaign_id)
         runtime = SystemConfiguration.objects.select_for_update().get()
         campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
         scope = CampaignCredentialState.objects.select_for_update().get(

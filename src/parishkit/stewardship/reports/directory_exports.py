@@ -7,7 +7,7 @@ from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
@@ -43,8 +43,9 @@ def create_directory_export(
     """Capture all matches once; regeneration reuses the trusted retained snapshot.
 
     The SQL insert trigger owns capture and source/row-count selection in one
-    statement. The work lock serializes request allocation with campaign changes;
-    code lookup holds its inventory lock, then persists only the stable Family
+    statement. The campaign's export lock serializes request allocation with
+    that campaign's lifecycle and gate changes (not the global work order); code
+    lookup holds its inventory lock, then persists only the stable Family
     selection. The web form can never supply a snapshot, Family ID or document.
     """
     if any(
@@ -76,7 +77,7 @@ def create_directory_export(
         admit_campaign(campaign_id, mutating=True)
         return True
 
-    with work_transaction():
+    with export_transaction(campaign_id):
         admit()
         if snapshot is None:
             with key_set_lock(mac):

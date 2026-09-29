@@ -20,6 +20,7 @@ from django.core.validators import validate_email
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.work_locks import lock_current_campaign_exports
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -193,6 +194,9 @@ class DatabaseMaterializer:
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
+            # An end-date edit or reopen is a campaign transition: order it
+            # with that campaign's export admission before any row lock.
+            lock_current_campaign_exports()
             runtime = SystemConfiguration.objects.select_for_update().first()
             self._campaign_admission()
             from .chair_seeding import confirmable

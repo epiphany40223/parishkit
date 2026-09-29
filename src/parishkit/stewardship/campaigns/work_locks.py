@@ -10,6 +10,7 @@ short atomic SQL activation. No worker holds this transaction during provider I/
 """
 
 from contextlib import contextmanager
+from uuid import UUID
 
 from django.db import connection, transaction
 
@@ -41,6 +42,67 @@ def require_work_order():
             raise StorageInvariantError(
                 "Work admission requires its owning lock order."
             )
+
+
+def lock_campaign_exports(campaign_id):
+    """Exclude one campaign's export admission from this transition (#147).
+
+    Export admission no longer joins the global work order: it takes only a
+    per-campaign lock. A transition that changes what export admission reads
+    for a campaign (its lifecycle, a purge work gate, the go-live gate) takes
+    the same lock here, after the global lock and before any row lock, so it
+    waits for exports already admitted there and later admissions see it.
+    The SQL helper joins the global order itself when a caller has not.
+    """
+    if not isinstance(campaign_id, UUID):
+        raise TypeError("Campaign identities must be UUIDs.")
+    if connection.vendor != "postgresql" or not connection.in_atomic_block:
+        raise StorageInvariantError("Work admission requires a PostgreSQL transaction.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_export_campaign_lock_v1(%s,true)", [campaign_id]
+        )
+
+
+def lock_current_campaign_exports():
+    """Order a configuration activation with the current campaign's exports.
+
+    An activation can change the current campaign's end date or reopen it
+    (a lifecycle transition), so it takes that campaign's export lock right
+    after the global lock and before any row lock (#147). The current-campaign
+    pointer changes only under the global lock the caller already holds.
+    """
+    if connection.vendor != "postgresql" or not connection.in_atomic_block:
+        raise StorageInvariantError("Work admission requires a PostgreSQL transaction.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_export_campaign_lock_v1(current_campaign_id,true) "
+            "FROM stewardship_system_configuration "
+            "WHERE current_campaign_id IS NOT NULL"
+        )
+
+
+@contextmanager
+def export_transaction(campaign_id):
+    """Admit one campaign's export without waiting on the global work order.
+
+    Queueing an export used to take the global lock, so it waited behind every
+    source promotion, installer and task transition (#147). It needs only to
+    be ordered against transitions of its own campaign: the per-campaign lock
+    comes first, before any row lock, and the SQL admission guards take it too.
+    Inside a transaction that already holds the global lock, which already
+    excludes every transition, the SQL helper takes nothing more.
+    """
+    if not isinstance(campaign_id, UUID):
+        raise TypeError("Campaign identities must be UUIDs.")
+    if connection.vendor != "postgresql":
+        raise StorageInvariantError("Export admission requires PostgreSQL.")
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_export_campaign_lock_v1(%s,false)", [campaign_id]
+            )
+        yield
 
 
 @contextmanager

@@ -1156,9 +1156,41 @@ check and the SQL guards on writer tables require the exclusive mode. So the
 Family form's issue and submit requests keep the exclusive lock. Issuing a
 form writes a baseline and pins its source snapshot, and submitting writes the
 submission and its derived rows, and SQL refuses both without the exclusive
-lock. Export admission also keeps it: its request and capture triggers take
-the lock themselves, and gate, purge and cleanup transitions rely on that
-order to see every admitted export.
+lock.
+
+### Export admission order
+
+Export admission (queueing a report export: its request and snapshot capture)
+does not join the work-order lock. It takes only its campaign's exclusive
+export lock, so it never waits behind a source promotion, installer or task
+transition. A transition that changes what export admission reads for a
+campaign takes that campaign's export lock after the work-order lock and
+before it locks the campaign row or any row admission uses: the lifecycle and
+control transaction owner, configuration activation (an end-date edit or
+reopen of the current campaign), the work gate that closes admission for
+purge, and closing the go-live gate for Production cleanup. (Go-live intake
+may already hold its Admin session row; admission never locks that row.) So such a transition waits for every export already
+admitted in that campaign, and an admission that waits for it then sees its
+effect and is refused. The request and capture triggers take the campaign
+lock themselves, and so do the work gate, lifecycle transition, end-date
+admission and go-live gate triggers, so the order holds without the
+application helpers. Inside a
+transaction that already holds the work-order lock, such as the exact-export
+handoff, admission takes nothing more, since that lock already excludes every
+transition.
+
+No other transition needs the campaign lock. The restore review flag is set
+only by a restore, never by a running transaction. A configuration activation
+reads no export, so an export bound to the configuration that was active when
+it was admitted is simply ordered before the activation, and the worker
+rechecks current policy before it renders. A fact generation that admission
+pins is protected by that generation's row lock, which fact compaction also
+takes, and each report capture reads one statement snapshot. Exact-export
+requests, export cancellation and the worker's attempt, publication and
+cleanup keep the work-order lock: an exact request binds the current source
+pointer and submission watermark and pins its source snapshot, which order
+against source promotion and submission; and cancellation and publication
+each check that the other has not happened.
 
 ## Effective-value merge
 
