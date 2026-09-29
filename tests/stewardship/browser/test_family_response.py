@@ -732,3 +732,45 @@ def test_form_opened_in_second_tab_keeps_first_tab_edits(page, component_origin)
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert [body["baseline"] for body in submissions] == issued[::2]
     assert submissions[-1]["answers"]["members"]["3"]["first_name"] == "My edit"
+
+
+def test_replaced_baseline_with_changed_records_asks_for_a_choice(
+    page, component_origin
+):
+    """#315 M2: a fresh form after reload_required merges like review_required.
+
+    The records changed while this tab's baseline was replaced: an edited
+    field needs the Family's explicit choice and an unedited one adopts the
+    new value.
+    """
+    loads = []
+
+    def load(route):
+        """First the original form, then one with changed source names."""
+        form = form_payload()
+        if loads:
+            member_field(form, "first_name")["value"] = "New source first"
+            member_field(form, "last_name")["value"] = "New source last"
+        loads.append(form["baseline"])
+        route.fulfill(json={"form": form})
+
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=409, json={"error": "reload_required"}
+        ),
+    )
+    # Replace prepare()'s fixed form with the two-step one above.
+    page.unroute("**/family/form")
+    page.route("**/family/form", load)
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Your edits are preserved"
+    )
+    assert len(loads) == 2
+    expect(page.locator('[data-conflict="members.3.first_name"]')).to_be_visible()
+    expect(page.get_by_label("Last name (required)")).to_have_value("New source last")
