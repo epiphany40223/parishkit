@@ -646,3 +646,131 @@ def test_a_server_ended_session_notice_stays_shown(page, component_origin):
     page.clock.fast_forward(20_000)
     expect(notice).to_be_visible()
     expect(page.get_by_role("link", name="Sign in again")).to_have_count(1)
+
+
+def test_temporary_outage_on_submit_keeps_answers_and_is_not_uncertain(
+    page, component_origin
+):
+    """#315 M3: a JSON 503 refusal is definite, not a possibly lost submission."""
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=503, json={"error": "temporarily_unavailable"}
+        ),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    message = page.locator("#family-flow-message")
+    expect(message).to_contain_text("could not be submitted")
+    expect(message).to_contain_text("Your edits remain in this tab")
+    assert "could not confirm" not in message.inner_text()
+    assert "My edit" in page.locator("main").inner_text()
+    # A later expiry must not suggest that the refused Submit may have landed.
+    page.clock.fast_forward(3_700_000)
+    expect(page.locator("#session-expired")).to_contain_text(
+        "Unsubmitted changes have not been saved"
+    )
+    assert "check your last submission time" not in page.locator("main").inner_text()
+
+
+def test_form_opened_in_second_tab_keeps_first_tab_edits(page, component_origin):
+    """#315 M2: a replaced baseline fetches a fresh form instead of losing edits.
+
+    A small fake server models the real rule: each form load issues a new
+    baseline and replaces the session's earlier one, and Submit answers
+    ``reload_required`` for any baseline that is not the latest.
+    """
+    issued, submissions = [], []
+
+    def load(route):
+        """Issue a fresh baseline, replacing every earlier one."""
+        form = form_payload()
+        issued.append(form["baseline"])
+        route.fulfill(json={"form": form})
+
+    def submit(route):
+        """Accept only the session's current baseline."""
+        body = route.request.post_data_json
+        submissions.append(body)
+        if body["baseline"] != issued[-1]:
+            route.fulfill(status=409, json={"error": "reload_required"})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    context = page.context
+    context.route("**/family/form", load)
+    context.route("**/family/submit", submit)
+    context.route(
+        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
+    )
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/family")
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    # The Family opens the form again in a second tab of the same session.
+    second = context.new_page()
+    second.clock.install(time=NOW)
+    second.goto(component_origin + "/family")
+    second.get_by_role("button", name="Begin reviewing").click()
+    expect(second.locator("[data-step-link]").first).to_be_attached()
+    assert len(issued) == 2
+    second.close()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Your edits are preserved"
+    )
+    assert len(issued) == 3
+    expect(show(page, page.get_by_label("First name (required)"))).to_have_value(
+        "My edit"
+    )
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    assert [body["baseline"] for body in submissions] == issued[::2]
+    assert submissions[-1]["answers"]["members"]["3"]["first_name"] == "My edit"
+
+
+def test_replaced_baseline_with_changed_records_asks_for_a_choice(
+    page, component_origin
+):
+    """#315 M2: a fresh form after reload_required merges like review_required.
+
+    The records changed while this tab's baseline was replaced: an edited
+    field needs the Family's explicit choice and an unedited one adopts the
+    new value.
+    """
+    loads = []
+
+    def load(route):
+        """First the original form, then one with changed source names."""
+        form = form_payload()
+        if loads:
+            member_field(form, "first_name")["value"] = "New source first"
+            member_field(form, "last_name")["value"] = "New source last"
+        loads.append(form["baseline"])
+        route.fulfill(json={"form": form})
+
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=409, json={"error": "reload_required"}
+        ),
+    )
+    # Replace prepare()'s fixed form with the two-step one above.
+    page.unroute("**/family/form")
+    page.route("**/family/form", load)
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Your edits are preserved"
+    )
+    assert len(loads) == 2
+    expect(page.locator('[data-conflict="members.3.first_name"]')).to_be_visible()
+    expect(page.get_by_label("Last name (required)")).to_have_value("New source last")
