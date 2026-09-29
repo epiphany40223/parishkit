@@ -146,14 +146,18 @@ def switch_patch(row, records):
     settings saved with the key (what the provider check used, such as the
     Slack channel) are carried over, merged onto the current settings, so a
     newer change to anything else (such as the refresh schedule) is kept.
-    When the save added the integration, the whole new record is added again.
-    A key staged without a selection request selects its fingerprint alone.
+    When the save added the integration, the whole new record is added again,
+    unless the key was in use and the integration was removed since: a
+    removed integration comes back only with a newly pasted, checked key. A
+    key staged without a selection request selects its fingerprint alone.
     """
     original = original_selection(row)
     item = original.patch[0] if original is not None else None
     if item is not None and item["operation"] == "add":
         if row.target in records:
             raise StaleRecordError("This integration was set up again since.")
+        if _was_selected(row):
+            raise StaleRecordError("This integration was removed since.")
         return [item]
     record = records.get(row.target)
     if record is None:

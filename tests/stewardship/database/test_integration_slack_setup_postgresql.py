@@ -171,6 +171,14 @@ def test_slack_is_set_up_removed_and_set_up_again(slack):
     page = browser.get(URL).content
     assert b"Key updated." in page and b"Remove Slack" in page and TOKEN not in page
     remove_slack(slack)
+    # The old key cannot bring Slack back without a newly pasted, checked
+    # token (#338 review): its selection is refused and not offered.
+    select = f"/admin/configuration/credentials/{row.pk}/select"
+    count = ConfigurationChangeRequest.objects.count()
+    assert browser.get(select).status_code == 409
+    assert ConfigurationChangeRequest.objects.count() == count
+    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    assert select.encode() not in status
     # Removed: no leftover "installed" line or dead Finish switching link.
     page = browser.get(URL).content
     assert b"Slack is not set up" in page
@@ -226,6 +234,8 @@ def test_a_failed_slack_add_can_finish_switching(slack):
     assert b"Slack alerts are not sent" in page
     select = f"/admin/configuration/credentials/{row.pk}/select"
     assert select.encode() in page
+    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    assert select.encode() in status
     preview = hidden(browser.get(select), "preview")
     with identity("pk_stewardship_web"):
         response = post(browser, select, {"action": "confirm", "preview": preview})

@@ -629,6 +629,32 @@ def dismiss_credential_result(request, target):
         return error_response(error)
 
 
+def _selectable(configuration, receipt):
+    """Offer Finish switching only for the key the settings page says needs it.
+
+    An older key, or one whose integration was removed after it was in use,
+    is history: selecting it again would bring back a key nobody pasted or
+    checked just now (#338 review).
+    """
+    if receipt.state != "applied":
+        return False
+    from .secret_models import SecretReplacementRequest
+
+    target = (
+        SecretReplacementRequest.objects.filter(pk=receipt.request_id)
+        .values_list("target", flat=True)
+        .first()
+    )
+    if target not in ROTATING_TARGETS:
+        return False
+    latest = summary(target, _optional(configuration, target) or _unset(target))
+    return (
+        latest is not None
+        and latest.kind == "unselected"
+        and latest.request_id == receipt.request_id
+    )
+
+
 @require_http_methods(["GET", "HEAD"])
 def credential_status(request, request_id):
     """Passive actor-scoped progress does not extend an abandoned Admin session."""
@@ -636,7 +662,7 @@ def credential_status(request, request_id):
         filters(request.GET, allowed=set())
         service = runtime()
         actor = principal(request, service, passive=True)
-        editable_configuration(service)
+        configuration = editable_configuration(service)
         receipt = secret_request_status(request_id=request_id, actor_id=actor.identity)
         response = render(
             request,
@@ -644,6 +670,7 @@ def credential_status(request, request_id):
             {
                 "receipt": receipt,
                 "pending": receipt.state in SECRET_PENDING,
+                "selectable": _selectable(configuration, receipt),
             },
         )
         return _checked(request, service, response)
