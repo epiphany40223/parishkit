@@ -6,6 +6,7 @@ from threading import Event
 import pytest
 from django.utils import timezone
 
+from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
     ScheduleOccurrence,
@@ -150,8 +151,13 @@ def test_an_old_message_is_not_failed_by_its_first_limit_refusal(
 def test_a_limit_refused_continuously_fails_visibly(
     dispatch_worker,  # noqa: F811
     monkeypatch,
+    caplog,
 ):
-    """A second limit refusal after LIMIT_GIVE_UP in one run fails the message."""
+    """A second limit refusal after LIMIT_GIVE_UP in one run fails the message.
+
+    The failure log names the message and its Family DUID, never an address,
+    and carries the task id the production log formatter keeps.
+    """
     harness, path = dispatch_worker
     calls = []
     monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
@@ -168,6 +174,37 @@ def test_a_limit_refused_continuously_fails_visibly(
         deliver(harness, path, message)
     message.refresh_from_db()
     assert len(calls) == 2 and message.state == "permanent_failure"
+    assert_names_message(caplog, message, "has failed")
+
+
+def assert_names_message(caplog, message, words):
+    """The one failure log naming ``message`` by id, DUID and task, no address."""
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    (record,) = [r for r in caplog.records if words in r.getMessage()]
+    text = record.getMessage()
+    assert str(message.pk) in text and f"Family DUID {duid}" in text
+    assert "@" not in text
+    assert record.extra == {"task_id": message.task_id}
+
+
+def test_a_preparation_failure_log_names_the_message(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+    caplog,
+):
+    """Exhausted preparation retries name the message, its Family and task."""
+    harness, path = dispatch_worker
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("synthetic preparation failure")
+
+    monkeypatch.setattr(f"{TASKS}.begin_submission", broken)
+    monkeypatch.setattr(f"{TASKS}.MAX_ATTEMPTS", 1)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+    assert_names_message(caplog, message, "preparation failed")
 
 
 def test_no_give_up_while_other_mail_is_accepted(

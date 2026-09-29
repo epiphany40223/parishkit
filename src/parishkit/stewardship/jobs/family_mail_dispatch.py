@@ -8,9 +8,11 @@ from django.db import connection, transaction
 from django.db.models import F, Func, IntegerField, Sum
 from django.db.models.functions import Now
 
+from parishkit.logging import log_extra
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
+    FamilyCampaign,
 )
 from parishkit.stewardship.campaigns.family_schedule_planning import (
     _planning_scope,
@@ -229,6 +231,27 @@ def accepted_since(instant):
     ).exists()
 
 
+def failure_identity(message_id):
+    """The message id and Family DUID (None for staff mail) a failure log names.
+
+    Neither is personal data, so an operator can find the failed message
+    without the log ever carrying an address or a name.
+    """
+    family = (
+        OutboxMessage.objects.filter(pk=message_id)
+        .values_list("family_id", flat=True)
+        .first()
+    )
+    duid = (
+        FamilyCampaign.objects.filter(pk=family)
+        .values_list("family_duid", flat=True)
+        .first()
+        if family
+        else None
+    )
+    return {"message": message_id, "family_duid": duid}
+
+
 def budget_spent(message, result):
     """Whether this non-acceptance ends the message's automatic retries.
 
@@ -270,13 +293,19 @@ def _log_give_up(message, waited, why):
     """Log, once the failure commits, that a message waited too long and failed.
 
     A claim that turns out stale (and rolls back) then raises no false alarm.
+    The task id is the part the production log formatter keeps; the rest
+    shows with debug logging.
     """
+    identity = failure_identity(message.pk)
     transaction.on_commit(
         lambda: LOG.critical(
-            "Mail has failed after %d hours in which %s; review the mail "
-            "provider and retry it.",
+            "Mail message %s (Family DUID %s) has failed after %d hours in "
+            "which %s; review the mail provider and retry it.",
+            identity["message"],
+            identity["family_duid"],
             waited // timedelta(hours=1),
             why,
+            extra=log_extra({"task_id": message.task_id}),
         )
     )
 

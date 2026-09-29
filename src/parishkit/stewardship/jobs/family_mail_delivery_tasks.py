@@ -11,6 +11,7 @@ from uuid import uuid4
 from django.db import connection, connections
 
 from parishkit.config import ConfigError
+from parishkit.logging import log_extra
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.key_files import file_fingerprint, read_private
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -40,6 +41,7 @@ from .family_mail_dispatch import (
     bound_dispatch,
     cancel_unsent,
     disposition,
+    failure_identity,
     finish_submission,
     over_daily_limit,
     result_retry_seconds,
@@ -491,11 +493,20 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
     except Exception:
         if not submitted:
             with work_transaction():
-                attempt = preparation_attempts(
-                    _status(lock_task_claim(execution.claim))
-                )
+                status = _status(lock_task_claim(execution.claim))
+                attempt = preparation_attempts(status)
             if attempt >= MAX_ATTEMPTS:
-                LOG.error("Family mail preparation failed after bounded retries.")
+                # The task id survives the production log formatter; the
+                # message id and Family DUID show with debug logging.
+                with work_transaction():
+                    identity = failure_identity(status.domain_request_id)
+                LOG.error(
+                    "Family mail message %s (Family DUID %s) preparation failed "
+                    "after bounded retries.",
+                    identity["message"],
+                    identity["family_duid"],
+                    extra=log_extra({"task_id": execution.claim.run_id}),
+                )
                 if _settle_failed_family_test(execution):
                     execution.transition("safe_cancel")
                 else:
