@@ -530,7 +530,15 @@ def _infrastructure(configuration):
 
 
 def _caddy(configuration):
-    """The same stable read-only lifecycle inode covers the stock proxy process."""
+    """The stock proxy, which keeps running while offline work upgrades the app.
+
+    Unlike every other online service, Caddy holds no startup-interlock lease
+    (#162). It reads no database, credential or runtime state: it serves the
+    static tree and proxies to web, and web still holds the lease, so nothing
+    behind Caddy can start during offline work. Staying up lets it answer with
+    its own maintenance page (runtime_ingress) instead of a refused connection
+    while an upgrade has web stopped.
+    """
     layout = RuntimeLayout(configuration)
     result = _application(CADDY_IMAGE, configuration.runtime_budget)
     result.update(
@@ -548,19 +556,13 @@ def _caddy(configuration):
             "retries": 3,
         },
         entrypoint=["/bin/sh", "-c"],
-        command=[
-            "exec 9</run/stewardship/startup.lock; "
-            "flock -sn 9 || { echo 'Offline maintenance prevents ingress startup.' "
-            ">&2; exit 1; }; "
-            "exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
-        ],
+        command=["exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"],
         ports=["80:8080", "443:8443"],
         networks={
             "proxy": {"ipv4_address": configuration.runtime_network.caddy},
             "ingress": {},
         },
         volumes=[
-            bind(layout.interlock, target="/run/stewardship/startup.lock"),
             bind(layout.service_directory / "Caddyfile", target="/etc/caddy/Caddyfile"),
             bind(configuration.paths["cache"] / "static", target="/srv/static"),
             bind(

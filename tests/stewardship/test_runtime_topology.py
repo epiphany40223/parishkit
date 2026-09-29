@@ -12,7 +12,7 @@ from parishkit.stewardship.deployment import (
     DeploymentProfile,
     load_deployment,
 )
-from parishkit.stewardship.runtime_ingress import render_caddy
+from parishkit.stewardship.runtime_ingress import MAINTENANCE_PAGE, render_caddy
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import CADDY_IMAGE, render_runtime
 
@@ -306,6 +306,47 @@ def test_ingress_has_ordered_denials_bounded_transport_and_no_private_logs(tmp_p
     assert "read_timeout 380s" in output
     assert "health_uri" not in output
     assert "https://acme-v02.api.letsencrypt.org/directory" in output
+
+
+def test_ingress_serves_a_self_contained_maintenance_page_only_when_web_is_down(
+    tmp_path,
+):
+    """Caddy answers an unreachable web with its own page, never a real error.
+
+    Only the proxy's own upstream failures (502 dial or reset, 503 no
+    upstream) reach handle_errors; application responses, 500s included, pass
+    through, and a slow request (504) is not dressed up as an upgrade (#162).
+    """
+    configuration = configuration_at(tmp_path, production=True)
+    output = render_caddy(configuration)
+    block = output[output.index("handle_errors") :]
+    assert output.index("reverse_proxy") < output.index("handle_errors")
+    assert block.startswith("handle_errors 502 503 {")
+    assert "504" not in block.splitlines()[0]
+    assert "MAINTENANCE 503" in block
+    assert 'Retry-After "120"' in block
+    assert 'Cache-Control "no-store"' in block
+    assert "default-src 'none'" in block
+    # Self-contained: no scripts, no application assets, and no braces the
+    # Caddyfile placeholder syntax would claim.
+    assert "<script" not in MAINTENANCE_PAGE
+    assert "/static/" not in MAINTENANCE_PAGE
+    assert "{" not in MAINTENANCE_PAGE and "}" not in MAINTENANCE_PAGE
+    assert "We&rsquo;re updating the site" in MAINTENANCE_PAGE
+
+
+def test_ingress_keeps_running_through_offline_work(tmp_path):
+    """Caddy holds no startup-interlock lease, so upgrades need not stop it."""
+    configuration = configuration_at(tmp_path, production=True)
+    compose, _ = render_runtime(configuration, image=IMAGE)
+    caddy = compose["services"]["caddy"]
+    layout = RuntimeLayout(configuration)
+    assert str(layout.interlock) not in [m["source"] for m in caddy["volumes"]]
+    assert "startup.lock" not in " ".join(caddy["command"])
+    assert "flock" not in " ".join(caddy["command"])
+    # web still holds the lease, so nothing behind caddy runs offline.
+    web = compose["services"]["web"]
+    assert str(layout.interlock) in [m["source"] for m in web["volumes"]]
 
 
 def test_individual_sql_overrides_reach_provisioner_and_only_their_consumers(tmp_path):

@@ -270,9 +270,13 @@ authorized recovery procedure for the identified mismatch.
 
 ## Offline work and upgrade boundary
 
-Stop web, proxy and every online installer/worker before offline work. Dependency
-containers may remain running. The same stable `startup.lock` inode is held shared
-for every online process lifetime and exclusively for offline work. A surviving
+Stop web and every online installer/worker before offline work. Dependency
+containers and the `caddy` proxy may remain running: the proxy holds no startup
+interlock, reads no database, credential or runtime state, and while web is down
+it serves its own maintenance page (see the
+[deployment runbook](stewardship-deployment-runbook.md#upgrade)). The same stable
+`startup.lock` inode is held shared for every other online process lifetime and
+exclusively for offline work. A surviving
 child retains exclusion; do not replace or unlink the lock file to force progress.
 All invocations must use the same resolved runtime/configuration paths.
 

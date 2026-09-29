@@ -27,6 +27,83 @@ def production_hostname(configuration):
     raise ConfigError("Production ingress requires a public HTTPS DNS origin.")
 
 
+# Served by Caddy itself when no web replica answers, above all during an
+# upgrade, when web is stopped but Caddy keeps running (#162). It is fully
+# self-contained: inline style attributes only (no <style> block, whose braces
+# the Caddyfile placeholder syntax would claim), no scripts and no application
+# assets, since the static tree may be mid-refresh. It reloads itself after a
+# minute, and names no parish, so every deployment serves the same text.
+MAINTENANCE_PAGE = "\n".join(
+    (
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<meta http-equiv="refresh" content="60">',
+        "<title>Updating the site</title>",
+        "</head>",
+        '<body style="margin:0;background:#f6f4ef;color:#1b2a31;'
+        "font:18px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif\">",
+        '<main style="max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;'
+        'background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12)">',
+        '<h1 style="margin:0 0 .75rem;font-size:1.5rem">'
+        "We&rsquo;re updating the site</h1>",
+        '<p style="margin:0 0 .75rem">Please try again in a couple of minutes. '
+        "This page will reload by itself.</p>",
+        '<p style="margin:0;color:#4f5e66">Thank you for your patience.</p>',
+        "</main>",
+        "</body>",
+        "</html>",
+    )
+)
+
+# Only for a site served while the application is unreachable: a strict
+# policy (the page has no scripts or remote assets) and no caching, so a
+# browser never keeps the maintenance page once the site is back.
+_MAINTENANCE_HEADERS = (
+    ("Content-Type", "text/html; charset=utf-8"),
+    ("Cache-Control", "no-store"),
+    ("Retry-After", "120"),
+    (
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+        "form-action 'none'; frame-ancestors 'none'",
+    ),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "no-referrer"),
+)
+
+
+def _maintenance_block():
+    """Caddy's error route for an unreachable application.
+
+    ``reverse_proxy`` raises a handler error only for its own upstream
+    failures: 502 for a refused or failed dial, and also for a connection
+    reset mid-request (a worker killed or out of memory); 503 when no upstream
+    is available. Those all show this page, recorded as 503 in the access log.
+    A response the application itself returns, including its own 500s, passes
+    straight through and never reaches ``handle_errors``, so the page cannot
+    hide a real application error. Upstream timeouts (504) are deliberately
+    left alone: a slow request is not an upgrade.
+    """
+    if "{" in MAINTENANCE_PAGE or "}" in MAINTENANCE_PAGE:
+        raise ValueError("The maintenance page must not contain Caddy braces.")
+    headers = "\n".join(
+        f'            {name} "{value}"' for name, value in _MAINTENANCE_HEADERS
+    )
+    body = "\n".join("            " + line for line in MAINTENANCE_PAGE.split("\n"))
+    return f"""    handle_errors 502 503 {{
+        header {{
+{headers}
+        }}
+        respond <<MAINTENANCE
+{body}
+            MAINTENANCE 503
+    }}
+"""
+
+
 def render_caddy(configuration):
     """Keep private data out of access and error logs, including upstream failures.
 
@@ -34,6 +111,8 @@ def render_caddy(configuration):
     to enumerate every URL representation. Operational logs retain level, status,
     byte counts and duration; sensitive free-form errors become a fixed message.
     No active health checks remove the app when business readiness is unavailable.
+    When no web replica answers (an upgrade stops web while Caddy keeps
+    running), Caddy serves its own self-contained maintenance page instead.
     """
     hostname = production_hostname(configuration)
     budget = configuration.runtime_budget
@@ -106,5 +185,5 @@ def render_caddy(configuration):
             }}
         }}
     }}
-}}
+{_maintenance_block()}}}
 """
