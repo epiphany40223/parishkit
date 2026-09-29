@@ -215,3 +215,70 @@ def test_identical_population_retry_does_not_rewrite_family_versions(tmp_path):
     before = FamilyCampaign.objects.get().version
     assert populate(campaign, ring) == 0
     assert FamilyCampaign.objects.get().version == before
+
+
+def test_reference_population_rewrites_families_in_set_based_batches(tmp_path):
+    """#147: every promotion rewrites all ~2,700 Families under the work lock.
+
+    Django's bulk_update built a CASE WHEN per row per field, which cost
+    seconds of Python at parish scale while the global work-order lock was
+    held. The set-based writer issues one unnest() UPDATE per 1,000 rows and
+    still fires the per-row version, cohort and history triggers.
+    """
+    count = 2700
+    _, campaign, _, ring = family_campaign(tmp_path, count=count)
+    versions = dict(FamilyCampaign.objects.values_list("family_duid", "version"))
+    history = FamilyEligibilityChange.objects.count()
+    # Every tenth Family loses email delivery; the rest only change generation.
+    statuses = [
+        FamilyStatus(n, True, True, True, n % 10 != 0)
+        if n % 10
+        else FamilyStatus(n, True, True, True, False, "eligible", "provider_suppressed")
+        for n in range(1, count + 1)
+    ]
+    with CaptureQueriesContext(connection) as captured:
+        assert populate(campaign, ring, statuses, generation=2) == count
+    updates = [
+        query["sql"]
+        for query in captured
+        if query["sql"].startswith(
+            (
+                "UPDATE stewardship_family_campaign ",
+                'UPDATE "stewardship_family_campaign"',
+            )
+        )
+    ]
+    assert len(updates) == 3
+    assert not any("CASE WHEN" in sql for sql in updates)
+    rows = FamilyCampaign.objects.values_list(
+        "family_duid",
+        "version",
+        "source_generation",
+        "email_deliverable",
+        "deliverability_reason",
+    )
+    for duid, version, generation, deliverable, reason in rows:
+        assert version == versions[duid] + 1 and generation == 2
+        assert deliverable == (duid % 10 != 0)
+        assert reason == ("deliverable" if duid % 10 else "provider_suppressed")
+    assert FamilyEligibilityChange.objects.count() == history + count // 10
+
+
+def test_set_based_family_writes_keep_field_and_row_guards(tmp_path):
+    """Values still pass field preparation; a missing row fails the write."""
+    from datetime import datetime
+
+    from django.core.exceptions import ValidationError
+
+    from parishkit.stewardship.campaigns.family_identity import _write_families
+
+    family_campaign(tmp_path)
+    row = FamilyCampaign.objects.get()
+    row.version += 1
+    row.eligibility_changed_at = datetime(2030, 1, 1)
+    with pytest.raises(ValidationError), transaction.atomic():
+        _write_families([row], ["eligibility_changed_at", "version"])
+    row.pk = uuid4()
+    with pytest.raises(StorageInvariantError), transaction.atomic():
+        _write_families([row], ["version"])
+    assert FamilyCampaign.objects.get().version == row.version - 1
