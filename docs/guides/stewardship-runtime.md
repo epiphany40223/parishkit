@@ -285,9 +285,11 @@ login and broker identity; the Compose files contain no extra service, and
 `retarget-image` renders the same service list. Its log lines appear in
 `docker compose ... logs worker` beside the main process's. Treat the two as
 one service: stopping, recreating or acknowledging a credential in `worker`
-covers both. When the source process exits or stops reporting progress, the
-main process stops too and the container exits, so `worker` shows as not
-running (production restarts it); a source process that fails to start (for
+covers both. When the source process exits, the main process stops too and
+the container exits, so `worker` shows as not running (production restarts
+it). A late source heartbeat is only logged (a `helper_timed_out` entry for
+`source_helper` with the limit and how late it was); the worker stops only
+after twice the probe's limit of silence, logged at `ERROR`; a source process that fails to start (for
 example, an unreadable credential) looks the same as the worker failing to
 start. The design and connection budget are in the background-processing
 specification's
@@ -349,8 +351,14 @@ older image pointed at a newer database. Keep credential escrow separate from
 ordinary backup output and retain the matching key material. Automated
 upgrade readiness checks remain deferred by the pre-production policy.
 
-Phase 2 changes the worker/mail-dispatch role limits to twice the configured
-rollout overlap, and the scheduler limit to the rollout overlap. Earlier
+Phase 2 changes the mail-dispatch role limit to twice the configured rollout
+overlap, and the scheduler limit to the rollout overlap. The worker's limit
+is three times the rollout overlap, since its container runs two consumer
+processes ([source process](#the-workers-source-process)); a deployment
+provisioned before that change needs the one-time `ALTER ROLE` described
+in the deployment runbook's
+[worker connection limit](stewardship-deployment-runbook.md#worker-connection-limit-339)
+before the new worker starts. Earlier
 development databases may still have the operator reserve as those role limits.
 Such databases intentionally fail both exact-role provisioning checks and runtime
 startup; rerunning first-deployment provisioning cannot upgrade them. Do not

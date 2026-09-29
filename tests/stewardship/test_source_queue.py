@@ -252,31 +252,96 @@ def test_source_consumer_runs_the_same_runtime_on_the_source_queue(monkeypatch):
     process.kill.assert_not_called()
 
 
-def test_source_consumer_reports_exit_staleness_and_kills_past_the_grace(
-    monkeypatch,
-):
-    """An exited or silent sibling fails the check; a stuck drain is killed."""
+def _consumer(monkeypatch, ages):
+    """A SourceConsumer over a fake process whose heartbeat ages are scripted."""
     from parishkit.stewardship import installer_health
+    from parishkit.stewardship.audit import timeouts
 
     process = Mock(returncode=None)
     process.poll.return_value = None
-    process.wait.side_effect = [subprocess.TimeoutExpired("x", 5), 0]
     monkeypatch.setattr(runtime_process.subprocess, "Popen", Mock(return_value=process))
+    monkeypatch.setattr(installer_health, "heartbeat_age", Mock(side_effect=ages))
+    recorded = Mock()
+    monkeypatch.setattr(timeouts, "record_timeout", recorded)
     consumer = runtime_process.SourceConsumer("/run/worker.yaml", drain_seconds=5)
-    consumer.started -= installer_health.MAX_AGE_SECONDS + 1
-    monkeypatch.setattr(installer_health, "healthcheck", Mock(return_value=1))
+    return consumer, process, recorded
+
+
+def test_one_slow_window_does_not_stop_the_worker_but_is_logged(monkeypatch):
+    """A heartbeat late by less than twice the probe limit is only a warning."""
+    from parishkit.stewardship.installer_health import MAX_AGE_SECONDS
+
+    slow = MAX_AGE_SECONDS + 30
+    consumer, _, recorded = _consumer(monkeypatch, [10, slow, slow + 20, 5])
+    for _ in range(4):
+        consumer.check()
+    # Each stale observation is logged with the limit and how late it was.
+    assert [c.kwargs["level"] for c in recorded.call_args_list] == [
+        "WARNING",
+        "WARNING",
+    ]
+    first = recorded.call_args_list[0]
+    assert first.args[0].value == "helper_timed_out"
+    assert first.kwargs["what"] == "source_helper"
+    assert first.kwargs["limit_seconds"] == MAX_AGE_SECONDS
+    assert first.kwargs["elapsed_seconds"] == slow
+    assert [c.kwargs["count"] for c in recorded.call_args_list] == [1, 2]
+    # A fresh heartbeat resets the run of stale observations.
+    assert consumer.stale == 0
+
+
+def test_sustained_silence_stops_the_worker_and_is_logged(monkeypatch):
+    """Silence past twice the probe limit stops the worker, logged as an error."""
+    from parishkit.stewardship.installer_health import MAX_AGE_SECONDS
+
+    limit = runtime_process.SourceConsumer.STALE_LIMIT
+    assert limit == 2 * MAX_AGE_SECONDS
+    consumer, _, recorded = _consumer(
+        monkeypatch, [MAX_AGE_SECONDS + 1, limit - 1, limit + 5]
+    )
+    consumer.check()
+    consumer.check()
     with pytest.raises(ConfigError):
         consumer.check()
+    last = recorded.call_args_list[-1]
+    assert last.kwargs["level"] == "ERROR"
+    assert last.kwargs["limit_seconds"] == limit
+    assert last.kwargs["elapsed_seconds"] == limit + 5
+    assert last.kwargs["count"] == 3
+
+
+def test_an_exited_sibling_stops_the_worker_at_once(monkeypatch):
+    """Exit needs no staleness window; it is a process failure, not a timeout."""
+    consumer, process, recorded = _consumer(monkeypatch, [])
     process.poll.return_value = 1
     with pytest.raises(ConfigError):
         consumer.check()
+    recorded.assert_not_called()
+
+
+def test_startup_counts_from_spawn_until_the_first_heartbeat(monkeypatch):
+    """No heartbeat yet is judged by the sibling's age, not as instant failure."""
+    consumer, _, recorded = _consumer(monkeypatch, [None, None])
+    consumer.check()
+    recorded.assert_not_called()
+    consumer.started -= runtime_process.SourceConsumer.STALE_LIMIT + 1
+    with pytest.raises(ConfigError):
+        consumer.check()
+
+
+def test_a_drain_past_the_grace_is_killed_and_logged(monkeypatch):
+    """The kill at the end of the grace period is a logged timeout."""
+    consumer, process, recorded = _consumer(monkeypatch, [])
+    process.wait.side_effect = [subprocess.TimeoutExpired("x", 5), 0]
     consumer.close()
     process.kill.assert_called_once()
+    assert recorded.call_args.kwargs["level"] == "ERROR"
+    assert recorded.call_args.kwargs["limit_seconds"] == 5
 
 
 @pytest.mark.parametrize("overlap,split", [(2, True), (1, False)])
 def test_a_budget_too_small_for_two_processes_keeps_one(tmp_path, overlap, split):
-    """Two processes need the worker login's four connections."""
+    """Two processes need the worker login's six connections."""
     configuration = configuration_at(tmp_path)
     configuration = replace(
         configuration,

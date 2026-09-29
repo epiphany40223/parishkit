@@ -24,6 +24,7 @@ from .observability import (
     emit_failure,
     installer_request,
 )
+from .probe import MAX_AGE_SECONDS as PROBE_MAX_AGE
 from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
@@ -385,9 +386,13 @@ class SourceConsumer:
     restarts, in production) instead of silently losing source work.
     """
 
+    # Silence this long (twice the container probe's limit) stops the worker.
+    STALE_LIMIT = 2 * PROBE_MAX_AGE
+
     def __init__(self, config_path, *, drain_seconds):
         self.drain_seconds = drain_seconds
         self.started = monotonic()
+        self.stale = 0
         # Same interpreter and environment; output joins the container's log.
         self.process = subprocess.Popen(
             [
@@ -403,16 +408,47 @@ class SourceConsumer:
         )
 
     def check(self):
-        """Raise unless the sibling is running and, after startup, reporting."""
-        from .installer_health import MAX_AGE_SECONDS, SOURCE_HEARTBEAT, healthcheck
+        """Raise when the sibling has exited or has been silent far too long.
+
+        An exited sibling stops the worker at once. A stale heartbeat alone
+        does not: one slow window (a long promotion transaction, a loaded
+        host) can delay the sibling's liveness past the probe's limit, and
+        restarting the container would interrupt that very work. Each stale
+        observation is logged durably; only silence past ``STALE_LIMIT``
+        (twice the probe's limit) stops the worker, and that is logged too.
+        Before its first heartbeat the sibling's age counts from its start.
+        """
+        from .installer_health import MAX_AGE_SECONDS, SOURCE_HEARTBEAT, heartbeat_age
 
         if self.process.poll() is not None:
             raise ConfigError("The source consumer exited.")
-        if (
-            monotonic() - self.started > MAX_AGE_SECONDS
-            and healthcheck(SOURCE_HEARTBEAT) != 0
-        ):
-            raise ConfigError("The source consumer stopped reporting progress.")
+        age = heartbeat_age(SOURCE_HEARTBEAT)
+        if age is None:
+            age = monotonic() - self.started
+        if age <= MAX_AGE_SECONDS:
+            self.stale = 0
+            return
+        self.stale += 1
+        if age < self.STALE_LIMIT:
+            self._record("WARNING", MAX_AGE_SECONDS, age, count=self.stale)
+            return
+        self._record("ERROR", self.STALE_LIMIT, age, count=self.stale)
+        raise ConfigError("The source consumer stopped reporting progress.")
+
+    def _record(self, level, limit, elapsed, *, count=None):
+        """Log one stale-liveness observation or stop on the durable timeout log."""
+        from .audit.timeouts import record_timeout
+
+        # "source_helper" is the reviewed timeout kind for a source-work
+        # helper process; reusing it keeps the SQL context vocabulary fixed.
+        record_timeout(
+            Event.HELPER_TIMED_OUT,
+            what="source_helper",
+            level=level,
+            limit_seconds=limit,
+            elapsed_seconds=elapsed,
+            count=count,
+        )
 
     def terminate(self):
         """Ask the sibling to drain; safe to repeat and to call from a signal."""
@@ -423,25 +459,28 @@ class SourceConsumer:
     def close(self):
         """Stop the sibling and wait for its drain, killing it only past the grace."""
         self.terminate()
+        draining = monotonic()
         try:
             self.process.wait(timeout=self.drain_seconds)
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait()
+            self._record("ERROR", self.drain_seconds, monotonic() - draining)
 
 
 def split_source(configuration):
     """Whether the worker login can hold two consumer processes' connections.
 
-    Each consumer process needs one task and one renewal connection. The
-    worker login's limit is ``rollout_overlap * 2``; Compose recreates a
-    container by stopping it before starting its replacement, so with the
-    default overlap of 2 those four connections serve the container's two
-    processes. A budget too small for both keeps one process on every queue.
+    Each consumer process may hold a task connection, a lease-renewal
+    connection and a short-lived timeout-log connection. The worker login's
+    limit is ``rollout_overlap * 3``; Compose recreates a container by
+    stopping it before starting its replacement, so with the default overlap
+    of 2 those six connections serve the container's two processes. A budget
+    too small for both keeps one process on every queue.
     """
     from .database_provisioning import role_limit
 
-    return role_limit(configuration, ServiceRole.WORKER) >= 4
+    return role_limit(configuration, ServiceRole.WORKER) >= 6
 
 
 def serve_background(configuration, lease, *, source=False, config_path=None):

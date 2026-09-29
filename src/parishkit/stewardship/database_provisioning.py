@@ -49,12 +49,18 @@ def role_limit(configuration, role):
         )
     if role in {ServiceRole.CONFIG_INSTALLER, ServiceRole.CREDENTIAL_INSTALLER}:
         return configuration.runtime_budget.rollout_overlap
-    if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH, ServiceRole.SCHEDULER}:
+    if role is ServiceRole.WORKER:
+        # The worker container runs two consumer processes (#336). Each may
+        # hold a task connection, a lease-renewal connection and a private
+        # timeout-log connection (audit.timeouts), so three per process.
+        # Compose never overlaps two worker containers, so the overlap
+        # factor's slots serve the second process (runtime_process.split_source).
+        return budget.rollout_overlap * 3
+    if role in {ServiceRole.MAIL_DISPATCH, ServiceRole.SCHEDULER}:
         # Execution retains main and independent renewal SQL connections;
-        # the scheduler pins exactly one singleton session. The worker's
-        # container runs two consumer processes (#336) whose two connections
-        # each fill this limit; Compose never overlaps two worker containers
-        # (see runtime_process.split_source).
+        # the scheduler pins exactly one singleton session. Mail dispatch's
+        # one process may add a private timeout-log connection: its three fit
+        # the four slots, which Compose never needs for an overlapping copy.
         return budget.rollout_overlap * (1 if role is ServiceRole.SCHEDULER else 2)
     return configuration.runtime_budget.operator_connections
 

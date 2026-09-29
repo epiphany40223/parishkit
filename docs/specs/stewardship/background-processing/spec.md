@@ -188,13 +188,18 @@ the other process's queue, leaving the durable row for the right consumer.
 Both processes share the worker's configuration, credential mounts, SQL login
 and broker identity. The main process starts the source process, forwards stop
 requests to it so both drain within the container's grace period, and exits
-if the source process exits or stops reporting liveness, so the container is
-restarted as a whole. Each process is budgeted one task and one lease-renewal
-connection; the worker login's limit of twice the rollout overlap covers both
-because Compose stops a container before starting its replacement. The main
-process's idle credential-acknowledgement pass runs only between messages, so
-it never needs a fifth connection. A runtime budget whose rollout overlap is
-below 2 keeps one process on all three queues. The source queue shares the
+if the source process exits or stays silent too long, so the container is
+restarted as a whole. A stale heartbeat alone does not stop it: each late
+observation is logged as a `helper_timed_out` entry (`source_helper`) with
+the limit and the heartbeat's age, and only silence longer than twice the
+container probe's limit stops the worker, logged the same way at `ERROR`.
+Each process may hold a task connection, a lease-renewal connection and a
+private timeout-log connection, so the worker login's limit is three times
+the rollout overlap; because Compose stops a container before starting its
+replacement, the overlap's slots serve the second process. The main
+process's idle credential-acknowledgement pass runs only between messages.
+A runtime budget whose worker limit is
+below six keeps one process on all three queues. The source queue shares the
 general queue's broker exchange and name prefix, so the Valkey ACL generated
 at provisioning already grants it.
 

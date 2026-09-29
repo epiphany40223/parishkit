@@ -84,6 +84,7 @@ sections:
     "Testing mode": [FAM-01, FAM-08]
   background-processing/spec.md:
     "Durable scheduling and task execution": [BG-01]
+    "Worker queues and processes": [BG-01, BG-05]
     "Campaign lifecycle boundaries": [BG-02]
     "Reopen token preparation": [BG-02]
     "Production-transition cleanup": [BG-03]
