@@ -521,7 +521,18 @@ def test_configuration_defect_is_collected_not_silently_held(
             operation="update",
             values={"settings": {"organization_id": "999"}},
         )
-    change(store, version, actor, [operation])
+    if missing:
+        change(store, version, actor, [operation])
+    else:
+        # The installer now refuses a new organization ID once data is loaded
+        # (#338), so a mismatch reaches a running deployment only through a
+        # configuration recorded before that guard or restored from backup.
+        # Simulate that path; collection must still report the defect.
+        from parishkit.stewardship.accounts import integration_selection
+
+        with monkeypatch.context() as patched:
+            patched.setattr(integration_selection, "loaded_organization", lambda: None)
+            change(store, version, actor, [operation])
     (identifier,) = schedule()
     assert consume(identifier)
     assert OperationalLog.objects.filter(level="CRITICAL").count() == 1
