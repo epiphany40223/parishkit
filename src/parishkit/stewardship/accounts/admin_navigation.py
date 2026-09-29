@@ -162,6 +162,7 @@ NON_PAGES = frozenset(
     {
         "background_counts",
         "background_task",
+        "background_task_status",
         "background_tasks",
         "branding_asset",
         "content_plain_text",
