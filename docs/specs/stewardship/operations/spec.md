@@ -929,7 +929,7 @@ At minimum, end-to-end tests demonstrate:
    seeded Chairperson relationship disappears, runtime suppression without YAML
    mutation, configuration-request role removal, YAML-backed manual restoration,
    and source-return reactivation.
-3. Testing email rerouting, the Family-facing Testing interstitial and banner,
+3. Testing email rerouting, the Family-facing Testing banner,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation, go-live admission gating, resumable bounded cleanup of
    test submissions/outbox detail, irreversible cancellation semantics, short

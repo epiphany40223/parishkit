@@ -44,9 +44,18 @@ def show(page, locator):
     return locator
 
 
+def visit_every_page(page):
+    """Open each form page once, as a Family must before Review."""
+    links = page.locator("[data-step-link]")
+    # The step bar is built once the form loads; count only after it exists.
+    expect(links.first).to_be_attached()
+    for index in range(links.count()):
+        links.nth(index).dispatch_event("click")
+
+
 def review(page):
-    """Go to the last form page and select Review response."""
-    page.locator("[data-step-link]").last.dispatch_event("click")
+    """Visit every form page, then select Review response on the last one."""
+    visit_every_page(page)
     page.get_by_role("button", name="Review response").click()
 
 
@@ -206,7 +215,7 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
 
 
 def test_testing_submits_without_acknowledgment_checkboxes(page, component_origin):
-    """The Testing banner is the only mode notice; no checkbox gates entry or Submit."""
+    """The Testing banner is the only mode notice: no entry page, no checkboxes."""
     submissions = []
 
     def submit(route):
@@ -215,9 +224,11 @@ def test_testing_submits_without_acknowledgment_checkboxes(page, component_origi
 
     attempts = prepare(page, component_origin, testing=True, submit=submit)
     expect(page.get_by_text("Testing mode:", exact=False).first).to_be_visible()
-    assert page.locator("main input[type=checkbox]:visible").count() == 0
-    page.get_by_role("button", name="Continue with test").click()
+    # The form opens straight away, without an entry page or a button to press.
     expect(page.locator("[data-step-link]").first).to_be_attached()
+    expect(page.locator("#family-entry")).to_be_hidden()
+    assert page.get_by_text("Test answers will not count").count() == 0
+    assert page.locator("#testing-entry-ack, #testing-submit-ack").count() == 0
     assert attempts[0].post_data_json == {}
     review(page)
     assert page.locator("#family-confirmation input[type=checkbox]").count() == 0
@@ -510,7 +521,7 @@ def test_expiry_after_definite_rejection_warns_changes_were_not_saved(
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator(".family-nav")).to_be_visible()
     page.clock.fast_forward(3_700_000)
-    expect(page.locator("#family-flow-message")).to_contain_text(
+    expect(page.locator("#session-expired")).to_contain_text(
         "Unsubmitted changes have not been saved"
     )
     assert "check your last submission time" not in page.locator("main").inner_text()
@@ -548,10 +559,67 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
     if retry == "validation":
         expect(page.locator(".family-nav")).to_be_visible()
         page.clock.fast_forward(3_700_000)
-    expect(page.locator("#family-flow-message")).to_contain_text(
+    expect(page.locator("#session-expired")).to_contain_text(
         "check your last submission time"
     )
     assert (
         "Unsubmitted changes have not been saved"
         not in page.locator("main").inner_text()
     )
+
+
+def test_testing_form_load_failure_offers_a_retry(page, component_origin):
+    """Testing opens the form itself; a failed load shows a Try again button."""
+    page.clock.install(time=NOW)
+    attempts = []
+
+    def load(route):
+        """Fail the first automatic load, then return the form."""
+        attempts.append(route.request)
+        if len(attempts) == 1:
+            route.fulfill(status=503, body="unavailable", content_type="text/plain")
+        else:
+            route.fulfill(json={"form": form_payload(testing=True)})
+
+    page.route("**/family/form", load)
+    page.route(
+        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
+    )
+    page.goto(component_origin + "/family-testing")
+    retry = page.get_by_role("button", name="Try again")
+    expect(retry).to_be_visible()
+    expect(page.locator("#family-flow-message")).to_contain_text("could not be loaded")
+    retry.click()
+    expect(page.locator("[data-step-link]").first).to_be_attached()
+    assert len(attempts) == 2
+
+
+@pytest.mark.parametrize("testing", [True, False])
+def test_session_timeout_shows_one_notice_under_the_testing_banner(
+    page, component_origin, testing
+):
+    """One red notice with one working sign-in link; Testing banner on top."""
+    prepare(page, component_origin, testing=testing)
+    if not testing:
+        page.get_by_role("button", name="Begin reviewing").click()
+    expect(page.locator("[data-step-link]").first).to_be_attached()
+    page.clock.fast_forward(3_700_000)
+    notice = page.locator("#session-expired")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("Your session has ended.")
+    links = page.get_by_role("link", name="Sign in again")
+    expect(links).to_have_count(1)
+    expect(links).to_have_attribute("href", "/")
+    expect(page.locator("#family-flow-message")).to_be_hidden()
+    assert page.locator("#session-warning").is_hidden()
+    banner = page.get_by_text("Testing mode:", exact=False)
+    if testing:
+        # The Testing banner comes before (above) the session notice.
+        assert banner.evaluate(
+            "(b, n) => Boolean(b.compareDocumentPosition(n) &"
+            " Node.DOCUMENT_POSITION_FOLLOWING)",
+            notice.element_handle(),
+        )
+        assert banner.bounding_box()["y"] < notice.bounding_box()["y"]
+    else:
+        expect(banner).to_have_count(0)

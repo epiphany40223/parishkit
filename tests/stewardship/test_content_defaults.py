@@ -116,6 +116,8 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "login_help",
         # A general reflection on caring for creation; it names no parish.
         "closing",
+        # One instruction line; the page's Submit button names the parish.
+        "review",
         # Appended after the receipt email body, which already names the
         # parish; this block carries only the contact sentence.
         "submission_confirmation",
@@ -210,7 +212,7 @@ def test_ministry_instructions_match_the_family_form_controls():
         "Current ministries",
         "Continuing",
         "Stop participating",
-        "Click here to join another ministry",
+        "here to join more ministries",
     ):
         assert label in script and f"<strong>{label}</strong>" in PAGES["ministry"]
 

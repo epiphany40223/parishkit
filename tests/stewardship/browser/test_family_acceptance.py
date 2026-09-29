@@ -112,7 +112,6 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
 def test_section_edit_returns_to_a_testing_review(page, component_origin):
     """A section shortcut from Review leads back to a Testing review, not live."""
     attempts = prepare(page, component_origin, testing=True)
-    page.get_by_role("button", name="Continue with test").click()
     review(page)
     show(
         page,
@@ -212,7 +211,7 @@ def test_large_household_and_on_demand_ministry_list(page, component_origin):
     render_seconds = monotonic() - started
     assert page.get_by_label("Search ministries").count() == 0
     show(
-        page, page.get_by_text("Click here to join another ministry", exact=True).first
+        page, page.get_by_text("Click here to join more ministries", exact=True).first
     ).click()
     show(page, page.get_by_label("Search ministries")).fill("500")
     show(

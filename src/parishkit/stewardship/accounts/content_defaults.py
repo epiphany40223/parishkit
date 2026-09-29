@@ -94,8 +94,9 @@ PAGES = {
     ),
     # The bold labels match the Family form's Ministry controls exactly
     # (static family-v1.js): the "Current ministries" heading, each current
-    # ministry's "Continuing" / "Stop participating" choice, and the "Click
-    # here to join another ministry" disclosure. Leaving is always honored.
+    # ministry's "Continuing" / "Stop participating" choice, and the "Tap (or
+    # Click) here to join more ministries" disclosure, whose verb follows the
+    # device. Leaving is always honored.
     "ministry": (
         "<p>Every skill, talent, and ability is a unique gift from God. Our call "
         "to serve is an invitation to discern <em>where</em> and <em>how</em> the "
@@ -110,9 +111,9 @@ PAGES = {
         "To continue in one, you don’t need to change anything.</li>"
         "<li>To stop participating in a ministry, choose "
         "<strong>Stop participating</strong>.</li>"
-        "<li>To begin a new ministry, or to learn more about one, select "
-        "<strong>Click here to join another ministry</strong>, search for it, and "
-        "check its box. Someone from that ministry will contact you.</li></ul>"
+        "<li>To begin a new ministry, or to learn more about one, tap or click "
+        "<strong>here to join more ministries</strong>, search for it, and check "
+        "its box. Someone from that ministry will contact you.</li></ul>"
     ),
     "financial": (
         "<p>Treasure is the word most often associated with stewardship. Many "
@@ -170,8 +171,6 @@ PAGES = {
     "review": (
         "<p>Please review your household’s answers below. You can go back to any "
         "section to make changes.</p>"
-        "<p><strong>Nothing is sent to {{ parish_name }} until you select the "
-        "Submit button at the bottom of this page.</strong></p>"
     ),
     "thank_you": (
         "<p>Thank you for taking the time to complete {{ parish_name }}’s "

@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -208,14 +209,18 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
     body = page.locator("main").inner_text()
     assert "These are requests" not in body and "wishes to stop" not in body
     choir.get_by_label("Stop participating").check()
-    page.get_by_text("Click here to join another ministry", exact=True).click()
+    page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
-    expect(page.get_by_text("Joining: Food pantry", exact=True)).to_be_visible()
+    expect(
+        page.locator(".ministry-joining li", has_text="Food pantry").first
+    ).to_be_visible()
     capture(page, "member-ministries")
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     review(page)
-    for text in ("Will continue: None", "Stopping: Choir", "Joining: Food pantry"):
-        expect(page.get_by_text(text, exact=True)).to_be_visible()
+    expect(page.get_by_text("Will continue: None", exact=True)).to_be_visible()
+    # Stopping and joining are bulleted, one ministry per line.
+    expect(page.locator(".stopping li", has_text="Choir")).to_be_visible()
+    expect(page.locator(".ministry-joining li", has_text="Food pantry")).to_be_visible()
     assert "may follow up" not in page.locator("main").inner_text()
     capture(page, "review")
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -315,11 +320,28 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     assert step_text(page) == f"Step 2 of {total}: Family information"
     expect(second).to_have_attribute("aria-current", "step")
     expect(first).to_have_class("family-track-done family-tip-start")
-    # Review opens only once every page is complete: a required answer (the
-    # annual pledge) is still missing, so the Family is taken to it instead.
+    # Review first requires every page to have been viewed: the Family is
+    # taken to the first page not yet seen, with a note saying why.
+    note = page.locator("[data-nav-error]")
+    review_segment.click()
+    assert step_text(page) == f"Step 3 of {total}: Alex Sample"
+    expect(note).to_contain_text("Please go through each page")
+    # The note also describes the focused heading, as the alert may be missed.
+    heading = page.locator("h3:focus")
+    expect(heading).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
+    expect(review_segment).not_to_have_attribute("aria-current", "step")
+    links = page.locator("[data-step-link]")
+    for index in range(links.count()):
+        links.nth(index).click()
+    # With every page seen, a missing required answer (the annual pledge)
+    # takes the Family to it, and the note names the question.
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
+    expect(note).to_contain_text("“Annual pledge” on the “Financial stewardship” page")
+    expect(note).to_be_visible()
     expect(review_segment).not_to_have_attribute("aria-current", "step")
 
 
@@ -499,16 +521,19 @@ def test_campaign_banner_and_page_icons(page, component_origin, axe_source, widt
         "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
         "financial": {"url": "/branding/financial.png", "width": 256, "height": 256},
     }
+    form["content"]["welcome"] = "<p>Welcome to the renewal.</p>"
     begin(page, component_origin, form, None)
     intro = page.locator('[data-page="intro"]')
-    banner = intro.locator("img.family-banner")
-    expect(banner).to_be_visible()
-    # The banner heads the page, above the welcome icon, and fits the screen.
-    assert intro.locator("img").first.get_attribute("class") == "family-banner"
-    assert banner.get_attribute("alt") == ""
-    assert banner.evaluate("e => e.getBoundingClientRect().width") <= width
+    # The wide banner is for emails only; Welcome shows just its icon, first
+    # (no returning-Family notice here) and above the intro text.
+    expect(page.locator("img.family-banner")).to_have_count(0)
     icon = intro.locator("img.family-page-icon")
     expect(icon).to_be_visible()
+    assert icon.get_attribute("alt") == ""
+    assert icon.evaluate(
+        "i => Boolean(i.compareDocumentPosition(i.parentElement"
+        ".querySelector('.content-block')) & Node.DOCUMENT_POSITION_FOLLOWING)"
+    )
     assert icon.evaluate("e => e.getBoundingClientRect().width") <= 100
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.evaluate(axe_source)
@@ -525,3 +550,116 @@ def test_no_campaign_images_means_no_images(page, component_origin):
     begin(page, component_origin, paged_form(), None)
     expect(page.locator('[data-step-link="intro"]')).to_be_attached()
     expect(page.locator(".family-page img")).to_have_count(0)
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_blocked_next_says_which_question_needs_an_answer(
+    page, component_origin, width
+):
+    """Next on the financial page without a share method explains itself."""
+    page.set_viewport_size({"width": width, "height": 900})
+    form = paged_form()
+    form["additional_enabled"] = True
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("1200")
+    page.get_by_label("Pledge frequency (required)").select_option("monthly")
+    before = step_text(page)
+    next_page(page)
+    assert step_text(page) == before
+    note = page.locator("[data-nav-error]")
+    expect(note).to_be_visible()
+    expect(note).to_have_text("Please check “How would you like to share?”.")
+    expect(page.locator("#financial-shares-error")).to_be_visible()
+    focused = page.locator(":focus")
+    expect(focused).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
+    # Only the share group is outlined in red, not the whole pledge section.
+    for selector in (".financial-pledge", "#financial-section"):
+        width = page.locator(selector).evaluate(
+            "e => getComputedStyle(e).borderTopWidth"
+        )
+        assert width in ("0px", "1px"), (selector, width)
+    group = page.locator("fieldset.choice-group")
+    assert group.evaluate("e => getComputedStyle(e).borderTopWidth") == "2px"
+    # The note sits with the (sticky) navigation, inside the viewport.
+    box = note.bounding_box()
+    assert box and box["y"] + box["height"] <= page.viewport_size["height"]
+    # Fixing the answer clears the note on the next attempt.
+    page.locator('#financial-section input[id^="financial-option-"]').first.check()
+    next_page(page)
+    expect(note).to_be_hidden()
+    assert step_text(page) != before
+    assert page.locator('[aria-describedby~="family-nav-error"]').count() == 0
+
+
+def test_returning_family_may_go_straight_to_review(page, component_origin):
+    """Someone who already submitted doesn't have to revisit every page."""
+    form = paged_form()
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    begin(page, component_origin, form, None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    page.locator("[data-step-review]").click()
+    expect(page.locator(".family-step")).to_contain_text("Review and submit")
+
+
+def test_member_section_is_not_outlined_by_an_invalid_field(page, component_origin):
+    """A Member's own invalid field doesn't draw a red box around the section."""
+    begin(page, component_origin, paged_form(), None)
+    first = show(page, page.get_by_label("First name (required)").first)
+    first.fill("")
+    next_page(page)
+    expect(page.locator("[data-nav-error]")).to_contain_text("First name")
+    section = page.locator("fieldset.member-section:visible").first
+    assert section.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
+
+
+def test_blocked_review_names_a_question_on_another_page(page, component_origin):
+    """An added Member's missing name stops Review and names that page."""
+    begin(page, component_origin, paged_form(), None)
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    add = show(
+        page,
+        page.get_by_role("button", name="Add a household member", include_hidden=True),
+    )
+    add.click()
+    key = page.locator(":focus").evaluate("e => e.closest('[data-page]').dataset.page")
+    # Every page has been seen; go to another page and ask for Review.
+    links = page.locator("[data-step-link]")
+    for index in range(links.count()):
+        links.nth(index).click()
+    page.locator('[data-step-link="intro"]').click()
+    page.locator("[data-step-review]").click()
+    expect(page.locator(f'[data-page="{key}"]')).to_be_visible()
+    note = page.locator("[data-nav-error]")
+    expect(note).to_contain_text("First name")
+    expect(note).to_contain_text("page")
+    expect(page.locator(":focus")).to_have_attribute(
+        "aria-describedby", re.compile("family-nav-error")
+    )
+
+
+def test_welcome_icon_sits_below_the_last_submitted_notice(page, component_origin):
+    """For a returning Family the icon follows the "last submitted" notice."""
+    page.route(
+        "**/branding/*.png",
+        lambda route: route.fulfill(body=png(256, 256), content_type="image/png"),
+    )
+    form = paged_form()
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    form["images"] = {
+        "banner": {"url": "/branding/banner.png", "width": 1024, "height": 217},
+        "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
+    }
+    form["content"]["welcome"] = "<p>Welcome to the renewal.</p>"
+    begin(page, component_origin, form, None)
+    intro = page.locator('[data-page="intro"]')
+    expect(page.locator("img.family-banner")).to_have_count(0)
+    order = intro.evaluate(
+        """p => [...p.children].map(e => e.matches('.family-submitted') ? 'notice'
+          : e.matches('img.family-page-icon') ? 'icon'
+          : e.matches('.content-block') ? 'intro' : null).filter(Boolean)"""
+    )
+    assert order == ["notice", "icon", "intro"]

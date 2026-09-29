@@ -125,9 +125,16 @@ def validate_financial_answers(payload, options):
     try:
         amount = pledge_amount(payload["annual_pledge"])
     except ValueError:
+        # Same wording as the Family form: a blank pledge is asked for plainly;
+        # anything else is shown how to write a dollar amount (#267).
+        blank = (
+            isinstance(payload["annual_pledge"], str)
+            and not payload["annual_pledge"].strip()
+        )
         errors["financial.annual_pledge"] = (
-            "Enter an annual pledge from $0.00 to $999,999,999.99, "
-            "with up to two decimals."
+            "Enter an annual pledge."
+            if blank
+            else "Enter a dollar amount, like 1200 or 1200.50."
         )
     frequency = payload["frequency"]
     if (

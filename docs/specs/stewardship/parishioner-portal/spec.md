@@ -22,7 +22,7 @@ These pages reveal no Family information. In Production, lifecycle state and
 the resolved boundaries govern access. In Testing, the one current `draft`
 campaign is treated as active solely for portal gating while the current instant
 falls inside its resolved interval; before/after pages still apply outside that
-interval, and the Testing interstitial and banner below remain mandatory.
+interval, and the Testing banner below remains mandatory.
 Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
@@ -84,16 +84,28 @@ answers, using the rate-limited
 [activity keepalive](../architecture/spec.md#identity-and-session-security).
 Passive presence polling does not extend the session. The expiry warning offers
 continued interaction when the idle deadline can still be refreshed and states
-when the absolute four-hour deadline cannot be extended.
+when the absolute four-hour deadline cannot be extended. When the session ends,
+a single red notice says so (and that unsubmitted changes were not saved, or,
+after an uncertain submission, to sign in again to check it) with one "Sign in
+again" link; in Testing it sits below the Testing banner, which is always the
+top-most bar.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors. A "Step N of M"
+current page and keeps the Family there with inline errors, focus on the first
+unanswered question, and a note beside the navigation buttons naming it
+("Please check “How would you like to share?”."), which also describes the
+focused field for assistive technology. Only a choice group (share methods) is
+outlined in red, never a whole section. A "Step N of M"
 line names the current step, and a segmented step bar like the setup wizard's
 has one button per step: each is named by its step, shows a "Step N of M"
-tooltip on hover or keyboard focus, and jumps to that page on click or tap. The
-Review segment checks every page, so the response cannot be completed until all
-steps are done. Browser Back/Forward move between pages. Every page shows the
+tooltip on hover or keyboard focus, and jumps to that page on click or tap.
+Review (the last segment, or Review response on the last page) first requires a
+Family that has not submitted before to have viewed every page: otherwise it
+opens the first page not yet viewed and says so. It then checks every page and,
+if an answer is missing, opens that page with the same note naming the
+question, so the response cannot be completed until all steps are done. A
+returning Family, who has submitted before, may go straight to Review. Browser Back/Forward move between pages. Every page shows the
 Family's name (for example "The Squyres Family") so the Family can confirm the
 right household is open; ParishSoft's mailing name and the session deadline are
 not shown. Browser history cannot resubmit or expose a completed form.
@@ -109,9 +121,10 @@ Help that every Family needs stays visible, including the birth-date Unknown
 explanation below and the pledge's "intention only" statement.
 
 Optional campaign images appear when the Admin has set them for the current
-campaign: the wide banner
-at the top of the welcome page, and a small icon (about 96 CSS pixels) above
-the heading of the welcome, Member, financial and closing pages. They are
+campaign: a small icon (about 96 CSS pixels) above the heading of the Member,
+financial and closing pages, and on the Welcome page below the returning-Family
+"last submitted" notice (or, without one, first), above the parish's intro text.
+The wide campaign banner is used in emails only, not on the Family pages. They are
 decorative (empty text alternatives), since the headings and text already carry
 their meaning, and scale down to fit a phone screen.
 
@@ -257,19 +270,23 @@ submission, including the linked stale-form reconfirmation requirement.
 Current memberships appear first under "Current ministries", each stating
 its choice once as "Continuing" (the default) or "Stop participating". Leaving
 is always honored; the form does not describe it as a request that may be
-declined. Existing memberships are excluded from join choices. "Click here to
-join another ministry" expands/searches the potentially long selected-Ministry
-list only on demand and supports multiple choices, and the chosen ministries
-stay listed as "Joining: …" while it is collapsed. Selecting and then
+declined. A Ministry set to "Stop participating" is highlighted in the
+attention (amber) colour. Existing memberships are excluded from join choices.
+"Click here to join more ministries" ("Tap here…" on a touch-only device)
+expands/searches the potentially long selected-Ministry list only on demand and
+supports multiple choices, and the chosen ministries stay listed under
+"Joining:", one per line, while it is collapsed. Selecting and then
 deselecting returns to no requested change. Review lists each Member's
-ministries as "Will continue", "Stopping" and "Joining".
+ministries as "Will continue", "Stopping" and "Joining", the last two as
+bulleted lists.
 
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
 
 ### Talents and "cannot participate"
 
-Above each Member's Ministry choices, the form asks: "If you have a special
+At the bottom of each Member's page, below the ministry updates, a "Talents to
+share" panel (styled like Ministry participation) asks: "If you have a special
 talent that you would like to share with your parish family, please select it
 below." It offers the campaign's talent checkboxes, which an Admin edits
 alongside the share options (see
@@ -278,32 +295,43 @@ edited them offers the built-in defaults: Painter, Florist, Seamstress,
 Carpenter, Attorney, Gardener and Other. An option marked for free text (Other)
 requires a short description, at most 200 characters. No talent is required.
 
-Each Member may also check "Because of physical limitations, I/we cannot
-participate in any ministries at this time." While checked, every current
-Ministry is set to "Stop participating", every join choice is cleared, and the
-Ministry choices and "Click here to join another ministry" are disabled for
-pointer, keyboard and assistive technology alike. Unchecking restores the
-Family's own earlier choices. The server rejects a response in which such a
+Above the Ministry choices, each Member may check "Because of physical
+limitations, I/we cannot participate in any ministries at this time." While
+checked, every current Ministry is set to "Stop participating", every join
+choice is cleared, the Ministry choices and the join-more-ministries disclosure
+are disabled for pointer, keyboard and assistive technology alike, and the
+talents question is hidden and no talents are sent. Unchecking restores the
+Family's own earlier choices, talents included. The server rejects a response in which such a
 Member continues or joins any Ministry. Talents and this answer are recorded
 with the response and are never written to ParishSoft.
 
 ## Financial stewardship
 
-When enabled, the page shows read-only aggregates from the latest promoted
-snapshot and configured funds:
+When enabled, the page shows one read-only sentence of giving history from the
+latest promoted snapshot and configured funds: "As of *date*, you have
+contributed *amount* towards your *comparison year* pledge", or "… *amount* in
+*comparison year*" when there was no prior pledge. The prior pledge
+amount and the records' refresh time are not repeated. Money on Family pages
+omits zero cents ("$1,200").
 
-- prior/current-period Family pledge; and
-- current-period contributions through the displayed data-as-of timestamp.
-
-Unavailable or incomplete upstream data displays "Unavailable" with an as-of
-warning, never `$0.00`. Individual contribution transactions are not shown.
+Unavailable or incomplete upstream data says so instead, never `$0.00`.
+Individual contribution transactions are not shown.
 
 The Family must enter an annual upcoming-period pledge. `$0.00` is valid. For a
 positive pledge, select exactly one frequency: weekly, monthly, quarterly, or
 annual, and at least one share method whenever any are offered; both are
-required, in the browser and by server validation. The UI divides by 52, 12, 4, or 1 using decimal arithmetic and displays
-an approximate two-decimal installment; annual total remains authoritative and
-the page notes the final payment may differ slightly.
+required, in the browser and by server validation. The UI divides by 52, 12, 4,
+or 1 using decimal arithmetic and shows each payment's amount. When the pledge
+divides evenly ($6,000 monthly) it is stated plainly ("$500 per month");
+otherwise it is "Approximately" a two-decimal amount, the annual total remains
+authoritative, and the page notes the final payment may differ slightly.
+
+Review shows the financial answer as "Your *year* pledge: *amount*", followed in
+parentheses by the payment amount under the same exact-or-approximate rule, and,
+for a positive pledge, "This pledge starts on **start date**" ("began on" once
+the period has started) with the date in bold. It does not
+repeat the giving history, and neither Review nor its default text adds a
+"nothing is sent until Submit" prompt.
 
 The configured upcoming start date is prominent, with text that the pledge does
 not take effect before it. If campaign and period overlap, the Admin-confirmed
@@ -406,12 +434,10 @@ submission.
 During Testing mode every otherwise eligible Family may use the portal during
 campaign dates through its current rehearsal-epoch code or token under the
 [credential policy](../architecture/spec.md#family-credential-security).
-Production credentials are not accepted in Testing. Immediately after successful authentication and
-before any household data is displayed, an interstitial states that this is a
-test, answers will be permanently deleted before launch, the response will not
-count, and the Family will need to respond again in Production. The user
-chooses **Continue with test** or signs out; no acknowledgment checkbox is
-required.
+Production credentials are not accepted in Testing. Testing has no entry page
+or interstitial: after successful authentication the form opens straight away,
+and the Testing banner (below) is the only mode notice. If the form cannot be
+loaded, the page says so and offers **Try again**.
 
 Every form step has a persistent, non-color-only Testing banner repeating that
 answers are disposable, and the final button reads **Submit test response**.

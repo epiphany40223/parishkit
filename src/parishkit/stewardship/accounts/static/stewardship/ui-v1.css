@@ -196,6 +196,9 @@ label:has(> input[type=checkbox], > input[type=radio]) > input { position: absol
 label.changed:has(> input[type=checkbox], > input[type=radio]) { padding-inline-start: 2.95rem; }
 label.changed:has(> input[type=checkbox], > input[type=radio]) > input { inset-inline-start: .75rem; }
 input[aria-invalid=true], textarea[aria-invalid=true], select[aria-invalid=true] { border: 2px solid var(--error-border); }
+/* A choice group (checkboxes or radios) with an unanswered required choice;
+   only groups marked .choice-group, never a whole Member section or panel. */
+fieldset.choice-group:has(> label > input:is([type=checkbox], [type=radio])[aria-invalid=true]) { border: 2px solid var(--error-border); }
 
 /* Field sizing. A field is only as wide as its content needs: dates, times
    and numbers are short, dropdowns medium, free text wider, and long text
@@ -377,15 +380,19 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 #family-flow > h2 { font-size: clamp(1.45rem, 5vw, 1.9rem); margin-bottom: .25rem; }
 .family-step { color: var(--muted); font-weight: 600; margin: 0 0 .35rem; }
 .family-page > h3 { margin-top: .5rem; }
-/* Campaign artwork (#248): a full-width banner on the welcome page and a
-   small icon above each page heading; both scale down on narrow phones. */
-.family-banner { display: block; width: 100%; max-width: 40rem; height: auto; margin: 0 auto .75rem; }
+/* Optional campaign images (#248): a small icon above each page heading (on
+   Welcome, below the returning-Family notice); it scales down on phones. The
+   wide banner is used in emails only. */
 .family-page-icon { display: block; width: 6rem; height: auto; margin: .25rem 0 0; }
 .artwork-banner { max-width: 100%; height: auto; }
 .artwork-section { width: 6rem; height: auto; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
+/* Why Next or Review didn't advance: a full-width line above the buttons. */
+.family-nav-error { flex: 1 1 100%; margin: 0; }
+/* On a phone the note must not crowd out the form under the sticky bar. */
+@media (max-width: 40rem) { .family-nav-error { padding: .5rem .75rem; font-size: .9rem; } }
 /* Keep a field that receives focus (Next to an error, Tab) clear of the
    sticky bar instead of scrolling it underneath. */
 html:has(.family-nav) { scroll-padding-bottom: 6rem; }
@@ -419,7 +426,16 @@ main nav.family-track { display: block; margin: 0; }
    other answers. */
 label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .financial-pledge { border: 0; padding: 0; margin: 0; background: none; }
-.talents-panel > label { display: block; }
+/* Room between the pledge, frequency and per-payment lines, so a focused
+   field's outline doesn't run into the line above or below it. */
+.financial-pledge input, .financial-pledge select { margin-block-end: .75rem; }
+.financial-pledge label { display: block; margin-block-start: 1rem; }
+#financial-installment { margin-block: .75rem 1rem; }
+/* Talents match the Ministry participation panel: the question is the group's
+   legend in body text, and each choice is a full-height row. */
+.talents-choices { border: 0; padding: 0; margin: 0; background: none; }
+.talents-choices > legend { float: none; padding: 0; margin-block-end: .5rem; font-weight: 400; }
+.talents-choices > label { display: flex; align-items: center; gap: .5rem; min-height: 44px; margin: 0; }
 /* Locked choices read as unavailable through color that still meets
    contrast (never opacity), a dashed outline and a not-allowed cursor. */
 .ministry-choices.is-locked { color: var(--muted); border-inline-start: 3px dashed var(--muted); padding-inline-start: .75rem; }
@@ -429,6 +445,10 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }
 .ministry-row > label { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; }
 .ministry-row.changed { border-inline-start-width: .3rem; }
+/* A ministry the Member is stopping, in the attention colour (not green). */
+.stopping { border-inline-start: .3rem solid var(--warning-border); padding-inline-start: .75rem; background: var(--warning-bg); border-radius: 0 var(--radius-small) var(--radius-small) 0; }
+.ministry-joining p, .stopping > p { margin-block: 0 .25rem; }
+.ministry-joining ul, .stopping > ul { margin-block: 0; }
 /* The join list is collapsed by default; make the disclosure look actionable. */
 .ministry-join > summary { list-style: none; display: inline-flex; align-items: center; gap: .5rem; }
 .ministry-join > summary::-webkit-details-marker { display: none; }
