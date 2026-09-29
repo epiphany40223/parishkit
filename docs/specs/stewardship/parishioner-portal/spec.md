@@ -121,9 +121,10 @@ Help that every Family needs stays visible, including the birth-date Unknown
 explanation below and the pledge's "intention only" statement.
 
 Optional campaign images appear when the Admin has set them for the current
-campaign: the wide banner
-at the top of the welcome page, and a small icon (about 96 CSS pixels) above
-the heading of the welcome, Member, financial and closing pages. They are
+campaign: a small icon (about 96 CSS pixels) above the heading of the Member,
+financial and closing pages, and on the Welcome page below the returning-Family
+"last submitted" notice (or, without one, first), above the parish's intro text.
+The wide campaign banner is used in emails only, not on the Family pages. They are
 decorative (empty text alternatives), since the headings and text already carry
 their meaning, and scale down to fit a phone screen.
 

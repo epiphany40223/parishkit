@@ -521,16 +521,19 @@ def test_campaign_banner_and_page_icons(page, component_origin, axe_source, widt
         "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
         "financial": {"url": "/branding/financial.png", "width": 256, "height": 256},
     }
+    form["content"]["welcome"] = "<p>Welcome to the renewal.</p>"
     begin(page, component_origin, form, None)
     intro = page.locator('[data-page="intro"]')
-    banner = intro.locator("img.family-banner")
-    expect(banner).to_be_visible()
-    # The banner heads the page, above the welcome icon, and fits the screen.
-    assert intro.locator("img").first.get_attribute("class") == "family-banner"
-    assert banner.get_attribute("alt") == ""
-    assert banner.evaluate("e => e.getBoundingClientRect().width") <= width
+    # The wide banner is for emails only; Welcome shows just its icon, first
+    # (no returning-Family notice here) and above the intro text.
+    expect(page.locator("img.family-banner")).to_have_count(0)
     icon = intro.locator("img.family-page-icon")
     expect(icon).to_be_visible()
+    assert icon.get_attribute("alt") == ""
+    assert icon.evaluate(
+        "i => Boolean(i.compareDocumentPosition(i.parentElement"
+        ".querySelector('.content-block')) & Node.DOCUMENT_POSITION_FOLLOWING)"
+    )
     assert icon.evaluate("e => e.getBoundingClientRect().width") <= 100
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.evaluate(axe_source)
@@ -635,3 +638,28 @@ def test_blocked_review_names_a_question_on_another_page(page, component_origin)
     expect(page.locator(":focus")).to_have_attribute(
         "aria-describedby", re.compile("family-nav-error")
     )
+
+
+def test_welcome_icon_sits_below_the_last_submitted_notice(page, component_origin):
+    """For a returning Family the icon follows the "last submitted" notice."""
+    page.route(
+        "**/branding/*.png",
+        lambda route: route.fulfill(body=png(256, 256), content_type="image/png"),
+    )
+    form = paged_form()
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    form["images"] = {
+        "banner": {"url": "/branding/banner.png", "width": 1024, "height": 217},
+        "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
+    }
+    form["content"]["welcome"] = "<p>Welcome to the renewal.</p>"
+    begin(page, component_origin, form, None)
+    intro = page.locator('[data-page="intro"]')
+    expect(page.locator("img.family-banner")).to_have_count(0)
+    order = intro.evaluate(
+        """p => [...p.children].map(e => e.matches('.family-submitted') ? 'notice'
+          : e.matches('img.family-page-icon') ? 'icon'
+          : e.matches('.content-block') ? 'intro' : null).filter(Boolean)"""
+    )
+    assert order == ["notice", "icon", "intro"]

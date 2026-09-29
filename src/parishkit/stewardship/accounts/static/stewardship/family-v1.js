@@ -1668,14 +1668,14 @@
     editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
-    const intro = addPage(editor, "intro", "Welcome", "welcome", "welcome");
-    // The banner heads the welcome page, above its icon and heading.
-    const banner = artwork("banner", intro.element, "family-banner");
-    if (banner) intro.element.prepend(banner);
+    // The wide campaign banner is for emails only; the Welcome page shows just
+    // its icon, below the returning-Family summary and above the intro text.
+    const intro = addPage(editor, "intro", "Welcome", "welcome");
     // The welcome text carries its own heading; keep "Welcome" only for
     // screen readers and focus, so it isn't shown twice.
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
     submittedBanner(intro.element);
+    artwork("welcome", intro.element, "family-page-icon");
     block("welcome", intro.element);
     const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});
     const attendBox = node("input", null, attend, {type: "checkbox", id: "cannot-attend"});
