@@ -227,3 +227,46 @@ def test_large_private_pipe_finishes_after_slow_child_start(monkeypatch):
     )
     assert processes[0].poll() == 0 and processes[0].stdin.closed
     assert check.call_count >= 3
+
+
+ORIGIN = "https://parish.example.org"
+BANNER_URL = f"{ORIGIN}/branding/0f0e0d0c-0b0a-4908-8706-050403020100.png"
+
+
+def banner_payload(origin):
+    """A campaign sample with the server-built banner (#248) in a helper envelope."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.web.content import email_banner
+
+    banner = email_banner({"url": BANNER_URL, "width": 1024, "height": 217}, "Renewal")
+    base = sample()
+    mail = replace(base, html=banner + base.html, banner_origin=ORIGIN)
+    request = {
+        "settings": SETTINGS,
+        "candidate": base64.b64encode(b"synthetic-private").decode(),
+        "mail": mail.payload(),
+    }
+    if origin is not None:
+        request["banner_origin"] = origin
+    return mail, json.dumps(request).encode()
+
+
+def test_parent_sends_its_banner_origin_and_helper_admits_the_banner(monkeypatch):
+    """The helper validates a campaign banner against the parent's own origin."""
+    mail, raw = banner_payload(ORIGIN)
+    assert worker.decode_request(raw)[2] == mail
+    process = Process(b"not_sent\n", 0)
+    monkeypatch.setattr(parent.subprocess, "Popen", lambda *a, **k: process)
+    parent.submit_sample(
+        b"synthetic-private", SETTINGS, mail, seconds=30, check=lambda: None
+    )
+    assert json.loads(process.inputs[0])["banner_origin"] == ORIGIN
+
+
+@pytest.mark.parametrize("origin", [None, "", "https://tracker.example.net"])
+def test_helper_refuses_a_banner_without_the_matching_origin(origin):
+    """No origin, or another host, means the banner image is not admitted."""
+    _, raw = banner_payload(origin)
+    with pytest.raises(ValueError):
+        worker.decode_request(raw)

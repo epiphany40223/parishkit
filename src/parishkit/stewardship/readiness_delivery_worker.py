@@ -29,15 +29,20 @@ def decode_request(raw):
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
     if (
         type(request) is not dict
-        or set(request) != {"settings", "candidate", "mail"}
+        # ``banner_origin`` is optional: only campaign samples carry one, and
+        # without it no campaign banner is admitted.
+        or set(request) - {"banner_origin"} != {"settings", "candidate", "mail"}
         or type(request["candidate"]) is not str
+        or type(request.get("banner_origin", "")) is not str
     ):
         raise ValueError("Invalid readiness delivery request.")
     settings = validated_context("google_workspace", request["settings"])
     candidate = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(candidate) <= MAX_FILE_BYTES:
         raise ValueError("Invalid readiness credential size.")
-    mail = ReadinessMail.from_payload(request["mail"])
+    mail = ReadinessMail.from_payload(
+        request["mail"], banner_origin=request.get("banner_origin", "")
+    )
     if any(
         getattr(mail, key) != settings[key]
         for key in ("sender", "reply_to", "recipient")

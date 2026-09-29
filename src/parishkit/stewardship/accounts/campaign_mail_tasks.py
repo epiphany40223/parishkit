@@ -102,7 +102,9 @@ def admit_task(action, status, *, store):
     )
 
 
-def campaign_mail_handler(store, *, credential_path=None, scheduler=False):
+def campaign_mail_handler(
+    store, *, credential_path=None, scheduler=False, public_origin=""
+):
     """Only a mounted installed Workspace credential enables provider execution."""
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Campaign test delivery requires an installed Workspace path.")
@@ -111,7 +113,9 @@ def campaign_mail_handler(store, *, credential_path=None, scheduler=False):
         admit=partial(admit_task, store=store),
         execute=_unavailable
         if scheduler
-        else partial(_execute, credential_path=credential_path),
+        else partial(
+            _execute, credential_path=credential_path, public_origin=public_origin
+        ),
         recover=recovery_plan,
         scope=work_transaction,
     )
@@ -132,7 +136,7 @@ def _check(execution, path, fingerprint):
         connections.close_all()
 
 
-def _execute(execution, *, credential_path):
+def _execute(execution, *, credential_path, public_origin=""):
     """Read the installed key, commit submitting, then invoke the finite helper."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError(
@@ -153,7 +157,9 @@ def _execute(execution, *, credential_path):
         if file_fingerprint(candidate) != row.fingerprint:
             raise PermissionError("The installed mail credential differs from preview.")
         execution.check()
-        mail, deadline = begin_submission(row.pk, execution.claim)
+        mail, deadline = begin_submission(
+            row.pk, execution.claim, banner_origin=public_origin
+        )
         submitted = True
         settings = workspace.settings | {
             key: getattr(mail, key) for key in ("sender", "reply_to", "recipient")

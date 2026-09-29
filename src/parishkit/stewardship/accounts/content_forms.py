@@ -362,12 +362,60 @@ SAMPLE_PARISH = {
 }
 
 
-def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=None):
+def sample_render(
+    value, *, parish, campaign, confirmation=False, receipt_block=None, banner=""
+):
     """Never look up a real Family or generate a live code/link for a sample preview.
 
     Parish and campaign values are the configured ones; parish contact fields
     that are not configured, and every Family value, are fictional samples.
+    ``banner`` is the server-built campaign banner (#248, see sample_banner),
+    placed first in the HTML exactly as the real Family render places it.
     """
+    result = _sample_render(
+        value,
+        parish=parish,
+        campaign=campaign,
+        confirmation=confirmation,
+        receipt_block=receipt_block,
+    )
+    if result is not None and banner:
+        result = result | {"html": banner + result["html"]}
+    return result
+
+
+def sample_banner(campaign, slot, *, show=None):
+    """The campaign banner a sample of this Family email carries, or "".
+
+    Matches the real render (family_mail_rendering, receipt_rendering): the
+    current campaign's banner, unless the email hides it. ``show`` overrides
+    the saved "Show the campaign banner" choice for an unsaved editor preview.
+    The address uses this deployment's public origin; without an HTTPS origin
+    there is no banner, as in real delivery.
+    """
+    from django.conf import settings
+
+    from parishkit.stewardship.accounts.branding_context import (
+        banner_for_email,
+        campaign_artwork,
+    )
+    from parishkit.stewardship.campaigns.configuration import BANNER_EMAILS
+    from parishkit.stewardship.web.content import email_banner
+
+    if slot not in BANNER_EMAILS:
+        return ""
+    origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", "") or ""
+    if show is None:
+        image = banner_for_email(campaign, slot, origin=origin)
+    else:
+        image = (
+            campaign_artwork(campaign, origin=origin).get("banner") if show else None
+        )
+    return email_banner(image, campaign["name"])
+
+
+def _sample_render(value, *, parish, campaign, confirmation=False, receipt_block=None):
+    """The fictional sample itself, before any campaign banner."""
     confirmation = confirmation or (
         value is not None and value.get("slot") == "confirmation"
     )

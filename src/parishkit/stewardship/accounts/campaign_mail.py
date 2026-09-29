@@ -22,7 +22,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .admin_editing import editable_configuration, principal
 from .campaign_mail_models import CampaignMailTest
 from .configuration_models import AppliedIntegration
-from .content_forms import sample_render
+from .content_forms import sample_banner, sample_render
 from .content_models import ContentVersion
 
 TASK_TYPE = "campaign_mail_test"
@@ -132,7 +132,11 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
                 receipt_block=confirmation_block(
                     version.canonical_document, campaign_id
                 ),
+                banner=sample_banner(
+                    campaign.active_configuration.values, template.slot
+                ),
             ),
+            banner_origin=_public_origin(),
         )
         row.mail = sample.payload()
         # Structural configuration may be unchanged after withdrawal, but that
@@ -143,6 +147,13 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             f"{version.digest}:{campaign.readiness_revision}",
             _families_link(runtime, campaign, revision_id),
         )
+
+
+def _public_origin():
+    """This deployment's public origin, the only host a sample banner may use."""
+    from django.conf import settings
+
+    return getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", "") or ""
 
 
 def _families_link(runtime, campaign, revision_id):
