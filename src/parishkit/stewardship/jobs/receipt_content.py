@@ -113,7 +113,9 @@ def render_receipt(
         f"Submitted: {stamp}",
     )
     # One compact paragraph, a line per fact, as the email signature does.
-    html += "<p>" + "<br>".join(escape(value) for value in facts) + "</p>"
+    # quote=False: the delivery check compares against sanitizer output,
+    # which writes quotes literally, so "O'Brien" must not become &#x27;.
+    html += "<p>" + "<br>".join(escape(value, quote=False) for value in facts) + "</p>"
     text += "\n\n" + "\n".join(facts)
     # Check the combined result as well: separate literals/substitutions cannot
     # assemble a reserved credential marker in an otherwise valid template.

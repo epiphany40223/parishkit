@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.family_delivery import FamilyDeliveryMail
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
 from parishkit.stewardship.jobs.receipt_content import ReceiptTemplate, render_receipt
 from parishkit.stewardship.web.content import SafeContent
@@ -169,3 +170,28 @@ def test_testing_subject_keeps_marker_for_maximum_length_subject():
 def test_template_repr_does_not_include_authored_text():
     """Incidental template diagnostics omit authored private prose."""
     assert "Private authored text" not in repr(ReceiptTemplate("Private authored text"))
+
+
+@pytest.mark.parametrize("testing", [False, True])
+@pytest.mark.parametrize("name", ["O'Brien", 'The "Big" Family', "St. Mary's"])
+def test_names_with_quotes_pass_the_delivery_check(testing, name):
+    """Quotes are written literally, as the sanitizer does, so delivery admits them."""
+    values = {
+        "parish_name": name,
+        "parish_phone": "+12025550100",
+        "parish_website": "https://example.org/",
+        "parish_email": "office@example.org",
+        "campaign_name": "Annual census",
+        "family_name": name,
+    }
+    result = render(testing=testing, values=values)
+    assert name in result.html
+    FamilyDeliveryMail(
+        semantic_key=uuid4(),
+        sender="parish@example.org",
+        reply_to="parish@example.org",
+        recipients=result.routed_recipients,
+        subject=result.subject,
+        html=result.html,
+        text=result.text,
+    )
