@@ -14,6 +14,7 @@ from openpyxl.styles.numbers import BUILTIN_FORMATS
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.parish_views import ParishForm
+from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.jobs.campaign_mail_values import campaign_values
 from parishkit.stewardship.reports.information_rendering import xlsx_cell
 from parishkit.stewardship.responses.page_content import public_values
@@ -138,11 +139,11 @@ def test_rejects_untyped_values():
 
 
 def test_csv_is_iso_whatever_the_parish_style():
-    """CSV dates are YYYY-MM-DD and timestamps YYYY-MM-DD HH:MM in their zone."""
+    """CSV dates are YYYY-MM-DD; timestamps are ISO 8601 with their zone offset."""
     local = MOMENT.astimezone(ZoneInfo(ZONE))
     with dates.using("us_long"):
         assert csv_cell(DAY) == "2027-01-05"
-        assert csv_cell(local) == "2027-01-05 15:04"
+        assert csv_cell(local) == "2027-01-05 15:04:00-05:00"
         assert csv_cell(dates.Span(DAY, date(2027, 6, 30))) == (
             "2027-01-05 through 2027-06-30"
         )
@@ -292,3 +293,43 @@ def test_script_style_table_matches_python():
         )
     )
     assert table == {code: style[1:] for code, style in dates._STYLES.items()}
+
+
+def test_the_repeated_fall_back_hour_stays_distinct():
+    """01:30 EDT and 01:30 EST on 2026-11-01 differ in the zone name and in CSV."""
+    first = datetime(2026, 11, 1, 5, 30, tzinfo=UTC).astimezone(ZoneInfo(ZONE))
+    second = datetime(2026, 11, 1, 6, 30, tzinfo=UTC).astimezone(ZoneInfo(ZONE))
+    assert dates.format_instant(first, ZONE, "us_long") == (
+        "November 1, 2026 at 1:30 AM EDT"
+    )
+    assert dates.format_instant(second, ZONE, "us_long") == (
+        "November 1, 2026 at 1:30 AM EST"
+    )
+    assert csv_cell(first) == "2026-11-01 01:30:00-04:00"
+    assert csv_cell(second) == "2026-11-01 01:30:00-05:00"
+
+
+def test_an_instant_after_utc_midnight_can_be_the_previous_local_day():
+    """03:00 UTC on January 6 is still the evening of January 5 in New York."""
+    moment = datetime(2027, 1, 6, 3, 0, tzinfo=UTC)
+    assert dates.format_instant(moment, ZONE, "iso") == "2027-01-05 22:00 EST"
+    assert dates.format_instant(moment, ZONE, "us_numeric", compact=True) == (
+        "01/05/27 10:00 PM"
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "style", "expected"),
+    [
+        ("09:00:00", "us_long", "9:00 AM"),
+        ("21:05:00", "us_long", "9:05 PM"),
+        ("21:05:00", "eu_long", "21:05"),
+        ("09:00:30", "us_long", "9:00:30 AM"),
+        ("", "us_long", ""),
+        ("not a time", "us_long", "not a time"),
+    ],
+)
+def test_parish_time_uses_the_style_clock(value, style, expected):
+    """Schedule times follow the parish style's 12- or 24-hour clock."""
+    with dates.using(style):
+        assert parish_time(value) == expected

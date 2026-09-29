@@ -171,3 +171,11 @@ def test_family_pages_placeholders_mail_and_exports_follow_the_setting(
         line.startswith("Requested at: " + requested.strftime("%d.%m.%Y %H:%M"))
         for line in lines
     )
+
+
+@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH])
+def test_background_roles_can_read_the_active_date_format(live_response_service, role):
+    """Workers and mail dispatch format dates with the Admin's chosen style."""
+    choose(live_response_service.service.store, "eu_dot")
+    with task_login(role, exact=True, reconnect=True):
+        assert active_date_format() == "eu_dot"

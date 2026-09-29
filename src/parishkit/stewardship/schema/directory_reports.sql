@@ -2,6 +2,9 @@
 CREATE FUNCTION stewardship_directory_report_v1(
     campaign_uuid uuid, parameters jsonb, page_number integer DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
+-- JIT compilation cost about 2.3 s per call at 2,500 Families and saved
+-- nothing: the selection itself runs in well under a second.
+SET jit TO off
 SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE f jsonb:=parameters->'filters'; answer jsonb;
 BEGIN
@@ -44,6 +47,11 @@ WITH selected AS MATERIALIZED (
     WHERE s.state='promoted' AND s.compacted_at IS NULL
 ), options AS (
     SELECT f AS f
+), name_trim AS (
+    -- Every character Python's str.strip() removes (str.isspace), so names
+    -- trimmed here match family_names.py exactly: search and sort use the
+    -- same string the page shows, even with tabs or no-break spaces.
+    SELECT E' \t\n\x0b\x0c\r\x1c\x1d\x1e\x1f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000'::text AS ws
 ), family_source AS MATERIALIZED (
     SELECT m.source_key,p.canonical::jsonb AS value
     FROM source s JOIN stewardship_snapshot_family m ON m.snapshot_id=s.source_id
@@ -62,21 +70,40 @@ WITH selected AS MATERIALIZED (
     SELECT m.source_key,p.canonical::jsonb->'fields' AS fields
     FROM source s JOIN stewardship_snapshot_address m ON m.snapshot_id=s.source_id
     JOIN stewardship_source_address p ON p.id=m.payload_id
+), head_emails AS MATERIALIZED (
+    -- Every head's email entries in one set-based pass. Per-Family
+    -- subqueries repeated the contacts lookup once for every Family.
+    SELECT f.source_key,e.value AS email
+    FROM family_source f
+    CROSS JOIN LATERAL jsonb_array_elements_text(f.value->'active_head_duids') h(head)
+    JOIN contacts c ON c.source_key='member:'||h.head
+    CROSS JOIN LATERAL jsonb_array_elements(c.value->'emails') e
+), email_counts AS MATERIALIZED (
+    SELECT x.source_key,count(*) AS address_count,
+        count(*) FILTER (WHERE x.email->'valid'='true'::jsonb) AS eligible,
+        count(*) FILTER (WHERE x.email->'valid'='true'::jsonb AND NOT EXISTS (
+            SELECT 1 FROM stewardship_recipient_refusal r
+            WHERE r.organization_id=s.organization_id
+              AND r.family_duid=x.source_key::bigint
+              AND r.address=x.email->>'value' AND NOT EXISTS (
+                  SELECT 1 FROM stewardship_recipient_resolution z
+                  WHERE z.refusal_id=r.id)
+        )) AS deliverable
+    FROM head_emails x CROSS JOIN source s
+    GROUP BY x.source_key
 ), base AS MATERIALIZED (
     SELECT f.source_key,f.source_key::bigint AS family_duid,i.id AS family_id,
-        coalesce(nullif(btrim(f.value->>'lastName'),''),
-            nullif(btrim(f.value->>'mailingName'),''),
-            nullif(btrim(concat_ws(' ',f.value->>'firstName',f.value->>'lastName')),''),
+        coalesce(nullif(btrim(f.value->>'lastName',(SELECT ws FROM name_trim)),''),
+            nullif(btrim(f.value->>'mailingName',(SELECT ws FROM name_trim)),''),
+            nullif(concat_ws(' ',nullif(btrim(f.value->>'firstName',(SELECT ws FROM name_trim)),''),
+                nullif(btrim(f.value->>'lastName',(SELECT ws FROM name_trim)),'')),''),
             'Family') AS family_name,
+        f.value->'active_head_duids' AS head_duids,
         concat_ws(' ',f.value->>'firstName',f.value->>'lastName') AS search_name,
         jsonb_array_length(f.value->'active_head_duids') AS head_count,
-        (SELECT count(*)
-            FROM jsonb_array_elements_text(f.value->'active_head_duids') h(head)
-            JOIN contacts c ON c.source_key='member:'||h.head
-            CROSS JOIN LATERAL jsonb_array_elements(c.value->'emails') e)
-            AS address_count,
-        recipients.eligible>0 AS email_eligible,
-        recipients.deliverable>0 AS email_deliverable,
+        coalesce(ec.address_count,0) AS address_count,
+        coalesce(ec.eligible,0)>0 AS email_eligible,
+        coalesce(ec.deliverable,0)>0 AS email_deliverable,
         EXISTS(SELECT 1 FROM stewardship_submission r WHERE r.family_id=i.id
             AND r.campaign_id=campaign_uuid AND r.mode='live') AS responded,
         -- A usable mailing address: a street line and a city, plus a state or
@@ -91,20 +118,22 @@ WITH selected AS MATERIALIZED (
     FROM family_source f CROSS JOIN source s
     LEFT JOIN stewardship_family_campaign i
         ON i.campaign_id=s.id AND i.family_duid=f.source_key::bigint
-    CROSS JOIN LATERAL (
-        SELECT count(*) AS eligible,count(*) FILTER (WHERE NOT EXISTS (
-            SELECT 1 FROM stewardship_recipient_refusal r
-            WHERE r.organization_id=s.organization_id
-              AND r.family_duid=f.source_key::bigint
-              AND r.address=e->>'value' AND NOT EXISTS (
-                  SELECT 1 FROM stewardship_recipient_resolution z
-                  WHERE z.refusal_id=r.id)
-        )) AS deliverable
-        FROM jsonb_array_elements_text(f.value->'active_head_duids') h(head)
-        JOIN contacts c ON c.source_key='member:'||h.head
-        CROSS JOIN LATERAL jsonb_array_elements(c.value->'emails') e
-        WHERE e->'valid'='true'::jsonb
-    ) recipients
+    LEFT JOIN email_counts ec ON ec.source_key=f.source_key
+), head_names AS MATERIALIZED (
+    -- The Family as shown (family_names.family_heads_name): the surname,
+    -- then the heads' first names ("A", "A and B", "A, B and C"), a head of
+    -- another surname in full. One set-based join over every head: a
+    -- per-Family subquery rescanned every Member for every Family.
+    SELECT b.source_key,array_agg(p.part ORDER BY h.head::bigint)
+        FILTER (WHERE p.part<>'') AS parts
+    FROM base b
+    CROSS JOIN LATERAL jsonb_array_elements_text(b.head_duids) h(head)
+    JOIN members m ON m.source_key=h.head
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(m.value->>'firstName',''),(SELECT ws FROM name_trim)),
+        btrim(coalesce(m.value->>'lastName',''),(SELECT ws FROM name_trim))) t(first,last)
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=b.family_name THEN t.first
+        ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) p(part)
+    GROUP BY b.source_key
 ), rows AS MATERIALIZED (
     SELECT b.*,CASE WHEN email_deliverable THEN 'deliverable'
         WHEN head_count=0 THEN 'no_head' WHEN address_count=0 THEN 'no_address'
@@ -114,19 +143,11 @@ WITH selected AS MATERIALIZED (
         -- then the heads' first names ("A", "A and B", "A, B and C"), a head
         -- of another surname in full. Search matches it and same-surname
         -- Families sort by it; the page computes it again for display.
-        family_name||coalesce(', '||(SELECT CASE WHEN cardinality(a)<3
-                THEN array_to_string(a,' and ')
-                ELSE array_to_string(a[1:cardinality(a)-1],', ')||' and '||a[cardinality(a)] END
-            FROM (SELECT array_agg(p.part ORDER BY h.head::bigint) FILTER (WHERE p.part<>'')
-                FROM family_source f
-                CROSS JOIN LATERAL jsonb_array_elements_text(f.value->'active_head_duids') h(head)
-                JOIN members m ON m.source_key=h.head
-                CROSS JOIN LATERAL (SELECT CASE
-                    WHEN btrim(coalesce(m.value->>'lastName',''))=b.family_name
-                    THEN btrim(coalesce(m.value->>'firstName',''))
-                    ELSE btrim(concat_ws(' ',m.value->>'firstName',m.value->>'lastName')) END) p(part)
-                WHERE f.source_key=b.source_key) x(a)),'') AS display_name
-    FROM base b
+        family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+                THEN array_to_string(n.parts,' and ')
+                ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
+                    ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
+    FROM base b LEFT JOIN head_names n ON n.source_key=b.source_key
 ), filtered AS MATERIALIZED (
     SELECT r.* FROM rows r CROSS JOIN options o
     WHERE (NOT (parameters->>'postal')::boolean OR NOT email_deliverable)
@@ -163,16 +184,23 @@ WITH selected AS MATERIALIZED (
     FROM filtered r CROSS JOIN options o
 ), page AS MATERIALIZED (
     SELECT * FROM ordered ORDER BY ordinal LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE 50 END OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*50 END
+), page_heads AS MATERIALIZED (
+    -- The shown page's heads in one set-based join; a per-row subquery
+    -- rescanned every Member for each of the page's rows.
+    SELECT p.source_key,jsonb_agg(jsonb_build_object('duid',h.head,
+            'name',concat_ws(' ',nullif(n.first,''),nullif(n.last,'')),
+            'first',n.first,'last',n.last)
+            ORDER BY h.head::bigint) AS heads
+    FROM page p
+    CROSS JOIN LATERAL jsonb_array_elements_text(p.head_duids) h(head)
+    JOIN members m ON m.source_key=h.head
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(m.value->>'firstName',''),(SELECT ws FROM name_trim)),
+        btrim(coalesce(m.value->>'lastName',''),(SELECT ws FROM name_trim))) n(first,last)
+    GROUP BY p.source_key
 ), details AS (
     -- Only the selected page constructs display-only private contact JSON.
     SELECT p.*,f.value->>'envelopeNumber' AS envelope,
-        coalesce((SELECT jsonb_agg(jsonb_build_object('duid',h.head,
-            'name',btrim(concat_ws(' ',m.value->>'firstName',m.value->>'lastName')),
-            'first',btrim(coalesce(m.value->>'firstName','')),
-            'last',btrim(coalesce(m.value->>'lastName','')))
-            ORDER BY h.head::bigint)
-            FROM jsonb_array_elements_text(f.value->'active_head_duids') h(head)
-            JOIN members m ON m.source_key=h.head),'[]'::jsonb) AS heads,
+        coalesce(ph.heads,'[]'::jsonb) AS heads,
         coalesce((SELECT jsonb_agg(jsonb_build_object('owner',v.owner,'kind',phone.key,
             'value',phone.value) ORDER BY v.owner,phone.key,phone.value)
             FROM (
@@ -189,6 +217,7 @@ WITH selected AS MATERIALIZED (
             WHERE a.source_key='family:'||p.source_key||':primary'),
             '{}'::jsonb) AS address
     FROM page p JOIN family_source f ON f.source_key=p.source_key
+    LEFT JOIN page_heads ph ON ph.source_key=p.source_key
 )
 SELECT jsonb_build_object('metadata',to_jsonb(s),
     'total',(SELECT count(*) FROM filtered),
@@ -197,7 +226,7 @@ SELECT jsonb_build_object('metadata',to_jsonb(s),
     'unreachable_total',(SELECT count(*) FROM rows
         WHERE NOT email_deliverable AND NOT mailable),
     'rows',coalesce((SELECT jsonb_agg(
-        to_jsonb(p)-ARRAY['ordinal','head_count','address_count','search_name','source_key','display_name']
+        to_jsonb(p)-ARRAY['ordinal','head_count','address_count','search_name','source_key','display_name','head_duids']
         ORDER BY ordinal) FROM details p),'[]'::jsonb)) INTO answer FROM source s;
     -- END DIRECTORY SELECTION
     RETURN answer;

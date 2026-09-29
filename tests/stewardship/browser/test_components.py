@@ -5,6 +5,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
+from parishkit.stewardship.web import dates
+
 from .conftest import NOW, load_collections
 from .waits import visible
 
@@ -25,7 +28,12 @@ def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
     assert instant.get_attribute("datetime") == "2026-10-01T13:00:00+00:00"
     assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()
     text = page.locator("main").inner_text()
-    assert "09:00:00" in text and "America/New_York" in text
+    # The parish's intended time uses the parish style's clock (the default
+    # style is 12-hour), computed from the same filter the template uses.
+    with dates.using(dates.DEFAULT):
+        parish_clock = parish_time("09:00:00")
+    assert parish_clock == "9:00 AM"
+    assert parish_clock in text and "America/New_York" in text
     assert "not recipient eligibility or permission to send" in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 

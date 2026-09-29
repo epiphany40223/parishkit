@@ -86,7 +86,7 @@ def test_table_and_csv_keep_exact_money_counts_and_pinned_metadata():
         assert row["fact_set_id"] == str(value.fact_set_id)
         assert row["input_source_generation"] == "3"
         # ISO 8601 in the stated browser_timezone (Los Angeles), per #221.
-        assert row["input_source_as_of"] == "2026-11-01 21:00"
+        assert row["input_source_as_of"] == "2026-11-01 21:00:00-08:00"
         assert row["submission_watermark"] == "1001"
         assert row["campaign_timezone"] == "America/New_York"
     assert "November 1, 2026 at 9:00 PM PST" in value.as_of_label

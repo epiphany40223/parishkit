@@ -55,6 +55,17 @@ class ActivityForm(forms.Form):
         ]
 
 
+def not_included(rows, active, campaign_url):
+    """Selected Ministries that activation will not add to the campaign.
+
+    Without a current campaign there is nothing to include them in, and
+    inactivation never adds anything, so neither needs the explanation.
+    """
+    if not (campaign_url and active):
+        return []
+    return [row for row in rows if not row["included"]]
+
+
 def current_catalog(document, current):
     """The promoted source usable as this configuration's Ministry catalog, or None.
 
@@ -220,11 +231,7 @@ def _preview(request, service, principal):
         "stewardship/ministry-preview.html",
         {
             "changing": changing,
-            # Selected Ministries that activation will not add to the campaign;
-            # without a current campaign there is nothing to include them in.
-            "not_included": [row for row in rows if not row["included"]]
-            if campaign_url
-            else [],
+            "not_included": not_included(rows, active, campaign_url),
             "campaign_url": campaign_url,
             "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,

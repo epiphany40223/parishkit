@@ -250,17 +250,22 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
             },
         )
         plan = cursor.fetchone()[0][0]["Plan"]
-    nodes, detail_loops = [plan], []
+    nodes, phone_loops, head_groups = [plan], [], []
     while nodes:
         node = nodes.pop()
         nodes.extend(node.get("Plans", []))
-        if node["Node Type"] == "Aggregate" and any(
-            "jsonb_build_object('owner'" in output
-            or "jsonb_build_object('duid'" in output
-            for output in node.get("Output", [])
-        ):
-            detail_loops.append(node["Actual Loops"])
-    assert len(detail_loops) == 2 and all(loops == 50 for loops in detail_loops)
+        outputs = node.get("Output", [])
+        if node["Node Type"] != "Aggregate":
+            continue
+        if any("jsonb_build_object('owner'" in output for output in outputs):
+            phone_loops.append(node["Actual Loops"])
+        elif any("jsonb_build_object('duid'" in output for output in outputs):
+            head_groups.append(node)
+    # Phones are gathered per shown row; heads in one grouped pass over the
+    # page's Families only (page_heads), never the whole directory.
+    assert phone_loops == [50]
+    assert len(head_groups) == 1 and head_groups[0]["Actual Loops"] == 1
+    assert head_groups[0]["Actual Rows"] <= 50
 
 
 def test_staff_directories_survive_limiter_outage_but_not_revocation(

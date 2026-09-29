@@ -1,7 +1,12 @@
 """The shared Family naming rule prefers the household surname."""
 
+import re
+import sys
+from pathlib import Path
+
 import pytest
 
+from parishkit.stewardship.source import family_names
 from parishkit.stewardship.source.family_names import (
     family_display_name,
     family_heads_name,
@@ -105,3 +110,19 @@ def test_name_series_joins_naturally(parts, expected):
 def test_family_heads_name_can_put_first_names_first(heads, expected):
     """Envelope order: shared surname once at the end, else each full name."""
     assert family_heads_name("Squyres", heads, surname_first=False) == expected
+
+
+def test_directory_sql_trims_exactly_what_python_strips():
+    """The directory SQL's name_trim set equals str.strip()'s whitespace.
+
+    Search and sort use the SQL-built name, the page shows the Python-built
+    one; any character one side trims and the other keeps makes them differ.
+    """
+    sql = (
+        Path(family_names.__file__).parents[1] / "schema" / "directory_reports.sql"
+    ).read_text()
+    literal = re.search(r"name_trim AS \(.*?SELECT E'(.*?)'::text AS ws", sql, re.S)
+    assert literal is not None
+    trimmed = set(literal.group(1).encode("latin-1").decode("unicode_escape"))
+    python = {chr(code) for code in range(sys.maxunicode + 1) if chr(code).isspace()}
+    assert trimmed == python

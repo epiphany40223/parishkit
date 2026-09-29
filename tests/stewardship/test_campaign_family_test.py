@@ -1,5 +1,6 @@
 """Pure chosen-Family test rules: bounded input, closed bindings, task routing."""
 
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -205,3 +206,26 @@ def test_family_name_is_shown_but_not_part_of_the_review_binding():
     assert named.name == "Squyres, Tracy and Jeff"
     assert intake.FamilyChoice(1, None, "unknown").name == ""
     assert intake._family_names(None, (1,)) == {}
+
+
+def test_renaming_a_family_does_not_change_the_review_binding():
+    """Two reviews that differ only in the shown Family names bind identically."""
+    context = {
+        "campaign": SimpleNamespace(pk=uuid4(), readiness_revision=3),
+        "template": SimpleNamespace(record_id=uuid4()),
+        "configuration": SimpleNamespace(digest="abc"),
+        "request_key": uuid4(),
+        "actor_id": uuid4(),
+        "epoch_id": None,
+        "in_progress": 0,
+        "testing_recipient": "test@example.org",
+    }
+    before, after = (
+        intake.FamilyTestPreview(
+            families=(intake.FamilyChoice(1, None, "eligible", name=name),),
+            **context,
+        )
+        for name in ("Squyres, Tracy and Jeff", "Squyres-Smith, Tracy and Jeff")
+    )
+    assert before.binding() == after.binding()
+    assert "Squyres" not in json.dumps(before.binding())

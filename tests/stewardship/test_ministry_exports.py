@@ -206,7 +206,7 @@ def test_complete_columns_and_csv_privacy(action):
     assert len(rows) == 54
     assert "hidden" not in output.getvalue().decode()
     assert "Birth date" not in report.headings
-    assert rows[1][rows[0].index("Requested at")] == "2026-09-19 11:00"
+    assert rows[1][rows[0].index("Requested at")] == "2026-09-19 11:00:00-04:00"
     assert report.sheet_name == (
         "Ministry summary" if action == "summary" else "Ministry requests"
     )

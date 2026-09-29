@@ -152,9 +152,11 @@ def format_local(value, style=None, *, compact=False):
 
 
 # Exports: CSV is ISO 8601 for every parish ("2027-01-31", and timestamps as
-# "2027-01-31 14:05" in the export's stated display time zone), so files sort
-# and import predictably. XLSX cells are native dates using Excel's built-in
-# locale-aware formats, so each viewer's Excel shows its own regional style.
+# "2027-01-31 14:05:00-05:00" in the export's stated display time zone, with
+# the offset so the repeated hour at a daylight-saving change stays
+# unambiguous), so files sort and import predictably. XLSX cells are native
+# dates using Excel's built-in locale-aware formats, so each viewer's Excel
+# shows its own regional style.
 # PDFs, which people read rather than process, use the parish's choice.
 XLSX_DATE = 14  # Excel's built-in short date
 XLSX_DATETIME = 22  # Excel's built-in short date and time
@@ -172,7 +174,7 @@ def csv_text(value):
     if isinstance(value, Span):
         return f"{value.start.isoformat()} through {value.end.isoformat()}"
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M")
+        return value.isoformat(sep=" ", timespec="seconds")
     if isinstance(value, date):
         return value.isoformat()
     return value

@@ -1,13 +1,13 @@
 """Only typed values reach the canonical display functions; HTML stays escaped."""
 
 import re
-from datetime import date
+from datetime import date, time
 
 from django import template
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 
-from parishkit.stewardship.web import presentation
+from parishkit.stewardship.web import dates, presentation
 
 register = template.Library()
 for name in (
@@ -37,6 +37,27 @@ def parish_date(value, style=None):
         except ValueError:
             return value
     return presentation.parish_date(value, style)
+
+
+@register.filter
+def parish_time(value):
+    """A wall-clock time, or its ISO text, with the parish style's 12/24-hour clock.
+
+    Seconds are kept only when a schedule really uses them ("9:00:30 AM").
+    Unparseable text is shown unchanged rather than failing the whole page.
+    """
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        try:
+            value = time.fromisoformat(value)
+        except ValueError:
+            return value
+    text = dates.format_time(value)
+    if value.second:
+        minute = f":{value.minute:02d}"
+        text = text.replace(minute, f"{minute}:{value.second:02d}", 1)
+    return text
 
 
 @register.filter

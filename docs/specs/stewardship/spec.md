@@ -303,9 +303,11 @@ month names or two-digit years, no time-zone abbreviation). One Python
 formatter (`web/dates.py`) and one browser script (`date-format-v1.js`, which
 reads `<body data-date-format>`) implement the same table. Exports that
 programs read are exempt: CSV files always use ISO 8601 (`2027-01-31`, and
-timestamps as `2027-01-31 14:05` in the export's stated display time zone),
-and XLSX cells are native dates in Excel's built-in locale-aware formats (14
-for dates, 22 for timestamps). Operational and security alert emails keep
+timestamps as `2027-01-31 14:05:00-05:00` in the export's stated display time
+zone, with the UTC offset so the repeated hour when clocks fall back stays
+unambiguous; Excel may treat such offset timestamps as text), and XLSX, the
+spreadsheet-native export, stores native dates in Excel's built-in
+locale-aware formats (14 for dates, 22 for timestamps). Operational and security alert emails keep
 their UTC stamp, which the database renders identically.
 
 ## Requirement traceability
