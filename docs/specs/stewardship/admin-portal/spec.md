@@ -961,6 +961,45 @@ atomic workflow clears the durable pause control; closed campaigns do not use
 the ordinary Resume action. Reopen readiness is blocked until the prior pause
 and held-message state is resolved.
 
+### Family portal maintenance
+
+An Administrator may close the Family portal for maintenance from System →
+Family portal availability, for example while fixing a data problem, and
+reopen it later. Changing the switch requires fresh authentication and a CSRF
+token, and each change is recorded in the audit log
+(`family_maintenance_started` or `family_maintenance_ended`); the newest such
+event is the switch's state, so a fresh install starts open. The optional
+message for Families is the Administrator's own text, at most 500 characters
+and without email addresses.
+
+While the portal is closed, every Family page (the sign-in page, personal
+links and the form page) returns a self-contained "temporarily unavailable"
+page with HTTP 503 and `Retry-After`, showing the message; its "Try again" link
+repeats the same page for a GET, and goes to the home page otherwise. The form's
+JSON endpoints return a clean 503 that the form script shows without discarding
+the answers on the page; a refused Submit is definitely not submitted. No Family
+answer is saved. The keepalive and sign-out endpoints stay open so a Family can
+keep, or end, their own session: keepalive still refreshes the Family session
+row, but skips the Family's campaign activity update while the portal is
+closed, so it does not contend with an Administrator's data fix; sign-out still
+revokes the session, audits it and cancels the session's baselines. A Family
+who stays active on the page keeps their answers; after the 60-minute idle
+limit their session ends and unsubmitted answers are lost, so maintenance
+should be short. The Administrator page says so.
+
+Two Administrators closing at once cannot silently lose a message: the change
+locks the system configuration row before reading the current state. Web
+processes reuse the state they read for up to 3 seconds, and requests already
+in progress when the portal closes still finish, so the page tells the
+Administrator to wait about 10 seconds after closing before changing data. A
+change takes effect everywhere within seconds, without a restart. A banner on
+every Admin page, for every Admin role, says the portal is closed.
+
+The switch does not stop email. No new receipt can arise while no Family can
+submit, and receipts already queued are still sent. Scheduled invitations and
+reminders continue unless an Administrator also uses [Live delivery
+pause](#live-delivery-pause), which the page links to.
+
 ### Reopen and archive
 
 Extending a closed campaign into the future can reopen it only through a

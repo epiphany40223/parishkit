@@ -12,6 +12,11 @@ showing a code form:
 
 - restore review required: a neutral parish-branded maintenance message with no
   Family authentication or data access;
+- closed for maintenance by an Administrator: a friendly "Sorry, the site is
+  temporarily unavailable" page with the Administrator's optional message and a
+  "Try again" link; no Family sign-in or form data access, and no Family answer
+  is saved, although an open session can still be kept alive or ended (see
+  [Family portal maintenance](../admin-portal/spec.md#family-portal-maintenance));
 - unconfigured: "The system is not configured yet" with parish contact help;
 - before start: the configured parish name and local start date;
 - after close: the configured parish name and ended message;
