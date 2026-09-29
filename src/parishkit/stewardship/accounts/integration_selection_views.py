@@ -20,12 +20,14 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .integration_credentials import switch_patch
-from .integration_forms import LABELS
+from .integration_forms import LABELS, IntegrationForm
 from .integration_selection import (
     TARGETS,
+    OrganizationLocked,
     StaleCredentialReceipt,
     current_receipt,
     integration_records,
+    refuse_organization_change,
 )
 from .integration_views import ERRORS, _checked
 from .request_admission import intake_base
@@ -97,7 +99,51 @@ def _selection(service, request_id):
     # A key added with a new integration has no predecessor in the settings.
     if record is not None and before != receipt.expected_fingerprint:
         raise StaleRecordError("The integration fingerprint changed.")
+    refuse_organization_change(records, _proposed(records, patch))
     return configuration, receipt, before, patch
+
+
+def _changes(configuration, patch):
+    """Settings the switch would change, as label/before/after rows.
+
+    Shown on the confirm page, so an Administrator sees exactly what else
+    the switch saves besides the key (normally nothing, or the Slack channel
+    or mailbox the key was checked against).
+    """
+    item = patch[0]
+    records = integration_records(configuration.active_configuration.canonical_document)
+    target = item["values"].get("kind") or next(
+        kind for kind, row in records.items() if row["id"] == item["id"]
+    )
+    before = records[target]["values"]["settings"] if target in records else {}
+    after = item["values"].get("settings", before)
+    fields = IntegrationForm(target).fields
+    return [
+        {
+            "label": fields[name].label if name in fields else name,
+            "before": before.get(name, ""),
+            "after": after.get(name, ""),
+        }
+        for name in sorted(before.keys() | after.keys())
+        if before.get(name) != after.get(name)
+    ]
+
+
+def _locked_page(request, request_id):
+    """Explain that this switch would change the loaded ParishSoft organization."""
+    target = (
+        SecretReplacementRequest.objects.filter(pk=request_id)
+        .values_list("target", flat=True)
+        .first()
+    )
+    response = render(
+        request,
+        "stewardship/credential-selection.html",
+        {"blocked": True, "label": LABELS.get(target, "")},
+        status=409,
+    )
+    response.stewardship_safe_error = True
+    return response
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -129,14 +175,20 @@ def select_credential(request, request_id):
                 request_schema=_preview_schema(request, request_id),
             )
         else:
-            with read_transaction():
-                configuration, receipt, before, patch = _selection(service, request_id)
-                base = service.store.active()
-                if (
-                    base is None
-                    or base.digest != configuration.active_configuration.digest
-                ):
-                    raise StaleRecordError("The credential preview base changed.")
+            try:
+                with read_transaction():
+                    configuration, receipt, before, patch = _selection(
+                        service, request_id
+                    )
+                    base = service.store.active()
+                    if (
+                        base is None
+                        or base.digest != configuration.active_configuration.digest
+                    ):
+                        raise StaleRecordError("The credential preview base changed.")
+            except OrganizationLocked:
+                # Refuse with a page that says why, not a generic refusal.
+                return _checked(request, service, _locked_page(request, request_id))
             # Preview/render work uses the captured immutable inputs without
             # blocking task claims or source promotion. Confirmation rechecks
             # current receipt, freshness and base under the owning work lock.
@@ -164,6 +216,7 @@ def select_credential(request, request_id):
                     "before": before,
                     "preview": preview,
                     "selected": selected,
+                    "changes": [] if selected else _changes(configuration, patch),
                 },
             )
         return _checked(request, service, response)

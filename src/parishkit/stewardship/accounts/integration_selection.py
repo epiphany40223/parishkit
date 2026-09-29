@@ -19,6 +19,44 @@ from .secret_models import (
 )
 
 TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
+# Integration settings a key is never checked against: refresh timing is
+# scheduling and the From name is presentation. Everything else in an
+# integration's settings is its key scope (see authentication_scope).
+NOT_KEY_SCOPE = frozenset({"nightly_time", "full_refresh", "sender_name"})
+
+
+class OrganizationLocked(ConfigError):
+    """The ParishSoft organization cannot change once its data is loaded."""
+
+
+def loaded_organization():
+    """The ParishSoft organization ID of the loaded data, or None before a load."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.values_list("organization_id", flat=True).first()
+
+
+def refuse_organization_change(before, after):
+    """Refuse a new ParishSoft organization ID once any data has been loaded.
+
+    ``before`` and ``after`` are integration records by kind. Every refresh
+    must read the organization whose data is loaded (``source.requests``),
+    so a changed ID would stop them all. The settings form refuses it too;
+    this check covers every path that records or installs a change.
+    """
+    if "parishsoft" not in before or "parishsoft" not in after:
+        return
+    old, new = (
+        records["parishsoft"]["values"]["settings"].get("organization_id")
+        for records in (before, after)
+    )
+    if old == new:
+        return
+    loaded = loaded_organization()
+    if loaded is not None and str(loaded) != new:
+        raise OrganizationLocked(
+            "The ParishSoft organization cannot change after data is loaded."
+        )
 
 
 class StaleCredentialReceipt(ConfigError):
@@ -37,9 +75,6 @@ def authentication_scope(target, records, *, recipient=None):
     """Match authentication inputs without treating an old recipient as readiness."""
     selected = dict(records[target]["values"]["settings"])
     if target == "parishsoft":
-        # Refresh timing is scheduling, not part of what a key is checked against.
-        selected.pop("nightly_time", None)
-        selected.pop("full_refresh", None)
         organization = selected.get("organization_id")
         if (
             not isinstance(organization, str)
@@ -50,7 +85,9 @@ def authentication_scope(target, records, *, recipient=None):
         selected["organization_id"] = int(organization)
         if str(selected["organization_id"]) != organization:
             raise ConfigError("A canonical organization ID is required.")
-    elif target == "google_workspace":
+    for name in NOT_KEY_SCOPE:
+        selected.pop(name, None)
+    if target == "google_workspace":
         email = records.get("email")
         if email is None:
             raise ConfigError("Outgoing email settings are unavailable.")
@@ -113,6 +150,7 @@ def validate_installation(document):
     )
     before = integration_records(previous.canonical_document)
     after = integration_records(document)
+    refuse_organization_change(before, after)
     # Initial setup adds its integrations under the setup readiness owner. After
     # setup (the predecessor already has ParishSoft), an integration added with
     # its first key, such as Slack, needs a current receipt. Its predecessor is

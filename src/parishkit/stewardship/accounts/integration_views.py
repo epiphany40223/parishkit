@@ -38,6 +38,7 @@ from .integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
+from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_admission import historical_record_id
@@ -107,13 +108,6 @@ def _unset(target):
         "id": None,
         "values": {"kind": target, "settings": {}, "credential_fingerprint": None},
     }
-
-
-def loaded_organization():
-    """The ParishSoft organization ID of the loaded data, or None before a load."""
-    from parishkit.stewardship.source.snapshot_models import SourceCurrent
-
-    return SourceCurrent.objects.values_list("organization_id", flat=True).first()
 
 
 def _form(target, *args, **kwargs):

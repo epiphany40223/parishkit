@@ -4,7 +4,7 @@ import re
 from dataclasses import replace
 from datetime import timedelta
 from types import MappingProxyType
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.utils import timezone
@@ -306,6 +306,113 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(working):
         store.active().document()["sections"]["parish"][0]["values"]["name"]
         == "Renamed first"
     )
+
+
+def failed_switch(value, **values):
+    """Save a key with a new organization, then let another change land first.
+
+    ``values`` is the other Administrator's ParishSoft settings change (by
+    default a new parish name instead). Returns the key's request row, whose
+    own selection has failed as ``stale_base``.
+    """
+    assert save(value, organization_id="54321").status_code == 302
+    row = installed(value)
+    store = value["service"].store
+    base = store.active()
+    if values:
+        record = base.document()["sections"]["integrations"][0]
+        patch = {
+            "section": "integrations",
+            "id": record["id"],
+            "values": {"settings": record["values"]["settings"] | values},
+        }
+    else:
+        parish = base.document()["sections"]["parish"][0]
+        patch = {
+            "section": "parish",
+            "id": parish["id"],
+            "values": {"name": "Renamed first"},
+        }
+    change(store, base, uuid4(), [{"operation": "update", **patch}])
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    result = install(value, selection.pk)
+    assert result.state == "failed" and result.failure_code == "stale_base"
+    return row
+
+
+def test_finish_switching_keeps_another_admins_newer_schedule(working):
+    """Finish switching carries only the key's own settings over (#338 review).
+
+    Another Administrator's schedule change landed first. Replaying the
+    whole saved settings block would silently undo it; only the key-scope
+    organization ID is carried over, and the confirm page lists it.
+    """
+    row = failed_switch(working, nightly_time="04:15")
+    browser = working["browser"]
+    select = f"/admin/configuration/credentials/{row.pk}/select"
+    page = browser.get(select)
+    changes = page.context["changes"]
+    assert [(c["before"], c["after"]) for c in changes] == [("12345", "54321")]
+    assert b"Settings saved with the new key" in page.content
+    with identity("pk_stewardship_web"):
+        response = post(
+            browser, select, {"action": "confirm", "preview": hidden(page, "preview")}
+        )
+    assert response.status_code == 302, response.content
+    finish = UUID(response["Location"].rsplit("/", 1)[-1])
+    assert install(working, finish).state == "applied"
+    settings = _record(working)["values"]["settings"]
+    assert settings["nightly_time"] == "04:15"
+    assert settings["organization_id"] == "54321"
+    assert _record(working)["values"]["credential_fingerprint"] == (
+        file_fingerprint(CANDIDATE)
+    )
+
+
+def test_finish_switching_cannot_change_a_loaded_organization(working, monkeypatch):
+    """A key saved with a new organization before the first load can't switch after.
+
+    The confirm page refuses in plain language and records nothing, and the
+    configuration installer refuses the same change from any other path.
+    """
+    from parishkit.stewardship.accounts import integration_selection
+    from parishkit.stewardship.accounts.configuration_requests import record_request
+
+    row = failed_switch(working)
+    monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
+    count = ConfigurationChangeRequest.objects.count()
+    browser = working["browser"]
+    page = browser.get(f"/admin/configuration/credentials/{row.pk}/select")
+    assert page.status_code == 409
+    assert b"organization ID can't change after ParishSoft data" in page.content
+    assert b'name="preview"' not in page.content
+    assert ConfigurationChangeRequest.objects.count() == count
+    # Any other path to the same change is refused by the installer.
+    store = working["service"].store
+    base = store.active()
+    record = base.document()["sections"]["integrations"][0]
+    request = record_request(
+        base_digest=base.digest,
+        actor_id=uuid4(),
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+        patch=[
+            {
+                "operation": "update",
+                "section": "integrations",
+                "id": record["id"],
+                "values": {
+                    "settings": record["values"]["settings"]
+                    | {"organization_id": "54321"}
+                },
+            }
+        ],
+    )
+    result = install(working, request.request_id)
+    assert result.state == "failed" and result.failure_code == "invalid_candidate"
+    assert _record(working)["values"]["settings"]["organization_id"] == "12345"
 
 
 def test_rejected_key_keeps_the_old_one_and_says_so(working):

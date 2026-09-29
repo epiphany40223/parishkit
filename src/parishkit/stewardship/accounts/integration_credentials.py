@@ -29,7 +29,11 @@ from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 from parishkit.stewardship.storage import StaleRecordError
 
 from .configuration_requests import _status, record_request
-from .integration_selection import authentication_scope, integration_records
+from .integration_selection import (
+    NOT_KEY_SCOPE,
+    authentication_scope,
+    integration_records,
+)
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
 from .privileged_actions import sealed_secret_request
@@ -136,12 +140,14 @@ def _was_selected(row):
 def switch_patch(row, records):
     """The configuration patch that finishes switching to ``row``'s key.
 
-    It repeats the key's original selection: the settings saved with the key
-    (which the provider check used) and, when the save added the integration,
-    the whole new record. Repeating it on the current settings is what lets
-    **Finish switching** recover from a selection that failed, for example
-    because another settings change was applied first. A key staged without
-    a selection request selects its fingerprint alone.
+    It repeats the key's original selection on the current settings, so
+    **Finish switching** recovers from a selection that failed, for example
+    because another settings change was applied first. Only the key-scope
+    settings saved with the key (what the provider check used, such as the
+    Slack channel) are carried over, merged onto the current settings, so a
+    newer change to anything else (such as the refresh schedule) is kept.
+    When the save added the integration, the whole new record is added again.
+    A key staged without a selection request selects its fingerprint alone.
     """
     original = original_selection(row)
     item = original.patch[0] if original is not None else None
@@ -153,8 +159,14 @@ def switch_patch(row, records):
     if record is None:
         raise StaleRecordError("This integration is no longer configured.")
     values = {"credential_fingerprint": row.resulting_fingerprint}
-    if item is not None and "settings" in item["values"]:
-        values["settings"] = item["values"]["settings"]
+    saved = item["values"].get("settings") if item is not None else None
+    if saved is not None:
+        current = record["values"]["settings"]
+        merged = current | {
+            name: value for name, value in saved.items() if name not in NOT_KEY_SCOPE
+        }
+        if merged != current:
+            values["settings"] = merged
     return [
         {
             "operation": "update",

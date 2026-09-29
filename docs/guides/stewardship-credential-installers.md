@@ -215,9 +215,16 @@ the file with the selected fingerprint, so the integration stops until the
 selection applies. If the selection fails for good (for example `stale_base`,
 when another settings change on the same base was applied first), the page
 shows an error saying what is stopped, with a **Finish switching to the new
-key** button. That page repeats the key's original selection (the settings
-saved with it, or the whole new record when the save added the integration)
-on the current settings, and any fresh Administrator may confirm it. Meanwhile
+key** button. That page repeats the key's original selection on the current
+settings, and any fresh Administrator may confirm it. Only the key-scope
+settings saved with the key (what the provider checked it against, such as the
+organization ID or the Slack channel) are carried over, merged onto the current
+settings, so a newer change to anything else, such as the refresh schedule,
+is kept. The page lists every setting the switch would change. When the save
+added the integration, the whole new record is added again. A switch that would
+change the ParishSoft organization ID after the first data load is refused on
+that page, and the configuration installer refuses such a change from any path
+(`invalid_candidate`). Meanwhile
 Family and operational mail treat the mismatch as a hold, not a failure:
 while the latest Workspace key change is in progress, or installed with the
 file's fingerprint but not selected, a message is deferred in the

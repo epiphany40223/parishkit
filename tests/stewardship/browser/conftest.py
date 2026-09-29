@@ -376,6 +376,9 @@ def component_origin():
                 "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
                 "preview": "synthetic-selection-intent",
                 "selected": False,
+                "changes": [
+                    {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
+                ],
             },
         ),
         (
