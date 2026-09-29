@@ -120,11 +120,13 @@ def queue(campaign_test):
     return CampaignMailTest.objects.get(), token
 
 
-def deliver(campaign_test):
+def deliver(campaign_test, *, public_origin=""):
     """Run the compiled handler with real claim and maintenance, never direct writes."""
     service, _, _, path = campaign_test
     row = CampaignMailTest.objects.latest("created_at")
-    handler = campaign_mail_handler(service.store, credential_path=path)
+    handler = campaign_mail_handler(
+        service.store, credential_path=path, public_origin=public_origin
+    )
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
         execution = claim_hint(
             row.task_id,
@@ -181,7 +183,7 @@ def test_cancellation_winning_submission_recheck_settles_immediately(
     row, _ = queue(campaign_test)
     original = tasks.begin_submission
 
-    def cancel_before_begin(identifier, claim):
+    def cancel_before_begin(identifier, claim, **options):
         """Model a separate revocation/recovery owner without changing SQL guards."""
         with connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
@@ -194,7 +196,7 @@ def test_cancellation_winning_submission_recheck_settles_immediately(
                 cursor.execute(
                     'SET SESSION AUTHORIZATION "pk_stewardship_mail_dispatch"'
                 )
-        return original(identifier, claim)
+        return original(identifier, claim, **options)
 
     monkeypatch.setattr(tasks, "begin_submission", cancel_before_begin)
     assert deliver(campaign_test).state == "cancelled"
@@ -649,3 +651,78 @@ def test_go_live_cleanup_gate_blocks_test_preview(campaign_test):
     with web_login():
         assert browser.get(path).status_code == 409
     assert not CampaignMailTest.objects.exists()
+
+
+ORIGIN = "https://parish.example.org"
+
+
+@pytest.mark.parametrize("banner", ["shown", "hidden", "none"])
+def test_sample_initial_email_carries_the_campaign_banner_like_real_mail(
+    campaign_test, monkeypatch, settings, banner
+):
+    """The test email matches the real render's banner (#248), sent by MAIL."""
+    from parishkit.stewardship.accounts import campaign_mail_tasks as tasks
+    from parishkit.stewardship.readiness_mail import ReadinessMail
+
+    from .test_artwork_views_postgresql import set_banner
+
+    settings.STEWARDSHIP_PUBLIC_ORIGIN = ORIGIN
+    service = campaign_test[0]
+    asset = None
+    if banner != "none":
+        asset = set_banner(
+            service.store,
+            Campaign.objects.get().pk,
+            hide=["initial"] if banner == "hidden" else None,
+        )
+    row, _ = queue(campaign_test)
+    image = f'<p><img src="{ORIGIN}/branding/{asset}.png"'
+    assert row.mail["html"].startswith(image) is (banner == "shown")
+    assert "<img" not in row.mail["text"]
+    if banner != "shown":
+        assert "<img" not in row.mail["html"]
+    seen = []
+
+    def submit(value, settings, mail, *, seconds, check):
+        """Capture what the exact MAIL role would hand the private helper."""
+        seen.append(mail)
+        return DeliveryOutcome.ACCEPTED
+
+    monkeypatch.setattr(tasks, "submit_sample", submit)
+    assert deliver(campaign_test, public_origin=ORIGIN).state == "accepted"
+    (mail,) = seen
+    assert mail.banner_origin == ORIGIN
+    assert mail.html.startswith(image) is (banner == "shown")
+    # The helper re-validates the same message against the origin it is sent.
+    assert ReadinessMail.from_payload(mail.payload(), banner_origin=ORIGIN) == mail
+    if banner == "shown":
+        # Without this deployment's origin the banner is not admitted.
+        with pytest.raises(ValueError):
+            ReadinessMail.from_payload(mail.payload())
+
+
+def test_email_editor_preview_shows_the_banner_it_would_send(campaign_test, settings):
+    """The editor's proposed sample follows the "Show the campaign banner" box."""
+    from .test_artwork_views_postgresql import set_banner
+    from .test_content_views_postgresql import values
+    from .test_parish_views_postgresql import token
+
+    settings.STEWARDSHIP_PUBLIC_ORIGIN = ORIGIN
+    service, browser, _, _ = campaign_test
+    campaign = Campaign.objects.get()
+    asset = set_banner(service.store, campaign.pk)
+    path = f"/admin/campaign/{campaign.pk}/content/email/initial"
+    html = "<p>{{ family_code }} {{ family_url }}</p>"
+    image = f"{ORIGIN}/branding/{asset}.png".encode()
+    shown = post(
+        browser,
+        path,
+        values(service.store, subject="Hello", html=html, show_banner="on"),
+    )
+    assert shown.status_code == 200 and image in shown.content
+    token(shown)
+    hidden = post(browser, path, values(service.store, subject="Hello", html=html))
+    # This slot has no saved revision, so the proposed sample is the only one:
+    # it shows the banner when checked and leaves it out when unchecked.
+    assert shown.content.count(image) == 1
+    assert hidden.status_code == 200 and image not in hidden.content

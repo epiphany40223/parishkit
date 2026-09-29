@@ -30,7 +30,7 @@ def _change(row, state, *, actor_id=None, **values):
     return row
 
 
-def begin_submission(identifier, claim):
+def begin_submission(identifier, claim, *, banner_origin=""):
     """Only a maintained mail claim can commit the irreversible provider boundary."""
     if connection.in_atomic_block:
         raise StorageInvariantError(
@@ -47,7 +47,7 @@ def begin_submission(identifier, claim):
             or not live(row)
         ):
             raise PermissionError("Campaign test submission is no longer admitted.")
-        mail = ReadinessMail.from_payload(row.mail)
+        mail = ReadinessMail.from_payload(row.mail, banner_origin=banner_origin)
         _change(
             row,
             "submitting",

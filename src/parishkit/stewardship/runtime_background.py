@@ -448,6 +448,7 @@ def configure_background(configuration, *, stop, heartbeat):
                 store,
                 scheduler=role is ServiceRole.SCHEDULER,
                 credential_path=configuration.secrets.get("google_workspace"),
+                public_origin=configuration.public_origin,
             ),
             pulse=heartbeat,
         )

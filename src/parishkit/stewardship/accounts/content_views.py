@@ -43,6 +43,7 @@ from .content_forms import (
     matches_default,
     page_slots,
     revision_patch,
+    sample_banner,
     sample_render,
     text_is_generated,
 )
@@ -255,16 +256,24 @@ def _preview(
             confirmation=form.kind == "email" and slot == "confirmation",
             receipt_block=confirmation_block(base.document(), campaign.pk),
         )
+        campaign_values = campaign.active_configuration.values
         before = sample_render(
             previous["values"] if previous else None,
             parish=parish,
-            campaign=campaign.active_configuration.values,
+            campaign=campaign_values,
+            banner=sample_banner(campaign_values, slot) if form.kind == "email" else "",
             **receipt,
         )
+        # The proposed sample follows the checkbox being previewed (#248).
         after = sample_render(
             values,
             parish=parish,
-            campaign=campaign.active_configuration.values,
+            campaign=campaign_values,
+            banner=sample_banner(
+                campaign_values, slot, show=form.cleaned_data.get("show_banner")
+            )
+            if form.kind == "email"
+            else "",
             **receipt,
         )
         token = sign_preview(

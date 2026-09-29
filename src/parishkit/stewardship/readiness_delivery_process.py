@@ -44,6 +44,9 @@ def submit_sample(value, settings, mail, *, seconds, check):
             "settings": settings,
             "candidate": base64.b64encode(value).decode("ascii"),
             "mail": mail.payload(),
+            # The helper has no configuration; the parent's own origin binds
+            # any campaign banner in the sample (#248).
+            "banner_origin": mail.banner_origin,
         },
         ensure_ascii=False,
     ).encode("utf-8")

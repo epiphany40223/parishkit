@@ -13,7 +13,7 @@ from parishkit.email.base import Email, build_message
 from .accounts.policy_schema import normalized_email
 from .mail_layout import email_document
 from .sender_name import apply_sender_name, clean_sender_name
-from .web.content import prepare_content, validate_template
+from .web.content import prepare_content, validate_template, without_email_banner
 
 
 @dataclass(frozen=True, repr=False)
@@ -29,6 +29,10 @@ class ReadinessMail:
     text: str
     # The From display name (sender_name.py), resolved when the test is queued.
     sender_name: str = ""
+    # The deployment's public origin, from the owning process's own
+    # configuration and never stored in the payload: the only host a campaign
+    # banner (#248) in a campaign email sample may load from.
+    banner_origin: str = ""
 
     def __post_init__(self):
         """Restored queue payloads receive the same checks as initial rendering."""
@@ -44,8 +48,10 @@ class ReadinessMail:
         if type(self.subject) is not str or not self.subject.strip():
             raise ValueError("Readiness mail requires a subject.")
         validate_template(self.subject, subject=True)
-        prepared = prepare_content(self.html, text=self.text)
-        if prepared.html != self.html or prepared.text != self.text:
+        # A campaign email sample may start with the one server-built banner.
+        html = without_email_banner(self.html, self.banner_origin)
+        prepared = prepare_content(html, text=self.text)
+        if prepared.html != html or prepared.text != self.text:
             raise ValueError("Readiness mail must contain canonical safe content.")
 
     def payload(self):
@@ -62,8 +68,12 @@ class ReadinessMail:
         }
 
     @classmethod
-    def from_payload(cls, value):
-        """Reject unknown fields, coercions and alternate UUID spellings at IPC."""
+    def from_payload(cls, value, *, banner_origin=""):
+        """Reject unknown fields, coercions and alternate UUID spellings at IPC.
+
+        ``banner_origin`` comes from the caller's own deployment configuration
+        (or its private transport envelope), not from the stored payload.
+        """
         fields = {
             "delivery_id",
             "sender",
@@ -83,7 +93,7 @@ class ReadinessMail:
         identifier = UUID(value["delivery_id"])
         if str(identifier) != value["delivery_id"]:
             raise ValueError("Invalid readiness mail identity.")
-        return cls(**(value | {"delivery_id": identifier}))
+        return cls(**(value | {"delivery_id": identifier}), banner_origin=banner_origin)
 
     def message(self):
         """Reuse shared MIME construction with mandatory TEST subject/body overrides.
