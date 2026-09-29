@@ -136,6 +136,7 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
                 deadline=deadline,
                 check=check,
                 on_timeout=on_timeout,
+                keep_finished=True,
             )
         except (OSError, CredentialValidationUnavailable):
             return DeliveryOutcome.UNKNOWN

@@ -303,3 +303,102 @@ def test_deadline_stop_is_recorded_with_its_limit(monkeypatch):
     )
     assert invoke() is DeliveryOutcome.UNKNOWN
     recorded.assert_not_called()
+
+
+def gated_helper(monkeypatch, output=b"accepted\n"):
+    """A helper whose reply waits until the lease check lets it finish.
+
+    Returns ``(release, done)``: set ``release`` to let the helper answer, and
+    ``done`` is set once it has.
+    """
+    import threading
+
+    process = Process(output, 0)
+    release, done = threading.Event(), threading.Event()
+
+    def communicate(*, input, timeout):
+        process.inputs.append(input)
+        release.wait(5)
+        done.set()
+        return output, None
+
+    process.communicate = communicate
+    monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
+    return release, done
+
+
+def blocked_check(release, done, *, then=None, calls=2):
+    """A lease check that, once the helper started, waits until it finished.
+
+    The first ``calls`` checks (before the helper and at its start) pass. The
+    next one lets the helper finish, then either waits past the deadline (a
+    work-order lock held by a busy writer) or raises ``then``.
+    """
+    import time
+
+    seen = []
+
+    def check():
+        seen.append(None)
+        if len(seen) <= calls:
+            return
+        release.set()
+        done.wait(5)
+        if then is not None:
+            raise then
+        time.sleep(0.4)
+
+    return check
+
+
+def test_a_result_finished_during_a_slow_check_is_kept(monkeypatch):
+    """A check blocked past the deadline no longer discards a finished send (#318).
+
+    The helper finished, so the deadline did not stop it: no timeout is
+    recorded either.
+    """
+    from parishkit.stewardship.audit import timeouts
+
+    recorded = Mock()
+    monkeypatch.setattr(timeouts, "record_timeout", recorded)
+    release, done = gated_helper(monkeypatch)
+    check = blocked_check(release, done)
+    assert invoke(seconds=0.2, check=check) is DeliveryOutcome.ACCEPTED
+    recorded.assert_not_called()
+
+
+def test_a_result_finished_before_a_failed_check_is_kept(monkeypatch):
+    """Ownership lost after the helper finished: its real result is returned.
+
+    Discarding it would record "delivery unknown" for mail the provider told
+    us it accepted. The caller's settlement still rechecks ownership under its
+    locks, so a truly lost task records nothing and is recovered as usual.
+    """
+    release, done = gated_helper(monkeypatch)
+    check = blocked_check(release, done, then=PermissionError("private"))
+    assert invoke(check=check) is DeliveryOutcome.ACCEPTED
+
+
+def test_ownership_lost_before_the_helper_finished_still_stops_it(monkeypatch):
+    """Only a finished helper's result survives; an unfinished one is killed."""
+    import threading
+
+    process = Process(returncode=None)
+    gate = threading.Event()
+
+    def communicate(*, input, timeout):
+        process.inputs.append(input)
+        gate.wait(5)
+        raise subprocess.TimeoutExpired("synthetic", timeout)
+
+    def kill():
+        """Killing the helper ends its pending reply, as a real kill would."""
+        process.killed = True
+        gate.set()
+
+    process.communicate, process.kill = communicate, kill
+    monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
+    check = Mock(side_effect=[None, None, PermissionError("private")])
+    with pytest.raises(ProviderCheckOwnershipLost):
+        invoke(check=check)
+    assert process.killed
