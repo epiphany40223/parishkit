@@ -23,10 +23,10 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .delivery_states import DeliveryAction
 from .family_dispatch_grants import METADATA_FIELDS
 from .family_mail_dispatch import (
-    MAX_ATTEMPTS,
     PROVIDER_SECONDS,
     FamilyDeliveryHeld,
-    retry_delay,
+    budget_spent,
+    result_retry_seconds,
 )
 from .family_mail_results import result_evidence
 from .models import TaskRun
@@ -229,10 +229,9 @@ def finish_submission(identifier, claim, result, owner=OPERATIONAL):
             FamilyDeliveryStatus.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
             FamilyDeliveryStatus.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
         }[result.status]
-        if (
-            action is DeliveryAction.RETRY_UNACCEPTED
-            and message.attempt >= MAX_ATTEMPTS
-        ):
+        # A Gmail sending limit is not the alert's fault: it waits for the
+        # limit instead of spending the attempt budget.
+        if action is DeliveryAction.RETRY_UNACCEPTED and budget_spent(message, result):
             action = DeliveryAction.FAIL_UNACCEPTED
 
         def admit(candidate, identity, status, proposal):
@@ -250,7 +249,7 @@ def finish_submission(identifier, claim, result, owner=OPERATIONAL):
             admit=admit,
             evidence=result_evidence(result, semantic_key=message.semantic_key),
             **(
-                {"retry_seconds": retry_delay(message.attempt)}
+                {"retry_seconds": result_retry_seconds(result, message.attempt)}
                 if action is DeliveryAction.RETRY_UNACCEPTED
                 else {}
             ),

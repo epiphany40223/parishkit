@@ -29,7 +29,12 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_delivery_tasks import DeliveryCircuit, preparation_attempts
-from .family_mail_dispatch import MAX_ATTEMPTS, FamilyDeliveryHeld, retry_delay
+from .family_mail_dispatch import (
+    MAX_ATTEMPTS,
+    FamilyDeliveryHeld,
+    result_retry_seconds,
+    retry_delay,
+)
 from .operational_dispatch import (
     begin_submission,
     bound_operational,
@@ -291,7 +296,13 @@ def _execute(execution, *, store, credential_path, circuit, owner):
             "%s email provider unavailable; further attempts are held.", owner.label
         )
     if outcome.state.value == "retry_wait":
-        execution.transition("retryable_failure", retry_seconds=retry_delay(attempt))
+        if result.limit is not None:
+            # A Gmail sending-limit deferral is an admission hold, not a spent
+            # preparation attempt (see preparation_attempts).
+            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+        execution.transition(
+            "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)
+        )
     else:
         execution.transition(
             "complete" if outcome.state.value == "delivered" else "permanent_failure"
