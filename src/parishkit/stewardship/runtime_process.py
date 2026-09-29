@@ -372,13 +372,27 @@ def independent_producer(guard, operation, *args):
     return result
 
 
+def source_command(argv=None):
+    """This process's own invocation, narrowed to the source queue.
+
+    The sibling re-executes exactly how this worker was started (from
+    ``sys.orig_argv``) plus ``--queue source``, rather than a separately
+    constructed command, so whatever the entry point sets up before the CLI
+    runs applies to both processes alike.
+    """
+    argv = list(sys.orig_argv if argv is None else argv)
+    if "runtime" not in argv[1:] or "--queue" in argv:
+        raise ConfigError("The source consumer requires a worker runtime command.")
+    return [sys.executable, *argv[1:], "--queue", "source"]
+
+
 class SourceConsumer:
     """The worker container's second consumer process: source work only (#336).
 
     ParishSoft refreshes and setup source loads take minutes. On the general
     consumer, which runs one message at a time, exports and operational
     collection waited behind them. The worker process starts this sibling,
-    which runs the same admitted runtime (``runtime --queue source``) with the
+    which re-executes the same admitted runtime (see ``source_command``) with the
     same configuration, mounts, credentials and SQL login but consumes only
     the source queue. Both share the container's lifetime: a stop request is
     forwarded at once so both drain together, and a sibling that exits or
@@ -389,23 +403,13 @@ class SourceConsumer:
     # Silence this long (twice the container probe's limit) stops the worker.
     STALE_LIMIT = 2 * PROBE_MAX_AGE
 
-    def __init__(self, config_path, *, drain_seconds):
+    def __init__(self, *, drain_seconds, argv=None):
         self.drain_seconds = drain_seconds
         self.started = monotonic()
         self.stale = 0
-        # Same interpreter and environment; output joins the container's log.
-        self.process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "parishkit.stewardship",
-                "runtime",
-                "--config",
-                str(config_path),
-                "--queue",
-                "source",
-            ]
-        )
+        # Same interpreter, environment and entry point; output joins the
+        # container's log.
+        self.process = subprocess.Popen(source_command(argv))
 
     def check(self):
         """Raise when the sibling has exited or has been silent far too long.
@@ -483,11 +487,11 @@ def split_source(configuration):
     return role_limit(configuration, ServiceRole.WORKER) >= 6
 
 
-def serve_background(configuration, lease, *, source=False, config_path=None):
+def serve_background(configuration, lease, *, source=False):
     """Assemble one admitted queue process and retain exclusion through final drain.
 
-    ``source`` selects the worker container's source-queue sibling; the
-    worker's main process starts it from ``config_path`` (see SourceConsumer).
+    ``source`` selects the worker container's source-queue sibling, which the
+    worker's main process starts (see SourceConsumer).
     """
     from uuid import uuid4
 
@@ -570,8 +574,7 @@ def serve_background(configuration, lease, *, source=False, config_path=None):
 
             if sibling and not stop.is_set():
                 companion = SourceConsumer(
-                    config_path,
-                    drain_seconds=configuration.runtime_budget.drain_seconds,
+                    drain_seconds=configuration.runtime_budget.drain_seconds
                 )
             receipts = dict(assembled.receipts)
             return serve_consumer(
@@ -684,7 +687,7 @@ def execute_runtime(args):
             raise ConfigError("This service's operational runtime is unavailable.")
         options, queue = {}, getattr(args, "queue", None)
         if configuration.service_role is ServiceRole.WORKER:
-            options = {"source": queue == "source", "config_path": args.config}
+            options = {"source": queue == "source"}
         elif queue is not None:
             raise ConfigError("Only the worker runs a source-queue consumer.")
         with StartupLease(

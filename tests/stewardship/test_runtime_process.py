@@ -57,8 +57,7 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
     def runner(config, lease, **options):
         """The lifecycle inode is real; only the process body is substituted."""
         if role is ServiceRole.WORKER:
-            assert options["source"] is False
-            assert str(options["config_path"]).endswith("operator-input.yaml")
+            assert options == {"source": False}
         called.append(config)
         lease.check()
         with pytest.raises(ConfigError), StartupLease(lease.path, offline=True):

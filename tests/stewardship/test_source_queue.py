@@ -228,28 +228,53 @@ def test_a_failed_sibling_stops_the_worker_and_stop_requests_reach_it(monkeypatc
     assert stop.is_set()
 
 
-def test_source_consumer_runs_the_same_runtime_on_the_source_queue(monkeypatch):
-    """The sibling is this interpreter's runtime command, narrowed by --queue."""
+WORKER_ARGV = ["python3", "/usr/local/bin/pk-stewardship", "runtime", "--config", "w"]
+
+
+def test_source_consumer_reexecutes_the_workers_own_invocation(monkeypatch):
+    """The sibling is this process's command line plus --queue source."""
     process = Mock(returncode=None)
     process.poll.return_value = None
     popen = Mock(return_value=process)
     monkeypatch.setattr(runtime_process.subprocess, "Popen", popen)
-    consumer = runtime_process.SourceConsumer("/run/worker.yaml", drain_seconds=5)
+    consumer = runtime_process.SourceConsumer(drain_seconds=5, argv=WORKER_ARGV)
     command = popen.call_args.args[0]
-    assert command[1:] == [
-        "-m",
-        "parishkit.stewardship",
-        "runtime",
-        "--config",
-        "/run/worker.yaml",
-        "--queue",
-        "source",
-    ]
+    assert command[0] == runtime_process.sys.executable
+    assert command[1:] == [*WORKER_ARGV[1:], "--queue", "source"]
     consumer.check()  # Running and still inside its startup grace.
     consumer.close()
     process.send_signal.assert_called_once_with(signal.SIGTERM)
     process.wait.assert_called_once_with(timeout=5)
     process.kill.assert_not_called()
+
+
+def test_the_sibling_keeps_whatever_the_entry_point_set_up():
+    """A wrapped entry point (``python -c SCRIPT ARG runtime ...``) is kept whole.
+
+    The compose harness installs its synthetic providers in such a wrapper
+    before the CLI runs. A sibling started through another entry point
+    (``-m parishkit.stewardship``) skipped it, so in the real containers the
+    setup source load reached no fake provider and never finished (#339 CI).
+    """
+    wrapped = ["python", "-c", "SCRIPT", "[pages]", "runtime", "--config", "w"]
+    assert runtime_process.source_command(wrapped)[1:] == [
+        *wrapped[1:],
+        "--queue",
+        "source",
+    ]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["python", "-c", "SCRIPT"],
+        [*WORKER_ARGV, "--queue", "source"],
+    ],
+)
+def test_the_sibling_command_needs_an_unnarrowed_runtime(argv):
+    """Only a worker runtime can be re-executed, and never twice narrowed."""
+    with pytest.raises(ConfigError):
+        runtime_process.source_command(argv)
 
 
 def _consumer(monkeypatch, ages):
@@ -263,7 +288,7 @@ def _consumer(monkeypatch, ages):
     monkeypatch.setattr(installer_health, "heartbeat_age", Mock(side_effect=ages))
     recorded = Mock()
     monkeypatch.setattr(timeouts, "record_timeout", recorded)
-    consumer = runtime_process.SourceConsumer("/run/worker.yaml", drain_seconds=5)
+    consumer = runtime_process.SourceConsumer(drain_seconds=5, argv=WORKER_ARGV)
     return consumer, process, recorded
 
 
