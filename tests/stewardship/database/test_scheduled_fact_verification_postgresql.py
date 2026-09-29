@@ -15,6 +15,7 @@ from django.db import (
     transaction,
 )
 
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.read_guards import ReadLimits, ReadUnavailable
@@ -52,7 +53,8 @@ from parishkit.stewardship.reports.verification_production import (
 )
 from parishkit.stewardship.reports.verification_tasks import verification_handler
 
-from .campaign_builders import campaign_clock, restored_runtime
+from ..test_request_patch import parish_patch
+from .campaign_builders import campaign_clock, change, restored_runtime
 from .fact_builders import staged_facts
 from .test_background_grants_postgresql import task_login
 from .test_fact_materialization_postgresql import allocation
@@ -557,3 +559,32 @@ def test_exhausted_crash_recovery_is_critical_and_does_not_reset_same_day(
         FactVerificationRequest.objects.filter(fact_set_id=original.fact_set_id).count()
         == 1
     )
+
+
+def test_settings_change_while_queued_audits_current_parish(
+    auth_service, response_service
+):
+    """A settings save must not strand queued checks on a stale Parish (#344)."""
+    ready()
+    with task_login(ServiceRole.SCHEDULER, exact=True):
+        roots = produce()
+    assert roots
+    store = auth_service.store
+    active = store.active()
+    result = change(store, active, uuid4(), parish_patch(active, name="Renamed"))
+    assert result.state == "applied"
+    parish = SystemConfiguration.objects.get().active_configuration.parish
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        for root in roots:
+            assert execute(root)
+    assert set(
+        TaskRun.objects.filter(pk__in=roots).values_list("state", flat=True)
+    ) == {"succeeded"}
+    events = AuditEvent.objects.filter(event_type="facts_verified")
+    assert events.count() == len(roots)
+    assert {(e.parish_id, e.ownership_scope) for e in events} == {(parish.pk, "parish")}
+    # The queued requests still pin the configuration of their allocation.
+    pinned = CampaignConfiguration.objects.filter(
+        pk__in=FactVerificationRequest.objects.values("timezone_configuration_id")
+    ).values_list("configuration__parish__id", flat=True)
+    assert pinned and parish.pk not in set(pinned)

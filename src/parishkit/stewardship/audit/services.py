@@ -18,13 +18,25 @@ def record_action(
     parish_id=None,
     campaign_id=None,
     context=None,
+    current_parish=False,
 ):
-    """Store only approved evidence in the same transaction as its domain effect."""
+    """Store only approved evidence in the same transaction as its domain effect.
+
+    ``current_parish`` asks SQL to attribute the event to the Parish of the
+    configuration active when the row is inserted. Callers holding a request
+    that pinned an older configuration use it: every activation creates a new
+    Parish row, and the ownership trigger accepts only the current one. The
+    trigger derives the owner in the INSERT itself, so a concurrent activation
+    cannot slip between a Python read and the write; ``parish`` scope still
+    makes the trigger refuse the event when no Parish is active.
+    """
     if not connection.in_atomic_block:
         raise StorageInvariantError("Audited effects require their owning transaction.")
     if not isinstance(action, Action) or not isinstance(actor_kind, ActorKind):
         raise ValueError("Audit requires canonical action and actor types.")
-    if campaign_id is not None and parish_id is None:
+    if current_parish and parish_id is not None:
+        raise ValueError("Derived audit ownership cannot also name a parish.")
+    if campaign_id is not None and parish_id is None and not current_parish:
         raise ValueError("Campaign audit requires parish ownership.")
     safe = sanitize(ContextKind.ACTION, {} if context is None else context)
     event = AuditEvent.objects.create(
@@ -32,7 +44,7 @@ def record_action(
         actor_id=actor_id,
         subject_id=subject_id,
         parish_id=parish_id,
-        ownership_scope="parish" if parish_id else "deployment",
+        ownership_scope="parish" if parish_id or current_parish else "deployment",
         campaign_reference=campaign_id,
     )
     AuditContext.objects.create(
