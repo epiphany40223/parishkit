@@ -284,7 +284,8 @@ unresolved choice cancels/supersedes its workflow while retaining history.
 
 ### Talents and "cannot participate"
 
-Above each Member's Ministry choices, the form asks: "If you have a special
+At the bottom of each Member's page, below the ministry updates, a "Talents to
+share" panel (styled like Ministry participation) asks: "If you have a special
 talent that you would like to share with your parish family, please select it
 below." It offers the campaign's talent checkboxes, which an Admin edits
 alongside the share options (see
@@ -293,12 +294,13 @@ edited them offers the built-in defaults: Painter, Florist, Seamstress,
 Carpenter, Attorney, Gardener and Other. An option marked for free text (Other)
 requires a short description, at most 200 characters. No talent is required.
 
-Each Member may also check "Because of physical limitations, I/we cannot
-participate in any ministries at this time." While checked, every current
-Ministry is set to "Stop participating", every join choice is cleared, and the
-Ministry choices and the join-more-ministries disclosure are disabled for
-pointer, keyboard and assistive technology alike. Unchecking restores the
-Family's own earlier choices. The server rejects a response in which such a
+Above the Ministry choices, each Member may check "Because of physical
+limitations, I/we cannot participate in any ministries at this time." While
+checked, every current Ministry is set to "Stop participating", every join
+choice is cleared, the Ministry choices and the join-more-ministries disclosure
+are disabled for pointer, keyboard and assistive technology alike, and the
+talents question is hidden and no talents are sent. Unchecking restores the
+Family's own earlier choices, talents included. The server rejects a response in which such a
 Member continues or joins any Ministry. Talents and this answer are recorded
 with the response and are never written to ParishSoft.
 

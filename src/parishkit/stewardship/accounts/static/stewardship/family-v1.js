@@ -691,12 +691,17 @@
     return answers.service[group][member.id] ||= {cannot_serve: false, talents: {}};
   }
   function lockMinistries(member) {
-    // "Cannot participate": stop every current Ministry and join none, keeping
-    // the Family's own choices aside so unchecking restores them.
+    // "Cannot participate": stop every current Ministry, join none and share
+    // no talents (the talents question is hidden), keeping the Family's own
+    // choices aside so unchecking restores them.
     const choices = ministryChoices(member), key = "ministries." + member.id;
     if (!setAside.has(key)) setAside.set(key, structuredClone(choices));
     choices.join = [];
     if (!member.proposed) choices.leave = [...ministryCurrent(member)].sort((a, b) => a - b);
+    if (!form.service) return;
+    const entry = serviceEntry(member), talentsKey = "talents." + member.id;
+    if (!setAside.has(talentsKey)) setAside.set(talentsKey, {...entry.talents});
+    entry.talents = {};
   }
   function unlockMinistries(member) {
     const choices = ministryChoices(member), key = "ministries." + member.id;
@@ -704,6 +709,10 @@
     setAside.delete(key);
     choices.join = saved ? saved.join : [];
     if (!member.proposed) choices.leave = saved ? saved.leave : [];
+    if (!form.service) return;
+    const talentsKey = "talents." + member.id;
+    serviceEntry(member).talents = setAside.get(talentsKey) || {};
+    setAside.delete(talentsKey);
   }
   function preserveService(previous, before) {
     // Keep this tab's own talent and "cannot participate" edits across a
@@ -739,6 +748,7 @@
       if (!form.service || !ministryEligible(member)) return;
       const key = "ministries." + member.id;
       if (kept.has(key)) setAside.set(key, kept.get(key));
+      if (kept.has("talents." + member.id)) setAside.set("talents." + member.id, kept.get("talents." + member.id));
       if (!serviceEntry(member).cannot_serve) return;
       if (!preserve && !setAside.has(key)) setAside.set(key, member.proposed ? {join: []} : {join: [], leave: []});
       lockMinistries(member);
@@ -751,11 +761,34 @@
       Object.assign(answers.financial, {annual_pledge: "", frequency: "", shares: {}});
     }
   }
-  function serviceEditor(member, parent) {
-    // Talents and "cannot participate", above the Ministry choices they affect.
+  function limitationEditor(member, parent) {
+    // "Cannot participate", above the Ministry choices it locks.
     if (!form.service) return;
     const entry = serviceEntry(member), prefix = "service-" + member.id;
-    const talents = node("fieldset", null, parent, {class: "panel talents-panel", id: prefix + "-talents"});
+    const lockId = prefix + "-cannot-serve";
+    const wrapper = node("label", null, parent, {for: lockId, class: "limitation"});
+    const lock = node("input", null, wrapper, {type: "checkbox", id: lockId});
+    // edit() rebuilds the page, so a live region would be new and silent.
+    // Instead the checkbox (focus returns to it) is described by the note.
+    if (entry.cannot_serve) lock.setAttribute("aria-describedby", lockId + "-note");
+    lock.checked = entry.cannot_serve;
+    wrapper.append(document.createTextNode(" Because of physical limitations, I/we cannot participate in any ministries at this time."));
+    lock.addEventListener("change", () => {
+      entry.cannot_serve = lock.checked;
+      if (lock.checked) lockMinistries(member); else unlockMinistries(member);
+      edit(lockId);
+    });
+  }
+  function talentsEditor(member, parent) {
+    // Talents come last on the Member's page, below the ministry updates,
+    // and are hidden while the Member cannot participate (none are sent).
+    if (!form.service || serviceEntry(member).cannot_serve) return;
+    const entry = serviceEntry(member), prefix = "service-" + member.id;
+    // Styled like the Ministry participation panel: a panel with an h4, and
+    // the question as the checkbox group's legend.
+    const panel = node("section", null, parent, {class: "panel talents-panel", id: prefix + "-talents-panel"});
+    node("h4", "Talents to share", panel);
+    const talents = node("fieldset", null, panel, {class: "talents-choices", id: prefix + "-talents"});
     node("legend", "If you have a special talent that you would like to share with your parish family, please select it below.", talents);
     form.service.talent_options.forEach((option) => {
       const id = prefix + "-talent-" + option.id;
@@ -784,19 +817,6 @@
         pageOfValidators(parent).push(validateText);
       }
     });
-    const lockId = prefix + "-cannot-serve";
-    const wrapper = node("label", null, parent, {for: lockId, class: "limitation"});
-    const lock = node("input", null, wrapper, {type: "checkbox", id: lockId});
-    // edit() rebuilds the page, so a live region would be new and silent.
-    // Instead the checkbox (focus returns to it) is described by the note.
-    if (entry.cannot_serve) lock.setAttribute("aria-describedby", lockId + "-note");
-    lock.checked = entry.cannot_serve;
-    wrapper.append(document.createTextNode(" Because of physical limitations, I/we cannot participate in any ministries at this time."));
-    lock.addEventListener("change", () => {
-      entry.cannot_serve = lock.checked;
-      if (lock.checked) lockMinistries(member); else unlockMinistries(member);
-      edit(lockId);
-    });
   }
   function pageOfValidators(element) {
     // Validators belong to the page being built (the last one added).
@@ -816,7 +836,7 @@
       }
       return;
     }
-    serviceEditor(member, parent);
+    limitationEditor(member, parent);
     const panel = node("section", null, parent, {class: "panel ministry-panel"});
     node("h4", "Ministry participation", panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
@@ -910,6 +930,7 @@
     // Keep the chosen ministries visible even while the list is collapsed.
     panel.append(joining);
     showJoining();
+    talentsEditor(member, parent);
   }
   function nameList(heading, names, parent) {
     // One ministry per line: a heading, then a bulleted list.
@@ -935,7 +956,7 @@
       const entry = serviceEntry(member);
       const talents = form.service.talent_options.filter((option) => option.id in entry.talents).map(
         (option) => option.free_text ? option.label + ": " + entry.talents[option.id] : option.label);
-      node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
+      if (!entry.cannot_serve) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
       if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }

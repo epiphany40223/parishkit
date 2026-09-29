@@ -74,6 +74,22 @@ def test_talents_and_ministry_lock_restore_and_submit(
     show(page, page.get_by_label("Painter")).check()
     page.get_by_label("Other", exact=True).check()
     page.get_by_label("Please describe your talent").fill(" Organ ")
+    # Talents come last on the Member's page, below the ministry updates,
+    # in a panel styled like Ministry participation.
+    talents = page.locator(".talents-panel")
+    ministries = page.locator(".ministry-panel")
+    assert talents.evaluate(
+        "(t, m) => Boolean(m.compareDocumentPosition(t) &"
+        " Node.DOCUMENT_POSITION_FOLLOWING)",
+        ministries.element_handle(),
+    )
+    expect(talents.get_by_role("heading", level=4)).to_have_text("Talents to share")
+    heading_style = (
+        "e => [getComputedStyle(e).fontSize, getComputedStyle(e).fontWeight]"
+    )
+    assert talents.locator("h4").evaluate(heading_style) == ministries.locator(
+        "h4"
+    ).evaluate(heading_style)
     # The Family's own choice before the lock: join Food pantry.
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
@@ -99,6 +115,8 @@ def test_talents_and_ministry_lock_restore_and_submit(
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_hidden()
+    # The talents question is hidden while the Member cannot participate.
+    expect(page.locator(".talents-panel")).to_have_count(0)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -110,12 +128,13 @@ def test_talents_and_ministry_lock_restore_and_submit(
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
+    # ...and the talents the Family had chosen.
+    expect(page.get_by_label("Painter")).to_be_checked()
+    expect(page.get_by_label("Please describe your talent")).to_have_value(" Organ ")
     page.get_by_label(SERVE).check()
     review(page)
     expect(page.get_by_text(ATTEND, exact=True)).to_be_visible()
-    expect(
-        page.get_by_text("Talents to share: Painter, Other: Organ", exact=True)
-    ).to_be_visible()
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
         show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
@@ -124,9 +143,7 @@ def test_talents_and_ministry_lock_restore_and_submit(
     assert answer["cannot_attend"] is True
     assert answer["ministries"]["members"]["3"] == {"join": [], "leave": [4]}
     assert answer["service"] == {
-        "members": {
-            "3": {"cannot_serve": True, "talents": {PAINTER: "", OTHER: " Organ "}}
-        },
+        "members": {"3": {"cannot_serve": True, "talents": {}}},
         "proposed_members": {},
     }
     assert not errors
@@ -225,9 +242,13 @@ def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(show(page, page.get_by_label(SERVE))).to_be_checked()
-    # Talents merge one by one: this tab's Painter and the other tab's Other.
+    # Hidden while locked; unchecking shows the talents merged one by one:
+    # this tab's Painter and the other tab's Other.
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    page.get_by_label(SERVE).uncheck()
     expect(page.get_by_label("Painter")).to_be_checked()
     expect(page.get_by_label("Please describe your talent")).to_have_value("Organ")
+    page.get_by_label(SERVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
@@ -236,7 +257,7 @@ def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
     assert submissions[1]["ministries"]["members"]["3"] == {"join": [], "leave": [4]}
     assert submissions[1]["service"]["members"]["3"] == {
         "cannot_serve": True,
-        "talents": {PAINTER: "", OTHER: "Organ"},
+        "talents": {},
     }
 
 
@@ -271,3 +292,25 @@ def test_refresh_drops_a_note_when_its_option_stops_taking_text(page, component_
         show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
     ).to_be_visible()
     assert submissions[1]["service"]["members"]["3"]["talents"] == {OTHER: ""}
+
+
+def test_loaded_limitation_hides_talents_and_restores_them(page, component_origin):
+    """A saved "cannot participate" hides saved talents until it's unchecked."""
+    form, submissions = service_form(), []
+    form["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
+    form["service"]["members"]["3"] = {"cannot_serve": True, "talents": {PAINTER: ""}}
+    begin(page, component_origin, form, recorder(submissions))
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    page.get_by_label(SERVE).uncheck()
+    expect(page.get_by_label("Painter")).to_be_checked()
+    page.get_by_label(SERVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[0]["service"]["members"]["3"] == {
+        "cannot_serve": True,
+        "talents": {},
+    }
