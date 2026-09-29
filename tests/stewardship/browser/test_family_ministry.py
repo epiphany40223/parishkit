@@ -292,3 +292,34 @@ def test_join_disclosure_says_tap_on_a_touch_only_device(page, component_origin)
     expect(
         show(page, page.get_by_text("Tap here to join more ministries", exact=True))
     ).to_be_visible()
+
+
+def test_repaired_ministry_names_fit_a_phone_screen(page, component_origin):
+    """#341: a capped 512-character name and a DUID fallback render cleanly."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    long_name = "Choir " + "x" * 505 + "…"
+    form = ministry_form(census=False)
+    form["ministries"]["options"] = [
+        {"id": 4, "name": long_name},
+        {"id": 9, "name": "Ministry 9"},
+    ]
+    begin(page, component_origin, form, lambda route: route.abort())
+    expect(
+        show(page, page.get_by_role("group", name=long_name, include_hidden=True))
+    ).to_be_visible()
+    show(
+        page, page.get_by_text("Click here to join more ministries", exact=True)
+    ).click()
+    show(page, page.get_by_label("Search ministries")).fill("Ministry 9")
+    expect(
+        show(
+            page,
+            page.get_by_role(
+                "checkbox", name="Ministry 9", exact=True, include_hidden=True
+            ),
+        )
+    ).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not errors

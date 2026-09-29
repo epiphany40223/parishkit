@@ -26,6 +26,10 @@ from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
 )
+from parishkit.stewardship.source.catalog_names import (
+    fund_display_name,
+    ministry_display_name,
+)
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
@@ -153,7 +157,13 @@ def _catalog(configuration, source, previous):
                 active = duid in ministry_ids
             retained = selected if model is SnapshotMinistry else retained_funds
             if active or duid in retained:
-                name = payload["name"]
+                # A blank, null or odd ParishSoft name must not break
+                # campaign settings (#341).
+                name = (
+                    ministry_display_name
+                    if model is SnapshotMinistry
+                    else fund_display_name
+                )(duid, payload.get("name"))
                 if not active:
                     name = _("%(name)s (inactive; retained selection)") % {"name": name}
                 choices.append((str(duid), name))

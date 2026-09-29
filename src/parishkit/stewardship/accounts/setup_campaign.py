@@ -8,6 +8,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.source.catalog_names import (
+    fund_display_name,
+    ministry_display_name,
+)
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
 from parishkit.stewardship.web.refusals import UserFacingMissing
 
@@ -70,7 +74,14 @@ def campaign_catalog(request, service, attempt_id):
                 # First setup has no local overrides; later activity uses its editor.
                 if model is SnapshotFund and payload.get("active", True) is False:
                     continue
-                entries.append((str(int(row.source_key)), payload["name"]))
+                duid = int(row.source_key)
+                # A blank, null or odd ParishSoft name must not break setup.
+                name = (
+                    ministry_display_name
+                    if model is SnapshotMinistry
+                    else fund_display_name
+                )(duid, payload.get("name"))
+                entries.append((str(duid), name))
             entries.sort(key=lambda row: (row[1].casefold(), int(row[0])))
             choices.append(tuple(entries))
         return SetupCatalog(result.pk, profile["timezone"], *choices)
