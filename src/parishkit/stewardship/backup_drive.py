@@ -19,6 +19,7 @@ URLs with tokens and credential material never do.
 
 import hashlib
 import json
+import logging
 import re
 import time
 from datetime import timedelta
@@ -27,6 +28,7 @@ from urllib.parse import parse_qs, urlsplit
 from parishkit.config import ConfigError
 
 from .backup import SET_NAME
+from .observability import Event, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 API = "https://www.googleapis.com/drive/v3/files"
@@ -50,6 +52,28 @@ REQUEST_SECONDS = 60
 PROBE_WAIT = timedelta(minutes=5)
 # A sealed dump can be large; the single-request body upload streams the file.
 UPLOAD_SECONDS = 3600
+
+
+def log_timeout(what, *, limit_seconds, elapsed_seconds):
+    """Log off-site backup work a time limit stopped: what, the limit, how long.
+
+    This is the one place the off-site copy and the "Test access" check
+    report a timeout, so they switch together to the durable operational
+    log writer (``audit.timeouts.record_timeout`` from #314, issue #293)
+    once it lands, by changing only this function: keep the process-log
+    line below (it carries the fields), then call ``record_timeout`` with
+    ``Event.WORK_BUDGET_REACHED`` for the two budgets or
+    ``Event.TASK_TIMED_OUT`` otherwise, ``what=what``, ``level="WARNING"``
+    and the same two durations. Until then the WARNING goes to the process
+    log only. ``what`` is one of ``observability.TIMEOUT_LIMITS``.
+    """
+    emit(
+        Event.TASK_FAILED,
+        level=logging.WARNING,
+        timeout=what,
+        limit_seconds=max(0, round(limit_seconds)),
+        elapsed_seconds=max(0, round(elapsed_seconds)),
+    )
 
 
 def deployment_tag(deployment_id):
@@ -178,11 +202,16 @@ class DriveClient:
         self.tag = tag
 
     def _call(self, method, url, *, params=None, timeout=REQUEST_SECONDS, **kwargs):
-        """Send one request and map every failure to a fixed category."""
+        """Send one request and map every failure to a fixed category.
+
+        A request stopped by its own timeout is logged with the limit and
+        how long it ran, then counts as ``unavailable`` like any outage.
+        """
         from google.auth.exceptions import RefreshError, TransportError
-        from requests import RequestException
+        from requests import RequestException, Timeout
 
         params = {"supportsAllDrives": "true", **(params or {})}
+        started = time.monotonic()
         try:
             response = self.session.request(
                 method, url, params=params, timeout=timeout, **kwargs
@@ -190,6 +219,13 @@ class DriveClient:
         except RefreshError:
             # An unauthorized client means the delegation lacks the Drive scope.
             raise DriveFailure("authorization") from None
+        except (Timeout, TimeoutError):
+            log_timeout(
+                "drive_request",
+                limit_seconds=timeout,
+                elapsed_seconds=time.monotonic() - started,
+            )
+            raise DriveFailure("unavailable") from None
         except (TransportError, RequestException, OSError):
             raise DriveFailure("unavailable") from None
         if response.status_code < 300:
@@ -413,22 +449,29 @@ def with_retries(
     sleep=time.sleep,
     deadline=None,
     clock=time.monotonic,
+    budget_seconds=None,
 ):
     """Run ``action`` again after transient failures, with growing pauses.
 
     No retry starts after ``deadline`` (a ``clock`` value), so a slow or
-    failing Drive bounds the whole copy rather than only each request.
+    failing Drive bounds the whole copy rather than only each request. A
+    retry refused for that reason is logged with ``budget_seconds`` (the
+    whole budget ``deadline`` ends) and how much of it has passed.
     """
     for attempt in range(attempts):
         try:
             return action()
         except DriveFailure as failure:
             delay = delays[min(attempt, len(delays) - 1)]
-            if (
-                not failure.retryable
-                or attempt == attempts - 1
-                or (deadline is not None and clock() + delay >= deadline)
-            ):
+            if not failure.retryable or attempt == attempts - 1:
+                raise
+            if deadline is not None and (now := clock()) + delay >= deadline:
+                if budget_seconds is not None:
+                    log_timeout(
+                        "drive_retry_budget",
+                        limit_seconds=budget_seconds,
+                        elapsed_seconds=now - (deadline - budget_seconds),
+                    )
                 raise
             sleep(delay)
     raise AssertionError("unreachable")

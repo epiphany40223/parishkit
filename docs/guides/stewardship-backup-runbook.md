@@ -176,10 +176,29 @@ it could record an outcome). That holds from the first backup after the
 folder is first configured or turned back on, before any copy has succeeded;
 a backup taken while copies were off is not expected on Drive. It resolves
 the incident on the next successful copy or when off-site copies are turned
-off. The page names the
-cause in plain language; the process log records only the category
-(`authorization` for a missing Drive scope, `api_disabled`, `not_found`,
-`permission`, `credential`, `verification`, `unavailable` or `unexpected`).
+off. The page names the cause in plain language. The process log's
+WARNING `task_failed` line with `failure_kind` `backup_offsite_failed`
+carries only the category, as `drive_failure` (`authorization` for a
+missing Drive scope, `api_disabled`, `not_found`, `permission`,
+`credential`, `verification`, `unavailable` or `unexpected`).
+
+A copy stopped by a time limit is recorded, and shown on the page, as
+`unavailable`, like a Drive outage. What tells the two apart is a WARNING
+`task_failed` line logged when the limit stops the work, whose `timeout`
+names the limit, with `limit_seconds` and `elapsed_seconds`:
+`drive_copy_budget` (no new set starts after four hours),
+`drive_retry_budget` (a retry refused because it would start after those
+four hours), `drive_request` (one Drive request passed its own timeout and
+may still be retried) or `drive_probe_wait` (a **Test access** check waited
+more than five minutes and was closed unanswered; this line comes from the
+Google Workspace credential installer). Today these lines are in the
+process log of the `backup-worker` run (the cron job's output) or of the
+Google Workspace credential installer. Once the timeout logging from
+issue #293 is in the release, each is also written to the durable
+operational log in the database, as `work_budget_reached`
+(`drive_copy_budget`, `drive_retry_budget`) or `task_timed_out`
+(`drive_request`, `drive_probe_wait`) with the same limit and elapsed
+seconds.
 
 To check the setup by hand from the host, run the smoke check in the backup
 profile; `--send` also uploads the newest complete local set:

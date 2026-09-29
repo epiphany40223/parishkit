@@ -36,6 +36,7 @@ from .backup_drive import (
     DriveFailure,
     deployment_tag,
     folder_id_from_url,
+    log_timeout,
     prune,
     upload_set,
     with_retries,
@@ -209,8 +210,15 @@ def _copy_pending(
         if not connection.in_atomic_block:
             connection.close()
         digest = _digest(directory)
-        if clock() >= deadline:
-            # Out of time: the next run picks up the remaining sets.
+        if (now := clock()) >= deadline:
+            # Out of time: the next run picks up the remaining sets. The row
+            # says "unavailable" (its categories are fixed by the schema), so
+            # the log line is what tells a stopped copy from a Drive outage.
+            log_timeout(
+                "drive_copy_budget",
+                limit_seconds=COPY_SECONDS,
+                elapsed_seconds=now - (deadline - COPY_SECONDS),
+            )
             return _failed(folder_id, directory.name, digest, "unavailable")
         try:
             with_retries(
@@ -220,6 +228,7 @@ def _copy_pending(
                 sleep=sleep,
                 deadline=deadline,
                 clock=clock,
+                budget_seconds=COPY_SECONDS,
             )
         except DriveFailure as failure:
             return _failed(folder_id, directory.name, digest, failure.kind)
@@ -236,7 +245,7 @@ def _copy_pending(
 
 
 def _failed(folder_id, set_name, digest, kind):
-    """Record and log one failed copy by category; return the summary."""
+    """Record and log one failed copy by its Drive category; return the summary."""
     _record(
         "failed",
         set_name=set_name,
@@ -248,5 +257,6 @@ def _failed(folder_id, set_name, digest, kind):
         Event.TASK_FAILED,
         level=logging.WARNING,
         failure_kind=FailureKind.BACKUP_OFFSITE,
+        drive_failure=kind,
     )
     return {"state": "failed", "failure_kind": kind}
