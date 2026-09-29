@@ -251,6 +251,61 @@ def test_a_copy_that_records_nothing_still_alerts(offsite):
     assert not backup_health.offsite_failing(run.completed_at + grace * 2)
 
 
+def configured_at(monkeypatch, instant):
+    """Say the applied configuration naming the folder was prepared then."""
+    monkeypatch.setattr(backup_health, "destination_configured_since", lambda: instant)
+
+
+def test_a_first_copy_that_records_nothing_still_alerts(offsite, monkeypatch):
+    """With no outcome at all yet, a silent first copy is noticed too (#324 M1).
+
+    The Drive folder was configured for the first time and every copy since
+    died before recording anything, so no row exists.
+    """
+    grace = backup_health.OFFSITE_GRACE
+    run = record_run(offsite.directory)
+    # Copies are off: a backup never copied is not a failure.
+    configured_at(monkeypatch, None)
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+    # A backup taken before the folder was configured is not expected on Drive.
+    configured_at(monkeypatch, run.completed_at + timedelta(seconds=1))
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+    # Within the grace the configuration is not even read.
+    monkeypatch.setattr(
+        backup_health,
+        "destination_configured_since",
+        lambda: pytest.fail("read the configuration too early"),
+    )
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    # One taken after it must record an outcome within the grace.
+    configured_at(monkeypatch, run.completed_at - timedelta(hours=1))
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert backup_health.offsite_failing(run.completed_at + grace * 2)
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+
+
+def test_a_reenabled_copy_that_records_nothing_still_alerts(offsite, monkeypatch):
+    """Turned off and back on, a silent copy is noticed despite "disabled"."""
+    grace = backup_health.OFFSITE_GRACE
+    assert copy(offsite)["state"] == "uploaded"
+    offsite.target[0] = None
+    assert copy(offsite) == {"state": "not_configured"}
+    # A backup while copies were off is not expected on Drive.
+    off = record_run(new_set(offsite, "20260928T020000Z"))
+    configured_at(monkeypatch, None)
+    assert not backup_health.offsite_failing(off.completed_at + grace * 2)
+    # Turned back on; the next backup's copy dies before recording anything.
+    configured_at(monkeypatch, off.completed_at + timedelta(microseconds=1))
+    assert not backup_health.offsite_failing(off.completed_at + grace * 2)
+    run = record_run(new_set(offsite, "20260929T020000Z"))
+    assert BackupUpload.objects.order_by("-created_at").first().state == "disabled"
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
+
+
 def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypatch):
     """An older set copied in the same run does not hide the newest one.
 
@@ -455,6 +510,9 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
         "preview",
     )
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
+    # The scheduler's alert sees the folder as configured from now on.
+    with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
+        assert backup_health.destination_configured_since() is not None
     # Saving the tested folder clears the earlier Test access result.
     assert b"Test access:" not in browser.get(URL).content
     assert backups(store) == [
@@ -478,6 +536,8 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     assert backups(store) == []
+    with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
+        assert backup_health.destination_configured_since() is None
 
 
 def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch):
