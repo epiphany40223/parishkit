@@ -353,3 +353,30 @@ def test_cannot_give_rejects_any_pledge_detail(patch):
     payload = {"annual_pledge": "", "frequency": "", "shares": {}, "cannot_give": True}
     with pytest.raises(InvalidFinancialAnswers):
         validate_financial_answers(payload | patch, OPTIONS)
+
+
+@pytest.mark.parametrize(
+    ("pledge", "message"),
+    [
+        ("", "Enter an annual pledge."),
+        ("  ", "Enter an annual pledge."),
+        ("abc", "Enter a dollar amount, like 1200 or 1200.50."),
+        ("1.001", "Enter a dollar amount, like 1200 or 1200.50."),
+        ("-5", "Enter a dollar amount, like 1200 or 1200.50."),
+        ([], "Enter a dollar amount, like 1200 or 1200.50."),
+    ],
+)
+def test_pledge_errors_ask_plainly_when_blank(pledge, message):
+    """A blank pledge is asked for; other bad input shows the amount format."""
+    with pytest.raises(InvalidFinancialAnswers) as failure:
+        validate_financial_answers(
+            {
+                "annual_pledge": pledge,
+                "frequency": "",
+                "shares": {},
+                "cannot_give": False,
+            },
+            OPTIONS,
+        )
+    assert failure.value.fields["financial.annual_pledge"] == message
+    assert "$0.00" not in message

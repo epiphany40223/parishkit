@@ -549,3 +549,21 @@ def test_zero_pledge_has_no_start_date_and_history_names_the_year(
     expect(page.get_by_text(re.compile(r"^Your \S+ pledge: \$0$"))).to_be_visible()
     assert page.get_by_text("This pledge starts on", exact=False).count() == 0
     assert page.get_by_text("This pledge began on", exact=False).count() == 0
+
+
+def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
+    page, component_origin
+):
+    """Empty: "Enter an annual pledge."; not an amount: how to write one."""
+    begin(page, component_origin, financial_form(), None)
+    pledge = show(page, page.get_by_label("Annual pledge (USD)"))
+    error = page.locator("#financial-annual-hint")
+    pledge.fill("")
+    review(page)
+    expect(error).to_have_text("Enter an annual pledge.")
+    expect(page.locator("[data-nav-error]")).to_contain_text("“Annual pledge”")
+    for value in ("abc", "1.001", "-5"):
+        pledge.fill(value)
+        pledge.blur()
+        expect(error).to_have_text("Enter a dollar amount, like 1200 or 1200.50.")
+    assert "$0.00" not in page.locator("main").inner_text()

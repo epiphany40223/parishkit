@@ -1162,7 +1162,10 @@
     const validate = (show = true) => {
       showErrors ||= show;
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
-      annual.setCustomValidity(cents === null ? "Enter an annual pledge from $0.00 to $999,999,999.99 with up to two decimals." : "");
+      // A blank pledge is asked for plainly; anything else that isn't an
+      // amount (text, three decimals, negative, too large) shows the format.
+      annual.setCustomValidity(cents !== null ? "" : !annual.value.trim() ? "Enter an annual pledge." :
+        "Enter a dollar amount, like 1200 or 1200.50.");
       frequency.required = cents !== null && cents > 0;
       frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
