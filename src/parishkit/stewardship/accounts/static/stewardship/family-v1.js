@@ -253,7 +253,7 @@
         }
       }
     }
-    if (preserve) enforceLimitations(keptAside, true);
+    if (preserve) enforceLimitations(keptAside, true, before);
     edit();
     // A refreshed form opens on the first page that needs the Family's choice.
     const conflict = preserve ? unresolvedConflict(root) : null;
@@ -738,7 +738,45 @@
       });
     });
   }
-  function enforceLimitations(kept, preserve) {
+  function rebaseIds(kept, old, fresh) {
+    // This tab's own additions and removals (kept versus old) applied to the
+    // refreshed list, so another tab's changes are not overwritten.
+    const result = new Set(fresh || []);
+    new Set([...(kept || []), ...(old || [])]).forEach((id) => {
+      const mine = (kept || []).includes(id), before = (old || []).includes(id);
+      if (mine && !before) result.add(id); else if (!mine && before) result.delete(id);
+    });
+    return [...result].sort((a, b) => a - b);
+  }
+  function rebaseTalents(kept, old, fresh) {
+    // As rebaseIds, one talent (and its note) at a time.
+    const result = {...(fresh || {})};
+    new Set([...Object.keys(kept || {}), ...Object.keys(old || {})]).forEach((id) => {
+      if ((kept || {})[id] === (old || {})[id]) return;
+      if ((kept || {})[id] === undefined) delete result[id]; else result[id] = kept[id];
+    });
+    return result;
+  }
+  function rebaseAside(member, kept, before) {
+    // A set-aside kept across a refresh holds this tab's choices from before
+    // the lock. Apply only what this tab changed (against the form it started
+    // from) on top of the refreshed form, as preserveMinistries and
+    // preserveService do for visible choices.
+    const group = member.proposed ? "proposed_members" : "members";
+    const key = "ministries." + member.id, talentsKey = "talents." + member.id;
+    if (kept.has(key)) {
+      const mine = kept.get(key), old = before?.ministries?.[group]?.[member.id];
+      const fresh = form.ministries?.[group]?.[member.id];
+      setAside.set(key, !old || !fresh ? mine : {join: rebaseIds(mine.join, old.join, fresh.join),
+        ...(member.proposed ? {} : {leave: rebaseIds(mine.leave, old.leave, fresh.leave)})});
+    }
+    if (kept.has(talentsKey)) {
+      const mine = kept.get(talentsKey), old = before?.service?.[group]?.[member.id];
+      const fresh = form.service?.[group]?.[member.id];
+      setAside.set(talentsKey, !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
+    }
+  }
+  function enforceLimitations(kept, preserve, before = null) {
     // After every merge, a "cannot participate" Member stops every current
     // Ministry and joins none, and "cannot contribute" leaves no pledge, even
     // when another tab set the limitation while this one had other edits.
@@ -747,8 +785,7 @@
     allMembers().forEach((member) => {
       if (!form.service || !ministryEligible(member)) return;
       const key = "ministries." + member.id;
-      if (kept.has(key)) setAside.set(key, kept.get(key));
-      if (kept.has("talents." + member.id)) setAside.set("talents." + member.id, kept.get("talents." + member.id));
+      rebaseAside(member, kept, before);
       if (!serviceEntry(member).cannot_serve) return;
       if (!preserve && !setAside.has(key)) setAside.set(key, member.proposed ? {join: []} : {join: [], leave: []});
       lockMinistries(member);
