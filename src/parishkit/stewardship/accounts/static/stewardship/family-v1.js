@@ -1716,6 +1716,9 @@
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
     submittedBanner(intro.element);
     artwork("welcome", intro.element, "family-page-icon");
+    // Without welcome text the visible "Welcome" heading follows the notice and
+    // icon, so the page reads notice, icon, heading or text either way.
+    if (!form.content.welcome) intro.element.append(intro.element.querySelector("h3"));
     block("welcome", intro.element);
     const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});
     const attendBox = node("input", null, attend, {type: "checkbox", id: "cannot-attend"});
