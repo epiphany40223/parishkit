@@ -113,6 +113,9 @@ def render_caddy(configuration):
     No active health checks remove the app when business readiness is unavailable.
     When no web replica answers (an upgrade stops web while Caddy keeps
     running), Caddy serves its own self-contained maintenance page instead.
+    Static files keep fixed names (``ui-v1.js``), so they are sent with
+    ``Cache-Control: no-cache``: browsers revalidate each use against the
+    file server's ETag, and a mid-campaign fix reaches returning Families.
     """
     hostname = production_hostname(configuration)
     budget = configuration.runtime_budget
@@ -171,6 +174,7 @@ def render_caddy(configuration):
             max_size 6MB
         }}
         handle_path /static/* {{
+            header Cache-Control "no-cache"
             root * /srv/static
             file_server
         }}

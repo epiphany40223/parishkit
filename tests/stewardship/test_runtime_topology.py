@@ -494,3 +494,14 @@ def test_every_service_caps_its_container_log(tmp_path, production):
         }, name
     # Each service owns its copy, so a later edit to one cannot move another.
     assert services["web"]["logging"] is not services["worker"]["logging"]
+
+
+def test_static_files_are_revalidated_on_every_use(tmp_path):
+    """#326 M4: fixed-name scripts and styles never outlive a hotfix in a cache."""
+    output = render_caddy(configuration_at(tmp_path, production=True))
+    block = output[output.index("handle_path /static/* {") :]
+    block = block[: block.index("}")]
+    assert 'header Cache-Control "no-cache"' in block
+    assert "file_server" in block
+    # Only static files: the application sets its own headers.
+    assert output.count("Cache-Control") == 2  # this and the maintenance page
