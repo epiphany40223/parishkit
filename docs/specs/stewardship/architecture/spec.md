@@ -90,6 +90,8 @@ The human-facing interface consists of:
 - `/access/<token>`: opaque email-link exchange, immediately redirected to a
   token-free Family URL after a session is established;
 - `/family/...`: authenticated wizard steps and final submission endpoint;
+- `/files/<token>`: unauthenticated hosted files for parishioners, defined by
+  [hosted files](../hosted-files/spec.md#public-serving);
 - `/admin/login`: Google-only login;
 - `/admin/...`: every administration page, JSON/HTML partial endpoint, export,
   job detail, and purge workflow.

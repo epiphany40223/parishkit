@@ -84,6 +84,12 @@ page-unload hooks warn that unsaved answers will be lost. This warning does not
 create a server or browser draft: preserving the requirement that nothing is
 saved before final Submit is an explicit privacy trade-off.
 
+Parish content may link to [hosted files](../hosted-files/spec.md). A hosted
+document is served as a download (`Content-Disposition: attachment`), so
+following its link saves or opens the file without unloading the form page
+and its in-memory answers; hosted images appear inline in the content.
+A deleted file's link shows a friendly "no longer available" page.
+
 Active form interaction keeps the authenticated session alive without saving
 answers, using the rate-limited
 [activity keepalive](../architecture/spec.md#identity-and-session-security).

@@ -204,7 +204,9 @@ in `/access/[redacted]`. Within a request it also scrubs that request's link
 token and its `code`, `state` and `token` query values wherever they appear in
 free text, including exception text.
 Upload/body/time limits protect the app without blocking configured logo/export
-workflows. The official stock
+workflows; the one larger body limit (11 MB for hosted-file uploads) and the
+buffering of `/files/` responses are defined by
+[hosted files](../hosted-files/spec.md#operations). The official stock
 Caddy image is used without third-party rate-limit modules; coarse and specific
 administration-login limits are application middleware defined by the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
@@ -441,7 +443,9 @@ operator command, or guarded campaign-purge web workflow. Each invocation
 creates one consistent backup set containing:
 
 - PostgreSQL logical/custom-format dump and schema/version metadata;
-- uploaded media/branding required by retained campaigns;
+- uploaded media/branding required by retained campaigns, and the
+  [hosted file library](../hosted-files/spec.md#operations), which lives in
+  the same media tree;
 - deployment configuration plus every retained Stewardship YAML version and
   active manifest needed to match database configuration snapshots; and
 - an explicit credential/key manifest and fingerprint list, never credential
