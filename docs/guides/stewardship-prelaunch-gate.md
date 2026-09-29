@@ -314,6 +314,8 @@ The #308 review then added `(created_at, id)` indexes on
 `stewardship_audit_event` and `stewardship_operational_log`, which System
 logs and its export read newest first, so no page sorts either whole table
 (Indexes digest only).
+Ministry name repair (#345) then added the `source_ministry_name_repaired`
+operational event (the operational event check; Constraints digest only).
 Export admission (#147) then stopped taking the global work-order lock: it
 takes a per-campaign export lock, which the work gate, lifecycle transition,
 configuration activation and go-live gate paths also take (one new lock
@@ -344,7 +346,7 @@ Regenerated from a fresh install, the current baseline is:
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `5ee21d05` |
+| Constraints | 3398 | `d7b9c846` |
 | Indexes | 1008 | `fa41fc80` |
 | Functions | 608 | `fb68052b` |
 | Triggers | 557 | `c9546d79` |
