@@ -5421,7 +5421,7 @@ BEGIN
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
             'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational',
-            'decision','review_reason']
+            'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5482,6 +5482,12 @@ BEGIN
         ELSIF key='review_reason' THEN
             IF jsonb_typeof(value)<>'string' OR length(text_value) NOT BETWEEN 1 AND 500
                OR position('@' in text_value)>0 THEN RETURN false; END IF;
+        -- A hosted file (#346): its placeholder name and its stored type.
+        ELSIF key IN ('file_slug','previous_file_slug') THEN
+            IF jsonb_typeof(value)<>'string' OR length(text_value)>64
+               OR text_value!~'^[a-z0-9]+(-[a-z0-9]+)*$' THEN RETURN false; END IF;
+        ELSIF key='file_kind' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('pdf','docx','xlsx','pptx','png','jpeg') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN

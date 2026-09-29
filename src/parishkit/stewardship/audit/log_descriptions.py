@@ -188,6 +188,11 @@ DESCRIPTIONS = {
     "family_maintenance_ended": _(
         "An Administrator reopened the Family portal after maintenance."
     ),
+    "hosted_file_uploaded": _("An Administrator uploaded a hosted file."),
+    "hosted_file_slug_changed": _(
+        "An Administrator changed a hosted file's placeholder name."
+    ),
+    "hosted_file_deleted": _("An Administrator deleted a hosted file."),
     "security_event_acknowledged": _(
         "An Administrator acknowledged a security notice."
     ),

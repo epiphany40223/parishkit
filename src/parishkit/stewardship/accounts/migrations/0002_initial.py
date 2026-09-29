@@ -2504,6 +2504,133 @@ class Migration(migrations.Migration):
                         "db_table": "stewardship_branding_asset",
                     },
                 ),
+                migrations.CreateModel(
+                    name="HostedFile",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "updated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "version",
+                            models.PositiveBigIntegerField(default=1, editable=False),
+                        ),
+                        ("slug", models.CharField(max_length=64)),
+                        ("original_name", models.CharField(max_length=200)),
+                        ("kind", models.CharField(max_length=8)),
+                        ("size", models.PositiveIntegerField()),
+                        ("sha256", models.CharField(max_length=64)),
+                        ("width", models.PositiveIntegerField(null=True)),
+                        ("height", models.PositiveIntegerField(null=True)),
+                        ("token", models.CharField(max_length=43)),
+                        ("uploaded_by_id", models.UUIDField()),
+                    ],
+                    options={
+                        "db_table": "stewardship_hosted_file",
+                        "abstract": False,
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(("version__gte", 1)),
+                                name="stewardship_accounts_hostedfile_positive_version",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("slug",), name="hosted_file_slug_unique"
+                            ),
+                            models.UniqueConstraint(
+                                fields=("token",), name="hosted_file_token_unique"
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("slug__regex", "^[a-z0-9]+(-[a-z0-9]+)*$")
+                                ),
+                                name="hosted_file_slug",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    (
+                                        "original_name__regex",
+                                        "^[^\\x01-\\x1f\\x7f/\\\\]{1,200}$",
+                                    )
+                                ),
+                                name="hosted_file_name",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    (
+                                        "kind__in",
+                                        ("pdf", "docx", "xlsx", "pptx", "png", "jpeg"),
+                                    )
+                                ),
+                                name="hosted_file_kind",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("size__gte", 1), ("size__lte", 10485760)
+                                ),
+                                name="hosted_file_size",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(("sha256__regex", "^[0-9a-f]{64}$")),
+                                name="hosted_file_digest",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("token__regex", "^[A-Za-z0-9_-]{43}$")
+                                ),
+                                name="hosted_file_token",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        ("height__gte", 1),
+                                        ("height__lte", 2048),
+                                        ("kind__in", ("png", "jpeg")),
+                                        ("width__gte", 1),
+                                        ("width__lte", 2048),
+                                    ),
+                                    models.Q(
+                                        ("height__isnull", True),
+                                        ("kind__in", ("pdf", "docx", "xlsx", "pptx")),
+                                        ("width__isnull", True),
+                                    ),
+                                    _connector="OR",
+                                ),
+                                name="hosted_file_dimensions",
+                            ),
+                        ],
+                    },
+                ),
             ],
         ),
     ]

@@ -21,6 +21,7 @@
 !src/parishkit/stewardship/schema/seed.sql
 !src/parishkit/stewardship/schema/guards.sql
 !src/parishkit/stewardship/schema/backup.sql
+!src/parishkit/stewardship/schema/hosted_files.sql
 !src/parishkit/stewardship/schema/delivery.sql
 !src/parishkit/stewardship/schema/mail_health.sql
 !src/parishkit/stewardship/schema/family_mail_tests.sql

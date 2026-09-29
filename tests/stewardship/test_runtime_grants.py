@@ -42,6 +42,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "stewardship_weekly_digest_completion_ready",  # Opaque resolved interval IDs.
         "stewardship_security_notifiable",  # Counts-only recipient projection.
         "stewardship_chair_suggestion",  # Current Chairpersons with names only.
+        "stewardship_hosted_file_use",  # Where each hosted file is used, no text.
     }
     assert WEB_INSERT_TABLES <= WEB_READ_TABLES
     assert WEB_UPDATE_TABLES <= WEB_READ_TABLES

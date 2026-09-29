@@ -87,6 +87,9 @@ class Action(StrEnum):
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
     FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
     FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
+    HOSTED_FILE_UPLOADED = "hosted_file_uploaded"
+    HOSTED_FILE_SLUG_CHANGED = "hosted_file_slug_changed"
+    HOSTED_FILE_DELETED = "hosted_file_deleted"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
@@ -185,10 +188,20 @@ FIELDS = {
         # personal data.
         "decision",
         "review_reason",
+        # A hosted file (#346): its placeholder name (a restricted charset,
+        # never free text), stored type, size and digest. The original file
+        # name is free text and is never recorded here.
+        "file_slug",
+        "previous_file_slug",
+        "file_kind",
+        "file_size",
+        "file_fingerprint",
     },
 }
 
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
+# Stored hosted-file types (#346); mirrored in stewardship_safe_context_v1.
+HOSTED_FILE_KINDS = frozenset({"pdf", "docx", "xlsx", "pptx", "png", "jpeg"})
 
 # The limits that can stop work (#293); mirrored in stewardship_safe_context_v1.
 TIMEOUT_KINDS = frozenset(
@@ -289,6 +302,15 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "decision":
             valid = type(value) is str and value in REVIEW_DECISIONS
+            safe[key] = value
+        elif key in {"file_slug", "previous_file_slug"}:
+            valid = type(value) is str and re.fullmatch(
+                r"[a-z0-9]+(-[a-z0-9]+)*", value
+            )
+            valid = valid and len(value) <= 64
+            safe[key] = value
+        elif key == "file_kind":
+            valid = type(value) is str and value in HOSTED_FILE_KINDS
             safe[key] = value
         elif key == "review_reason":
             valid = type(value) is str and 0 < len(value) <= 500 and "@" not in value
