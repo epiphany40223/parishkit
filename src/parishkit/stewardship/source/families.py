@@ -6,6 +6,7 @@ Provider suppression is an explicit input, never inferred from publishability
 or from a Family's proposed census email preference.
 """
 
+import json
 from dataclasses import dataclass, field
 
 from django.db import connection
@@ -234,12 +235,16 @@ def reconcile_source_families(
             raise StorageInvariantError(
                 "Family effects belong to another source owner."
             )
+        # Decode each payload's canonical text directly (what SourceVersion's
+        # payload property does) instead of building two ORM models per row:
+        # this runs under the global work-order lock, where model construction
+        # for about 25,000 rows cost more than the query itself (#147).
         corpus = {
             kind: {
-                row.source_key: row.payload.payload
-                for row in ENTITY_MODELS[kind][1]
+                key: json.loads(canonical)
+                for key, canonical in ENTITY_MODELS[kind][1]
                 .objects.filter(snapshot=snapshot)
-                .select_related("payload")
+                .values_list("source_key", "payload__canonical")
                 .iterator(chunk_size=500)
             }
             for kind in ("family", "member", "contact", "ministry", "roster")
