@@ -19,6 +19,10 @@ PLEDGE_INPUT = re.compile(
     r"(?:[0-9]{1,9}|[0-9]{1,3}(?:,[0-9]{3}){1,2})(?:\.[0-9]{1,2})?"
 )
 
+# A plain dollar amount (digits, commas, up to two decimals); pledge_error uses
+# it to tell an amount over the $999,999,999.99 limit from malformed input.
+LARGE_PLEDGE = re.compile(r"[1-9][0-9,]*(?:\.[0-9]{1,2})?")
+
 
 class InvalidFinancialAnswers(ValueError):
     """Static field messages only; never interpolate a pledge or free-text answer."""
@@ -50,6 +54,25 @@ def pledge_amount(value):
     if cents > MAX_PLEDGE_CENTS:
         raise ValueError("The annual pledge exceeds the supported maximum.")
     return MoneyAmount(cents)
+
+
+def pledge_error(value):
+    """The Family form's wording for a pledge that isn't a usable amount.
+
+    A blank pledge is asked for plainly, a well-formed amount of a billion
+    dollars or more gets the limit, and anything else is shown the format.
+    """
+    text = value.strip() if isinstance(value, str) else None
+    if text == "":
+        return "Enter an annual pledge."
+    if (
+        text
+        and LARGE_PLEDGE.fullmatch(text)
+        # Count digits, never int() a forged string of unbounded length.
+        and len(text.replace(",", "").partition(".")[0]) >= 10
+    ):
+        return "Enter an annual pledge under $1,000,000,000."
+    return "Enter a dollar amount, like 1200 or 1200.50."
 
 
 def installment(annual, frequency):
@@ -125,17 +148,7 @@ def validate_financial_answers(payload, options):
     try:
         amount = pledge_amount(payload["annual_pledge"])
     except ValueError:
-        # Same wording as the Family form: a blank pledge is asked for plainly;
-        # anything else is shown how to write a dollar amount (#267).
-        blank = (
-            isinstance(payload["annual_pledge"], str)
-            and not payload["annual_pledge"].strip()
-        )
-        errors["financial.annual_pledge"] = (
-            "Enter an annual pledge."
-            if blank
-            else "Enter a dollar amount, like 1200 or 1200.50."
-        )
+        errors["financial.annual_pledge"] = pledge_error(payload["annual_pledge"])
     frequency = payload["frequency"]
     if (
         type(frequency) is not str

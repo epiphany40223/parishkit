@@ -621,5 +621,25 @@ def test_session_timeout_shows_one_notice_under_the_testing_banner(
             notice.element_handle(),
         )
         assert banner.bounding_box()["y"] < notice.bounding_box()["y"]
+        # ...and above the page title, as in the Admin portal.
+        title = page.locator("main h1").first
+        assert banner.bounding_box()["y"] < title.bounding_box()["y"]
     else:
         expect(banner).to_have_count(0)
+
+
+def test_a_server_ended_session_notice_stays_shown(page, component_origin):
+    """A 403 ends the session before the timer; later timer ticks keep it."""
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(status=403, body="Forbidden"),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    notice = page.locator("#session-expired")
+    expect(notice).to_be_visible()
+    page.clock.fast_forward(20_000)
+    expect(notice).to_be_visible()
+    expect(page.get_by_role("link", name="Sign in again")).to_have_count(1)

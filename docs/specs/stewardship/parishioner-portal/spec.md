@@ -88,7 +88,7 @@ when the absolute four-hour deadline cannot be extended. When the session ends,
 a single red notice says so (and that unsubmitted changes were not saved, or,
 after an uncertain submission, to sign in again to check it) with one "Sign in
 again" link; in Testing it sits below the Testing banner, which is always the
-top-most bar.
+top-most bar, above the page title.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
@@ -123,7 +123,8 @@ explanation below and the pledge's "intention only" statement.
 Optional campaign images appear when the Admin has set them for the current
 campaign: a small icon (about 96 CSS pixels) above the heading of the Member,
 financial and closing pages, and on the Welcome page below the returning-Family
-"last submitted" notice (or, without one, first), above the parish's intro text.
+"last submitted" notice (or, without one, first), above the parish's intro text
+or, when there is none, above the "Welcome" heading.
 The wide campaign banner is used in emails only, not on the Family pages. They are
 decorative (empty text alternatives), since the headings and text already carry
 their meaning, and scale down to fit a phone screen.

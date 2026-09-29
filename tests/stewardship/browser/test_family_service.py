@@ -131,6 +131,8 @@ def test_talents_and_ministry_lock_restore_and_submit(
     # ...and the talents the Family had chosen.
     expect(page.get_by_label("Painter")).to_be_checked()
     expect(page.get_by_label("Please describe your talent")).to_have_value(" Organ ")
+    # The visible talents panel is accessible too.
+    assert page.evaluate(AXE) == []
     page.get_by_label(SERVE).check()
     review(page)
     expect(page.get_by_text(ATTEND, exact=True)).to_be_visible()
@@ -215,6 +217,7 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
+    show(page, page.get_by_label("Painter")).check()
     page.get_by_label(SERVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -223,6 +226,8 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
+    # The talents set aside by the lock come back after the refresh too.
+    expect(page.get_by_label("Painter")).to_be_checked()
 
 
 def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
@@ -314,3 +319,80 @@ def test_loaded_limitation_hides_talents_and_restores_them(page, component_origi
         "cannot_serve": True,
         "talents": {},
     }
+
+
+def test_refresh_keeps_another_tabs_talents_under_this_tabs_lock(
+    page, component_origin
+):
+    """A lock's set-aside only reapplies this tab's own changes after refresh."""
+    form, submissions = service_form(), []
+    form["service"]["members"]["3"]["talents"] = {PAINTER: ""}
+    fresh = deepcopy(form)
+    # Another tab removed Painter and added Other ("Organ").
+    fresh["service"]["members"]["3"]["talents"] = {OTHER: "Organ"}
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Florist")).check()
+    page.get_by_label(SERVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    page.get_by_label(SERVE).uncheck()
+    # This tab's Florist, and the other tab's removal and Other, all kept.
+    expect(page.get_by_label("Florist")).to_be_checked()
+    expect(page.get_by_label("Painter")).not_to_be_checked()
+    expect(page.get_by_label("Please describe your talent")).to_have_value("Organ")
+
+
+def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
+    page, component_origin
+):
+    """A refreshed form locked by another tab stores the lock's choices; this
+    tab's set-aside must come back unchanged when the Family unchecks."""
+    form, submissions = service_form(), []
+    fresh = deepcopy(form)
+    fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
+    fresh["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Painter")).check()
+    page.get_by_text("Click here to join more ministries", exact=True).click()
+    page.get_by_label("Search ministries").fill("pantry")
+    page.get_by_role("checkbox", name="Food pantry", exact=True).check()
+    page.get_by_label(SERVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    page.get_by_label(SERVE).uncheck()
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    expect(choir.get_by_label("Continuing")).to_be_checked()
+    expect(page.get_by_label("Painter")).to_be_checked()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["ministries"]["members"]["3"] == {"join": [9], "leave": []}
+    assert submissions[1]["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": {PAINTER: ""},
+    }
+
+
+def test_refresh_unlocked_elsewhere_drops_the_stale_set_aside(page, component_origin):
+    """If another tab unlocks the Member, a later lock captures current talents."""
+    florist = DEFAULT_TALENTS[1].id
+    form, submissions = service_form(), []
+    form["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
+    form["service"]["members"]["3"] = {"cannot_serve": True, "talents": {PAINTER: ""}}
+    fresh = deepcopy(form)
+    fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": []}
+    fresh["service"]["members"]["3"] = {"cannot_serve": False, "talents": {florist: ""}}
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).not_to_be_checked()
+    expect(page.get_by_label("Florist")).to_be_checked()
+    expect(page.get_by_label("Painter")).not_to_be_checked()
+    page.get_by_label(SERVE).check()
+    page.get_by_label(SERVE).uncheck()
+    expect(page.get_by_label("Florist")).to_be_checked()
+    expect(page.get_by_label("Painter")).not_to_be_checked()

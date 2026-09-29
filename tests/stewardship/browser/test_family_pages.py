@@ -663,3 +663,27 @@ def test_welcome_icon_sits_below_the_last_submitted_notice(page, component_origi
           : e.matches('.content-block') ? 'intro' : null).filter(Boolean)"""
     )
     assert order == ["notice", "icon", "intro"]
+
+
+def test_welcome_icon_precedes_the_heading_without_welcome_text(page, component_origin):
+    """Without welcome text: notice, icon, then the visible Welcome heading."""
+    page.route(
+        "**/branding/*.png",
+        lambda route: route.fulfill(body=png(256, 256), content_type="image/png"),
+    )
+    form = paged_form()
+    form["content"]["welcome"] = ""
+    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    form["images"] = {
+        "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
+    }
+    begin(page, component_origin, form, None)
+    intro = page.locator('[data-page="intro"]')
+    order = intro.evaluate(
+        """p => [...p.children].map(e => e.matches('.family-submitted') ? 'notice'
+          : e.matches('img.family-page-icon') ? 'icon'
+          : e.matches('h3') ? 'heading' : null).filter(Boolean)"""
+    )
+    assert order == ["notice", "icon", "heading"]
+    expect(intro.get_by_role("heading", name="Welcome", level=3)).to_be_visible()

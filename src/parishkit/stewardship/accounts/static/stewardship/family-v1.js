@@ -253,7 +253,7 @@
         }
       }
     }
-    if (preserve) enforceLimitations(keptAside, true);
+    if (preserve) enforceLimitations(keptAside, true, before);
     edit();
     // A refreshed form opens on the first page that needs the Family's choice.
     const conflict = preserve ? unresolvedConflict(root) : null;
@@ -738,7 +738,60 @@
       });
     });
   }
-  function enforceLimitations(kept, preserve) {
+  function rebaseIds(kept, old, fresh, allowed) {
+    // This tab's own additions and removals (kept versus old) applied to the
+    // refreshed list, so another tab's changes are not overwritten. Only
+    // ids still allowed (as in preserveMinistries) are applied.
+    const result = new Set(fresh || []);
+    new Set([...(kept || []), ...(old || [])]).forEach((id) => {
+      const mine = (kept || []).includes(id), before = (old || []).includes(id);
+      if (mine === before || !allowed(id)) return;
+      if (mine) result.add(id); else result.delete(id);
+    });
+    return [...result].sort((a, b) => a - b);
+  }
+  function rebaseTalents(kept, old, fresh) {
+    // As rebaseIds, one talent at a time, for talents still offered; a note
+    // stays only while its option still takes free text (as preserveService).
+    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
+    const result = {...(fresh || {})};
+    new Set([...Object.keys(kept || {}), ...Object.keys(old || {})]).forEach((id) => {
+      if ((kept || {})[id] === (old || {})[id] || !options.has(id)) return;
+      if ((kept || {})[id] === undefined) delete result[id];
+      else result[id] = options.get(id).free_text ? kept[id] : "";
+    });
+    return result;
+  }
+  function rebaseAside(member, kept, before) {
+    // A set-aside kept across a refresh holds this tab's choices from before
+    // the lock. It matters only while the Member is still locked: if another
+    // tab unlocked them, it is dropped so a later lock captures the current
+    // choices. If the refreshed form itself is locked, its stored choices are
+    // the lock's (all stopped, no talents), so the set-aside is kept as is.
+    // Otherwise only this tab's own changes, against the form it started
+    // from, are applied on top of the refreshed choices, as preserveMinistries
+    // and preserveService do for visible choices.
+    const group = member.proposed ? "proposed_members" : "members";
+    const key = "ministries." + member.id, talentsKey = "talents." + member.id;
+    if (!serviceEntry(member).cannot_serve) return;
+    const freshLocked = Boolean(form.service?.[group]?.[member.id]?.cannot_serve);
+    if (kept.has(key)) {
+      const mine = kept.get(key), old = before?.ministries?.[group]?.[member.id];
+      const fresh = form.ministries?.[group]?.[member.id];
+      const offered = new Set((form.ministries?.options || []).map((option) => option.id));
+      const current = ministryCurrent(member);
+      setAside.set(key, freshLocked || !old || !fresh ? mine : {
+        join: rebaseIds(mine.join, old.join, fresh.join, (id) => offered.has(id) && !current.has(id)),
+        ...(member.proposed ? {} : {leave: rebaseIds(mine.leave, old.leave, fresh.leave,
+          (id) => offered.has(id) && current.has(id))})});
+    }
+    if (kept.has(talentsKey)) {
+      const mine = kept.get(talentsKey), old = before?.service?.[group]?.[member.id];
+      const fresh = form.service?.[group]?.[member.id];
+      setAside.set(talentsKey, freshLocked || !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
+    }
+  }
+  function enforceLimitations(kept, preserve, before = null) {
     // After every merge, a "cannot participate" Member stops every current
     // Ministry and joins none, and "cannot contribute" leaves no pledge, even
     // when another tab set the limitation while this one had other edits.
@@ -747,8 +800,7 @@
     allMembers().forEach((member) => {
       if (!form.service || !ministryEligible(member)) return;
       const key = "ministries." + member.id;
-      if (kept.has(key)) setAside.set(key, kept.get(key));
-      if (kept.has("talents." + member.id)) setAside.set("talents." + member.id, kept.get("talents." + member.id));
+      rebaseAside(member, kept, before);
       if (!serviceEntry(member).cannot_serve) return;
       if (!preserve && !setAside.has(key)) setAside.set(key, member.proposed ? {join: []} : {join: [], leave: []});
       lockMinistries(member);
@@ -1162,10 +1214,13 @@
     const validate = (show = true) => {
       showErrors ||= show;
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
-      // A blank pledge is asked for plainly; anything else that isn't an
-      // amount (text, three decimals, negative, too large) shows the format.
-      annual.setCustomValidity(cents !== null ? "" : !annual.value.trim() ? "Enter an annual pledge." :
-        "Enter a dollar amount, like 1200 or 1200.50.");
+      // A blank pledge is asked for plainly, a well-formed amount that is too
+      // large gets the limit, and anything else (text, three decimals, a
+      // negative) shows the format. The server uses the same wording.
+      const typed = annual.value.trim();
+      const tooLarge = /^[1-9][0-9,]*(\.[0-9]{1,2})?$/.test(typed) && Number(typed.replaceAll(",", "")) >= 1e9;
+      annual.setCustomValidity(cents !== null ? "" : !typed ? "Enter an annual pledge." :
+        tooLarge ? "Enter an annual pledge under $1,000,000,000." : "Enter a dollar amount, like 1200 or 1200.50.");
       frequency.required = cents !== null && cents > 0;
       frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
@@ -1676,6 +1731,9 @@
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
     submittedBanner(intro.element);
     artwork("welcome", intro.element, "family-page-icon");
+    // Without welcome text the visible "Welcome" heading follows the notice and
+    // icon, so the page reads notice, icon, heading or text either way.
+    if (!form.content.welcome) intro.element.append(intro.element.querySelector("h3"));
     block("welcome", intro.element);
     const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});
     const attendBox = node("input", null, attend, {type: "checkbox", id: "cannot-attend"});
