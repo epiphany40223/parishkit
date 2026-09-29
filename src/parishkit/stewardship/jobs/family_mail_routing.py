@@ -64,7 +64,9 @@ def route_family_mail(
         )
         # The mode prefix is mandatory even for a maximum-length subject.
         subject = "[TEST] " + (subject if len(subject) <= 247 else subject[:246] + "…")
-        html = "<h2>TEST</h2><p>" + escape(description) + "</p>" + html
+        # quote=False matches sanitizer output, so names with quotes pass
+        # the delivery check (e.g. "O'Brien").
+        html = "<h2>TEST</h2><p>" + escape(description, quote=False) + "</p>" + html
         text = description + "\n\n" + text
     elif testing_recipient is not None:
         raise ValueError("Production mail cannot have a Testing override.")

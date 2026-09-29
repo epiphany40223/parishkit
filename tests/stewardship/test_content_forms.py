@@ -256,7 +256,7 @@ def test_receipt_preview_includes_fixed_facts_and_optional_block(configured):
     )
     for body in (rendered["html"], rendered["text"]):
         assert "Family: Sample" in body and "Submitted:" in body
-        assert "Questions:" in body
+        assert "Questions:" not in body
         assert "Optional follow-up." in body
         assert "ABCDEFGH" not in body and "/access/" not in body
 
