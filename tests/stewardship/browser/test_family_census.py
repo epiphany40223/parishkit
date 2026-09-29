@@ -111,7 +111,7 @@ def test_us_rules_do_not_block_international_address(page, component_origin):
     prepare(page, component_origin)
     page.get_by_role("button", name="Begin reviewing").click()
     fill_address(page, "home_address", address(region="", postal_code=""))
-    review(page)
+    assert not review(page)
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     show(page, page.locator("#family-home_address-country")).select_option("IE")
     review(page)
@@ -380,7 +380,7 @@ def test_untouched_address_fields_show_errors_only_on_blur_or_review(
         show(page, page.locator("#family-home_address-city-constraint"))
     ).to_be_visible()
     expect(page.locator("#family-home_address-country-constraint")).to_be_hidden()
-    review(page)
+    assert not review(page)
     expect(
         show(page, page.locator("#family-home_address-country-constraint"))
     ).to_be_visible()

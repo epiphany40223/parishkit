@@ -291,13 +291,13 @@ def test_financial_validation_zero_and_unavailable(page, component_origin):
     assert "$0.00" not in page.locator("main").inner_text()
     for invalid in ("", "-1", "1e2", "1.001", "1,23", "1000000000"):
         show(page, page.get_by_label("Annual pledge (USD)")).fill(invalid)
-        review(page)
+        assert not review(page)
         assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
         expect(page.get_by_label("Annual pledge (USD)")).to_have_attribute(
             "aria-invalid", "true"
         )
     show(page, page.get_by_label("Annual pledge (USD)")).fill("1")
-    review(page)
+    assert not review(page)
     expect(page.get_by_label("Pledge frequency")).to_have_attribute(
         "aria-invalid", "true"
     )
@@ -567,7 +567,7 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
     pledge = show(page, page.get_by_label("Annual pledge (USD)"))
     error = page.locator("#financial-annual-hint")
     pledge.fill("")
-    review(page)
+    assert not review(page)
     expect(error).to_have_text("Enter an annual pledge.")
     # One notice: the inline line, not also a visible note by the buttons.
     assert unseen(page.locator("[data-nav-error]"))

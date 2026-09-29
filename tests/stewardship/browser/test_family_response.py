@@ -29,34 +29,81 @@ def expect(locator):
     return browser_expect(locator)
 
 
+def current_page(page):
+    """The key of the form page the Family is looking at."""
+    return page.locator("[data-page]:not([hidden])").get_attribute("data-page")
+
+
+def advance(page, *, required=True):
+    """Select Next once and return whether the form moved to the following page.
+
+    Next checks the page being left. By default a blocked Next fails the test;
+    with ``required=False`` the caller handles it.
+    """
+    before = current_page(page)
+    page.locator("[data-page-next]").dispatch_event("click")
+    moved = current_page(page) != before
+    assert moved or not required, f"Next did not leave the {before} page"
+    return moved
+
+
+def locked(link):
+    """Whether a step-bar segment is not yet available (#330)."""
+    return link.get_attribute("aria-disabled") == "true"
+
+
 def show(page, locator):
     """Open the Family form page that holds ``locator`` and return it.
 
     The form shows one page at a time; other pages stay in the DOM but hidden.
     This uses the page's own step-bar segment, so it follows the same code path
-    as a Family jumping to a page. It dispatches the click directly: these tests
-    exercise their own behavior, and real navigation is covered in
-    test_family_pages.py.
+    as a Family jumping to a page. A Family cannot jump past the furthest page
+    reached (#330), so a later page is reached with Next first, as a Family
+    would. It dispatches the clicks directly: these tests exercise their own
+    behavior, and real navigation is covered in test_family_pages.py.
     """
     key = locator.first.evaluate("e => e.closest('[data-page]')?.dataset.page || ''")
     if key and not locator.first.is_visible():
-        page.locator(f'[data-step-link="{key}"]').dispatch_event("click")
+        link = page.locator(f'[data-step-link="{key}"]')
+        while locked(link):
+            advance(page)
+        link.dispatch_event("click")
     return locator
 
 
-def visit_every_page(page):
-    """Open each form page once, as a Family must before Review."""
+def visit_every_page(page, *, required=True):
+    """Open each form page once, as a Family must before Review.
+
+    Segments already available are opened directly; the rest are reached with
+    Next from the page before, since the step bar never jumps ahead (#330).
+    Returns whether every page was reached: with ``required=False``, a page
+    whose own check blocks Next stops the walk there instead of failing.
+    """
     links = page.locator("[data-step-link]")
     # The step bar is built once the form loads; count only after it exists.
     expect(links.first).to_be_attached()
     for index in range(links.count()):
-        links.nth(index).dispatch_event("click")
+        if not locked(links.nth(index)):
+            links.nth(index).dispatch_event("click")
+        elif not advance(page, required=required):
+            return False
+    return True
 
 
 def review(page):
-    """Visit every form page, then select Review response on the last one."""
-    visit_every_page(page)
+    """Go to Review as a Family would, and select Review response.
+
+    A Family reaches Review only through every page (#330), so Next checks any
+    page not yet passed. When one of those has a problem, the Family stops on
+    that page with its errors shown, exactly as Next shows them, instead of
+    reaching Review; tests of Review-time checks then assert on those errors.
+    Returns whether Review response was selected, so such a test can say
+    which it expects.
+    """
+    if not visit_every_page(page, required=False):
+        return False
     page.get_by_role("button", name="Review response").click()
+    return True
 
 
 def unseen(locator):
@@ -328,7 +375,7 @@ def test_invalid_email_blur_and_answer_markup_stays_text(page, component_origin)
         "<img src=x onerror=alert(1)>"
     )
     expect(email).to_have_attribute("aria-invalid", "true")
-    review(page)
+    assert not review(page)
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     email.fill("valid@example.org")
     review(page)
