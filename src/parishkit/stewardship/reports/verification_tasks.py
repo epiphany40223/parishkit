@@ -4,7 +4,6 @@ from django.db import connection
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational, record_action
-from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.read_guards import (
     BACKGROUND_LIMITS,
     CampaignReadGuard,
@@ -214,9 +213,10 @@ def _execute(execution):
             actor_id=execution.claim.worker_id,
             subject_id=result.pk,
             campaign_id=request.campaign_id,
-            parish_id=CampaignConfiguration.objects.values_list(
-                "configuration__parish__id", flat=True
-            ).get(pk=request.timezone_configuration_id),
+            # The request pins an older configuration; a settings save while
+            # it is queued would make that Parish stale, so SQL derives the
+            # currently active owner in the INSERT (#344).
+            current_parish=True,
             context={
                 "count": len(differences),
                 "outcome": Outcome.SUCCEEDED,
