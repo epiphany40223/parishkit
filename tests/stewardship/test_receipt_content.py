@@ -57,12 +57,14 @@ def test_required_facts_and_optional_separate_block(testing):
     for value in (
         "Example Parish",
         "Annual census",
-        "+12025550100",
-        "https://example.org/",
         "November 1, 2026 at 1:30 AM EDT",
         "Parish-authored thanks.",
     ):
         assert value in result.html and value in result.text
+    # Contact details come from the parish-authored closing note, not a fixed
+    # "Questions:" line, and the facts are one compact paragraph.
+    assert "Questions:" not in result.html and "Questions:" not in result.text
+    assert "<br>Campaign: Annual census<br>" in result.html
     assert "A &amp; &lt;B&gt;" in result.html and "A & <B>" in result.text
     assert result.routed_recipients == (
         ("test@example.org",) if testing else result.intended_recipients

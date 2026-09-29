@@ -169,7 +169,7 @@ def test_confirmation_sample_includes_fixed_facts_and_selected_optional_block(
     path = f"/admin/campaign/{campaign.pk}/content/test/{template['id']}"
     row, _ = queue((service, browser, path, credential))
     for body in (row.mail["html"], row.mail["text"]):
-        assert "Submitted:" in body and "Questions:" in body
+        assert "Submitted:" in body and "Questions:" not in body
         assert "Optional follow-up." in body and "Family: Sample" in body
         assert "/access/" not in body
 

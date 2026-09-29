@@ -111,9 +111,9 @@ def render_receipt(
         f"Campaign: {values['campaign_name']}",
         f"Family: {values['family_name']}",
         f"Submitted: {stamp}",
-        f"Questions: {values['parish_phone']} — {values['parish_website']}",
     )
-    html += "".join("<p>" + escape(value) + "</p>" for value in facts)
+    # One compact paragraph, a line per fact, as the email signature does.
+    html += "<p>" + "<br>".join(escape(value) for value in facts) + "</p>"
     text += "\n\n" + "\n".join(facts)
     # Check the combined result as well: separate literals/substitutions cannot
     # assemble a reserved credential marker in an otherwise valid template.
