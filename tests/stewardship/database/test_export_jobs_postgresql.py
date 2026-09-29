@@ -7,6 +7,10 @@ from django.db import IntegrityError, transaction
 
 from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.schemas import Action, ActorKind
+from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
@@ -26,6 +30,8 @@ from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.facts import FactUnavailable, publish_fact_set
 from parishkit.stewardship.reports.models import CampaignFactPin
 
+from ..test_request_patch import parish_patch
+from .campaign_builders import change
 from .fact_builders import fact_fixture, staged_facts
 from .test_background_grants_postgresql import task_login
 from .test_policy_postgresql import user
@@ -241,3 +247,53 @@ def test_cancel_wins_publication_after_rendering(scenario, monkeypatch):
     assert run_export(scenario, request)
     assert not ExportPublication.objects.exists()
     assert TaskRun.objects.get(pk=request.task_id).state == "cancelled"
+
+
+def activate_settings_change(store):
+    """Apply one ordinary configuration change; activation creates a new Parish."""
+    active = store.active()
+    result = change(store, active, uuid4(), parish_patch(active, name="Renamed"))
+    assert result.state == "applied"
+    return SystemConfiguration.objects.get().active_configuration.parish
+
+
+def assert_current_owner(action, request, parish):
+    """The retained event belongs to the Parish active when it was written."""
+    event = AuditEvent.objects.get(event_type=action.value, subject_id=request.pk)
+    assert (event.parish_id, event.ownership_scope) == (parish.pk, "parish")
+    assert event.campaign_reference == request.campaign_id
+    assert event.parish_id != request.configuration.parish.pk
+
+
+def test_download_after_settings_change_audits_current_parish(scenario):
+    """A settings save between request and download must not strand the export."""
+    store, principal, _, _ = scenario
+    request = request_export(scenario)
+    assert run_export(scenario, request)
+    parish = activate_settings_change(store)
+    grant = issue_download(store, principal.pk, request.pk)
+    publication = consume_download(store, principal.pk, grant.pk)
+    assert publication.request_id == request.pk
+    assert_current_owner(Action.EXPORT_DOWNLOADED, request, parish)
+
+
+def test_cancel_after_settings_change_audits_current_parish(scenario):
+    """Cancellation shares the export audit helper and its current attribution."""
+    store, principal, _, _ = scenario
+    request = request_export(scenario)
+    parish = activate_settings_change(store)
+    cancel_export(store, principal.pk, request.pk)
+    assert_current_owner(Action.EXPORT_CANCELLED, request, parish)
+
+
+def test_derived_parish_cannot_be_combined_with_an_explicit_parish(scenario):
+    """Derivation is exclusive, so no caller can smuggle a stale owner through."""
+    request = request_export(scenario)
+    with pytest.raises(ValueError, match="cannot also name"), transaction.atomic():
+        record_action(
+            Action.EXPORT_REQUESTED,
+            actor_kind=ActorKind.PORTAL_USER,
+            parish_id=request.configuration.parish.pk,
+            campaign_id=request.campaign_id,
+            current_parish=True,
+        )

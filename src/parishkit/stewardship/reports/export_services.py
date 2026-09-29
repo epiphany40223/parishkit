@@ -71,6 +71,10 @@ def audit(action, request, actor_id, *, outcome, count=None):
     Copy only those numeric identifiers and the privacy projection into retained
     audit context, so attribution survives later campaign-detail purge. One
     event avoids per-Ministry chained writes for parish-wide exports.
+
+    Ownership is the currently active Parish, derived in SQL, not the Parish of
+    the configuration pinned when the export was requested: a later settings
+    change would otherwise make every download and cancel fail attribution.
     """
     context = {"outcome": outcome}
     if count is not None:
@@ -86,7 +90,7 @@ def audit(action, request, actor_id, *, outcome, count=None):
         actor_kind=ActorKind.PORTAL_USER,
         actor_id=actor_id,
         subject_id=request.pk,
-        parish_id=request.configuration.parish.pk,
+        current_parish=True,
         campaign_id=request.campaign_id,
         context=context,
     )

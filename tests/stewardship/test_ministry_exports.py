@@ -81,7 +81,9 @@ def test_shared_audit_preserves_each_request_model(monkeypatch, kind):
     assert actual_action == Action.EXPORT_REQUESTED
     assert evidence["subject_id"] == request.pk
     assert evidence["campaign_id"] == request.campaign_id
-    assert evidence["parish_id"] == configuration.parish.pk
+    # Ownership is derived in SQL from the active Parish, never the pinned one.
+    assert evidence["current_parish"] is True
+    assert "parish_id" not in evidence
     assert evidence["actor_id"] == actor
     assert evidence["context"] == (
         {"outcome": Outcome.STARTED, "count": 1}
