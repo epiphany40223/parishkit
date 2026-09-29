@@ -582,9 +582,11 @@ more once the recipients of the last 24 hours' accepted or uncertain
 submissions reach the deployment limit, stopping bulk invitations and
 reminders earlier so receipts, digests and alerts keep a reserve; capped mail
 waits as a hold, not a failed attempt. A provider refusal at Gmail's own
-mailbox-wide daily or rate limit defers the message without spending its
-attempt budget, suppressing an address, or counting as a provider outage, for
-at most 48 hours; see
+daily or rate limit defers the message without spending its attempt budget,
+suppressing an address, or counting as a provider outage; a rate limit in
+reply to one message's DATA holds only that message, not all sending. It
+fails visibly after 48 hours of continuous limit refusals once no mail has
+been accepted in the last 24 hours, and after 7 days in any case; see
 [Family mail dispatch](../../../guides/stewardship-family-mail-dispatch.md).
 
 Before provider submission the exact non-secret message content and intended/

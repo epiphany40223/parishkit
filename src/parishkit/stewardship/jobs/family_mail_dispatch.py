@@ -8,9 +8,11 @@ from django.db import connection, transaction
 from django.db.models import F, Func, IntegerField, Sum
 from django.db.models.functions import Now
 
+from parishkit.logging import log_extra
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
+    FamilyCampaign,
 )
 from parishkit.stewardship.campaigns.family_schedule_planning import (
     _planning_scope,
@@ -28,6 +30,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
+    ProviderHealth,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StorageInvariantError
@@ -75,10 +78,18 @@ RESERVED_SENDS = 200
 BULK_PURPOSES = frozenset({"initial", "reminder", "family_test"})
 # How long a Gmail sending-limit refusal holds the refused message: the daily
 # limit is re-probed hourly as the rolling day moves on; a rate limit clears
-# within minutes. A message refused at a limit for LIMIT_GIVE_UP keeps failing
-# for some other reason, so it then fails visibly like any exhausted retry.
-LIMIT_RETRY_SECONDS = {"daily": 3600, "rate": 900}
+# within minutes. Only the mailbox-wide limits also pause all other sending; a
+# rate limit answering one message's DATA ("message") holds that message only.
+# A message refused at a limit for LIMIT_GIVE_UP while no mail
+# was accepted in the last ACCEPTANCE_WINDOW keeps failing for some other
+# reason, so it then fails visibly like any exhausted retry. Recent acceptances
+# mean the queue is still draining past a real but partial limit, so the
+# message keeps waiting, but never past LIMIT_GIVE_UP_ABSOLUTE.
+LIMIT_RETRY_SECONDS = {"daily": 3600, "rate": 900, "message": 900}
+MAILBOX_LIMITS = frozenset({"daily", "rate"})
 LIMIT_GIVE_UP = timedelta(hours=48)
+LIMIT_GIVE_UP_ABSOLUTE = timedelta(days=7)
+ACCEPTANCE_WINDOW = timedelta(hours=24)
 # How long a message found over this deployment's own daily limit waits
 # before it is looked at again.
 CAPPED_RETRY_SECONDS = 900
@@ -129,22 +140,51 @@ def over_daily_limit(purpose, sent, recipients=1):
     return sent + recipients > limit
 
 
-def limit_history(message):
-    """Count a message's earlier sending-limit refusals and when the current run began.
+# Stored evidence is sorted compact JSON, so health is its first member (see
+# mail_health.health_filter).
+SHARED_FAULT = '{"health":"unavailable",'
 
-    Stored evidence deliberately never names a limit. A limit refusal is
-    recognized instead as a submission outcome whose Task then deferred in the
-    RECONCILING phase (see family_mail_delivery_tasks._execute), matched by the
-    attempt's (run, fence). Return ``(count, started)``: every limit refusal so
-    far, and the time of the first one in the current unbroken run of them. Any
-    other provider outcome, or a staff retry of a failed delivery, ends a run.
+
+def shared_fault(reason, evidence):
+    """Whether a stored outcome was a definitely unsent shared outage.
+
+    Only a retryable (unavailable or transient) result counts: an uncertain
+    one with unavailable health is never retried, so it is never spared.
+    """
+    return reason in {"smtp_unavailable", "smtp_transient"} and (
+        evidence or ""
+    ).startswith(SHARED_FAULT)
+
+
+def limit_history(message):
+    """Count a message's earlier spared outcomes and when its limit run began.
+
+    Two provider outcomes are not the message's fault and are spared from its
+    attempt budget: a shared outage (stored with unavailable health) and a
+    sending-limit refusal. Stored evidence deliberately never names a limit,
+    so a limit refusal is recognized instead as a healthy submission outcome
+    whose Task then deferred in the RECONCILING phase (see
+    family_mail_delivery_tasks._execute), matched by the attempt's (run,
+    fence). Return ``(spared, started, first)``: every spared outcome so far,
+    the time of the first limit refusal in the current unbroken run of them,
+    and the time of the message's first provider outcome since it was last
+    retried by staff. Any other provider outcome, or a staff retry of a
+    failed delivery, ends a limit run.
     """
     events = list(
         OutboxEvent.objects.filter(message_id=message.pk)
         .order_by("version")
-        .values_list("action", "previous_state", "run_id", "task_fence", "created_at")
+        .values_list(
+            "action",
+            "previous_state",
+            "run_id",
+            "task_fence",
+            "created_at",
+            "reason",
+            "evidence_note",
+        )
     )
-    runs = {run for _, _, run, _, _ in events if run is not None}
+    runs = {event[2] for event in events if event[2] is not None}
     limited = set(
         TaskRunEvent.objects.filter(
             run_id__in=runs,
@@ -152,26 +192,36 @@ def limit_history(message):
             phase=TaskPhase.RECONCILING,
         ).values_list("run_id", "fence")
     )
-    return limit_run(events, limited)
+    return limit_run(
+        [(*event[:5], shared_fault(*event[5:])) for event in events],
+        limited,
+    )
 
 
 def limit_run(events, limited):
     """The pure walk behind ``limit_history`` (see there), kept separately testable.
 
-    ``events`` are ``(action, previous_state, run, fence, created)`` in version
-    order; ``limited`` is the set of ``(run, fence)`` pairs deferred at a limit.
+    ``events`` are ``(action, previous_state, run, fence, created, shared)`` in
+    version order, ``shared`` marking a shared-outage result; ``limited`` is
+    the set of ``(run, fence)`` pairs whose Task deferred as a hold.
     """
-    count, started = 0, None
-    for action, previous, run, fence, created in events:
+    spared, started, first = 0, None, None
+    for action, previous, run, fence, created, shared in events:
         if action == DeliveryAction.RETRY_FAILED.value:
-            started = None
+            # A staff retry starts the message's give-up clocks afresh.
+            started = first = None
         elif previous == "submitting":
-            if (run, fence) in limited:
-                count += 1
+            first = first or created
+            if shared:
+                # Outage deferrals are holds too, but never limit refusals.
+                spared += 1
+                started = None
+            elif (run, fence) in limited:
+                spared += 1
                 started = started or created
             else:
                 started = None
-    return count, started
+    return spared, started, first
 
 
 def accepted_since(instant):
@@ -181,36 +231,83 @@ def accepted_since(instant):
     ).exists()
 
 
+def failure_identity(message_id):
+    """The message id and Family DUID (None for staff mail) a failure log names.
+
+    Neither is personal data, so an operator can find the failed message
+    without the log ever carrying an address or a name.
+    """
+    family = (
+        OutboxMessage.objects.filter(pk=message_id)
+        .values_list("family_id", flat=True)
+        .first()
+    )
+    duid = (
+        FamilyCampaign.objects.filter(pk=family)
+        .values_list("family_duid", flat=True)
+        .first()
+        if family
+        else None
+    )
+    return {"message": message_id, "family_duid": duid}
+
+
 def budget_spent(message, result):
     """Whether this non-acceptance ends the message's automatic retries.
 
-    Limit refusals are not the message's fault: they are left out of the
-    attempt budget, and instead a message refused at a limit continuously for
-    LIMIT_GIVE_UP fails visibly.
+    Limit refusals and shared outages are not the message's fault: they are
+    left out of the attempt budget. Instead a message refused at a limit
+    continuously for LIMIT_GIVE_UP fails visibly, unless other mail was
+    accepted recently, and in any case after LIMIT_GIVE_UP_ABSOLUTE; a message
+    kept unsent by outages fails LIMIT_GIVE_UP_ABSOLUTE after its first
+    provider outcome since any staff retry. (The delivery circuit, not this
+    budget, keeps a long outage from probing with every queued message.)
     """
-    count, started = limit_history(message)
+    spared, started, first = limit_history(message)
+    now = database_now()
+    if result.limit is None and result.health is ProviderHealth.UNAVAILABLE:
+        if first is None or now - first <= LIMIT_GIVE_UP_ABSOLUTE:
+            return False
+        _log_give_up(message, now - first, "the mail provider was unavailable")
+        return True
     if result.limit is None:
-        return message.attempt - count >= MAX_ATTEMPTS
-    if (
-        started is None
-        or database_now() - started <= LIMIT_GIVE_UP
+        return message.attempt - spared >= MAX_ATTEMPTS
+    if started is None:
+        return False
+    waited = now - started
+    if waited <= LIMIT_GIVE_UP or (
+        waited <= LIMIT_GIVE_UP_ABSOLUTE
         # While other mail is still being accepted, the limit is real but
         # partial (for example Google's cap is lower than ours): the queue is
         # draining, so this message keeps waiting its turn. Scoped like the
-        # daily count, to the whole sending mailbox.
-        or accepted_since(started)
+        # daily count, to the whole sending mailbox, and to recent acceptances
+        # only, so one early acceptance cannot keep the message waiting.
+        and accepted_since(max(started, now - ACCEPTANCE_WINDOW))
     ):
         return False
-    # Logged only once the failure commits, so a claim that turns out stale
-    # (and rolls back) never raises a false alarm.
+    _log_give_up(message, waited, "Google refused it at a sending limit")
+    return True
+
+
+def _log_give_up(message, waited, why):
+    """Log, once the failure commits, that a message waited too long and failed.
+
+    A claim that turns out stale (and rolls back) then raises no false alarm.
+    The task id is the part the production log formatter keeps; the rest
+    shows with debug logging.
+    """
+    identity = failure_identity(message.pk)
     transaction.on_commit(
         lambda: LOG.critical(
-            "Mail was refused at a Google sending limit for over %d hours and has "
-            "failed; review the mail provider and retry it.",
-            LIMIT_GIVE_UP // timedelta(hours=1),
+            "Mail message %s (Family DUID %s) has failed after %d hours in "
+            "which %s; review the mail provider and retry it.",
+            identity["message"],
+            identity["family_duid"],
+            waited // timedelta(hours=1),
+            why,
+            extra=log_extra({"task_id": message.task_id}),
         )
     )
-    return True
 
 
 def bound_dispatch(status):

@@ -6,6 +6,7 @@ from threading import Event
 import pytest
 from django.utils import timezone
 
+from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
     ScheduleOccurrence,
@@ -150,8 +151,13 @@ def test_an_old_message_is_not_failed_by_its_first_limit_refusal(
 def test_a_limit_refused_continuously_fails_visibly(
     dispatch_worker,  # noqa: F811
     monkeypatch,
+    caplog,
 ):
-    """A second limit refusal after LIMIT_GIVE_UP in one run fails the message."""
+    """A second limit refusal after LIMIT_GIVE_UP in one run fails the message.
+
+    The failure log names the message and its Family DUID, never an address,
+    and carries the task id the production log formatter keeps.
+    """
     harness, path = dispatch_worker
     calls = []
     monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
@@ -168,6 +174,37 @@ def test_a_limit_refused_continuously_fails_visibly(
         deliver(harness, path, message)
     message.refresh_from_db()
     assert len(calls) == 2 and message.state == "permanent_failure"
+    assert_names_message(caplog, message, "has failed")
+
+
+def assert_names_message(caplog, message, words):
+    """The one failure log naming ``message`` by id, DUID and task, no address."""
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    (record,) = [r for r in caplog.records if words in r.getMessage()]
+    text = record.getMessage()
+    assert str(message.pk) in text and f"Family DUID {duid}" in text
+    assert "@" not in text
+    assert record.extra == {"task_id": message.task_id}
+
+
+def test_a_preparation_failure_log_names_the_message(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+    caplog,
+):
+    """Exhausted preparation retries name the message, its Family and task."""
+    harness, path = dispatch_worker
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("synthetic preparation failure")
+
+    monkeypatch.setattr(f"{TASKS}.begin_submission", broken)
+    monkeypatch.setattr(f"{TASKS}.MAX_ATTEMPTS", 1)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+    assert_names_message(caplog, message, "preparation failed")
 
 
 def test_no_give_up_while_other_mail_is_accepted(
@@ -221,7 +258,7 @@ def test_limit_refusals_do_not_count_toward_the_attempt_budget(
     assert len(calls) == 3 and message.attempt == 3
     assert message.state == "retry_wait"
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
-        assert family_mail_dispatch.limit_history(message)[0] == 2
+        assert family_mail_dispatch.limit_history(message)[:2] == (2, None)
 
 
 def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
@@ -234,21 +271,29 @@ def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
     # Pairs whose Task deferred in RECONCILING: the limit refusals. The last
     # limit refusal (fence 5) gave up and failed, so its Task never deferred.
     limited = {("r", 1), ("r", 2), ("r", 4)}
+    # An outage deferral (fence 7) is a hold too, but never a limit refusal.
+    limited |= {("r", 7)}
     outcome = [
-        ("retry_unaccepted", "submitting", "r", 1, t[0]),  # limit
-        ("retry_unaccepted", "submitting", "r", 2, t[1]),  # limit
-        ("retry_unaccepted", "submitting", "r", 3, t[2]),  # other transient
-        ("retry_unaccepted", "submitting", "r", 4, t[3]),  # limit
-        ("retry_unaccepted", "submitting", "r", 6, t[4]),  # other transient
-        ("retry_failed", "permanent_failure", None, None, t[5]),  # staff retry
+        ("retry_unaccepted", "submitting", "r", 1, t[0], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 2, t[1], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 3, t[2], False),  # other transient
+        ("retry_unaccepted", "submitting", "r", 4, t[3], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 6, t[4], False),  # other transient
+        ("retry_failed", "permanent_failure", None, None, t[5], False),  # staff
+        ("retry_unaccepted", "submitting", "r", 7, t[6], True),  # outage
     ]
-    assert limit_run(outcome[:2], limited) == (2, t[0])
-    assert limit_run(outcome[:3], limited) == (2, None)
-    assert limit_run(outcome[:4], limited) == (3, t[3])
-    assert limit_run(outcome[:5], limited) == (3, None)
-    assert limit_run(outcome[:4] + outcome[5:], limited) == (3, None)
+    assert limit_run(outcome[:2], limited) == (2, t[0], t[0])
+    assert limit_run(outcome[:3], limited) == (2, None, t[0])
+    assert limit_run(outcome[:4], limited) == (3, t[3], t[0])
+    assert limit_run(outcome[:5], limited) == (3, None, t[0])
+    # A staff retry also restarts the outage clock (the 7-day cap).
+    assert limit_run(outcome[:4] + outcome[5:6], limited) == (3, None, None)
+    assert limit_run(outcome[:4] + outcome[5:7], limited) == (4, None, t[6])
+    # An outage is spared from the budget and ends a limit run.
+    assert limit_run(outcome[3:4] + outcome[6:], limited) == (2, None, t[3])
     # Submit events themselves (previous state pending) are not outcomes.
-    assert limit_run([("submit", "pending", "r", 1, t[0])], limited) == (0, None)
+    pending = [("submit", "pending", "r", 1, t[0], False)]
+    assert limit_run(pending, limited) == (0, None, None)
 
 
 @pytest.mark.parametrize(
@@ -388,3 +433,139 @@ def test_accepted_since_reads_real_acceptances(family_mail):  # noqa: F811
             assert not family_mail_dispatch.accepted_since(
                 timezone.now() + timedelta(minutes=1)
             )
+
+
+@pytest.mark.parametrize(
+    "reason,evidence,shared",
+    [
+        ("smtp_unavailable", '{"health":"unavailable","protocol":1}', True),
+        ("smtp_transient", '{"health":"unavailable","protocol":1}', True),
+        # An uncertain result is never retried, so it is never spared.
+        ("smtp_delivery_unknown", '{"health":"unavailable","protocol":1}', False),
+        ("smtp_transient", '{"health":"healthy","protocol":1}', False),
+        ("smtp_transient", None, False),
+    ],
+)
+def test_only_retryable_outage_results_are_shared_faults(reason, evidence, shared):
+    """The outage inference needs both unavailable health and a retryable result."""
+    assert family_mail_dispatch.shared_fault(reason, evidence) is shared
+
+
+def test_only_recent_acceptances_keep_a_limited_message_waiting(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Past LIMIT_GIVE_UP, only acceptances inside the window count as draining.
+
+    One acceptance soon after the run began must not keep a message waiting
+    for the rest of its life.
+    """
+    harness, path = dispatch_worker
+    calls, seen = [], []
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "ACCEPTANCE_WINDOW", timedelta(0))
+    monkeypatch.setattr(
+        family_mail_dispatch, "accepted_since", lambda instant: seen.append(instant)
+    )
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        Event().wait(1.1)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    task = TaskRun.objects.get(pk=message.task_id)
+    started = TaskRunEvent.objects.filter(run_id=task.pk).earliest("version")
+    # The window (now), not the start of the run a second earlier, is asked.
+    assert len(seen) == 1 and seen[0] > started.created_at + timedelta(seconds=1)
+    assert message.state == "permanent_failure"
+
+
+def test_the_absolute_cap_fails_even_while_mail_flows(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Recent acceptances never keep a limited message waiting past the cap."""
+    harness, path = dispatch_worker
+    calls = []
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP_ABSOLUTE", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "accepted_since", lambda _: True)
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        Event().wait(1.1)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert len(calls) == 2 and message.state == "permanent_failure"
+
+
+def test_a_data_rate_refusal_waits_without_pausing_other_mail(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """The same message refused at DATA with 421 4.7.x, over and over.
+
+    It is a per-message limit (see test_a_rate_refusal_of_data_is_per_message):
+    far more refusals than the attempt budget leave it waiting, not failed,
+    and the worker's circuit never holds, so other Families' mail flows.
+    """
+    harness, path = dispatch_worker
+    calls = []
+    refused = FamilyDeliveryResult(
+        Status.TRANSIENT, 1, health=ProviderHealth.HEALTHY, limit="message"
+    )
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(refused, calls))
+    monkeypatch.setattr(family_mail_dispatch, "MAX_ATTEMPTS", 2)
+    fast = {"daily": 1, "rate": 1, "message": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        for _ in range(4):
+            owner = deliver(harness, path, message)
+            circuit = owner.admit.keywords["circuit"]
+            assert circuit.limit_remaining() == 0 and not circuit.blocks_new_send()
+            Event().wait(1.1)
+    message.refresh_from_db()
+    assert len(calls) == 4 and message.state == "retry_wait"
+    assert TaskRun.objects.get(pk=message.task_id).state == "retry_wait"
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        assert family_mail_dispatch.limit_history(message)[0] == 4
+
+
+def test_a_long_outage_fails_no_message(dispatch_worker, monkeypatch):  # noqa: F811
+    """Outage results are definitely unsent shared faults, never the message's.
+
+    More of them than the attempt budget leave the message and its Task
+    waiting; only LIMIT_GIVE_UP_ABSOLUTE after its first outcome does it fail.
+    """
+    harness, path = dispatch_worker
+    calls = []
+    outage = FamilyDeliveryResult(Status.UNAVAILABLE, 1)
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(outage, calls))
+    monkeypatch.setattr(family_mail_dispatch, "MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(family_mail_dispatch, "RETRY_BASE_SECONDS", 1)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        for attempt in range(3):
+            # A fresh worker each time: this is about the budget, not the pause.
+            deliver(harness, path, message)
+            Event().wait(2**attempt + 0.1)
+        message.refresh_from_db()
+        assert message.state == "retry_wait" and message.attempt == 3
+        task = TaskRun.objects.get(pk=message.task_id)
+        assert task.state == "retry_wait"
+        monkeypatch.setattr(
+            family_mail_dispatch, "LIMIT_GIVE_UP_ABSOLUTE", timedelta(0)
+        )
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert len(calls) == 4 and message.state == "permanent_failure"

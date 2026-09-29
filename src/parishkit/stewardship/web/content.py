@@ -298,6 +298,19 @@ def _normalize(clean):
     return _serialize(_flow(parser.root[2]))
 
 
+def text_html(value):
+    """Escape plain text for HTML exactly as the sanitizer writes text.
+
+    Server-built fragments (receipt facts, Testing banners) are compared
+    against sanitizer output by the delivery check, so they must match it:
+    quotes stay literal, a non-breaking space (common in names pasted from
+    word processors) is written as ``&nbsp;``, and CR or CRLF line endings
+    become LF, as the HTML parser normalizes them.
+    """
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    return escape(value, quote=False).replace("\u00a0", "&nbsp;")
+
+
 def sanitize_html(value):
     """No images, styles, forms, event handlers or executable URL schemes.
 

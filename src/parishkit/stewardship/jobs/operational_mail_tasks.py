@@ -296,9 +296,9 @@ def _execute(execution, *, store, credential_path, circuit, owner):
             "%s email provider unavailable; further attempts are held.", owner.label
         )
     if outcome.state.value == "retry_wait":
-        if result.limit is not None:
-            # A Gmail sending-limit deferral is an admission hold, not a spent
-            # preparation attempt (see preparation_attempts).
+        if result.limit is not None or result.health is ProviderHealth.UNAVAILABLE:
+            # A Gmail sending-limit or shared-outage deferral is an admission
+            # hold, not a spent preparation attempt (see preparation_attempts).
             execution.progress(0, 0, phase=TaskPhase.RECONCILING)
         execution.transition(
             "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)

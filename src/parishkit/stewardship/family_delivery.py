@@ -53,20 +53,34 @@ class ProviderHealth(StrEnum):
 # the RFC 3463 enhanced status code that starts a reply line (the prose is
 # never retained). "5.4.5" is the daily user sending limit (despite its 5xx
 # code it clears as the rolling day moves on). "421 4.7.x" is Gmail closing the
-# connection for a sending-rate limit, at any stage, and "454 4.7.x" in reply
-# to AUTH is its login-rate limit. Other 4.7.x replies (for example to one
-# RCPT) stay ordinary per-message or per-address temporary refusals.
+# connection for a sending-rate limit, and "454 4.7.x" in reply to AUTH is its
+# login-rate limit. A "421 4.7.x" answering DATA is still a rate limit (421
+# closes the session; a content or size refusal would be 5.7.x or 552), but it
+# is reported as "message": that message waits like any limit refusal without
+# pausing all other mail, so one message Gmail keeps refusing cannot hold up
+# the queue at every retry. Other 4.7.x replies (for example to one RCPT) stay
+# ordinary per-message or per-address temporary refusals.
+#
+# Any other 421 (the session is closing) and any 4.3.x or 4.4.x (a mail
+# system or network condition, such as "451 4.3.0 Temporary System Problem")
+# in reply to RCPT or DATA is the provider's temporary trouble, not the
+# message's: it is a "message" limit too, so a partial Google incident cannot
+# spend the attempt budget of every queued invitation. (At MAIL such replies
+# are already a shared outage; see _handshake_failure.)
 _DAILY_LIMIT = re.compile(rb"(?m)^[ \t]*5\.4\.5(?=\s|$)")
 _RATE_LIMIT = re.compile(rb"(?m)^[ \t]*4\.7\.[0-9]{1,3}(?=\s|$)")
-SENDING_LIMITS = frozenset({"daily", "rate"})
+_PROVIDER_TROUBLE = re.compile(rb"(?m)^[ \t]*4\.[34]\.[0-9]{1,3}(?=\s|$)")
+SENDING_LIMITS = frozenset({"daily", "rate", "message"})
 
 
 def sending_limit(reply, *, stage=""):
-    """Return "daily", "rate" or None for one raw ``(code, message)`` reply.
+    """Return "daily", "rate", "message" or None for one ``(code, message)`` reply.
 
     ``stage`` is the SMTP command answered ("auth" admits the login-rate
-    limit). Only the enhanced status code at the start of a reply line is
-    inspected; nothing from the reply is kept.
+    limit; "data" makes a rate limit "message"; "rcpt" and "data" admit
+    provider trouble as "message"). Only the enhanced
+    status code at the start of a reply line is inspected; nothing from the
+    reply is kept.
     """
     if type(reply) is not tuple or len(reply) != 2 or type(reply[0]) is not int:
         return None
@@ -78,8 +92,13 @@ def sending_limit(reply, *, stage=""):
     text = text[:1024]
     if 500 <= code <= 599 and _DAILY_LIMIT.search(text):
         return "daily"
-    if (code == 421 or (code == 454 and stage == "auth")) and _RATE_LIMIT.search(text):
-        return "rate"
+    rate = code == 421 or (code == 454 and stage == "auth")
+    if rate and _RATE_LIMIT.search(text):
+        return "message" if stage == "data" else "rate"
+    if stage in {"rcpt", "data"} and (
+        code == 421 or (400 <= code <= 499 and _PROVIDER_TROUBLE.search(text))
+    ):
+        return "message"
     return None
 
 

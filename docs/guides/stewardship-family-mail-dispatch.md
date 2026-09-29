@@ -34,24 +34,39 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   anonymous pipes. It emits only a closed result and recipient positions,
   never addresses, provider prose, tokens or keys. Missing/malformed/late
   acknowledgements remain uncertain.
-- Gmail's own mailbox-wide sending limits are recognized by the enhanced
-  status code that starts a reply line, never by prose elsewhere in it:
-  `5.4.5` on a 5xx reply (the daily user sending limit, at any stage), `421
-  4.7.x` (Gmail closing the connection for a sending rate, including at the
-  greeting and EHLO) and `454 4.7.x` in reply to AUTH (login rate). Other
-  `4.7.x` refusals, for example to one RCPT, stay ordinary per-address or
-  per-message temporary refusals. A limit refusal blames no address and trips
-  no outage circuit. The helper reports the limit on its output line only;
-  the stored attempt is an ordinary definitive non-acceptance by a healthy
-  provider. The message keeps its attempt budget and waits (an hour for the
-  daily limit, 15 minutes for a rate limit) while new sends pause for the same
-  time (plus up to five minutes of jitter), logged once per pause. Limit
-  refusals are left out of the attempt budget. A message refused at a limit
-  continuously for over 48 hours, measured from the first refusal of an
-  unbroken run (another outcome or a staff retry starts a new run), fails
-  visibly like any exhausted retry. Since stored evidence never names a limit,
-  a limit refusal is recognized by its Task's RECONCILING-phase deferral for
-  the same attempt.
+- Gmail's own sending limits are recognized by the enhanced status code that
+  starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
+  reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail
+  closing the connection for a sending rate) and `454 4.7.x` in reply to
+  AUTH (login rate). Other `4.7.x` refusals, for example to one RCPT, stay
+  ordinary per-address or per-message temporary refusals. A limit refusal
+  blames no address and trips no outage circuit. The helper reports the
+  limit on its output line only; the stored attempt is an ordinary definitive
+  non-acceptance by a healthy provider.
+- The refused message waits an hour for the daily limit and 15 minutes for a
+  rate limit (`LIMIT_RETRY_SECONDS`). The daily limit and a rate limit at
+  the greeting, EHLO, AUTH, MAIL or RCPT are mailbox-wide, so new sends pause
+  for the same time (plus up to five minutes of jitter), logged once per
+  pause. A `421 4.7.x` in reply to DATA (`"message"`) holds only that
+  message: it still closes the session, so it is a limit rather than a
+  content refusal (which would be 5.7.x or 552), but pausing all Family mail
+  at every retry of one message Gmail keeps refusing would stall the queue.
+  Any other `421`, and any `4.3.x` or `4.4.x` reply (such as `451 4.3.0
+  Temporary System Problem`), in reply to RCPT or DATA is the provider's
+  temporary trouble and is a `"message"` limit too, so a partial Google
+  incident cannot spend every queued message's attempt budget. Per-address
+  `45x 4.7.x` RCPT refusals are unchanged.
+- Limit refusals are left out of the attempt budget. A message refused at a
+  limit continuously for over 48 hours (`LIMIT_GIVE_UP`), measured from the
+  first refusal of an unbroken run (another outcome or a staff retry starts
+  a new run), fails visibly like any exhausted retry, but only while no mail
+  from the sending mailbox was accepted in the last 24 hours
+  (`ACCEPTANCE_WINDOW`): recent acceptances mean the queue is still draining
+  past a real but partial limit, so the message keeps its place. After 7
+  days (`LIMIT_GIVE_UP_ABSOLUTE`) it fails regardless. The failure log names
+  the message id and Family DUID, never an address. Since stored evidence
+  never names a limit, a limit refusal is recognized by its Task's
+  RECONCILING-phase deferral for the same attempt, with healthy evidence.
 - Stewardship also stops before Google does. Google limits a mailbox per
   rolling 24 hours to about 2,000 messages and 2,000 unique external
   recipients (see Google's Gmail sending limits), so Stewardship counts the
@@ -77,13 +92,24 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   retains them and blocks automatic resend. Task abandonment plus elapsed
   provider deadline is uncertainty, not proof of non-acceptance.
 - Shared temporary token/connection/handshake failures retain a definite-unsent
-  retry outcome and impose a 60-second process-wide new-send cooldown. Three
-  consecutive shared outages stop that sending run and log CRITICAL. An
-  observed healthy provider result resets the consecutive-failure count; local
-  unobserved outcomes do not. No result can undo an existing halt. Deterministic
-  shared TLS/configuration/protocol faults
-  stop immediately. Restart resets this process-owned circuit; BG-10 owns
-  durable operational escalation. Already-submitted outcomes can always drain.
+  retry outcome and impose a 60-second process-wide new-send cooldown. Such
+  an outage result is not the message's fault, so it is left out of the
+  attempt budget; a message kept unsent only by outages fails 7 days
+  (`LIMIT_GIVE_UP_ABSOLUTE`) after its first provider outcome (or its last
+  staff retry). Three
+  consecutive shared outages pause that sending run for 10 minutes
+  (`OUTAGE_RECOVERY_SECONDS`). After a pause exactly one message probes the
+  provider, and one more outage result pauses again at once, so a long
+  outage spends one probe per pause. The first pause since a healthy result
+  is logged CRITICAL and later ones WARNING. An observed healthy provider
+  result resets the consecutive-failure count; local unobserved outcomes do
+  not. No result can shorten an existing pause. Deterministic shared
+  TLS/configuration/protocol faults (SYSTEMIC) stop the run immediately and
+  stay stopped until the process restarts, since waiting cannot fix them.
+  The pause and the stop are process-local; the durable record is BG-10's
+  `mail_provider_failed` incident, which the same stored outcomes open and
+  the first healthy outcome after the pause resolves. Already-submitted
+  outcomes can always drain.
 - Delivery certainty and provider health are separate closed values in the
   private IPC and SQL evidence. A DATA connection fault can be both uncertain
   delivery and an unhealthy provider; it never becomes a safe resend. Earlier

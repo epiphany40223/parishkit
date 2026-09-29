@@ -442,6 +442,7 @@ DAILY = (
     b" Gmail sending limits go to https://support.google.com/a/answer/166852",
 )
 RATE = (421, b"4.7.0 Try again later, closing connection. (EHLO) - gsmtp")
+TROUBLE = (451, b"4.3.0 Temporary System Problem. Try again later. - gsmtp")
 LOGINS = (454, b"4.7.0 Too many login attempts, please try again later. - gsmtp")
 
 
@@ -459,6 +460,15 @@ LOGINS = (454, b"4.7.0 Too many login attempts, please try again later. - gsmtp"
         (RATE, "ehlo", "rate"),
         (RATE, "rcpt", "rate"),
         (LOGINS, "auth", "rate"),
+        # A 421 answering DATA holds this one message, not the mailbox.
+        (RATE, "data", "message"),
+        # Provider trouble at RCPT or DATA holds the message, not an address.
+        ((451, b"4.3.0 Temporary System Problem. Try again later."), "data", "message"),
+        ((451, b"4.4.2 Timeout - closing connection"), "rcpt", "message"),
+        ((421, b"Service not available"), "data", "message"),
+        ((421, b"Service not available"), "rcpt", "message"),
+        ((451, b"4.3.0 Temporary System Problem"), "", None),
+        (DAILY, "data", "daily"),
         # Login throttling is mailbox-wide only in reply to AUTH.
         (LOGINS, "rcpt", None),
         # Other 4.7.x replies stay ordinary per-message temporary refusals.
@@ -489,8 +499,13 @@ def test_sending_limit_reads_only_the_enhanced_status_code(reply, stage, kind):
     assert sending_limit(reply, stage=stage) == kind
 
 
-@pytest.mark.parametrize("step", ["mail", "rcpt0", "rcpt1", "data"])
-@pytest.mark.parametrize("reply,kind", [(DAILY, "daily"), (RATE, "rate")])
+@pytest.mark.parametrize(
+    "step,reply,kind",
+    [(step, DAILY, "daily") for step in ("mail", "rcpt0", "rcpt1", "data")]
+    + [(step, RATE, "rate") for step in ("mail", "rcpt0", "rcpt1")]
+    + [("data", RATE, "message")]
+    + [(step, TROUBLE, "message") for step in ("rcpt0", "rcpt1", "data")],
+)
 def test_a_sending_limit_defers_without_blaming_any_address(
     monkeypatch, step, reply, kind
 ):
@@ -585,3 +600,22 @@ def test_a_per_address_rate_refusal_stays_per_address(monkeypatch):
     )
     assert result.limit is None and result.status is Status.ACCEPTED
     assert result.transient == (0,) and "data" in seen
+
+
+@pytest.mark.parametrize("raised", [False, True])
+def test_a_rate_refusal_of_data_is_per_message(monkeypatch, raised):
+    """A 421 4.7.x answering DATA is a limit on this one message.
+
+    Like any limit it spares the attempt budget, but "message" never pauses
+    all Family mail, so one message Gmail keeps refusing cannot hold up the
+    queue.
+    """
+    if raised:
+        result, _ = delivery(
+            monkeypatch, failure="data", stage_error=smtplib.SMTPDataError(*RATE)
+        )
+    else:
+        result, _ = delivery(monkeypatch, replies={"data": RATE})
+    assert result == FamilyDeliveryResult(
+        Status.TRANSIENT, 2, health=ProviderHealth.HEALTHY, limit="message"
+    )

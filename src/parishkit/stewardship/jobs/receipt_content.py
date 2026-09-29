@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from html import escape
 
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import (
@@ -12,6 +11,7 @@ from parishkit.stewardship.web.content import (
     bounded_text,
     prepare_content,
     render_template,
+    text_html,
     validate_receipt_content,
 )
 
@@ -113,9 +113,9 @@ def render_receipt(
         f"Submitted: {stamp}",
     )
     # One compact paragraph, a line per fact, as the email signature does.
-    # quote=False: the delivery check compares against sanitizer output,
-    # which writes quotes literally, so "O'Brien" must not become &#x27;.
-    html += "<p>" + "<br>".join(escape(value, quote=False) for value in facts) + "</p>"
+    # Escaped as the sanitizer writes text, which the delivery check compares
+    # against: "O'Brien" must not become &#x27;, nor a pasted U+00A0 stay raw.
+    html += "<p>" + "<br>".join(text_html(value) for value in facts) + "</p>"
     text += "\n\n" + "\n".join(facts)
     # Check the combined result as well: separate literals/substitutions cannot
     # assemble a reserved credential marker in an otherwise valid template.

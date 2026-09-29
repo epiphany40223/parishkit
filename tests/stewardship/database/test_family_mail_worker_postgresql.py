@@ -1,5 +1,6 @@
 """Installed MAIL consumer, finite-provider boundary and maintained Task lifetime."""
 
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -55,14 +56,23 @@ def dispatch_worker(request, monkeypatch, tmp_path):
     return harness, path
 
 
-def deliver(harness, path, message):
-    """Execute the real maintained worker, including connection closure/rebinding."""
-    owner = delivery_handler(
+def family_owner(harness, path):
+    """The installed Family MAIL handler, with its own delivery circuit."""
+    return delivery_handler(
         harness.service.store,
         private=harness.rings.private,
         public_origin="http://localhost:8000",
         credential_path=path,
     )
+
+
+def deliver(harness, path, message, owner=None):
+    """Execute the real maintained worker, including connection closure/rebinding.
+
+    Pass ``owner`` to share one handler (and its circuit) across deliveries,
+    as the long-lived worker process does.
+    """
+    owner = owner or family_owner(harness, path)
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
         execution = claim_hint(
             message.task_id,
@@ -274,3 +284,69 @@ def test_definitive_retry_budget_ends_without_uncertain_resend(
     assert message.state == "permanent_failure" and message.attempt == 2
     assert message.sealed_substitutions is None
     assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+
+
+def test_an_outage_pause_lifts_after_its_cooldown(dispatch_worker, monkeypatch, caplog):
+    """Three outages pause the long-lived worker; after the cooldown mail flows.
+
+    Every Family purpose (invitations, reminders, receipts) shares this one
+    handler and circuit, so a short Google outage during a send no longer
+    stops all of them until someone restarts the mail worker. The pause is
+    recorded durably by the CRITICAL mail_provider_failed entry the stored
+    outcomes raise. After a pause one probe is sent; its failure pauses again
+    at once, logged as a WARNING rather than a second CRITICAL.
+    """
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.jobs import family_mail_dispatch
+
+    harness, path = dispatch_worker
+    clock = [1000.0]
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.monotonic",
+        lambda: clock[0],
+    )
+    monkeypatch.setattr(family_mail_dispatch, "RETRY_BASE_SECONDS", 1)
+    outage = FamilyDeliveryResult(Status.UNAVAILABLE, 1)
+    results = [outage] * 4 + [FamilyDeliveryResult(Status.ACCEPTED, 1)]
+    calls = []
+
+    def provider(value, settings, mail, **kwargs):
+        calls.append(mail.semantic_key)
+        return results[len(calls) - 1]
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.submit_family",
+        provider,
+    )
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        owner = family_owner(harness, path)
+        for attempt in range(3):
+            assert deliver(harness, path, message, owner) is owner
+            # Past both the one-minute probe spacing and the retry backoff.
+            clock[0] += 60
+            Event().wait(2**attempt + 0.1)
+        circuit = owner.admit.keywords["circuit"]
+        assert circuit.halted.is_set() and not circuit.stopped
+        assert OperationalLog.objects.filter(
+            event="mail_provider_failed", level="CRITICAL"
+        ).exists()
+        # The pause began at the third outage, one minute ago.
+        clock[0] += 600 - 60 - 1
+        # Still paused: admission refuses the claim, and nothing is sent.
+        with pytest.raises(PermissionError):
+            deliver(harness, path, message, owner)
+        clock[0] += 1
+        # The single probe fails: sending pauses again at once, quietly.
+        assert deliver(harness, path, message, owner) is owner
+        pauses = [r for r in caplog.records if "sending pauses for" in r.getMessage()]
+        assert [r.levelname for r in pauses] == ["CRITICAL", "WARNING"]
+        Event().wait(8.1)
+        clock[0] += 60
+        with pytest.raises(PermissionError):
+            deliver(harness, path, message, owner)
+        clock[0] += 600
+        assert deliver(harness, path, message, owner) is owner
+    message.refresh_from_db()
+    # Five provider results, four of them outages: none spent the budget.
+    assert len(calls) == 5 and message.state == "delivered"
