@@ -84,7 +84,11 @@ answers, using the rate-limited
 [activity keepalive](../architecture/spec.md#identity-and-session-security).
 Passive presence polling does not extend the session. The expiry warning offers
 continued interaction when the idle deadline can still be refreshed and states
-when the absolute four-hour deadline cannot be extended.
+when the absolute four-hour deadline cannot be extended. When the session ends,
+a single red notice says so (and that unsubmitted changes were not saved, or,
+after an uncertain submission, to sign in again to check it) with one "Sign in
+again" link; in Testing it sits below the Testing banner, which is always the
+top-most bar.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the

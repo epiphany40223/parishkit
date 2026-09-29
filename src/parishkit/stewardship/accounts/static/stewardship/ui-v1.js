@@ -1251,8 +1251,11 @@
     if (familyFinished) return;
     const now = Date.now() + offset;
     const remaining = Math.min(deadline, absolute) - now;
-    warning.hidden = remaining > 300000 || remaining <= 0;
-    expired.hidden = remaining > 0;
+    // Once the Family form has ended the session (data-expired), keep the
+    // notice shown even if the local timer still has time left.
+    const ended = expired.hasAttribute("data-expired");
+    warning.hidden = ended || remaining > 300000 || remaining <= 0;
+    expired.hidden = !ended && remaining > 0;
     if (remaining <= 0 && !expiryAnnounced && session.hasAttribute("data-family-session")) {
       expiryAnnounced = true;
       document.dispatchEvent(new Event("stewardship:family-expired"));

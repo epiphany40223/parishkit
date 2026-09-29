@@ -3,10 +3,12 @@
 {% block head %}<script src="{% static 'stewardship/phone-v1.js' %}" defer></script><script src="{% static 'stewardship/family-v1.js' %}" defer></script>{% endblock %}
 {% block content %}<section class="flow" data-family-session data-presence-section="welcome" data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
   <h1>{{ portal_title|default:_("Stewardship") }}</h1>
+  {% comment %}The Testing banner is always the top-most bar, above the session
+  notices, as in the rest of the Family and Admin portals.{% endcomment %}
+  {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
   <noscript><p class="notice">{% translate "To complete the Family response flow, enable JavaScript in a current or previous major version of Chrome, Edge, Firefox or Safari." %}</p></noscript>
   <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Changes that have not been submitted will be lost. The session cannot extend beyond its four-hour limit." %}</p>
-  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="/">{% translate "Sign in again" %}</a></p>
-  {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
+  <p id="session-expired" class="notice notice-error" role="alert" hidden><span data-session-expired-text>{% translate "Your session has ended." %}</span> <a href="/">{% translate "Sign in again" %}</a></p>
   <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
   <div id="family-flow" data-testing="{{ testing|yesno:'true,false' }}">
     {% comment %}Testing has no entry page: the form opens straight away and the

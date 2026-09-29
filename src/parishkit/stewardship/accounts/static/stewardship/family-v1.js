@@ -107,10 +107,17 @@
     clear();
     finished = true;
     cancel.hidden = true;
-    say(submissionAttempted ?
+    // The single red notice (family.html) says so and links to sign-in; a
+    // server rejection can end the session before the timer does. Only an
+    // uncertain submission changes its wording.
+    say("");
+    const notice = document.getElementById("session-expired");
+    notice.querySelector("[data-session-expired-text]").textContent = submissionAttempted ?
       "Your session has ended. If you just submitted, sign in again to check your last submission time." :
-      "Your session has ended. Unsubmitted changes have not been saved. Sign in again to continue.");
-    node("a", "Sign in again", root, {href: "/"});
+      "Your session has ended. Unsubmitted changes have not been saved.";
+    notice.dataset.expired = "";
+    notice.hidden = false;
+    document.getElementById("session-warning").hidden = true;
   }
   async function send(path, body) {
     const response = await fetch(path, {
@@ -1706,11 +1713,15 @@
       id: "family-nav-error", "data-nav-error": "", hidden: ""});
     const back = node("button", "Back", nav, {type: "button", class: "button-secondary", "data-page-back": ""});
     back.addEventListener("click", () => {
+      reviewPointerDown = false;
       const index = pages.findIndex((page) => page.key === currentPage);
       if (index > 0) showPage(pages[index - 1].key, {push: true});
     });
     const next = node("button", "Next", nav, {type: "button", "data-page-next": ""});
     next.addEventListener("click", () => {
+      // The press that deferred blur validation is over; a later outside click
+      // must validate as usual.
+      reviewPointerDown = false;
       const index = pages.findIndex((page) => page.key === currentPage);
       if (pageValid(pages[index])) showPage(pages[index + 1].key, {push: true});
     });
@@ -1731,9 +1742,12 @@
       const unvisited = form.last_submitted_display ? null :
         pages.find((page) => !visited.has(page.key));
       if (unvisited) {
-        showPage(unvisited.key, {push: true});
-        navNote("Please go through each page before reviewing. This one is next.",
-          unvisited.element.querySelector("h3"));
+        // Attach the note before focus moves, so the heading is announced
+        // together with its description.
+        showPage(unvisited.key, {push: true, focus: false});
+        const title = unvisited.element.querySelector("h3");
+        navNote("Please go through each page before reviewing. This one is next.", title);
+        focusTop(title);
         return;
       }
       const conflict = unresolvedConflict(editor);
