@@ -143,7 +143,7 @@ def form_payload(*, testing=False):
     }
 
 
-def prepare(page, origin, *, testing=False, submit=None):
+def prepare(page, origin, *, testing=False, submit=None, form=None):
     """Capture boundary traffic; presence is explicitly answer-free and separate."""
     page.clock.install(time=NOW)
     attempts = []
@@ -151,7 +151,7 @@ def prepare(page, origin, *, testing=False, submit=None):
     def begin(route):
         """Return fixture data only after the actual browser consent action."""
         attempts.append(route.request)
-        route.fulfill(json={"form": form_payload(testing=testing)})
+        route.fulfill(json={"form": form or form_payload(testing=testing)})
 
     page.route("**/family/form", begin)
     page.route(

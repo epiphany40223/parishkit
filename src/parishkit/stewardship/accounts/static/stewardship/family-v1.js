@@ -376,8 +376,8 @@
   function submittedBanner(parent) {
     // A returning Family learns when they last submitted and that submitting
     // again is fine: the most recent submission is the one the parish uses.
-    if (!form.last_submitted_display) return;
-    node("p", "You last submitted your renewal on " + form.last_submitted_display +
+    if (!form.last_submitted_display) return null;
+    return node("p", "You last submitted your renewal on " + form.last_submitted_display +
       ". You can review, change and submit again as many times as you like; " +
       "your most recent submission is the one we use.", parent,
       {class: "notice family-submitted", role: "status"});
@@ -1654,6 +1654,8 @@
     const page = pages.find((entry) => entry.key === key) || pages[0];
     currentPage = page.key;
     navNote("");
+    const lastSubmitted = root.querySelector(".family-submitted");
+    if (lastSubmitted) lastSubmitted.hidden = page.key !== "intro";
     pages.forEach((entry) => { entry.element.hidden = entry !== page; });
     const index = pages.indexOf(page);
     session.dataset.presenceSection = page.presence;
@@ -1740,6 +1742,10 @@
   }
   function edit(target = null) {
     heading(familyTitle(), "welcome");
+    // The "last submitted" notice sits above the Family heading (below the
+    // Testing banner, which is outside the form) and shows on Welcome only.
+    const lastSubmitted = submittedBanner(root);
+    if (lastSubmitted) root.prepend(lastSubmitted);
     pages = [];
     stepHeader(root);
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
@@ -1758,10 +1764,9 @@
     // The welcome text carries its own heading; keep "Welcome" only for
     // screen readers and focus, so it isn't shown twice.
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
-    submittedBanner(intro.element);
     artwork("welcome", intro.element, "family-page-icon");
-    // Without welcome text the visible "Welcome" heading follows the notice and
-    // icon, so the page reads notice, icon, heading or text either way.
+    // Without welcome text the visible "Welcome" heading follows the icon, so
+    // the page reads icon, then heading or text, either way.
     if (!form.content.welcome) intro.element.append(intro.element.querySelector("h3"));
     block("welcome", intro.element);
     const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});

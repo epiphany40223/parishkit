@@ -128,8 +128,8 @@ explanation below and the pledge's "intention only" statement.
 Optional campaign images appear when the Admin has set them for the current
 campaign: a small icon (about 96 CSS pixels) above the heading of the Member,
 financial and closing pages, and on the Welcome page below the returning-Family
-"last submitted" notice (or, without one, first), above the parish's intro text
-or, when there is none, above the "Welcome" heading.
+"last submitted" notice and the Family's name heading, above the parish's intro
+text or, when there is none, above the "Welcome" heading.
 The wide campaign banner is used in emails only, not on the Family pages. They are
 decorative (empty text alternatives), since the headings and text already carry
 their meaning, and scale down to fit a phone screen.
@@ -152,7 +152,8 @@ Steps are assembled from enabled modules:
 7. Additional information, when enabled.
 8. Review and final Submit.
 
-When the Family has submitted before, the welcome page opens with "You last
+When the Family has submitted before, the welcome page opens (above the
+Family's name heading, below the Testing banner) with "You last
 submitted your renewal on DATE AND TIME. You can review, change and submit
 again as many times as you like; your most recent submission is the one we
 use." The time is shown in the campaign's time zone. In Testing mode it reports
