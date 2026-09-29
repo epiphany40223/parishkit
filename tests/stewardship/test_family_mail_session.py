@@ -789,6 +789,24 @@ def test_the_transport_switch_selects_the_session(batched):
     assert scheduler.execute is _unavailable
 
 
+@pytest.mark.parametrize(
+    "transport,level", [("batched", "INFO"), ("per_message", "WARNING")]
+)
+def test_mail_dispatch_logs_its_transport_once(caplog, transport, level):
+    """The effective transport is visible in the mail worker's startup log."""
+    import logging
+
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        log_family_mail_transport,
+    )
+
+    with caplog.at_level(logging.INFO):
+        log_family_mail_transport(transport)
+    ((record,),) = [caplog.records]
+    assert record.levelname == level
+    assert ("per_message" in record.getMessage()) is (transport == "per_message")
+
+
 def test_only_reap_kills_a_retired_helper(gmail, timeouts, monkeypatch):
     """A laggard is killed by reap(), which runs before a message commits.
 

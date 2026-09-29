@@ -376,6 +376,22 @@ def delivery_handler(
     )
 
 
+def log_family_mail_transport(transport):
+    """Say once, at mail-dispatch startup, which Family mail transport is in use.
+
+    The fallback is a WARNING: it is slower, and it must not stay in effect
+    unnoticed after the operator meant to return to batched sending.
+    """
+    if transport == "per_message":
+        LOG.warning(
+            "Family mail uses one helper per message (the per_message fallback); "
+            "recreate mail-dispatch without PARISHKIT_STEWARDSHIP_FAMILY_MAIL_"
+            "TRANSPORT to return to batched sending."
+        )
+    else:
+        LOG.info("Family mail uses one batched helper per mail worker.")
+
+
 def _unavailable(execution):
     """A scheduler registration never grants private key or provider access."""
     raise PermissionError("Schedulers cannot submit Family mail.")

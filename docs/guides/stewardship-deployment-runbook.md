@@ -556,6 +556,12 @@ sequence with the commands that exist.
    raised the worker's SQL connection limit, which needs the one-time step
    in [worker connection limit](#worker-connection-limit-339).
 
+   The new image recreates `mail-dispatch`, which returns it to batched
+   Family mail; if the one-helper-per-message fallback is in use, put
+   `PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT=per_message` before this
+   `up --detach` as well
+   ([Falling back to one helper per message](stewardship-family-mail-dispatch.md#falling-back-to-one-helper-per-message)).
+
 Record the new release's complete `IMAGE@sha256:DIGEST` reference in the
 operators' notes, and keep the previous ones: a restore onto a new host
 pulls the image a set was taken under by that reference. The old image

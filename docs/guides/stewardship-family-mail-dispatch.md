@@ -59,32 +59,8 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   deadline kill before the `started` line leaves the message definitely
   unsent (an ordinary retry); a result that fully arrived before the kill
   is kept.
-- The transport has a fallback. `batched` is the default; `per_message` is
-  the one-helper-per-message transport from before #284, with the same
-  per-message outcomes, retries and limits, only slower. To switch the
-  running deployment, recreate only the mail worker with the variable
-  exported in the shell that runs Compose (the rendered Compose file passes
-  it to `mail-dispatch` only, and leaves it empty otherwise):
-
-  ```text
-  PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT=per_message docker compose ... up --detach --force-recreate mail-dispatch
-  ```
-
-  To return to batched sending, recreate it again without the variable:
-
-  ```text
-  docker compose ... up --detach --force-recreate mail-dispatch
-  ```
-
-  Recreating stops the worker gracefully: its in-flight message is settled,
-  or, if it cannot be, recovered like any other interrupted submission
-  (never resent blindly). The choice lasts only as long as that container,
-  so a later recreation without the variable returns to the deployment
-  setting. That setting is `family_mail_transport` in the deployment YAML
-  (see [deployment settings](../development/stewardship-deployment.md#schema-version-1));
-  it is rendered into each service's document, so changing it there takes
-  effect only with a reinstall, as the
-  [runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
+- The transport has an operator fallback to one helper per message; see
+  [Falling back to one helper per message](#falling-back-to-one-helper-per-message).
 - Gmail's own sending limits are recognized by the enhanced status code that
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail
@@ -177,6 +153,51 @@ Implementation and local correction validation of this dispatch boundary are
 complete; protected PR delivery is pending. All checks use synthetic
 providers and owned disposable databases; existing development databases are
 untouched. The follow-on Admin workflows and Gate 3 remain open.
+
+## Falling back to one helper per message
+
+`batched` is the default Family mail transport. `per_message` is the
+one-helper-per-message transport from before #284, with the same per-message
+outcomes, retries and limits, only slower. The mail worker logs which one is
+in effect when it starts: an INFO line for batched, a WARNING for the
+fallback.
+
+To switch the running deployment, recreate only the mail worker with the
+variable set for that one command. The rendered Compose file passes it to
+`mail-dispatch` only, and leaves it empty otherwise:
+
+```text
+PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT=per_message docker compose ... up --detach --force-recreate mail-dispatch
+```
+
+To return to batched sending, recreate it again without the variable:
+
+```text
+docker compose ... up --detach --force-recreate mail-dispatch
+```
+
+Recreating stops the worker gracefully: its in-flight message is settled,
+or, if it cannot be, recovered like any other interrupted submission (never
+resent blindly).
+
+The choice lasts only as long as that container. `restart mail-dispatch`
+keeps it, but **any recreation of `mail-dispatch` without the variable
+returns to batched sending**: an upgrade's `up --detach`, or any other `up`
+that recreates it. To stay on the fallback, put the same prefix on that
+command too, and check the startup log line afterwards. Replacing the
+mailbox key from the web recreates nothing: every message rereads the key,
+and a new key simply starts a fresh helper.
+
+Use the one-command prefix form shown above, never `export`. An exported
+variable stays in your shell, where `retarget-image` refuses to run while
+it is set, and an install run from that shell writes it into the
+deployment's rendered documents for good.
+
+The deployment YAML has the same setting, `family_mail_transport` (see the
+[deployment settings](../development/stewardship-deployment.md#schema-version-1)).
+It is rendered into each service's document, so changing it there takes
+effect only with a reinstall, as the
+[runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
 
 ## Fresh-install schema evidence
 
