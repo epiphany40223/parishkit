@@ -34,6 +34,7 @@ from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
 from . import campaign_builders
 from .auth_builders import signed_in
+from .campaign_builders import change
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -224,6 +225,87 @@ def test_organization_cannot_change_after_the_first_load(
     # The same organization still saves a key and other settings.
     assert save(working).status_code == 302
     assert SecretReplacementRequest.objects.count() == 1
+
+
+def installed(value):
+    """Check, install and acknowledge the saved key; return its request row."""
+    with identity("pk_stewardship_credential_parishsoft"):
+        assert value["installer"].run_once().state == "awaiting_ack"
+    with identity("pk_stewardship_worker"):
+        acknowledge_rotations(value["worker"], {})
+    with identity("pk_stewardship_credential_parishsoft"):
+        assert value["installer"].run_once().state == "applied"
+    return SecretReplacementRequest.objects.get()
+
+
+def test_failed_switch_is_an_error_and_finish_switching_recovers(working):
+    """An installed key whose automatic switch failed is an error with a fix.
+
+    Another settings change applied first makes the save's own selection
+    fail for good (``stale_base``). The key file is already in place, so
+    the refresh refuses the mismatch: the page must say so plainly, and
+    Finish switching must still work, carrying the settings the key was
+    checked against (#307 M1).
+    """
+    from parishkit.stewardship.accounts.integration_selection import switching
+
+    assert save(working, organization_id="54321").status_code == 302
+    row = installed(working)
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    store = working["service"].store
+    base = store.active()
+    parish = base.document()["sections"]["parish"][0]
+    change(
+        store,
+        base,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Renamed first"},
+            }
+        ],
+    )
+    result = install(working, selection.pk)
+    assert result.state == "failed" and result.failure_code == "stale_base"
+    # Meanwhile the installed key is not the selected one: consumers (the
+    # refresh compares exactly this) refuse it, and mail holds (see
+    # test_family_mail_worker_postgresql) because a key change is switching.
+    fingerprint = file_fingerprint(CANDIDATE)
+    assert _record(working)["values"]["credential_fingerprint"] != fingerprint
+    assert switching("parishsoft", fingerprint)
+    assert not switching("parishsoft", "0" * 64)
+    browser = working["browser"]
+    page = browser.get(URL).content.decode()
+    assert "switching to it did not finish" in page
+    assert "ParishSoft refreshes are stopped" in page
+    assert "notice-error" in page and 'role="alert"' in page
+    select = f"/admin/configuration/credentials/{row.pk}/select"
+    assert f'class="button" href="{select}"' in page
+    assert summary("parishsoft", _record(working)).kind == "unselected"
+    # Finish switching previews the original selection on today's settings.
+    preview = hidden(browser.get(select), "preview")
+    with identity("pk_stewardship_web"):
+        response = post(browser, select, {"action": "confirm", "preview": preview})
+    assert response.status_code == 302, response.content
+    assert b"Switching to it now" in browser.get(URL).content
+    finish = ConfigurationChangeRequest.objects.get(
+        pk=response["Location"].rsplit("/", 1)[-1]
+    )
+    assert install(working, finish.pk).state == "applied"
+    record = _record(working)["values"]
+    assert record["credential_fingerprint"] == fingerprint
+    assert record["settings"]["organization_id"] == "54321"
+    page = browser.get(URL).content
+    assert b"Key updated." in page and b"switching to it did not" not in page
+    assert (
+        store.active().document()["sections"]["parish"][0]["values"]["name"]
+        == "Renamed first"
+    )
 
 
 def test_rejected_key_keeps_the_old_one_and_says_so(working):

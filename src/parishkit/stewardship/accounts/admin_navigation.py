@@ -125,9 +125,6 @@ PAGES = {
     "branding_preview": Page("parish", _("Logo preview"), "branding_settings"),
     "integrations": Page("parish", _("Integrations")),
     "integration_settings": Page("parish", _("Integration"), "integrations"),
-    "replace_credential": Page(
-        "parish", _("Replace credential"), "integration_settings"
-    ),
     "credential_status": Page("parish", _("Credential change"), "integrations"),
     "select_credential": Page("parish", _("Choose credential"), "integrations"),
     "ministries": Page("parish", _("Ministry activity")),

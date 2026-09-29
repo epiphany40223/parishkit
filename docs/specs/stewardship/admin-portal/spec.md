@@ -501,7 +501,11 @@ that links back to the page that builds it, so one click starts a fresh review
 and nothing is saved in between. A finished key change (updated, failed,
 cancelled or expired) shows on its integration's page for one hour, and any
 Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
-one that is installed but not yet in use keeps showing until it is resolved.
+one that is installed but not selected (its automatic switch failed) is an
+error, not news: it says what is stopped (ParishSoft refreshes, email or Slack
+alerts) and offers **Finish switching to the new key**, and it keeps showing
+until it is resolved. Mail meanwhile waits without spending attempts; see the
+[credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 The history
 stays on the change's details page and in the audit log. The ParishSoft daily
 refresh time is shown only for the once-a-day frequency; for hourly and

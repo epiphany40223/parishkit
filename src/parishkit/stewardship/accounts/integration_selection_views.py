@@ -19,6 +19,7 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .integration_credentials import switch_patch
 from .integration_forms import LABELS
 from .integration_selection import (
     TARGETS,
@@ -49,8 +50,28 @@ def _preview_schema(request, request_id):
     return credential_request_schema(base.document())
 
 
+def _proposed(records, patch):
+    """The integration records as they would be once ``patch`` applies."""
+    item = patch[0]
+    target = item["values"].get("kind") or next(
+        kind for kind, row in records.items() if row["id"] == item["id"]
+    )
+    current = records.get(target, {"id": item["id"], "values": {}})
+    return records | {
+        target: {**current, "values": {**current["values"], **item["values"]}}
+    }
+
+
 def _selection(service, request_id):
-    """The original request is correlation, not authority or proof of current use."""
+    """Check the key can still be switched to, and return the patch that does it.
+
+    The original request is correlation, not authority or proof of current
+    use. The patch repeats the key's original selection on the current
+    settings (``switch_patch``), so **Finish switching** also recovers a
+    selection that failed. Returns the configuration, the receipt, the
+    currently selected fingerprint (None when the integration is not set up)
+    and the patch.
+    """
     configuration = editable_configuration(service)
     receipt = SecretReplacementRequest.objects.filter(
         pk=request_id,
@@ -60,21 +81,23 @@ def _selection(service, request_id):
     if receipt is None:
         raise LookupError("An acknowledged replacement is unavailable.")
     records = integration_records(configuration.active_configuration.canonical_document)
-    if receipt.target not in records:
-        raise StaleRecordError("This integration is no longer configured.")
+    record = records.get(receipt.target)
+    before = None if record is None else record["values"]["credential_fingerprint"]
+    if before == receipt.resulting_fingerprint:
+        return configuration, receipt, before, None
+    patch = switch_patch(receipt, records)
     try:
-        proof = current_receipt(receipt.target, receipt.resulting_fingerprint, records)
+        proof = current_receipt(
+            receipt.target, receipt.resulting_fingerprint, _proposed(records, patch)
+        )
     except StaleCredentialReceipt:
         raise StaleRecordError("This replacement is no longer current.") from None
     if proof.pk != receipt.pk:
         raise StaleRecordError("This replacement is no longer current.")
-    record = records[receipt.target]
-    if record["values"]["credential_fingerprint"] not in {
-        receipt.expected_fingerprint,
-        receipt.resulting_fingerprint,
-    }:
+    # A key added with a new integration has no predecessor in the settings.
+    if record is not None and before != receipt.expected_fingerprint:
         raise StaleRecordError("The integration fingerprint changed.")
-    return configuration, receipt, record
+    return configuration, receipt, before, patch
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -94,7 +117,7 @@ def select_credential(request, request_id):
             def scope(service):
                 """Intake repeats freshness and current receipt proof under its lock."""
                 require_fresh(request)
-                configuration, _, _ = _selection(service, request_id)
+                configuration, _, _, _ = _selection(service, request_id)
                 return configuration, None
 
             response = confirm(
@@ -107,7 +130,7 @@ def select_credential(request, request_id):
             )
         else:
             with read_transaction():
-                configuration, receipt, record = _selection(service, request_id)
+                configuration, receipt, before, patch = _selection(service, request_id)
                 base = service.store.active()
                 if (
                     base is None
@@ -117,18 +140,7 @@ def select_credential(request, request_id):
             # Preview/render work uses the captured immutable inputs without
             # blocking task claims or source promotion. Confirmation rechecks
             # current receipt, freshness and base under the owning work lock.
-            selected = (
-                record["values"]["credential_fingerprint"]
-                == receipt.resulting_fingerprint
-            )
-            patch = [
-                {
-                    "operation": "update",
-                    "section": "integrations",
-                    "id": record["id"],
-                    "values": {"credential_fingerprint": receipt.resulting_fingerprint},
-                }
-            ]
+            selected = patch is None
             preview = None
             if not selected:
                 build_candidate(
@@ -149,7 +161,7 @@ def select_credential(request, request_id):
                 {
                     "receipt": receipt,
                     "label": LABELS[receipt.target],
-                    "before": record["values"]["credential_fingerprint"],
+                    "before": before,
                     "preview": preview,
                     "selected": selected,
                 },

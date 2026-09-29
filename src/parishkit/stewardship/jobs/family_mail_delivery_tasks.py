@@ -13,6 +13,7 @@ from django.db import connection, connections
 from parishkit.config import ConfigError
 from parishkit.logging import log_extra
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
+from parishkit.stewardship.accounts.integration_selection import switching
 from parishkit.stewardship.accounts.key_files import file_fingerprint, read_private
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.family_delivery import (
@@ -440,6 +441,9 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
             return
         candidate = read_private(credential_path)
         if file_fingerprint(candidate) != workspace.credential_fingerprint:
+            # Mid-switch to a new key: hold without spending an attempt.
+            if switching("google_workspace", file_fingerprint(candidate)):
+                raise FamilyDeliveryHeld("Workspace key change is switching.")
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
         prepared = begin_submission(

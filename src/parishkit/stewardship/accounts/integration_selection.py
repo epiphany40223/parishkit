@@ -128,3 +128,27 @@ def validate_installation(document):
             receipt = current_receipt(target, proposed, after)
             if receipt.expected_fingerprint != old:
                 raise ConfigError("Credential replacement has a different predecessor.")
+
+
+def switching(target, fingerprint):
+    """True while ``target``'s key is changing to the installed ``fingerprint``.
+
+    From the moment a credential installer renames a new key into place until
+    a configuration request selects its fingerprint, a consumer that compares
+    the file with the applied configuration sees a mismatch. That is not a
+    bad key: the change is still in progress, or it is installed and waits
+    for an Administrator to select **Finish switching to the new key** (for
+    example after its automatic selection failed). Consumers hold their work
+    and retry later instead of spending their attempts on it (#307 M1).
+    Any other mismatch is still a refusal.
+    """
+    latest = (
+        SecretReplacementRequest.objects.filter(target=target)
+        .order_by("-created_at", "-pk")
+        .values_list("state", "resulting_fingerprint")
+        .first()
+    )
+    return latest is not None and (
+        latest[0] in SECRET_PENDING
+        or (latest[0] == "applied" and latest[1] == fingerprint)
+    )

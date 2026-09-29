@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.credential_installation import (
     CredentialInstaller,
     acknowledge_loaded_credential,
 )
+from parishkit.stewardship.accounts.integration_credentials import selection_key
 from parishkit.stewardship.accounts.key_files import (
     file_fingerprint,
     read_private,
@@ -34,10 +35,10 @@ from .test_configuration_service_postgresql import (  # noqa: F401
 )
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
 from .test_integration_views_postgresql import (  # noqa: F401
-    REPLACE,
     handoff,
     hidden,
     post,
+    save_key,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -61,9 +62,9 @@ def replacement(request, monkeypatch, tmp_path, google):
     monkeypatch.setattr(campaign_builders, "configuration_document", document)
     service = request.getfixturevalue("auth_service")
     private = request.getfixturevalue("handoff")
+    request.getfixturevalue("config_role")
     browser, _ = signed_in()
-    intent = hidden(browser.get(REPLACE), "intent")
-    result = post(browser, REPLACE, {"intent": intent, "candidate": CANDIDATE.decode()})
+    result = save_key(browser, CANDIDATE.decode())
     assert result.status_code == 302, result.content
     row = SecretReplacementRequest.objects.get()
     directory = tmp_path / "private-parishsoft"
@@ -81,12 +82,22 @@ def replacement(request, monkeypatch, tmp_path, google):
         browser=browser,
         installer=installer,
         row=row,
-        url=result["Location"] + "/select",
+        selection=ConfigurationChangeRequest.objects.get(
+            request_key=selection_key(row.pk)
+        ),
+        url=f"/admin/configuration/credentials/{row.pk}/select",
     )
 
 
 def complete(value):
-    """Finish only after the actual required worker attests its loaded key bytes."""
+    """Install the key, then let its automatic switch fail as in #307 M1.
+
+    Only the actual required worker's attestation of its loaded key bytes
+    finishes the replacement. Another settings change is then applied first,
+    so the save's own selection request fails as ``stale_base``: the key is
+    installed but not selected, and these tests exercise **Finish switching**
+    as the recovery.
+    """
     with identity("pk_stewardship_worker"):
         acknowledge_loaded_credential(
             request_id=value.row.pk, consumer="worker", loaded_value=CANDIDATE
@@ -94,6 +105,33 @@ def complete(value):
     with identity("pk_stewardship_credential_parishsoft"):
         assert value.installer.run_once().state == "applied"
     value.row.refresh_from_db()
+    rename(value.service.store, "Parish renamed first")
+    with as_config_installer():
+        result = install_request(
+            value.service.store,
+            request_id=value.selection.pk,
+            correlation_id=uuid4(),
+        )
+    assert result.state == "failed" and result.failure_code == "stale_base"
+
+
+def rename(store, name):
+    """Apply an unrelated settings change, as another Administrator might."""
+    base = store.active()
+    record = base.document()["sections"]["parish"][0]
+    change(
+        store,
+        base,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": record["id"],
+                "values": {"name": name},
+            }
+        ],
+    )
 
 
 def test_replacement_audit_is_independent_of_query_plan(request, sql_plan_mode):
@@ -319,19 +357,13 @@ def test_second_replacement_requires_selection_of_the_installed_predecessor(
     value = replacement
     complete(value)
     old = value.service.store.active()
+    assert save_key(value.browser, "third-candidate").status_code == 409
+    assert SecretReplacementRequest.objects.count() == 1
     preview = hidden(value.browser.get(value.url), "preview")
     response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
     row = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rsplit("/", 1)[-1]
     )
-    intent = hidden(value.browser.get(REPLACE), "intent")
-    assert (
-        post(
-            value.browser, REPLACE, {"intent": intent, "candidate": "third-candidate"}
-        ).status_code
-        == 409
-    )
-    assert SecretReplacementRequest.objects.count() == 1
     assert read_private(value.installer.files.path) == CANDIDATE
     assert (
         install_request(
@@ -341,13 +373,7 @@ def test_second_replacement_requires_selection_of_the_installed_predecessor(
     )
     assert not row.checkpoints.filter(state="failed").exists()
     assert value.service.store.active() != old
-    intent = hidden(value.browser.get(REPLACE), "intent")
-    assert (
-        post(
-            value.browser, REPLACE, {"intent": intent, "candidate": "third-candidate"}
-        ).status_code
-        == 302
-    )
+    assert save_key(value.browser, "third-candidate").status_code == 302
     newest = SecretReplacementRequest.objects.exclude(pk=value.row.pk).get()
     assert newest.expected_fingerprint == file_fingerprint(CANDIDATE)
     from parishkit.stewardship.accounts.secret_requests import cancel_secret_request
@@ -493,7 +519,7 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
     response = post(browser, value.url, {"action": "confirm", "preview": own_preview})
     assert response.status_code == 302, response.content
     assert (
-        b"Finish switching to the new key"
+        b"Switching to it now"
         in browser.get("/admin/configuration/integrations/parishsoft").content
     )
     row = ConfigurationChangeRequest.objects.get(

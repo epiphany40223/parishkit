@@ -206,10 +206,26 @@ in the same form as its settings. No server step is needed:
    progress, applies the new fingerprint and settings.
 
 The settings page shows one plain-language line about the latest change:
-checking, updated, not accepted (the previous key is still in use), or
-installed but not yet in use, with a link to finish the selection by hand.
-Request states and fingerprints are on the linked details page and in the
-audit log. A compose file generated before this change still mounts the single
+checking, switching, updated, or not accepted (the previous key is still in
+use). Request states and fingerprints are on the linked details page and in
+the audit log.
+
+Once the installer renames the new key into place, every consumer compares
+the file with the selected fingerprint, so the integration stops until the
+selection applies. If the selection fails for good (for example `stale_base`,
+when another settings change on the same base was applied first), the page
+shows an error saying what is stopped, with a **Finish switching to the new
+key** button. That page repeats the key's original selection (the settings
+saved with it, or the whole new record when the save added the integration)
+on the current settings, and any fresh Administrator may confirm it. Meanwhile
+Family and operational mail treat the mismatch as a hold, not a failure:
+while the latest Workspace key change is in progress, or installed with the
+file's fingerprint but not selected, a message is deferred in the
+`RECONCILING` phase without charging its attempt budget, like a sending-limit
+hold. ParishSoft refreshes are refused (`SOURCE_CREDENTIAL_FAILED`) and run
+again on schedule after the switch. There is no stand-alone "replace
+credential" page any more: it staged a key with nothing to select it, which
+always ended in this state. A compose file generated before this change still mounts the single
 file; regenerate the compose files and recreate `worker` and `mail-dispatch`
 once to gain the directory mounts. Until then the operator command below still
 works. Only the default `credentials/<target>/credential` layout gets a

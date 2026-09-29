@@ -23,7 +23,6 @@ from parishkit.stewardship.accounts.integration_credentials import (
     CredentialSummary,
 )
 from parishkit.stewardship.accounts.integration_forms import (
-    CredentialForm,
     InlineCredentialForm,
     IntegrationForm,
 )
@@ -366,15 +365,6 @@ def component_origin():
                 "changes": [
                     {"label": "Organization ID", "before": "12345", "after": "54321"}
                 ],
-            },
-        ),
-        (
-            "/credential-replace",
-            "credential-replace",
-            {
-                "target": "parishsoft",
-                "label": "ParishSoft",
-                "form": CredentialForm(initial={"intent": "synthetic-intent"}),
             },
         ),
         (

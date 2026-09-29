@@ -1,6 +1,5 @@
 """Admin integration settings and sealed replacement intake; no provider IO in web."""
 
-from datetime import timedelta
 from uuid import UUID, uuid4
 
 from django.core import signing
@@ -15,8 +14,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
-from parishkit.stewardship.observability import current_correlation
-from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS, ROTATING_TARGETS
+from parishkit.stewardship.service_boundaries import ROTATING_TARGETS
 from parishkit.stewardship.source.refresh_status import (
     full_refresh_status,
     refresh_schedule,
@@ -37,15 +35,11 @@ from .handoff_discovery import public_handoff
 from .integration_credentials import dismiss, save_credential, summary
 from .integration_forms import (
     LABELS,
-    CredentialForm,
     InlineCredentialForm,
     IntegrationForm,
 )
-from .integration_selection import authentication_scope
 from .limiting import LimiterUnavailable
-from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
-from .privileged_actions import sealed_secret_request
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
@@ -541,33 +535,12 @@ def integration_settings(request, target=None):
                 raise LookupError("Integration is unavailable.")
             response = _page(request, configuration, target)
         return _checked(request, service, response)
+    except SecretRequestConflict:
+        # A reused page carrying a different key: correctable input, not an
+        # outage. The key itself is never echoed.
+        return error_response(ValueError("Credential intake identity has changed."))
     except ERRORS as error:
         return error_response(error)
-
-
-def _context(configuration, target):
-    """Bind a candidate to the exact currently applied public provider settings."""
-    records = _records(configuration)
-    _selected(configuration, target)
-    return authentication_scope(
-        target, records, recipient=configuration.testing_recipient
-    )
-
-
-def _credential_form(configuration, actor, target):
-    """One short-lived server-selected identity permits safe network retry."""
-    _handoff(target)
-    intent = signing.dumps(
-        {
-            "actor": str(actor.identity),
-            "target": target,
-            "base": configuration.active_configuration.digest,
-            "request": str(uuid4()),
-            "staging": str(uuid4()),
-        },
-        salt=CREDENTIAL_SALT,
-    )
-    return CredentialForm(initial={"intent": intent})
 
 
 def _handoff(target):
@@ -576,99 +549,6 @@ def _handoff(target):
         return public_handoff(target)
     except ConfigError:
         raise IntegrationUnavailable() from None
-
-
-def _stage(request, configuration, actor, target, form):
-    """Seal immediately; only ciphertext, fingerprint and public scope persist."""
-    intent = signing.loads(
-        form.cleaned_data["intent"], salt=CREDENTIAL_SALT, max_age=300
-    )
-    if intent["actor"] != str(actor.identity) or intent["target"] != target:
-        raise PermissionError("Credential intent does not belong to this session.")
-    if intent["base"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Integration settings changed.")
-    identifier = UUID(intent["request"])
-    value = form.cleaned_data.pop("candidate").encode("utf-8")
-    from .key_files import MAX_FILE_BYTES
-
-    if len(value) > MAX_FILE_BYTES:
-        raise ValueError("Credential exceeds its byte bound.")
-    sealed = _handoff(target).seal(identifier, value)
-    fingerprint = credential_receipt(value, target)
-    del value
-    receipt = sealed_secret_request(
-        request,
-        configuration_digest=intent["base"],
-        request_id=identifier,
-        target=target,
-        staging_reference=UUID(intent["staging"]),
-        staging_lifetime=timedelta(hours=1),
-        expected_fingerprint=_selected(configuration, target)["values"][
-            "credential_fingerprint"
-        ],
-        correlation_id=current_correlation(),
-        sealed_candidate=sealed,
-        candidate_fingerprint=fingerprint,
-        required_consumers=tuple(
-            role.value for role, names in ALLOWED_SECRETS.items() if target in names
-        ),
-        provider_settings=_context(configuration, target),
-    )
-    return HttpResponseRedirect(
-        f"/admin/configuration/credentials/{receipt.request_id}"
-    )
-
-
-@sensitive_post_parameters("candidate")
-@require_http_methods(["GET", "HEAD", "POST"])
-def replace_credential(request, target):
-    """Fresh Google authentication and CSRF precede private credential submission."""
-    try:
-        service = runtime()
-        actor = principal(request, service)
-        configuration = editable_configuration(service)
-        if target not in {"parishsoft", "google_workspace", "slack"}:
-            raise LookupError("Integration is unavailable.")
-        _context(configuration, target)
-        require_fresh(request)
-        if request.method == "POST":
-            if (
-                request.FILES
-                or set(request.POST) - {"candidate", "intent", "csrfmiddlewaretoken"}
-                or any(len(values) != 1 for _, values in request.POST.lists())
-            ):
-                raise ValueError("Invalid credential fields.")
-            form = CredentialForm(request.POST)
-            if form.is_valid():
-                return _checked(
-                    request,
-                    service,
-                    _stage(request, configuration, actor, target, form),
-                )
-            status = 400
-        else:
-            filters(request.GET, allowed=set())
-            form = _credential_form(configuration, actor, target)
-            status = 200
-        response = render(
-            request,
-            "stewardship/credential-replace.html",
-            {
-                "form": form,
-                "target": target,
-                "label": LABELS[target],
-                "breadcrumb_label": _("Replace %(label)s credential")
-                % {"label": LABELS[target]},
-            },
-            status=status,
-        )
-        if status == 400:
-            response.stewardship_safe_error = True
-        return _checked(request, service, response)
-    except SecretRequestConflict:
-        return error_response(ValueError("Credential intake identity has changed."))
-    except ERRORS as error:
-        return error_response(error)
 
 
 @require_http_methods(["GET", "HEAD"])

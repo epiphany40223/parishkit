@@ -350,3 +350,82 @@ def test_an_outage_pause_lifts_after_its_cooldown(dispatch_worker, monkeypatch, 
     message.refresh_from_db()
     # Five provider results, four of them outages: none spent the budget.
     assert len(calls) == 5 and message.state == "delivered"
+
+
+@pytest.mark.parametrize("switching", [True, False])
+def test_key_change_mid_switch_holds_mail_without_spending_attempts(
+    dispatch_worker, monkeypatch, switching
+):
+    """A new Workspace key installed but not yet selected holds Family mail.
+
+    Between the installer renaming a new key into place and the configuration
+    selecting it (or while an Administrator still has to select Finish
+    switching after the automatic switch failed), the file differs from the
+    selected fingerprint. That is not a bad key, so the message waits
+    without charging its attempt budget, however long it takes (#307 M1).
+    A mismatch with no key change under way is still an ordinary failure.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
+    from parishkit.stewardship.accounts.cryptography import Key
+    from parishkit.stewardship.accounts.secret_requests import stage_secret_request
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as tasks
+    from parishkit.stewardship.jobs.models import TaskRunEvent
+    from parishkit.stewardship.jobs.phases import TaskPhase
+    from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
+
+    harness, path = dispatch_worker
+    write_private(path, b"synthetic-next-workspace-key")
+    if switching:
+        # A sealed Workspace key change still in progress, bound to the
+        # consumers that read it (row security shows it only to them).
+        request_id = uuid4()
+        candidate = b"synthetic-next-workspace-key"
+        private = PrivateHandoff("google_workspace", Key("h", "active", b"w" * 32))
+        stage_secret_request(
+            request_id=request_id,
+            target="google_workspace",
+            staging_reference=uuid4(),
+            actor_id=uuid4(),
+            reauthenticated_at=timezone.now() - timedelta(seconds=1),
+            expires_at=timezone.now() + timedelta(minutes=10),
+            expected_fingerprint=file_fingerprint(KEY),
+            correlation_id=uuid4(),
+            sealed_candidate=private.public().seal(request_id, candidate),
+            candidate_fingerprint=file_fingerprint(candidate),
+            required_consumers=tuple(
+                role.value
+                for role, names in ALLOWED_SECRETS.items()
+                if "google_workspace" in names
+            ),
+        )
+
+    def provider(*args, **kwargs):
+        pytest.fail("No mail is sent with a key that is not selected.")
+
+    monkeypatch.setattr(tasks, "submit_family", provider)
+    monkeypatch.setattr(tasks, "MAX_ATTEMPTS", 1)
+    held = tasks._defer_held
+    monkeypatch.setattr(
+        tasks, "_defer_held", lambda execution, seconds=30: held(execution, seconds=1)
+    )
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        if switching:
+            # Past the (one-attempt) budget, it is still waiting.
+            Event().wait(1.1)
+            deliver(harness, path, message)
+    task = TaskRun.objects.get(pk=message.task_id)
+    message.refresh_from_db()
+    if not switching:
+        assert task.state == "failed"
+        return
+    assert task.state == "retry_wait" and message.submitted_at is None
+    holds = TaskRunEvent.objects.filter(
+        run_id=task.pk, action="retryable_failure", phase=TaskPhase.RECONCILING
+    )
+    assert holds.count() == 2

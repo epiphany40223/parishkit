@@ -46,6 +46,14 @@ PENDING_CONFIGURATION = ("staged", "validating", "prepared", "yaml_activated")
 # The installer and consumer have this long to finish before rollback.
 STAGING_LIFETIME = timedelta(hours=1)
 
+# What stops while a new key is installed but not selected: every consumer
+# compares the installed file with the selected fingerprint (#307 M1).
+STOPPED = {
+    "parishsoft": _("ParishSoft refreshes are stopped"),
+    "google_workspace": _("email is held and not sent"),
+    "slack": _("Slack alerts are not sent"),
+}
+
 FAILED = {
     "parishsoft": _(
         "ParishSoft did not accept the new API key for this organization ID. "
@@ -78,16 +86,58 @@ def selection_key(request_id):
     return uuid5(SELECTION_NAMESPACE, str(request_id))
 
 
-def _selection(row):
-    """Return the linked selection request's latest state, if one was recorded."""
-    selection = (
-        ConfigurationChangeRequest.objects.filter(
-            actor_id=row.requested_by_id, request_key=selection_key(row.pk)
-        )
-        .select_related("base")
-        .first()
-    )
-    return None if selection is None else _status(selection).state
+def original_selection(row):
+    """The selection request the key's own save recorded, if there is one."""
+    return ConfigurationChangeRequest.objects.filter(
+        actor_id=row.requested_by_id, request_key=selection_key(row.pk)
+    ).first()
+
+
+def _switching(row):
+    """True while any configuration request selecting this key is still queued.
+
+    That is the save's own selection request or a later **Finish switching**
+    request, by any Administrator: each one sets the integration's
+    fingerprint to the key's.
+    """
+    requests = ConfigurationChangeRequest.objects.filter(
+        patch__contains=[
+            {"values": {"credential_fingerprint": row.resulting_fingerprint}}
+        ]
+    ).select_related("base")
+    return any(_status(request).state in PENDING_CONFIGURATION for request in requests)
+
+
+def switch_patch(row, records):
+    """The configuration patch that finishes switching to ``row``'s key.
+
+    It repeats the key's original selection: the settings saved with the key
+    (which the provider check used) and, when the save added the integration,
+    the whole new record. Repeating it on the current settings is what lets
+    **Finish switching** recover from a selection that failed, for example
+    because another settings change was applied first. A key staged without
+    a selection request selects its fingerprint alone.
+    """
+    original = original_selection(row)
+    item = original.patch[0] if original is not None else None
+    if item is not None and item["operation"] == "add":
+        if row.target in records:
+            raise StaleRecordError("This integration was set up again since.")
+        return [item]
+    record = records.get(row.target)
+    if record is None:
+        raise StaleRecordError("This integration is no longer configured.")
+    values = {"credential_fingerprint": row.resulting_fingerprint}
+    if item is not None and "settings" in item["values"]:
+        values["settings"] = item["values"]["settings"]
+    return [
+        {
+            "operation": "update",
+            "section": "integrations",
+            "id": record["id"],
+            "values": values,
+        }
+    ]
 
 
 # How long a finished key change stays on its integration's settings page,
@@ -167,17 +217,24 @@ def summary(target, record):
             return CredentialSummary(
                 "updated", row.updated_at, _("Key updated."), row.pk
             )
-        if _selection(row) in PENDING_CONFIGURATION:
+        if _switching(row):
             return CredentialSummary(
                 "pending",
                 row.created_at,
                 _("The new key is installed. Switching to it now."),
                 row.pk,
             )
+        # The key is in place but nothing will select it: the automatic
+        # switch failed (or never existed). Consumers refuse the mismatch, so
+        # this needs action now, not later.
         return CredentialSummary(
             "unselected",
             row.updated_at,
-            _("The new key is installed but not yet in use."),
+            _(
+                "The new key is installed, but switching to it did not finish, "
+                "so %(stopped)s. Select Finish switching to the new key now."
+            )
+            % {"stopped": STOPPED[target]},
             row.pk,
         )
     if row.state == "expired":

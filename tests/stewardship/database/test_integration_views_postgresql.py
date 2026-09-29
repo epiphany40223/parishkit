@@ -33,7 +33,6 @@ from .test_credential_isolation_postgresql import identity, isolated_roles  # no
 pytestmark = pytest.mark.django_db(transaction=True)
 INDEX = "/admin/configuration/integrations"
 URL = INDEX + "/parishsoft"
-REPLACE = URL + "/credential"
 SECRET = "SYNTHETIC-PRIVATE-CANDIDATE"
 
 
@@ -50,6 +49,32 @@ def hidden(response, name):
     return unescape(
         re.search(rf'name="{name}" value="([^"]+)"', response.content.decode()).group(1)
     )
+
+
+def save_key(browser, candidate, page=None, **fields):
+    """Paste a key into the settings page's own form, as a browser would.
+
+    ``page`` is the rendered settings page whose signed intent and base the
+    save uses; by default a fresh one. Extra ``fields`` override the form.
+    """
+    page = page if page is not None else browser.get(URL)
+    return post(
+        browser,
+        URL,
+        {
+            "action": "preview",
+            "base_digest": hidden(page, "base_digest"),
+            "organization_id": "12345",
+            "intent": hidden(page, "intent"),
+            "candidate": candidate,
+        }
+        | fields,
+    )
+
+
+def status_url(row):
+    """The key change's details page."""
+    return f"/admin/configuration/credentials/{row.pk}"
 
 
 def edit(store, **values):
@@ -261,20 +286,17 @@ def test_replacement_seals_once_and_real_web_cannot_read_ciphertext(
     """The target's private key opens the exact request; HTML/audit contain no value."""
     browser, _ = signed_in()
     with identity("pk_stewardship_web"):
-        token = hidden(browser.get(REPLACE), "intent")
-        response = post(browser, REPLACE, {"intent": token, "candidate": SECRET})
+        page = browser.get(URL)
+        response = save_key(browser, SECRET, page)
         assert response.status_code == 302, response.content
-        progress = browser.get(response["Location"])
+        row = SecretReplacementRequest.objects.get()
+        progress = browser.get(status_url(row))
         assert progress.status_code == 200
         assert progress["Cache-Control"] == "no-store"
         assert SECRET.encode() not in progress.content
-        assert (
-            post(browser, REPLACE, {"intent": token, "candidate": SECRET})["Location"]
-            == response["Location"]
-        )
-        changed = post(
-            browser, REPLACE, {"intent": token, "candidate": "DIFFERENT-PRIVATE"}
-        )
+        # An identical browser retry reuses the original request.
+        assert save_key(browser, SECRET, page).status_code == 302
+        changed = save_key(browser, "DIFFERENT-PRIVATE", page)
         assert changed.status_code == 400
         assert b"DIFFERENT-PRIVATE" not in changed.content
     row = SecretReplacementRequest.objects.get()
@@ -303,19 +325,25 @@ def test_private_form_errors_and_csrf_never_stage_or_redisplay(
 ):
     """Invalid controls, CSRF and bad signatures fail before sealed persistence."""
     browser, _ = signed_in()
-    token = hidden(browser.get(REPLACE), "intent")
-    for data, expected in [
-        ({"candidate": SECRET}, 400),
-        ({"candidate": SECRET, "intent": "forged"}, 400),
-        ({"candidate": SECRET, "intent": token, "target": "slack"}, 400),
-        ({"candidate": SECRET, "intent": [token, token]}, 400),
+    page = browser.get(URL)
+    token = hidden(page, "intent")
+    for fields in [
+        {"intent": ""},
+        {"intent": "forged"},
+        {"target": "slack"},
+        {"intent": [token, token]},
     ]:
-        response = post(browser, REPLACE, data)
-        assert response.status_code == expected
+        response = save_key(browser, SECRET, page, **fields)
+        assert response.status_code == 400
         assert SECRET.encode() not in response.content
-    assert (
-        browser.post(REPLACE, {"candidate": SECRET, "intent": token}).status_code == 403
-    )
+    fields = {
+        "action": "preview",
+        "base_digest": hidden(page, "base_digest"),
+        "organization_id": "12345",
+        "candidate": SECRET,
+        "intent": token,
+    }
+    assert browser.post(URL, fields).status_code == 403
     assert not SecretReplacementRequest.objects.exists()
 
 
@@ -324,7 +352,7 @@ def test_stale_configuration_and_authentication_deny_secret_intake(
 ):
     """Old forms do not bind credentials to changed settings or renew authentication."""
     browser, _ = signed_in()
-    token = hidden(browser.get(REPLACE), "intent")
+    page = browser.get(URL)
     version = auth_service.store.active()
     record = version.document()["sections"]["parish"][0]
     change(
@@ -340,15 +368,12 @@ def test_stale_configuration_and_authentication_deny_secret_intake(
             }
         ],
     )
-    assert (
-        post(browser, REPLACE, {"candidate": SECRET, "intent": token}).status_code
-        == 409
-    )
+    assert save_key(browser, SECRET, page).status_code == 409
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.sessions.database_now",
         lambda: timezone.now() + timedelta(minutes=6),
     )
-    assert browser.get(REPLACE).status_code == 403
+    assert save_key(browser, SECRET).status_code == 403
     assert not SecretReplacementRequest.objects.exists()
 
 
@@ -372,22 +397,29 @@ def test_integrations_and_secrets_are_admin_only(auth_service, google, role):
     for url in (
         INDEX,
         URL,
-        REPLACE,
         "/admin/configuration/credentials/" + str(uuid4()),
     ):
         assert browser.get(url).status_code == 403
-    assert (
-        post(browser, REPLACE, {"candidate": SECRET, "intent": "forged"}).status_code
-        == 403
+    response = post(
+        browser,
+        URL,
+        {"action": "preview", "candidate": SECRET, "intent": "forged"},
     )
+    assert response.status_code == 403
+    assert not SecretReplacementRequest.objects.exists()
 
 
 def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
     """Web cannot invent a key, create an unknown integration or claim readiness."""
     browser, _ = signed_in()
-    assert browser.get(REPLACE).status_code == 503
+    page = browser.get(URL)
+    assert page.status_code == 200 and page.context["credential_unavailable"]
+    assert b'name="candidate"' not in page.content
     assert browser.get(INDEX + "/unknown").status_code == 404
-    assert browser.get(INDEX + "/email/credential").status_code == 404
+    # The unlinked stand-alone "replace credential" page is gone: it staged a
+    # key with nothing to switch to it, which stopped mail (#307 M1).
+    for target in ("parishsoft", "google_workspace", "slack", "email"):
+        assert browser.get(f"{INDEX}/{target}/credential").status_code == 404
     assert (
         browser.get("/admin/configuration/credentials/" + str(uuid4())).status_code
         == 404
@@ -400,13 +432,12 @@ def test_credential_status_follows_live_and_never_renews_idle(
     """The self-updating status page is a passive read: polling it cannot keep
     an otherwise idle login alive, and it stays pending until installed."""
     browser, _ = signed_in()
-    token = hidden(browser.get(REPLACE), "intent")
-    response = post(browser, REPLACE, {"intent": token, "candidate": SECRET})
-    assert response.status_code == 302
+    assert save_key(browser, SECRET).status_code == 302
+    location = status_url(SecretReplacementRequest.objects.get())
     session = PortalSession.objects.get(revoked_at__isnull=True)
     activity = session.last_activity_at
     for _ in range(3):
-        progress = browser.get(response["Location"])
+        progress = browser.get(location)
         assert progress.status_code == 200
         assert b'data-live-status="credential"' in progress.content
         assert b"data-live-pending" in progress.content
