@@ -5,6 +5,7 @@ before invocation and enforce a finite process deadline. In particular, SMTP's
 Message-ID is correlation, not a contractual idempotent-send facility.
 """
 
+import re
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -48,6 +49,47 @@ class ProviderHealth(StrEnum):
     SYSTEMIC = "systemic"
 
 
+# Gmail's own sending limits for the whole sending mailbox, recognized only by
+# the RFC 3463 enhanced status code that starts a reply line (the prose is
+# never retained). "5.4.5" is the daily user sending limit (despite its 5xx
+# code it clears as the rolling day moves on). "421 4.7.x" is Gmail closing the
+# connection for a sending-rate limit, at any stage, and "454 4.7.x" in reply
+# to AUTH is its login-rate limit. Other 4.7.x replies (for example to one
+# RCPT) stay ordinary per-message or per-address temporary refusals.
+_DAILY_LIMIT = re.compile(rb"(?m)^[ \t]*5\.4\.5(?=\s|$)")
+_RATE_LIMIT = re.compile(rb"(?m)^[ \t]*4\.7\.[0-9]{1,3}(?=\s|$)")
+SENDING_LIMITS = frozenset({"daily", "rate"})
+
+
+def sending_limit(reply, *, stage=""):
+    """Return "daily", "rate" or None for one raw ``(code, message)`` reply.
+
+    ``stage`` is the SMTP command answered ("auth" admits the login-rate
+    limit). Only the enhanced status code at the start of a reply line is
+    inspected; nothing from the reply is kept.
+    """
+    if type(reply) is not tuple or len(reply) != 2 or type(reply[0]) is not int:
+        return None
+    code, text = reply
+    if isinstance(text, str):
+        text = text.encode("utf-8", "replace")
+    if not isinstance(text, bytes):
+        return None
+    text = text[:1024]
+    if 500 <= code <= 599 and _DAILY_LIMIT.search(text):
+        return "daily"
+    if (code == 421 or (code == 454 and stage == "auth")) and _RATE_LIMIT.search(text):
+        return "rate"
+    return None
+
+
+def _limit_error(error, stage=""):
+    """The sending limit carried by an SMTP exception, if any."""
+    if isinstance(error, smtplib.SMTPResponseException):
+        return sending_limit((error.smtp_code, error.smtp_error), stage=stage)
+    return None
+
+
 _RESULT_HEALTH = {
     FamilyDeliveryStatus.ACCEPTED: (ProviderHealth.HEALTHY,),
     FamilyDeliveryStatus.TRANSIENT: (
@@ -76,9 +118,21 @@ class FamilyDeliveryResult:
     permanent: tuple[int, ...] = ()
     transient: tuple[int, ...] = ()
     health: ProviderHealth | None = None
+    # A Gmail sending limit ("daily" or "rate") that refused this attempt. It
+    # crosses the helper's output pipe but is never stored: durably the attempt
+    # is an ordinary definitive non-acceptance by a healthy provider.
+    limit: str | None = None
 
     def __post_init__(self):
         """Reject malformed or contradictory outcomes at the process boundary."""
+        if self.limit is not None and (
+            self.limit not in SENDING_LIMITS
+            or self.status is not FamilyDeliveryStatus.TRANSIENT
+            or self.health not in (None, ProviderHealth.HEALTHY)
+            or self.permanent
+            or self.transient
+        ):
+            raise ValueError("Invalid Family sending-limit outcome.")
         if (
             not isinstance(self.status, FamilyDeliveryStatus)
             or type(self.recipient_count) is not int
@@ -120,13 +174,27 @@ class FamilyDeliveryResult:
             "health": self.health.value,
         }
 
+    def wire_payload(self):
+        """The helper's output line: the stored result plus any sending limit."""
+        return self.payload() | ({"limit": self.limit} if self.limit else {})
+
     @classmethod
-    def from_payload(cls, value, *, recipient_count):
-        """Bind a closed helper result to the parent's exact envelope size."""
+    def from_payload(cls, value, *, recipient_count, wire=False):
+        """Bind a closed helper result to the parent's exact envelope size.
+
+        ``wire`` admits the optional helper-only ``limit`` key; stored
+        evidence never carries it.
+        """
+        keys = {"status", "recipient_count", "permanent", "transient", "health"}
+        limit = None
+        if wire and type(value) is dict and "limit" in value:
+            value = dict(value)
+            limit = value.pop("limit")
+            if type(limit) is not str:
+                raise ValueError("Invalid Family delivery result payload.")
         if (
             type(value) is not dict
-            or set(value)
-            != {"status", "recipient_count", "permanent", "transient", "health"}
+            or set(value) != keys
             or type(value["status"]) is not str
             or type(value["health"]) is not str
             or type(value["permanent"]) is not list
@@ -140,6 +208,7 @@ class FamilyDeliveryResult:
             tuple(value["permanent"]),
             tuple(value["transient"]),
             ProviderHealth(value["health"]),
+            limit,
         )
 
 
@@ -279,6 +348,11 @@ def _submit(smtp, mail, sender_name=""):
             status, count, tuple(permanent), tuple(transient), health
         )
 
+    def limited(kind):
+        # The mailbox is over a Gmail limit: nothing was sent and no address
+        # was refused, so no recipient evidence (or suppression) is recorded.
+        return _limited_result(kind, count)
+
     uncertain = False
     stage = "content"
     try:
@@ -299,12 +373,18 @@ def _submit(smtp, mail, sender_name=""):
         )
         options = ["SMTPUTF8", "BODY=8BITMIME"] if international else []
         stage = "mail"
-        code = _reply(smtp.mail(mail.sender, options=options))
+        reply = smtp.mail(mail.sender, options=options)
+        if kind := sending_limit(reply, stage="mail"):
+            return limited(kind)
+        code = _reply(reply)
         if code != 250:
             return result(_handshake_failure(code))
         stage = "rcpt"
         for index, address in enumerate(mail.recipients):
-            code = _reply(smtp.rcpt(address))
+            reply = smtp.rcpt(address)
+            if kind := sending_limit(reply, stage="rcpt"):
+                return limited(kind)
+            code = _reply(reply)
             if code in (250, 251):
                 continue
             if 400 <= code <= 499:
@@ -321,9 +401,15 @@ def _submit(smtp, mail, sender_name=""):
             )
         uncertain = True
         try:
-            code = _reply(smtp.data(message))
+            reply = smtp.data(message)
+            if kind := sending_limit(reply, stage="data"):
+                return limited(kind)
+            code = _reply(reply)
         except smtplib.SMTPDataError as error:
             code = error.smtp_code
+            # A limit refusal of DATA is still definitive non-acceptance.
+            if kind := _limit_error(error, "data"):
+                return limited(kind)
             # smtplib also raises here if the preliminary DATA reply was not
             # 354. An anomalous 250 exception is not final message acceptance.
             if type(code) is not int or not 400 <= code <= 599:
@@ -406,19 +492,28 @@ def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
         with smtp_factory(
             "smtp.gmail.com", 465, timeout=10, context=ssl.create_default_context()
         ) as smtp:
-            code = _reply(smtp.ehlo())
+            reply = smtp.ehlo()
+            # "421 4.7.0 Try again later, closing connection. (EHLO)" is Gmail's
+            # connection-rate limit, not an outage.
+            if kind := sending_limit(reply, stage="ehlo"):
+                result = _limited_result(kind, len(mail.recipients))
+                return result
+            code = _reply(reply)
             if code != 250:
                 result = FamilyDeliveryResult(
                     _handshake_failure(code), len(mail.recipients)
                 )
                 return result
-            code = _reply(
-                smtp.docmd(
-                    "AUTH",
-                    "XOAUTH2 "
-                    + xoauth2_string(settings["delegated_email"], credentials.token),
-                )
+            reply = smtp.docmd(
+                "AUTH",
+                "XOAUTH2 "
+                + xoauth2_string(settings["delegated_email"], credentials.token),
             )
+            # "Too many login attempts" (454 4.7.0) is a rate limit, not an outage.
+            if kind := sending_limit(reply, stage="auth"):
+                result = _limited_result(kind, len(mail.recipients))
+                return result
+            code = _reply(reply)
             if code != 235:
                 result = FamilyDeliveryResult(
                     _handshake_failure(code), len(mail.recipients)
@@ -427,12 +522,26 @@ def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
             result = _submit(smtp, mail, settings.get("sender_name", ""))
     except Exception as error:
         # Once _submit has returned, even a QUIT failure cannot erase its
-        # definitive DATA/refusal evidence. Earlier failures are shared faults.
+        # definitive DATA/refusal evidence. Earlier failures are shared faults,
+        # unless the server's greeting (SMTPConnectError) or a raised reply
+        # was a sending limit.
         if result is None:
-            result = FamilyDeliveryResult(
-                _connection_failure(error), len(mail.recipients)
+            kind = _limit_error(error)
+            result = (
+                _limited_result(kind, len(mail.recipients))
+                if kind
+                else FamilyDeliveryResult(
+                    _connection_failure(error), len(mail.recipients)
+                )
             )
     return result
+
+
+def _limited_result(kind, count):
+    """Nothing was sent and no address was refused: a clean, healthy deferral."""
+    return FamilyDeliveryResult(
+        FamilyDeliveryStatus.TRANSIENT, count, health=ProviderHealth.HEALTHY, limit=kind
+    )
 
 
 def _handshake_failure(code):

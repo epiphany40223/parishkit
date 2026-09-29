@@ -76,7 +76,9 @@ def delivery(
         seen.append(step)
         if failure == step:
             raise stage_error or TimeoutError("private SMTP response")
-        return replies[step], b"private SMTP response"
+        value = replies[step]
+        # A tuple is a full (code, text) reply, e.g. a real Gmail limit reply.
+        return value if isinstance(value, tuple) else (value, b"private SMTP response")
 
     class SMTP:
         def __init__(self, host, port, **kwargs):
@@ -431,3 +433,155 @@ def test_unobserved_result_cannot_claim_a_recipient_refusal():
         FamilyDeliveryResult(
             Status.PERMANENT, 2, permanent=(0,), health=ProviderHealth.UNOBSERVED
         )
+
+
+# Real Gmail replies (prose as Gmail sends it) for its sending limits.
+DAILY = (
+    550,
+    b"5.4.5 Daily user sending limit exceeded. For more information on"
+    b" Gmail sending limits go to https://support.google.com/a/answer/166852",
+)
+RATE = (421, b"4.7.0 Try again later, closing connection. (EHLO) - gsmtp")
+LOGINS = (454, b"4.7.0 Too many login attempts, please try again later. - gsmtp")
+
+
+@pytest.mark.parametrize(
+    "reply,stage,kind",
+    [
+        (DAILY, "", "daily"),
+        ((550, "5.4.5 Daily SMTP relay limit exceeded for user"), "rcpt", "daily"),
+        # A multi-line reply may carry the code on any line.
+        (
+            (550, b"Message refused.\n5.4.5 Daily user sending limit exceeded."),
+            "",
+            "daily",
+        ),
+        (RATE, "ehlo", "rate"),
+        (RATE, "rcpt", "rate"),
+        (LOGINS, "auth", "rate"),
+        # Login throttling is mailbox-wide only in reply to AUTH.
+        (LOGINS, "rcpt", None),
+        # Other 4.7.x replies stay ordinary per-message temporary refusals.
+        ((451, b"4.7.28 Our system has detected an unusual rate"), "rcpt", None),
+        ((450, b"4.7.1 Recipient address rejected"), "rcpt", None),
+        # A code must START a line: a number merely mentioned is not the code.
+        ((550, b"5.7.1 [5.4.5.12] refused"), "", None),
+        ((451, b"4.3.0 temporary failure, ref 4.7.1.9"), "", None),
+        ((421, b"please see 4.7.0 above"), "", None),
+        ((550, b"5.4.52 not the daily limit"), "", None),
+        # A 5.4.5 on a 4xx, or a 4.7.x on a 5xx, is not a sending limit.
+        ((450, b"5.4.5 odd"), "", None),
+        ((550, b"4.7.0 odd"), "", None),
+        (
+            (550, b"5.1.1 The email account that you tried to reach does not exist"),
+            "rcpt",
+            None,
+        ),
+        ((250, b"2.1.5 OK"), "", None),
+        ((550, None), "", None),
+        ("550", "", None),
+    ],
+)
+def test_sending_limit_reads_only_the_enhanced_status_code(reply, stage, kind):
+    """Gmail's mailbox-wide daily and rate limits are recognized; nothing else is."""
+    from parishkit.stewardship.family_delivery import sending_limit
+
+    assert sending_limit(reply, stage=stage) == kind
+
+
+@pytest.mark.parametrize("step", ["mail", "rcpt0", "rcpt1", "data"])
+@pytest.mark.parametrize("reply,kind", [(DAILY, "daily"), (RATE, "rate")])
+def test_a_sending_limit_defers_without_blaming_any_address(
+    monkeypatch, step, reply, kind
+):
+    """A limit refusal is a healthy, definitive non-acceptance with no refusals.
+
+    Recording the RCPT index as a permanent refusal would wrongly suppress a
+    Family's address; recording an outage would trip the delivery circuit.
+    """
+    result, seen = delivery(monkeypatch, replies={step: reply})
+    assert result == FamilyDeliveryResult(
+        Status.TRANSIENT, 2, health=ProviderHealth.HEALTHY, limit=kind
+    )
+    assert result.permanent == result.transient == ()
+    # Nothing after the refused step is attempted.
+    assert seen[-1] == step
+
+
+def test_a_login_rate_limit_is_not_an_outage(monkeypatch):
+    """Gmail's "too many login attempts" defers like any rate limit."""
+    result, seen = delivery(monkeypatch, replies={"auth": LOGINS})
+    assert result.limit == "rate" and result.health is ProviderHealth.HEALTHY
+    assert "mail" not in seen
+
+
+def test_a_daily_limit_refusal_of_data_is_still_definitive(monkeypatch):
+    """smtplib raises for a refused DATA; the limit is read from the exception."""
+    result, _ = delivery(
+        monkeypatch,
+        failure="data",
+        stage_error=smtplib.SMTPDataError(*DAILY),
+    )
+    assert result.limit == "daily" and result.status is Status.TRANSIENT
+
+
+def test_limit_crosses_the_pipe_but_is_never_stored():
+    """Only the helper's wire line carries the limit; stored evidence cannot."""
+    result = FamilyDeliveryResult(
+        Status.TRANSIENT, 2, health=ProviderHealth.HEALTHY, limit="daily"
+    )
+    assert "limit" not in result.payload()
+    wire = result.wire_payload()
+    assert wire["limit"] == "daily"
+    assert FamilyDeliveryResult.from_payload(wire, recipient_count=2, wire=True) == (
+        result
+    )
+    with pytest.raises(ValueError):
+        FamilyDeliveryResult.from_payload(wire, recipient_count=2)
+    plain = FamilyDeliveryResult(Status.ACCEPTED, 2)
+    assert plain.wire_payload() == plain.payload()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"status": Status.PERMANENT},
+        {"status": Status.UNAVAILABLE, "health": ProviderHealth.UNAVAILABLE},
+        {"health": ProviderHealth.UNOBSERVED},
+        {"permanent": (0,)},
+        {"transient": (1,)},
+        {"limit": "weekly"},
+    ],
+)
+def test_a_limit_outcome_is_closed(kwargs):
+    """A limit is only ever a clean, healthy, address-free transient outcome."""
+    values = {
+        "status": Status.TRANSIENT,
+        "recipient_count": 2,
+        "health": ProviderHealth.HEALTHY,
+        "limit": "daily",
+    } | kwargs
+    with pytest.raises(ValueError):
+        FamilyDeliveryResult(**values)
+
+
+def test_a_connection_rate_limit_at_ehlo_defers(monkeypatch):
+    """Gmail's "421 4.7.0 Try again later (EHLO)" is a limit, not an outage."""
+    result, seen = delivery(monkeypatch, replies={"ehlo": RATE})
+    assert result.limit == "rate" and result.health is ProviderHealth.HEALTHY
+    assert seen == ["ehlo"]
+
+
+def test_a_rate_limited_greeting_defers(monkeypatch):
+    """A 421 greeting raises SMTPConnectError while connecting; it still defers."""
+    result, _ = delivery(monkeypatch, smtp_error=smtplib.SMTPConnectError(*RATE))
+    assert result.limit == "rate" and result.status is Status.TRANSIENT
+
+
+def test_a_per_address_rate_refusal_stays_per_address(monkeypatch):
+    """A 450/451 4.7.x to one RCPT is that address's temporary refusal only."""
+    result, seen = delivery(
+        monkeypatch, replies={"rcpt0": (451, b"4.7.1 Try this address later")}
+    )
+    assert result.limit is None and result.status is Status.ACCEPTED
+    assert result.transient == (0,) and "data" in seen

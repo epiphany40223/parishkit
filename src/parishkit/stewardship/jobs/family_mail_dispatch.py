@@ -1,8 +1,12 @@
 """Commit-before-send Family outbox transactions and truthful outcome settlement."""
 
+import logging
+from datetime import timedelta
 from uuid import UUID, uuid4
 
-from django.db import connection
+from django.db import connection, transaction
+from django.db.models import F, Func, IntegerField, Sum
+from django.db.models.functions import Now
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import (
@@ -32,7 +36,7 @@ from .admission import _scope
 from .delivery_states import DeliveryAction
 from .family_dispatch_grants import METADATA_FIELDS
 from .family_mail_results import result_evidence
-from .models import TaskRun
+from .models import TaskRun, TaskRunEvent
 from .outbox_models import OutboxEvent, OutboxMessage
 from .outbox_storage import (
     change_message,
@@ -42,8 +46,10 @@ from .outbox_storage import (
 )
 from .outbox_validation import DeliveryEvidence
 from .ownership import database_now, lock_task_claim
+from .phases import TaskPhase
 from .storage import TaskStatus, _status
 
+LOG = logging.getLogger(__name__)
 TASK_TYPE = "outbox_delivery"
 # Purposes with no schedule occurrence: they never write occurrence state or a
 # fulfillment, whatever their provider outcome.
@@ -53,6 +59,29 @@ UNSCHEDULED_PURPOSES = frozenset(
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
+DAY = timedelta(hours=24)
+
+
+# Google Workspace limits one mailbox, per rolling 24 hours, to about 2,000
+# messages, 10,000 recipients in total, 3,000 external recipients and 2,000
+# unique external recipients (support.google.com/a/answer/166852). Recipients
+# are always at least messages, so Stewardship counts RECIPIENTS and stops a
+# little short of the tightest (2,000 unique external), leaving staff some
+# headroom. RESERVED_SENDS of that is held back for receipts, digests and
+# alerts, so a large bulk send (invitations, reminders, Family tests) can never
+# crowd out a Family's submission receipt.
+DAILY_SEND_LIMIT = 1800
+RESERVED_SENDS = 200
+BULK_PURPOSES = frozenset({"initial", "reminder", "family_test"})
+# How long a Gmail sending-limit refusal holds the refused message: the daily
+# limit is re-probed hourly as the rolling day moves on; a rate limit clears
+# within minutes. A message refused at a limit for LIMIT_GIVE_UP keeps failing
+# for some other reason, so it then fails visibly like any exhausted retry.
+LIMIT_RETRY_SECONDS = {"daily": 3600, "rate": 900}
+LIMIT_GIVE_UP = timedelta(hours=48)
+# How long a message found over this deployment's own daily limit waits
+# before it is looked at again.
+CAPPED_RETRY_SECONDS = 900
 
 
 class FamilyDeliveryHeld(PermissionError):
@@ -62,6 +91,126 @@ class FamilyDeliveryHeld(PermissionError):
 def retry_delay(attempt):
     """Use one bounded schedule for the provider journal and its Task hint."""
     return min(600, RETRY_BASE_SECONDS * 2 ** (attempt - 1))
+
+
+def result_retry_seconds(result, attempt):
+    """A sending-limit refusal waits for the limit; other retries back off."""
+    if result.limit is not None:
+        return LIMIT_RETRY_SECONDS[result.limit]
+    return retry_delay(attempt)
+
+
+def sends_in_last_day():
+    """Recipients this deployment handed to Gmail in the last 24 hours.
+
+    Accepted and uncertain submissions both count: an uncertain one may well
+    have been sent. Definitive refusals are not counted, as Gmail does not.
+    """
+    total = OutboxEvent.objects.filter(
+        previous_state="submitting",
+        submitted_at__isnull=False,
+        reason__in=("smtp_accepted", "smtp_delivery_unknown", "recovery_unknown"),
+        created_at__gte=Now() - DAY,
+    ).aggregate(
+        total=Sum(
+            Func(
+                F("render__routed_recipients"),
+                function="jsonb_array_length",
+                output_field=IntegerField(),
+            )
+        )
+    )["total"]
+    return total or 0
+
+
+def over_daily_limit(purpose, sent, recipients=1):
+    """Whether ``recipients`` more of ``purpose`` would pass the daily limit."""
+    limit = DAILY_SEND_LIMIT - (RESERVED_SENDS if purpose in BULK_PURPOSES else 0)
+    return sent + recipients > limit
+
+
+def limit_history(message):
+    """Count a message's earlier sending-limit refusals and when the current run began.
+
+    Stored evidence deliberately never names a limit. A limit refusal is
+    recognized instead as a submission outcome whose Task then deferred in the
+    RECONCILING phase (see family_mail_delivery_tasks._execute), matched by the
+    attempt's (run, fence). Return ``(count, started)``: every limit refusal so
+    far, and the time of the first one in the current unbroken run of them. Any
+    other provider outcome, or a staff retry of a failed delivery, ends a run.
+    """
+    events = list(
+        OutboxEvent.objects.filter(message_id=message.pk)
+        .order_by("version")
+        .values_list("action", "previous_state", "run_id", "task_fence", "created_at")
+    )
+    runs = {run for _, _, run, _, _ in events if run is not None}
+    limited = set(
+        TaskRunEvent.objects.filter(
+            run_id__in=runs,
+            action="retryable_failure",
+            phase=TaskPhase.RECONCILING,
+        ).values_list("run_id", "fence")
+    )
+    return limit_run(events, limited)
+
+
+def limit_run(events, limited):
+    """The pure walk behind ``limit_history`` (see there), kept separately testable.
+
+    ``events`` are ``(action, previous_state, run, fence, created)`` in version
+    order; ``limited`` is the set of ``(run, fence)`` pairs deferred at a limit.
+    """
+    count, started = 0, None
+    for action, previous, run, fence, created in events:
+        if action == DeliveryAction.RETRY_FAILED.value:
+            started = None
+        elif previous == "submitting":
+            if (run, fence) in limited:
+                count += 1
+                started = started or created
+            else:
+                started = None
+    return count, started
+
+
+def accepted_since(instant):
+    """Whether any message was accepted by the provider since ``instant``."""
+    return OutboxEvent.objects.filter(
+        previous_state="submitting", reason="smtp_accepted", created_at__gte=instant
+    ).exists()
+
+
+def budget_spent(message, result):
+    """Whether this non-acceptance ends the message's automatic retries.
+
+    Limit refusals are not the message's fault: they are left out of the
+    attempt budget, and instead a message refused at a limit continuously for
+    LIMIT_GIVE_UP fails visibly.
+    """
+    count, started = limit_history(message)
+    if result.limit is None:
+        return message.attempt - count >= MAX_ATTEMPTS
+    if (
+        started is None
+        or database_now() - started <= LIMIT_GIVE_UP
+        # While other mail is still being accepted, the limit is real but
+        # partial (for example Google's cap is lower than ours): the queue is
+        # draining, so this message keeps waiting its turn. Scoped like the
+        # daily count, to the whole sending mailbox.
+        or accepted_since(started)
+    ):
+        return False
+    # Logged only once the failure commits, so a claim that turns out stale
+    # (and rolls back) never raises a false alarm.
+    transaction.on_commit(
+        lambda: LOG.critical(
+            "Mail was refused at a Google sending limit for over %d hours and has "
+            "failed; review the mail provider and retry it.",
+            LIMIT_GIVE_UP // timedelta(hours=1),
+        )
+    )
+    return True
 
 
 def bound_dispatch(status):
@@ -471,7 +620,9 @@ def finish_submission(identifier, claim, result):
                 campaign_id=message.campaign_id
             )
             if (
-                message.attempt >= MAX_ATTEMPTS
+                # A sending-limit refusal is not the message's fault, so it
+                # does not spend the attempt budget.
+                budget_spent(message, result)
                 or runtime.mode != message.mode
                 or (
                     message.mode == "testing"
@@ -503,7 +654,7 @@ def finish_submission(identifier, claim, result):
             evidence=result_evidence(result, semantic_key=message.semantic_key),
             admit=admit,
             **(
-                {"retry_seconds": retry_delay(message.attempt)}
+                {"retry_seconds": result_retry_seconds(result, message.attempt)}
                 if action is DeliveryAction.RETRY_UNACCEPTED
                 else {}
             ),

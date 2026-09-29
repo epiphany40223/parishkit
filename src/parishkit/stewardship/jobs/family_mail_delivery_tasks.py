@@ -3,6 +3,7 @@
 import logging
 from functools import partial
 from pathlib import Path
+from random import randint
 from threading import Event, Lock
 from time import monotonic
 from uuid import uuid4
@@ -30,6 +31,8 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
+    CAPPED_RETRY_SECONDS,
+    LIMIT_RETRY_SECONDS,
     MAX_ATTEMPTS,
     FamilyDeliveryHeld,
     begin_submission,
@@ -37,7 +40,10 @@ from .family_mail_dispatch import (
     cancel_unsent,
     disposition,
     finish_submission,
+    over_daily_limit,
+    result_retry_seconds,
     retry_delay,
+    sends_in_last_day,
 )
 from .family_mail_dispatch_recovery import (
     cancel_abandoned_family_test,
@@ -78,6 +84,34 @@ class DeliveryCircuit:
         self.lock = Lock()
         self.failures = 0
         self.probe_after = 0.0
+        self.limit_until = 0.0
+        self.counted_at = None
+        self.counted = 0
+        self.capped = False
+
+    def daily_sends(self):
+        """The last-24-hour recipient count, re-read at most every 15 seconds.
+
+        Every queued message consults it, so a fresh count per message would
+        repeat the same query thousands of times during a bulk send.
+        """
+        now = monotonic()
+        if self.counted_at is None or now - self.counted_at >= 15:
+            self.counted = sends_in_last_day()
+            self.counted_at = now
+        return self.counted
+
+    def note_capped(self, capped):
+        """Log once when bulk sending reaches the daily limit and when it resumes."""
+        with self.lock:
+            changed, self.capped = capped != self.capped, capped
+        if changed and capped:
+            LOG.critical(
+                "Family mail reached this deployment's daily sending limit; "
+                "bulk sending resumes automatically as the day rolls on."
+            )
+        elif changed:
+            LOG.warning("Family mail is below its daily sending limit again.")
 
     def blocks_new_send(self):
         """Admission alone observes the circuit; draining never consults it."""
@@ -91,6 +125,25 @@ class DeliveryCircuit:
                 self.failures = 0
                 self.probe_after = 0.0
             return self.halted.is_set() or monotonic() < self.probe_after
+
+    def hold(self, seconds):
+        """Hold new sends for ``seconds`` after a Gmail sending limit.
+
+        Return true when this starts a new hold (so it is reported once). A
+        limit is not a failure: it is kept apart from the outage probe, so a
+        later healthy observation cannot clear it, and it lifts by itself
+        instead of stopping the run.
+        """
+        with self.lock:
+            now = monotonic()
+            newly = self.limit_until <= now
+            self.limit_until = max(self.limit_until, now + seconds)
+            return newly
+
+    def limit_remaining(self):
+        """Seconds left in the current sending-limit hold (0 when none)."""
+        with self.lock:
+            return max(0.0, self.limit_until - monotonic())
 
     def observe(self, health):
         """Return true when a shared failure newly stops this sending run."""
@@ -312,6 +365,10 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
                 )
                 # Display only: the From name is not part of any admission check.
                 sender_name = configured_sender_name(configuration_id)
+                recipients = len(message.render.routed_recipients)
+                sent = circuit.daily_sends()
+                capped = over_daily_limit(message.purpose, sent, recipients)
+                bulk_capped = over_daily_limit("initial", sent)
         if terminal is not None:
             execution.transition(terminal)
             return
@@ -324,6 +381,21 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
                 metadata_only=True,
             )
             _finish_no_send(execution)
+            return
+        # A sending limit defers the message here, after its claim, rather
+        # than refusing the claim: a refused claim is retried (and logged) on
+        # every scan, while a deferral moves not_before and quiets the queue.
+        # Neither spends the message's attempt budget.
+        circuit.note_capped(bulk_capped)
+        wait = circuit.limit_remaining()
+        if capped or wait:
+            # Jitter spreads the held messages out, so they do not all probe
+            # the provider together the moment a hold lifts.
+            _defer_held(
+                execution,
+                seconds=(max(60, int(wait)) if wait else CAPPED_RETRY_SECONDS)
+                + randint(0, 300),
+            )
             return
         candidate = read_private(credential_path)
         if file_fingerprint(candidate) != workspace.credential_fingerprint:
@@ -404,8 +476,22 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
     status = finish_submission(message.pk, execution.claim, result)
     if circuit.observe(result.health):
         LOG.critical("Family mail provider is unavailable; further sending is stopped.")
+    if result.limit is not None and circuit.hold(LIMIT_RETRY_SECONDS[result.limit]):
+        # Logged once per hold, not per refused message.
+        LOG.critical(
+            "Google Workspace refused mail at its %s sending limit; sending "
+            "pauses and resumes automatically.",
+            result.limit,
+        )
     if status.state.value == "retry_wait":
-        execution.transition("retryable_failure", retry_seconds=retry_delay(attempt))
+        if result.limit is not None:
+            # A limit deferral is an admission hold, not a failed attempt: in
+            # the RECONCILING phase it is not counted by preparation_attempts,
+            # so a later crash cannot exhaust the budget early.
+            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+        execution.transition(
+            "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)
+        )
     else:
         execution.transition(
             "complete" if status.state.value == "delivered" else "permanent_failure"
@@ -445,7 +531,7 @@ def _finish_no_send(execution):
         _defer_held(execution)
 
 
-def _defer_held(execution):
+def _defer_held(execution, *, seconds=30):
     """Retain an ordinary admission hold without charging the failure budget."""
     execution.progress(0, 0, phase=TaskPhase.RECONCILING)
-    execution.transition("retryable_failure", retry_seconds=30)
+    execution.transition("retryable_failure", retry_seconds=seconds)

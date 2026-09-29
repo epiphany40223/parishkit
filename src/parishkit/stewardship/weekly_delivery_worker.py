@@ -22,7 +22,9 @@ def main():
             sys.stdin.buffer.read(MAX_WEEKLY_INPUT + 1)
         )
         result = deliver_weekly(candidate, settings, mail)
-        sys.stdout.write(json.dumps(result.payload(), separators=(",", ":")) + "\n")
+        sys.stdout.write(
+            json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
+        )
     except Exception:
         return 1
     return 0

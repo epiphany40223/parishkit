@@ -577,6 +577,16 @@ another Family shares that message. Templates include Family names, code,
 secure link, generic URL, parish/campaign values, and mode banner. Render
 failure for one Family records an error and does not block others.
 
+Mail dispatch respects the sending mailbox's daily limits. It sends nothing
+more once the recipients of the last 24 hours' accepted or uncertain
+submissions reach the deployment limit, stopping bulk invitations and
+reminders earlier so receipts, digests and alerts keep a reserve; capped mail
+waits as a hold, not a failed attempt. A provider refusal at Gmail's own
+mailbox-wide daily or rate limit defers the message without spending its
+attempt budget, suppressing an address, or counting as a provider outage, for
+at most 48 hours; see
+[Family mail dispatch](../../../guides/stewardship-family-mail-dispatch.md).
+
 Before provider submission the exact non-secret message content and intended/
 routed recipients are persisted. Credential-bearing substitutions are sealed
 to the dedicated token-key public key and are decryptable only by the

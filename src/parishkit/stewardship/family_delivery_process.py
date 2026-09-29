@@ -115,6 +115,7 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit):
             return FamilyDeliveryResult.from_payload(
                 json.loads(output.decode("utf-8"), object_pairs_hook=_object),
                 recipient_count=count,
+                wire=True,
             )
         except (ValueError, TypeError, RecursionError):
             return unknown

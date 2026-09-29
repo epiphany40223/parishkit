@@ -34,6 +34,35 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   anonymous pipes. It emits only a closed result and recipient positions,
   never addresses, provider prose, tokens or keys. Missing/malformed/late
   acknowledgements remain uncertain.
+- Gmail's own mailbox-wide sending limits are recognized by the enhanced
+  status code that starts a reply line, never by prose elsewhere in it:
+  `5.4.5` on a 5xx reply (the daily user sending limit, at any stage), `421
+  4.7.x` (Gmail closing the connection for a sending rate, including at the
+  greeting and EHLO) and `454 4.7.x` in reply to AUTH (login rate). Other
+  `4.7.x` refusals, for example to one RCPT, stay ordinary per-address or
+  per-message temporary refusals. A limit refusal blames no address and trips
+  no outage circuit. The helper reports the limit on its output line only;
+  the stored attempt is an ordinary definitive non-acceptance by a healthy
+  provider. The message keeps its attempt budget and waits (an hour for the
+  daily limit, 15 minutes for a rate limit) while new sends pause for the same
+  time (plus up to five minutes of jitter), logged once per pause. Limit
+  refusals are left out of the attempt budget. A message refused at a limit
+  continuously for over 48 hours, measured from the first refusal of an
+  unbroken run (another outcome or a staff retry starts a new run), fails
+  visibly like any exhausted retry. Since stored evidence never names a limit,
+  a limit refusal is recognized by its Task's RECONCILING-phase deferral for
+  the same attempt.
+- Stewardship also stops before Google does. Google limits a mailbox per
+  rolling 24 hours to about 2,000 messages and 2,000 unique external
+  recipients (see Google's Gmail sending limits), so Stewardship counts the
+  RECIPIENTS of accepted and uncertain submissions in the last 24 hours and
+  sends nothing more at 1,800 (`DAILY_SEND_LIMIT`). Invitations, reminders and
+  Family tests stop 200 earlier (`RESERVED_SENDS`), keeping room for receipts,
+  digests and alerts. A capped message is still claimed, then deferred 15
+  minutes as a hold (not a failed attempt), so the queue goes quiet instead of
+  refusing the same claim on every scan. A campaign with more recipients than
+  that simply finishes over the following days; split the initial invitation
+  with mail schedules to control which Families go first.
 - Per-address outcomes are recorded in the existing immutable outbox event's
   bounded evidence, bound to its numbered attempt and exact rendering. A
   permanently refused address can be suppressed independently of accepted,
