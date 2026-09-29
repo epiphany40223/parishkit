@@ -1,9 +1,10 @@
 """Calculate, stage, publish and verify exact retained participation generations.
 
 The compiled task owner supplies campaign/restore/purge admission and a live
-task claim. This service performs no scheduling or provider I/O. Verification
-callers additionally retain their response-lifetime campaign read guard, just
-like other consumers of ``read_fact_set``. Historical reconstruction deliberately
+task claim. This service performs no scheduling or provider I/O. Scheduled
+verification loads its inputs under a bounded background campaign read guard
+(``load_verification``) and recalculates after the guard closes; its live
+request keeps the generation pinned meanwhile. Historical reconstruction deliberately
 does not read old snapshot memberships, which source retention may compact.
 """
 

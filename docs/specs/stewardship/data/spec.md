@@ -1076,6 +1076,13 @@ read without reconnecting or continuing unguarded. Multi-campaign responses
 acquire all guards in stable identifier order before reading any campaign.
 Use bounded lock acquisition, a 60-second total interactive-read deadline, and
 a five-minute total download deadline, configurable with finite maxima.
+Background guarded reads (report verification and export rendering) serve no
+waiting browser and use a five-minute deadline. A read-only background read
+that reaches its deadline has its SQL cancelled and its task fails; only a
+read that writes files (an export) also stops its worker process, so no write
+outlives the purge barrier. Every deadline stop first writes a
+`task_timed_out` operational log entry on its own short-lived connection,
+naming the task, the limit and the elapsed time.
 Database/proxy/application timeouts must enforce these lifetimes; inactivity
 timeouts alone do not bound a slow continuous transfer.
 

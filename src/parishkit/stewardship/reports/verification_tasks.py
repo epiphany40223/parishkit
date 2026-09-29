@@ -5,7 +5,11 @@ from django.db import connection
 from parishkit.stewardship.audit.schemas import Action, ActorKind, ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational, record_action
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
-from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard, ReadLimits
+from parishkit.stewardship.campaigns.read_guards import (
+    BACKGROUND_LIMITS,
+    CampaignReadGuard,
+    background_abort,
+)
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
@@ -19,17 +23,11 @@ from parishkit.stewardship.observability import Event
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .export_services import admit_campaign
-from .export_tasks import _abort_render_worker
 from .facts import FACT_READ_NAMESPACE, FactUnavailable, fact_inputs
 from .materialization import differing_days, load_verification
 from .models import CampaignDailyFactSet
 from .verification_models import FactVerificationRequest, FactVerificationResult
 from .verification_production import INPUT_FIELDS, TASK_TYPE
-
-# A background check is not an interactive page view: give its guarded read
-# the largest bounded budget. Only database loading happens under the guard;
-# the recalculation runs after it closes (see _execute).
-VERIFICATION_READ_LIMITS = ReadLimits(interactive_seconds=120)
 
 
 def bound_request(status):
@@ -171,15 +169,18 @@ def _execute(execution):
                 "The original verification generation is unavailable."
             )
 
-    # The guard's deadline hard-stops this worker process (_abort_render_worker),
-    # so only the bounded database reads run inside it. Recalculating a whole
-    # campaign is CPU work on in-memory data and runs after the guard closes;
-    # the live verification request keeps the generation non-disposable.
+    # Only the bounded database reads run inside the guard. Recalculating a
+    # whole campaign is CPU work on in-memory data and runs after the guard
+    # closes; the live verification request keeps the generation
+    # non-disposable. The reads write nothing, so a deadline cancels their SQL
+    # and the task fails visibly (and is logged) instead of the worker being
+    # killed (#287, #293).
     with CampaignReadGuard(
         [request.campaign_id],
         authorize=authorize,
-        abort=_abort_render_worker,
-        limits=VERIFICATION_READ_LIMITS,
+        abort=background_abort,
+        limits=BACKGROUND_LIMITS,
+        timeout_task=execution.claim.run_id,
     ) as guard:
 
         def admit_read(action, inputs):

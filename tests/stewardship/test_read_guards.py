@@ -18,6 +18,7 @@ from parishkit.stewardship.campaigns.read_guards import (
     "field,value",
     [
         ("interactive_seconds", 0),
+        ("interactive_seconds", 601),
         ("download_seconds", True),
         ("download_seconds", 901),
         ("download_idle_seconds", 300),
