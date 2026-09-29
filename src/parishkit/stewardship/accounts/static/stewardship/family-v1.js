@@ -738,42 +738,57 @@
       });
     });
   }
-  function rebaseIds(kept, old, fresh) {
+  function rebaseIds(kept, old, fresh, allowed) {
     // This tab's own additions and removals (kept versus old) applied to the
-    // refreshed list, so another tab's changes are not overwritten.
+    // refreshed list, so another tab's changes are not overwritten. Only
+    // ids still allowed (as in preserveMinistries) are applied.
     const result = new Set(fresh || []);
     new Set([...(kept || []), ...(old || [])]).forEach((id) => {
       const mine = (kept || []).includes(id), before = (old || []).includes(id);
-      if (mine && !before) result.add(id); else if (!mine && before) result.delete(id);
+      if (mine === before || !allowed(id)) return;
+      if (mine) result.add(id); else result.delete(id);
     });
     return [...result].sort((a, b) => a - b);
   }
   function rebaseTalents(kept, old, fresh) {
-    // As rebaseIds, one talent (and its note) at a time.
+    // As rebaseIds, one talent at a time, for talents still offered; a note
+    // stays only while its option still takes free text (as preserveService).
+    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
     const result = {...(fresh || {})};
     new Set([...Object.keys(kept || {}), ...Object.keys(old || {})]).forEach((id) => {
-      if ((kept || {})[id] === (old || {})[id]) return;
-      if ((kept || {})[id] === undefined) delete result[id]; else result[id] = kept[id];
+      if ((kept || {})[id] === (old || {})[id] || !options.has(id)) return;
+      if ((kept || {})[id] === undefined) delete result[id];
+      else result[id] = options.get(id).free_text ? kept[id] : "";
     });
     return result;
   }
   function rebaseAside(member, kept, before) {
     // A set-aside kept across a refresh holds this tab's choices from before
-    // the lock. Apply only what this tab changed (against the form it started
-    // from) on top of the refreshed form, as preserveMinistries and
-    // preserveService do for visible choices.
+    // the lock. It matters only while the Member is still locked: if another
+    // tab unlocked them, it is dropped so a later lock captures the current
+    // choices. If the refreshed form itself is locked, its stored choices are
+    // the lock's (all stopped, no talents), so the set-aside is kept as is.
+    // Otherwise only this tab's own changes, against the form it started
+    // from, are applied on top of the refreshed choices, as preserveMinistries
+    // and preserveService do for visible choices.
     const group = member.proposed ? "proposed_members" : "members";
     const key = "ministries." + member.id, talentsKey = "talents." + member.id;
+    if (!serviceEntry(member).cannot_serve) return;
+    const freshLocked = Boolean(form.service?.[group]?.[member.id]?.cannot_serve);
     if (kept.has(key)) {
       const mine = kept.get(key), old = before?.ministries?.[group]?.[member.id];
       const fresh = form.ministries?.[group]?.[member.id];
-      setAside.set(key, !old || !fresh ? mine : {join: rebaseIds(mine.join, old.join, fresh.join),
-        ...(member.proposed ? {} : {leave: rebaseIds(mine.leave, old.leave, fresh.leave)})});
+      const offered = new Set((form.ministries?.options || []).map((option) => option.id));
+      const current = ministryCurrent(member);
+      setAside.set(key, freshLocked || !old || !fresh ? mine : {
+        join: rebaseIds(mine.join, old.join, fresh.join, (id) => offered.has(id) && !current.has(id)),
+        ...(member.proposed ? {} : {leave: rebaseIds(mine.leave, old.leave, fresh.leave,
+          (id) => offered.has(id) && current.has(id))})});
     }
     if (kept.has(talentsKey)) {
       const mine = kept.get(talentsKey), old = before?.service?.[group]?.[member.id];
       const fresh = form.service?.[group]?.[member.id];
-      setAside.set(talentsKey, !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
+      setAside.set(talentsKey, freshLocked || !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
     }
   }
   function enforceLimitations(kept, preserve, before = null) {
@@ -1203,7 +1218,7 @@
       // large gets the limit, and anything else (text, three decimals, a
       // negative) shows the format. The server uses the same wording.
       const typed = annual.value.trim();
-      const tooLarge = /^[0-9][0-9,]*(\.[0-9]{1,2})?$/.test(typed) && Number(typed.replaceAll(",", "")) >= 1e9;
+      const tooLarge = /^[1-9][0-9,]*(\.[0-9]{1,2})?$/.test(typed) && Number(typed.replaceAll(",", "")) >= 1e9;
       annual.setCustomValidity(cents !== null ? "" : !typed ? "Enter an annual pledge." :
         tooLarge ? "Enter an annual pledge under $1,000,000,000." : "Enter a dollar amount, like 1200 or 1200.50.");
       frequency.required = cents !== null && cents > 0;

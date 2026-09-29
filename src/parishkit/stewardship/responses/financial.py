@@ -68,7 +68,8 @@ def pledge_error(value):
     if (
         text
         and LARGE_PLEDGE.fullmatch(text)
-        and int(text.replace(",", "").partition(".")[0]) >= 1_000_000_000
+        # Count digits, never int() a forged string of unbounded length.
+        and len(text.replace(",", "").partition(".")[0]) >= 10
     ):
         return "Enter an annual pledge under $1,000,000,000."
     return "Enter a dollar amount, like 1200 or 1200.50."

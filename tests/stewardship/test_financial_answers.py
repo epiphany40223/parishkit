@@ -367,6 +367,9 @@ def test_cannot_give_rejects_any_pledge_detail(patch):
         ("12,34", "Enter a dollar amount, like 1200 or 1200.50."),
         ("1000000000", "Enter an annual pledge under $1,000,000,000."),
         ("1,000,000,000.00", "Enter an annual pledge under $1,000,000,000."),
+        ("01000000000", "Enter a dollar amount, like 1200 or 1200.50."),
+        # A forged pledge longer than int()'s digit limit is still a 422.
+        ("1" * 5000, "Enter an annual pledge under $1,000,000,000."),
     ],
 )
 def test_pledge_errors_ask_plainly_when_blank(pledge, message):
