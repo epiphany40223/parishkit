@@ -75,10 +75,18 @@ RESERVED_SENDS = 200
 BULK_PURPOSES = frozenset({"initial", "reminder", "family_test"})
 # How long a Gmail sending-limit refusal holds the refused message: the daily
 # limit is re-probed hourly as the rolling day moves on; a rate limit clears
-# within minutes. A message refused at a limit for LIMIT_GIVE_UP keeps failing
-# for some other reason, so it then fails visibly like any exhausted retry.
-LIMIT_RETRY_SECONDS = {"daily": 3600, "rate": 900}
+# within minutes. Only the mailbox-wide limits also pause all other sending; a
+# rate limit answering one message's DATA ("message") holds that message only.
+# A message refused at a limit for LIMIT_GIVE_UP while no mail
+# was accepted in the last ACCEPTANCE_WINDOW keeps failing for some other
+# reason, so it then fails visibly like any exhausted retry. Recent acceptances
+# mean the queue is still draining past a real but partial limit, so the
+# message keeps waiting, but never past LIMIT_GIVE_UP_ABSOLUTE.
+LIMIT_RETRY_SECONDS = {"daily": 3600, "rate": 900, "message": 900}
+MAILBOX_LIMITS = frozenset({"daily", "rate"})
 LIMIT_GIVE_UP = timedelta(hours=48)
+LIMIT_GIVE_UP_ABSOLUTE = timedelta(days=7)
+ACCEPTANCE_WINDOW = timedelta(hours=24)
 # How long a message found over this deployment's own daily limit waits
 # before it is looked at again.
 CAPPED_RETRY_SECONDS = 900
@@ -185,32 +193,44 @@ def budget_spent(message, result):
     """Whether this non-acceptance ends the message's automatic retries.
 
     Limit refusals are not the message's fault: they are left out of the
-    attempt budget, and instead a message refused at a limit continuously for
-    LIMIT_GIVE_UP fails visibly.
+    attempt budget. Instead a message refused at a limit continuously for
+    LIMIT_GIVE_UP fails visibly, unless other mail was accepted recently, and
+    in any case after LIMIT_GIVE_UP_ABSOLUTE.
     """
     count, started = limit_history(message)
+    now = database_now()
     if result.limit is None:
         return message.attempt - count >= MAX_ATTEMPTS
-    if (
-        started is None
-        or database_now() - started <= LIMIT_GIVE_UP
+    if started is None:
+        return False
+    waited = now - started
+    if waited <= LIMIT_GIVE_UP or (
+        waited <= LIMIT_GIVE_UP_ABSOLUTE
         # While other mail is still being accepted, the limit is real but
         # partial (for example Google's cap is lower than ours): the queue is
         # draining, so this message keeps waiting its turn. Scoped like the
-        # daily count, to the whole sending mailbox.
-        or accepted_since(started)
+        # daily count, to the whole sending mailbox, and to recent acceptances
+        # only, so one early acceptance cannot keep the message waiting.
+        and accepted_since(max(started, now - ACCEPTANCE_WINDOW))
     ):
         return False
-    # Logged only once the failure commits, so a claim that turns out stale
-    # (and rolls back) never raises a false alarm.
+    _log_give_up(message, waited, "Google refused it at a sending limit")
+    return True
+
+
+def _log_give_up(message, waited, why):
+    """Log, once the failure commits, that a message waited too long and failed.
+
+    A claim that turns out stale (and rolls back) then raises no false alarm.
+    """
     transaction.on_commit(
         lambda: LOG.critical(
-            "Mail was refused at a Google sending limit for over %d hours and has "
-            "failed; review the mail provider and retry it.",
-            LIMIT_GIVE_UP // timedelta(hours=1),
+            "Mail has failed after %d hours in which %s; review the mail "
+            "provider and retry it.",
+            waited // timedelta(hours=1),
+            why,
         )
     )
-    return True
 
 
 def bound_dispatch(status):

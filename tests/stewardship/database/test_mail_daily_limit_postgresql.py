@@ -221,7 +221,7 @@ def test_limit_refusals_do_not_count_toward_the_attempt_budget(
     assert len(calls) == 3 and message.attempt == 3
     assert message.state == "retry_wait"
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
-        assert family_mail_dispatch.limit_history(message)[0] == 2
+        assert family_mail_dispatch.limit_history(message)[:2] == (2, None)
 
 
 def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
@@ -388,3 +388,93 @@ def test_accepted_since_reads_real_acceptances(family_mail):  # noqa: F811
             assert not family_mail_dispatch.accepted_since(
                 timezone.now() + timedelta(minutes=1)
             )
+
+
+def test_only_recent_acceptances_keep_a_limited_message_waiting(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Past LIMIT_GIVE_UP, only acceptances inside the window count as draining.
+
+    One acceptance soon after the run began must not keep a message waiting
+    for the rest of its life.
+    """
+    harness, path = dispatch_worker
+    calls, seen = [], []
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "ACCEPTANCE_WINDOW", timedelta(0))
+    monkeypatch.setattr(
+        family_mail_dispatch, "accepted_since", lambda instant: seen.append(instant)
+    )
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        Event().wait(1.1)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    task = TaskRun.objects.get(pk=message.task_id)
+    started = TaskRunEvent.objects.filter(run_id=task.pk).earliest("version")
+    # The window (now), not the start of the run a second earlier, is asked.
+    assert len(seen) == 1 and seen[0] > started.created_at + timedelta(seconds=1)
+    assert message.state == "permanent_failure"
+
+
+def test_the_absolute_cap_fails_even_while_mail_flows(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Recent acceptances never keep a limited message waiting past the cap."""
+    harness, path = dispatch_worker
+    calls = []
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(DAILY, calls))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_GIVE_UP_ABSOLUTE", timedelta(0))
+    monkeypatch.setattr(family_mail_dispatch, "accepted_since", lambda _: True)
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+        Event().wait(1.1)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert len(calls) == 2 and message.state == "permanent_failure"
+
+
+def test_a_data_rate_refusal_waits_without_pausing_other_mail(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """The same message refused at DATA with 421 4.7.x, over and over.
+
+    It is a per-message limit (see test_a_rate_refusal_of_data_is_per_message):
+    far more refusals than the attempt budget leave it waiting, not failed,
+    and the worker's circuit never holds, so other Families' mail flows.
+    """
+    harness, path = dispatch_worker
+    calls = []
+    refused = FamilyDeliveryResult(
+        Status.TRANSIENT, 1, health=ProviderHealth.HEALTHY, limit="message"
+    )
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(refused, calls))
+    monkeypatch.setattr(family_mail_dispatch, "MAX_ATTEMPTS", 2)
+    fast = {"daily": 1, "rate": 1, "message": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        for _ in range(4):
+            owner = deliver(harness, path, message)
+            circuit = owner.admit.keywords["circuit"]
+            assert circuit.limit_remaining() == 0 and not circuit.blocks_new_send()
+            Event().wait(1.1)
+    message.refresh_from_db()
+    assert len(calls) == 4 and message.state == "retry_wait"
+    assert TaskRun.objects.get(pk=message.task_id).state == "retry_wait"
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        assert family_mail_dispatch.limit_history(message)[0] == 4

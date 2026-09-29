@@ -33,6 +33,7 @@ from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
     CAPPED_RETRY_SECONDS,
     LIMIT_RETRY_SECONDS,
+    MAILBOX_LIMITS,
     MAX_ATTEMPTS,
     FamilyDeliveryHeld,
     begin_submission,
@@ -476,7 +477,10 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
     status = finish_submission(message.pk, execution.claim, result)
     if circuit.observe(result.health):
         LOG.critical("Family mail provider is unavailable; further sending is stopped.")
-    if result.limit is not None and circuit.hold(LIMIT_RETRY_SECONDS[result.limit]):
+    # A rate limit answering one message's DATA holds that message only.
+    if result.limit in MAILBOX_LIMITS and circuit.hold(
+        LIMIT_RETRY_SECONDS[result.limit]
+    ):
         # Logged once per hold, not per refused message.
         LOG.critical(
             "Google Workspace refused mail at its %s sending limit; sending "
