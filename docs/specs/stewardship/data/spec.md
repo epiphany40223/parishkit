@@ -376,11 +376,19 @@ Those snapshots and their membership/payload rows remain fully reconstructable
 for the lifetime of the protecting record. Among otherwise unprotected
 promoted snapshots, the system retains:
 
-- every reconstructable snapshot for six hours after promotion;
-- after six hours through one year, the latest promoted snapshot in each UTC
-  calendar day; and
-- after one year, the latest promoted snapshot in each UTC calendar month
-  indefinitely.
+- every reconstructable snapshot for six hours after promotion, except one
+  whose content is identical to the current snapshot's, which the current
+  snapshot already reproduces and which may be compacted at once;
+- after six hours through one year, the content the latest promoted snapshot
+  in each UTC calendar day ended in; and
+- after one year, the content the latest promoted snapshot in each UTC
+  calendar month ended in, indefinitely.
+
+These day and month anchors are chosen over every promoted snapshot. When an
+anchor was itself compacted because its content repeated, the latest
+uncompacted snapshot with the same content digest is kept in its place. That
+is at worst the last snapshot of the unchanged run, so a day or weekend that
+ends in content which then stays unchanged still keeps that final content.
 
 Compaction keeps every manifest, including its immutable source generation and
 promotion UTC instant used as a historical fact cutoff watermark, but may remove

@@ -70,13 +70,50 @@ def _live_pins(now):
     )
 
 
+def _retained_anchors(recent, now):
+    """The snapshots that keep each day's (or month's) final content reconstructable.
+
+    Anchors are chosen over every promoted snapshot, compacted or not, so each
+    UTC day or month is anchored at the state it really ended in. A snapshot
+    identical to the current one is compacted at once, however, and that is
+    often the day's latest. Its content still exists in a later, uncompacted
+    snapshot with the same content digest, at worst the last one of that
+    unchanged run, so that snapshot is kept instead (#320). Picking only
+    uncompacted anchors would anchor such a day, or a whole unchanged weekend,
+    at an earlier state and lose its end-of-day content once the run ends.
+    """
+    rows = list(
+        SourceSnapshot.objects.filter(state="promoted", promoted_at__lt=recent)
+        .values_list(
+            "id", "promoted_at", "generation", "content_digest", "compacted_at"
+        )
+        .iterator(chunk_size=1000)
+    )
+    anchors = retention_anchors((row[:3] for row in rows), now=now)
+    kept = {row[0] for row in rows if row[0] in anchors and row[4] is None}
+    digests = {
+        row[3] for row in rows if row[0] in anchors and row[4] is not None and row[3]
+    }
+    if digests:
+        # The latest uncompacted snapshot of each such content, at any age.
+        kept.update(
+            SourceSnapshot.objects.filter(
+                state="promoted", compacted_at__isnull=True, content_digest__in=digests
+            )
+            .order_by("content_digest", "-promoted_at", "-generation")
+            .distinct("content_digest")
+            .values_list("id", flat=True)
+        )
+    return kept
+
+
 def _select_compaction(current, now, limit):
     """Skip active readers and recheck late pins after winning each candidate lock.
 
     A superseded snapshot whose content digest equals the current snapshot's
     is redundant even inside the recent window: most 15-minute refreshes find
     no change, and the current corpus reproduces exactly the same content.
-    Such a snapshot still yields to pins, live references and daily anchors.
+    Such a snapshot still yields to pins, live references and retained anchors.
     """
     recent, _ = retention_cutoffs(now)
     current_digest = (
@@ -87,12 +124,7 @@ def _select_compaction(current, now, limit):
     eligible = Q(promoted_at__lt=recent)
     if current_digest:
         eligible |= Q(content_digest=current_digest)
-    anchors = retention_anchors(
-        SourceSnapshot.objects.filter(state="promoted", promoted_at__lt=recent)
-        .values_list("id", "promoted_at", "generation")
-        .iterator(chunk_size=1000),
-        now=now,
-    )
+    anchors = _retained_anchors(recent, now)
     pins = _live_pins(now).filter(snapshot_id=OuterRef("id"))
     candidates = list(
         SourceSnapshot.objects.filter(
