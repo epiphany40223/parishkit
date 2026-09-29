@@ -1,11 +1,13 @@
-"""Report functions turn JIT off (#277, #322).
+"""Report queries turn JIT off (#277, #322).
 
 JIT is on at the database level, and compiling these large report queries cost
 about 2.3 s per call at parish size while saving nothing.
 """
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
+
+from parishkit.stewardship.reports.statistics_selection import capture_statistics
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -32,3 +34,24 @@ def test_every_report_function_turns_jit_off():
     for name, options in rows.items():
         assert "jit=off" in options, name
         assert "search_path=pg_catalog, public, pg_temp" in options, name
+
+
+def test_statistics_capture_turns_jit_off_only_for_its_transaction(
+    response_service,
+):
+    """SET LOCAL joins the caller's transaction and never leaks to the session."""
+
+    def jit():
+        """The connection's current jit setting."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_setting('jit')")
+            return cursor.fetchone()[0]
+
+    session = jit()
+    with transaction.atomic():
+        capture_statistics(response_service.campaign.pk)
+        assert jit() == "off"
+    assert jit() == session
+    # In autocommit the capture opens its own transaction for the setting.
+    capture_statistics(response_service.campaign.pk)
+    assert jit() == session

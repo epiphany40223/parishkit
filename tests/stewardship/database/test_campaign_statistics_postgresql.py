@@ -20,6 +20,17 @@ from .test_policy_postgresql import user
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def single_capture(queries):
+    """The capture is one data statement, after the transaction-local JIT off.
+
+    Django also logs BEGIN and COMMIT for the transaction the capture opens
+    for SET LOCAL when it runs in autocommit; those are not data statements.
+    """
+    control = {"BEGIN", "COMMIT"}
+    statements = [query["sql"] for query in queries if query["sql"] not in control]
+    return len(statements) == 2 and statements[0] == "SET LOCAL jit = off"
+
+
 def selection(harness, principal, **options):
     """Bind the real configuration store and consumer guard without a new route."""
     return statistics_report(
@@ -35,7 +46,7 @@ def test_single_statement_captures_current_population_and_safe_projection(
     harness = response_service
     with CaptureQueriesContext(connection) as queries:
         inputs = capture_statistics(harness.campaign.pk)
-    assert len(queries) == 1
+    assert single_capture(queries)
     document = inputs.document()
     assert document["source"]["id"] == str(harness.snapshot.pk)
     assert document["submission_watermark"] == 0
@@ -406,7 +417,7 @@ def test_reference_population_capture_is_one_query_and_within_page_budget(
                     capture_statistics(response_service.campaign.pk)
                 )
                 timings.append(perf_counter() - started)
-            assert len(queries) == 1
+            assert single_capture(queries)
             assert result.active.families == result.active.active_members == 5000
             assert (
                 result.active.eligible_email == result.active.deliverable_email == 5000
