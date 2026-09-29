@@ -504,7 +504,8 @@ Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
 one that is installed but not selected (its automatic switch failed) is an
 error, not news: it says what is stopped (ParishSoft refreshes, email or Slack
 alerts) and offers **Finish switching to the new key**, and it keeps showing
-until it is resolved. Mail meanwhile waits without spending attempts; see the
+until it is resolved; the Admin home page shows it too. Mail meanwhile waits
+without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 The history
 stays on the change's details page and in the audit log. The ParishSoft daily

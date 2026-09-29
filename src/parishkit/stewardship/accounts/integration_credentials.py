@@ -299,6 +299,35 @@ def summary(target, record):
     return CredentialSummary("failed", row.updated_at, message, row.pk)
 
 
+def unfinished_switches(configuration):
+    """Integrations whose new key is installed but whose switch did not finish.
+
+    The Admin home page lists these, because their consumers are stopped or
+    holding mail until an Administrator selects Finish switching, and nobody
+    may open the integration's own page for days. Normally one small query:
+    the latest key change per integration, all already in use.
+    """
+    records = integration_records(configuration.active_configuration.canonical_document)
+    latest = (
+        SecretReplacementRequest.objects.filter(target__in=STOPPED)
+        .order_by("target", "-created_at", "-pk")
+        .distinct("target")
+    )
+    stuck = []
+    for row in latest:
+        record = records.get(row.target)
+        if row.state != "applied" or (
+            record is not None
+            and record["values"]["credential_fingerprint"] == row.resulting_fingerprint
+        ):
+            continue
+        unset = {"id": None, "values": {"credential_fingerprint": None}}
+        line = summary(row.target, record or unset)
+        if line is not None and line.kind == "unselected":
+            stuck.append(row.target)
+    return stuck
+
+
 def save_credential(
     request, service, configuration, actor, *, target, intent, value, record, settings
 ):

@@ -238,7 +238,9 @@ def installed(value):
     return SecretReplacementRequest.objects.get()
 
 
-def test_failed_switch_is_an_error_and_finish_switching_recovers(working):
+def test_failed_switch_is_an_error_and_finish_switching_recovers(
+    working, monkeypatch, caplog
+):
     """An installed key whose automatic switch failed is an error with a fix.
 
     Another settings change applied first makes the save's own selection
@@ -277,9 +279,27 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(working):
     # test_family_mail_worker_postgresql) because a key change is switching.
     fingerprint = file_fingerprint(CANDIDATE)
     assert _record(working)["values"]["credential_fingerprint"] != fingerprint
+    from parishkit.stewardship.accounts import integration_selection
+
+    monkeypatch.setattr(integration_selection, "SWITCH_ALERT_AFTER", timedelta(0))
+    monkeypatch.setattr(integration_selection, "_alerted", {})
+    assert switching("parishsoft", fingerprint)
     assert switching("parishsoft", fingerprint)
     assert not switching("parishsoft", "0" * 64)
+    # A consumer holding for it logs the unfinished switch as an ERROR, at
+    # most hourly, so it is noticed without opening this page (#338 review).
+    alerts = [
+        record
+        for record in caplog.records
+        if getattr(record, "extra", {}).get("failure_kind")
+        == "credential_switch_unfinished"
+    ]
+    assert len(alerts) == 1 and alerts[0].levelname == "ERROR"
     browser = working["browser"]
+    # The Admin home page says so too, with a way to the fix.
+    home = browser.get("/admin/").content.decode()
+    assert "a new key is installed, but switching to it did not finish" in home
+    assert "ParishSoft refreshes are stopped" in home
     page = browser.get(URL).content.decode()
     assert "switching to it did not finish" in page
     assert "ParishSoft refreshes are stopped" in page
@@ -302,6 +322,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(working):
     assert record["settings"]["organization_id"] == "54321"
     page = browser.get(URL).content
     assert b"Key updated." in page and b"switching to it did not" not in page
+    assert b"switching to it did not" not in browser.get("/admin/").content
     assert (
         store.active().document()["sections"]["parish"][0]["values"]["name"]
         == "Renamed first"

@@ -93,6 +93,15 @@ def summary(actor, configuration, now):
             result["offsite"] = offsite_status()
         else:
             result["offsite_unset"] = True
+        from .integration_credentials import STOPPED, unfinished_switches
+        from .integration_forms import LABELS
+
+        # A new key installed but not selected stops its integration (and
+        # holds email) until an Administrator finishes the switch (#307).
+        result["unfinished_keys"] = [
+            {"target": target, "label": LABELS[target], "stopped": STOPPED[target]}
+            for target in unfinished_switches(configuration)
+        ]
     if "administrator" in actor.roles:
         from .security_events import open_events
 

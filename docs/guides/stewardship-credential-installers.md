@@ -229,7 +229,14 @@ Family and operational mail treat the mismatch as a hold, not a failure:
 while the latest Workspace key change is in progress, or installed with the
 file's fingerprint but not selected, a message is deferred in the
 `RECONCILING` phase without charging its attempt budget, like a sending-limit
-hold. ParishSoft refreshes are refused (`SOURCE_CREDENTIAL_FAILED`) and run
+hold. The hold is not silent: the Admin home page shows the same error for
+every integration in this state, and once a key has been installed but
+unselected for 15 minutes the consumer holding for it logs
+`installer_request_failed` at ERROR with `failure_kind`
+`credential_switch_unfinished`, at most hourly per key in each process. That
+is the structured process log: the mail-dispatch login may write only timeout
+events to the operational log table, and widening that is a schema change.
+ParishSoft refreshes are refused (`SOURCE_CREDENTIAL_FAILED`) and run
 again on schedule after the switch. There is no stand-alone "replace
 credential" page any more: it staged a key with nothing to select it, which
 always ended in this state. A compose file generated before this change still mounts the single

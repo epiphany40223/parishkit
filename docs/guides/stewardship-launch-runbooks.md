@@ -330,8 +330,10 @@ describes the design.
    "Switching to it now", then "Key updated." The isolated installer checks
    the key with the provider first and sends no message. A rejected key says
    so, and the previous key stays in use.
-3. If the page instead says in red that switching to the new key did not
-   finish, select **Finish switching to the new key** right away and confirm.
+3. If the page (or the Admin home page) instead says in red that switching to
+   the new key did not finish, select **Finish switching to the new key** right
+   away and confirm. After 15 minutes in this state `mail-dispatch` also logs
+   `installer_request_failed` with `credential_switch_unfinished` at ERROR.
    The new key is already installed, so until it is selected the integration
    stops: ParishSoft refreshes are refused, and email waits (it is held, not
    failed, and goes out once the switch finishes). This happens when another

@@ -5,7 +5,13 @@ adding/removing an integration remain their separate owning workflows; ordinary
 replacement of an existing reference must not nominate arbitrary fingerprints.
 """
 
+import logging
+from datetime import timedelta
+
+from django.utils import timezone
+
 from parishkit.config import ConfigError
+from parishkit.stewardship.observability import Event, FailureKind, emit
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 
 from .configuration_errors import ConfigurationReadinessUnavailable
@@ -169,6 +175,17 @@ def validate_installation(document):
                 raise ConfigError("Credential replacement has a different predecessor.")
 
 
+# A key installed but not selected for this long is logged as an error by the
+# consumer that holds for it: the automatic switch takes about a minute, so
+# this is stuck, and held mail must not wait unnoticed (#338 review). The
+# log repeats at most hourly per key in each process.
+SWITCH_ALERT_AFTER = timedelta(minutes=15)
+SWITCH_ALERT_EVERY = timedelta(hours=1)
+# The last alert per key change, in this process. It holds one entry: only
+# the latest change of a target can be stuck at a time.
+_alerted = {}
+
+
 def switching(target, fingerprint):
     """True while ``target``'s key is changing to the installed ``fingerprint``.
 
@@ -180,14 +197,40 @@ def switching(target, fingerprint):
     example after its automatic selection failed). Consumers hold their work
     and retry later instead of spending their attempts on it (#307 M1).
     Any other mismatch is still a refusal.
+
+    A key that stays installed but unselected past ``SWITCH_ALERT_AFTER`` is
+    also logged as an ERROR, so held work is noticed even when nobody opens
+    the integration's page; the Admin home page shows it too.
     """
     latest = (
         SecretReplacementRequest.objects.filter(target=target)
         .order_by("-created_at", "-pk")
-        .values_list("state", "resulting_fingerprint")
+        .values_list("pk", "state", "resulting_fingerprint", "updated_at")
         .first()
     )
-    return latest is not None and (
-        latest[0] in SECRET_PENDING
-        or (latest[0] == "applied" and latest[1] == fingerprint)
+    if latest is None:
+        return False
+    identifier, state, installed, changed_at = latest
+    if state in SECRET_PENDING:
+        return True
+    if state != "applied" or installed != fingerprint:
+        return False
+    _alert_unfinished(identifier, changed_at)
+    return True
+
+
+def _alert_unfinished(identifier, installed_at):
+    """Log a long-unfinished key switch as an ERROR, at most hourly per key."""
+    now = timezone.now()
+    if now - installed_at < SWITCH_ALERT_AFTER:
+        return
+    last = _alerted.get(identifier)
+    if last is not None and now - last < SWITCH_ALERT_EVERY:
+        return
+    _alerted.clear()
+    _alerted[identifier] = now
+    emit(
+        Event.INSTALLER_REQUEST_FAILED,
+        level=logging.ERROR,
+        failure_kind=FailureKind.CREDENTIAL_SWITCH_UNFINISHED,
     )

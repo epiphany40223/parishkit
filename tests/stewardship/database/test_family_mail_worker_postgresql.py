@@ -1,5 +1,7 @@
 """Installed MAIL consumer, finite-provider boundary and maintained Task lifetime."""
 
+from contextlib import contextmanager
+from datetime import timedelta
 from threading import Event
 from uuid import uuid4
 
@@ -352,18 +354,17 @@ def test_an_outage_pause_lifts_after_its_cooldown(dispatch_worker, monkeypatch, 
     assert len(calls) == 5 and message.state == "delivered"
 
 
-@pytest.mark.parametrize("switching", [True, False])
-def test_key_change_mid_switch_holds_mail_without_spending_attempts(
-    dispatch_worker, monkeypatch, switching
-):
-    """A new Workspace key installed but not yet selected holds Family mail.
+NEXT_KEY = b"synthetic-next-workspace-key"
 
-    Between the installer renaming a new key into place and the configuration
-    selecting it (or while an Administrator still has to select Finish
-    switching after the automatic switch failed), the file differs from the
-    selected fingerprint. That is not a bad key, so the message waits
-    without charging its attempt budget, however long it takes (#307 M1).
-    A mismatch with no key change under way is still an ordinary failure.
+
+def workspace_key_change(old, new, *, installed):
+    """Record a sealed Workspace key change from ``old`` to ``new``.
+
+    It stays in progress (``staged``), or with ``installed`` is walked
+    through the installer's states to ``applied``: the new key is in place
+    and acknowledged, but no configuration selects it, as after a failed
+    automatic switch. It is bound to the key's real consumers, because row
+    security shows a key change only to them.
     """
     from datetime import timedelta
 
@@ -371,61 +372,152 @@ def test_key_change_mid_switch_holds_mail_without_spending_attempts(
 
     from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
     from parishkit.stewardship.accounts.cryptography import Key
+    from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
     from parishkit.stewardship.accounts.secret_requests import stage_secret_request
-    from parishkit.stewardship.jobs import family_mail_delivery_tasks as tasks
-    from parishkit.stewardship.jobs.models import TaskRunEvent
-    from parishkit.stewardship.jobs.phases import TaskPhase
     from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 
-    harness, path = dispatch_worker
-    write_private(path, b"synthetic-next-workspace-key")
-    if switching:
-        # A sealed Workspace key change still in progress, bound to the
-        # consumers that read it (row security shows it only to them).
-        request_id = uuid4()
-        candidate = b"synthetic-next-workspace-key"
-        private = PrivateHandoff("google_workspace", Key("h", "active", b"w" * 32))
-        stage_secret_request(
-            request_id=request_id,
-            target="google_workspace",
-            staging_reference=uuid4(),
-            actor_id=uuid4(),
-            reauthenticated_at=timezone.now() - timedelta(seconds=1),
-            expires_at=timezone.now() + timedelta(minutes=10),
-            expected_fingerprint=file_fingerprint(KEY),
-            correlation_id=uuid4(),
-            sealed_candidate=private.public().seal(request_id, candidate),
-            candidate_fingerprint=file_fingerprint(candidate),
-            required_consumers=tuple(
-                role.value
-                for role, names in ALLOWED_SECRETS.items()
-                if "google_workspace" in names
-            ),
+    request_id = uuid4()
+    private = PrivateHandoff("google_workspace", Key("h", "active", b"w" * 32))
+    stage_secret_request(
+        request_id=request_id,
+        target="google_workspace",
+        staging_reference=uuid4(),
+        actor_id=uuid4(),
+        reauthenticated_at=timezone.now() - timedelta(seconds=1),
+        expires_at=timezone.now() + timedelta(minutes=10),
+        expected_fingerprint=file_fingerprint(old),
+        correlation_id=uuid4(),
+        sealed_candidate=private.public().seal(request_id, new),
+        candidate_fingerprint=file_fingerprint(new),
+        required_consumers=tuple(
+            role.value
+            for role, names in ALLOWED_SECRETS.items()
+            if "google_workspace" in names
+        ),
+    )
+    row = SecretReplacementRequest.objects.get(pk=request_id)
+    if installed:
+        from parishkit.stewardship.accounts.credential_installation import (
+            acknowledge_loaded_credential,
+        )
+        from parishkit.stewardship.accounts.secret_models import (
+            SealedCredentialStaging,
         )
 
-    def provider(*args, **kwargs):
-        pytest.fail("No mail is sent with a key that is not selected.")
+        def advance(state, **values):
+            """One installer transition, as the SQL state guard requires."""
+            row.state = state
+            row.version += 1
+            row.actor_id = None
+            for name, value in values.items():
+                setattr(row, name, value)
+            with installer_identity():
+                row.save()
 
-    monkeypatch.setattr(tasks, "submit_family", provider)
+        advance("testing")
+        advance("installing", resulting_fingerprint=file_fingerprint(new))
+        advance("awaiting_ack")
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            acknowledge_loaded_credential(
+                request_id=request_id, consumer="mail-dispatch", loaded_value=new
+            )
+        row.refresh_from_db()
+        advance("cleanup_pending", cleanup_reason="applied")
+        with installer_identity():
+            SealedCredentialStaging.objects.filter(request_id=request_id).update(
+                ciphertext=None
+            )
+        row.refresh_from_db()
+        advance("applied")
+    return row
+
+
+@contextmanager
+def installer_identity():
+    """Act as the Workspace credential installer's SQL login.
+
+    The state guard lets only that login advance a Workspace key change.
+    Tests never provision it, so a disposable role stands in; it is a
+    superuser only so this test needs no copy of the installer's grants.
+    """
+    name = "pk_stewardship_credential_google_workspace"
+    with connection.cursor() as cursor:
+        cursor.execute(f'CREATE ROLE "{name}" SUPERUSER')
+        cursor.execute(f'SET SESSION AUTHORIZATION "{name}"')
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f'DROP ROLE "{name}"')
+
+
+def hold_quickly(monkeypatch, tasks):
+    """Make held messages retry after one second, and fail a charged attempt."""
     monkeypatch.setattr(tasks, "MAX_ATTEMPTS", 1)
     held = tasks._defer_held
     monkeypatch.setattr(
         tasks, "_defer_held", lambda execution, seconds=30: held(execution, seconds=1)
     )
+
+
+@pytest.mark.parametrize("change", ["in_progress", "installed", None])
+def test_key_change_mid_switch_holds_mail_without_spending_attempts(
+    dispatch_worker, monkeypatch, caplog, change
+):
+    """A new Workspace key not yet selected holds Family mail.
+
+    Between the installer renaming a new key into place and the configuration
+    selecting it (or while an Administrator still has to select Finish
+    switching after the automatic switch failed), the file differs from the
+    selected fingerprint. That is not a bad key, so the message waits
+    without charging its attempt budget, however long it takes (#307 M1).
+    A key installed but unselected past 15 minutes is also logged as an
+    ERROR, once an hour, so the held mail is noticed (#338 review). A
+    mismatch with no key change under way is still an ordinary failure.
+    """
+    from parishkit.stewardship.accounts import integration_selection
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as tasks
+    from parishkit.stewardship.jobs.models import TaskRunEvent
+    from parishkit.stewardship.jobs.phases import TaskPhase
+
+    harness, path = dispatch_worker
+    write_private(path, NEXT_KEY)
+    if change is not None:
+        workspace_key_change(KEY, NEXT_KEY, installed=change == "installed")
+    # Treat the installed key as long unfinished, so its first hold alerts.
+    monkeypatch.setattr(integration_selection, "SWITCH_ALERT_AFTER", timedelta(0))
+    monkeypatch.setattr(integration_selection, "_alerted", {})
+
+    def provider(*args, **kwargs):
+        pytest.fail("No mail is sent with a key that is not selected.")
+
+    monkeypatch.setattr(tasks, "submit_family", provider)
+    hold_quickly(monkeypatch, tasks)
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = prepare(harness)
         deliver(harness, path, message)
-        if switching:
+        if change is not None:
             # Past the (one-attempt) budget, it is still waiting.
             Event().wait(1.1)
             deliver(harness, path, message)
     task = TaskRun.objects.get(pk=message.task_id)
     message.refresh_from_db()
-    if not switching:
-        assert task.state == "failed"
+    alerts = [
+        record
+        for record in caplog.records
+        if getattr(record, "extra", {}).get("failure_kind")
+        == "credential_switch_unfinished"
+    ]
+    if change is None:
+        assert task.state == "failed" and not alerts
         return
     assert task.state == "retry_wait" and message.submitted_at is None
     holds = TaskRunEvent.objects.filter(
         run_id=task.pk, action="retryable_failure", phase=TaskPhase.RECONCILING
     )
     assert holds.count() == 2
+    # Only an installed key can be stuck; one alert for two holds.
+    assert len(alerts) == (1 if change == "installed" else 0)
+    if alerts:
+        assert alerts[0].levelname == "ERROR"
