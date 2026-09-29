@@ -115,7 +115,8 @@ def validate_installation(document):
     after = integration_records(document)
     # Initial setup adds its integrations under the setup readiness owner. After
     # setup (the predecessor already has ParishSoft), an integration added with
-    # its first key, such as Slack, needs a receipt that expected no key.
+    # its first key, such as Slack, needs a current receipt. Its predecessor is
+    # whatever key file an earlier removal left installed, not a setting.
     added = after.keys() - before.keys() if "parishsoft" in before else set()
     for target in TARGETS & ((before.keys() & after.keys()) | added):
         old = (
@@ -126,7 +127,7 @@ def validate_installation(document):
         proposed = after[target]["values"]["credential_fingerprint"]
         if old != proposed:
             receipt = current_receipt(target, proposed, after)
-            if receipt.expected_fingerprint != old:
+            if target in before and receipt.expected_fingerprint != old:
                 raise ConfigError("Credential replacement has a different predecessor.")
 
 

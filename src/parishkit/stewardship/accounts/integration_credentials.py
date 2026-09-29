@@ -108,6 +108,31 @@ def _switching(row):
     return any(_status(request).state in PENDING_CONFIGURATION for request in requests)
 
 
+def leftover_key(target):
+    """The key file an unconfigured integration still has installed, or None.
+
+    Removing an integration (Slack) removes only its settings; the installed
+    file stays until a new key replaces it. That file is the latest key the
+    installer applied for the target.
+    """
+    return (
+        SecretReplacementRequest.objects.filter(target=target, state="applied")
+        .order_by("-created_at", "-pk")
+        .values_list("resulting_fingerprint", flat=True)
+        .first()
+    )
+
+
+def _was_selected(row):
+    """True once any applied configuration request selected this key."""
+    requests = ConfigurationChangeRequest.objects.filter(
+        patch__contains=[
+            {"values": {"credential_fingerprint": row.resulting_fingerprint}}
+        ]
+    ).select_related("base")
+    return any(_status(request).state == "applied" for request in requests)
+
+
 def switch_patch(row, records):
     """The configuration patch that finishes switching to ``row``'s key.
 
@@ -196,6 +221,16 @@ def summary(target, record):
     )
     if row is None:
         return None
+    if (
+        record["id"] is None
+        and row.state == "applied"
+        and not _switching(row)
+        and _was_selected(row)
+    ):
+        # The integration was removed after this key was in use (Remove
+        # Slack): nothing needs action, and the page offers setting it up
+        # again. A key whose own "add" never applied still shows below.
+        return None
     # A finished change is news for an hour (or until an Administrator
     # dismisses it), not forever; its history stays on the details page and
     # in the audit log. A key that is installed but not yet in use still
@@ -261,7 +296,9 @@ def save_credential(
     than left to install without anything selecting it.
 
     ``record`` is None when adding Slack after setup: the selection request
-    then adds the integration record together with its first key.
+    then adds the integration record together with its first key. Removing
+    Slack leaves its last key file installed, so setting it up again replaces
+    that file: the new request names it as the predecessor.
     """
     require_fresh(request)
     records = integration_records(configuration.active_configuration.canonical_document)
@@ -270,11 +307,19 @@ def save_credential(
     if adding:
         if target not in OPTIONAL_INTEGRATIONS:
             raise LookupError("Integration is unavailable.")
-        # A retry of the same save derives the same new record identity.
+        # Setting up again reuses the removed integration's record identity,
+        # which history keeps stable; otherwise a retry of the same save
+        # derives the same new one.
+        from .request_admission import historical_record_id
+
         record = {
-            "id": str(uuid5(SELECTION_NAMESPACE, f"record:{identifier}")),
+            "id": historical_record_id(configuration.active_configuration.pk, target)
+            or str(uuid5(SELECTION_NAMESPACE, f"record:{identifier}")),
             "values": {"kind": target, "settings": {}, "credential_fingerprint": None},
         }
+        predecessor = leftover_key(target)
+    else:
+        predecessor = record["values"]["credential_fingerprint"]
     proposed = {**record, "values": {**record["values"], "settings": settings}}
     scope = authentication_scope(
         target,
@@ -292,7 +337,7 @@ def save_credential(
         target=target,
         staging_reference=UUID(intent["staging"]),
         staging_lifetime=STAGING_LIFETIME,
-        expected_fingerprint=record["values"]["credential_fingerprint"],
+        expected_fingerprint=predecessor,
         correlation_id=current_correlation(),
         sealed_candidate=sealed,
         candidate_fingerprint=fingerprint,

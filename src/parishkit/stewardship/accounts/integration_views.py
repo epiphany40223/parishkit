@@ -40,6 +40,7 @@ from .integration_forms import (
 )
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
+from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
@@ -386,9 +387,11 @@ def _preview(request, service, actor, target):
         if record["id"] is not None
         else {
             # The off-site folder is added by settings alone; it has no key.
+            # Adding it again after removal reuses its stable record ID.
             "operation": "add",
             "section": "integrations",
-            "id": str(uuid4()),
+            "id": historical_record_id(configuration.active_configuration.pk, target)
+            or str(uuid4()),
             "values": {
                 "kind": target,
                 "settings": settings,

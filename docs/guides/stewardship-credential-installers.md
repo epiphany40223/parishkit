@@ -242,6 +242,14 @@ Slack's credential directory, even before Slack is set up, so `compose.json`
 and `compose-slack.json` now render the same mounts and no Compose switch is
 needed. Removing Slack is an ordinary previewed configuration change; new
 Slack alerts stop, and the old key file remains until Slack is set up again.
+After removal the page shows no key-change line, only "Slack is not set up".
+Setting Slack up again is the same one-step save: the new key names the
+leftover file as its predecessor (the latest applied key for the target), and
+the added record reuses Slack's earlier record ID, because integration
+identities stay stable across configuration history. The off-site backup
+folder reuses its record ID the same way when it is turned on again. If the
+add's own selection fails, the page shows the "switching did not finish" error
+above, and **Finish switching** repeats the whole add.
 
 ## Verification
 
