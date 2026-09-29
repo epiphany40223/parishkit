@@ -76,3 +76,19 @@ def test_exports_keep_formula_text_literal():
     shaped["members"][0]["member_name"] = "=cmd"
     rows = list(csv.reader(io.StringIO(talents_csv(shaped, UTC).decode())))
     assert rows[1][2] == "'=cmd"
+
+
+def test_xlsx_escapes_control_characters_in_source_names():
+    """A vertical tab pasted into a ParishSoft name cannot break the workbook.
+
+    openpyxl rejects characters XML 1.0 forbids, so a raw write raised and the
+    download failed. The shared writer escapes them reversibly instead.
+    """
+    raw = result({PAINTER: ""}, {PAINTER: 1})
+    raw["members"][0]["member_name"] = "Alex\x0bExample"
+    raw["families"][0]["family_name"] = "Example\x0b"
+    shaped = shape_result(raw, configuration={"modules": ["ministry"]})
+    book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
+    member = book["Members"]["C2"]
+    assert member.data_type == "s" and member.value == "Alex\\u000bExample"
+    assert book["Families"]["A2"].value == "Example\\u000b"
