@@ -470,6 +470,14 @@ def _execute(
                 raise FamilyDeliveryHeld("Workspace key change is switching.")
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
+        if session is not None and message.purpose not in {
+            "daily_digest",
+            "weekly_digest",
+        }:
+            # Settle retired helpers before this message commits
+            # "submitting": failing to reap one is fatal, and must not leave
+            # an unsent message looking possibly sent.
+            session.reap()
         prepared = begin_submission(
             message.pk,
             execution.claim,

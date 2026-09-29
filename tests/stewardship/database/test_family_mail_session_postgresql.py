@@ -27,7 +27,7 @@ from parishkit.stewardship.jobs import family_mail_dispatch
 from parishkit.stewardship.jobs.dispatch import recover_hint
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
 from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.jobs.outbox_models import OutboxEvent
+from parishkit.stewardship.jobs.outbox_models import OutboxEvent, OutboxMessage
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
@@ -147,10 +147,21 @@ def fast_limits(monkeypatch):
 
 def test_a_batch_shares_one_helper_and_settles_each_message(batch):
     """One process, token and connection; each message has its own outcome."""
+    reaped = []
+    real_reap = batch.session.reap
+
+    def reap():
+        """Note the message's state when the worker reaps retired helpers."""
+        reaped.append(OutboxMessage.objects.get().state)
+        real_reap()
+
+    batch.session.reap = reap
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         before, first = other(batch)
         message = send(batch, prepare(batch.harness))
-        after, last = other(batch)
+    # Reaping happens before the message commits "submitting".
+    assert reaped == ["pending"]
+    after, last = other(batch)
     assert batch.seen == [SETTINGS]
     assert (first, last) == (Status.ACCEPTED, Status.ACCEPTED)
     assert message.state == "delivered" and task(message).state == "succeeded"

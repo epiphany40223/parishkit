@@ -787,3 +787,26 @@ def test_the_transport_switch_selects_the_session(batched):
     # setting: its execute refuses outright.
     scheduler = delivery_handler(None, scheduler=True, batched=batched)
     assert scheduler.execute is _unavailable
+
+
+def test_only_reap_kills_a_retired_helper(gmail, timeouts, monkeypatch):
+    """A laggard is killed by reap(), which runs before a message commits.
+
+    ``submit`` only retires helpers, so a fatal failure to reap one can never
+    strike while a message is already "submitting".
+    """
+    # No background reaper interferes within this test.
+    monkeypatch.setattr(family_delivery_process, "REAP_SECONDS", 3600)
+    session = gmail.session()
+    assert send(session, mail()).status is Status.ACCEPTED
+    old = session.process
+    gmail.script(("quit", ["hang"]))
+    other = SETTINGS | {"sender_name": "Parish Office"}
+    assert send(session, mail(), settings=other).status is Status.ACCEPTED
+    time.sleep(family_delivery_process.RETIRE_SECONDS + 0.2)
+    assert send(session, mail(), settings=other).status is Status.ACCEPTED
+    assert old.poll() is None and timeouts == []
+    session.reap()
+    assert old.poll() is not None
+    assert [event for event, _ in timeouts] == ["helper_timed_out"]
+    session.close()

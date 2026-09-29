@@ -250,17 +250,21 @@ class FamilyMailSession:
         self.reaper = None
 
     def submit(self, value, settings, mail, *, count, seconds, check):
-        """Submit one admitted mail payload; return a result or DeliveryOutcome."""
+        """Submit one admitted mail payload; return a result or DeliveryOutcome.
+
+        The deadline starts on entry: ``seconds`` is what remains of the
+        message's provider deadline, so time spent waiting for the session
+        lock (held briefly by the reaper) must come out of it, never extend
+        it. Rotation itself never waits for a helper.
+        """
+        deadline = time.monotonic() + seconds
         with self.lock:
             _check_owner(check)
             candidate = base64.b64encode(value).decode("ascii")
             key = hashlib.sha256(
                 json.dumps([candidate, settings], sort_keys=True).encode("utf-8")
             ).digest()
-            # Rotation never waits for a helper, so the message's whole budget
-            # starts here, after it.
             self._rotate(key)
-            deadline = time.monotonic() + seconds
             on_timeout = helper_timeout_recorder(
                 "family_delivery_worker", what="mail_helper", seconds=seconds
             )
@@ -294,9 +298,20 @@ class FamilyMailSession:
                 self._retire()
             return DeliveryOutcome.NOT_SENT
 
+    def reap(self):
+        """Reap retired helpers now, killing (and logging) any past their grace.
+
+        The worker calls this before a message commits "submitting": the kill
+        can fail fatally (the OS cannot reap a helper), and that must not
+        happen while an unsent message looks possibly sent. ``submit`` itself
+        only retires helpers, never kills a retired one.
+        """
+        with self.lock:
+            self._reap()
+
     def _rotate(self, key):
         """Retire a helper that has ended, aged out, idled or has other context."""
-        self._reap()
+        self._retire_stale()
         if self.process is not None and (
             key != self.key
             or self.count >= SESSION_MESSAGES
@@ -323,17 +338,21 @@ class FamilyMailSession:
             )
         )
 
-    def _reap(self, *, wait=False):
-        """Retire an idle or exited helper; reap, or kill and log, retired ones.
-
-        With ``wait`` (closing the session) each retired helper is waited for
-        until its RETIRE_SECONDS are up, instead of only polled.
-        """
+    def _retire_stale(self):
+        """Retire the current helper if it has exited or sat idle too long."""
         if self.process is not None and (
             self.process.poll() is not None
             or self.clock() - self.used >= PARENT_IDLE_SECONDS
         ):
             self._retire()
+
+    def _reap(self, *, wait=False):
+        """Retire a stale helper; reap, or kill and log, retired ones.
+
+        With ``wait`` (closing the session) each retired helper is waited for
+        until its RETIRE_SECONDS are up, instead of only polled.
+        """
+        self._retire_stale()
         pending = []
         for process, retired, record in self.retiring:
             if wait:
