@@ -1199,10 +1199,13 @@
     const validate = (show = true) => {
       showErrors ||= show;
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
-      // A blank pledge is asked for plainly; anything else that isn't an
-      // amount (text, three decimals, negative, too large) shows the format.
-      annual.setCustomValidity(cents !== null ? "" : !annual.value.trim() ? "Enter an annual pledge." :
-        "Enter a dollar amount, like 1200 or 1200.50.");
+      // A blank pledge is asked for plainly, a well-formed amount that is too
+      // large gets the limit, and anything else (text, three decimals, a
+      // negative) shows the format. The server uses the same wording.
+      const typed = annual.value.trim();
+      const tooLarge = /^[0-9][0-9,]*(\.[0-9]{1,2})?$/.test(typed) && Number(typed.replaceAll(",", "")) >= 1e9;
+      annual.setCustomValidity(cents !== null ? "" : !typed ? "Enter an annual pledge." :
+        tooLarge ? "Enter an annual pledge under $1,000,000,000." : "Enter a dollar amount, like 1200 or 1200.50.");
       frequency.required = cents !== null && cents > 0;
       frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {

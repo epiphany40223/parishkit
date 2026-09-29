@@ -566,4 +566,8 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
         pledge.fill(value)
         pledge.blur()
         expect(error).to_have_text("Enter a dollar amount, like 1200 or 1200.50.")
+    for value in ("1000000000", "1,000,000,000.00"):
+        pledge.fill(value)
+        pledge.blur()
+        expect(error).to_have_text("Enter an annual pledge under $1,000,000,000.")
     assert "$0.00" not in page.locator("main").inner_text()
