@@ -225,7 +225,13 @@ def at(*args):
     return datetime(*args, tzinfo=UTC)
 
 
-def test_many_deploy_backups_in_one_day_keep_the_daily_anchors():
+@pytest.fixture
+def no_floor(monkeypatch):
+    """Drop the newest-sets floor to one, so the date tiers alone decide."""
+    monkeypatch.setattr(backup, "MINIMUM_SETS", 1)
+
+
+def test_many_deploy_backups_in_one_day_keep_the_daily_anchors(no_floor):
     """Forty sets in one day do not push out the twice-daily history."""
     scheduled = [
         name(at(2026, 9, 28, 2) - timedelta(hours=12 * step)) for step in range(40)
@@ -242,7 +248,7 @@ def test_many_deploy_backups_in_one_day_keep_the_daily_anchors():
     )
 
 
-def test_day_and_month_boundaries_are_utc():
+def test_day_and_month_boundaries_are_utc(no_floor):
     """A set a second before midnight UTC belongs to the earlier day and month."""
     now = at(2026, 9, 29, 12)
     sets = [
@@ -268,7 +274,7 @@ def test_day_and_month_boundaries_are_utc():
     }
 
 
-def test_the_newest_set_is_always_kept():
+def test_the_newest_set_is_always_kept(no_floor):
     """Even when it is older than every window, and even if alone."""
     now = at(2026, 9, 29)
     assert backup.retained([], now) == set()
@@ -276,7 +282,7 @@ def test_the_newest_set_is_always_kept():
     assert backup.retained(ancient, now) == {ancient[-1]}
 
 
-def test_the_recent_window_keeps_every_set():
+def test_the_recent_window_keeps_every_set(no_floor):
     """All sets from the last week stay; eight days back only the anchor."""
     now = at(2026, 9, 29, 12)
     recent = [name(now - timedelta(days=6, hours=23, minutes=n)) for n in range(5)]
@@ -284,6 +290,55 @@ def test_the_recent_window_keeps_every_set():
     keep = backup.retained(recent + older, now)
     assert set(recent) <= keep
     assert keep & set(older) == {max(older)}
+
+
+def test_the_floor_survives_a_forward_clock_jump():
+    """A year's jump ages every set out of the tiers; the newest 14 stay."""
+    sets = [name(at(2026, 9, 1, 2) + timedelta(hours=12 * n)) for n in range(40)]
+    keep = backup.retained(sets, at(2027, 12, 1))
+    assert keep == set(sets[-backup.MINIMUM_SETS :])
+
+
+def put_sets(backups, names):
+    """Write complete local sets with the given names."""
+    for set_name in names:
+        (backups / set_name).mkdir(mode=0o700)
+        (backups / set_name / backup.MANIFEST).write_text("{}")
+
+
+@pytest.mark.parametrize(
+    ("taken", "now"),
+    [
+        # The clock jumped forward: the new set is days after the last one.
+        (NOW + timedelta(days=3), NOW + timedelta(days=3)),
+        # The clock went back: an existing set is dated after "now".
+        (None, NOW - timedelta(days=30)),
+    ],
+)
+def test_a_suspect_clock_pauses_host_retention(
+    deployment, taken, now, caplog, no_floor
+):
+    """Nothing is pruned, and a WARNING names why, when the clock looks wrong."""
+    backups = deployment.paths["backups"]
+    sets = [name(NOW - timedelta(days=40, hours=n)) for n in range(5)] + [name(NOW)]
+    put_sets(backups, sets + ([name(taken)] if taken else []))
+    backup._prune(backups, now)
+    assert set(sets) <= {p.name for p in backups.iterdir()}
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "extra", {}).get("failure_kind")
+        == "backup_retention_paused"
+        for record in caplog.records
+    )
+
+
+def test_a_normal_gap_does_not_pause_retention(deployment, no_floor):
+    """Twelve hours after the previous set, pruning goes ahead."""
+    backups = deployment.paths["backups"]
+    old = [name(NOW - timedelta(days=40, hours=n)) for n in range(5)]
+    put_sets(backups, old + [name(NOW - timedelta(hours=12)), name(NOW)])
+    backup._prune(backups, NOW)
+    assert not set(old[1:]) & {p.name for p in backups.iterdir()}
 
 
 def test_refusals_leave_no_record(deployment, tmp_path):

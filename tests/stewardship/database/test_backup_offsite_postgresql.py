@@ -730,3 +730,43 @@ def test_saving_a_folder_counts_only_backup_folder_changes(workspace):
     after = database_now_sql()
     assert backup_destination.saved_folder_since(before) == (other, True)
     assert backup_destination.saved_folder_since(after) == (other, False)
+
+
+def test_drive_retention_keeps_only_recorded_copies(offsite, monkeypatch):
+    """The copy's prune reads verified sets from the recorded uploads.
+
+    A complete folder with no ``uploaded`` row (its copy failed verification,
+    or a restored database lacks the row) is never chosen over a recorded
+    copy and is never trashed; of two recorded copies from one past day,
+    only the newer is kept (the older is never an anchor again).
+    """
+    from parishkit.stewardship import backup
+
+    monkeypatch.setattr(backup, "MINIMUM_SETS", 1)
+    drive = offsite.drive
+    folders = {}
+    for name in ("20260801T020000Z", "20260801T140000Z", "20260801T200000Z"):
+        folders[name] = drive.create_folder(name, FOLDER)
+        for file_name in SEALED_FILES:
+            drive._new(
+                name=file_name, mime="x", parent=folders[name], size="6", md5="0" * 32
+            )
+    # A recent neighbour, so the clock check sees no multi-day gap.
+    drive.create_folder("20260926T140000Z", FOLDER)
+    for name in ("20260801T020000Z", "20260801T140000Z"):
+        BackupUpload.objects.create(
+            state="uploaded", set_name=name, manifest_digest="a" * 64, folder_id=FOLDER
+        )
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert drive.items[folders["20260801T020000Z"]]["trashed"]
+    assert not drive.items[folders["20260801T140000Z"]]["trashed"]
+    assert not drive.items[folders["20260801T200000Z"]]["trashed"]
+
+
+def test_a_second_copy_waits_for_the_copy_lock(offsite):
+    """While one run holds the host's copy lock, another copies nothing."""
+    with backup_offsite._copy_lock(offsite.configuration.paths["backups"]) as held:
+        assert held
+        assert copy(offsite) == {"state": "busy"}
+    assert not offsite.drive.sets()
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}

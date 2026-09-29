@@ -27,7 +27,15 @@ from urllib.parse import parse_qs, urlsplit
 
 from parishkit.config import ConfigError
 
-from .backup import DUMP, FILES, MANIFEST, RECENT_WINDOW, retained, set_started
+from .backup import (
+    DUMP,
+    FILES,
+    MANIFEST,
+    RECENT_WINDOW,
+    retained,
+    retention_paused,
+    set_started,
+)
 from .observability import Event, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
@@ -406,9 +414,10 @@ def upload_set(client, folder_id, directory, names):
 def _complete(client, folder):
     """True when a set folder holds all three files, each with size and MD5.
 
-    Only ``upload_set`` writes these folders, and it verifies each file as it
-    goes, so a folder missing a file is a copy that failed or is still being
-    written.
+    A folder missing a file is a copy that failed or was interrupted. Having
+    all three is not proof the copy verified (``upload_set`` stops at the
+    first mismatched file but leaves it), which is why ``prune`` also needs
+    the recorded ``uploaded`` outcome.
     """
     stored = {
         item.get("name")
@@ -418,30 +427,48 @@ def _complete(client, folder):
     return {DUMP, FILES, MANIFEST} <= stored
 
 
-def prune(client, folder_id, *, now=None):
+def prune(client, folder_id, *, verified, now=None):
     """Trash this deployment's set folders the host's retention would not keep.
 
-    The rules are ``backup.retained``'s, so the Drive copy keeps the same
-    daily and monthly anchors as the host. Folders started within
-    ``RECENT_WINDOW`` are never touched, complete or not: one may be a copy
-    still being written. Older ones count only when complete, so partial
-    folders left by failed copies can never push a good set out; the anchors
-    are chosen among the complete ones (the newest of them always stays),
-    and an older partial folder is trashed. Folders without this
-    deployment's tag, or not named like a set, are never touched.
+    ``verified`` names the sets with a recorded ``uploaded`` outcome for this
+    folder. The rules are ``backup.retained``'s, so the Drive copy keeps the
+    same daily and monthly anchors as the host, chosen only among folders
+    that are both verified and complete: a failed or partial copy can never
+    displace a good one. Beyond those:
+
+    - folders started within ``RECENT_WINDOW`` are never touched;
+    - an older folder missing a file is trashed (the caller holds the copy
+      lock, so it is not another run's copy in progress);
+    - an older complete folder without a recorded outcome is left alone: it
+      may be a good copy whose row a restored database lacks, or a copy that
+      failed verification; the operator removes it by hand;
+    - nothing is trashed while ``backup.retention_paused`` says the clock
+      looks wrong, or if any listing fails;
+    - folders without this deployment's tag, or not named like a set, are
+      never touched.
     """
     now = now or datetime.now(UTC)
-    older = [
+    folders = [
         item
         for item in client.children(folder_id, tagged=True, folders=True)
-        if (started := set_started(item.get("name", "")))
-        and started < now - RECENT_WINDOW
+        if set_started(item.get("name", ""))
     ]
-    complete = [item for item in older if _complete(client, item)]
-    keep = retained([item["name"] for item in complete], now)
-    kept = {item["id"] for item in complete if item["name"] in keep}
+    if retention_paused([item["name"] for item in folders], now):
+        return
+    older = [
+        item for item in folders if set_started(item["name"]) < now - RECENT_WINDOW
+    ]
+    # Every listing happens before the first trash, so a failed one trashes
+    # nothing.
+    complete = {item["id"] for item in older if _complete(client, item)}
+    good = [
+        item for item in older if item["id"] in complete and item["name"] in verified
+    ]
+    keep = retained([item["name"] for item in good], now)
     for item in older:
-        if item["id"] not in kept:
+        if item["id"] not in complete or (
+            item["name"] in verified and item["name"] not in keep
+        ):
             client.trash(item["id"])
 
 
