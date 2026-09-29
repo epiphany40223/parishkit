@@ -1145,7 +1145,9 @@ request, confirmations and mutations keep the work-order lock; access audits
 of page views do not, and commit in their own short transaction after the
 snapshot. Campaign-detail reads still use the
 [campaign read guards](#campaign-read-guards) above; the snapshot replaces
-neither. A read whose helpers require the work order keeps the lock.
+neither. A read whose helpers require the work order keeps the lock. Access
+is rechecked after the snapshot ends, so the snapshot cannot hide a revocation
+committed while the page was read.
 
 ## Effective-value merge
 

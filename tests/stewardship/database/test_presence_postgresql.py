@@ -339,3 +339,98 @@ def test_presence_invalid_navigation_is_rejected(family_service, google, query):
     """Presence is a bounded read endpoint, not an open-ended ORM query interface."""
     browser, _ = signed_in()
     assert browser.get(ADMIN + query).status_code == 400
+
+
+def test_roster_never_waits_behind_the_work_lock_or_another_reader(
+    family_service, google
+):
+    """A promotion holding the work lock, or another open reader, delays no view.
+
+    Another session holds the exclusive work-order lock for the whole check,
+    as a source promotion or installer does, and a second reader thread sits
+    inside its own snapshot. The roster, its JSON form and the header count
+    all still render under a short statement timeout, and the roster still
+    records its access audit. A regression back to the work lock fails fast
+    with 503 instead of hanging.
+    """
+    from threading import Event, Thread
+
+    from django.db import connections
+
+    from parishkit.stewardship.campaigns.work_locks import (
+        WORK_ORDER_LOCK,
+        read_transaction,
+    )
+
+    from .test_schedule_views_postgresql import other_session
+
+    publish(source())
+    family, _ = login(family_service.code)
+    assert beat(family).status_code == 200
+    browser, _ = signed_in()
+    entered, done = Event(), Event()
+
+    def reader():
+        """Hold one snapshot open, as a concurrent Admin page view does."""
+        try:
+            with read_transaction():
+                FamilySession.objects.count()
+                entered.set()
+                done.wait(30)
+        finally:
+            connections.close_all()
+
+    thread = Thread(target=reader)
+    with other_session() as holder:
+        holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
+        thread.start()
+        try:
+            assert entered.wait(30)
+            with connection.cursor() as cursor:
+                cursor.execute("SET statement_timeout = '3s'")
+            for query in ("", "?format=json", "?format=count"):
+                response = browser.get(ADMIN + query)
+                assert response.status_code == 200, query
+            assert response.json()["count"] == 1
+        finally:
+            done.set()
+            thread.join(30)
+            with connection.cursor() as cursor:
+                cursor.execute("RESET statement_timeout")
+    assert AuditEvent.objects.filter(event_type="family_presence_viewed").count() == 2
+
+
+def test_roster_access_revoked_during_its_snapshot_is_refused(
+    family_service, google, monkeypatch
+):
+    """The snapshot cannot hide a revocation committed while the roster was read.
+
+    Another session disables the Administrator after the snapshot began. The
+    access recheck runs after the snapshot ends, refuses, and records no
+    successful roster disclosure.
+    """
+    from parishkit.stewardship.accounts import presence
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    from .test_schedule_views_postgresql import other_session
+
+    publish(source())
+    family, _ = login(family_service.code)
+    assert beat(family).status_code == 200
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org")
+    genuine = presence._names
+
+    def revoking(*args, **kwargs):
+        """Name the Families as usual while a concurrent session disables us."""
+        with other_session() as other:
+            other.execute(
+                "UPDATE stewardship_portal_user SET disabled=true, "
+                "version=version+1 WHERE id=%s",
+                [admin.pk],
+            )
+        return genuine(*args, **kwargs)
+
+    monkeypatch.setattr(presence, "_names", revoking)
+    assert browser.get(ADMIN + "?format=json").status_code == 403
+    assert not AuditEvent.objects.filter(event_type="family_presence_viewed").exists()
