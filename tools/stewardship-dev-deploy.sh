@@ -4,7 +4,9 @@
 #
 # Pre-launch only. This skips CI and the release workflow, so an image it
 # deploys has not been validated: never use it on a deployment serving real
-# Families. Go-live must run a digest from a real release.
+# Families. Go-live must run a digest from a real release. The host-side
+# script refuses, before building or stopping anything, once the campaign
+# has been activated to Production.
 #
 # What it does:
 #   1. Packs the checkout's tracked files, including uncommitted edits, and
@@ -82,6 +84,28 @@ services="$root/config/services"
 isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
     --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777)
+
+# Refuse, before building, pushing or stopping anything, once the campaign
+# has been activated to Production (#326): this path skips CI, deploys an
+# untested image with debug logging on, and its best-effort backup would
+# leave the migration refusing only after the services had stopped. An
+# unreadable answer refuses too; nothing has changed yet.
+activated=$(docker compose -f "$services/compose-initial.json" -p "$project" \
+    exec -T postgres psql -U pk_stewardship_operator -d stewardship -Atc \
+    "SELECT EXISTS (SELECT 1 FROM stewardship_production_request WHERE activated_at IS NOT NULL)" \
+    2>/dev/null || true)
+if [ "$activated" != f ]; then
+    if [ "$activated" = t ]; then
+        echo "This deployment's campaign is in Production; refusing a dev deploy." >&2
+    else
+        echo "Cannot tell whether this deployment is in Production; refusing." >&2
+        echo "Start the database first:" >&2
+        echo "  docker compose -f $services/compose-initial.json -p $project up --detach --wait postgres" >&2
+    fi
+    echo "Deploy a release digest with the deployment runbook's Upgrade steps:" >&2
+    echo "  docs/guides/stewardship-deployment-runbook.md#upgrade" >&2
+    exit 1
+fi
 
 echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
 docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \

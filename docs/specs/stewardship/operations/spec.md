@@ -167,6 +167,11 @@ and proxies dynamic traffic. Production requires a DNS hostname pointing to the
 VM and inbound ports 80/443. Caddy's data/config volumes persist account and
 certificate state across upgrades.
 
+Static assets keep fixed names (for example `ui-v1.js`), so Caddy sends them
+with `Cache-Control: no-cache`: browsers may keep a copy but revalidate it
+against the file server's `ETag` on every use, and a mid-campaign fix to a
+script or stylesheet reaches returning Families on their next page load.
+
 Caddy has explicit highest-priority matchers that return the ordinary public
 not-found response for `/health/live`, `/health/ready`, and `/metrics` before
 the catch-all application reverse proxy. Container health checks and authorized

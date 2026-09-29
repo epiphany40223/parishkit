@@ -471,3 +471,37 @@ def test_worker_receives_the_source_loss_override_from_the_operator_shell(
     assert environment["PARISHKIT_SOURCE_MAX_DROP_PERCENT"] == (
         "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}"
     )
+
+
+@pytest.mark.parametrize("production", [False, True])
+def test_every_service_caps_its_container_log(tmp_path, production):
+    """#326 M1: no container, database and ingress included, logs without limit.
+
+    Docker's default json-file driver never rotates, so each service keeps
+    at most five 10 MB files.
+    """
+    compose, _ = render_runtime(
+        configuration_at(tmp_path, production=production),
+        image=IMAGE if production else "parishkit-stewardship:development",
+    )
+    services = compose["services"]
+    assert {"postgres", "valkey", "web", "worker", "backup-worker"} <= set(services)
+    assert production == ("caddy" in services)
+    for name, service in services.items():
+        assert service["logging"] == {
+            "driver": "json-file",
+            "options": {"max-size": "10m", "max-file": "5"},
+        }, name
+    # Each service owns its copy, so a later edit to one cannot move another.
+    assert services["web"]["logging"] is not services["worker"]["logging"]
+
+
+def test_static_files_are_revalidated_on_every_use(tmp_path):
+    """#326 M4: fixed-name scripts and styles never outlive a hotfix in a cache."""
+    output = render_caddy(configuration_at(tmp_path, production=True))
+    block = output[output.index("handle_path /static/* {") :]
+    block = block[: block.index("}")]
+    assert 'header Cache-Control "no-cache"' in block
+    assert "file_server" in block
+    # Only static files: the application sets its own headers.
+    assert output.count("Cache-Control") == 2  # this and the maintenance page

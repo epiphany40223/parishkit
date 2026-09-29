@@ -8,6 +8,7 @@ later-phase delivery, publication and backup workers remain explicitly pending.
 """
 
 import re
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -34,6 +35,18 @@ CADDY_IMAGE = (
     "caddy:2.11.4-alpine@sha256:"
     "5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
 )
+
+# Docker's default json-file driver keeps a container's log forever, so one
+# noisy service could fill the host's disk during a month-long campaign.
+# Every service, the one-shot profiles included, keeps at most five 10 MB
+# files (50 MB); about eighteen long-running services then use under 1 GB.
+# Docker applies it when a container is created, so the next retarget-image
+# and `up` recreate each container with the cap. Durable evidence lives in
+# the database, not in these logs.
+CONTAINER_LOGGING = {
+    "driver": "json-file",
+    "options": {"max-size": "10m", "max-file": "5"},
+}
 
 
 def bind(path, *, target=None, read_only=True):
@@ -368,8 +381,6 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         services[name] = service
     web = services.pop("web")
     for replica in range(budget.replicas):
-        from copy import deepcopy
-
         selected = deepcopy(web)
         if configuration.profile is DeploymentProfile.PRODUCTION:
             selected["networks"]["proxy"] = {"ipv4_address": network.web(replica)}
@@ -389,6 +400,8 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         for service in services.values():
             if "profiles" not in service:
                 service["restart"] = "unless-stopped"
+    for service in services.values():
+        service["logging"] = deepcopy(CONTAINER_LOGGING)
     return {
         "name": "parishkit-stewardship",
         "services": services,
