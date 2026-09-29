@@ -322,6 +322,42 @@ def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(
     assert row.expires_at == row.authenticated_at + timedelta(hours=4)
 
 
+def test_keepalive_leaves_the_campaign_row_alone_during_maintenance(
+    family_service, monkeypatch
+):
+    """While closed, keepalive refreshes only the session, not FamilyCampaign."""
+    from parishkit.stewardship.accounts import family_authentication, family_maintenance
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    client, _ = login(family_service.code)
+    row = FamilySession.objects.get()
+    before = FamilyCampaign.objects.values("last_activity_at", "version").get(
+        pk=row.family_id
+    )
+    instant = row.last_activity_at + timedelta(minutes=10)
+    monkeypatch.setattr(family_authentication, "database_now", lambda: instant)
+    monkeypatch.setattr(
+        family_maintenance,
+        "current_state",
+        lambda **_: family_maintenance.MaintenanceState(closed=True),
+    )
+    response = client.post(
+        "/family/keepalive",
+        b"",
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=client.cookies["pk_family_csrf"].value,
+    )
+    assert response.status_code == 200
+    row.refresh_from_db()
+    assert row.last_activity_at == instant
+    assert (
+        FamilyCampaign.objects.values("last_activity_at", "version").get(
+            pk=row.family_id
+        )
+        == before
+    )
+
+
 def test_idle_and_absolute_deadlines_cannot_be_extended(family_service, monkeypatch):
     from parishkit.stewardship.accounts import family_authentication
 

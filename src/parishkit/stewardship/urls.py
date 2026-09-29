@@ -23,6 +23,7 @@ from .accounts import (
     critical_event_views,
     delivery_control_views,
     family_authentication,
+    family_maintenance_views,
     go_live_views,
     integration_selection_views,
     integration_views,
@@ -421,6 +422,11 @@ admin_patterns = [
         name="content_revision",
     ),
     path("presence", presence.active_families, name="presence"),
+    path(
+        "family-portal",
+        family_maintenance_views.family_portal,
+        name="family_portal",
+    ),
     path(
         "campaign/<uuid:campaign_id>/share-options",
         share_views.share_settings,

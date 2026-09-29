@@ -151,6 +151,7 @@ PAGES = {
     "delivery_refusal": Page("system", _("Refused address"), "delivery_refusals"),
     "logs": Page("system", _("System logs")),
     "presence": Page("system", _("Families on the form now")),
+    "family_portal": Page("system", _("Family portal availability")),
 }
 
 # Admin routes that are not navigable pages: form actions, downloads, images,

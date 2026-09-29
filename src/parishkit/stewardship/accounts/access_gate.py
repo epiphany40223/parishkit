@@ -11,6 +11,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.web.namespaces import is_admin
 from parishkit.stewardship.web.security import login_denial
 
+from . import family_maintenance
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .models import SystemConfiguration
@@ -79,6 +80,12 @@ class AccessGateMiddleware(MiddlewareMixin):
                 # expiry revocation and privilege-change cookie rotation. This
                 # routing-only middleware must neither repeat that work nor
                 # reject a session before its owning view can rotate it.
+                # The one exception is an Administrator's maintenance switch,
+                # which closes Family routes before any Family view runs.
+                if family and family_maintenance.gates(request):
+                    state = family_maintenance.current_state()
+                    if state.closed:
+                        return family_maintenance.family_response(request, state)
                 return None
             if admin:
                 principal = authenticated_admin(request, store=service.store)

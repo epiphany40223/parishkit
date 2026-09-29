@@ -84,6 +84,8 @@ class Action(StrEnum):
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
+    FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
+    FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
