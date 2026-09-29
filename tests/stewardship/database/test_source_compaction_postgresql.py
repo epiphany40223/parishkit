@@ -474,3 +474,42 @@ def test_spent_budget_marks_now_and_the_next_run_reclaims(history):
         9,
         1,
     )
+
+
+def test_a_days_final_content_survives_an_unchanged_run(monkeypatch):
+    """#320: a day that ends in content that then stays unchanged keeps it.
+
+    Day 0 ends at 23:00 in content "same", unchanged until day 1 at 09:00. A
+    retention run at 01:00 compacts the 23:00 snapshot at once, because it is
+    identical to the current one (00:30). After the change, the only snapshot
+    holding day 0's final content is the last one of the unchanged run
+    (00:30). It is not day 1's anchor, and day 0's only other snapshot (10:00)
+    holds an earlier state. The 00:30 snapshot must be kept, and 10:00 may go.
+    """
+    with transaction.atomic():
+        now = _now()
+    day0 = (now - timedelta(days=10)).replace(minute=0, second=0, microsecond=0)
+    day1 = day0 + timedelta(days=1)
+    first = promote_history(
+        monkeypatch,
+        [
+            (day0.replace(hour=10), "first"),
+            (day0.replace(hour=23), "same"),
+            (day1.replace(hour=0, minute=30), "same"),
+        ],
+    )
+    with monkeypatch.context() as context:
+        context.setattr(compaction, "_now", lambda: day1.replace(hour=1))
+        while cleanup().snapshot_count:
+            pass
+    compacted = SourceSnapshot.objects.filter(compacted_at__isnull=False)
+    assert set(compacted.values_list("pk", flat=True)) == {first[1].pk}
+    changed = promote_history(monkeypatch, [(day1.replace(hour=9), "changed")])
+    with monkeypatch.context() as context:
+        context.setattr(compaction, "_now", lambda: day1.replace(hour=20))
+        while cleanup().snapshot_count:
+            pass
+    assert set(compacted.values_list("pk", flat=True)) == {first[0].pk, first[1].pk}
+    assert reconstruct_snapshot(first[2].pk)["family"]["1"]["name"] == "Synthetic same"
+    assert reconstruct_snapshot()["family"]["1"]["name"] == "Synthetic changed"
+    assert SourceSnapshot.objects.get(pk=changed[0].pk).compacted_at is None

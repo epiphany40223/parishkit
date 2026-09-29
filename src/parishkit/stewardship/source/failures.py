@@ -30,6 +30,7 @@ from parishkit.stewardship.observability import (
     Event,
     correlation,
     debug_logging_enabled,
+    emit,
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -57,6 +58,9 @@ class ReadFailure:
     retry: bool
     contention: bool
     event: Event
+    # For a destructive change: the closed measure name and its before/after
+    # counts, logged so the operator can see what dropped (see loading.py).
+    loss: tuple | None = None
 
 
 def classify_read_failure(error, *, has_source_claim):
@@ -75,7 +79,9 @@ def classify_read_failure(error, *, has_source_claim):
     if isinstance(error, SourceOrganizationMismatch):
         return ReadFailure(False, False, Event.SOURCE_TENANT_MISMATCH)
     if isinstance(error, DestructiveSourceChange):
-        return ReadFailure(False, False, Event.SOURCE_DESTRUCTIVE_CHANGE)
+        return ReadFailure(
+            False, False, Event.SOURCE_DESTRUCTIVE_CHANGE, loss=error.loss
+        )
     if isinstance(error, ShiftedSourceScan):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
         # full load failed once and passed on five immediate re-runs). Retry
@@ -224,6 +230,16 @@ def settle_failed_read(execution, error, *, source_claim=None):
                     "version": result.version,
                     "outcome": Outcome.RETRY if retry else Outcome.FAILED,
                 },
+            )
+        if decision.loss is not None:
+            # The durable event above has no place for this detail, so the
+            # process log names the count that fell and its before and after
+            # values (counts only, never parish data). It is not debug output.
+            emit(
+                decision.event,
+                level=logging.CRITICAL,
+                task_id=result.run_id,
+                source_loss=decision.loss,
             )
         execution.control.finished.set()
         return result

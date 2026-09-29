@@ -248,10 +248,11 @@ its nightly and fifteen-minute cadence and resolves the incident by itself
 after a successful refresh of the current scope, as the
 [source health guide](stewardship-source-health.md) explains. Two other source
 incidents are refusals, not outages: `source_tenant_mismatch` (the key now
-sees another organization) and `source_destructive_change` (a full load lost
-an unexpected share of records). The application holds those refreshes and
-does not overwrite the snapshot; stop and investigate before touching the
-credential or the source.
+sees another organization) and `source_destructive_change` (a load lost an
+unexpected share of records or of eligible Families). The application holds
+those refreshes and does not overwrite the snapshot; stop and investigate
+before touching the credential or the source. For a destructive change, see
+[Accepting a large ParishSoft change](#accepting-a-large-parishsoft-change).
 
 **You do:**
 
@@ -268,6 +269,51 @@ credential or the source.
 **It is over when:** the refresh completes and the incident resolves. Data
 entered by Families during the outage was never at risk: submissions are
 stored against the snapshot and reconciled on the next refresh.
+
+### Accepting a large ParishSoft change
+
+A refresh is refused with `source_destructive_change` when, compared with the
+last full refresh or the current data (whichever is larger), a record count
+(Families, Members, Ministries, roster rows, funds) or an eligibility count
+(portal-eligible Families, email-eligible Families, Families with an active
+head, contacts with a valid email) falls by more than 25%, or falls to zero
+from any number, however small. Every later refresh is refused the same way
+until the drop is explained.
+
+1. Find what fell. The worker's log line for the refusal, a CRITICAL
+   `source_destructive_change`, carries `source_loss` with the count's name
+   and its before and after values (counts only, no parish data):
+   `docker compose ... logs worker | grep source_loss`.
+2. Check it in ParishSoft. If it is a mistake or an outage there (records
+   removed, organization or status fields blanked), fix it in ParishSoft and
+   use **Refresh now**; nothing else is needed.
+3. If the change is real, such as the parish inactivating many Families at
+   once, accept it for one refresh. Recreate the worker with a higher loss
+   limit, in percent (`100` accepts any drop; a load with no Families or
+   Members is still refused), then use **Refresh now**:
+
+   ```text
+   PARISHKIT_SOURCE_MAX_DROP_PERCENT=100 docker compose ... up --detach --force-recreate worker
+   ```
+
+4. Wait until the full refresh that **Refresh now** started has completed.
+   Its progress page (where **Refresh now** takes you) shows it finished,
+   and on `/admin/source/refresh` the "Last full ParishSoft refresh" time
+   moves past the moment you clicked, with no "a full refresh is running
+   now". A 15-minute update that completes first is not enough: later
+   refreshes also compare with the last full refresh, so removing the
+   override before the full one completes gets the next refresh refused
+   again. Only then recreate the worker without the variable, so the 25%
+   limit applies again:
+
+   ```text
+   docker compose ... up --detach --force-recreate worker
+   ```
+
+A malformed value keeps the 25% limit. The accepted refresh records the
+limit it used in its manifest. While any limit other than 25% is in effect,
+the worker logs a WARNING line carrying `source_max_drop_percent` at the
+start of every refresh, so a forgotten override shows in its log.
 
 ## Replacing a provider credential
 

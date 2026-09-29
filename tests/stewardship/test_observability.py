@@ -43,6 +43,53 @@ def test_events_keep_safe_context_and_utc(caplog, level):
     )
 
 
+def test_source_loss_detail_is_logged_only_as_closed_counts(caplog):
+    """#320: a refused refresh names the dropped count in ordinary output."""
+    with caplog.at_level(logging.DEBUG):
+        emit(
+            Event.SOURCE_DESTRUCTIVE_CHANGE,
+            level=logging.CRITICAL,
+            source_loss=("active_head_families", 1200, 3),
+        )
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["source_loss"] == {
+        "measure": "active_head_families",
+        "before": 1200,
+        "after": 3,
+    }
+    for event, loss in (
+        (Event.TASK_FAILED, ("family", 2, 1)),
+        (Event.SOURCE_DESTRUCTIVE_CHANGE, ("private@example.org", 2, 1)),
+        (Event.SOURCE_DESTRUCTIVE_CHANGE, ("family", "2", 1)),
+        (Event.SOURCE_DESTRUCTIVE_CHANGE, ("family", 2)),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_loss=loss)
+
+
+def test_source_loss_limit_override_is_logged_only_as_a_percent(caplog):
+    """#320: an overridden limit is visible, carried by the reviewed start event."""
+    task_id = uuid4()
+    with caplog.at_level(logging.DEBUG):
+        emit(
+            Event.TASK_STARTED,
+            level=logging.WARNING,
+            task_id=task_id,
+            source_max_drop_percent=100,
+        )
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["level"] == "WARNING"
+    assert payload["extra"]["source_max_drop_percent"] == 100
+    for event, value in (
+        (Event.TASK_FAILED, 50),
+        (Event.TASK_STARTED, 101),
+        (Event.TASK_STARTED, "50"),
+        (Event.TASK_STARTED, True),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_max_drop_percent=value)
+
+
 def test_unstructured_errors_are_redacted_without_mutating_record():
     """Discard unsafe names, formatted args, exception text, stacks, and extras."""
     record = logging.LogRecord(

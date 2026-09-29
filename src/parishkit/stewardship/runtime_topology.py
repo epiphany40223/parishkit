@@ -20,6 +20,7 @@ from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
 from .service_boundaries import ALLOWED_SECRETS, rotating_directories
+from .source.loading import DROP_OVERRIDE_VARIABLE
 
 POSTGRES_IMAGE = (
     "postgres:18.6-trixie@sha256:"
@@ -171,6 +172,9 @@ def _application(image, budget):
             # Off unless the operator's shell exports it when running Compose;
             # see observability.debug_logging_enabled. Pre-launch debugging only.
             DEBUG_LOGGING_VARIABLE: "${" + DEBUG_LOGGING_VARIABLE + ":-0}",
+            # Empty unless the operator's shell exports it to accept one known
+            # large source change; see source.loading.maximum_drop_percent.
+            DROP_OVERRIDE_VARIABLE: "${" + DROP_OVERRIDE_VARIABLE + ":-}",
         },
         "networks": {"backend": {}},
         "restart": "no",

@@ -505,7 +505,18 @@ The cycle:
 2. Loads source collections into staging with bounded shared retries.
 3. Normalizes IDs/dates/emails/relationships and validates referential
    integrity, uniqueness, pagination completeness, and plausible counts.
-4. Compares count/drop thresholds to the last successful full snapshot.
+4. Compares core record counts with the last successful full snapshot, and
+   derived eligibility counts (portal-eligible and email-eligible Families,
+   Families with an active head, and contacts with a valid email) with both
+   the last full and the current snapshot, using the same drop threshold
+   (25% by default). Every record can stay while the fields eligibility
+   depends on disappear, so both are checked. The last full snapshot bounds
+   the loss accumulated over a series of deltas. Any count falling to zero
+   is refused, even from one or two. An operator accepts a known large change
+   for one refresh by raising the threshold, as the
+   [launch runbook](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
+   describes. The refusal's log line names the count and its before and
+   after values, never record data.
 5. Builds derived eligibility, roster, giving, and reconciliation data.
 6. Promotes all staged data atomically as defined by the
    [data specification](../data/spec.md#source-snapshot).

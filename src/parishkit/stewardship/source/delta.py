@@ -15,7 +15,13 @@ from parishkit.parishsoft_source import CoherentParishSoftClient
 from .canonical import InvalidSourcePayload
 from .corpus import KINDS, _scalar, normalize_core
 from .cursors import delta_dates
-from .loading import SourceLoad, validate_count_trend
+from .loading import (
+    DEFAULT_MAXIMUM_DROP_PERCENT,
+    SourceLoad,
+    derived_counts,
+    validate_count_trend,
+    validate_derived_trend,
+)
 from .windows import RefreshWindow
 
 
@@ -105,7 +111,8 @@ def load_delta_source(
     started_at,
     as_of,
     previous_full_counts,
-    maximum_drop_percent=25,
+    previous_derived_counts=None,
+    maximum_drop_percent=DEFAULT_MAXIMUM_DROP_PERCENT,
 ):
     """Return a whole replacement corpus or require a full refresh; never save SQL.
 
@@ -177,6 +184,12 @@ def load_delta_source(
             previous_full_counts=previous_full_counts,
             maximum_drop_percent=maximum_drop_percent,
         )
+        derived = derived_counts(corpus)
+        validate_derived_trend(
+            derived,
+            baseline_counts=previous_derived_counts,
+            maximum_drop_percent=maximum_drop_percent,
+        )
     except (ConfigError, KeyError, TypeError, ValueError, OverflowError):
         raise ChangeFeedIncomplete(
             "The Family delta cannot be safely scoped."
@@ -196,5 +209,6 @@ def load_delta_source(
             "giving_as_of_date": retained["giving_as_of_date"],
             "anonymous_pledges": retained["anonymous_pledges"],
             "anonymous_contributions": retained["anonymous_contributions"],
+            "derived_counts": derived,
         },
     )

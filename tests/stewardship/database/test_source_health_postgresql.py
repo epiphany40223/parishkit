@@ -621,3 +621,29 @@ def test_looser_threshold_cannot_resolve_without_a_new_success(
     observe()
     incident.refresh_from_db()
     assert incident.resolved_at is not None
+
+
+def test_destructive_refusal_logs_which_count_fell(tmp_path, caplog):
+    """#320: the refusal's closed detail reaches ordinary, non-debug output."""
+    import json
+    import logging
+
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    credential, *_ = configured(tmp_path)
+    publish(credential)
+    error = DestructiveSourceChange(
+        "PRIVATE", measure="email_eligible_families", before=900, after=10
+    )
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        settle_failed_read(claim(command()), error)
+    lines = [
+        json.loads(SafeJsonFormatter().format(record))
+        for record in caplog.records
+        if record.msg is Event.SOURCE_DESTRUCTIVE_CHANGE
+    ]
+    assert [line["extra"]["source_loss"] for line in lines] == [
+        {"measure": "email_eligible_families", "before": 900, "after": 10}
+    ]
+    assert lines[0]["level"] == "CRITICAL" and "PRIVATE" not in json.dumps(lines)
+    assert OperationalLog.objects.filter(event="source_destructive_change").exists()

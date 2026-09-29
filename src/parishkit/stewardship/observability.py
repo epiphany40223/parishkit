@@ -98,8 +98,17 @@ def emit(
     task_id: UUID | None = None,
     authentication_limits: tuple[str, ...] = (),
     failure_kind: FailureKind | None = None,
+    source_loss: tuple | None = None,
+    source_max_drop_percent: int | None = None,
 ) -> None:
-    """Emit only typed identifiers and an allowlisted event; accept no free text."""
+    """Emit only typed identifiers and an allowlisted event; accept no free text.
+
+    ``source_loss`` is a refused source refresh's (closed measure name, count
+    before, count after), only with ``SOURCE_DESTRUCTIVE_CHANGE``.
+    ``source_max_drop_percent`` is a source refresh's overridden loss limit,
+    only with ``TASK_STARTED``. Event names are mirrored by a SQL constraint,
+    so the override rides on that reviewed event rather than a new one.
+    """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
         logging.INFO,
@@ -117,6 +126,14 @@ def emit(
         or not _safe_thresholds(authentication_limits)
     ):
         raise ValueError("Authentication threshold names must be reviewed fields.")
+    if source_loss is not None and (
+        event is not Event.SOURCE_DESTRUCTIVE_CHANGE or not _safe_loss(source_loss)
+    ):
+        raise ValueError("Source loss detail must be a reviewed measure and counts.")
+    if source_max_drop_percent is not None and (
+        event is not Event.TASK_STARTED or not _safe_percent(source_max_drop_percent)
+    ):
+        raise ValueError("A source loss limit must be a whole percent.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -126,6 +143,8 @@ def emit(
                 "task_id": task_id,
                 "authentication_limits": authentication_limits,
                 "failure_kind": failure_kind,
+                "source_loss": source_loss,
+                "source_max_drop_percent": source_max_drop_percent,
             }
         ),
     )
@@ -173,6 +192,28 @@ def installer_request(identifier):
         except Exception as error:
             emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
             raise
+
+
+def _safe_percent(value):
+    """A whole percent from 0 to 100."""
+    return type(value) is int and 0 <= value <= 100
+
+
+def _safe_loss(value):
+    """A (measure, before, after) triple: a closed name and non-negative counts.
+
+    ``before`` is ``None`` only for an empty load, which has no comparison.
+    """
+    from .source.loading import LOSS_MEASURES
+
+    return (
+        type(value) is tuple
+        and len(value) == 3
+        and type(value[0]) is str
+        and value[0] in LOSS_MEASURES
+        and all(item is None or (type(item) is int and item >= 0) for item in value[1:])
+        and type(value[2]) is int
+    )
 
 
 def _safe_thresholds(value):
@@ -351,6 +392,23 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _safe_thresholds(context.get("authentication_limits"))
         ):
             safe.extra["authentication_limits"] = list(context["authentication_limits"])
+        if (
+            record.msg is Event.SOURCE_DESTRUCTIVE_CHANGE
+            and isinstance(context, dict)
+            and _safe_loss(context.get("source_loss"))
+        ):
+            measure, before, after = context["source_loss"]
+            safe.extra["source_loss"] = {
+                "measure": measure,
+                "before": before,
+                "after": after,
+            }
+        if (
+            record.msg is Event.TASK_STARTED
+            and isinstance(context, dict)
+            and _safe_percent(context.get("source_max_drop_percent"))
+        ):
+            safe.extra["source_max_drop_percent"] = context["source_max_drop_percent"]
         if debug_logging_enabled():
             # The debug details are the only free text in a line. Scrub each
             # value before serialization. The current request's secrets come

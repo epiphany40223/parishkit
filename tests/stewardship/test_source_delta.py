@@ -11,7 +11,10 @@ from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.stewardship.source.corpus import normalize_core
 from parishkit.stewardship.source.cursors import refresh_cursor
 from parishkit.stewardship.source.delta import load_delta_source
-from parishkit.stewardship.source.loading import DestructiveSourceChange
+from parishkit.stewardship.source.loading import (
+    DestructiveSourceChange,
+    derived_counts,
+)
 from parishkit.stewardship.source.windows import RefreshWindow
 
 from .test_source_corpus import TODAY, source
@@ -143,6 +146,27 @@ def test_family_inactivation_updates_eligibility_without_erasing_identity(tmp_pa
     result = load_delta_source(connection, **arguments())
     assert not result.corpus["family"]["1"]["portal_eligible"]
     assert set(result.corpus["member"]) == {"3"}
+
+
+def test_delta_eligibility_collapse_against_current_requires_full(tmp_path):
+    """#320: a delta whose derived counts collapse is refused like a record loss.
+
+    The single fixture Family losing its active head drops every derived
+    eligibility count to zero while every record stays; with the current
+    snapshot's counts supplied, the delta is not promotable.
+    """
+    connection = client(
+        tmp_path,
+        [
+            [indication()],
+            *household(member_change={"memberStatus": "Inactive"}),
+            [{"famGroupID": 7, "famGroup": "Active"}],
+        ],
+    )
+    options = arguments()
+    options["previous_derived_counts"] = derived_counts(options["base"])
+    with pytest.raises(ChangeFeedIncomplete):
+        load_delta_source(connection, **options)
 
 
 def test_empty_indications_preserve_giving_age_but_reevaluate_roster_dates(tmp_path):

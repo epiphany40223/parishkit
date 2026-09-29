@@ -5,6 +5,7 @@ effects and Task outcome. This pipeline never declares success or advances the
 current pointer: validated staging is not a completed campaign refresh.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 from itertools import batched
@@ -17,13 +18,21 @@ from parishkit.parishsoft import ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.jobs.phases import TaskPhase
+from parishkit.stewardship.observability import Event, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _scope, begin_refresh_attempt, verify_refresh_attempt
 from .canonical import InvalidSourcePayload
 from .cursors import refresh_cursor
 from .delta import load_delta_source
-from .loading import load_full_source
+from .loading import (
+    DEFAULT_MAXIMUM_DROP_PERCENT,
+    derived_baseline,
+    derived_counts,
+    load_full_source,
+    maximum_drop_percent,
+    valid_derived_counts,
+)
 from .requests import _window
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import finish_snapshot, reconstruct_snapshot, stage_entities
@@ -38,8 +47,16 @@ class RefreshInputs:
     window: RefreshWindow
     as_of: date
     previous_full_counts: dict | None
+    previous_derived_counts: dict | None
     base_cursor: dict | None
     base: dict | None = field(repr=False)
+
+
+def _recorded_derived(snapshot):
+    """The derived counts a snapshot's load recorded, or ``None`` if absent."""
+    load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
+    value = load.get("derived_counts") if type(load) is dict else None
+    return value if valid_derived_counts(value) else None
 
 
 def _inputs(attempt_id, execution, claim):
@@ -54,6 +71,7 @@ def _inputs(attempt_id, execution, claim):
         base = None
         cursor = None
         counts = None
+        derived = None
         if current.snapshot_id is not None:
             full = (
                 SourceSnapshot.objects.filter(
@@ -71,6 +89,22 @@ def _inputs(attempt_id, execution, claim):
             if snapshot.kind == "delta":
                 base = reconstruct_snapshot(current.snapshot_id)
                 cursor = SourceSnapshot.objects.get(pk=current.snapshot_id).cursor
+            # Eligibility is compared with both the last full and the current
+            # snapshot (#320), from the derived counts each load records in its
+            # manifest, so normally nothing is reconstructed for this.
+            current_row = SourceSnapshot.objects.get(pk=current.snapshot_id)
+            recorded = _recorded_derived(current_row)
+            if recorded is None:
+                # A snapshot promoted before these counts were recorded: count
+                # it once from its Family and contact rows (or the delta base).
+                recorded = derived_counts(
+                    base
+                    if base is not None
+                    else reconstruct_snapshot(
+                        current.snapshot_id, kinds=("family", "contact")
+                    )
+                )
+            derived = derived_baseline(_recorded_derived(full), recorded)
         zone = (
             scope.campaign.active_configuration.timezone
             if scope.campaign is not None
@@ -82,6 +116,7 @@ def _inputs(attempt_id, execution, claim):
             _window(scope),
             snapshot.started_at.astimezone(ZoneInfo(zone)).date(),
             counts,
+            derived,
             cursor,
             base,
         )
@@ -115,10 +150,22 @@ def load_and_stage_attempt(execution, claim, credential):
         )
         execution.progress(0, 0, phase=TaskPhase.FETCHING)
         connections.close_all()
+        limit = maximum_drop_percent()
+        if limit != DEFAULT_MAXIMUM_DROP_PERCENT:
+            # An operator override is meant for one refresh; say so on every
+            # refresh it applies to, so a forgotten one shows in normal logs.
+            emit(
+                Event.TASK_STARTED,
+                level=logging.WARNING,
+                task_id=execution.claim.run_id,
+                source_max_drop_percent=limit,
+            )
         options = dict(
             window=inputs.window,
             as_of=inputs.as_of,
             previous_full_counts=inputs.previous_full_counts,
+            previous_derived_counts=inputs.previous_derived_counts,
+            maximum_drop_percent=limit,
         )
         if claim.phase == "full":
             loaded = load_full_source(client, **options)
