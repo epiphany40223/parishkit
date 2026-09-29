@@ -43,7 +43,9 @@ def main():
     try:
         candidate, settings, mail = decode_request(sys.stdin.buffer.read(MAX_INPUT + 1))
         result = deliver_family(candidate, settings, mail)
-        sys.stdout.write(json.dumps(result.payload(), separators=(",", ":")) + "\n")
+        sys.stdout.write(
+            json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
+        )
     except Exception:
         return 1
     return 0
