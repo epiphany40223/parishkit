@@ -6,6 +6,9 @@ Database/cluster identity is bound before mutations. Existing unrelated roles
 and populated application databases are refused rather than adopted or reset.
 """
 
+import hashlib
+import re
+from pathlib import Path
 from uuid import UUID
 
 import psycopg
@@ -309,6 +312,7 @@ def provision_grants(configuration, deployment_id):
         database.cursor() as cursor,
     ):
         _admit_operator(cursor, configuration, marker, initial=False)
+        _admit_writer_guard(cursor)
         for _, login, role, target in database_identities():
             if not _check_role(
                 cursor,
@@ -348,6 +352,43 @@ def provision_grants(configuration, deployment_id):
                         )
                     )
     return {"database_grants_provisioned": True}
+
+
+def _writer_guard_digest():
+    """The md5 of the writer guard's body as this release's schema defines it."""
+    text = (Path(__file__).with_name("schema") / "functions.sql").read_text()
+    body = re.search(
+        r"^CREATE FUNCTION public\.stewardship_operational_log_writer_v1\(\)"
+        r".*?AS \$\$(.*?)\$\$;$",
+        text,
+        re.S | re.M,
+    )
+    if body is None:
+        raise ConfigError("The schema's operational log writer guard is missing.")
+    return hashlib.md5(body.group(1).encode()).hexdigest()
+
+
+def _admit_writer_guard(cursor):
+    """Refuse grants until this release's operational log writer guard is installed.
+
+    The mail-dispatch and backup logins may insert into the operational log
+    only because stewardship_operational_log_writer_v1 limits them to timeout
+    entries (#293); without it their INSERT grant could forge any event. The
+    trigger must call exactly this release's function body, so an older,
+    weaker guard cannot pass either.
+    """
+    cursor.execute(
+        "SELECT md5(p.prosrc) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+        "WHERE t.tgname='stewardship_operational_log_writer_v1' "
+        "AND t.tgrelid='public.stewardship_operational_log'::regclass "
+        "AND t.tgenabled='O' AND t.tgtype=7 "
+        "AND t.tgfoid='public.stewardship_operational_log_writer_v1()'::regprocedure"
+    )
+    row = cursor.fetchone()
+    if row is None or row[0] != _writer_guard_digest():
+        raise ConfigError(
+            "Install the schema's operational log writer guard before grants."
+        )
 
 
 def _admit_existing_grants(cursor, login, tables, columns):

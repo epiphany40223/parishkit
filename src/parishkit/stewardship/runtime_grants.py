@@ -285,10 +285,13 @@ def runtime_grants(role, *, target=None):
         # The dump itself reads through the pg_read_all_data membership that
         # provisioning grants; the registry holds the one row it may write and
         # read back (the database supplies the completion time), and the
-        # off-site copy outcome it appends after each set.
+        # off-site copy outcome it appends after each set. A copy stopped by
+        # its whole-copy deadline, or a backup task's lost lease, is logged
+        # (#293): insert only, and a trigger admits only timeout events.
         return {
             "stewardship_backup_run": {"SELECT", "INSERT"},
             "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_operational_log": {"INSERT"},
         }, {}
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(

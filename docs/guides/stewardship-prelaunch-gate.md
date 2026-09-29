@@ -302,16 +302,21 @@ run without JIT (one function body; Functions digest only).
 Report fixes (#322) then ran the financial, information, talent and
 ministry report functions without JIT too (four function settings;
 Functions digest only).
+Timeout logging (#293) added four operational events for work stopped by a
+time limit and a `timeout` context kind for them, and a guard trigger that
+lets the mail-dispatch and backup logins append only those entries (the
+operational event check, one function body and one new trigger function;
+Constraints, Functions and Triggers digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `79351bb3` |
+| Constraints | 3398 | `5ee21d05` |
 | Indexes | 1006 | `bd3148b3` |
-| Functions | 602 | `d1e0a64f` |
-| Triggers | 554 | `64154a74` |
+| Functions | 603 | `66d3088b` |
+| Triggers | 555 | `80f32975` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

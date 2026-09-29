@@ -2689,6 +2689,9 @@ CREATE TRIGGER stewardship_occurrence_transition_immutable_guard_v1 BEFORE DELET
 -- TRIGGER: stewardship_operational_log stewardship_operational_log_immutable_guard_v1
 CREATE TRIGGER stewardship_operational_log_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_operational_log FOR EACH ROW EXECUTE FUNCTION public.stewardship_operational_log_immutable_v1();
 
+-- TRIGGER: stewardship_operational_log stewardship_operational_log_writer_v1
+CREATE TRIGGER stewardship_operational_log_writer_v1 BEFORE INSERT ON public.stewardship_operational_log FOR EACH ROW EXECUTE FUNCTION public.stewardship_operational_log_writer_v1();
+
 -- TRIGGER: stewardship_parish stewardship_parish_branding_v1
 CREATE TRIGGER stewardship_parish_branding_v1 BEFORE INSERT ON public.stewardship_parish FOR EACH ROW EXECUTE FUNCTION public.stewardship_parish_branding_v1();
 

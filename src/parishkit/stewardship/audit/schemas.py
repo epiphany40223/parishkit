@@ -22,6 +22,7 @@ class ContextKind(StrEnum):
     ACTION = "action"
     BOUNDARY = "boundary"
     SCHEDULE = "schedule"
+    TIMEOUT = "timeout"
 
 
 class Outcome(StrEnum):
@@ -139,6 +140,20 @@ FIELDS = {
     },
     ContextKind.REQUEST: {"method", "status", "outcome", "source_fingerprint"},
     ContextKind.TASK: {"task_id", "count", "version", "outcome"},
+    # Work stopped by a time limit (#293). ``what`` names the limit that
+    # stopped it; the seconds are whole numbers; ``count`` is how many times
+    # it happened when one entry summarizes several.
+    ContextKind.TIMEOUT: {
+        "task_id",
+        "task_type",
+        "attempt",
+        "limit_seconds",
+        "elapsed_seconds",
+        "what",
+        "helper",
+        "count",
+        "outcome",
+    },
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome", "reason"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},
     ContextKind.MEMBER_SOURCE: {"family_duid", "member_duid", "field"},
@@ -174,6 +189,43 @@ FIELDS = {
 }
 
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
+
+# The limits that can stop work (#293); mirrored in stewardship_safe_context_v1.
+TIMEOUT_KINDS = frozenset(
+    {
+        "read_guard",
+        "lease",
+        "retention_budget",
+        "drive_copy_budget",
+        "drive_retry_budget",
+        "drive_request",
+        "drive_probe_wait",
+        "statement_timeout",
+        "lock_timeout",
+        "transaction_timeout",
+        "mail_helper",
+        "source_helper",
+        "provider_check",
+        "renewal_drain",
+        "control_lock",
+    }
+)
+# The helper processes a deadline can kill (#293), by their entry point;
+# mirrored in stewardship_safe_context_v1.
+TIMEOUT_HELPERS = frozenset(
+    {
+        "readiness_delivery_worker",
+        "readiness_notification_worker",
+        "family_delivery_worker",
+        "digest_delivery_worker",
+        "weekly_delivery_worker",
+        "operational_mail_worker",
+        "operational_slack_worker",
+        "security_mail_worker",
+        "provider_check_worker",
+        "parishsoft_http_worker",
+    }
+)
 
 
 def sanitize(kind, values):
@@ -223,6 +275,15 @@ def sanitize(kind, values):
             safe[key] = list(value) if valid else None
         elif key == "method":
             valid = type(value) is str and value in {"GET", "HEAD", "POST"}
+            safe[key] = value
+        elif key == "task_type":
+            valid = type(value) is str and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", value)
+            safe[key] = value
+        elif key == "what":
+            valid = type(value) is str and value in TIMEOUT_KINDS
+            safe[key] = value
+        elif key == "helper":
+            valid = type(value) is str and value in TIMEOUT_HELPERS
             safe[key] = value
         elif key == "decision":
             valid = type(value) is str and value in REVIEW_DECISIONS

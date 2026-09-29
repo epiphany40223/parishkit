@@ -622,6 +622,24 @@ Admin UI. Metrics include request latency/error, sessions, queue depth/age,
 task duration/failure, scheduler lag, outbox age/delivery, ParishSoft snapshot
 age, database/broker health, disk usage, backup age, and TLS expiry.
 
+Every time limit that stops work leaves an operational log entry that says
+what was stopped, which limit stopped it and after how long, using the
+`timeout` context (task id, type and attempt when known, limit and elapsed
+seconds, a reviewed name for the limit, and an occurrence count when one
+entry summarizes several). A read deadline, a PostgreSQL
+statement, lock or transaction timeout (including the lease renewal's own
+lock and statement limits and its drain limit), or a helper process killed at its
+deadline is an ERROR (`task_timed_out`, `helper_timed_out`). A helper entry is
+written right after the kill and names the helper (a mail, ParishSoft or provider
+check helper) and the task it served, when a worker runs it. A lost worker
+lease is a WARNING, and an ERROR with the failed outcome when it ends the
+task's last attempt (`task_lease_lost`). Housekeeping that stops at its time
+budget and resumes on its next run is INFO for retention and WARNING for the
+off-site backup copy (`work_budget_reached`). Entries that precede a process
+exit or a rolled-back transaction are written on their own short-lived
+database connection; recording never raises, so a failure to record cannot
+replace the original outcome.
+
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
 database, migrations, Valkey limiter store, and configuration needed for the
 deployment's current setup phase; it must not call external services per probe.

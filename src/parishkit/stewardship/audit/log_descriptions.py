@@ -32,6 +32,16 @@ DESCRIPTIONS = {
     "task_recovery_retry": _("An interrupted background task was queued again."),
     "task_recovery_fail": _("An interrupted background task could not be recovered."),
     "task_failed": _("A background task failed; see its task page for the reason."),
+    "task_timed_out": _("Work was stopped because it ran longer than its time limit."),
+    "helper_timed_out": _(
+        "A helper process was stopped because it ran longer than its time limit."
+    ),
+    "work_budget_reached": _(
+        "Routine work reached its time budget and will continue on its next run."
+    ),
+    "task_lease_lost": _(
+        "A background worker stopped reporting before finishing a task."
+    ),
     # ParishSoft data.
     "source_promoted": _("New ParishSoft data became the current data."),
     "source_rejected": _(

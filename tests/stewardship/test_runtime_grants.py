@@ -185,6 +185,7 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
         {
             "stewardship_backup_run": {"SELECT", "INSERT"},
             "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_operational_log": {"INSERT"},
         },
         {},
     )

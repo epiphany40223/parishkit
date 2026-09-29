@@ -219,7 +219,11 @@ def execute_hint(run_id, *, queue, worker_id, handlers, stop=None):
     execution = claim_hint(run_id, queue=queue, worker_id=worker_id, handlers=handlers)
     if execution is None:
         return False
-    with maintain_execution(execution, stop=stop):
+    from parishkit.stewardship.observability import task_scope
+
+    # Bind the task so a helper stopped deep inside the handler can say which
+    # task it was serving (#293).
+    with task_scope(execution.claim.run_id), maintain_execution(execution, stop=stop):
         execution.handler.execute(execution)
     return True
 
@@ -245,7 +249,9 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
         raise PermissionError("This task is unavailable to the admitted consumer.")
     with handler.scope(), _locked(original.correlation_id, root_id=original.root_id):
         row = TaskRun.objects.select_for_update().get(pk=run_id)
-        if row.state == "running" and row.lease_expires_at <= database_now():
+        now = database_now()
+        if row.state == "running" and row.lease_expires_at <= now:
+            lost = _lease_facts(row, now)
             change_run(
                 run_id=row.pk,
                 expected_version=row.version,
@@ -255,6 +261,7 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
                 admit=handler.admit,
             )
             row.refresh_from_db()
+            _record_lease_lost(lost, level="WARNING")
         if row.state != "abandoned" or handler.recover is None:
             return False
         plan = handler.recover(_status(row))
@@ -271,6 +278,45 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
             admit=handler.admit,
             retry_seconds=plan.retry_seconds,
         )
+        if plan.action == "recovery_fail":
+            # The final attempt also lost its lease: say how many attempts ran
+            # and that the task has now failed (#293).
+            from parishkit.stewardship.audit.schemas import Outcome
+
+            _record_lease_lost(
+                {"task_id": row.pk, "task_type": row.task_type, "attempt": row.attempt},
+                level="ERROR",
+                outcome=Outcome.FAILED,
+            )
         if handler.after_transition is not None:
             handler.after_transition(plan.action, result)
         return True
+
+
+def _lease_facts(row, now):
+    """What to record about a lost lease: the task and how long it went silent."""
+    last = row.heartbeat_at or row.updated_at
+    facts = {"task_id": row.pk, "task_type": row.task_type, "attempt": row.attempt}
+    if last is not None:
+        facts["elapsed_seconds"] = (now - last).total_seconds()
+        if row.lease_expires_at is not None:
+            facts["limit_seconds"] = (row.lease_expires_at - last).total_seconds()
+    return facts
+
+
+def _record_lease_lost(facts, *, level, outcome=None):
+    """Record that a worker stopped reporting before finishing a task (#293).
+
+    Written in the recovery transaction, so the entry exists exactly when the
+    recorded transition committed. A savepoint keeps a failure to record from
+    aborting the recovery itself; that failure goes to the process log.
+    """
+    from parishkit.stewardship.audit.timeouts import insert_timeout, timeout_context
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    try:
+        context = timeout_context(what="lease", outcome=outcome, **facts)
+        with transaction.atomic(), transaction.get_connection().cursor() as cursor:
+            insert_timeout(cursor, Event.TASK_LEASE_LOST, level, context)
+    except Exception as error:
+        emit_failure(error, event=Event.TASK_LEASE_LOST)

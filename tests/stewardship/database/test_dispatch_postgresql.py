@@ -203,5 +203,93 @@ def test_post_transition_hook_is_atomic_and_not_replayed(recovery, fail_callback
     else:
         assert invoke(task.run_id, **options)
         assert not invoke(task.run_id, **options)
-        assert OperationalLog.objects.count() == 1
+        assert OperationalLog.objects.filter(event="task_completed").count() == 1
+        # A recovered task also records its lost lease (#293), once.
+        assert OperationalLog.objects.filter(event="task_lease_lost").count() == (
+            1 if recovery else 0
+        )
     assert calls == ["recovery_complete" if recovery else "complete"]
+
+
+def test_lost_lease_is_recorded_with_the_task_and_its_silence():
+    """Lease expiry says which task went silent, and for how long (#293)."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = expired_task()
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda *args: True,
+        lambda context: None,
+        recover=lambda status: RecoveryPlan("recovery_retry", 30),
+    )
+    options = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    assert recover_hint(task.run_id, **options)
+    entry = OperationalLog.objects.get()
+    assert (entry.event, entry.level, entry.schema) == (
+        "task_lease_lost",
+        "WARNING",
+        "timeout",
+    )
+    assert entry.context == {
+        "what": "lease",
+        "task_id": str(task.run_id),
+        "task_type": "dispatch_probe",
+        "attempt": 1,
+        "limit_seconds": 1,
+        "elapsed_seconds": 1,
+    }
+
+
+def test_final_lost_lease_records_the_failed_task():
+    """When the last attempt also went silent, the failure summary says so."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = expired_task()
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda *args: True,
+        lambda context: None,
+        recover=lambda status: RecoveryPlan("recovery_fail"),
+    )
+    options = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    assert recover_hint(task.run_id, **options)
+    assert TaskRun.objects.get(pk=task.run_id).state == "failed"
+    final = OperationalLog.objects.get(level="ERROR")
+    assert final.event == "task_lease_lost"
+    assert final.context == {
+        "what": "lease",
+        "task_id": str(task.run_id),
+        "task_type": "dispatch_probe",
+        "attempt": 1,
+        "outcome": "failed",
+    }
+    assert OperationalLog.objects.filter(level="WARNING").count() == 1
+
+
+def test_a_failure_to_record_a_lost_lease_never_blocks_recovery(monkeypatch):
+    """Recording is best effort; the recovery transition still commits."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.audit import timeouts
+
+    def refused(*args, **kwargs):
+        """A login that cannot write the operational log."""
+        raise DatabaseError("synthetic refusal")
+
+    monkeypatch.setattr(timeouts, "insert_timeout", refused)
+    task = expired_task()
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda *args: True,
+        lambda context: None,
+        recover=lambda status: RecoveryPlan("recovery_fail"),
+    )
+    options = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    assert recover_hint(task.run_id, **options)
+    assert TaskRun.objects.get(pk=task.run_id).state == "failed"

@@ -3817,6 +3817,28 @@ CREATE FUNCTION public.stewardship_operational_log_immutable_v1() RETURNS trigge
             END;
             $$;
 
+-- FUNCTION: stewardship_operational_log_writer_v1()
+CREATE FUNCTION public.stewardship_operational_log_writer_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- The mail-dispatch and backup logins may record only work stopped by a
+    -- time limit (#293): no other event, no CRITICAL level (which pages and
+    -- opens incidents), no actor to impersonate, and the database's own time.
+    IF current_user IN ('pk_stewardship_mail_dispatch','pk_stewardship_backup_worker') THEN
+        IF NEW.schema<>'timeout' OR NEW.event NOT IN
+               ('task_timed_out','helper_timed_out','work_budget_reached','task_lease_lost')
+           OR NEW.level NOT IN ('INFO','WARNING','ERROR')
+           OR NEW.actor_id IS NOT NULL THEN
+            RAISE EXCEPTION 'This login may record only timeout events'
+                USING ERRCODE = '42501';
+        END IF;
+        NEW.created_at := statement_timestamp();
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 -- FUNCTION: stewardship_parish_branding_v1()
 CREATE FUNCTION public.stewardship_parish_branding_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -5331,6 +5353,7 @@ BEGIN
             'decision','review_reason']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
+        WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
@@ -5366,6 +5389,18 @@ BEGIN
             END LOOP;
         ELSIF key='method' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('GET','HEAD','POST') THEN RETURN false; END IF;
+        -- Work stopped by a time limit (#293): the task type and the limit.
+        ELSIF key='task_type' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value!~'^[a-z][a-z0-9_]{0,63}$' THEN RETURN false; END IF;
+        ELSIF key='what' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('read_guard','lease','retention_budget','drive_copy_budget',
+                'drive_retry_budget','drive_request','drive_probe_wait',
+                'statement_timeout','lock_timeout','transaction_timeout','mail_helper','source_helper','provider_check',
+                'renewal_drain','control_lock') THEN RETURN false; END IF;
+        ELSIF key='helper' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('readiness_delivery_worker','readiness_notification_worker',
+                'family_delivery_worker','digest_delivery_worker','weekly_delivery_worker','operational_mail_worker',
+                'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker') THEN RETURN false; END IF;
         -- An Administrator's decision on a suspended Chairperson seed: a closed
         -- word, and the reason entered for it, bounded text refused when it
         -- carries an address-like token, since this context holds no

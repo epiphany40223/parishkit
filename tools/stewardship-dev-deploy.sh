@@ -107,6 +107,17 @@ if [ "$activated" != f ]; then
     exit 1
 fi
 
+# database-grants refuses until the operational log's writer guard (#293)
+# is installed; say so now, before anything stops, instead of after.
+guard=$(docker compose -f "$services/compose-initial.json" -p "$project" \
+    exec -T postgres psql -U pk_stewardship_operator -d stewardship -Atc \
+    "SELECT count(*) FROM pg_trigger WHERE tgname='stewardship_operational_log_writer_v1'" \
+    2>/dev/null || true)
+if [ "$guard" != 1 ]; then
+    echo "The operational log writer guard is not installed; apply its in-place SQL first." >&2
+    exit 1
+fi
+
 echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
 docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \
     --tag "${repo}:${tag}" "$build" >/dev/null
