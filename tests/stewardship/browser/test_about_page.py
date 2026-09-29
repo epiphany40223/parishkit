@@ -2,7 +2,7 @@
 
 import pytest
 
-from .waits import visible
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -26,14 +26,14 @@ def test_about_panel_remembers_closed_and_reopened(page, component_origin):
     summary.click()
     expect(placeholders).to_be_hidden()
     # The choice is saved from the asynchronous "toggle" event.
-    page.wait_for_function("localStorage.length === 1")
+    eventually(page, "() => localStorage.length", 1)
     page.reload()
     expect(panel).not_to_have_attribute("open", "")
     expect(placeholders).to_be_hidden()
 
     summary.click()
     visible(placeholders)
-    page.wait_for_function("localStorage.length === 0")
+    eventually(page, "() => localStorage.length", 0)
     page.reload()
     visible(placeholders)
     assert not failures

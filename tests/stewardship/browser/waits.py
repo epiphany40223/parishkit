@@ -16,3 +16,24 @@ def visible(locator):
     from playwright.sync_api import expect
 
     expect(locator).to_be_visible()
+
+
+def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
+    """Poll ``page.evaluate(expression, arg)`` until it returns ``expected``.
+
+    Use this only for page state no locator assertion can express, such as
+    ``localStorage`` or a window variable; prefer ``expect(locator)`` otherwise.
+    ``page.wait_for_function`` is not a substitute: when its condition is not
+    already true, Playwright re-evaluates the predicate inside the page, which
+    the stewardship CSP (``script-src 'self'``, no ``'unsafe-eval'``) blocks.
+    ``page.evaluate`` runs through the browser's debugging protocol instead, so
+    the policy does not apply and each poll is an ordinary round trip. The
+    default timeout matches the 30 s ``wait_for_function`` default it replaces.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout / 1000
+    while (value := page.evaluate(expression, arg)) != expected:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"{expression!r} returned {value!r}, not {expected!r}")
+        page.wait_for_timeout(50)
