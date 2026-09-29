@@ -413,6 +413,9 @@ refreshed baseline while unsaved edits remain only in tab memory. Clearly
 distinguish updated parish records from proposed answers, preserve unaffected
 edits, and require resolution of invalid/competing choices and a new Submit;
 never silently overwrite refreshed records with unchanged old form values.
+A baseline replaced by the form opening in another tab, or invalidated by a
+deploy, is handled the same way: the tab loads a fresh form and keeps its edits
+(see [submission concurrency](../data/spec.md#submission-concurrency)).
 A definite refusal, such as a temporary server outage, says the answers were
 not submitted and remain in the tab; only a lost reply is reported as
 uncertain.

@@ -516,3 +516,39 @@ def test_multiple_source_addresses_submit_unchanged_and_revisit(live_response_se
     assert not ProposedChange.objects.exists()
     harness.client, _ = login(harness.code)
     assert answers_for(load_form(harness)) == answers
+
+
+def test_second_tab_form_load_needs_a_fresh_form_not_lost_edits(response_service):
+    """#315 M2: a replaced baseline is a definite refusal the tab recovers from.
+
+    Loading the form again in the same session (a second tab) replaces the
+    first tab's baseline, so its Submit is refused with ``reload_required``.
+    Nothing is saved; the first tab loads a fresh form and resubmits the same
+    in-memory answers.
+    """
+    harness = response_service
+    first = load_form(harness)
+    answers = answers_for(first)
+    answers["members"]["3"]["first_name"] = "First tab edit"
+    second = load_form(harness)
+    assert FamilyFormBaseline.objects.get(pk=first["baseline"]).state == "replaced"
+    response = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": first["baseline"], "answers": answers},
+    )
+    assert response.status_code == 409
+    assert response.json() == {"error": "reload_required"}
+    assert not Submission.objects.exists()
+    fresh = load_form(harness)
+    assert fresh["baseline"] not in {first["baseline"], second["baseline"]}
+    response = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": fresh["baseline"], "answers": answers},
+    )
+    assert response.status_code == 200, response.content
+    assert (
+        Submission.objects.get().answers["members"]["3"]["first_name"]
+        == "First tab edit"
+    )

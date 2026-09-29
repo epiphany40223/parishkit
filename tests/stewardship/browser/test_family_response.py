@@ -674,3 +674,61 @@ def test_temporary_outage_on_submit_keeps_answers_and_is_not_uncertain(
         "Unsubmitted changes have not been saved"
     )
     assert "check your last submission time" not in page.locator("main").inner_text()
+
+
+def test_form_opened_in_second_tab_keeps_first_tab_edits(page, component_origin):
+    """#315 M2: a replaced baseline fetches a fresh form instead of losing edits.
+
+    A small fake server models the real rule: each form load issues a new
+    baseline and replaces the session's earlier one, and Submit answers
+    ``reload_required`` for any baseline that is not the latest.
+    """
+    issued, submissions = [], []
+
+    def load(route):
+        """Issue a fresh baseline, replacing every earlier one."""
+        form = form_payload()
+        issued.append(form["baseline"])
+        route.fulfill(json={"form": form})
+
+    def submit(route):
+        """Accept only the session's current baseline."""
+        body = route.request.post_data_json
+        submissions.append(body)
+        if body["baseline"] != issued[-1]:
+            route.fulfill(status=409, json={"error": "reload_required"})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    context = page.context
+    context.route("**/family/form", load)
+    context.route("**/family/submit", submit)
+    context.route(
+        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
+    )
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/family")
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    # The Family opens the form again in a second tab of the same session.
+    second = context.new_page()
+    second.clock.install(time=NOW)
+    second.goto(component_origin + "/family")
+    second.get_by_role("button", name="Begin reviewing").click()
+    expect(second.locator("[data-step-link]").first).to_be_attached()
+    assert len(issued) == 2
+    second.close()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Your edits are preserved"
+    )
+    assert len(issued) == 3
+    expect(show(page, page.get_by_label("First name (required)"))).to_have_value(
+        "My edit"
+    )
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    assert [body["baseline"] for body in submissions] == issued[::2]
+    assert submissions[-1]["answers"]["members"]["3"]["first_name"] == "My edit"

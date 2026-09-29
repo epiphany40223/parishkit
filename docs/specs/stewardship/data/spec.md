@@ -1225,7 +1225,11 @@ Unedited fields adopt the refreshed baseline; do not replay the whole old form
 as new edits. Never display removed/inaccessible Member detail merely to aid
 comparison. No page reload, server draft, or browser-persistent storage is
 required for this review. Missing/expired or mismatched baseline references
-cannot be accepted; they require a fresh authorized form instead.
+cannot be accepted; they require a fresh authorized form instead. Loading the
+form again in the same session replaces the session's earlier open baseline,
+and a deploy that changes the form schema or projection version invalidates
+it. The tab then fetches a fresh authorized form itself and follows the same
+review path, so its unsaved edits survive.
 
 Under the shared source-promotion and Family submission locks, repeat the
 effective-version comparison, relevant-source comparison, complete validation,

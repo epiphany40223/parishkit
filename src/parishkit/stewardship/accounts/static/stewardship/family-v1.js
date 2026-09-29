@@ -2049,15 +2049,27 @@
         } else if (finished) {
           expired();
           return;
-        } else if (result.error === "review_required") {
-          accept(result.form, true);
-          say("Parish records or a previous Family response changed. Your edits to remaining fields are preserved. Please review everything and submit again.");
+        } else if (result.error === "review_required" || result.error === "reload_required") {
+          // review_required carries the fresh form. reload_required means this
+          // tab's form was replaced (the form was opened in another tab of this
+          // session) or a deploy changed the form version; nothing was saved,
+          // so fetch a fresh form here. Either way accept() keeps the Family's
+          // edits relative to the form they started from. A failed fetch is
+          // not an uncertain Submit, so it must not reach the catch below.
+          const fresh = result.form || (await send("/family/form", {}).catch(() => null))?.form;
+          if (finished || closedForMaintenance) return;
+          if (!fresh) {
+            say("The response could not be submitted. Your edits remain in this tab; please try again.");
+          } else {
+            accept(fresh, true);
+            say(result.error === "review_required" ?
+              "Parish records or a previous Family response changed. Your edits to remaining fields are preserved. Please review everything and submit again." :
+              "This form was opened again in another tab or window, or the site was updated. Your edits are preserved. Please review everything and submit again.");
+          }
         } else if (result.error === "validation") {
           fieldErrors(result.fields);
         } else {
-          say(result.error === "reload_required" ?
-            "This form is no longer current. Reload the page and review again. Unsubmitted edits will be lost." :
-            "The response could not be submitted. Your edits remain in this tab; please try again.");
+          say("The response could not be submitted. Your edits remain in this tab; please try again.");
         }
       } catch {
         uncertainSubmission = submissionAttempted = true;
