@@ -59,6 +59,32 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   deadline kill before the `started` line leaves the message definitely
   unsent (an ordinary retry); a result that fully arrived before the kill
   is kept.
+- The transport has a fallback. `batched` is the default; `per_message` is
+  the one-helper-per-message transport from before #284, with the same
+  per-message outcomes, retries and limits, only slower. To switch the
+  running deployment, recreate only the mail worker with the variable
+  exported in the shell that runs Compose (the rendered Compose file passes
+  it to `mail-dispatch` only, and leaves it empty otherwise):
+
+  ```text
+  PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT=per_message docker compose ... up --detach --force-recreate mail-dispatch
+  ```
+
+  To return to batched sending, recreate it again without the variable:
+
+  ```text
+  docker compose ... up --detach --force-recreate mail-dispatch
+  ```
+
+  Recreating stops the worker gracefully: its in-flight message is settled,
+  or, if it cannot be, recovered like any other interrupted submission
+  (never resent blindly). The choice lasts only as long as that container,
+  so a later recreation without the variable returns to the deployment
+  setting. That setting is `family_mail_transport` in the deployment YAML
+  (see [deployment settings](../development/stewardship-deployment.md#schema-version-1));
+  it is rendered into each service's document, so changing it there takes
+  effect only with a reinstall, as the
+  [runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
 - Gmail's own sending limits are recognized by the enhanced status code that
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail

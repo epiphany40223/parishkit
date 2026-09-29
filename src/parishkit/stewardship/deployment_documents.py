@@ -45,6 +45,7 @@ def deployment_document(configuration):
         # Every service loads its rendered document, not the operator's YAML,
         # so an omitted section silently reverts to its defaults there.
         "operational_alerts": asdict(configuration.operational_alerts),
+        "family_mail_transport": configuration.family_mail_transport,
     }
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target

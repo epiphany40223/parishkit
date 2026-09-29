@@ -473,6 +473,25 @@ def test_worker_receives_the_source_loss_override_from_the_operator_shell(
     )
 
 
+def test_only_mail_dispatch_receives_the_family_mail_transport_switch(tmp_path):
+    """#284: the batched-mail fallback reaches the mail worker from the shell.
+
+    It is empty unless the operator's shell exports it when running Compose,
+    which keeps the rendered deployment setting (batched by default).
+    """
+    compose, _ = render_runtime(
+        configuration_at(tmp_path, production=True), image=IMAGE
+    )
+    name = "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT"
+    services = compose["services"]
+    assert services["mail-dispatch"]["environment"][name] == "${" + name + ":-}"
+    assert [
+        service
+        for service, values in services.items()
+        if name in values.get("environment", {})
+    ] == ["mail-dispatch"]
+
+
 @pytest.mark.parametrize("production", [False, True])
 def test_every_service_caps_its_container_log(tmp_path, production):
     """#326 M1: no container, database and ingress included, logs without limit.

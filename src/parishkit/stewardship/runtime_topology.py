@@ -15,7 +15,12 @@ from urllib.parse import urlsplit
 
 from parishkit.config import ConfigError
 
-from .deployment import SECRET_NAMES, DeploymentProfile, ServiceRole
+from .deployment import (
+    FAMILY_MAIL_TRANSPORT_VARIABLE,
+    SECRET_NAMES,
+    DeploymentProfile,
+    ServiceRole,
+)
 from .deployment_documents import deployment_document, service_configuration_file
 from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
@@ -316,6 +321,13 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         )
         documents[selected.configuration_file] = deployment_document(selected)
         service = _application(image, budget)
+        if role is ServiceRole.MAIL_DISPATCH:
+            # Empty unless the operator's shell exports it when running
+            # Compose: "per_message" falls back from batched Family mail
+            # (#284) on this service's next recreation.
+            service["environment"][FAMILY_MAIL_TRANSPORT_VARIABLE] = (
+                "${" + FAMILY_MAIL_TRANSPORT_VARIABLE + ":-}"
+            )
         if role in {
             ServiceRole.BOOTSTRAP,
             ServiceRole.MIGRATION,

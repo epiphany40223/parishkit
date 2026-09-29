@@ -77,6 +77,49 @@ def test_rendered_service_documents_keep_the_operational_alert_policy(tmp_path):
     ) == (120, 180, 2400)
 
 
+def test_family_mail_transport_defaults_to_batched_and_can_fall_back(tmp_path):
+    """The #284 fallback: YAML or environment selects one helper per message."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    assert load_deployment(environ={}).family_mail_transport == "batched"
+    path = config_file(tmp_path, {"family_mail_transport": "per_message"})
+    configuration = load_deployment(path, environ={})
+    assert configuration.family_mail_transport == "per_message"
+    # Services load the rendered document, so the choice must survive it.
+    (tmp_path / "rendered").mkdir()
+    rendered = config_file(
+        tmp_path / "rendered", deployment_document(configuration)["deployment"]
+    )
+    assert load_deployment(rendered, environ={}).family_mail_transport == (
+        "per_message"
+    )
+    name = "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT"
+    assert (
+        load_deployment(path, environ={name: "batched"}).family_mail_transport
+        == "batched"
+    )
+    # Compose passes the variable empty when the operator does not export it:
+    # that keeps the rendered setting instead of failing the mail worker.
+    assert load_deployment(rendered, environ={name: ""}).family_mail_transport == (
+        "per_message"
+    )
+    assert load_deployment(environ={name: ""}).family_mail_transport == "batched"
+    assert (
+        load_deployment(rendered, environ={name: "batched"}).family_mail_transport
+        == "batched"
+    )
+    with pytest.raises(ConfigError, match="family_mail_transport"):
+        load_deployment(environ={name: "single"})
+
+
+@pytest.mark.parametrize("value", ["single", "", 1, ["batched"], {"a": 1}])
+def test_an_unknown_family_mail_transport_is_rejected(tmp_path, value):
+    """Only the two reviewed transports exist; nothing else is guessed."""
+    path = config_file(tmp_path, {"family_mail_transport": value})
+    with pytest.raises(ConfigError, match="family_mail_transport"):
+        load_deployment(path, environ={})
+
+
 @pytest.mark.parametrize(
     "values",
     [

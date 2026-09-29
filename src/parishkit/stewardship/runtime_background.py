@@ -467,6 +467,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 credential_path=configuration.secrets.get("google_workspace"),
                 private=rings.get("token_private"),
                 public_origin=configuration.public_origin,
+                batched=configuration.family_mail_transport == "batched",
             ),
             pulse=heartbeat,
         )

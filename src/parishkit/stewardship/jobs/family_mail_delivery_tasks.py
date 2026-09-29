@@ -336,9 +336,20 @@ def admit_task(action, status, *, store, circuit):
 
 
 def delivery_handler(
-    store, *, private=None, public_origin=None, credential_path=None, scheduler=False
+    store,
+    *,
+    private=None,
+    public_origin=None,
+    credential_path=None,
+    scheduler=False,
+    batched=True,
 ):
-    """Schedulers own metadata only; mounted private keys stay in the mail worker."""
+    """Schedulers own metadata only; mounted private keys stay in the mail worker.
+
+    ``batched`` (the default) sends Family mail through one long-lived helper
+    (#284). False is the operator fallback, deployment setting
+    ``family_mail_transport: per_message``: one helper per message, as before.
+    """
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Family dispatch requires an installed Workspace path.")
     circuit = DeliveryCircuit(
@@ -346,7 +357,7 @@ def delivery_handler(
     )
     # One batched private helper for this worker's Family messages (#284). It
     # spans Tasks but holds no lease or database state; see FamilyMailSession.
-    session = None if scheduler else FamilyMailSession()
+    session = FamilyMailSession() if batched and not scheduler else None
     return Handler(
         queue=WorkQueue.MAIL,
         admit=partial(admit_task, store=store, circuit=circuit),

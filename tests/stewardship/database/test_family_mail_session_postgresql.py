@@ -7,6 +7,7 @@ Other Families' messages go through the same session before and after, so
 the database message is always in the middle of a batch.
 """
 
+import json
 from threading import Event
 from types import SimpleNamespace
 from uuid import uuid4
@@ -286,3 +287,52 @@ def test_a_deadline_kill_mid_batch_is_logged_and_unknown(batch, monkeypatch):
     assert entry.context["helper"] == "family_delivery_worker"
     assert entry.context["what"] == "mail_helper"
     assert entry.context["task_id"] == str(message.task_id)
+
+
+@pytest.mark.parametrize("transport", ["batched", "per_message"])
+def test_both_transports_deliver_through_the_real_handler(
+    dispatch_worker,  # noqa: F811
+    tmp_path,
+    monkeypatch,
+    transport,
+):
+    """The fallback switch picks the transport; the Task semantics are the same.
+
+    ``per_message`` is the one-helper-per-message path from before #284; its
+    helper launch is replaced by a synthetic acceptance so no network is used.
+    """
+    from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+
+    harness, path = dispatch_worker
+    gmail = FakeGmailHelpers(tmp_path / "gmail")
+    owner = tasks.delivery_handler(
+        harness.service.store,
+        private=harness.rings.private,
+        public_origin="http://localhost:8000",
+        credential_path=path,
+        batched=transport == "batched",
+    )
+    session = owner.execute.keywords["session"]
+    if session is not None:
+        session.spawn = gmail.spawn
+    launched = []
+
+    def one_helper(payload, **kwargs):
+        """Stand in for the one-message helper and its closed result."""
+        launched.append(kwargs["helper"])
+        result = FamilyDeliveryResult(Status.ACCEPTED, 1).wire_payload()
+        return kwargs["decode"](json.dumps(result).encode())
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.family_delivery_process._submit_private", one_helper
+    )
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message, owner)
+    message.refresh_from_db()
+    assert message.state == "delivered" and task(message).state == "succeeded"
+    if transport == "batched":
+        assert launched == [] and gmail.data(message) == 1
+        session.close()
+    else:
+        assert launched == ["family_delivery_worker"] and gmail.events() == []

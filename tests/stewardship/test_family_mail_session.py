@@ -768,3 +768,24 @@ def test_a_helper_whose_parent_dies_quits_and_exits(gmail, tmp_path):
 
     wait_until(gone)
     assert gmail.count("quit") == 1 and gmail.count("accepted") == 1
+
+
+@pytest.mark.parametrize("batched", [True, False])
+def test_the_transport_switch_selects_the_session(batched):
+    """``family_mail_transport: per_message`` gives the handler no session."""
+    from pathlib import Path
+
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        _unavailable,
+        delivery_handler,
+    )
+
+    handler = delivery_handler(
+        None, credential_path=Path("/synthetic/unread"), batched=batched
+    )
+    session = handler.execute.keywords["session"]
+    assert isinstance(session, FamilyMailSession) if batched else session is None
+    # A scheduler never holds a session (or any provider path), whatever the
+    # setting: its execute refuses outright.
+    scheduler = delivery_handler(None, scheduler=True, batched=batched)
+    assert scheduler.execute is _unavailable
