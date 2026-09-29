@@ -341,3 +341,42 @@ def test_scoped_heartbeat_and_domain_effect_share_the_same_fresh_gate(tmp_path):
         renew_once(context)
     with pytest.raises(PermissionError), context.effect():
         pytest.fail("The old scope admitted a new effect")
+
+
+def test_snapshot_reads_hold_no_work_lock_and_writers_refuse_shared_mode():
+    """Readers use a lock-free snapshot; a shared work lock never admits a writer.
+
+    read_transaction() joins no lock order, so concurrent readers cannot
+    serialize on each other or delay a writer: another session takes the
+    exclusive lock without waiting while the snapshot is open. A shared mode
+    of the same lock would still wait behind every exclusive writer, and it
+    cannot stand in for the writers' order: require_work_order(), like the
+    SQL guards on Family baselines and submissions, demands ExclusiveLock.
+    """
+    from parishkit.stewardship.campaigns.work_locks import (
+        WORK_ORDER_LOCK,
+        read_transaction,
+        require_work_order,
+    )
+
+    from .test_schedule_views_postgresql import other_session
+
+    observe = (
+        "SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() "
+        "AND locktype='advisory' AND classid=%s AND objid=%s"
+    )
+    with read_transaction(), connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM stewardship_system_configuration")
+        cursor.execute(observe, WORK_ORDER_LOCK)
+        assert cursor.fetchone() == (0,)
+        with other_session() as writer:
+            taken = writer.execute(
+                "SELECT pg_try_advisory_lock(%s,%s)", WORK_ORDER_LOCK
+            ).fetchone()
+            assert taken == (True,)
+    with pytest.raises(StorageInvariantError), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock_shared(%s,%s)", WORK_ORDER_LOCK
+            )
+        require_work_order()

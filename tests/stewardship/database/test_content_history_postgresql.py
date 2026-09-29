@@ -119,3 +119,34 @@ def test_current_campaign_without_content_has_read_only_empty_catalog(
         assert response.status_code == 302
         assert response["Location"] == "/admin/maintenance"
         assert response["Cache-Control"] == "no-store"
+
+
+def test_history_never_waits_behind_the_work_lock(auth_service, google):
+    """A writer holding the work-order lock does not delay retained content.
+
+    Another session holds the lock, as a source promotion or installer does.
+    The history catalog and a revision still render under a short statement
+    timeout; a regression back to the work lock fails fast with 503.
+    """
+    from django.db import connection
+
+    from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
+
+    from .test_schedule_views_postgresql import other_session
+
+    campaign, _ = setup(auth_service.store)
+    record = campaign.active_configuration.configuration.canonical_document["sections"][
+        "content"
+    ][0]
+    browser, _ = signed_in()
+    path = f"/admin/campaign/{campaign.pk}/content/history"
+    with other_session() as holder:
+        holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
+        with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '3s'")
+        try:
+            assert browser.get(path).status_code == 200
+            assert browser.get(path + "/" + record["id"]).status_code == 200
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET statement_timeout")

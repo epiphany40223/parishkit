@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
@@ -32,7 +32,10 @@ def content_history(request, campaign_id, revision_id=None):
         service = runtime()
         principal(request, service)
         filters(request.GET, allowed=set())
-        with work_transaction():
+        # A read-only snapshot, not the writers' work lock: this page only
+        # observes retained content, so a source promotion or installer must
+        # not delay it (#147).
+        with read_transaction():
             editable_configuration(service)
             campaign = (
                 Campaign.objects.select_related(
@@ -98,7 +101,9 @@ def content_history(request, campaign_id, revision_id=None):
                     "parish_branding": branding_for(version.parish),
                 },
             )
-            return _checked(request, service, response)
+        # Recheck access after the snapshot ends, so it cannot hide a
+        # revocation committed while the page rendered.
+        return _checked(request, service, response)
     except (
         ConfigError,
         DatabaseError,

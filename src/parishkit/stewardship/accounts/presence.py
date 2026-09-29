@@ -25,7 +25,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 )
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
@@ -149,11 +149,13 @@ def _names(configuration, rows):
 def active_families(request):
     """Admin-only passive read with one coherent eligibility/source observation.
 
-    The work lock prevents population reconciliation, mode/epoch selection and
-    source promotion between session filtering and name lookup. A plain READ
-    COMMITTED transaction does not provide that multi-query invariant. Keep the
-    page bounded; no provider IO or unbounded roster is loaded under the lock.
-    Count-only polling does not join names and needs no global work lock.
+    Session filtering and name lookup must see the same population, mode/epoch
+    and promoted source. A plain READ COMMITTED transaction does not give that
+    multi-query invariant; one REPEATABLE READ snapshot does, because every
+    writer of those rows (population reconciliation, mode/epoch selection,
+    source promotion) commits atomically. The snapshot takes no work-order
+    lock, so a promotion or installer never delays this page (#147). Keep the
+    page bounded; no provider IO or unbounded roster is loaded here.
     """
     try:
         service = admin_runtime()
@@ -161,22 +163,18 @@ def active_families(request):
         selected = filters(request.GET, allowed={"page", "size", "format"})
         if selected.get("format", "html") not in {"html", "json", "count"}:
             raise ValueError("Invalid presence format.")
+        count_only = selected.get("format") == "count"
         window = PageWindow(
             expected_version(selected.get("page", "1")),
             expected_version(selected.get("size", "50")),
         )
-        boundary = (
-            transaction.atomic
-            if selected.get("format") == "count"
-            else work_transaction
-        )
-        with boundary():
+        with read_transaction():
             configuration = editable_configuration(service)
             instant = database_now()
             query = visible_sessions(configuration, instant)
             rows, has_next = (
                 ([], False)
-                if selected.get("format") == "count"
+                if count_only
                 else window.rows(
                     query.select_related("family").order_by("-presence_at", "id")
                 )
@@ -200,36 +198,40 @@ def active_families(request):
                     for row in rows
                 ],
             }
-            if selected.get("format") == "count":
-                data = {"count": data["count"], "as_of": instant}
+        if count_only:
+            data = {"count": data["count"], "as_of": instant}
+        response = (
+            JsonResponse(data)
+            if selected.get("format") in {"json", "count"}
+            else render(
+                request,
+                "stewardship/presence.html",
+                {
+                    "presence": data,
+                    "table": window_table(window, data["sessions"], has_next),
+                },
+            )
+        )
+        # Recheck access after the snapshot ends, so a read-only observation
+        # cannot hide a revocation committed while it ran. The audit row is an
+        # append that needs no work lock; it commits with the recheck.
+        with transaction.atomic():
             if not allows(
                 authenticated_admin(request, store=service.store, read_only=True),
                 Capability.CONFIGURE,
             ):
                 raise PermissionError("Presence access was revoked.")
-            response = (
-                JsonResponse(data)
-                if selected.get("format") in {"json", "count"}
-                else render(
-                    request,
-                    "stewardship/presence.html",
-                    {
-                        "presence": data,
-                        "table": window_table(window, data["sessions"], has_next),
-                    },
-                )
-            )
             # Passive header polling discloses no identity list. Audit actual
             # roster views, not every 30-second count observation in every tab.
-            if selected.get("format") != "count":
+            if not count_only:
                 record_action(
                     Action.PRESENCE_VIEWED,
                     actor_kind=ActorKind.PORTAL_USER,
                     actor_id=actor.identity,
                     context={"outcome": Outcome.SUCCEEDED, "count": len(rows)},
                 )
-            response["Cache-Control"] = "no-store"
-            return response
+        response["Cache-Control"] = "no-store"
+        return response
     except (
         ConfigError,
         DatabaseError,
