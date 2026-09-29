@@ -37,6 +37,7 @@ from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.web.security import login_denial
 
+from . import family_maintenance
 from .auth_incidents import record_link_rejection, record_login_rejection
 from .configuration_installation import coherent_configuration
 from .cryptography import (
@@ -356,10 +357,14 @@ def authenticated_family(
                 row.last_keepalive_at = now
             row.version += 1
             row.save()
-            FamilyCampaign.objects.filter(pk=row.family_id).update(
-                last_activity_at=now,
-                version=F("version") + 1,
-            )
+            # While an Administrator has closed the portal for maintenance,
+            # only keepalive reaches here; leave the Family's campaign row
+            # alone so it does not contend with the Administrator's data fix.
+            if not family_maintenance.current_state().closed:
+                FamilyCampaign.objects.filter(pk=row.family_id).update(
+                    last_activity_at=now,
+                    version=F("version") + 1,
+                )
         request.family_session = row
         request.principal = Principal(row.family_id, family_id=row.family_id)
         return request.principal

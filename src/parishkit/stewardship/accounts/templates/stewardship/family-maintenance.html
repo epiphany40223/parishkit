@@ -1,0 +1,14 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  Shown for every Family page while an Administrator has closed the Family
+  portal for maintenance (family_maintenance.py). It reads nothing about the
+  Family and offers only a way to check again; answers already saved are safe.
+{% endcomment %}
+{% block title %}{% translate "Temporarily unavailable" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Sorry, the site is temporarily unavailable" %}</h1>
+  <p>{% translate "The parish is doing some maintenance on this site. Please try again a little later." %}</p>
+  {% if message %}<p class="notice">{{ message }}</p>{% endif %}
+  <p>{% translate "Anything you already submitted is safe." %}</p>
+  <p><a class="button" href="{{ retry|default:'/' }}">{% translate "Try again" %}</a></p>
+</section>{% endblock %}

@@ -166,6 +166,12 @@ DESCRIPTIONS = {
     "credential_result_dismissed": _(
         "An Administrator dismissed the result of a key change."
     ),
+    "family_maintenance_started": _(
+        "An Administrator closed the Family portal for maintenance."
+    ),
+    "family_maintenance_ended": _(
+        "An Administrator reopened the Family portal after maintenance."
+    ),
     "security_event_acknowledged": _(
         "An Administrator acknowledged a security notice."
     ),

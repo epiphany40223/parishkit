@@ -119,13 +119,38 @@
     notice.hidden = false;
     document.getElementById("session-warning").hidden = true;
   }
+  // Set when the server says an Administrator closed the portal for maintenance.
+  let closedForMaintenance = false;
   async function send(path, body) {
+    closedForMaintenance = false;
     const response = await fetch(path, {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrf,
         "Accept": "application/json"}, body: JSON.stringify(body)
     });
     if (response.status === 403) { submissionAttempted = uncertainSubmission; expired(); return null; }
+    if (response.status === 503 && response.headers.get("Content-Type")?.includes("application/json")) {
+      // An Administrator closed the Family portal for maintenance. The server
+      // refused the request before any view ran, so nothing was saved and a
+      // submission is definitely not in doubt; the answers on the page stay.
+      const body = await response.json().catch(() => ({}));
+      if (body.maintenance) {
+        closedForMaintenance = true;
+        // Only an earlier, genuinely uncertain Submit may still be in doubt;
+        // this refusal must not make a later expiry say "if you just submitted".
+        submissionAttempted = uncertainSubmission;
+        // Idle sessions end after 60 minutes and take unsubmitted answers
+        // with them, so a Family with a form open is asked to stay active.
+        const note = typeof body.message === "string" && body.message ? " " + body.message : "";
+        say(form ?
+          "This site is temporarily closed for maintenance. Nothing was lost: your " +
+          "answers on this page are still here. Please keep this page open, click or " +
+          "type on it now and then so your session stays active, and try again " +
+          "later." + note :
+          "This site is temporarily closed for maintenance. Please try again later." + note);
+        return null;
+      }
+    }
     if (!response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unavailable response");
     }
@@ -2042,6 +2067,12 @@
     };
     try {
       const result = await send("/family/form", {});
+      if (!result && closedForMaintenance && !finished) {
+        // Closed for maintenance: keep the notice and offer a retry.
+        entry.hidden = false;
+        if (testing) start.textContent = "Try again";
+        return;
+      }
       if (!result || finished) return;
       if (result.form) { say(""); accept(result.form, false); }
       else failed("The campaign form is not available. Please try again later.");

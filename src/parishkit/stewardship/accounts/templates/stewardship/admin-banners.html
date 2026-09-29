@@ -11,6 +11,7 @@
 <p>{% translate "Since" %} <time data-local-instant datetime="{{ admin_chrome.delivery_pause.since|instant }}">{{ admin_chrome.delivery_pause.since|instant }}</time> ({{ admin_chrome.delivery_pause.since|timesince }}).</p>
 <p>{% translate "Held messages" %}: {{ admin_chrome.delivery_pause.inventory.held|number }}. {% translate "Already submitting" %}: {{ admin_chrome.delivery_pause.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ admin_chrome.delivery_pause.inventory.unknown|number }}.</p>
 <a href="{{ admin_chrome.delivery_pause.url }}">{% translate "Review held message types and delivery controls" %}</a>{% endif %}</aside>{% endif %}
+{% if admin_chrome.family_closed %}<aside class="notice notice-error">{% translate "The Family portal is closed for maintenance. Families see a “temporarily unavailable” page." %}{% if admin_chrome.admin %} <a href="{{ admin_chrome.family_portal_url }}">{% translate "Family portal availability" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
 {% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error critical-events" role="alert">
   <strong>{% translate "Critical problems in the past 24 hours" %}</strong>

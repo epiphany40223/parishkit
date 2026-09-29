@@ -13,7 +13,7 @@ from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
-from . import admin_navigation
+from . import admin_navigation, family_maintenance
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -103,6 +103,10 @@ def portal_chrome(request):
             "paused": bool(campaign and campaign.delivery_paused),
             "delivery_pause": delivery_pause,
             "go_live": go_live,
+            # The Family portal maintenance switch (family_maintenance.py).
+            # Every Admin role sees this: chairs field the Families' calls.
+            "family_closed": family_maintenance.current_state().closed,
+            "family_portal_url": reverse("admin:family_portal"),
             "critical_count": sum(critical.values()),
             "critical_events": critical_summary(critical),
             # The banner's System logs link filters from this UTC day onward.
@@ -198,6 +202,7 @@ def _navigation_items(actor, admin, campaign, configuration):
         add("system", "background", _("Background work"))
         add("system", "deliveries", _("Outgoing mail"))
         add("system", "presence", _("Families on the form now"))
+        add("system", "family_portal", _("Family portal availability"))
     if allows(actor, Capability.SYSTEM_LOGS):
         add("system", "logs", _("System logs"))
     return items

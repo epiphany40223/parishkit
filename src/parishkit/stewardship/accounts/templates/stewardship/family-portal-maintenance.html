@@ -1,0 +1,33 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Family portal availability" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Family portal availability" %}</h1>
+{% aboutpage "family-portal" %}
+<p>{% translate "Close the Family portal for maintenance when Families must not use the form, for example while fixing a data problem. Every Family page then shows a friendly “temporarily unavailable” page, and nothing a Family does is saved. The Admin portal keeps working. Reopening takes effect within a few seconds." %}</p>
+<p>{% translate "After closing, wait about 10 seconds before changing any data: Family requests already in progress still finish, and every web server notices the change within a few seconds." %}</p>
+<p>{% translate "A Family who has the form open keeps the answers on the page while they stay active on it. After 60 minutes without activity their session ends and unsubmitted answers are lost, so keep maintenance short." %}</p>
+<p>{% translate "Closing the portal does not stop email. No new receipts can be sent (no Family can submit), but scheduled invitations and reminders still go out unless you also pause Family email delivery." %}</p>
+{% endaboutpage %}
+{% if state.closed %}
+<section class="panel notice notice-error" aria-labelledby="portal-state">
+  <h2 id="portal-state">{% translate "The Family portal is closed for maintenance" %}</h2>
+  <p>{% translate "Closed" %} <time data-local-instant datetime="{{ state.since|instant }}">{{ state.since|instant }}</time>{% if closed_by %} {% translate "by" %} {{ closed_by }}{% endif %}.</p>
+  {% if state.message %}<p>{% translate "Families see this message:" %} {{ state.message }}</p>{% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><input type="hidden" name="message" value="">
+    <button type="submit">{% translate "Reopen the Family portal" %}</button>
+  </form>
+</section>
+{% else %}
+<section class="panel" aria-labelledby="portal-state">
+  <h2 id="portal-state">{% translate "The Family portal is open" %}</h2>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="close">
+    <label for="maintenance-message">{% translate "Message for Families (optional)" %}</label>
+    <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" aria-describedby="maintenance-message-help"></textarea>
+    <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” Up to 500 characters; no email addresses." %}</p>
+    <button type="submit">{% translate "Close the Family portal for maintenance" %}</button>
+  </form>
+</section>
+{% endif %}
+{% if delivery_url %}<p><a href="{{ delivery_url }}">{% translate "Pause or resume Family email delivery" %}</a></p>{% endif %}
+<p class="help">{% translate "Changing this requires you to confirm your sign-in with Google, and every change is recorded in the audit log." %}</p>
+{% endblock %}
