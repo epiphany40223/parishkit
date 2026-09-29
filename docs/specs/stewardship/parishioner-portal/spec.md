@@ -382,6 +382,13 @@ Members terminal does not discard or clear the Family's pledge/share answers.
 With a zero (or not yet entered) pledge, the frequency and share-method fields
 are hidden, cleared and not required, and the form submits neither.
 
+Typing the pledge and ticking share methods change the page in place: no
+control is rebuilt, the window does not scroll, and focus and the caret stay
+where the Family left them. A free-text method's details box appears under it
+without taking focus (which would raise a phone keyboard and scroll). Leaving
+the pledge field reveals only the pledge's own error, so an error line never
+appears above the share methods as the Family taps one.
+
 The Family may instead check "Because of financial limitations, I/we cannot
 contribute financially at this time." While checked, the pledge, frequency and
 share-method fields are hidden and not required, and the response records a

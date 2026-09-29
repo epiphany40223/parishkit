@@ -1211,28 +1211,37 @@
     // frequency and share fields can never block a zero pledge.
     const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": ""});
     node("legend", "Pledge details", conditional, {class: "visually-hidden"});
+    // One function per share method that redraws its checkbox (and details
+    // box) from the answers, so they can change without a rebuild.
+    const shareSyncs = [];
     let shown = pledgePositive();
     const setConditional = () => {
+      // Show frequency and share methods only for a positive pledge. This
+      // runs on every keystroke, so it changes what it must in place: a
+      // rebuild (edit()) replaces the field being typed in, scrolls to the
+      // top and refocuses it, which flickered and jumped on iOS Safari (#295).
       const show = pledgePositive();
-      if (show !== shown) {
-        shown = show;
-        if (!show) {
-          // Clear hidden answers so a zero pledge never carries a stale
-          // frequency or share method into review or submission.
-          answers.financial.frequency = "";
-          answers.financial.shares = {};
-          ["financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
-            .forEach((path) => conflicts.delete(path));
+      if (shown && !show) {
+        // Clear hidden answers so a zero pledge never carries a stale
+        // frequency or share method into review or submission.
+        answers.financial.frequency = "";
+        answers.financial.shares = {};
+        const cleared = ["financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
+          .map((path) => conflicts.delete(path)).includes(true);
+        if (cleared || shares.querySelector('[id^="financial-discard-"], [id^="financial-removed-"]')) {
+          // Rare: a changed-record choice or an old note must leave the page
+          // too, so rebuild, keeping the caret where the Family is typing.
+          shown = show;
+          const caret = annual.selectionStart;
+          edit("financial-annual_pledge");
+          document.getElementById("financial-annual_pledge")?.setSelectionRange(caret, caret);
+          return;
         }
-        // Rebuild so the controls match the answers, keeping the caret in the
-        // pledge field the Family is typing in.
-        const caret = annual.selectionStart;
-        edit("financial-annual_pledge");
-        document.getElementById("financial-annual_pledge")?.setSelectionRange(caret, caret);
-        return;
+        frequency.value = "";
+        shareSyncs.forEach((sync) => sync());
       }
-      conditional.hidden = !show;
-      conditional.disabled = !show;
+      shown = show;
+      conditional.hidden = conditional.disabled = !show;
     };
     node("label", "Pledge frequency (required)", conditional, {for: "financial-frequency"});
     const frequency = node("select", null, conditional, {id: "financial-frequency", "aria-describedby": "financial-frequency-hint"});
@@ -1243,9 +1252,14 @@
     frequency.value = answers.financial.frequency;
     const frequencyError = node("p", null, conditional, {id: "financial-frequency-hint", class: "error"});
     const approximation = node("p", null, conditional, {"aria-live": "polite", id: "financial-installment"});
-    let showErrors = false;
-    const validate = (show = true) => {
-      showErrors ||= show;
+    // The controls whose errors are revealed. Leaving the pledge reveals only
+    // its own: flagging the untouched frequency then would insert an error
+    // line above the share methods just as the Family taps one, moving it
+    // from under their finger (#295). Next, Review and a frequency change
+    // reveal both.
+    const revealed = new Set();
+    const validate = (...reveal) => {
+      reveal.forEach((input) => revealed.add(input));
       const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
       // A blank pledge is asked for plainly, a well-formed amount that is too
       // large gets the limit, and anything else (text, three decimals, a
@@ -1257,9 +1271,9 @@
       frequency.required = cents !== null && cents > 0;
       frequency.setCustomValidity(frequency.required && !periods ? "Select how often you will give." : "");
       for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
-        error.textContent = showErrors ? input.validationMessage : "";
+        error.textContent = revealed.has(input) ? input.validationMessage : "";
         error.hidden = !error.textContent;
-        input.setAttribute("aria-invalid", String(showErrors && !input.checkValidity()));
+        input.setAttribute("aria-invalid", String(revealed.has(input) && !input.checkValidity()));
       }
       const each = installment(cents, frequency.value);
       approximation.textContent = !each ?
@@ -1269,18 +1283,18 @@
         moneyDisplay(cents) + "; the final payment may differ slightly.";
     };
     annual.addEventListener("input", () => {
-      answers.financial.annual_pledge = annual.value; setConditional(); validate(false);
+      answers.financial.annual_pledge = annual.value; setConditional(); validate();
     });
-    frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(false); });
+    frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(); });
     annual.addEventListener("blur", (event) => {
       // As for Member fields: Next and Review validate after their click.
-      if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate();
+      if (!deferValidation() && !event.relatedTarget?.closest?.(".family-nav")) validate(annual);
     });
-    frequency.addEventListener("change", () => validate());
-    validators.push(() => validate());
+    frequency.addEventListener("change", () => validate(annual, frequency));
+    validators.push(() => validate(annual, frequency));
     conflictChoice("financial.annual_pledge", annual, pledge);
     conflictChoice("financial.frequency", frequency, conditional);
-    validate(false);
+    validate();
     const shares = node("fieldset", null, conditional, {class: "choice-group"});
     node("legend", "How would you like to share? (choose at least one)", shares);
     const sharesError = node("p", null, shares, {id: "financial-shares-error", class: "error", hidden: ""});
@@ -1303,7 +1317,8 @@
       checkbox.checked = option.id in answers.financial.shares;
       checkbox.disabled = Boolean(conflict && conflict.choice === undefined);
       wrapper.append(document.createTextNode(" " + financialLabel(option)));
-      if (!option.free_text && checkbox.checked && answers.financial.shares[option.id]) {
+      const stale = !option.free_text && checkbox.checked && Boolean(answers.financial.shares[option.id]);
+      if (stale) {
         // A draft configuration can change an option's text requirement.
         // Never erase a previously entered note without an explicit choice.
         node("p", "This method no longer accepts details. Your note: " + answers.financial.shares[option.id], shares);
@@ -1317,28 +1332,45 @@
           if (discard.checked) { answers.financial.shares[option.id] = ""; edit(); }
         });
       }
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) answers.financial.shares[option.id] = "";
-        else delete answers.financial.shares[option.id];
-        edit(); document.getElementById("financial-shares-" + option.id)?.focus();
-        if (!option.free_text || !checkbox.checked) document.getElementById("financial-option-" + option.id)?.focus();
-      });
-      if (option.free_text && checkbox.checked) {
+      // A free-text method's details box is always built and shown only
+      // while the method is ticked; disabled, it is never validated.
+      let sync = () => { checkbox.checked = option.id in answers.financial.shares; };
+      if (option.free_text) {
         const id = "financial-shares-" + option.id;
-        node("label", "Details for " + financialLabel(option), shares, {for: id});
-        const extra = node("textarea", null, shares, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
-        extra.value = answers.financial.shares[option.id];
-        extra.disabled = checkbox.disabled;
-        const error = node("p", null, shares, {id: id + "-hint", class: "error"});
+        const details = node("div", null, shares);
+        node("label", "Details for " + financialLabel(option), details, {for: id});
+        const extra = node("textarea", null, details, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
+        const error = node("p", null, details, {id: id + "-hint", class: "error"});
         const validateText = () => {
           extra.setCustomValidity(extra.value.trim() ? "" : "Provide details for this share method.");
           error.textContent = extra.validationMessage; error.hidden = !error.textContent;
           extra.setAttribute("aria-invalid", String(!extra.checkValidity()));
         };
+        sync = () => {
+          checkbox.checked = option.id in answers.financial.shares;
+          details.hidden = !checkbox.checked;
+          extra.disabled = checkbox.disabled || !checkbox.checked;
+          extra.value = answers.financial.shares[option.id] ?? "";
+          // A newly ticked (or hidden) box starts without an error.
+          error.textContent = ""; error.hidden = true; extra.setAttribute("aria-invalid", "false");
+        };
         extra.addEventListener("input", () => { answers.financial.shares[option.id] = extra.value; validateText(); });
         extra.addEventListener("blur", validateText);
         validators.push(validateText);
       }
+      sync();
+      shareSyncs.push(sync);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) answers.financial.shares[option.id] = "";
+        else delete answers.financial.shares[option.id];
+        // An old note awaiting "Discard" goes with a rebuild; otherwise
+        // change in place, leaving focus and scroll alone (#295). Focus
+        // stays on the checkbox: moving it into the new details box would
+        // raise a phone's keyboard and scroll the page.
+        if (stale) { edit("financial-option-" + option.id); return; }
+        sync();
+        if (!sharesError.hidden) validateShares();
+      });
     });
     const offered = new Set(form.financial.options.map((option) => option.id));
     Object.keys(answers.financial.shares).filter((id) => !offered.has(id)).forEach((id) => {
