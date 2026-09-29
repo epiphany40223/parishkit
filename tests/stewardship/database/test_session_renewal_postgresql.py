@@ -13,7 +13,7 @@ from parishkit.stewardship.accounts.session_policy import ADMIN_IDLE
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 
 from ..test_setup_forms import VALUES
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_views_postgresql import post, setup_http, started  # noqa: F401
@@ -87,10 +87,12 @@ def test_renewal_never_extends_the_absolute_limit(auth_service, google):
     """Near the absolute limit, renewal reports that limit as the idle deadline."""
     browser, _ = signed_in()
     row = PortalSession.objects.get(revoked_at__isnull=True)
-    PortalSession.objects.filter(pk=row.pk).update(
-        expires_at=F("last_activity_at") + timedelta(minutes=3),
-        version=F("version") + 1,
-    )
+    # The deadline is immutable in SQL (#306); only the owner can seed it.
+    with unguarded():
+        PortalSession.objects.filter(pk=row.pk).update(
+            expires_at=F("last_activity_at") + timedelta(minutes=3),
+            version=F("version") + 1,
+        )
     data = post(browser, RENEW, {}).json()
     after = PortalSession.objects.get(pk=row.pk)
     assert instant(data["absolute_deadline"]) == after.expires_at

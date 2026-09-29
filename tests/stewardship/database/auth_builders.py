@@ -1,6 +1,8 @@
 """Real disposable Valkey, signed synthetic Google tokens and durable policy."""
 
 import os
+from contextlib import contextmanager
+from datetime import timedelta
 from functools import cache
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -8,6 +10,7 @@ from uuid import uuid4
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from django.db import connection, transaction
 from django.test import Client
 from django.utils import timezone
 from redis import Redis
@@ -166,3 +169,36 @@ def signed_in(client=None, **fields):
         "/admin/oauth/callback", {"code": "synthetic-code", "state": query["state"][0]}
     )
     return client, response
+
+
+@contextmanager
+def unguarded():
+    """Seed a row state the SQL guards refuse, as only a superuser could.
+
+    Tests of clock skew, expiry, re-enabling and generic storage behavior
+    need Admin session and portal user rows that the #306 guards refuse from
+    every runtime login. Replica mode skips ordinary and foreign-key triggers
+    for the statements inside this block only; ALTER TABLE ... DISABLE
+    TRIGGER cannot be used, because a session row's deferred foreign-key
+    check would still be pending when the trigger is enabled again.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        yield
+        cursor.execute("SET LOCAL session_replication_role = origin")
+
+
+def stale_sign_in():
+    """Make the live Admin sign-ins six minutes old, past the fresh window.
+
+    Shifting the application clock forward instead would record session
+    activity in the future, which the SQL session guard refuses (#306).
+    """
+    from django.db.models import F
+
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    with unguarded():
+        PortalSession.objects.filter(revoked_at__isnull=True).update(
+            authenticated_at=F("authenticated_at") - timedelta(minutes=6)
+        )

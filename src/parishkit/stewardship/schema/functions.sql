@@ -4205,12 +4205,45 @@ CREATE FUNCTION public.stewardship_population_update_dirty_v1() RETURNS trigger
     RETURN NULL;
 END $$;
 
+-- FUNCTION: stewardship_portal_session_admission_v1()
+CREATE FUNCTION public.stewardship_portal_session_admission_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    -- #306 M2: the SQL Admin checks trust these rows, so an Admin session
+    -- cannot be minted by a web logic bug that SQL can see. The absolute
+    -- limit is ADMIN_ABSOLUTE (12 hours, accounts/session_policy.py); an
+    -- authority rotation copies the older row's earlier deadline. The
+    -- principal must be a live PortalUser whose current address or domain
+    -- rule grants at least one Admin role (the same projection as
+    -- stewardship_export_authorized_v1). Python may grant fewer roles than
+    -- the rule names, never more.
+    IF NEW.expires_at > statement_timestamp() + interval '12 hours'
+       OR NEW.authenticated_at > statement_timestamp()
+       OR NEW.last_activity_at > statement_timestamp()
+       OR NOT EXISTS (
+        SELECT 1 FROM stewardship_portal_user u
+        CROSS JOIN stewardship_system_configuration r
+        LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
+            AND a.email=lower(u.email)
+        LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
+            AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
+        WHERE u.id=NEW.principal_id AND NOT u.disabled
+            AND coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader'])
+    THEN
+        RAISE EXCEPTION 'Admin session requires a current authorized principal and bounded lifetime'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+
 -- FUNCTION: stewardship_portal_session_mutable_v1()
 CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -4222,6 +4255,13 @@ CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
                         OR NEW."authenticated_at" < OLD."authenticated_at"
                         OR NEW."authenticated_at" > statement_timestamp()) THEN
                     RAISE EXCEPTION 'Session authentication may only advance to a verified past instant'
+                        USING ERRCODE = '23514';
+                END IF;
+                -- #306 M2: activity renews the idle limit only up to this
+                -- statement's clock, never to a future instant.
+                IF NEW."last_activity_at" IS DISTINCT FROM OLD."last_activity_at"
+                   AND NEW."last_activity_at" > statement_timestamp() THEN
+                    RAISE EXCEPTION 'Session activity cannot be recorded in the future'
                         USING ERRCODE = '23514';
                 END IF;
                 IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
@@ -4240,6 +4280,23 @@ CREATE FUNCTION public.stewardship_portal_user_mutable_v1() RETURNS trigger
             BEGIN
                 IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."google_subject" IS DISTINCT FROM OLD."google_subject" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
+                        USING ERRCODE = '23514';
+                END IF;
+                -- #306 M2: disabling is one-way. No path re-enables an
+                -- account; a future Administrator path needs its own evidence.
+                IF OLD."disabled" AND NOT NEW."disabled" THEN
+                    RAISE EXCEPTION 'A disabled portal user cannot be re-enabled'
+                        USING ERRCODE = '23514';
+                END IF;
+                -- #306 M2: the email and hosted-domain claims change only with
+                -- a re-verification stamped in this same transaction, as the
+                -- Google sign-in callback does; verified_at only advances.
+                IF (NEW."email", NEW."hosted_domain", NEW."verified_at")
+                   IS DISTINCT FROM (OLD."email", OLD."hosted_domain", OLD."verified_at")
+                   AND (NEW."verified_at" <= OLD."verified_at"
+                        OR NEW."verified_at" < transaction_timestamp()
+                        OR NEW."verified_at" > statement_timestamp()) THEN
+                    RAISE EXCEPTION 'Identity claims change only with a fresh verification'
                         USING ERRCODE = '23514';
                 END IF;
                 IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN

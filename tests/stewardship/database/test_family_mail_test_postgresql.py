@@ -59,7 +59,7 @@ from parishkit.stewardship.jobs.storage import _status
 
 from ..content_factory import content
 from . import campaign_builders
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import login
@@ -533,9 +533,11 @@ def test_scheduler_settles_stale_tickets_and_worker_cancels_their_tasks(family_t
     assert TaskRun.objects.get(pk=first.task_id).state == "cancelled"
     assert not OutboxMessage.objects.filter(purpose="family_test").exists()
     # A restored Administrator sees both settled tickets without a Family.
-    PortalUser.objects.filter(pk=first.requested_by_id).update(
-        disabled=False, version=F("version") + 1
-    )
+    # Re-enabling is refused in SQL (#306); only the owner can undo it.
+    with unguarded():
+        PortalUser.objects.filter(pk=first.requested_by_id).update(
+            disabled=False, version=F("version") + 1
+        )
     with web_login():
         page = browser.get(path)
     assert page.status_code == 200, page.content

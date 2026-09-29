@@ -2740,6 +2740,9 @@ CREATE TRIGGER stewardship_population_manifest_v1 BEFORE INSERT OR UPDATE ON pub
 -- TRIGGER: stewardship_family_campaign stewardship_population_update_dirty_v1
 CREATE TRIGGER stewardship_population_update_dirty_v1 AFTER UPDATE ON public.stewardship_family_campaign REFERENCING OLD TABLE AS old_families NEW TABLE AS new_families FOR EACH STATEMENT EXECUTE FUNCTION public.stewardship_population_update_dirty_v1();
 
+-- TRIGGER: stewardship_portal_session stewardship_portal_session_admission_v1
+CREATE TRIGGER stewardship_portal_session_admission_v1 BEFORE INSERT ON public.stewardship_portal_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_portal_session_admission_v1();
+
 -- TRIGGER: stewardship_portal_session stewardship_portal_session_mutable_guard_v1
 CREATE TRIGGER stewardship_portal_session_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_portal_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_portal_session_mutable_v1();
 

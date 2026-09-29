@@ -12,7 +12,7 @@ from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import cleanup_admin_sessions
 from parishkit.stewardship.audit.models import AuditEvent
 
-from .auth_builders import OMIT, signed_in, start
+from .auth_builders import OMIT, signed_in, start, unguarded
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -295,10 +295,12 @@ def test_admin_idle_and_absolute_boundaries_and_fresh_auth(
         sessions.require_fresh(request)
     if absolute:
         row.last_activity_at = row.expires_at - timedelta(minutes=5)
-        PortalSession.objects.filter(pk=row.pk).update(
-            last_activity_at=row.last_activity_at,
-            version=F("version") + 1,
-        )
+        # Future activity is refused by the session guard (#306); seed it.
+        with unguarded():
+            PortalSession.objects.filter(pk=row.pk).update(
+                last_activity_at=row.last_activity_at,
+                version=F("version") + 1,
+            )
     boundary = (
         row.expires_at if absolute else row.last_activity_at + sessions.ADMIN_IDLE
     )

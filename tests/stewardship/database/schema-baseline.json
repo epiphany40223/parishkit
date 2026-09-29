@@ -8,8 +8,8 @@
     "sha256": "d7b9c8462ecfa42e7a548043b05b9d0ae2379e14bdf15d9d8eae950af013ac18"
   },
   "functions": {
-    "count": 606,
-    "sha256": "271adefa2f8f26fab4e2d2c5c0ee3eba2e6d1531be8834dc1dc61dfc6d0d28c3"
+    "count": 607,
+    "sha256": "b8ed3450ce81797a5ee7780a35572aaf07c233eb521ea8196c35a2de0839108a"
   },
   "indexes": {
     "count": 1008,
@@ -24,7 +24,7 @@
     "sha256": "5493b41e9a1a2a8935fd05eb53b4b37774c682cf26fbb7650ad9cf4083c06e2c"
   },
   "triggers": {
-    "count": 556,
-    "sha256": "e8cb79b76d9551ee304a7ef7718804cf9af2e41c61a3337c7fce8a8fd1b849f9"
+    "count": 557,
+    "sha256": "c9546d7924d9d1c9a2c015b9d6349c4ecc2083b8a27f3b522751c5726f52a182"
   }
 }

@@ -324,6 +324,13 @@ login that executes each task type: a new task login guard replaced the
 scheduler-only cancel guard, web may cancel only a waiting cleanup, and a
 login may create only a known type (one new mapping function and one
 replaced trigger function and trigger; Functions and Triggers digests).
+The #306 review (M2) then guarded the Admin identity rows the SQL Admin
+checks trust: an Admin session insert needs a live principal with a current
+Admin rule and at most the 12-hour absolute limit, its deadline is
+immutable, activity never moves into the future, disabling a portal user is
+one-way, and its email or hosted domain changes only with a re-verification
+stamped in the same transaction (two guard bodies and one new trigger;
+Functions and Triggers digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -332,8 +339,8 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 606 | `271adefa` |
-| Triggers | 556 | `e8cb79b7` |
+| Functions | 607 | `b8ed3450` |
+| Triggers | 557 | `c9546d79` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A
