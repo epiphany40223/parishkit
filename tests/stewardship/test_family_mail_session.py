@@ -9,6 +9,7 @@ import json
 import os
 import smtplib
 import subprocess
+import sys
 import time
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -580,3 +581,190 @@ def test_real_spawn_arguments_are_isolated(monkeypatch):
     ]
     assert seen["env"] == {} and seen["stderr"] is subprocess.DEVNULL
     assert seen["close_fds"] is True
+
+
+# --- Retiring, reaping and logging helpers that end (review of #334) ----------
+
+
+def wait_until(condition, seconds=10):
+    """Poll ``condition`` until true or fail after ``seconds``."""
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, "condition never became true"
+        time.sleep(0.05)
+
+
+@pytest.fixture
+def timeouts(monkeypatch):
+    """Capture every record_timeout call the real recorder makes."""
+    calls = []
+    monkeypatch.setattr(
+        "parishkit.stewardship.audit.timeouts.record_timeout",
+        lambda event, **facts: calls.append((str(event), facts)),
+    )
+    return calls
+
+
+def test_close_kills_and_logs_a_helper_that_will_not_quit(gmail, timeouts):
+    """A helper still running RETIRE_SECONDS after EOF is killed and logged."""
+    session = gmail.session()
+    assert send(session, mail()).status is Status.ACCEPTED
+    process = session.process
+    gmail.script(("quit", ["hang"]))
+    started = time.monotonic()
+    session.close()
+    assert 1.5 < time.monotonic() - started < 5 and process.poll() is not None
+    ((event, facts),) = timeouts
+    assert event == "helper_timed_out"
+    assert (facts["helper"], facts["what"], facts["limit_seconds"]) == (
+        "family_delivery_worker",
+        "mail_helper",
+        family_delivery_process.RETIRE_SECONDS,
+    )
+    assert facts["elapsed_seconds"] >= family_delivery_process.RETIRE_SECONDS
+
+
+def test_a_polite_close_logs_nothing(gmail, timeouts):
+    """A helper that QUITs on EOF is reaped without a timeout entry."""
+    session = gmail.session()
+    send(session, mail())
+    session.close()
+    assert timeouts == [] and gmail.count("quit") == 1
+
+
+def test_rotation_never_spends_the_next_messages_budget(gmail, timeouts, monkeypatch):
+    """Replacing a helper does not wait for it; a laggard is reaped and logged."""
+    monkeypatch.setattr(family_delivery_process, "REAP_SECONDS", 0.1)
+    session = gmail.session()
+    assert send(session, mail()).status is Status.ACCEPTED
+    old = session.process
+    gmail.script(("quit", ["hang"]))
+    other = SETTINGS | {"sender_name": "Parish Office"}
+    started = time.monotonic()
+    # The new helper starts at once, with the full deadline for its message.
+    assert send(session, mail(), settings=other, seconds=3).status is (Status.ACCEPTED)
+    assert time.monotonic() - started < 2 and old.poll() is None
+    wait_until(lambda: old.poll() is not None)
+    wait_until(lambda: timeouts)
+    assert timeouts[0][1]["limit_seconds"] == family_delivery_process.RETIRE_SECONDS
+    session.close()
+
+
+def test_a_deadline_before_started_is_definitely_unsent(gmail, timeouts):
+    """Killed before its "started" line, the helper never began the message."""
+    session = gmail.session()
+    value = mail()
+    gmail.script(("request", ["hang"]))
+    result = send(session, value, seconds=1.5)
+    assert result.status is Status.UNAVAILABLE and gmail.data(value) == 0
+    assert [event for event, _ in timeouts] == ["helper_timed_out"]
+    assert session.process is None
+
+
+def test_a_result_written_just_before_the_kill_is_kept(timeouts):
+    """A complete result read after a deadline kill is the message's outcome."""
+    result = FamilyDeliveryResult(Status.ACCEPTED, 2).wire_payload()
+
+    class Helper:
+        """Starts at once, but its result only lands as it is killed."""
+
+        def __init__(self):
+            self.read, stdin_fd = os.pipe()
+            stdout_fd, self.write = os.pipe()
+            self.stdin = os.fdopen(stdin_fd, "wb")
+            self.stdout = os.fdopen(stdout_fd, "rb")
+            self.returncode = None
+            os.write(self.write, b"started 1\n")
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            # The helper finished an instant before the kill landed.
+            line = json.dumps({"seq": 1, "result": result}).encode() + b"\n"
+            os.write(self.write, line)
+            os.close(self.write)
+            os.close(self.read)
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    session = FamilyMailSession(spawn=Helper)
+    assert send(session, mail(), seconds=0.3).status is Status.ACCEPTED
+    assert [event for event, _ in timeouts] == ["helper_timed_out"]
+
+
+def test_a_helper_that_exits_idle_is_reaped_promptly(gmail, monkeypatch):
+    """A helper leaving on its own idle timeout is reaped without waiting for mail."""
+    monkeypatch.setattr(family_delivery_process, "REAP_SECONDS", 0.2)
+    (gmail.directory / "idle").write_text("1")
+    session = gmail.session()
+    assert send(session, mail()).status is Status.ACCEPTED
+    process = session.process
+    # The helper leaves after a second idle; the reaper notices and reaps it.
+    wait_until(lambda: session.process is None and not session.retiring)
+    assert process.poll() == 0 and gmail.count("quit") == 1
+    wait_until(lambda: session.reaper is None)
+    # The next message simply gets a fresh helper.
+    assert send(session, mail()).status is Status.ACCEPTED
+    assert gmail.count("spawn") == 2
+    session.close()
+
+
+def test_the_reaper_retires_an_idle_helper_on_time(gmail, monkeypatch):
+    """No key-holding helper sits idle past PARENT_IDLE_SECONDS."""
+    monkeypatch.setattr(family_delivery_process, "REAP_SECONDS", 0.1)
+    now = [0.0]
+    session = gmail.session(clock=lambda: now[0])
+    send(session, mail())
+    process = session.process
+    time.sleep(0.3)
+    assert process.poll() is None
+    now[0] += family_delivery_process.PARENT_IDLE_SECONDS
+    wait_until(lambda: process.poll() is not None)
+    assert gmail.count("quit") == 1
+    wait_until(lambda: session.reaper is None)
+
+
+PARENT = """
+import os, sys
+from tests.stewardship.family_mail_session_fakes import FakeGmailHelpers, SETTINGS, mail
+from parishkit.stewardship.family_delivery_process import submit_family
+
+gmail = FakeGmailHelpers(sys.argv[1])
+session = gmail.session()
+result = submit_family(
+    b"k", SETTINGS, mail(), seconds=10, check=lambda: None, session=session
+)
+print(result.status.value, session.process.pid, flush=True)
+os._exit(0)  # the mail worker dies without closing anything
+"""
+
+
+def test_a_helper_whose_parent_dies_quits_and_exits(gmail, tmp_path):
+    """A dead mail worker leaves no helper behind: EOF ends it after a QUIT."""
+    from pathlib import Path
+
+    script = tmp_path / "parent.py"
+    script.write_text(PARENT)
+    root = str(Path(__file__).resolve().parents[2])
+    output = subprocess.run(
+        [sys.executable, str(script), str(gmail.directory)],
+        capture_output=True,
+        check=True,
+        timeout=30,
+        env={"PYTHONPATH": os.pathsep.join([root, *(p for p in sys.path if p)])},
+    ).stdout.split()
+    assert output[0] == b"accepted"
+    pid = int(output[1])
+
+    def gone():
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+
+    wait_until(gone)
+    assert gmail.count("quit") == 1 and gmail.count("accepted") == 1

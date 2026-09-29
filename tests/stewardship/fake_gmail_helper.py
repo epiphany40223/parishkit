@@ -9,11 +9,12 @@ killed, reaped and read to EOF exactly like the production helper.
 this and any later helper process: when a helper reaches the stage named by
 the first fault, that fault is removed and applied. Stages are ``request``
 (a request line was read, before its "started" line), ``connect``, ``ehlo``,
-``auth``, ``mail``, ``rcpt``, ``data`` and ``noop``. Actions are
+``auth``, ``mail``, ``rcpt``, ``data`` and ``quit``. Actions are
 ``["reply", code, text]``, ``["disconnect"]`` (the server drops the
 connection), ``["exit"]`` (the helper process dies at once) and ``["hang"]``.
 Every token, connection, QUIT and DATA is appended to ``events.jsonl``, so a
-test can count exactly what Gmail would have received.
+test can count exactly what Gmail would have received. A number in
+``STATE_DIR/idle`` replaces the helper's own idle timeout, in seconds.
 """
 
 import json
@@ -85,6 +86,7 @@ class FakeGmail:
     def __exit__(self, *args):
         """QUIT, as smtplib does on leaving the context."""
         if not self.closed:
+            fault("quit")
             record("quit")
 
     def _reply(self, stage, default=250):
@@ -142,6 +144,9 @@ def main():
         return decode(raw, settings)
 
     family_delivery_worker.decode_session_request = request
+    idle = STATE / "idle"
+    if idle.exists():
+        family_delivery_worker.HELPER_IDLE_SECONDS = float(idle.read_text())
     record("spawn")
     return family_delivery_worker.serve(
         sys.stdin.fileno(),

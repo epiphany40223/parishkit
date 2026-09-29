@@ -53,7 +53,12 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   provider fault retires the helper. Helpers are rotated after 100 messages,
   10 minutes or 60 seconds idle. The
   [design comment](https://github.com/epiphany40223/parishkit/issues/284#issuecomment-5896798635)
-  has the full reasoning. Digests keep one-message helpers.
+  has the full reasoning. Digests keep one-message helpers. Replacing a
+  helper never waits: it gets EOF and is reaped later, and one that has not
+  exited two seconds later is killed and logged as `helper_timed_out`. A
+  deadline kill before the `started` line leaves the message definitely
+  unsent (an ordinary retry); a result that fully arrived before the kill
+  is kept.
 - Gmail's own sending limits are recognized by the enhanced status code that
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail
