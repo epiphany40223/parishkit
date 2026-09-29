@@ -469,3 +469,26 @@ def test_admin_retry_cannot_inject_private_answer_text(response_service, monkeyp
     assert list(TaskRun.objects.values_list("pk", flat=True)) == before
     message.refresh_from_db()
     assert message.state == "pending" and message.version == 1
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_receipt_banner_resolves_under_the_exact_mail_role(response_service, hidden):
+    """The restricted MAIL role re-renders the campaign banner (#248), or omits it."""
+    from .test_artwork_views_postgresql import set_banner
+
+    harness = response_service
+    banner = set_banner(
+        harness.service.store,
+        harness.campaign.pk,
+        hide=["confirmation"] if hidden else None,
+    )
+    message = receipt(harness)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        mail, *_ = begin(message, execution)
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    image = f'<img src="https://parish.example.org/branding/{banner}.png"'
+    assert (image in mail.html) is not hidden
+    assert "branding" not in mail.text

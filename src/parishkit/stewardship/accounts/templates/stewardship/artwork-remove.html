@@ -1,0 +1,9 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Remove campaign image" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Remove campaign image" %}</h1>
+<p>{% blocktranslate with slot=label %}Stop showing an image for: {{ slot }}. Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+<button type="submit">{% translate "Remove the image" %}</button></form>
+<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Back to campaign images" %}</a></p>
+{% endblock %}

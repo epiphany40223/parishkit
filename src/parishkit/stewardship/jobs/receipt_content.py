@@ -63,6 +63,7 @@ def render_receipt(
     intended_recipients,
     testing_recipient=None,
     reply_to=None,
+    banner="",
 ):
     """Append required fixed facts independently of optional parish-authored text.
 
@@ -117,6 +118,9 @@ def render_receipt(
     # Check the combined result as well: separate literals/substitutions cannot
     # assemble a reserved credential marker in an otherwise valid template.
     validate_receipt_content(subject, html, text)
+    # The optional campaign banner (#248) is server-built markup, added after
+    # the content checks, which never admit images in parish text.
+    html = banner + html
     return route_family_mail(
         identity=identity,
         configuration_id=configuration_id,

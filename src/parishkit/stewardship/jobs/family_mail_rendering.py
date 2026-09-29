@@ -2,9 +2,11 @@
 
 from uuid import UUID
 
+from parishkit.stewardship.accounts.branding_context import banner_for_email
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.web.content import email_banner
 
 from .campaign_mail_values import document_parish
 from .family_mail_content import FamilyMailTemplate, render_family_mail
@@ -48,4 +50,12 @@ def current_render(identity, template_record_id, scope, source, *, public_origin
         testing_recipient=scope.runtime.testing_recipient
         if identity.mode == "testing"
         else None,
+        banner=email_banner(
+            banner_for_email(
+                scope.campaign.active_configuration.values,
+                template.slot,
+                origin=public_origin,
+            ),
+            scope.campaign.active_configuration.values["name"],
+        ),
     )

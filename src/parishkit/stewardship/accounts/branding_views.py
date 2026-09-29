@@ -35,7 +35,7 @@ from .authentication import runtime
 from .branding_files import read_variant
 from .branding_models import BrandingAsset
 from .branding_staging import file_receipt, stage_branding, staged_bundle
-from .branding_validation import validate_installation
+from .branding_validation import campaign_artwork_retained, validate_installation
 from .configuration_installation import coherent_configuration
 from .configuration_models import Parish
 from .integration_views import _checked
@@ -100,6 +100,10 @@ def media_root():
 
 def _retained(asset):
     """Only actual activation history publishes logos; prepared YAML is not enough."""
+    if asset.label in {"banner", "section"}:
+        # Campaign artwork (#248) is published by an activated campaign
+        # configuration that names it.
+        return campaign_artwork_retained(asset.pk)
     field = {
         "large": "large_logo_id",
         "menu": "menu_logo_id",

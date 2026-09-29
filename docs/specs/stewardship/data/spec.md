@@ -96,7 +96,13 @@ main phone number, and branding references. Public origin remains solely
 authoritative in deployment configuration and is not duplicated as an editable
 Parish value. Logo uploads produce normalized large, menu, icon, and favicon
 variants. Accepted inputs are PNG, JPEG, or WebP; files are decoded and re-
-encoded before use.
+encoded before use. A campaign's optional `artwork` value (absent when
+empty) holds its theme artwork: `images` maps the `banner`, `welcome`,
+`member`, `financial` and `closing` slots to single-image branding bundles (a
+`banner` image, or a `section` icon for the page slots), and `hide_banner`
+lists, in canonical order, the Family emails that skip the banner. Selected
+images are pinned against staging cleanup like the logos, and `artwork` is
+exempt from the live-campaign structural lock.
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`
 mode, single valid Testing recipient, current campaign pointer, durable

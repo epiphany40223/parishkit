@@ -1,9 +1,10 @@
 """Current credential-free receipt configuration, selected under the work lock."""
 
+from parishkit.stewardship.accounts.branding_context import banner_for_email
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.web.content import SafeContent
+from parishkit.stewardship.web.content import SafeContent, email_banner
 
 from .campaign_mail_values import document_parish
 from .family_mail_inputs import public_values
@@ -55,4 +56,12 @@ def current_receipt_render(
         testing_recipient=runtime.testing_recipient
         if identity.mode == "testing"
         else None,
+        banner=email_banner(
+            banner_for_email(
+                campaign.active_configuration.values,
+                "confirmation",
+                origin=public_origin,
+            ),
+            campaign.active_configuration.values["name"],
+        ),
     )

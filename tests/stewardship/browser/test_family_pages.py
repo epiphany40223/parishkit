@@ -1,9 +1,11 @@
 """The paged Family form: navigation, per-page checks and conditional fields."""
 
+import io
 import os
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
@@ -471,3 +473,55 @@ def test_no_closing_content_means_no_closing_step(page, component_origin):
     begin(page, component_origin, paged_form(), None)
     expect(page.locator('[data-step-link="intro"]')).to_be_attached()
     expect(page.locator('[data-step-link="closing"]')).to_have_count(0)
+
+
+def png(width, height):
+    """PNG bytes for a routed campaign image."""
+    stream = io.BytesIO()
+    Image.new("RGB", (width, height), "green").save(stream, format="PNG")
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_campaign_banner_and_page_icons(page, component_origin, axe_source, width):
+    """Optional campaign images (#248) show without overflow and stay decorative."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.route(
+        "**/branding/*.png",
+        lambda route: route.fulfill(
+            body=png(1024, 217) if "banner" in route.request.url else png(256, 256),
+            content_type="image/png",
+        ),
+    )
+    form = paged_form()
+    form["images"] = {
+        "banner": {"url": "/branding/banner.png", "width": 1024, "height": 217},
+        "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
+        "financial": {"url": "/branding/financial.png", "width": 256, "height": 256},
+    }
+    begin(page, component_origin, form, None)
+    intro = page.locator('[data-page="intro"]')
+    banner = intro.locator("img.family-banner")
+    expect(banner).to_be_visible()
+    # The banner heads the page, above the welcome icon, and fits the screen.
+    assert intro.locator("img").first.get_attribute("class") == "family-banner"
+    assert banner.get_attribute("alt") == ""
+    assert banner.evaluate("e => e.getBoundingClientRect().width") <= width
+    icon = intro.locator("img.family-page-icon")
+    expect(icon).to_be_visible()
+    assert icon.evaluate("e => e.getBoundingClientRect().width") <= 100
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    # Pages without an image slot set show none.
+    page.locator('[data-step-link="household"]').click()
+    expect(page.locator('[data-page="household"] img')).to_have_count(0)
+    page.locator('[data-step-link="financial"]').click()
+    expect(page.locator('[data-page="financial"] img.family-page-icon')).to_be_visible()
+
+
+def test_no_campaign_images_means_no_images(page, component_origin):
+    """A form without images renders no image elements on its pages."""
+    begin(page, component_origin, paged_form(), None)
+    expect(page.locator('[data-step-link="intro"]')).to_be_attached()
+    expect(page.locator(".family-page img")).to_have_count(0)

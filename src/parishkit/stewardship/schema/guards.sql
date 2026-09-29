@@ -2407,6 +2407,9 @@ CREATE TRIGGER stewardship_campaign_config_abort_immutable_guard_v1 BEFORE DELET
 -- TRIGGER: stewardship_campaign_config_intent stewardship_campaign_config_intent_immutable_guard_v1
 CREATE TRIGGER stewardship_campaign_config_intent_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_campaign_config_intent FOR EACH ROW EXECUTE FUNCTION public.stewardship_campaign_config_intent_immutable_v1();
 
+-- TRIGGER: stewardship_campaign_configuration stewardship_campaign_artwork_v1
+CREATE TRIGGER stewardship_campaign_artwork_v1 BEFORE INSERT ON public.stewardship_campaign_configuration FOR EACH ROW EXECUTE FUNCTION public.stewardship_campaign_artwork_v1();
+
 -- TRIGGER: stewardship_campaign_configuration stewardship_campaign_configuration_immutable_guard_v1
 CREATE TRIGGER stewardship_campaign_configuration_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_campaign_configuration FOR EACH ROW EXECUTE FUNCTION public.stewardship_campaign_configuration_immutable_v1();
 

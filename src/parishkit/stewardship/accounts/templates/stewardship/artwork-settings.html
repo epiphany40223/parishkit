@@ -1,0 +1,14 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Campaign images" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign images" %}</h1>
+{% aboutpage "artwork" %}<p>{% translate "Optional theme images for this campaign; a new campaign starts with none. The banner appears at the top of the initial, reminder and confirmation emails and at the top of the Family welcome page. Each icon appears small beside the heading of its Family page. Leave a slot empty to show no image there." %}</p>
+<p>{% translate "Upload PNG, JPEG or WebP files up to 5 MB. Each upload is resized for phones and email, and the original file and its metadata are not kept. Review each image before confirming it." %}</p>{% endaboutpage %}
+{% for entry in slots %}<section class="panel artwork-slot"><h2>{{ entry.label }}</h2>
+{% if entry.asset %}<figure><img src="{% url 'public:branding_asset' entry.asset.pk %}" alt="" width="{{ entry.asset.width }}" height="{{ entry.asset.height }}" class="branding-preview artwork-{{ entry.asset.label }}"><figcaption>{% translate "Current image" %} — {{ entry.asset.width|number }} × {{ entry.asset.height|number }} {% translate "pixels" %}</figcaption></figure>
+<p><a href="{% url 'admin:artwork_remove' campaign.pk entry.slot %}">{% translate "Remove this image" %}</a></p>
+{% else %}<p>{% translate "No image is set." %}</p>{% endif %}
+<form method="post" enctype="multipart/form-data" action="{% url 'admin:artwork_upload' campaign.pk entry.slot %}">{% csrf_token %}{{ entry.form.as_div }}
+<button type="submit">{% if entry.asset %}{% translate "Upload a replacement and preview" %}{% else %}{% translate "Upload and preview" %}{% endif %}</button></form></section>
+{% endfor %}
+{% endblock %}

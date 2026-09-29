@@ -18,6 +18,10 @@ from parishkit.stewardship.runtime_paths import private_directory
 from parishkit.stewardship.web.content import Graphic
 
 VARIANTS = {"large": 1024, "menu": 128, "icon": 128, "favicon": 32}
+# Campaign artwork (#248) is one image per bundle: a wide banner, or a small
+# square section icon kept at 2-3x its displayed size for sharp phones.
+ARTWORK = {"banner": 1024, "section": 256}
+LABELS = VARIANTS | ARTWORK
 MAX_BYTES = 5 * 1024 * 1024
 
 
@@ -90,12 +94,24 @@ def media_lock(media_root):
 
 
 def _inventory(bundle_id, graphics):
-    """Freeze metadata from the existing normalizer's three bounded PNG variants."""
+    """Freeze metadata from the normalizer's bounded PNG variants.
+
+    A logo bundle comes from the three logo sizes and stores four files; a
+    campaign artwork bundle is exactly one ``banner`` or ``section`` image.
+    """
     _identifier(bundle_id)
-    if type(graphics) is not dict or set(graphics) != {"large", "small", "favicon"}:
+    if type(graphics) is dict and set(graphics) == {"large", "small", "favicon"}:
+        labels = VARIANTS
+    elif (
+        type(graphics) is dict
+        and len(graphics) == 1
+        and graphics.keys() <= ARTWORK.keys()
+    ):
+        labels = {label: ARTWORK[label] for label in graphics}
+    else:
         raise ValueError("A complete normalized branding bundle is required.")
     result = []
-    for label, maximum in VARIANTS.items():
+    for label, maximum in labels.items():
         graphic = graphics["small" if label in {"menu", "icon"} else label]
         if (
             not isinstance(graphic, Graphic)
@@ -165,7 +181,7 @@ def read_variant(media_root, bundle_id, metadata):
     _identifier(bundle_id)
     if (
         not isinstance(metadata, BrandingFile)
-        or metadata.label not in VARIANTS
+        or metadata.label not in LABELS
         or metadata.reference != uuid5(bundle_id, metadata.label)
         or type(metadata.size) is not int
         or not 0 < metadata.size <= MAX_BYTES
@@ -225,7 +241,7 @@ def remove_bundle(media_root, bundle_id):
                 if inode.st_uid != os.geteuid() or stat.S_IMODE(inode.st_mode) != 0o700:
                     raise ConfigError("Branding directory is not private.")
                 names = os.listdir(descriptor)
-                if set(names) - {label + ".png" for label in VARIANTS}:
+                if set(names) - {label + ".png" for label in LABELS}:
                     raise ConfigError("Branding bundle contains unexpected files.")
                 for filename in names:
                     inode = os.stat(filename, dir_fd=descriptor, follow_symlinks=False)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from django.db import connection
 from django.db.models import BooleanField, Exists, Func, OuterRef, Q
+from django.db.models.expressions import RawSQL
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import (
@@ -32,6 +33,12 @@ from .runtime_models import SystemConfiguration
 from .setup_models import SetupAttempt
 
 TASK_TYPE = "branding_cleanup"
+# Every branding asset any campaign configuration selects as artwork (#248).
+CAMPAIGN_ARTWORK = (
+    "SELECT image.value::uuid FROM public.stewardship_campaign_configuration c "
+    "CROSS JOIN LATERAL jsonb_each_text("
+    "coalesce(c.values->'artwork'->'images','{}'::jsonb)) image"
+)
 
 
 def unpinned_bundles():
@@ -44,6 +51,9 @@ def unpinned_bundles():
         | Q(pk__in=parishes.values("menu_logo_id"))
         | Q(pk__in=parishes.values("icon_logo_id"))
         | Q(pk__in=parishes.values("favicon_id"))
+        # Campaign artwork (#248) named by any campaign configuration pins
+        # its single-image bundle the same way.
+        | Q(pk__in=RawSQL(CAMPAIGN_ARTWORK, ()))
     ).values("bundle_id")
     return (
         BrandingBundle.objects.exclude(pk__in=pinned)

@@ -340,6 +340,10 @@ def _build_records(
                 # the canonical "not configured" form the schema accepts.
                 if section == "parish" and values.get("online_giving_url", "") is None:
                     del existing["values"]["online_giving_url"]
+                # Likewise, clearing a campaign's artwork (#248) removes the
+                # optional key rather than storing an empty mapping.
+                if section == "campaigns" and values.get("artwork", "") is None:
+                    existing["values"].pop("artwork", None)
             item["values"] = values
         normalized.append(item)
     # Content records carried unchanged from the base keep their applied

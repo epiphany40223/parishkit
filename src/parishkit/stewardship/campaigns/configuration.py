@@ -63,13 +63,46 @@ def _options(options):
         seen.add(option["id"])
 
 
+# Campaign artwork (#248): the optional theme banner and one icon per Family
+# page, and the Family emails that should not show the banner.
+ARTWORK_SLOTS = ("banner", "welcome", "member", "financial", "closing")
+BANNER_EMAILS = ("initial", "reminder", "confirmation")
+
+
+def _artwork(artwork):
+    """Validate the optional ``artwork`` value; it is absent rather than empty.
+
+    ``images`` maps slots to branding asset UUIDs; ``hide_banner`` lists, in
+    canonical order, the Family emails that skip the banner (all show it by
+    default). Each part is absent, never empty, so "no artwork" has one form.
+    """
+    if type(artwork) is not dict or not artwork:
+        invalid()
+    if set(artwork) - {"images", "hide_banner"}:
+        invalid()
+    images = artwork.get("images", {"banner": None})
+    if type(images) is not dict or not images or not set(images) <= set(ARTWORK_SLOTS):
+        invalid()
+    if "images" in artwork:
+        for reference in images.values():
+            typed(reference, "uuid")
+    if "hide_banner" in artwork:
+        hidden = artwork["hide_banner"]
+        if (
+            type(hidden) is not list
+            or not hidden
+            or hidden != [slot for slot in BANNER_EMAILS if slot in hidden]
+        ):
+            invalid()
+
+
 def campaign_values(values):
     """Validate the full draft structure and return its canonical UTC interval.
 
     ``talent_options`` is optional: a campaign that never edited its Member
     talents list resolves to the built-in defaults (see responses.service).
     """
-    if set(values) - {"talent_options"} != {
+    if set(values) - {"talent_options", "artwork"} != {
         "name",
         "year_label",
         "timezone",
@@ -147,6 +180,8 @@ def campaign_values(values):
     # while the Ministry module is off; it is simply unused until re-enabled.
     if "talent_options" in values:
         _options(values["talent_options"])
+    if "artwork" in values:
+        _artwork(values["artwork"])
     content = values["content_versions"]
     if type(content) is not dict or not set(content) <= {
         "welcome",

@@ -306,7 +306,7 @@ no template hand-writes a breadcrumb.
 The sidebar starts with Home, then these sections, each listing the entries the
 viewer may open:
 
-- **Campaign**: Campaign settings (or New campaign), Pages and emails, Mail
+- **Campaign**: Campaign settings (or New campaign), Campaign images, Pages and emails, Mail
   schedules, Share options (financial campaigns), Member talents (Ministry
   campaigns), Go-live readiness (drafts)
   and Delivery controls (Production).
@@ -464,6 +464,17 @@ timezone when one exists.
 Logo management previews every generated size. Uploads remain staged until the
 YAML version referencing their immutable branding version is applied;
 historical email/page previews retain their campaign version.
+
+Campaign images (Campaign navigation) hold the current campaign's theme
+artwork: five optional slots, a wide banner and one small icon each for the
+Family welcome, Member, financial and closing pages. A new campaign starts with
+none. Each upload is normalized like a logo (a banner fitted within 1,024
+pixels, an icon within 256), previewed, and used only once its configuration
+request is applied, the same staging and cleanup rules as logos. Removing a
+slot's image is its own reviewed change; a slot without an image shows nothing.
+Artwork is presentation, not structure, so it stays editable while the campaign
+is live. Each Family email's editor (initial, reminder and confirmation) has a
+"Show the campaign banner at the top of this email" checkbox, on by default.
 
 Integration pages expose connection status, last check, safe fingerprint, and
 Replace/Test actions. Secret replacement requires fresh Google authentication.

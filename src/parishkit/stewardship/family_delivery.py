@@ -25,7 +25,7 @@ from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
 from .sender_name import apply_sender_name, clean_sender_name
-from .web.content import prepare_content
+from .web.content import prepare_content, without_email_banner
 
 
 class FamilyDeliveryStatus(StrEnum):
@@ -154,6 +154,9 @@ class FamilyDeliveryMail:
     subject: str
     html: str
     text: str
+    # The deployment's public origin, set by the dispatcher from its own
+    # configuration; the only host a campaign banner (#248) may load from.
+    banner_origin: str = ""
 
     def __post_init__(self):
         """Do not admit attachments, injected headers or noncanonical content."""
@@ -169,8 +172,10 @@ class FamilyDeliveryMail:
             or any(char in self.subject for char in "\r\n\x00")
         ):
             raise ValueError("Invalid Family delivery subject.")
-        content = prepare_content(self.html, text=self.text)
-        if content.html != self.html or content.text != self.text:
+        # The campaign banner (#248) is the one server-built image allowed.
+        html = without_email_banner(self.html, self.banner_origin)
+        content = prepare_content(html, text=self.text)
+        if content.html != html or content.text != self.text:
             raise ValueError("Invalid Family delivery content.")
 
     def payload(self):
@@ -183,6 +188,7 @@ class FamilyDeliveryMail:
             "subject": self.subject,
             "html": self.html,
             "text": self.text,
+            "banner_origin": self.banner_origin,
         }
 
     @classmethod
@@ -199,6 +205,7 @@ class FamilyDeliveryMail:
                 "subject",
                 "html",
                 "text",
+                "banner_origin",
             }
             or type(value["recipients"]) is not list
             or any(

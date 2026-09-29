@@ -6,6 +6,7 @@ from . import views
 from .accounts import (
     access_gate,
     activation_views,
+    artwork_views,
     assignment_views,
     authentication,
     branding_views,
@@ -424,6 +425,26 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/share-options",
         share_views.share_settings,
         name="share_settings",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/images",
+        artwork_views.artwork_settings,
+        name="artwork_settings",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/images/<slug:slot>",
+        artwork_views.artwork_upload,
+        name="artwork_upload",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/images/<slug:slot>/remove",
+        artwork_views.artwork_remove,
+        name="artwork_remove",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/images/<slug:slot>/<uuid:bundle_id>",
+        artwork_views.artwork_preview,
+        name="artwork_preview",
     ),
     path(
         "campaign/<uuid:campaign_id>/talents",

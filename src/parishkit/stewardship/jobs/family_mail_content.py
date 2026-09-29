@@ -110,6 +110,7 @@ def render_family_mail(
     intended_recipients,
     testing_recipient=None,
     reply_to=None,
+    banner="",
 ):
     """Pin non-secret content and routing; never receive a plaintext link or code.
 
@@ -125,7 +126,9 @@ def render_family_mail(
     for value in values.values():
         _no_reserved_markers(value)
     subject = _render_part(template.subject, values)
-    html = _render_part(template.html, values, html=True)
+    # The optional campaign banner (#248) is server-built markup, added after
+    # the parish template is rendered so content rules never admit images.
+    html = banner + _render_part(template.html, values, html=True)
     text = _render_part(template.text, values)
     return route_family_mail(
         identity=identity,

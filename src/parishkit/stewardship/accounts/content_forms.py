@@ -156,11 +156,26 @@ class ContentForm(forms.Form):
     )
     clear = forms.BooleanField(label=_("Remove this selected content"), required=False)
 
-    def __init__(self, *args, kind, slot=None, **kwargs):
-        """Page content cannot carry a subject or masquerade as an email template."""
+    def __init__(self, *args, kind, slot=None, banner=None, **kwargs):
+        """Page content cannot carry a subject or masquerade as an email template.
+
+        ``banner`` is whether this campaign email currently shows the campaign
+        banner (#248); it is None where the choice does not apply (pages, Admin
+        emails, and the setup wizard, which has no campaign artwork yet).
+        """
         self.kind = kind
         self.slot = slot
         super().__init__(*args, **kwargs)
+        if banner is not None:
+            self.fields["show_banner"] = forms.BooleanField(
+                label=_("Show the campaign banner at the top of this email"),
+                help_text=_(
+                    "Uses this campaign's banner image, if one is set under "
+                    "Campaign images."
+                ),
+                required=False,
+                initial=banner,
+            )
         if kind == "page":
             del self.fields["subject"]
         if not has_plain_text(kind, slot):

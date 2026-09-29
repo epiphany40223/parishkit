@@ -156,5 +156,6 @@ def current_receipt_content(message, scope, *, public_origin):
         render.subject,
         render.html,
         render.text,
+        banner_origin=public_origin,
     )
     return render, None, mail

@@ -524,6 +524,14 @@ phase. Manual does not bypass validation, retry, lock, or atomic promotion.
 
 ## Family invitations and reminders
 
+When the current campaign has a banner (see
+[campaign images](../admin-portal/spec.md#parish-and-integration-configuration))
+and the email does not hide it, the HTML part of each initial, reminder and
+receipt email opens with it (after any Testing notice), sized at most 600 pixels wide and loaded from the public
+HTTPS origin with the campaign name as its text alternative. The banner is
+server-built markup; parish-authored email content itself never admits images,
+and the plain-text part carries no banner.
+
 At each configured schedule, the scheduler considers current active registered
 Families. One personalized message is due only when:
 

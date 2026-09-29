@@ -33,6 +33,46 @@ def branding_for(parish):
     }
 
 
+def campaign_artwork(values, *, origin=""):
+    """The campaign's selected, ready artwork images (#248), keyed by slot.
+
+    ``values`` are a campaign configuration's values; unset slots are absent.
+    """
+    return artwork_images(values.get("artwork", {}).get("images", {}), origin=origin)
+
+
+def banner_for_email(values, slot, *, origin):
+    """The campaign banner for one Family email, unless that email hides it."""
+    if slot in values.get("artwork", {}).get("hide_banner", []):
+        return None
+    return campaign_artwork(values, origin=origin).get("banner")
+
+
+def artwork_images(references, *, origin=""):
+    """Resolve ``{slot: asset id}`` to ``{slot: {"url", "width", "height"}}``.
+
+    Unset or unavailable slots are absent, so callers render nothing there.
+    Pass ``origin`` for absolute URLs (emails).
+    """
+    # Read only the columns mail dispatch may SELECT (family_dispatch_grants):
+    # dispatch re-renders each message and resolves the banner itself.
+    assets = {
+        str(pk): (width, height)
+        for pk, width, height in BrandingAsset.objects.filter(
+            pk__in=list(references.values()), bundle__state="ready"
+        ).values_list("pk", "width", "height")
+    }
+    return {
+        slot: {
+            "url": origin + reverse("public:branding_asset", args=[reference]),
+            "width": assets[str(reference)][0],
+            "height": assets[str(reference)][1],
+        }
+        for slot, reference in references.items()
+        if str(reference) in assets
+    }
+
+
 def display_parish(request):
     """The request's active Parish projection, or None on bootstrap/error pages.
 

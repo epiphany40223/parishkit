@@ -1448,12 +1448,21 @@
   function pageOf(element) {
     return element?.closest("[data-page]")?.dataset.page || null;
   }
-  function addPage(editor, key, title, presence) {
+  function artwork(slot, parent, className) {
+    // Optional campaign images (#248). They repeat what the headings and text
+    // already say, so they are decorative (empty alt) and never focusable.
+    const image = (form.images || {})[slot];
+    if (!image) return null;
+    return node("img", null, parent, {src: image.url, alt: "", width: String(image.width),
+      height: String(image.height), class: className, decoding: "async"});
+  }
+  function addPage(editor, key, title, presence, icon = null) {
     // Each page is a section of the one editor form, so every answer, conflict
     // and validator keeps working unchanged; only visibility is paged.
     const element = node("section", null, editor, {class: "family-page", "data-page": key,
       "aria-labelledby": "page-" + key + "-title"});
     element.hidden = true;
+    if (icon) artwork(icon, element, "family-page-icon");
     node("h3", title, element, {id: "page-" + key + "-title", tabindex: "-1"});
     const page = {key, title, presence, element, validators: []};
     pages.push(page);
@@ -1528,7 +1537,10 @@
     editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
-    const intro = addPage(editor, "intro", "Welcome", "welcome");
+    const intro = addPage(editor, "intro", "Welcome", "welcome", "welcome");
+    // The banner heads the welcome page, above its icon and heading.
+    const banner = artwork("banner", intro.element, "family-banner");
+    if (banner) intro.element.prepend(banner);
     // The welcome text carries its own heading; keep "Welcome" only for
     // screen readers and focus, so it isn't shown twice.
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
@@ -1550,7 +1562,7 @@
       const members = allMembers();
       members.forEach((member, index) => {
         const page = addPage(editor, "member-" + member.id, memberName(member, index),
-          form.household ? "census" : "ministry");
+          form.household ? "census" : "ministry", "member");
         if (index === 0) {
           if (form.household) block("member_census", page.element);
           block("ministry", page.element);
@@ -1564,14 +1576,15 @@
     }
     const removedFinancial = conflicts.get("financial.removed");
     if (form.financial || (removedFinancial && removedFinancial.choice === undefined)) {
-      const financial = addPage(editor, "financial", "Financial stewardship", "financial");
+      const financial = addPage(editor, "financial", "Financial stewardship", "financial",
+        "financial");
       financialEditor(financial.element, financial.validators);
     }
     // The optional closing page has content only (no answers). The server
     // sends it only when its text is non-empty, so an Admin removes the page
     // by removing its content.
     if (form.content.closing) {
-      const closing = addPage(editor, "closing", "Closing", "closing");
+      const closing = addPage(editor, "closing", "Closing", "closing", "closing");
       block("closing", closing.element);
       // When the closing text opens with its own heading, keep "Closing"
       // for screen readers and focus only, so no title shows twice.
