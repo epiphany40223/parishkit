@@ -336,12 +336,14 @@ def test_step_bar_names_each_step_and_jumps(page, component_origin):
     for index in range(links.count()):
         links.nth(index).click()
     # With every page seen, a missing required answer (the annual pledge)
-    # takes the Family to it, and the note names the question.
+    # takes the Family to it; its own error line explains it, so the note
+    # beside the buttons is not shown as well (#295).
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
     expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
-    expect(note).to_contain_text("“Annual pledge” on the “Financial stewardship” page")
-    expect(note).to_be_visible()
+    error = page.locator("#financial-annual-hint")
+    expect(error).to_have_text("Enter an annual pledge.")
+    expect(note).to_be_hidden()
     expect(review_segment).not_to_have_attribute("aria-current", "step")
 
 
@@ -556,7 +558,7 @@ def test_no_campaign_images_means_no_images(page, component_origin):
 def test_blocked_next_says_which_question_needs_an_answer(
     page, component_origin, width
 ):
-    """Next on the financial page without a share method explains itself."""
+    """Next on the financial page without a share method explains itself once."""
     page.set_viewport_size({"width": width, "height": 900})
     form = paged_form()
     form["additional_enabled"] = True
@@ -566,14 +568,15 @@ def test_blocked_next_says_which_question_needs_an_answer(
     before = step_text(page)
     next_page(page)
     assert step_text(page) == before
+    # The group's own error line explains it; no second note (#295).
     note = page.locator("[data-nav-error]")
-    expect(note).to_be_visible()
-    expect(note).to_have_text("Please check “How would you like to share?”.")
     expect(page.locator("#financial-shares-error")).to_be_visible()
+    expect(note).to_be_hidden()
     focused = page.locator(":focus")
-    expect(focused).to_have_attribute(
-        "aria-describedby", re.compile("family-nav-error")
-    )
+    expect(focused).to_have_attribute("aria-describedby", "financial-shares-error")
+    # Focus brings the group into view above the sticky navigation.
+    box, nav = focused.bounding_box(), page.locator(".family-nav").bounding_box()
+    assert box and nav and box["y"] >= 0 and box["y"] + box["height"] <= nav["y"]
     # Only the share group is outlined in red, not the whole pledge section.
     for selector in (".financial-pledge", "#financial-section"):
         width = page.locator(selector).evaluate(
@@ -582,10 +585,7 @@ def test_blocked_next_says_which_question_needs_an_answer(
         assert width in ("0px", "1px"), (selector, width)
     group = page.locator("fieldset.choice-group")
     assert group.evaluate("e => getComputedStyle(e).borderTopWidth") == "2px"
-    # The note sits with the (sticky) navigation, inside the viewport.
-    box = note.bounding_box()
-    assert box and box["y"] + box["height"] <= page.viewport_size["height"]
-    # Fixing the answer clears the note on the next attempt.
+    # Fixing the answer moves on.
     page.locator('#financial-section input[id^="financial-option-"]').first.check()
     next_page(page)
     expect(note).to_be_hidden()
@@ -610,13 +610,13 @@ def test_member_section_is_not_outlined_by_an_invalid_field(page, component_orig
     first = show(page, page.get_by_label("First name (required)").first)
     first.fill("")
     next_page(page)
-    expect(page.locator("[data-nav-error]")).to_contain_text("First name")
+    expect(page.locator("[data-nav-error]")).to_be_hidden()
     section = page.locator("fieldset.member-section:visible").first
     assert section.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
 
 
-def test_blocked_review_names_a_question_on_another_page(page, component_origin):
-    """An added Member's missing name stops Review and names that page."""
+def test_blocked_review_opens_a_question_on_another_page(page, component_origin):
+    """An added Member's missing name stops Review and opens that page."""
     begin(page, component_origin, paged_form(), None)
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     add = show(
@@ -632,12 +632,11 @@ def test_blocked_review_names_a_question_on_another_page(page, component_origin)
     page.locator('[data-step-link="intro"]').click()
     page.locator("[data-step-review]").click()
     expect(page.locator(f'[data-page="{key}"]')).to_be_visible()
-    note = page.locator("[data-nav-error]")
-    expect(note).to_contain_text("First name")
-    expect(note).to_contain_text("page")
-    expect(page.locator(":focus")).to_have_attribute(
-        "aria-describedby", re.compile("family-nav-error")
-    )
+    # The focused name shows its own error line, so there is no second note.
+    focused = page.locator(":focus")
+    expect(focused).to_have_id(re.compile(r"-first_name$"))
+    expect(page.locator(f"#{focused.get_attribute('id')}-inline-error")).to_be_visible()
+    expect(page.locator("[data-nav-error]")).to_be_hidden()
 
 
 FIRST_CONTROL = """page => {

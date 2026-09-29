@@ -392,6 +392,11 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
     if changed == "pledge":
+        # An unresolved conflict has no error line of its own, so the note
+        # beside the buttons still explains the block (#295).
+        expect(page.locator("[data-nav-error]")).to_have_text(
+            "Please choose a value for each changed record."
+        )
         show(
             page,
             page.get_by_role(
@@ -410,8 +415,9 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         # A positive pledge still needs a share method once the old one is gone.
         show(page, page.locator(f"#financial-option-{CHECK}")).check()
     else:
+        # Its own error line explains the block; no second note (#295).
         expect(page.locator(f"#financial-discard-{OTHER}-error")).to_be_visible()
-        expect(page.locator("[data-nav-error]")).to_contain_text("Discard this note")
+        expect(page.locator("[data-nav-error]")).to_be_hidden()
         show(
             page, page.get_by_label("Discard this note and keep the selected method")
         ).click()
@@ -563,7 +569,9 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
     pledge.fill("")
     review(page)
     expect(error).to_have_text("Enter an annual pledge.")
-    expect(page.locator("[data-nav-error]")).to_contain_text("“Annual pledge”")
+    # One notice: the inline line, not also a note by the buttons (#295).
+    expect(page.locator("[data-nav-error]")).to_be_hidden()
+    expect(pledge).to_be_focused()
     for value in ("abc", "1.001", "-5"):
         pledge.fill(value)
         pledge.blur()

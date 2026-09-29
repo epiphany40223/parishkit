@@ -97,19 +97,23 @@ top-most bar, above the page title.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
 move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors, focus on the first
-unanswered question, and a note beside the navigation buttons naming it
-("Please check “How would you like to share?”."), which also describes the
-focused field for assistive technology. Only a choice group (share methods) is
-outlined in red, never a whole section. A "Step N of M"
+current page and keeps the Family there with inline errors and focus on the
+first unanswered question, scrolled into view above the sticky navigation. Each
+problem is reported once: a question with its own visible error line (the red
+outline and message under it) gets no second notice. Only a problem with no
+error line of its own, such as an unresolved changed-record choice, gets a note
+beside the navigation buttons ("Please choose a value for each changed
+record."), which also describes the focused control for assistive technology.
+Only a choice group (share methods) is outlined in red, never a whole section. A "Step N of M"
 line names the current step, and a segmented step bar like the setup wizard's
 has one button per step: each is named by its step, shows a "Step N of M"
 tooltip on hover or keyboard focus, and jumps to that page on click or tap.
 Review (the last segment, or Review response on the last page) first requires a
 Family that has not submitted before to have viewed every page: otherwise it
 opens the first page not yet viewed and says so. It then checks every page and,
-if an answer is missing, opens that page with the same note naming the
-question, so the response cannot be completed until all steps are done. A
+if an answer is missing, opens that page and focuses it under the same
+one-notice rule (a note names the question and its page only when it has no
+error line), so the response cannot be completed until all steps are done. A
 returning Family, who has submitted before, may go straight to Review. Browser Back/Forward move between pages. Every page shows the
 Family's name (for example "The Squyres Family") so the Family can confirm the
 right household is open; ParishSoft's mailing name and the session deadline are

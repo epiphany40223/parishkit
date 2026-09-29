@@ -1329,7 +1329,7 @@
         const extra = node("textarea", null, shares, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
         extra.value = answers.financial.shares[option.id];
         extra.disabled = checkbox.disabled;
-        const error = node("p", null, shares, {id: id + "-hint"});
+        const error = node("p", null, shares, {id: id + "-hint", class: "error"});
         const validateText = () => {
           extra.setCustomValidity(extra.value.trim() ? "" : "Provide details for this share method.");
           error.textContent = extra.validationMessage; error.hidden = !error.textContent;
@@ -1715,6 +1715,18 @@
       target.setAttribute("aria-describedby", [...ids, note.id].join(" "));
     }
   }
+  function inlineError(control) {
+    // Whether the control already shows its own visible error line: an
+    // error line it names in aria-describedby, or its "-inline-error" line.
+    // Such a control needs no second note beside the navigation buttons;
+    // the red outline, that line and focus say enough (#295).
+    const ids = (control.getAttribute("aria-describedby") || "").split(" ").concat(control.id + "-inline-error");
+    return ids.some((id) => {
+      const line = id && id !== "family-nav-error" ? document.getElementById(id) : null;
+      return Boolean(line && (line.classList.contains("error") || id.endsWith("-error")) &&
+        line.textContent.trim() && line.getClientRects().length);
+    });
+  }
   function questionName(input) {
     // The question as the Family sees it: a share group's legend for its
     // "choose at least one" check, otherwise the field's own label.
@@ -1737,7 +1749,7 @@
     const invalid = [...page.element.querySelectorAll("input, select, textarea")].find(
       (input) => !input.disabled && !input.checkValidity());
     if (invalid) {
-      navNote("Please check " + questionName(invalid) + ".", invalid);
+      navNote(inlineError(invalid) ? "" : "Please check " + questionName(invalid) + ".", invalid);
       invalid.focus();
       return false;
     }
@@ -1896,7 +1908,9 @@
       } else {
         const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
         showPage(pageOf(invalid), {focus: false});
-        if (invalid) {
+        // Checked after showPage, so the invalid control's own error line is
+        // on screen; only a control without one gets the note.
+        if (invalid && !inlineError(invalid)) {
           const title = pages.find((page) => page.key === currentPage)?.title;
           navNote("Please check " + questionName(invalid) + (title ? " on the “" + title + "” page" : "") + ".",
             invalid);
