@@ -37,6 +37,41 @@
     });
   });
 
+  // Hosted files (#346). A Copy button copies its read-only field; without
+  // script (or the clipboard API) the button stays hidden and the field can
+  // be selected by hand. Choosing a file fills an empty placeholder-name
+  // field from the file's base name, as the server would derive it (the
+  // server still derives and validates it when the field is left blank).
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    document.querySelectorAll("button[data-copy]").forEach((button) => {
+      const field = document.getElementById(button.dataset.copy);
+      if (!field) return;
+      button.hidden = false;
+      const label = button.textContent;
+      button.addEventListener("click", () => {
+        navigator.clipboard.writeText(field.value).then(
+          () => { button.textContent = "Copied"; setTimeout(() => { button.textContent = label; }, 2000); },
+          () => { field.select(); },
+        );
+      });
+    });
+  }
+  const slugSource = document.querySelector("input[data-slug-from]");
+  const slugTarget = document.querySelector("input[data-slug-to]");
+  if (slugSource && slugTarget) {
+    let derived = "";
+    slugSource.addEventListener("change", () => {
+      const file = slugSource.files && slugSource.files[0];
+      if (!file || (slugTarget.value && slugTarget.value !== derived)) return;
+      const stem = file.name.replace(/\.[^.]*$/, "");
+      let slug = stem.normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      if (slug.length > 64) slug = slug.slice(0, 64).replace(/-[^-]*$/, "") || slug.slice(0, 64);
+      derived = slug.replace(/^-+|-+$/g, "") || "file";
+      slugTarget.value = derived;
+    });
+  }
+
   // The parish's chosen date format (date-format-v1.js, loaded first).
   if (window.ParishDates) window.ParishDates.localize(document);
 

@@ -1,0 +1,62 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Hosted files" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Hosted files" %}</h1>
+<p>{% translate "Files you can link from Family pages and emails. Anyone with a file's link can open it." %}</p>
+{% aboutpage "hosted-files" %}
+<p>{% translate "To link a file, copy its placeholder into a page or email and write your own link text, for example:" %} <code>{{ example_link }}</code></p>
+<p>{% translate "To show an image, copy its image tag and describe the image in alt, or leave alt empty if the image is only decoration." %} <code>{{ example_image }}</code></p>
+<p>{% translate "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PNG, JPEG and still GIF files are accepted, up to 10 MB each, 100 files and 200 MB in all. Older Office files (.doc, .xls, .ppt), files with macros and animated images are not. Images are copied without their hidden details (such as location) and fitted within 2,048 pixels. A large upload needs a reasonably fast connection." %}</p>
+<p>{% translate "A file's link never changes, even if you change its placeholder name. Many email programs hide images until the reader allows them, so keep important information in the text too." %}</p>
+<p>{% translate "A file can't be deleted, or have its placeholder name changed, while a page or email still uses it. Deleting a file breaks its link everywhere, including in emails already sent, which then show a “no longer available” page. To replace a file, upload the new one, change the pages and emails to use it, then delete the old one. Anyone with a link can open the file, so never upload anything private." %}</p>
+{% endaboutpage %}
+{% if uploaded %}<p class="notice" role="status">{% blocktranslate with name=uploaded.original_name placeholder=uploaded_placeholder %}Uploaded {{ name }} as <code>{{ placeholder }}</code>.{% endblocktranslate %}</p>{% endif %}
+{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}
+<form method="post" action="{% url 'admin:hosted_file_upload' %}" enctype="multipart/form-data" class="panel">{% csrf_token %}
+<h2>{% translate "Upload a file" %}</h2>
+{{ form.as_div }}
+<button type="submit">{% translate "Upload" %}</button></form>
+<p>{% blocktranslate with count=count max_files=max_files used=total|filesizeformat limit=max_bytes|filesizeformat %}{{ count }} of {{ max_files }} files, {{ used }} of {{ limit }} used.{% endblocktranslate %}</p>
+{% translate "Hosted file pages" as navigator_label %}
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<form method="post" action="{% url 'admin:hosted_file_delete' %}" data-select-table>
+  {% csrf_token %}<input type="hidden" name="action" value="preview">
+  <div class="bulk-bar">
+    {% include "stewardship/table-selection.html" %}
+    <button type="submit" class="button-secondary" data-bulk-action>{% translate "Delete selected" %}</button>
+  </div>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="hosted-file-caption">
+  <table class="data-table hosted-files">
+    <caption id="hosted-file-caption">{% translate "Hosted files" %}</caption>
+    <thead><tr>
+      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every file on this page' %}"></th>
+      <th scope="col">{% translate "Preview" %}</th>
+      <th scope="col">{% translate "Name" %}</th>
+      <th scope="col">{% translate "Placeholder" %}</th>
+      <th scope="col">{% translate "Type" %}</th>
+      <th scope="col" class="numeric">{% translate "Size" %}</th>
+      <th scope="col">{% translate "Uploaded" %}</th>
+      <th scope="col">{% translate "Used in" %}</th>
+      <th scope="col">{% translate "Actions" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in table.rows %}<tr>
+      <td class="select-col"><input type="checkbox" name="file_id" value="{{ row.file.pk }}" data-select-row aria-label="{% blocktranslate with name=row.file.slug %}Select {{ name }}{% endblocktranslate %}"></td>
+      <td>{% if row.missing %}<span class="status-badge">{% translate "Missing" %}</span>{% elif row.image %}<img src="{{ row.link }}" alt="" width="48" class="hosted-file-thumbnail">{% else %}{{ row.type }}{% endif %}</td>
+      <th scope="row"><a href="{{ row.link }}" target="_blank" rel="noopener noreferrer">{{ row.file.original_name }}</a></th>
+      <td><input type="text" readonly value="{{ row.placeholder }}" id="placeholder-{{ row.file.pk }}" aria-label="{% blocktranslate with name=row.file.slug %}Placeholder for {{ name }}{% endblocktranslate %}" class="hosted-file-copy">
+        <button type="button" class="button-secondary" data-copy="placeholder-{{ row.file.pk }}" hidden>{% translate "Copy" %}</button>
+        {% if row.image_tag %}<input type="text" readonly value="{{ row.image_tag }}" id="image-tag-{{ row.file.pk }}" aria-label="{% blocktranslate with name=row.file.slug %}Image tag for {{ name }}{% endblocktranslate %}" class="hosted-file-copy">
+        <button type="button" class="button-secondary" data-copy="image-tag-{{ row.file.pk }}" hidden>{% translate "Copy image tag" %}</button>{% endif %}</td>
+      <td>{{ row.type }}{% if row.image %}, {{ row.file.width }} × {{ row.file.height }}{% endif %}</td>
+      <td class="numeric">{{ row.file.size|filesizeformat }}</td>
+      <td>{{ row.uploader }}<br><time datetime="{{ row.file.created_at|instant }}" data-local-instant>{{ row.file.created_at|instant }}</time></td>
+      <td>{% if row.uses %}<ul>{% for use in row.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% else %}{% translate "Not used" %}{% endif %}</td>
+      <td>{% if row.uses %}{% translate "In use" %}{% else %}<a href="{% url 'admin:hosted_file_rename' row.file.pk %}">{% translate "Change placeholder name" %}</a>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="9">{% translate "No files yet. Upload a PDF, Office document or image to link it from pages and emails." %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+{% endblock %}

@@ -62,6 +62,8 @@ from .directory_components import components as directory_components
 from .financial_components import components as financial_components
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
+from .hosted_file_components import IMAGE_TOKEN
+from .hosted_file_components import components as hosted_file_components
 from .information_components import components as information_components
 from .log_components import components as log_components
 from .ministry_components import components as ministry_components
@@ -1367,6 +1369,7 @@ def component_origin():
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
+    responses.update(hosted_file_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
@@ -1397,6 +1400,8 @@ def component_origin():
             "image/png",
             logo.getvalue(),
         )
+    # A hosted image (#346) served from the same origin, like /files/<token>.
+    responses[f"/files/{IMAGE_TOKEN}"] = ("image/png", logo.getvalue())
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""
