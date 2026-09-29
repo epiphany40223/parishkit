@@ -446,7 +446,9 @@ creates one consistent backup set containing:
 
 Backups are encrypted before leaving the VM and transferred to an
 operator-configured off-host target. Defaults retain 30 daily and 12 monthly
-successful backups. Failure to complete a successful backup within 24 hours is
+successful backups (v1 also keeps every backup from the last seven days; see
+the backup runbook's
+[retention](../../../guides/stewardship-backup-runbook.md#retention)). Failure to complete a successful backup within 24 hours is
 CRITICAL. Backup logs contain sizes/digests/durations, never contents/secrets.
 
 Each data-backup manifest records its encryption-key ID. Rotation stages a new

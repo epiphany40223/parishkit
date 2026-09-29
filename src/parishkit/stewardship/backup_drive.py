@@ -22,12 +22,12 @@ import json
 import logging
 import re
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 from parishkit.config import ConfigError
 
-from .backup import SET_NAME
+from .backup import DUMP, FILES, MANIFEST, RECENT_WINDOW, retained, set_started
 from .observability import Event, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
@@ -41,9 +41,6 @@ FOLDER_MIME = "application/vnd.google-apps.folder"
 TAG_KEY = "parishkitStewardshipBackup"
 TAG_VALUE = "v1"
 DEPLOYMENT_TAG = re.compile(r"^[A-Za-z0-9-]{1,100}$")
-# Off-site sets kept in the Drive folder, matching the host's retention
-# (backup.RETAINED_SETS); older tagged set folders go to the Drive trash.
-RETAINED_SETS = 30
 # Drive file and folder IDs are URL-safe base64-like tokens.
 FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
 REQUEST_SECONDS = 60
@@ -406,18 +403,46 @@ def upload_set(client, folder_id, directory, names):
     return subfolder
 
 
-def prune(client, folder_id, *, keep=RETAINED_SETS):
-    """Trash tagged set folders beyond the newest ``keep``; never touch others."""
-    sets = sorted(
-        (
-            item
-            for item in client.children(folder_id, tagged=True, folders=True)
-            if SET_NAME.fullmatch(item.get("name", ""))
-        ),
-        key=lambda item: item["name"],
-    )
-    for item in sets[:-keep] if keep else sets:
-        client.trash(item["id"])
+def _complete(client, folder):
+    """True when a set folder holds all three files, each with size and MD5.
+
+    Only ``upload_set`` writes these folders, and it verifies each file as it
+    goes, so a folder missing a file is a copy that failed or is still being
+    written.
+    """
+    stored = {
+        item.get("name")
+        for item in client.children(folder["id"])
+        if item.get("size") is not None and item.get("md5Checksum") is not None
+    }
+    return {DUMP, FILES, MANIFEST} <= stored
+
+
+def prune(client, folder_id, *, now=None):
+    """Trash this deployment's set folders the host's retention would not keep.
+
+    The rules are ``backup.retained``'s, so the Drive copy keeps the same
+    daily and monthly anchors as the host. Folders started within
+    ``RECENT_WINDOW`` are never touched, complete or not: one may be a copy
+    still being written. Older ones count only when complete, so partial
+    folders left by failed copies can never push a good set out; the anchors
+    are chosen among the complete ones (the newest of them always stays),
+    and an older partial folder is trashed. Folders without this
+    deployment's tag, or not named like a set, are never touched.
+    """
+    now = now or datetime.now(UTC)
+    older = [
+        item
+        for item in client.children(folder_id, tagged=True, folders=True)
+        if (started := set_started(item.get("name", "")))
+        and started < now - RECENT_WINDOW
+    ]
+    complete = [item for item in older if _complete(client, item)]
+    keep = retained([item["name"] for item in complete], now)
+    kept = {item["id"] for item in complete if item["name"] in keep}
+    for item in older:
+        if item["id"] not in kept:
+            client.trash(item["id"])
 
 
 def probe(client, folder_id):
