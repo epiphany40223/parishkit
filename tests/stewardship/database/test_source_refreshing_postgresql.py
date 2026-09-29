@@ -88,10 +88,39 @@ def test_full_pipeline_stages_one_bound_manifest_without_claiming_success(
     assert result.cursor["full_snapshot_id"] == str(result.pk)
     assert result.counts["family"] == result.counts["member"] == 1
     assert result.counts["fund"] == 1
+    # The manifest keeps the derived counts later refreshes compare with (#320).
+    assert result.cursor["load"]["derived_counts"]["portal_eligible_families"] == 1
     assert SourceCurrent.objects.get().snapshot_id is None
     task = TaskRun.objects.get(pk=execution.claim.run_id)
     assert task.state == "running" and task.phase == "validating"
     assert task.progress_current == task.progress_total == sum(result.counts.values())
+
+
+@pytest.mark.parametrize("value,logged", [(None, None), ("25", None), ("100", 100)])
+def test_every_refresh_under_a_loss_limit_override_logs_a_warning(
+    tmp_path, monkeypatch, caplog, value, logged
+):
+    """#320: a forgotten override shows in normal logs on every refresh."""
+    import logging
+
+    from parishkit.stewardship.observability import Event
+    from parishkit.stewardship.source.loading import DROP_OVERRIDE_VARIABLE
+
+    monkeypatch.delenv(DROP_OVERRIDE_VARIABLE, raising=False)
+    if value is not None:
+        monkeypatch.setenv(DROP_OVERRIDE_VARIABLE, value)
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        result = run(credential, execution, lease)
+    assert result.state == "ready"
+    assert result.cursor["load"]["maximum_drop_percent"] == int(value or 25)
+    warnings = [
+        record.extra["source_max_drop_percent"]
+        for record in caplog.records
+        if record.msg is Event.TASK_STARTED and record.levelno == logging.WARNING
+    ]
+    assert warnings == ([] if logged is None else [logged])
 
 
 def test_bad_provider_data_does_not_stage_any_entities(tmp_path, monkeypatch):
@@ -261,3 +290,36 @@ def test_delta_changed_window_requires_full_without_any_provider_read(
         run(credential, execution, lease)
     assert not calls and SourceCurrent.objects.get().snapshot_id == first.pk
     assert SourceSnapshot.objects.exclude(pk=first.pk).get().state == "staging"
+
+
+@pytest.mark.parametrize("cause,phase", [("delta", "delta"), ("manual", "full")])
+def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path, cause, phase):
+    """#320: both refresh kinds compare eligibility with the current snapshot.
+
+    The seeded snapshot predates recorded derived counts, so they are counted
+    from its rows; the last full snapshot (the same one) has none to add.
+    """
+    from parishkit.stewardship.source.loading import derived_counts
+    from parishkit.stewardship.source.snapshots import reconstruct_snapshot
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease)
+    execution = claim_request(
+        command(cause=cause)
+        if cause == "manual"
+        else command(cause=cause, actor_id=None)
+    )
+    with execution.effect():
+        lease = acquire_source(
+            task_id=execution.claim.run_id,
+            task_fence=execution.claim.fence,
+            worker_id=execution.claim.worker_id,
+            phase=phase,
+        )
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    inputs = _inputs(attempt.pk, execution, lease)
+    expected = derived_counts(reconstruct_snapshot(first.pk))
+    assert inputs.previous_derived_counts == expected
+    assert expected["portal_eligible_families"] > 0
+    assert expected["valid_email_contacts"] > 0
+    assert (inputs.base is None) == (phase == "full")

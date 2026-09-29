@@ -12,9 +12,15 @@ from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.corpus import KINDS
 from parishkit.stewardship.source.loading import (
+    DERIVED_COUNTS,
+    DROP_OVERRIDE_VARIABLE,
     DestructiveSourceChange,
+    derived_baseline,
+    derived_counts,
     load_full_source,
+    maximum_drop_percent,
     validate_count_trend,
+    validate_derived_trend,
 )
 from parishkit.stewardship.source.windows import RefreshWindow
 
@@ -133,7 +139,7 @@ def test_initial_unexpected_empty_corpus_fails_closed(kind):
         validate_count_trend(counts(**{kind: 0}), previous_full_counts=None)
 
 
-@pytest.mark.parametrize("value", [True, -1, 91, 25.0])
+@pytest.mark.parametrize("value", [True, -1, 101, 25.0])
 def test_invalid_loss_threshold_is_not_coerced(value):
     """Operator configuration cannot silently disable loss detection."""
     with pytest.raises(ValueError):
@@ -211,3 +217,159 @@ def test_different_valid_id_proves_mismatch_even_when_optional_name_is_missing(
     client.config = replace(client.config, expected_organization="Expected Parish")
     with pytest.raises(SourceOrganizationMismatch):
         load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+
+
+def eligibility(**values):
+    """A synthetic corpus whose derived counts are exactly ``values`` (default 100)."""
+    wanted = dict.fromkeys(DERIVED_COUNTS, 100) | values
+    families = {
+        str(index): {
+            "portal_eligible": index < wanted["portal_eligible_families"],
+            "email_eligible": index < wanted["email_eligible_families"],
+            "active_head_duids": [index]
+            if index < wanted["active_head_families"]
+            else [],
+        }
+        for index in range(100)
+    }
+    contacts = {
+        str(index): {
+            "emails": [{"value": "x", "valid": index < wanted["valid_email_contacts"]}]
+        }
+        for index in range(100)
+    }
+    return {"family": families, "contact": contacts}
+
+
+@pytest.mark.parametrize("name", DERIVED_COUNTS)
+def test_eligibility_loss_uses_the_record_loss_threshold(name):
+    """#320: rows can all stay while the facts eligibility needs disappear."""
+    baseline = derived_counts(eligibility())
+    assert baseline == dict.fromkeys(DERIVED_COUNTS, 100)
+    validate_derived_trend(
+        derived_counts(eligibility(**{name: 75})), baseline_counts=baseline
+    )
+    for after in (74, 0):
+        with pytest.raises(DestructiveSourceChange, match="eligibility") as refused:
+            validate_derived_trend(
+                derived_counts(eligibility(**{name: after})), baseline_counts=baseline
+            )
+        # The refusal names the count and its before/after values, nothing else.
+        assert refused.value.loss == (name, 100, after)
+    # Growth, and a first load with nothing to compare, are never refused.
+    validate_derived_trend(baseline, baseline_counts=baseline | {name: 50})
+    validate_derived_trend(
+        derived_counts(eligibility(**{name: 0})), baseline_counts=None
+    )
+
+
+def test_baseline_bounds_the_drop_from_both_the_last_full_and_current():
+    """Step-by-step erosion over deltas is bounded by the last full snapshot."""
+    full = dict.fromkeys(DERIVED_COUNTS, 100)
+    current = dict.fromkeys(DERIVED_COUNTS, 80)
+    baseline = derived_baseline(full, current)
+    assert baseline == full
+    # 64 is within 25% of the current 80, but not of the last full 100.
+    with pytest.raises(DestructiveSourceChange) as refused:
+        validate_derived_trend(
+            dict.fromkeys(DERIVED_COUNTS, 64), baseline_counts=baseline
+        )
+    assert refused.value.loss == ("portal_eligible_families", 100, 64)
+    # A delta that grew raises the bar for the next full load.
+    assert derived_baseline(current, full | {"valid_email_contacts": 200}) == (
+        full | {"valid_email_contacts": 200}
+    )
+    # Missing or malformed evidence is skipped rather than trusted.
+    assert derived_baseline(None, {"portal_eligible_families": 1}) is None
+    assert derived_baseline(None, current) == current
+
+
+@pytest.mark.parametrize("value", [{}, {"portal_eligible_families": 1}, []])
+def test_incomplete_eligibility_baseline_is_refused(value):
+    with pytest.raises(InvalidSourcePayload, match="evidence"):
+        validate_derived_trend(derived_counts(eligibility()), baseline_counts=value)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, 25),
+        ("", 25),
+        ("40", 40),
+        (" 100 ", 100),
+        ("0", 0),
+        ("101", 25),
+        ("-1", 25),
+        ("off", 25),
+        ("٣٠", 25),
+    ],
+)
+def test_threshold_override_is_read_from_the_environment(monkeypatch, value, expected):
+    """Only a whole percent from 0 to 100 overrides; anything else keeps 25."""
+    monkeypatch.delenv(DROP_OVERRIDE_VARIABLE, raising=False)
+    if value is not None:
+        monkeypatch.setenv(DROP_OVERRIDE_VARIABLE, value)
+    assert maximum_drop_percent() == expected
+
+
+def test_threshold_of_100_accepts_a_known_large_change_but_not_emptiness():
+    """The documented recovery for a legitimate bulk change, e.g. inactivations."""
+    baseline = dict.fromkeys(DERIVED_COUNTS, 100)
+    validate_derived_trend(
+        dict.fromkeys(DERIVED_COUNTS, 0),
+        baseline_counts=baseline,
+        maximum_drop_percent=100,
+    )
+    validate_count_trend(
+        counts(ministry=0),
+        previous_full_counts=counts(ministry=50),
+        maximum_drop_percent=100,
+    )
+    with pytest.raises(DestructiveSourceChange, match="empty") as refused:
+        validate_count_trend(
+            counts(family=0), previous_full_counts=counts(), maximum_drop_percent=100
+        )
+    assert refused.value.loss == ("empty", None, 0)
+
+
+def test_tiny_counts_falling_to_zero_are_refused():
+    """On a tiny parish, losing the only one or two of something is still refused."""
+    baseline = dict.fromkeys(DERIVED_COUNTS, 2)
+    with pytest.raises(DestructiveSourceChange):
+        validate_derived_trend(
+            baseline | {"active_head_families": 0}, baseline_counts=baseline
+        )
+
+
+@pytest.mark.parametrize(
+    "family_change,member_change",
+    [
+        # The Family is no longer registered here: not portal or email eligible.
+        ({"registeredOrganizationID": None}, None),
+        # The head's type and email vanish: no active head, no valid email.
+        (None, {"memberType": None, "emailAddress": None}),
+    ],
+)
+def test_stable_record_counts_with_collapsed_eligibility_are_refused(
+    tmp_path, family_change, member_change
+):
+    """#320: the full loader refuses the collapse before anything is staged."""
+    good = load_full_source(
+        client_factory(tmp_path / "good", provider_pages()),
+        window=RefreshWindow(None, ()),
+        as_of=TODAY,
+    )
+    # Each load records its derived counts for later comparisons.
+    assert good.evidence["derived_counts"] == derived_counts(good.corpus)
+    client = client_factory(
+        tmp_path / "bad",
+        provider_pages(family_change=family_change, member_change=member_change),
+    )
+    with pytest.raises(DestructiveSourceChange, match="eligibility"):
+        load_full_source(
+            client,
+            window=RefreshWindow(None, ()),
+            as_of=TODAY,
+            previous_full_counts=good.counts,
+            previous_derived_counts=good.evidence["derived_counts"],
+        )

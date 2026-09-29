@@ -48,6 +48,22 @@ def test_source_safety_failures_keep_specific_value_free_classification(kind, ev
     assert "PRIVATE" not in repr(decision)
 
 
+def test_destructive_change_carries_only_its_closed_loss_detail():
+    """#320: the operator sees which count fell and by how much, never values."""
+    decision = classify_read_failure(
+        RetryError(
+            "PRIVATE",
+            DestructiveSourceChange(
+                "PRIVATE", measure="portal_eligible_families", before=1238, after=12
+            ),
+        ),
+        has_source_claim=True,
+    )
+    assert decision.loss == ("portal_eligible_families", 1238, 12)
+    unnamed = DestructiveSourceChange("PRIVATE", measure="PRIVATE", before=1, after=0)
+    assert classify_read_failure(unnamed, has_source_claim=True).loss is None
+
+
 def test_shifted_scan_is_a_retryable_provider_failure():
     """A scan that moved mid-read is retried, not reported as invalid data."""
     for error in (

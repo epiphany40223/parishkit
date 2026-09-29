@@ -331,8 +331,11 @@ def read_snapshot(snapshot_id=None, *, metadata_only=False):
         yield snapshots.get(pk=snapshot_id)
 
 
-def reconstruct_snapshot(snapshot_id=None):
-    """Materialize one complete corpus while its snapshot is protected from cleanup."""
+def reconstruct_snapshot(snapshot_id=None, kinds=None):
+    """Materialize one corpus while its snapshot is protected from cleanup.
+
+    ``kinds`` limits it to those collections (all of them by default).
+    """
     with read_snapshot(snapshot_id) as snapshot:
         return {
             kind: {
@@ -342,4 +345,5 @@ def reconstruct_snapshot(snapshot_id=None):
                 .iterator(chunk_size=500)
             }
             for kind, (_, membership) in ENTITY_MODELS.items()
+            if kinds is None or kind in kinds
         }

@@ -451,3 +451,23 @@ def test_every_rendered_service_document_carries_the_alert_policy(tmp_path, mode
             "escalation_seconds": 180,
             "source_stale_seconds": 2400,
         }
+
+
+@pytest.mark.parametrize("provider_mode", ["initial", "configured", "configured-slack"])
+def test_worker_receives_the_source_loss_override_from_the_operator_shell(
+    tmp_path, provider_mode
+):
+    """#320: the runbook's one-refresh override reaches the source worker.
+
+    It is empty unless the operator's shell exports it when running Compose,
+    which keeps the 25% default.
+    """
+    compose, _ = render_runtime(
+        configuration_at(tmp_path, production=True),
+        image=IMAGE,
+        provider_mode=provider_mode,
+    )
+    environment = compose["services"]["worker"]["environment"]
+    assert environment["PARISHKIT_SOURCE_MAX_DROP_PERCENT"] == (
+        "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}"
+    )
