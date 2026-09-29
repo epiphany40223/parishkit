@@ -388,7 +388,12 @@ STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
 ```
 
 Its images skip CI, so they are never deployed to a campaign serving real
-Families: go-live runs a digest from a real release.
+Families: go-live runs a digest from a real release. The script enforces
+this on the host: before it builds, pushes or stops anything, it refuses
+once the deployment's campaign has been activated to Production (a
+`stewardship_production_request` row has `activated_at` set), and it also
+refuses when it cannot read that answer. From then on, deploy only a
+release digest through [upgrade](#upgrade).
 
 By default it also starts the services with debug logging
 (`PARISHKIT_DEBUG_LOGGING=1`, which the generated Compose files pass to every
