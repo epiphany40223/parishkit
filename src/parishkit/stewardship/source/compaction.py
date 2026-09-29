@@ -251,7 +251,7 @@ def compact_source(
         return evidence
 
 
-def _compact_superseded_facts(execution, limit=5, deadline=None):
+def _compact_superseded_facts(execution, limit=500, deadline=None):
     """Delete superseded, unused report fact generations in every campaign.
 
     Every refresh rebuilds report facts, and each generation pins its source
@@ -267,8 +267,8 @@ def _compact_superseded_facts(execution, limit=5, deadline=None):
 
     # Plain transactions, not execution.effect(): the refresh handler's effect
     # scope is the global work lock, and retention must never hold it.
-    # compact_facts takes its own task-claim, campaign, source and generation
-    # locks in the same order fact builds use.
+    # compact_facts deletes one generation per short transaction, locking this
+    # task's row before the campaign row (the heartbeat's order).
     execution.check()
     with transaction.atomic():
         if SystemConfiguration.objects.filter(restore_review_required=True).exists():
@@ -278,23 +278,24 @@ def _compact_superseded_facts(execution, limit=5, deadline=None):
             .values_list("campaign_id", flat=True)
             .distinct()
         )
-    # compact_facts holds this task's claim row for its whole transaction, so
-    # keep each one to a few generations; the heartbeat waits at most 2 s.
     deadline = monotonic() + RETENTION_BUDGET_SECONDS if deadline is None else deadline
+
+    def proceed():
+        """Stop at the retention budget or when the execution must drain."""
+        execution.check()
+        return monotonic() < deadline
+
     removed = []
     for campaign_id in campaigns:
-        while monotonic() < deadline:
-            execution.check()
-            with transaction.atomic():
-                batch = compact_facts(
-                    campaign_id,
-                    execution.claim,
-                    admit=lambda action, inputs: action == "compact",
-                    limit=limit,
-                )
-            removed += batch
-            if len(batch) < limit:
-                break
+        if not proceed():
+            break
+        removed += compact_facts(
+            campaign_id,
+            execution.claim,
+            admit=lambda action, inputs: action == "compact",
+            limit=limit,
+            proceed=proceed,
+        )
     return removed
 
 
