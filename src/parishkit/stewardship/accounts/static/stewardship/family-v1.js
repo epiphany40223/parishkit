@@ -1137,27 +1137,30 @@
     });
   }
   function financialSource(parent) {
+    // The Family's giving history: one sentence, then any notice that the
+    // records are incomplete or changed while the Family was editing.
     const value = form.financial;
-    node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
-    // Calendar dates and instants use the parish date format (date-format-v1.js).
+    // Calendar dates use the parish date format (date-format-v1.js).
     const dates = window.ParishDates;
-    const start = dates ? dates.date(value.upcoming.start) : value.upcoming.start;
-    node("p", value.upcoming.start > form.today ?
-      "This pledge does not take effect before " + start + "." :
-      "This stewardship period began on " + start + ".", parent);
-    // One sentence of giving history; the prior pledge amount and the
-    // records' refresh time repeated it, so they are not shown.
     if (value.contributions.available && value.through_date) {
-      // "towards your <year> pledge" only when there was one to give towards.
+      // "towards your <year> pledge of $y" only when there was one to give
+      // towards; otherwise "in <year>".
       const pledged = value.pledge.available && Number(value.pledge.amount) > 0;
       node("p", "As of " + (dates ? dates.date(value.through_date) : value.through_date) +
         ", you have contributed " + value.contributions.display + (pledged ?
-          " towards your " + periodYears(value.comparison) + " pledge." :
+          " towards your " + periodYears(value.comparison) + " pledge of " + value.pledge.display + "." :
           " in " + periodYears(value.comparison) + "."), parent);
     }
     if (!value.pledge.available || !value.contributions.available) node("p",
       "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
     if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});
+  }
+  function pledgePeriod(parent) {
+    // Which period the pledge covers, merged with the "intention only" note.
+    const {start, end} = form.financial.upcoming, dates = window.ParishDates;
+    const day = (value) => dates ? dates.date(value) : value;
+    node("p", "This pledge is for the stewardship period of " + day(start) + " – " + day(end) +
+      ". This form records your intention only. It does not take a payment or request bank or card credentials.", parent);
   }
   function financialEditor(parent, validators, deferValidation = () => false) {
     const removed = conflicts.get("financial.removed");
@@ -1173,7 +1176,6 @@
     node("legend", "Financial stewardship", group, {class: "visually-hidden"});
     block("financial", group);
     financialSource(group);
-    node("p", "This form records your intention only. It does not take a payment or request bank or card credentials.", group);
     const unable = node("label", null, group, {for: "financial-cannot-give", class: "limitation"});
     const unableBox = node("input", null, unable, {type: "checkbox", id: "financial-cannot-give"});
     unableBox.checked = answers.financial.cannot_give;
@@ -1198,6 +1200,8 @@
     const pledge = node("fieldset", null, group, {class: "financial-pledge"});
     node("legend", "Your pledge", pledge, {class: "visually-hidden"});
     pledge.hidden = pledge.disabled = answers.financial.cannot_give;
+    // Inside the pledge fieldset, so it hides with the pledge it describes.
+    pledgePeriod(pledge);
     node("label", "Annual pledge (USD)", pledge, {for: "financial-annual_pledge"});
     const annual = node("input", null, pledge, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});

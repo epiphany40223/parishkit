@@ -221,7 +221,9 @@ def test_financial_modules_mobile_final_only_and_accessible(
     # One sentence of giving history, in whole dollars (#256); the prior
     # pledge and the refresh time are not repeated (#267).
     history = page.get_by_text("you have contributed", exact=False)
-    expect(history).to_contain_text("you have contributed $500 towards your")
+    expect(history).to_contain_text(
+        re.compile(r"you have contributed \$500 towards your \d{4} pledge of \$1,200\.")
+    )
     assert "Parish records for" not in page.locator("main").inner_text()
     assert "Giving records last refreshed" not in page.locator("main").inner_text()
     show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
@@ -571,3 +573,27 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
         pledge.blur()
         expect(error).to_have_text("Enter an annual pledge under $1,000,000,000.")
     assert "$0.00" not in page.locator("main").inner_text()
+
+
+def test_financial_page_reads_history_checkbox_period_then_pledge(
+    page, component_origin
+):
+    """#295: history, the checkbox, one period sentence, then the pledge field."""
+    begin(page, component_origin, financial_form(), None)
+    section = show(page, page.locator("#financial-section"))
+    text = section.inner_text()
+    order = [
+        "As of ",
+        "Because of financial limitations",
+        "This pledge is for the stewardship period of January 1, 2027 – "
+        "December 31, 2027. This form records your intention only. It does not "
+        "take a payment or request bank or card credentials.",
+        "Annual pledge (USD)",
+    ]
+    positions = [text.index(part) for part in order]
+    assert positions == sorted(positions), text
+    for gone in ("Upcoming stewardship period", "does not take effect", "began on"):
+        assert gone not in text
+    # The period sentence belongs to the pledge, so it hides with it.
+    page.get_by_label("Because of financial limitations", exact=False).check()
+    expect(page.get_by_text("This pledge is for the stewardship period")).to_be_hidden()

@@ -318,12 +318,22 @@ with the response and are never written to ParishSoft.
 
 ## Financial stewardship
 
-When enabled, the page shows one read-only sentence of giving history from the
-latest promoted snapshot and configured funds: "As of *date*, you have
-contributed *amount* towards your *comparison year* pledge", or "… *amount* in
-*comparison year*" when there was no prior pledge. The prior pledge
-amount and the records' refresh time are not repeated. Money on Family pages
-omits zero cents ("$1,200").
+When enabled, the page reads, below the Admin's Financial text:
+
+1. one read-only sentence of giving history from the latest promoted snapshot
+   and configured funds: "As of *date*, you have contributed *amount* towards
+   your *comparison year* pledge of *prior pledge*.", or "… *amount* in
+   *comparison year*." when there was no prior pledge. The records' refresh
+   time is not repeated;
+2. the "cannot contribute" checkbox (below);
+3. "This pledge is for the stewardship period of *start date* – *end date*.
+   This form records your intention only. It does not take a payment or
+   request bank or card credentials.", shown with the pledge fields and hidden
+   with them; and
+4. the Annual pledge (USD) field and the rest of the pledge.
+
+Dates use the parish date format. Money on Family pages omits zero cents
+("$1,200").
 
 Unavailable or incomplete upstream data says so instead, never `$0.00`.
 Individual contribution transactions are not shown.
@@ -344,10 +354,10 @@ the period has started) with the date in bold. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 
-The configured upcoming start date is prominent, with text that the pledge does
-not take effect before it. If campaign and period overlap, the Admin-confirmed
-configuration is displayed accurately rather than asserting the start is
-future.
+On the Financial page the configured upcoming period appears only in the "This
+pledge is for the stewardship period of …" sentence, which states its dates
+without claiming the start is in the future, so a campaign that overlaps its
+period is still displayed accurately.
 
 Share methods are a multi-select of campaign-versioned options. Default content
 is based on:
