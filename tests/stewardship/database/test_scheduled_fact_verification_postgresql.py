@@ -294,6 +294,31 @@ def test_interruption_and_atomic_acknowledgment_can_retry_original_inputs(
     assert result.outcome == "matched"
 
 
+def test_recalculation_runs_after_the_bounded_read_guard_closes(response_service):
+    """Verification recalculates outside any transaction (#287).
+
+    The read guard's deadline hard-stops the worker process, so a whole-campaign
+    recalculation inside it killed every attempt on real data. Only the database
+    loading may run in the guarded read; the calculation must not.
+    """
+    from parishkit.stewardship.reports import materialization
+
+    ready()
+    root = produce(limit=1)[0]
+    calculate = materialization.calculate_participation
+    observed = []
+
+    def outside_transaction(context):
+        """Record whether the recalculation ran inside a database transaction."""
+        observed.append(connection.in_atomic_block)
+        return calculate(context)
+
+    with patch.object(materialization, "calculate_participation", outside_transaction):
+        execute(root)
+    assert observed == [False]
+    assert FactVerificationResult.objects.get().outcome == "matched"
+
+
 def test_failed_or_unavailable_calculation_is_never_a_clean_result(response_service):
     from parishkit.stewardship.reports.facts import FactUnavailable
 
@@ -301,7 +326,7 @@ def test_failed_or_unavailable_calculation_is_never_a_clean_result(response_serv
     root = produce(limit=1)[0]
     with (
         patch(
-            "parishkit.stewardship.reports.verification_tasks.verify_fact_set",
+            "parishkit.stewardship.reports.verification_tasks.load_verification",
             side_effect=FactUnavailable("synthetic unavailable source"),
         ),
         pytest.raises(FactUnavailable),
