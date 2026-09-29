@@ -9,6 +9,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.test import Client
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import (
@@ -524,3 +525,117 @@ def test_rate_limit_and_limiter_outage_render_temporary_unavailability(
         assert denial_kind(response) == UNAVAILABLE
         assert b"Try signing in again" in response.content
     assert limited.content == still_limited.content == outage.content
+
+
+@pytest.fixture
+def debug_log(monkeypatch, caplog):
+    """Formatted debug-logging output, as a deployment with debugging on writes it.
+
+    Routes every logger (Django's request records included) through the
+    production formatter into a buffer, with debug details enabled.
+    """
+    import io
+    import logging
+
+    from parishkit.stewardship.observability import (
+        DEBUG_LOGGING_VARIABLE,
+        SafeJsonFormatter,
+    )
+
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    buffer = io.StringIO()
+    handler = logging.StreamHandler(buffer)
+    handler.setFormatter(SafeJsonFormatter())
+    root = logging.getLogger()
+    # caplog.set_level goes through setLevel (clearing the logging module's
+    # level cache) and restores each level afterwards.
+    caplog.set_level(logging.DEBUG)
+    for name in ("django", "django.request", "parishkit.stewardship.debug"):
+        logger = logging.getLogger(name)
+        monkeypatch.setattr(logger, "propagate", True)
+        monkeypatch.setattr(logger, "disabled", False)
+        caplog.set_level(logging.DEBUG, logger=name)
+    root.addHandler(handler)
+    yield buffer
+    root.removeHandler(handler)
+
+
+def _closed(monkeypatch):
+    """Close the Family portal for maintenance."""
+    from parishkit.stewardship.accounts import family_maintenance
+
+    monkeypatch.setattr(
+        family_maintenance,
+        "current_state",
+        lambda **_: family_maintenance.MaintenanceState(closed=True),
+    )
+
+
+def _limiter_down(monkeypatch, service):
+    """Fail the limiter's first admission check, as a Valkey outage would."""
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+
+    def unavailable(*args, **kwargs):
+        """Simulate the limiter store failing."""
+        raise LimiterUnavailable("synthetic outage")
+
+    monkeypatch.setattr(service.service.limiter, "bucket", unavailable)
+
+
+def _throttled(monkeypatch, service):
+    """Report the client as over its link-attempt budget."""
+    monkeypatch.setattr(service.service.limiter, "bucket", lambda *args: 30)
+
+
+def _lookup_fails(error):
+    """Make the link lookup raise ``error`` with the token in its message."""
+
+    def install(monkeypatch, service):
+        """Replace the lookup the access view calls."""
+        from parishkit.stewardship.accounts import family_authentication
+
+        def fail(*args, token=None, **kwargs):
+            """Embed the raw token, as careless exception text might."""
+            raise error(f"no credential for {token}")
+
+        monkeypatch.setattr(family_authentication, "lookup", fail)
+
+    return install
+
+
+def _revoked(monkeypatch, service):
+    """Invalidate the rehearsal so the valid-looking link is refused."""
+    invalidate_rehearsal(campaign_id=service.campaign.pk, admit=lambda *args: True)
+
+
+@pytest.mark.parametrize(
+    ("arrange", "status"),
+    [
+        (lambda monkeypatch, service: _closed(monkeypatch), 503),
+        (_limiter_down, 503),
+        (_lookup_fails(ConfigError), 503),
+        (_throttled, 429),
+        (_revoked, 403),
+        (_lookup_fails(RuntimeError), 500),
+    ],
+    ids=[
+        "maintenance",
+        "limiter-outage",
+        "config-error",
+        "throttled",
+        "revoked",
+        "unexpected-error",
+    ],
+)
+def test_debug_logging_never_writes_the_personal_link_token(
+    family_service, monkeypatch, debug_log, arrange, status
+):
+    """#311: a failed personal link logs its route, never its working token."""
+    arrange(monkeypatch, family_service)
+    client = Client(raise_request_exception=False)
+    response = client.get("/access/" + family_service.token)
+    assert response.status_code == status
+    output = debug_log.getvalue()
+    # Django's request record proves the failing request was logged at all.
+    assert "/access/[redacted]" in output
+    assert family_service.token not in output

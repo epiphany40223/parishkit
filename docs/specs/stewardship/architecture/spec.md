@@ -604,7 +604,8 @@ The implementation follows Django deployment checks and OWASP guidance:
   randomized storage names;
 - CSV formula-injection neutralization and safe XLSX/PDF generation; and
 - log redaction for credentials, session IDs, access tokens, and Family-link
-  secrets.
+  secrets, including in debug logging (see
+  [production ingress](../operations/spec.md#production-ingress-and-tls)).
 
 Production volumes and off-host backups must be encrypted. Application-level
 encryption protects credentials, Family display codes, and other values whose
