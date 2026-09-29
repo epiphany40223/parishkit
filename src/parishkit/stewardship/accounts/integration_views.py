@@ -114,6 +114,19 @@ def _unset(target):
     }
 
 
+def loaded_organization():
+    """The ParishSoft organization ID of the loaded data, or None before a load."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.values_list("organization_id", flat=True).first()
+
+
+def _form(target, *args, **kwargs):
+    """The settings form, with ParishSoft's organization ID fixed once loaded."""
+    loaded = loaded_organization() if target == "parishsoft" else None
+    return IntegrationForm(target, *args, loaded_organization=loaded, **kwargs)
+
+
 def _checked(request, service, response):
     """Repeat authorization before private settings or progress leave the process."""
     if not allows(
@@ -146,7 +159,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         # and once any backup folder has been saved since the test, the saved
         # folder shows instead.
         initial["target"] = probe.folder_url
-    form = form if form is not None else IntegrationForm(target, initial=initial)
+    form = form if form is not None else _form(target, initial=initial)
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -293,7 +306,7 @@ def _save(request, service, configuration, actor, target):
     stale session gets the step-up page instead of a sealed request.
     """
     require_fresh(request)
-    form = IntegrationForm(target, request.POST)
+    form = _form(target, request.POST)
     credential = InlineCredentialForm(target, request.POST)
     if not (form.is_valid() and credential.is_valid()):
         credential = InlineCredentialForm(
@@ -357,7 +370,7 @@ def _preview(request, service, actor, target):
     if _optional(configuration, target) is None and target != "backup":
         raise ValueError("Paste the key to set up this integration.")
     record = _optional(configuration, target) or _unset(target)
-    form = IntegrationForm(target, request.POST)
+    form = _form(target, request.POST)
     if not form.is_valid():
         return _page(request, configuration, target, form=form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:

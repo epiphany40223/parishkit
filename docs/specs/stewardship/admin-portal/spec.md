@@ -486,7 +486,12 @@ staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it. Failure or expiry destroys sealed staging and leaves the old working
 credential installed. Slack is optional; its token and channel must be
 supplied/removed together. Non-secret integration setting changes use the YAML
-configuration-request path rather than the credential installer.
+configuration-request path rather than the credential installer. The ParishSoft
+organization ID can change only until the first ParishSoft data load. After
+that the page shows it read-only and refuses a different value, with or without
+a new key, in plain language: every refresh must read the organization whose
+data is loaded, and a refresh for another organization is refused as a tenant
+mismatch.
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed

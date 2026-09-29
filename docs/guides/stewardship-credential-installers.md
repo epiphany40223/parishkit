@@ -188,8 +188,10 @@ in the same form as its settings. No server step is needed:
    shown again.
 2. The same web request records the configuration request that will select the
    new fingerprint, together with any changed settings the key was checked
-   against, such as a new organization ID. If that request cannot be recorded,
-   the staged key is cancelled.
+   against, such as a new Slack channel. (The ParishSoft organization ID can
+   change only before the first ParishSoft data load; see the
+   [Admin portal spec](../specs/stewardship/admin-portal/spec.md).) If that
+   request cannot be recorded, the staged key is cancelled.
 3. The target's installer checks the key with the provider, using exactly those
    settings, and renames it into place (`awaiting_ack`). A rejected key fails
    the request; the previous key stays in use.

@@ -154,8 +154,12 @@ def test_saved_key_installs_acknowledges_and_is_selected(working):
     assert SecretReplacementRequest.objects.count() == 1
 
 
-def test_key_and_changed_organization_are_checked_and_saved_together(working):
-    """The new organization ID travels with the key it was checked against."""
+def test_before_a_load_key_and_changed_organization_are_saved_together(working):
+    """Before any ParishSoft data is loaded, the organization ID can still change.
+
+    The new organization ID travels with the key it was checked against.
+    Once data is loaded it cannot change (see the next tests).
+    """
     assert save(working, organization_id="54321").status_code == 302
     row = SecretReplacementRequest.objects.get()
     selection = ConfigurationChangeRequest.objects.get(
@@ -175,6 +179,51 @@ def test_key_and_changed_organization_are_checked_and_saved_together(working):
         .document()["sections"]["integrations"][0]["values"]["settings"]
     )
     assert settings["organization_id"] == "54321"
+
+
+@pytest.mark.parametrize("with_key", [False, True])
+def test_organization_cannot_change_after_the_first_load(
+    working, monkeypatch, with_key
+):
+    """After a load, a different organization ID is refused in plain language.
+
+    Every refresh must read the organization whose data is loaded, so saving
+    another ID (with or without a new key) would stop them all. The page
+    shows the ID read-only, and a posted change is refused: nothing is
+    queued or staged.
+    """
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.integration_views.loaded_organization",
+        lambda: 12345,
+    )
+    page = working["browser"].get(URL)
+    field = page.context["form"]["organization_id"]
+    assert field.field.widget.attrs.get("readonly") is True
+    assert b"so its ID can no longer change" in page.content
+    if with_key:
+        response = save(working, organization_id="54321")
+    else:
+        browser, store = working["browser"], working["service"].store
+        with identity("pk_stewardship_web"):
+            response = post(
+                browser,
+                URL,
+                {
+                    "action": "preview",
+                    "base_digest": store.active().digest,
+                    "organization_id": "54321",
+                },
+            )
+    assert response.status_code == 400
+    assert b"can&#x27;t change after ParishSoft data has been loaded" in (
+        response.content
+    )
+    assert b"Keep 12345 here." in response.content
+    assert not SecretReplacementRequest.objects.exists()
+    assert not ConfigurationChangeRequest.objects.exists()
+    # The same organization still saves a key and other settings.
+    assert save(working).status_code == 302
+    assert SecretReplacementRequest.objects.count() == 1
 
 
 def test_rejected_key_keeps_the_old_one_and_says_so(working):

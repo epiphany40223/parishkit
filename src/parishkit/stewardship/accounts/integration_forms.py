@@ -33,16 +33,30 @@ class IntegrationForm(forms.Form):
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
 
-    def __init__(self, target, *args, **kwargs):
-        """Use a compiled form per integration, not caller-provided schema fields."""
+    def __init__(self, target, *args, loaded_organization=None, **kwargs):
+        """Use a compiled form per integration, not caller-provided schema fields.
+
+        ``loaded_organization`` is the ParishSoft organization ID whose data
+        is already loaded, or None before the first load. Once data is
+        loaded, the organization ID is shown read-only and a different value
+        is refused: every later refresh must read that same organization, so
+        a changed ID would stop them all (see ``source.requests``).
+        """
         super().__init__(*args, **kwargs)
         self.target = target
+        self.loaded_organization = loaded_organization
         if target == "parishsoft":
             self.fields["organization_id"] = forms.IntegerField(
                 label=_("Expected ParishSoft organization ID"),
                 min_value=1,
                 max_value=2**31 - 1,
             )
+            if loaded_organization is not None:
+                self.fields["organization_id"].widget.attrs["readonly"] = True
+                self.fields["organization_id"].help_text = _(
+                    "ParishSoft data for this organization is already loaded, "
+                    "so its ID can no longer change."
+                )
             self.fields["full_refresh"] = forms.ChoiceField(
                 label=_("Full ParishSoft refresh"),
                 choices=REFRESH_CHOICES,
@@ -142,6 +156,21 @@ class IntegrationForm(forms.Form):
             for name, value in self.cleaned_data.items()
             if name != "base_digest" and not (name == "sender_name" and not value)
         }
+
+    def clean_organization_id(self):
+        """Refuse a different organization once its ParishSoft data is loaded."""
+        value = self.cleaned_data["organization_id"]
+        if self.loaded_organization is not None and value != self.loaded_organization:
+            raise forms.ValidationError(
+                _(
+                    "The organization ID can't change after ParishSoft data has "
+                    "been loaded: the loaded Families and Members belong to "
+                    "organization %(loaded)s, and every refresh must read that "
+                    "same organization. Keep %(loaded)s here."
+                ),
+                params={"loaded": self.loaded_organization},
+            )
+        return value
 
     def clean_nightly_time(self):
         """An omitted time retains the documented default, never browser-local time."""
