@@ -24,6 +24,7 @@ from .leases import reserve_source_request, verify_source
 from .loading import load_full_source
 from .setup_final_tasks import require_final_task
 from .snapshots import begin_snapshot, finish_snapshot, stage_entities
+from .transport import source_timeout_recorder
 
 
 def load_final_setup_source(execution, claim, *, store, credential_path):
@@ -88,7 +89,11 @@ def load_final_setup_source(execution, claim, *, store, credential_path):
         finally:
             connections.close_all()
 
-    session = BoundedSourceSession(before_request=before_request, check=execution.check)
+    session = BoundedSourceSession(
+        before_request=before_request,
+        check=execution.check,
+        on_timeout=source_timeout_recorder(execution),
+    )
     session.headers["x-api-key"] = credential.api_key
     try:
         client = CoherentParishSoftClient(

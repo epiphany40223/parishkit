@@ -695,3 +695,25 @@ def test_helper_rejects_oversized_request_frame(monkeypatch):
     )
     assert (status, output) == (1, b"ERROR\n")
     perform.assert_not_called()
+
+
+def test_deadline_stop_is_reported_to_the_owner(launches):
+    """The owner learns the limit and elapsed time once the helper is killed."""
+    seen = []
+
+    def observe(limit, elapsed):
+        """Record the report and whether the helper was still running (it is not)."""
+        seen.append((limit, elapsed, launches[0].poll() is None))
+
+    current = session(on_timeout=observe)
+    with pytest.raises(SourceTransportError, match="deadline"):
+        fetch(current, "sleep", timeout=0.3)
+    assert launches[0].poll() is not None
+    # Reported after the kill, with the limit and elapsed time.
+    assert len(seen) == 1 and seen[0][0] == 0.3 and 0.3 <= seen[0][1] < 5
+    assert seen[0][2] is False
+    fetch(current)
+    assert len(seen) == 1
+    current.close()
+    with pytest.raises(TypeError):
+        session(on_timeout="not callable")

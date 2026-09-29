@@ -40,6 +40,10 @@ class SourceTransportError(requests.ConnectionError):
     """
 
 
+class SourceTransportTimeout(SourceTransportError):
+    """The helper was stopped because one request exceeded its deadline."""
+
+
 class SourceTransportDrainFailure(BaseException):
     """Stop the consumer if the OS cannot confirm that its read helper stopped."""
 
@@ -193,7 +197,9 @@ class _SourceHelper:
                 check()
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise SourceTransportError("Source request exceeded its deadline.")
+                    raise SourceTransportTimeout(
+                        "Source request exceeded its deadline."
+                    )
                 for ready, _events in selector.select(min(remaining, 0.25)):
                     if ready.fileobj is self.process.stdin:
                         pending = pending[self._write(pending) :]
@@ -266,20 +272,25 @@ def _parse_header(reply):
     return len(status) + 1 + size, bytearray(status + b"\n" + rest)
 
 
-def _exchange(payload, *, seconds, check, helper):
+def _exchange(payload, *, seconds, check, helper, on_timeout=None):
     """Run one request on the persistent helper under a hard wall-clock deadline.
 
     Requests' own timeout only bounds socket idleness, so the parent enforces
     the total deadline. Any exception, including lost ownership from ``check``,
     kills and reaps the helper so no request outlives its admission; the next
-    request then starts a fresh helper. An unconfirmed reap is fatal.
+    request then starts a fresh helper. An unconfirmed reap is fatal. At the
+    deadline, ``on_timeout(seconds, elapsed)`` runs right after the kill, so
+    reporting never delays it.
     """
+    started = time.monotonic()
     try:
-        return helper.exchange(
-            payload, deadline=time.monotonic() + seconds, check=check
-        )
-    except BaseException:
+        return helper.exchange(payload, deadline=started + seconds, check=check)
+    except BaseException as error:
+        elapsed = time.monotonic() - started
         helper.stop()
+        if on_timeout is not None and isinstance(error, SourceTransportTimeout):
+            with suppress(Exception):
+                on_timeout(seconds, elapsed)
         raise
 
 
@@ -292,10 +303,17 @@ class BoundedSourceSession:
     Neither callback can be provided by an HTTP request or broker payload.
     """
 
-    def __init__(self, *, before_request, check):
-        """Require concrete owning hooks; an absent fence must not default to allow."""
+    def __init__(self, *, before_request, check, on_timeout=None):
+        """Require concrete owning hooks; an absent fence must not default to allow.
+
+        ``on_timeout(seconds, elapsed)`` is told, just after the helper is
+        killed, that a request exceeded its deadline, so the owner can record it.
+        """
         if not callable(before_request) or not callable(check):
             raise TypeError("Bounded source transport requires owning callbacks.")
+        if on_timeout is not None and not callable(on_timeout):
+            raise TypeError("A source timeout observer must be callable.")
+        self.on_timeout = on_timeout
         self.headers = requests.structures.CaseInsensitiveDict()
         self.before_request = before_request
         self.check = check
@@ -347,7 +365,11 @@ class BoundedSourceSession:
         self.check()
         self._helper.bind(request["api_key"])
         output = _exchange(
-            payload, seconds=timeout, check=self.check, helper=self._helper
+            payload,
+            seconds=timeout,
+            check=self.check,
+            helper=self._helper,
+            on_timeout=self.on_timeout,
         )
         status, separator, body = output.partition(b"\n")
         if not separator or not _valid_status(status):

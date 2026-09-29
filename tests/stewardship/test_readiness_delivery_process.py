@@ -4,6 +4,7 @@ import base64
 import json
 import subprocess
 import sys
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -270,3 +271,35 @@ def test_helper_refuses_a_banner_without_the_matching_origin(origin):
     _, raw = banner_payload(origin)
     with pytest.raises(ValueError):
         worker.decode_request(raw)
+
+
+def test_deadline_stop_is_recorded_with_its_limit(monkeypatch):
+    """A helper stopped at its deadline is logged (#293); its outcome stays unknown."""
+    from parishkit.stewardship.audit import timeouts
+
+    process = Process(returncode=None)
+
+    def communicate(*, input, timeout):
+        """Hold the pipe until the deadline passes, as a stuck provider would."""
+        process.inputs.append(input)
+        time.sleep(timeout)
+        raise subprocess.TimeoutExpired("synthetic", timeout)
+
+    process.communicate = communicate
+    killed_first = []
+    recorded = Mock(side_effect=lambda *a, **k: killed_first.append(process.killed))
+    monkeypatch.setattr(timeouts, "record_timeout", recorded)
+    monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
+    assert invoke(seconds=0.3) is DeliveryOutcome.UNKNOWN
+    # Logged just after the kill, naming which helper was stopped.
+    assert process.killed and killed_first == [True]
+    assert recorded.call_args.kwargs["what"] == "mail_helper"
+    assert recorded.call_args.kwargs["helper"] == "readiness_delivery_worker"
+    assert recorded.call_args.kwargs["limit_seconds"] == 0.3
+    assert recorded.call_args.kwargs["elapsed_seconds"] >= 0.3
+    recorded.reset_mock()
+    monkeypatch.setattr(
+        process, "communicate", Mock(side_effect=subprocess.TimeoutExpired("s", 1))
+    )
+    assert invoke() is DeliveryOutcome.UNKNOWN
+    recorded.assert_not_called()

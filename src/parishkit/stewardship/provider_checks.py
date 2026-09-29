@@ -42,13 +42,47 @@ def _stop(process):
         raise ProviderCheckDrainFailure("Provider check could not drain.") from None
 
 
-def _exchange(process, payload, *, deadline, check):
+def helper_timeout_recorder(helper, *, what, seconds):
+    """Build the hook that logs a helper killed at its deadline (#293).
+
+    Called with the moment the deadline stopped the helper, just after the
+    kill, it records which helper, the running task (when a worker bound one),
+    the time limit and how long the helper ran. Recording never raises.
+    """
+    started = time.monotonic()
+
+    def record(stopped):
+        """Write one helper_timed_out entry for this helper."""
+        from .audit.timeouts import record_timeout
+        from .observability import Event
+
+        record_timeout(
+            Event.HELPER_TIMED_OUT,
+            what=what,
+            helper=helper,
+            limit_seconds=seconds,
+            elapsed_seconds=stopped - started,
+        )
+
+    return record
+
+
+def _exchange(process, payload, *, deadline, check, on_timeout=None):
     """One pipe owner completes partial writes while the caller checks its lease.
 
     Retrying communicate with no input can stop pumping a partially written
     stdin on supported Python versions. A single bounded call owns both pipes;
     the caller remains responsive and must join it before closing descriptors.
+    When the deadline is what ends the exchange, ``on_timeout(stopped)`` runs
+    right after the helper is killed, so logging never delays the kill.
     """
+    stopped = []
+
+    def timed_out():
+        """Note a deadline stop (not ownership loss) for the report below."""
+        if on_timeout is not None and time.monotonic() >= deadline:
+            stopped.append(time.monotonic())
+
     completed = Event()
     result = []
 
@@ -76,16 +110,22 @@ def _exchange(process, payload, *, deadline, check):
             _check_owner(check)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                timed_out()
                 raise CredentialValidationUnavailable()
             completed.wait(min(remaining, 0.25))
         _check_owner(check)
         if not result:
+            # communicate() itself may have given up at the deadline.
+            timed_out()
             raise CredentialValidationUnavailable()
         return result[0]
     finally:
         try:
             _stop(process)
         finally:
+            if stopped:
+                with suppress(Exception):
+                    on_timeout(stopped[0])
             thread.join(timeout=5)
             if thread.is_alive():
                 raise ProviderCheckDrainFailure(
@@ -119,6 +159,9 @@ def check_candidate(target, settings, value, *, seconds, check):
     process = None
     _check_owner(check)
     deadline = time.monotonic() + seconds
+    on_timeout = helper_timeout_recorder(
+        "provider_check_worker", what="provider_check", seconds=seconds
+    )
     try:
         try:
             process = subprocess.Popen(
@@ -134,7 +177,13 @@ def check_candidate(target, settings, value, *, seconds, check):
                 close_fds=True,
                 env={},
             )
-            output = _exchange(process, payload, deadline=deadline, check=check)
+            output = _exchange(
+                process,
+                payload,
+                deadline=deadline,
+                check=check,
+                on_timeout=on_timeout,
+            )
         except OSError:
             raise CredentialValidationUnavailable() from None
         if process.returncode != 0 or output not in {b"valid\n", b"invalid\n"}:

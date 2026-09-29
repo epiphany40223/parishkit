@@ -62,6 +62,35 @@ def source_session(execution, claim, *, attempt_id, credential):
         finally:
             connections.close_all()
 
-    session = BoundedSourceSession(before_request=before_request, check=execution.check)
+    session = BoundedSourceSession(
+        before_request=before_request,
+        check=execution.check,
+        on_timeout=source_timeout_recorder(execution),
+    )
     session.headers["x-api-key"] = credential.api_key
     return session
+
+
+def source_timeout_recorder(execution):
+    """Record that a ParishSoft request was stopped at its deadline (#293).
+
+    Called just after the read helper is killed. The entry names the task, the
+    request's time limit and how long it ran, on a private connection, so the
+    caller's no-SQL-during-provider-reads rule is unaffected.
+    """
+
+    def record(limit, elapsed):
+        """Write one helper_timed_out entry for this task."""
+        from parishkit.stewardship.audit.timeouts import record_timeout
+        from parishkit.stewardship.observability import Event
+
+        record_timeout(
+            Event.HELPER_TIMED_OUT,
+            what="source_helper",
+            helper="parishsoft_http_worker",
+            task_id=execution.claim.run_id,
+            limit_seconds=limit,
+            elapsed_seconds=elapsed,
+        )
+
+    return record
