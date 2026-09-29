@@ -646,3 +646,31 @@ def test_a_server_ended_session_notice_stays_shown(page, component_origin):
     page.clock.fast_forward(20_000)
     expect(notice).to_be_visible()
     expect(page.get_by_role("link", name="Sign in again")).to_have_count(1)
+
+
+def test_temporary_outage_on_submit_keeps_answers_and_is_not_uncertain(
+    page, component_origin
+):
+    """#315 M3: a JSON 503 refusal is definite, not a possibly lost submission."""
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=503, json={"error": "temporarily_unavailable"}
+        ),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    show(page, page.get_by_label("First name (required)")).fill("My edit")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    message = page.locator("#family-flow-message")
+    expect(message).to_contain_text("could not be submitted")
+    expect(message).to_contain_text("Your edits remain in this tab")
+    assert "could not confirm" not in message.inner_text()
+    assert "My edit" in page.locator("main").inner_text()
+    # A later expiry must not suggest that the refused Submit may have landed.
+    page.clock.fast_forward(3_700_000)
+    expect(page.locator("#session-expired")).to_contain_text(
+        "Unsubmitted changes have not been saved"
+    )
+    assert "check your last submission time" not in page.locator("main").inner_text()

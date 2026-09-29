@@ -150,6 +150,10 @@
           "This site is temporarily closed for maintenance. Please try again later." + note);
         return null;
       }
+      // Any other 503 (e.g. temporarily_unavailable) is a definite refusal.
+      // The body has already been read, so return it rather than reading it
+      // again, which would throw and be mistaken for an uncertain Submit.
+      return body;
     }
     if (!response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unavailable response");
