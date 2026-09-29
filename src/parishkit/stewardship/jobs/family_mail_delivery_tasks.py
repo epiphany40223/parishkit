@@ -22,6 +22,7 @@ from parishkit.stewardship.family_delivery import (
     ProviderHealth,
 )
 from parishkit.stewardship.family_delivery_process import (
+    FamilyMailSession,
     submit_digest,
     submit_family,
     submit_weekly,
@@ -343,6 +344,9 @@ def delivery_handler(
     circuit = DeliveryCircuit(
         recovery_seconds=OUTAGE_RECOVERY_SECONDS, systemic_stops=True
     )
+    # One batched private helper for this worker's Family messages (#284). It
+    # spans Tasks but holds no lease or database state; see FamilyMailSession.
+    session = None if scheduler else FamilyMailSession()
     return Handler(
         queue=WorkQueue.MAIL,
         admit=partial(admit_task, store=store, circuit=circuit),
@@ -355,6 +359,7 @@ def delivery_handler(
             public_origin=public_origin,
             credential_path=credential_path,
             circuit=circuit,
+            session=session,
         ),
         scope=work_transaction,
     )
@@ -373,8 +378,16 @@ def _check(execution):
         connections.close_all()
 
 
-def _execute(execution, *, private, public_origin, credential_path, circuit):
-    """Pin credentials, durably begin, then run one bounded private submission."""
+def _execute(
+    execution, *, private, public_origin, credential_path, circuit, session=None
+):
+    """Pin credentials, durably begin, then run one bounded private submission.
+
+    Family mail goes to the worker's batched helper ``session`` (#284); the
+    rare digests keep their one-message helpers. Either way this message's
+    "submitting" state and provider deadline are committed first, and its
+    result is settled here before the next message is claimed.
+    """
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
     execution.progress(0, 0, phase=TaskPhase.PREPARING)
@@ -475,20 +488,18 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
         )
         if remaining > 0:
             launched = True
-            submit = (
-                submit_weekly
-                if message.purpose == "weekly_digest"
-                else submit_digest
-                if message.purpose == "daily_digest"
-                else submit_family
-            )
-            result = submit(
-                candidate,
-                settings,
-                mail,
-                seconds=min(30, remaining),
-                check=lambda: _check(execution),
-            )
+            options = {
+                "seconds": min(30, remaining),
+                "check": lambda: _check(execution),
+            }
+            if message.purpose == "weekly_digest":
+                result = submit_weekly(candidate, settings, mail, **options)
+            elif message.purpose == "daily_digest":
+                result = submit_digest(candidate, settings, mail, **options)
+            else:
+                result = submit_family(
+                    candidate, settings, mail, session=session, **options
+                )
     except ProviderCheckDrainFailure:
         raise
     except FamilyDeliveryHeld:

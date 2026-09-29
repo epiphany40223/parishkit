@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.family_delivery_process import FamilyMailSession
 from parishkit.stewardship.jobs.dispatch import claim_hint
 from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
@@ -99,8 +100,10 @@ def test_installed_worker_commits_before_exactly_one_provider_call(
         complete_empty_catchup(harness.campaign, uuid4())
     calls = []
 
-    def provider(value, settings, mail, *, seconds, check):
+    def provider(value, settings, mail, *, seconds, check, session):
         assert not connection.in_atomic_block and 0 < seconds <= 30
+        # Family mail always goes to the worker's batched helper (#284).
+        assert isinstance(session, FamilyMailSession)
         check()
         assert OutboxMessage.objects.get().state == "submitting"
         assert value == KEY and settings["delegated_email"] == "sender@example.org"

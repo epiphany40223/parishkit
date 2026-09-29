@@ -41,6 +41,19 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   few seconds at worst, and a tick stopped by one of those limits is skipped
   and reported. A busy deployment cannot turn a known outcome into an
   uncertain one.
+- Family mail uses one batched helper per mail worker (#284), not one per
+  message. The helper reuses its OAuth token and SMTP connection across
+  consecutive messages, while each message keeps its own Task, committed
+  submitting state, deadline and settled outcome. The helper writes a
+  `started` line before each submission. A helper that ends before that line
+  never began the message, which is then handed once to a fresh helper. After
+  that line, a lost helper or a mismatched result is delivery unknown and is
+  never resent. A connection Gmail closed while idle is replaced before DATA,
+  and the message is sent once. Any fault retires the connection, and a
+  provider fault retires the helper. Helpers are rotated after 100 messages,
+  10 minutes or 60 seconds idle. The
+  [design comment](https://github.com/epiphany40223/parishkit/issues/284#issuecomment-5896798635)
+  has the full reasoning. Digests keep one-message helpers.
 - Gmail's own sending limits are recognized by the enhanced status code that
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail
