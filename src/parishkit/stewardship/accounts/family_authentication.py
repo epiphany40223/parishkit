@@ -358,8 +358,9 @@ def authenticated_family(
             row.version += 1
             row.save()
             # While an Administrator has closed the portal for maintenance,
-            # only keepalive reaches here; leave the Family's campaign row
-            # alone so it does not contend with the Administrator's data fix.
+            # keepalive (or a Family request already in flight when it closed)
+            # can still reach here; leave the Family's campaign row alone so it
+            # does not contend with the Administrator's data fix.
             if not family_maintenance.current_state().closed:
                 FamilyCampaign.objects.filter(pk=row.family_id).update(
                     last_activity_at=now,

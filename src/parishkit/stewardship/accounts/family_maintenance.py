@@ -10,9 +10,12 @@ the Administrator's own bounded text, stored in the event's reviewed
 Every web process reads the state on Family requests, so a short in-process
 cache keeps that to about one indexed query per process every few seconds;
 turning the switch on or off takes effect everywhere within that time, with
-no restart. The process that changes the switch clears its own cache at once.
+no restart. The process that changes the switch clears its own cache, but
+another thread in that process that read the old state just before the commit
+can write it back, so even there the change can take up to CACHE_SECONDS.
 Requests already in progress when the portal closes still finish, so the Admin
-page asks the Administrator to wait about 10 seconds before changing data.
+page asks the Administrator to wait about 10 seconds before changing data;
+that wait also covers the cache delay above.
 
 While the portal is closed, Family pages answer with a maintenance page and
 the form's JSON endpoints with a clean 503, so no Family answer is written.
