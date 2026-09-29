@@ -96,8 +96,8 @@ def test_talents_and_ministry_lock_restore_and_submit(
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     page.get_by_label(SERVE).check()
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
-    expect(choir.get_by_label("Stop participating")).to_be_checked()
-    expect(choir.get_by_label("Stop participating")).to_be_disabled()
+    expect(choir.get_by_label("Stop participating in this ministry")).to_be_checked()
+    expect(choir.get_by_label("Stop participating in this ministry")).to_be_disabled()
     # Readable, not inert: rows are disabled fieldsets and the join
     # disclosure is marked disabled, out of the tab order and cannot open.
     assert page.locator(".ministry-choices[inert]").count() == 0
@@ -123,8 +123,8 @@ def test_talents_and_ministry_lock_restore_and_submit(
     # Unchecking brings back exactly what the Family had chosen.
     page.get_by_label(SERVE).uncheck()
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
-    expect(choir.get_by_label("Continuing")).to_be_checked()
-    expect(choir.get_by_label("Continuing")).to_be_enabled()
+    expect(choir.get_by_label("Continue in this ministry")).to_be_checked()
+    expect(choir.get_by_label("Continue in this ministry")).to_be_enabled()
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
@@ -363,7 +363,7 @@ def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
     expect(show(page, page.get_by_label(SERVE))).to_be_checked()
     page.get_by_label(SERVE).uncheck()
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
-    expect(choir.get_by_label("Continuing")).to_be_checked()
+    expect(choir.get_by_label("Continue in this ministry")).to_be_checked()
     expect(page.get_by_label("Painter")).to_be_checked()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()

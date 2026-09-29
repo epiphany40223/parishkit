@@ -86,34 +86,22 @@ PAGES = {
         "keep this information up to date, so please understand if you see "
         "errors.</p>"
     ),
+    # Kept to one sentence: on a phone every line pushes the first field down.
     "member_census": (
-        "<p>Please check each household member’s information below for accuracy "
-        "and correct anything that has changed. The parish office does its best "
-        "to keep this information up to date, so please understand if you see "
-        "errors.</p>"
+        "<p>Please check this person’s information and correct anything that "
+        "has changed.</p>"
     ),
-    # The bold labels match the Family form's Ministry controls exactly
-    # (static family-v1.js): the "Current ministries" heading, each current
-    # ministry's "Continuing" / "Stop participating" choice, and the "Tap (or
-    # Click) here to join more ministries" disclosure, whose verb follows the
-    # device. Leaving is always honored.
+    # Short for phones (#292). The bold labels match the Family form's Ministry
+    # controls exactly (static family-v1.js): each current ministry's "Continue
+    # in this ministry" / "Stop participating in this ministry" choice, and the
+    # "Tap (or Click) here to join more ministries" disclosure, whose verb
+    # follows the device. Leaving is always honored.
     "ministry": (
-        "<p>Every skill, talent, and ability is a unique gift from God. Our call "
-        "to serve is an invitation to discern <em>where</em> and <em>how</em> the "
-        "Spirit is calling us. As our talents develop and circumstances change, "
-        "we listen to how God is calling us to use our gifts. If you haven’t yet "
-        "explored your spiritual gifts, consider a spiritual gifts assessment.</p>"
-        "<p>Please check the information below for accuracy. The parish office "
-        "does its best to keep it up to date, so please understand if you see "
-        "errors.</p>"
-        "<ul><li>Ministries each person takes part in are listed under "
-        "<strong>Current ministries</strong>, marked <strong>Continuing</strong>. "
-        "To continue in one, you don’t need to change anything.</li>"
-        "<li>To stop participating in a ministry, choose "
-        "<strong>Stop participating</strong>.</li>"
-        "<li>To begin a new ministry, or to learn more about one, tap or click "
-        "<strong>here to join more ministries</strong>, search for it, and check "
-        "its box. Someone from that ministry will contact you.</li></ul>"
+        "<p>Every talent is a gift from God. For each ministry, keep "
+        "<strong>Continue in this ministry</strong>, or choose <strong>Stop "
+        "participating in this ministry</strong>. "
+        "To join or learn about another, tap or click <strong>here to join more "
+        "ministries</strong>; someone from that ministry will contact you.</p>"
     ),
     "financial": (
         "<p>Treasure is the word most often associated with stewardship. Many "

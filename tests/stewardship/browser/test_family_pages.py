@@ -10,7 +10,7 @@ from PIL import Image
 
 from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
-from .test_family_ministry import begin
+from .test_family_ministry import begin, ministry_form
 from .test_family_response import expect, review, show
 
 pytestmark = pytest.mark.parametrize(
@@ -195,7 +195,7 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
 
 
 def test_ministry_rows_state_each_choice_once(page, component_origin):
-    """Continuing is the default; stop and join choices read plainly on review."""
+    """Continuing in a ministry is the default; stop and join read plainly."""
     submissions = []
 
     def submit(route):
@@ -205,10 +205,10 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
 
     begin(page, component_origin, paged_form(), submit)
     choir = show(page, page.get_by_role("group", name="Choir", include_hidden=True))
-    expect(choir.get_by_label("Continuing")).to_be_checked()
+    expect(choir.get_by_label("Continue in this ministry")).to_be_checked()
     body = page.locator("main").inner_text()
     assert "These are requests" not in body and "wishes to stop" not in body
-    choir.get_by_label("Stop participating").check()
+    choir.get_by_label("Stop participating in this ministry").check()
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     expect(
@@ -217,7 +217,7 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
     capture(page, "member-ministries")
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     review(page)
-    expect(page.get_by_text("Will continue: None", exact=True)).to_be_visible()
+    expect(page.get_by_text("Continuing: None", exact=True)).to_be_visible()
     # Stopping and joining are bulleted, one ministry per line.
     expect(page.locator(".stopping li", has_text="Choir")).to_be_visible()
     expect(page.locator(".ministry-joining li", has_text="Food pantry")).to_be_visible()
@@ -687,3 +687,58 @@ def test_welcome_icon_precedes_the_heading_without_welcome_text(page, component_
     )
     assert order == ["notice", "icon", "heading"]
     expect(intro.get_by_role("heading", name="Welcome", level=3)).to_be_visible()
+
+
+FIRST_CONTROL = """page => {
+  const control = [...page.querySelectorAll('input, select, textarea, button, summary')]
+    .find(e => e.getClientRects().length && !e.closest('.visually-hidden'));
+  const nav = document.querySelector('.family-nav').getBoundingClientRect();
+  return {top: control.getBoundingClientRect().top, visible: nav.top, id: control.id};
+}"""
+
+
+@pytest.mark.parametrize("census", [True, False])
+def test_member_page_first_control_fits_a_phone(page, component_origin, census):
+    """#292: at 390x844 the first Member control shows without scrolling."""
+    from parishkit.stewardship.accounts.content_defaults import PAGES
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    form = paged_form() if census else ministry_form(census=False)
+    form["content"]["member_census"] = PAGES["member_census"]
+    form["content"]["ministry"] = PAGES["ministry"]
+    begin(page, component_origin, form, None)
+    key = page.locator("[data-step-link^=member-]").first.get_attribute(
+        "data-step-link"
+    )
+    page.locator(f'[data-step-link="{key}"]').click()
+    found = page.locator(f'[data-page="{key}"]').evaluate(FIRST_CONTROL)
+    assert found["top"] < found["visible"], found
+
+
+def test_ministry_choice_labels_wrap_on_a_phone(page, component_origin):
+    """The longer choice labels stay inside their row at 320 and 390 px."""
+    page.set_viewport_size({"width": 320, "height": 844})
+    begin(page, component_origin, ministry_form(census=False), None)
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    stop = show(page, choir.get_by_label("Stop participating in this ministry"))
+    expect(stop).to_be_visible()
+    row = choir.bounding_box()
+    for label in choir.locator("label").all():
+        box = label.bounding_box()
+        assert (
+            box["x"] >= row["x"] and box["x"] + box["width"] <= row["x"] + row["width"]
+        )
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_review_lists_continuing_ministries_one_per_line(page, component_origin):
+    """Continuing ministries are bulleted on Review, like Stopping and Joining."""
+    form = ministry_form(census=False)
+    form["ministries"]["options"].append({"id": 11, "name": "Greeters"})
+    form["ministries"]["members"]["3"]["current"] = [4, 11]
+    begin(page, component_origin, form, None)
+    review(page)
+    expect(page.locator(".ministry-continuing > p")).to_have_text("Continuing:")
+    expect(page.locator(".ministry-continuing li")).to_have_text(["Choir", "Greeters"])

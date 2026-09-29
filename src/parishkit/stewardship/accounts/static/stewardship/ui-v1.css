@@ -444,11 +444,15 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
 .ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }
 .ministry-row > label { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; }
+/* The choice labels are long ("Stop participating in this ministry"): let them
+   wrap inside the row on a phone, keeping the radio beside the first line. */
+.ministry-row > label { min-width: 0; max-width: 100%; }
+.ministry-row > label > input { flex-shrink: 0; }
 .ministry-row.changed { border-inline-start-width: .3rem; }
 /* A ministry the Member is stopping, in the attention colour (not green). */
 .stopping { border-inline-start: .3rem solid var(--warning-border); padding-inline-start: .75rem; background: var(--warning-bg); border-radius: 0 var(--radius-small) var(--radius-small) 0; }
-.ministry-joining p, .stopping > p { margin-block: 0 .25rem; }
-.ministry-joining ul, .stopping > ul { margin-block: 0; }
+.ministry-joining p, .stopping > p, .ministry-continuing > p { margin-block: 0 .25rem; }
+.ministry-joining ul, .stopping > ul, .ministry-continuing > ul { margin-block: 0; }
 /* The join list is collapsed by default; make the disclosure look actionable. */
 .ministry-join > summary { list-style: none; display: inline-flex; align-items: center; gap: .5rem; }
 .ministry-join > summary::-webkit-details-marker { display: none; }

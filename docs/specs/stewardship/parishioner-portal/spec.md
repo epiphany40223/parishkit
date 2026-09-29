@@ -140,7 +140,10 @@ Steps are assembled from enabled modules:
 2. Family census, when enabled.
 3. One Member page per current active Member when census or Ministry
    stewardship is enabled; its census and Ministry subsections appear only when
-   their respective modules are enabled.
+   their respective modules are enabled. The Member census and Ministry
+   introductions appear on the first Member page only; their defaults are one
+   short paragraph each so that, on a 390×844 phone, the page's first control
+   is visible without scrolling.
 4. Add and fully edit proposed Members, when census is enabled, including their
    enabled census and Ministry subsections.
 5. Financial stewardship, when enabled.
@@ -273,18 +276,19 @@ choices. Hiding an existing membership or earlier request does not delete it or
 turn omission into a new leave/withdrawal action. Recheck the same policy at
 submission, including the linked stale-form reconfirmation requirement.
 
-Current memberships appear first under "Current ministries", each stating
-its choice once as "Continuing" (the default) or "Stop participating". Leaving
+Current memberships appear first (with no visible heading; screen readers get
+a "Current ministries" heading), each stating
+its choice once as "Continue in this ministry" (the default) or "Stop participating in this ministry". Leaving
 is always honored; the form does not describe it as a request that may be
-declined. A Ministry set to "Stop participating" is highlighted in the
+declined. A Ministry set to "Stop participating in this ministry" is highlighted in the
 attention (amber) colour. Existing memberships are excluded from join choices.
 "Click here to join more ministries" ("Tap here…" on a touch-only device)
 expands/searches the potentially long selected-Ministry list only on demand and
 supports multiple choices, and the chosen ministries stay listed under
 "Joining:", one per line, while it is collapsed. Selecting and then
 deselecting returns to no requested change. Review lists each Member's
-ministries as "Will continue", "Stopping" and "Joining", the last two as
-bulleted lists.
+ministries under "Continuing", "Stopping" and "Joining", each as a bulleted
+list with one ministry per line.
 
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
@@ -303,7 +307,7 @@ requires a short description, at most 200 characters. No talent is required.
 
 Above the Ministry choices, each Member may check "Because of physical
 limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating", every join
+checked, every current Ministry is set to "Stop participating in this ministry", every join
 choice is cleared, the Ministry choices and the join-more-ministries disclosure
 are disabled for pointer, keyboard and assistive technology alike, and the
 talents question is hidden and no talents are sent. Unchecking restores the

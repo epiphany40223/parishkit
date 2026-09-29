@@ -937,9 +937,11 @@
       choices[action] = [...next].sort((a, b) => a - b);
     }
     // Current Ministries: each row states the choice once, as a pair of
-    // radio buttons defaulting to Continuing, instead of repeating a suffix
+    // radio buttons defaulting to "Continue in this ministry", instead of repeating a suffix
     // on every checkbox label.
-    node("h5", "Current ministries", choicesBox);
+    // No visible heading (#292): the rows speak for themselves on a phone, but
+    // screen readers still get a named heading for the list.
+    node("h5", "Current ministries", choicesBox, {class: "visually-hidden"});
     const currentOptions = form.ministries.options.filter((option) => current.has(option.id));
     if (!currentOptions.length) node("p", "No current ministries are included in this campaign.", choicesBox);
     currentOptions.forEach((option) => {
@@ -947,7 +949,7 @@
       row.disabled = locked;
       node("legend", option.name, row);
       const name = "ministry-" + member.id + "-" + option.id;
-      [["continue", "Continuing"], ["leave", "Stop participating"]].forEach(([value, label]) => {
+      [["continue", "Continue in this ministry"], ["leave", "Stop participating in this ministry"]].forEach(([value, label]) => {
         const wrapper = node("label", null, row);
         const input = node("input", null, wrapper, {type: "radio", name, value,
           id: name + "-" + value});
@@ -1037,7 +1039,9 @@
       if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }
-    node("p", "Will continue: " + (continuing.join(", ") || "None"), parent);
+    // Like Stopping and Joining: a heading and one ministry per line.
+    if (continuing.length) nameList("Continuing:", continuing, node("div", null, parent, {class: "ministry-continuing"}));
+    else node("p", "Continuing: None", parent);
     if (stopping.length) nameList("Stopping:", stopping, node("div", null, parent, {class: "changed stopping"}));
     if (joining.length) nameList("Joining:", joining, node("div", null, parent, {class: "changed ministry-joining"}));
   }
