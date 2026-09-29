@@ -58,21 +58,27 @@ def log_timeout(what, *, limit_seconds, elapsed_seconds):
     """Log off-site backup work a time limit stopped: what, the limit, how long.
 
     This is the one place the off-site copy and the "Test access" check
-    report a timeout, so they switch together to the durable operational
-    log writer (``audit.timeouts.record_timeout`` from #314, issue #293)
-    once it lands, by changing only this function: keep the process-log
-    line below (it carries the fields), then call ``record_timeout`` with
-    ``Event.WORK_BUDGET_REACHED`` for the two budgets or
-    ``Event.TASK_TIMED_OUT`` otherwise, ``what=what``, ``level="WARNING"``
-    and the same two durations. Until then the WARNING goes to the process
-    log only. ``what`` is one of ``observability.TIMEOUT_LIMITS``.
+    report a timeout. The process-log line carries the fields; the durable
+    operational log entry (#293) is a WORK_BUDGET_REACHED warning for the two
+    budgets, whose remaining work waits for the next run, and a
+    TASK_TIMED_OUT warning otherwise. ``what`` is one of
+    ``observability.TIMEOUT_LIMITS``.
     """
+    from .audit.timeouts import record_timeout
+
     emit(
         Event.TASK_FAILED,
         level=logging.WARNING,
         timeout=what,
         limit_seconds=max(0, round(limit_seconds)),
         elapsed_seconds=max(0, round(elapsed_seconds)),
+    )
+    record_timeout(
+        Event.WORK_BUDGET_REACHED if what.endswith("_budget") else Event.TASK_TIMED_OUT,
+        what=what,
+        level="WARNING",
+        limit_seconds=limit_seconds,
+        elapsed_seconds=elapsed_seconds,
     )
 
 

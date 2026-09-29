@@ -19,6 +19,7 @@ from parishkit.stewardship.accounts.backup_destination import (
 )
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.backup_drive import PROBE_WAIT
 from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -206,6 +207,14 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     assert stopped["timeout"] == "drive_copy_budget"
     assert stopped["limit_seconds"] == backup_offsite.COPY_SECONDS
     assert stopped["elapsed_seconds"] == backup_offsite.COPY_SECONDS + 1
+    # The backup login also records it durably (#293).
+    entry = OperationalLog.objects.get(event="work_budget_reached")
+    assert entry.level == "WARNING"
+    assert entry.context == {
+        "what": "drive_copy_budget",
+        "limit_seconds": backup_offsite.COPY_SECONDS,
+        "elapsed_seconds": backup_offsite.COPY_SECONDS + 1,
+    }
 
 
 def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite, caplog):

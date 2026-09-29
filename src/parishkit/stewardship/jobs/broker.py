@@ -7,6 +7,7 @@ the isolated runtime must first validate mounts, database grants and secrets.
 
 import functools
 import os
+from contextlib import suppress
 from dataclasses import dataclass, field
 from threading import Event
 from types import MappingProxyType
@@ -159,6 +160,7 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
             consume_hint(args, kwargs, service=service, handlers=registry, stop=stop)
         except Exception as error:
             emit_failure(error)
+            record_sql_timeout(error, args)
         finally:
             dates.reset(token)
             from django.db import connections
@@ -173,6 +175,49 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
         if name != HINT_TASK:
             del app.tasks[name]
     return BrokerRuntime(app, service, stop)
+
+
+# PostgreSQL errors that mean a time limit stopped the statement (#293).
+_SQL_TIMEOUTS = {
+    "55P03": "lock_timeout",
+    "25P04": "transaction_timeout",
+}
+
+
+def sql_timeout_kind(error):
+    """Name the SQL time limit that stopped ``error``, or None.
+
+    A statement timeout and a deliberate cancel share SQLSTATE 57014; only the
+    statement timeout counts (a read guard records its own deadline).
+    """
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        state = getattr(error, "sqlstate", None)
+        if state in _SQL_TIMEOUTS:
+            return _SQL_TIMEOUTS[state]
+        if state == "57014":
+            diag = getattr(error, "diag", None)
+            message = getattr(diag, "message_primary", None) or ""
+            if "statement timeout" in message:
+                return "statement_timeout"
+        error = error.__cause__ or error.__context__
+    return None
+
+
+def record_sql_timeout(error, args):
+    """Log a task stopped by a SQL time limit, naming the task when known."""
+    kind = sql_timeout_kind(error)
+    if kind is None:
+        return
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.observability import Event
+
+    task_id = None
+    if len(args) == 1 and type(args[0]) is str:
+        with suppress(ValueError):
+            task_id = UUID(args[0])
+    record_timeout(Event.TASK_TIMED_OUT, what=kind, task_id=task_id)
 
 
 def consume_hint(args, kwargs, *, service, handlers, stop=None):

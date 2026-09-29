@@ -376,6 +376,7 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                     _skipped(error)
                 for _ in range(batches):
                     if monotonic() >= deadline:
+                        _budget_reached(execution, deadline)
                         break
                     execution.check()
                     batch = compact_source(
@@ -397,6 +398,24 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                 release_source(claim)
     except Exception as error:
         _skipped(error)
+
+
+def _budget_reached(execution, deadline):
+    """Log that retention stopped at its time budget; the next refresh resumes.
+
+    This is expected housekeeping, not an error (#293).
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.observability import Event
+
+    record_timeout(
+        Event.WORK_BUDGET_REACHED,
+        what="retention_budget",
+        level="INFO",
+        task_id=execution.claim.run_id,
+        limit_seconds=RETENTION_BUDGET_SECONDS,
+        elapsed_seconds=monotonic() - (deadline - RETENTION_BUDGET_SECONDS),
+    )
 
 
 def _skipped(error):
