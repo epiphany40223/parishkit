@@ -156,12 +156,11 @@ def check_ingress(file, project, configuration, run):
         assert denied.returncode != 0
         assert denied.returncode != 127
     run(file, project, "stop", "--timeout", "10", "web")
-    assert (
-        json.loads(request_from_caddy_host(file, project, configuration, run).stdout)[
-            "status"
-        ]
-        == 502
-    )
+    # With web down, Caddy answers with its own maintenance page (#162).
+    down = json.loads(request_from_caddy_host(file, project, configuration, run).stdout)
+    assert down["status"] == 503
+    assert down["retry_after"] == "120"
+    assert "updating the site" in down["body"]
     run(file, project, "up", "--detach", "web")
     certificate = run(
         file,
@@ -216,7 +215,9 @@ def request_from_caddy_host(file, project, configuration, run):
         "b'Host: parish.example\\r\\nCookie: private-cookie-canary\\r\\n'"
         "b'Connection: close\\r\\n\\r\\n')\n"
         "response=http.client.HTTPResponse(connection)\nresponse.begin()\n"
-        "print(json.dumps({'status':response.status}))\n"
+        "print(json.dumps({'status':response.status,"
+        "'retry_after':response.getheader('Retry-After'),"
+        "'body':response.read(4096).decode('utf-8','replace')}))\n"
     )
     return run(
         file,

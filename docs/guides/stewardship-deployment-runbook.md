@@ -392,10 +392,15 @@ sequence with the commands that exist.
    and confirm its off-host copy. Do not continue without it: it is the only
    rollback, and step 4 refuses a configured deployment whose newest recorded
    backup is more than 24 hours old.
-2. **Stop the online services**: `caddy`, `web`, `worker`, `scheduler`,
+2. **Stop the online services**: `web`, `worker`, `scheduler`,
    `mail-dispatch`, `config-installer` and every credential installer, with
    `stop` on the current Compose file and project name. Leave `postgres` and
-   `valkey` running. Stopping, not restarting, matters: online services use
+   `valkey` running, and leave `caddy` running too: it holds no startup
+   interlock, and while `web` is down it answers every request with its own
+   self-contained "We're updating the site" page (HTTP 503 with
+   `Retry-After`) instead of a refused connection. A `caddy` from a release
+   before that change still holds the interlock and makes every offline
+   step refuse, so stop it too on the first upgrade to this release. Stopping, not restarting, matters: online services use
    `unless-stopped`, so a crashed service would otherwise come back during
    the offline work, as
    [Offline work and upgrade boundary](stewardship-runtime.md#offline-work-and-upgrade-boundary)
@@ -478,16 +483,28 @@ sequence with the commands that exist.
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
-   otherwise ship its templates with the previous release's scripts. With
-   `caddy` still stopped, move `cache/static` aside under the name of the
-   release being replaced (for example `cache/static.PREVIOUS_DIGEST`, never
-   deleting it), create an empty `cache/static` owned by `10001:10001` with
-   mode `0700`, and run `collect-static` into it in the *new* image, exactly
-   as first installation does. Keep the old tree until the release is
-   accepted; a rollback puts it back.
+   otherwise ship its templates with the previous release's scripts. Create
+   an empty `cache/static.next` owned by `10001:10001` with mode `0700` and
+   run `collect-static` into it in the *new* image, exactly as first
+   installation does. Copy the current `cache/static` aside under the name
+   of the release being replaced (for example
+   `cache/static.PREVIOUS_DIGEST`, never deleting it), then refresh
+   `cache/static` *in place*: empty it and copy `cache/static.next`'s
+   contents into it. Do not move or replace the `cache/static` directory
+   itself: the running `caddy` has it bind-mounted, and a directory moved
+   aside stays mounted in its place. Keep the old tree until the release is
+   accepted; a rollback copies it back the same way.
 6. **Start and check.** Bring the online services back with `up --detach`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever
-   the deployment uses) and project name, then `caddy`. Run the health
+   the deployment uses) and project name, then `caddy`. Caddy reads its
+   Caddyfile only when it starts, so compare what the running `caddy`
+   loaded (`exec -T caddy sha256sum /etc/caddy/Caddyfile`) with the host's
+   `Caddyfile`; when they differ, use `up --detach --force-recreate caddy`,
+   otherwise `up --detach caddy` leaves it alone. Comparing the loaded copy
+   rather than a checksum taken before step 3 also catches a re-run after
+   a failed upgrade. Until `web` is healthy again, `caddy` keeps serving its
+   maintenance page, so a failed upgrade leaves that page up until the
+   upgrade is re-run or rolled back. Run the health
    command and open the public origin. Confirm in the portal that background
    work resumed: the home page's latest refresh time advances and the
    background task pages show the scheduler running.
@@ -501,8 +518,11 @@ An application-only rollback is possible only when the new release changed
 neither the schema nor any runtime grant:
 stop the online services, run `retarget-image` with the previous digest (in
 that previous image), pull, put the previous release's static tree back
-(move the new `cache/static` aside and restore the one step 5 kept, or
-collect into an empty `cache/static` in the previous image), and start;
+*in place*, as step 5 refreshes it (empty `cache/static` and copy the kept
+tree's contents into it, or collect into an empty `cache/static.next` in
+the previous image and copy that in), because the running `caddy` has
+`cache/static` bind-mounted, and start, applying step 6's rule to recreate
+`caddy` when its loaded Caddyfile differs from the host file;
 step 4 is not repeated. A grant the new release added is refused as
 excessive by the previous release's services, so it needs the database
 restore below. A deployment field the new release added makes the previous

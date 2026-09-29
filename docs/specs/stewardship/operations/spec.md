@@ -173,6 +173,21 @@ the catch-all application reverse proxy. Container health checks and authorized
 metrics clients call the application service directly over the internal Compose
 network.
 
+When no web replica answers, for example while an upgrade has web stopped,
+Caddy answers every request with its own self-contained maintenance page ("We're
+updating the site"): HTTP 503 with `Retry-After: 120` and `Cache-Control:
+no-store`, inline styles only, no scripts or application assets, and a strict
+Content-Security-Policy. Only the proxy's own upstream failures (502 or 503)
+select it: a refused dial or no available upstream, as during an upgrade, but
+also an upstream connection reset mid-request (a worker killed or out of
+memory), whose 502 is shown as this 503 page and recorded as 503 in the access
+log. An application response, including an application 500, passes through
+unchanged, and an upstream timeout (504) is not treated as an upgrade. (A later
+refinement could match only the connection-refused error.) A failed upgrade
+leaves the page up until the upgrade is re-run or rolled back. Caddy holds no startup interlock, so it keeps running through offline
+upgrade work; web still holds the interlock, so nothing behind Caddy runs
+during that work.
+
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
 segments and do not log cookies/query secrets or request bodies. Exact Family-

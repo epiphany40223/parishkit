@@ -70,3 +70,8 @@ def test_stock_caddy_accepts_real_generated_configuration(tmp_path):
     assert "172.29.241.10:8000" in serialized
     assert "health_checks" not in serialized
     assert "acme-v02.api.letsencrypt.org" in serialized
+    # The maintenance page answers only proxy failures to reach web (#162).
+    (route,) = server["errors"]["routes"]
+    assert "{http.error.status_code} in [502, 503]" in json.dumps(route)
+    assert '"status_code":503' in json.dumps(route, separators=(",", ":"))
+    assert "updating the site" in json.dumps(route)
