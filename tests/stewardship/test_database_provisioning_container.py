@@ -348,3 +348,182 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
+
+
+def upgrade_noop(configuration, deployment, tmp_path):
+    """Render the check in a fresh process, as the upgrade does, then run it.
+
+    The operator session is read-only, as the upgrade scripts run it; any
+    query error counts as "not a no-op", which is how they treat it.
+    """
+    config_file = tmp_path / "upgrade-check.json"
+    config_file.write_text(json.dumps(deployment_document(configuration)))
+    script = tmp_path / "upgrade_check.py"
+    script.write_text(
+        "import sys\n"
+        "from parishkit.stewardship.cli import main\n"
+        "sys.exit(main(sys.argv[1:]))\n"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "upgrade-check",
+            "--config",
+            str(config_file),
+            "--confirm-deployment",
+            str(deployment),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    with connect(configuration) as database, database.cursor() as cursor:
+        cursor.execute("SET TRANSACTION READ ONLY")
+        try:
+            cursor.execute(result.stdout)
+        except psycopg.Error:
+            return False
+        return cursor.fetchone()[0]
+
+
+def test_upgrade_check_proves_migration_and_grants_are_no_ops(
+    empty_operator_database, tmp_path
+):
+    """True only when migrate and database-grants would both change nothing."""
+    configuration = empty_operator_database
+    deployment = uuid4()
+    provision_roles(configuration, deployment)
+    # Before migration the tables it names do not exist yet.
+    assert upgrade_noop(configuration, deployment, tmp_path) is False
+    layout = RuntimeLayout(configuration)
+    migration = replace(
+        configuration,
+        service_role=ServiceRole.MIGRATION,
+        postgres=replace(
+            configuration.postgres,
+            user="pk_stewardship_migration",
+            password_file=layout.database_password("migration"),
+        ),
+    )
+    config_file = tmp_path / "migration.json"
+    config_file.write_text(json.dumps(deployment_document(migration)))
+    script = tmp_path / "migrate_fixture.py"
+    script.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from parishkit.stewardship.deployment import load_deployment\n"
+        "from parishkit.stewardship import operator_commands as commands\n"
+        "configuration = load_deployment(Path(sys.argv[1]), environ={})\n"
+        "commands.configure_operator_database(configuration)\n"
+        "from django.core.management import call_command\n"
+        "call_command('migrate', interactive=False, verbosity=0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), str(config_file)],
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    with connect(configuration) as database:
+        database.execute(
+            # What the migrate command, not bare Django, also establishes.
+            "UPDATE stewardship_download_policy SET capacity=%s,"
+            "version=version+1 WHERE id=1 AND capacity<>%s",
+            [configuration.runtime_budget.download_capacity] * 2,
+        )
+    # Migrated, but no runtime grant is installed yet.
+    assert upgrade_noop(configuration, deployment, tmp_path) is False
+    provision_grants(configuration, deployment)
+    assert upgrade_noop(configuration, deployment, tmp_path) is True
+    # Another deployment's marker is never proof.
+    assert upgrade_noop(configuration, uuid4(), tmp_path) is False
+    # Each change that migrate or database-grants would make, or refuse, is
+    # detected, and undoing it restores the proof.
+    with connect(configuration) as database:
+        guard = database.execute(
+            "SELECT pg_get_functiondef("
+            "'public.stewardship_operational_log_writer_v1()'::regprocedure)"
+        ).fetchone()[0]
+    changes = [
+        (
+            # Another body under the same name and trigger: an older guard.
+            "CREATE OR REPLACE FUNCTION "
+            "public.stewardship_operational_log_writer_v1() RETURNS trigger "
+            "LANGUAGE plpgsql AS $$BEGIN RETURN NEW; END$$",
+            guard,
+        ),
+        (
+            "CREATE ROLE pk_upgrade_check_group; "
+            "GRANT pk_upgrade_check_group TO pk_stewardship_web",
+            "DROP ROLE pk_upgrade_check_group",
+        ),
+        (
+            "ALTER ROLE pk_stewardship_web BYPASSRLS",
+            "ALTER ROLE pk_stewardship_web NOBYPASSRLS",
+        ),
+        (
+            "CREATE SCHEMA upgrade_check_extra; "
+            "CREATE TABLE upgrade_check_extra.extra (id integer); "
+            "GRANT SELECT ON upgrade_check_extra.extra TO pk_stewardship_worker",
+            "DROP SCHEMA upgrade_check_extra CASCADE",
+        ),
+        (
+            "REVOKE INSERT ON stewardship_backup_run FROM pk_stewardship_backup_worker",
+            "GRANT INSERT ON stewardship_backup_run TO pk_stewardship_backup_worker",
+        ),
+        (
+            "REVOKE SELECT ON stewardship_campaign FROM pk_stewardship_web",
+            "GRANT SELECT ON stewardship_campaign TO pk_stewardship_web",
+        ),
+        (
+            "GRANT DELETE ON stewardship_campaign TO pk_stewardship_web",
+            "REVOKE DELETE ON stewardship_campaign FROM pk_stewardship_web",
+        ),
+        (
+            "GRANT UPDATE (id) ON stewardship_campaign TO pk_stewardship_download",
+            "REVOKE UPDATE (id) ON stewardship_campaign FROM pk_stewardship_download",
+        ),
+        (
+            "GRANT UPDATE ON stewardship_campaign TO pk_stewardship_backup_worker",
+            "REVOKE UPDATE ON stewardship_campaign FROM pk_stewardship_backup_worker",
+        ),
+        (
+            "ALTER ROLE pk_stewardship_worker CONNECTION LIMIT 99",
+            "ALTER ROLE pk_stewardship_worker CONNECTION LIMIT "
+            + str(role_limit(configuration, ServiceRole.WORKER)),
+        ),
+        (
+            "UPDATE stewardship_download_policy "
+            "SET capacity=capacity+1,version=version+1 WHERE id=1",
+            "UPDATE stewardship_download_policy "
+            "SET capacity=capacity-1,version=version+1 WHERE id=1",
+        ),
+        (
+            "ALTER TABLE stewardship_operational_log DISABLE TRIGGER "
+            "stewardship_operational_log_writer_v1",
+            "ALTER TABLE stewardship_operational_log ENABLE TRIGGER "
+            "stewardship_operational_log_writer_v1",
+        ),
+        (
+            "INSERT INTO django_migrations (app,name,applied) "
+            "VALUES ('accounts','9999_future',now())",
+            "DELETE FROM django_migrations WHERE name='9999_future'",
+        ),
+    ]
+    for change, undo in changes:
+        with connect(configuration) as database:
+            database.execute(change)
+        assert upgrade_noop(configuration, deployment, tmp_path) is False, change
+        with connect(configuration) as database:
+            database.execute(undo)
+        assert upgrade_noop(configuration, deployment, tmp_path) is True, undo
+    with connect(configuration) as database:
+        row = database.execute(
+            "DELETE FROM django_migrations WHERE id=(SELECT max(id) "
+            "FROM django_migrations) RETURNING app,name"
+        ).fetchone()
+    assert row is not None
+    assert upgrade_noop(configuration, deployment, tmp_path) is False

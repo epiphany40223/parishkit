@@ -342,14 +342,17 @@ nothing; the operator runs the [backup](stewardship-backup-runbook.md) first,
 stops the online services, retargets, and starts the services again, in the
 order the [deployment runbook](stewardship-deployment-runbook.md#upgrade)
 gives. A release that changes the schema or a runtime grant also needs the
-migration profile and `database-grants`; on a configured deployment both
+migration profile and `database-grants`; the new image's `upgrade-check`
+command renders the read-only query that tells, from the live database,
+whether either would change anything. On a configured deployment both
 admit the change only when a backup completed within the last 24 hours is
 recorded, and otherwise refuse with the generic offline-refusal error and
 exit status 2. The first-deployment command is not a backup
 bypass. An incompatible schema requires the approved restore path, not an
 older image pointed at a newer database. Keep credential escrow separate from
 ordinary backup output and retain the matching key material. Automated
-upgrade readiness checks remain deferred by the pre-production policy.
+upgrade readiness checks beyond `upgrade-check` remain deferred by the
+pre-production policy.
 
 Phase 2 changes the mail-dispatch role limit to twice the configured rollout
 overlap, and the scheduler limit to the rollout overlap. The worker's limit
