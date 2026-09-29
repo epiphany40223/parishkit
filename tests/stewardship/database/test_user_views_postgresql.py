@@ -321,11 +321,18 @@ def test_strangers_who_only_attempted_a_sign_in_cost_and_show_nothing(
     auth_service, google
 ):
     """The work under the global lock is bounded by policy, not by attempts."""
+    from parishkit.stewardship.accounts import family_maintenance
+
     browser, _ = signed_in()
+    # The Family maintenance banner reads its state through a process-wide
+    # cache of a few seconds; start both requests cold so each makes that
+    # read, whatever ran before this test.
+    family_maintenance._cache.update(at=None)
     with CaptureQueriesContext(connection) as before:
         assert browser.get(URL).status_code == 200
     for index in range(40):
         identity(f"stranger{index}@elsewhere.example", hosted="elsewhere.example")
+    family_maintenance._cache.update(at=None)
     with CaptureQueriesContext(connection) as after:
         response = browser.get(URL)
     assert response.status_code == 200 and b"stranger" not in response.content
