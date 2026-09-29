@@ -13,6 +13,7 @@ from parishkit.stewardship.source.snapshot_models import (
     SourceSnapshot,
     SourceSnapshotPin,
 )
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .facts import FACT_READ_NAMESPACE, FactUnavailable, _admit, fact_inputs
 from .models import CampaignDailyFactSet, CampaignFactPin, FactCompactionRecord
@@ -60,40 +61,56 @@ def release_fact_pin(pin_id, *, parent_kind, parent_id, admit):
         return selected.delete()[0] == 1
 
 
-def compact_facts(campaign_id, claim, *, admit, limit=50):
+def compact_facts(campaign_id, claim, *, admit, limit=50, proceed=None):
     """Remove a bounded set of whole superseded generations and exact input pins.
 
     Owning housekeeping supplies concrete campaign purge/restore admission.
-    Locks use campaign -> source -> generation order, matching build allocation.
     Shared readers and late pins win over cleanup; no reader lease is inferred.
+
+    The candidates are chosen once, before any lock: the disposability check
+    is the slow part, and it is repeated under each generation's own lock.
+    Each generation is then deleted in its own short transaction, locking
+    task -> campaign -> source -> generation. That is the documented work
+    order (task before domain rows), which the refresh heartbeat also uses,
+    so the heartbeat waits for at most one generation and cannot deadlock
+    with cleanup. A skipped candidate does not end the batch. ``proceed``, if
+    given, is asked before each generation (e.g. a time budget or a drain
+    check); returning False stops early and leaves the rest for later.
     """
     if type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("Fact cleanup requires a bounded positive batch size.")
-    with transaction.atomic():
-        lock_task_claim(claim)
-        Campaign.objects.select_for_update().get(pk=campaign_id)
-        # Only UUIDs are selected here. Each generation is reselected and checked
-        # under its own row lock before any deletion can become visible.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id,source_id FROM stewardship_daily_fact_set "
-                "WHERE campaign_id=%s AND stewardship_fact_disposable(id) "
-                "ORDER BY created_at,id LIMIT %s",
-                (campaign_id, limit),
-            )
-            candidates = cursor.fetchall()
-        removed = []
-        for identifier, source_id in candidates:
+    if connection.in_atomic_block:
+        # An outer transaction would keep every generation's task and campaign
+        # locks until it commits, starving the heartbeat again.
+        raise StorageInvariantError("Fact cleanup must run outside a transaction.")
+    # Only UUIDs are selected here, with no lock held.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id,source_id FROM stewardship_daily_fact_set "
+            "WHERE campaign_id=%s AND stewardship_fact_disposable(id) "
+            "ORDER BY created_at,id LIMIT %s",
+            (campaign_id, limit),
+        )
+        candidates = cursor.fetchall()
+    removed = []
+    for identifier, source_id in candidates:
+        if proceed is not None and not proceed():
+            break
+        with transaction.atomic():
+            lock_task_claim(claim)
+            Campaign.objects.select_for_update().get(pk=campaign_id)
             with transaction.atomic():
-                if _compact_candidate(identifier, source_id, claim, admit):
-                    removed.append(identifier)
-                else:
+                deleted = _compact_candidate(identifier, source_id, claim, admit)
+                if not deleted:
                     # Release this skipped candidate's source/generation locks,
                     # not merely its advisory lock, before the next candidate.
-                    # Successful deletions still commit with the whole batch.
                     transaction.set_rollback(True)
-        lock_task_claim(claim)
-        return removed
+            # Fence the commit: a lease that expired during the deletion rolls
+            # this generation back.
+            lock_task_claim(claim)
+        if deleted:
+            removed.append(identifier)
+    return removed
 
 
 def _compact_candidate(identifier, source_id, claim, admit):

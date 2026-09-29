@@ -128,12 +128,15 @@ def test_skipping_active_reader_releases_candidate_rows_before_batch_end(tmp_pat
     skipped, finish = Event(), Event()
 
     def cleaning():
-        """Leave the outer batch open after it has skipped this protected reader."""
+        """Stay connected after skipping this protected reader.
+
+        Each generation runs in its own transaction, so returning means the
+        skipped candidate's locks are already gone.
+        """
         try:
-            with transaction.atomic():
-                assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
-                skipped.set()
-                assert finish.wait(10)
+            assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
+            skipped.set()
+            assert finish.wait(10)
         finally:
             connections.close_all()
 
@@ -178,14 +181,13 @@ def test_mixed_batch_skip_preserves_other_successful_deletion(tmp_path, protect_
     processed, finish = Event(), Event()
 
     def cleaning():
-        """Expose the batch before commit, after both candidate savepoints finish."""
+        """Stay connected after both candidates' own transactions have ended."""
         try:
-            with transaction.atomic():
-                assert compact_facts(inputs.campaign_id, owner, admit=permit) == [
-                    disposable.pk
-                ]
-                processed.set()
-                assert finish.wait(10)
+            assert compact_facts(inputs.campaign_id, owner, admit=permit) == [
+                disposable.pk
+            ]
+            processed.set()
+            assert finish.wait(10)
         finally:
             connections.close_all()
 
@@ -201,9 +203,9 @@ def test_mixed_batch_skip_preserves_other_successful_deletion(tmp_path, protect_
                 .filter(pk=protected.pk)
                 .exists()
             )
-            # The successful candidate remains invisible until the outer batch
-            # commits, despite its own savepoint having completed already.
-            assert CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
+            # Each generation commits in its own transaction, so the
+            # successful candidate is already gone while cleanup is still open.
+            assert not CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
         finally:
             finish.set()
         pending.result(timeout=10)
