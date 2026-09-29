@@ -59,10 +59,10 @@ MINIMUM_SETS = 14
 # after the one before it, or when a set is dated this far after ``now``.
 CLOCK_GAP = timedelta(days=2)
 CLOCK_SKEW = timedelta(hours=1)
-# The archived trees are small (branding images are at most a few megabytes
-# each); anything larger is not what this backup was designed for and stops
-# before sealing.
-MAX_FILES_BYTES = 256 * 1024 * 1024
+# The archived trees are small: branding images are at most a few megabytes
+# each, and the hosted-file library (#346) at most 200 MB in all. Anything
+# larger is not what this backup was designed for and stops before sealing.
+MAX_FILES_BYTES = 512 * 1024 * 1024
 SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
 DUMP = "database.pgdump.sealed"
 FILES = "files.tar.sealed"

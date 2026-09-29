@@ -526,7 +526,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    the tree inside it), never delete it, then move `config` to the runtime root's `config`, `credentials` to its
    `credentials`, `media` to `run/persistent/media`, and the record to the
    runtime root itself. Give everything back to `10001:10001`; the archive
-   records owner-only modes (`0700` directories, `0600` files).
+   records owner-only modes (`0700` directories, `0600` files). Check that
+   `media/branding` and `media/hosted-files` came back that way too: the
+   service serves a logo or hosted file only when it owns it with mode
+   `0600`, and shows any other as missing.
 5. **Replacement host only: roles.** Start `postgres` and `valkey` with
    `up --detach --wait postgres valkey`, then run
    `run --rm database-provision database-roles --config PROVISION_CONFIG --confirm-deployment UUID`
