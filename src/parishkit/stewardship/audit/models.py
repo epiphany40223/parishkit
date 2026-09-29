@@ -30,7 +30,10 @@ class AuditEvent(ImmutableRecord):
     class Meta:
         db_table = "stewardship_audit_event"
         indexes = [
-            models.Index(fields=["event_type", "created_at"], name="audit_event_time")
+            models.Index(fields=["event_type", "created_at"], name="audit_event_time"),
+            # System logs and their export read newest first by (created_at,
+            # id), with a keyset cursor on the same pair (#308).
+            models.Index(fields=["created_at", "id"], name="audit_event_created_id"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -72,7 +75,9 @@ class OperationalLog(ImmutableRecord):
     class Meta:
         db_table = "stewardship_operational_log"
         indexes = [
-            models.Index(fields=["level", "created_at"], name="operational_level_time")
+            models.Index(fields=["level", "created_at"], name="operational_level_time"),
+            # System logs order newest first by (created_at, id) (#308).
+            models.Index(fields=["created_at", "id"], name="operational_created_id"),
         ]
         constraints = [
             models.CheckConstraint(

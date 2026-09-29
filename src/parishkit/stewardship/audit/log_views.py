@@ -112,7 +112,10 @@ def _bounded(rows, query, *, size):
         rows = rows.filter(created_at__lt=datetime.combine(end, time.min, UTC))
     if query.cursor:
         instant, identifier = query.cursor
-        rows = rows.filter(
+        # The OR alone cannot bound an index scan; the redundant upper bound
+        # lets "Older entries" seek into the (created_at, id) index at the
+        # cursor instead of walking every newer entry first (#308).
+        rows = rows.filter(created_at__lte=instant).filter(
             Q(created_at__lt=instant) | Q(created_at=instant, id__lt=identifier)
         )
     return rows.order_by("-created_at", "-id")[: size + 1]

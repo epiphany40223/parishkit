@@ -1104,6 +1104,9 @@ ALTER TABLE ONLY public.stewardship_task_event
 ALTER TABLE ONLY public.stewardship_task_run
     ADD CONSTRAINT task_retry_sequence UNIQUE (root_id, retry_sequence);
 
+-- INDEX: audit_event_created_id
+CREATE INDEX audit_event_created_id ON public.stewardship_audit_event USING btree (created_at, id);
+
 -- INDEX: audit_event_time
 CREATE INDEX audit_event_time ON public.stewardship_audit_event USING btree (event_type, created_at);
 
@@ -1157,6 +1160,9 @@ CREATE INDEX family_session_presence ON public.stewardship_family_session USING 
 
 -- INDEX: occurrence_retry_command
 CREATE UNIQUE INDEX occurrence_retry_command ON public.stewardship_occurrence_transition USING btree (occurrence_id, retry_command_id) WHERE (retry_command_id IS NOT NULL);
+
+-- INDEX: operational_created_id
+CREATE INDEX operational_created_id ON public.stewardship_operational_log USING btree (created_at, id);
 
 -- INDEX: operational_level_time
 CREATE INDEX operational_level_time ON public.stewardship_operational_log USING btree (level, created_at);

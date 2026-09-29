@@ -310,6 +310,10 @@ Constraints, Functions and Triggers digests).
 The #306 schema review then let boundary audits record the two purge
 states, so a boundary skipped during a purge can settle (the same function
 body; Functions digest only).
+The #308 review then added `(created_at, id)` indexes on
+`stewardship_audit_event` and `stewardship_operational_log`, which System
+logs and its export read newest first, so no page sorts either whole table
+(Indexes digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -317,7 +321,7 @@ Regenerated from a fresh install, the current baseline is:
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
-| Indexes | 1006 | `bd3148b3` |
+| Indexes | 1008 | `fa41fc80` |
 | Functions | 603 | `5bd6449b` |
 | Triggers | 555 | `80f32975` |
 | Policies | 28 | `1c9c3b2d` |

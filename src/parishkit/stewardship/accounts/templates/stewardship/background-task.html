@@ -4,19 +4,7 @@
 {% block content %}
 <h1>{% translate "Background task details" %}</h1>
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}{% if task.name != task.type %} (<code>{{ task.type }}</code>){% endif %} — {{ task.id }}</p>
-<section class="panel" aria-live="polite" data-live-status="task" data-live-state="{{ task.state }}"{% if task.state == 'queued' or task.state == 'running' or task.state == 'retry_wait' or task.state == 'abandoned' %} data-live-pending{% endif %}><h2>{% translate "Current status" %}</h2>
-{% if task.state == 'queued' or task.state == 'running' or task.state == 'retry_wait' or task.state == 'abandoned' %}{% if task.state == 'running' and phase_text %}{% blocktranslate asvar running %}{{ phase_text }}…{% endblocktranslate %}{% elif task.state == 'retry_wait' %}{% translate "Waiting to try again…" as running %}{% else %}{% translate "Still working…" as running %}{% endif %}{% include 'stewardship/live-running.html' with message=running %}{% elif task.state == 'succeeded' %}<p class="live-done"><strong>{% translate "Finished successfully." %}</strong></p>{% elif task.state == 'failed' %}<p class="notice notice-error live-failed" role="alert">{% translate "This task failed. Its details are below." %}</p>{% elif task.state == 'cancelled' %}<p><strong>{% translate "This task was cancelled." %}</strong></p>{% endif %}
-{% if retry_text %}<p class="notice">{{ retry_text }} {% if task.state == 'retry_wait' %}{% blocktranslate with attempt=task.attempt|number %}Attempts so far: {{ attempt }}.{% endblocktranslate %}{% else %}{% blocktranslate with attempt=task.attempt|number %}This is attempt {{ attempt }}.{% endblocktranslate %}{% endif %}</p>{% endif %}
-<p>{% translate "State:" %} {{ task.state|capfirst }} · {% translate "Phase:" %} {{ task.progress.phase|capfirst }}</p>
-<p>{% translate "Attempt:" %} {{ task.attempt|number }} · {% translate "Retry sequence:" %} {{ task.retry_sequence|number }}</p>
-<p>{% translate "Initiator ID:" %} {{ task.initiator_id|default:_("System") }}</p>
-<p>{% translate "Created:" %} <time datetime="{{ task.created_at }}" data-local-instant>{{ task.created_at }}</time></p>
-{% if task.heartbeat_at %}<p>{% translate "Heartbeat:" %} <time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></p>{% endif %}
-{% if task.lease_expires_at %}<p>{% translate "Lease expires:" %} <time datetime="{{ task.lease_expires_at }}" data-local-instant>{{ task.lease_expires_at }}</time></p>{% endif %}
-{% if task.state == 'running' and not task.active %}<p class="notice">{% translate "The worker lease is no longer current. Recovery has not yet finished." %}</p>{% endif %}
-{% if task.progress.total %}<p>{% if is_refresh %}{% blocktranslate with current=task.progress.current|number total=task.progress.total|number %}{{ current }} of {{ total }} records checked{% endblocktranslate %}{% else %}{{ task.progress.display|out_of }}{% endif %}</p><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% elif is_refresh and task.state == 'running' and task.progress.phase == 'fetching' %}<p>{% translate "Downloading from ParishSoft. This step shows no count yet: a full refresh usually takes a few minutes, a 15-minute update a minute or two." %}</p>{% else %}<p>{% translate "Waiting for progress details." %}</p>{% endif %}
-{% if is_refresh %}<p class="help">{% translate "Every refresh places every ParishSoft record into a complete new copy, so this counts records checked, not records changed. Unchanged records are reused, not stored again." %}</p>{% endif %}
-</section>
+{% include 'stewardship/background-task-status.html' %}
 {% if export_cleanup_retry_key %}
 <section class="panel"><h2>{% translate "Retry export cleanup" %}</h2>
 <p>{% translate "After correcting the storage or access problem, retry removal of this expired export. Retained report history and source calculations will not be deleted." %}</p>

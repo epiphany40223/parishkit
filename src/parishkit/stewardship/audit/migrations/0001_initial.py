@@ -166,7 +166,11 @@ class Migration(migrations.Migration):
                             models.Index(
                                 fields=["level", "created_at"],
                                 name="operational_level_time",
-                            )
+                            ),
+                            models.Index(
+                                fields=["created_at", "id"],
+                                name="operational_created_id",
+                            ),
                         ],
                         "constraints": [
                             models.CheckConstraint(
@@ -233,6 +237,12 @@ class Migration(migrations.Migration):
                     model_name="auditevent",
                     index=models.Index(
                         fields=["event_type", "created_at"], name="audit_event_time"
+                    ),
+                ),
+                migrations.AddIndex(
+                    model_name="auditevent",
+                    index=models.Index(
+                        fields=["created_at", "id"], name="audit_event_created_id"
                     ),
                 ),
                 migrations.AddConstraint(

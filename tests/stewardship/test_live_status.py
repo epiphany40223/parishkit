@@ -117,6 +117,21 @@ def test_background_task_follows_until_terminal(state, live, text):
     html = render_to_string("stewardship/background-task.html", {"task": task(state)})
     assert pending(html, "task") is live
     assert text in html
+    # The status fragment the page polls carries the same region.
+    fragment = render_to_string(
+        "stewardship/background-task-status.html", {"task": task(state)}
+    )
+    assert pending(fragment, "task") is live
+    assert "data-live-url" not in region(fragment, "task")
+
+
+def test_background_task_polls_its_passive_fragment_not_the_page():
+    """Polling the audited page would log a view every few seconds (#308)."""
+    html = render_to_string(
+        "stewardship/background-task.html",
+        {"task": task("running"), "status_url": "/admin/background/task/x/status"},
+    )
+    assert 'data-live-url="/admin/background/task/x/status"' in region(html, "task")
 
 
 @pytest.mark.parametrize(

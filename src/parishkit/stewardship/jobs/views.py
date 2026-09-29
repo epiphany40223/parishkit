@@ -6,8 +6,9 @@ from uuid import uuid4
 
 from django.db import DatabaseError, transaction
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import JsonResponse, QueryDict
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_safe
 
@@ -217,8 +218,14 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
         return _error(ErrorCode.UNAVAILABLE, 503)
 
 
-def _finish_html(request, result, response, identifier=None):
-    """Audit only rendered HTML still authorized for its original reader."""
+def _finish_html(request, result, response, identifier=None, *, audit=True):
+    """Release rendered HTML only to its still-authorized original reader.
+
+    A real page view is audited once. The passive status fragment that an
+    open task page polls (audit=False) is rechecked the same way but never
+    audited: a watched task would otherwise add a background_viewed row
+    every few seconds for up to an hour.
+    """
     try:
         service = runtime()
         with transaction.atomic():
@@ -228,16 +235,17 @@ def _finish_html(request, result, response, identifier=None):
                 or current.identity != result.stewardship_read_identity
             ):
                 return _error(ErrorCode.DENIED, 403)
-            record_action(
-                Action.BACKGROUND_VIEWED,
-                actor_kind=ActorKind.PORTAL_USER,
-                actor_id=current.identity,
-                subject_id=identifier,
-                context={
-                    "outcome": Outcome.SUCCEEDED,
-                    "count": result.stewardship_read_count,
-                },
-            )
+            if audit:
+                record_action(
+                    Action.BACKGROUND_VIEWED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=current.identity,
+                    subject_id=identifier,
+                    context={
+                        "outcome": Outcome.SUCCEEDED,
+                        "count": result.stewardship_read_count,
+                    },
+                )
         response["Cache-Control"] = "no-store"
         return response
     except (ConfigError, LimiterUnavailable, DatabaseError, ValueError, TypeError):
@@ -321,31 +329,65 @@ def background_page(request):
     return _finish_html(request, result, response)
 
 
+def _task_read(request, task_id):
+    """Read one task unaudited and build the context its status region shows.
+
+    Returns (result, context); context is None when result is an error
+    response to return as is.
+    """
+    result = _read(request, task_id, audit=False)
+    if result.status_code != 200:
+        return result, None
+    work = json.loads(result.content)
+    task = _named(work["task"])
+    for item in [task, *work["events"]]:
+        progress = item["progress"]
+        progress["display"] = Percentage(progress["current"], progress["total"])
+    return result, {
+        "work": work,
+        "task": task,
+        "is_refresh": task["type"] == REFRESH,
+        "phase_text": phase_words(task["type"], task["progress"]["phase"]),
+        "retry_text": retry_reason(task),
+    }
+
+
+@require_safe
+def task_status(request, task_id):
+    """Passive status fragment that an open task page polls; never audited.
+
+    live-status-v1.js follows a queued or running task every 2-10 s for up
+    to an hour. Re-reading the whole page recorded background_viewed on
+    every poll (#308), burying real System logs entries, so the page points
+    the poller here instead, as presence count polls do. Only the task page
+    itself records the view.
+    """
+    # The region shows no history, so history paging does not apply here.
+    request.GET = QueryDict()
+    result, context = _task_read(request, task_id)
+    if context is None:
+        return result
+    response = render(request, "stewardship/background-task-status.html", context)
+    return _finish_html(request, result, response, task_id, audit=False)
+
+
 @require_safe
 def task_page(request, task_id):
     """Render bounded chronological task history without exposing worker payloads."""
-    result = _read(request, task_id, audit=False)
-    if result.status_code != 200:
+    result, context = _task_read(request, task_id)
+    if context is None:
         return result
-    work = json.loads(result.content)
-    _named(work["task"])
-    for item in [work["task"], *work["events"]]:
-        progress = item["progress"]
-        progress["display"] = Percentage(progress["current"], progress["total"])
+    work, task = context["work"], context["task"]
     following = request.GET.copy()
     following["page"] = str(work["page"] + 1)
-    task = work["task"]
     kinds = refresh_kinds([task["root_id"]]) if task["type"] == REFRESH else {}
     response = render(
         request,
         "stewardship/background-task.html",
-        {
-            "work": work,
-            "task": task,
+        context
+        | {
             "refresh_label": refresh_label(task, kinds),
-            "is_refresh": task["type"] == REFRESH,
-            "phase_text": phase_words(task["type"], task["progress"]["phase"]),
-            "retry_text": retry_reason(task),
+            "status_url": reverse("admin:background_task_status", args=[task_id]),
             "export_cleanup_retry_key": str(uuid4())
             if work["task"]["type"] == "report_export_cleanup"
             and work["task"]["state"] == "failed"

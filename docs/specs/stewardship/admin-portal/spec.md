@@ -430,9 +430,12 @@ indicator and re-reads its passive status, backing off from 2 to 10 seconds
 and pausing while the tab is hidden; it states success or failure prominently
 when the work finishes and then stops. These status reads are passive like the
 indicator polling above, and a page never reloads itself through a view that
-counts as activity, so an open page cannot keep an idle login alive. The page
-never replaces a control the Admin is using and never re-sends a form; its
-manual refresh link remains for browsers without JavaScript.
+counts as activity, so an open page cannot keep an idle login alive. Nor does
+a status read record an audited view: a page whose own view is audited, such
+as background task details, reads a status-only fragment instead, so opening
+the page records one view however long it stays open. The page never replaces
+a control the Admin is using and never re-sends a form; its manual refresh
+link remains for browsers without JavaScript.
 
 ## Parish and integration configuration
 

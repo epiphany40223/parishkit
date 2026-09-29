@@ -4,6 +4,7 @@ import json
 import re
 from collections import Counter
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -500,3 +501,28 @@ def test_export_is_administrator_only_and_post_only(auth_service, google):
     google[0]["email"] = "staff@example.org"
     staff, _ = signed_in()
     assert export(staff).status_code == 403
+
+
+@pytest.mark.parametrize("model", [AuditEvent, OperationalLog])
+def test_older_entries_seek_into_the_creation_time_index(auth_service, model):
+    """An "Older entries" page starts its index scan at the cursor (#308).
+
+    The keyset OR alone leaves created_at only as a filter, so the scan
+    would walk every newer entry first; the redundant upper bound must
+    become an index condition.
+    """
+    query = SimpleNamespace(
+        actor=None,
+        correlation=None,
+        days=(None, None),
+        cursor=(timezone.now(), uuid4()),
+    )
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            # The test tables are nearly empty; make the planner show the
+            # index path it would take for a large table.
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute("SET LOCAL enable_bitmapscan = off")
+        plan = log_views._bounded(model.objects.all(), query, size=50).explain()
+    assert "created_id" in plan
+    assert re.search(r"Index Cond: \(created_at <= ", plan), plan

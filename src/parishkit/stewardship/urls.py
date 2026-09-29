@@ -567,6 +567,11 @@ admin_patterns = [
         job_views.task_page,
         name="background_task_page",
     ),
+    path(
+        "background/task/<uuid:task_id>/status",
+        job_views.task_status,
+        name="background_task_status",
+    ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
     path(
         "reports/weekly-digests/request/<uuid:campaign_id>/",

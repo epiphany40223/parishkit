@@ -276,3 +276,64 @@ def test_html_render_or_final_revocation_cannot_record_success(
         assert response.status_code == 403
         assert str(task.run_id).encode() not in response.content
     assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
+
+
+def test_polling_task_status_fragment_is_passive_and_unaudited(auth_service, google):
+    """An open task page polls a fragment; only the real page view is audited.
+
+    #308: the page used to re-read itself, recording background_viewed on
+    every 2-10 s poll for up to an hour per open tab.
+    """
+    task = act(new(), "claim")
+    browser, _ = signed_in()
+    before = PortalSession.objects.get().last_activity_at
+    path = f"/admin/background/task/{task.run_id}"
+    page = browser.get(path)
+    assert page.status_code == 200
+    assert f'data-live-url="{path}/status"'.encode() in page.content
+    views_logged = AuditEvent.objects.filter(event_type="background_viewed")
+    assert views_logged.count() == 1
+    audit_count = AuditEvent.objects.count()
+    for _ in range(3):
+        poll = browser.get(f"{path}/status")
+        assert poll.status_code == 200 and poll["Cache-Control"] == "no-store"
+        assert b'data-live-status="task"' in poll.content
+        assert b"data-live-pending" in poll.content
+        # Only the region: no Admin chrome or task history table.
+        assert b"Task history" not in poll.content and b"<html" not in poll.content
+    # History paging copied from the page URL is ignored, never refused.
+    paged = browser.get(f"{path}/status", {"page": 99, "size": 1})
+    assert paged.status_code == 200 and b"data-live-pending" in paged.content
+    assert AuditEvent.objects.count() == audit_count
+    # Completing the task audits its own work; the final poll adds no view.
+    task = act(task, "complete")
+    finished = browser.get(f"{path}/status")
+    assert b"Finished successfully." in finished.content
+    assert b"data-live-pending" not in finished.content
+    assert views_logged.count() == 1
+    assert PortalSession.objects.get().last_activity_at == before
+    assert browser.get(f"/admin/background/task/{uuid4()}/status").status_code == 404
+    assert Client().get(f"{path}/status").status_code == 403
+
+
+@pytest.mark.parametrize("role", ["staff", "ministry_leader"])
+def test_task_status_fragment_is_administrator_only(auth_service, google, role):
+    """The passive fragment keeps the task page's Administrator-only access."""
+    store = auth_service.store
+    row = address("reader@example.org", roles=(role,))
+    assert (
+        change(
+            store,
+            store.active(),
+            store.active().version_id,
+            [{"operation": "add", "section": "login_rules", **row}],
+        ).state
+        == "applied"
+    )
+    google[0]["email"] = "reader@example.org"
+    task = new()
+    browser, signed = signed_in()
+    assert signed.status_code == 302
+    response = browser.get(f"/admin/background/task/{task.run_id}/status")
+    assert response.status_code == 403
+    assert str(task.run_id).encode() not in response.content
