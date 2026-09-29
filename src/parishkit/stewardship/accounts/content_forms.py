@@ -247,6 +247,13 @@ class ContentForm(forms.Form):
                 ),
             )
             return values
+        from .hosted_file_content import content_problems
+
+        hosted = content_problems(prepared.html, prepared.text)
+        for message in hosted:
+            self.add_error(None, forms.ValidationError(message, code="hosted_file"))
+        if hosted:
+            return values
         if self.kind == "email" and self.slot in {"initial", "reminder"}:
             problems = family_email_problems(
                 values["subject"], prepared.html, prepared.text
@@ -453,15 +460,35 @@ def _sample_render(value, *, parish, campaign, confirmation=False, receipt_block
         ),
     }
     assert set(substitutions) == PLACEHOLDERS
+    from .hosted_file_content import links_for
+    from .hosted_files import public_origin
+
+    files = links_for(
+        public_origin(),
+        *(
+            part
+            for content in (value, receipt_block)
+            if content is not None
+            for part in (
+                (content["html"], content["text"])
+                if isinstance(content, dict)
+                else (content.html, content.text)
+            )
+        ),
+    )
     if confirmation:
         from parishkit.stewardship.jobs.receipt_preview import sample_receipt
 
         return sample_receipt(
-            value, substitutions=substitutions, campaign=campaign, block=receipt_block
+            value,
+            substitutions=substitutions,
+            campaign=campaign,
+            block=receipt_block,
+            files=files,
         )
     return {
-        "html": render_template(value["html"], substitutions, html=True),
-        "text": render_template(value["text"], substitutions),
+        "html": render_template(value["html"], substitutions, html=True, files=files),
+        "text": render_template(value["text"], substitutions, files=files),
         "subject": render_template(value["subject"], substitutions, subject=True)
         if value["subject"] is not None
         else None,

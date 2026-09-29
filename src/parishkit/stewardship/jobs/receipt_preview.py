@@ -26,8 +26,11 @@ def confirmation_block(document, campaign_id):
     return SafeContent("", "")
 
 
-def sample_receipt(value, *, substitutions, campaign, block):
-    """Use the campaign's first date at noon as an explicit fictional sample time."""
+def sample_receipt(value, *, substitutions, campaign, block, files=None):
+    """Use the campaign's first date at noon as an explicit fictional sample time.
+
+    ``files`` expands hosted-file placeholders (#346), as in real delivery.
+    """
     identifier = UUID(int=1)
     rendered = render_receipt(
         identity=DeliveryIdentity(
@@ -56,5 +59,6 @@ def sample_receipt(value, *, substitutions, campaign, block):
         campaign_timezone=campaign["timezone"],
         sender="sample@example.invalid",
         intended_recipients=("sample@example.invalid",),
+        files=files,
     )
     return {field: getattr(rendered, field) for field in ("subject", "html", "text")}

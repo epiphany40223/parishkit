@@ -14,7 +14,20 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 MAX_TEXT_BYTES = 128 * 1024
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 16_000_000
-TAGS = {"p", "br", "strong", "em", "ul", "ol", "li", "h2", "h3", "blockquote", "a"}
+TAGS = {
+    "p",
+    "br",
+    "strong",
+    "em",
+    "ul",
+    "ol",
+    "li",
+    "h2",
+    "h3",
+    "blockquote",
+    "a",
+    "img",
+}
 PLACEHOLDERS = frozenset(
     {
         "parish_name",
@@ -39,6 +52,16 @@ PLACEHOLDERS = frozenset(
     }
 )
 PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
+# A hosted file (#346): {{ file.<slug> }}, with only spaces inside the braces
+# so stored text and the database's in-use search match exactly.
+FILE_PLACEHOLDER = re.compile(r"{{ *file\.([a-z0-9]+(?:-[a-z0-9]+)*) *}}")
+# A hosted file's public link path (see accounts.hosted_files).
+_FILE_LINK = r"/files/[A-Za-z0-9_-]{43}"
+# What a placeholder for a file that no longer exists expands to: a link
+# that shows the "no longer available" page and is never an image source.
+UNAVAILABLE_FILE_PATH = "/files/unavailable"
+MAX_ALT = 250
+MAX_IMAGE_WIDTH = 2048
 FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
 ADMIN_DIGEST_PLACEHOLDERS = PLACEHOLDERS - {
     "family_name",
@@ -92,6 +115,8 @@ _REWRITTEN = re.compile(
 )
 _MARKUP = re.compile(r"<[A-Za-z!/?]")
 _BR = ("br", [], [])
+# Elements with no content or end tag.
+_VOID = frozenset({"br", "img"})
 
 
 # Elements whose content is dropped along with the tag, and allowed link
@@ -102,17 +127,70 @@ _DROPPED_WITH_CONTENT = frozenset(
 _LINK_SCHEMES = frozenset({"https", "http", "mailto", "tel"})
 
 
-def _clean(value, tags):
-    """The one nh3 policy: no images, styles, forms, handlers or unsafe schemes."""
-    return nh3.clean(
+def _image_source(value, origin):
+    """Whether ``value`` is an accepted inline image source (#346).
+
+    Without an origin (content being authored or stored) only the canonical
+    file placeholder is accepted; with one (rendered output and the delivery
+    checks) only this deployment's hosted-file link is.
+    """
+    if origin is None:
+        return FILE_PLACEHOLDER.fullmatch(value) is not None
+    return re.fullmatch(re.escape(origin) + _FILE_LINK, value) is not None
+
+
+def _attribute_filter(origin):
+    """Keep only valid hosted-image attributes; links pass unchanged."""
+
+    def keep(element, attribute, value):
+        if element != "img":
+            return value
+        if attribute == "src":
+            return value if _image_source(value, origin) else None
+        if attribute == "alt":
+            return value if len(value) <= MAX_ALT else None
+        if attribute == "width":
+            valid = value.isascii() and value.isdecimal() and len(value) <= 4
+            return value if valid and 1 <= int(value) <= MAX_IMAGE_WIDTH else None
+        return None
+
+    return keep
+
+
+# One image tag as nh3 writes it: each attribute double-quoted, and a value
+# never holds a raw quote (it may hold ">", so match attribute by attribute).
+_IMAGE_TAG = re.compile(r'<img((?:\s+[a-z-]+="[^"]*")*)\s*/?>')
+_ATTRIBUTE = re.compile(r'\s+([a-z-]+)="([^"]*)"')
+
+
+def _image_attributes(tag):
+    """The attributes of one ``_IMAGE_TAG`` match, as a dict."""
+    return dict(_ATTRIBUTE.findall(tag[1]))
+
+
+def _drop_sourceless(html):
+    """Remove each image whose source was not a hosted image (nh3 kept the tag)."""
+    return _IMAGE_TAG.sub(
+        lambda tag: tag[0] if "src" in _image_attributes(tag) else "", html
+    )
+
+
+def _clean(value, tags, origin=None):
+    """The one nh3 policy: no styles, forms, handlers or unsafe schemes.
+
+    The only images are hosted ones (see ``_image_source``).
+    """
+    clean = nh3.clean(
         value,
         tags=tags,
-        attributes={"a": {"href", "title"}},
+        attributes={"a": {"href", "title"}, "img": {"src", "alt", "width"}},
+        attribute_filter=_attribute_filter(origin),
         url_schemes=set(_LINK_SCHEMES),
         clean_content_tags=set(_DROPPED_WITH_CONTENT),
         link_rel="noopener noreferrer",
         strip_comments=True,
     )
+    return _drop_sourceless(clean)
 
 
 def _plain_paragraphs(value):
@@ -145,12 +223,12 @@ class _Tree(HTMLParser):
     def handle_starttag(self, tag, attrs):
         node = (_RENAMES.get(tag, tag), attrs, [])
         self.stack[-1][2].append(node)
-        if tag != "br":
+        if tag not in _VOID:
             self.stack.append(node)
 
     def handle_endtag(self, tag):
         tag = _RENAMES.get(tag, tag)
-        if tag != "br" and any(node[0] == tag for node in self.stack[1:]):
+        if tag not in _VOID and any(node[0] == tag for node in self.stack[1:]):
             while self.stack.pop()[0] != tag:
                 pass
 
@@ -171,7 +249,7 @@ def _serialize(nodes):
             )
             + ">"
         )
-        if tag != "br":
+        if tag not in _VOID:
             parts.append(_serialize(children) + f"</{tag}>")
     return "".join(parts)
 
@@ -311,21 +389,24 @@ def text_html(value):
     return escape(value, quote=False).replace("\u00a0", "&nbsp;")
 
 
-def sanitize_html(value):
-    """No images, styles, forms, event handlers or executable URL schemes.
+def sanitize_html(value, *, origin=None):
+    """No styles, forms, event handlers, executable URL schemes or foreign images.
 
     Structure survives: browser line wrappers (<div>) become paragraphs and
     <b>/<i> become <strong>/<em> before the allowlist would strip them to bare
     text, and markup-free text keeps its paragraphs. Content that is already
     canonical passes through unchanged, so stored content stays a fixed point.
+    An ``<img>`` survives only as a hosted image (#346): a file placeholder in
+    stored content, or, when ``origin`` is given (rendered output and the
+    delivery checks), this deployment's hosted-file link.
     """
     value = bounded_text(value)
     if "\n" in value and not _MARKUP.search(value):
         value = _plain_paragraphs(value)
-    staged = _clean(value, TAGS | _WRAPPERS | _RENAMES.keys())
+    staged = _clean(value, TAGS | _WRAPPERS | _RENAMES.keys(), origin)
     if _REWRITTEN.search(staged):
         value = _normalize(staged)
-    return bounded_text(_clean(value, TAGS))
+    return bounded_text(_clean(value, TAGS, origin))
 
 
 class _PlainText(HTMLParser):
@@ -437,6 +518,14 @@ def removed_markup(value):
                 else f"<{tag}> element"
             )
             continue
+        if tag == "img":
+            values = dict(attrs)
+            if not _image_source(values.get("src") or "", None):
+                removed.add("image not from the hosted file library")
+                continue
+            for name in values.keys() - {"src", "alt", "width"}:
+                removed.add(f"{name} attribute")
+            continue
         for name, attribute in attrs:
             if tag == "a" and name in {"href", "title", "rel"}:
                 scheme = _SCHEME.match(attribute or "") if name == "href" else None
@@ -457,9 +546,13 @@ class SafeContent:
     text: str
 
 
-def prepare_content(html, *, text=None):
-    """Sanitize before storage; allow independently edited, bounded plain text."""
-    clean = sanitize_html(html)
+def prepare_content(html, *, text=None, origin=None):
+    """Sanitize before storage; allow independently edited, bounded plain text.
+
+    ``origin`` admits rendered hosted-image links (see ``sanitize_html``);
+    content being stored never passes one.
+    """
+    clean = sanitize_html(html, origin=origin)
     parser = _PlainText()
     parser.feed(clean)
     plain = (
@@ -470,25 +563,82 @@ def prepare_content(html, *, text=None):
     return SafeContent(clean, plain)
 
 
+def file_references(value):
+    """The hosted-file slugs a template names with ``{{ file.<slug> }}``."""
+    return frozenset(FILE_PLACEHOLDER.findall(bounded_text(value)))
+
+
+def image_references(html):
+    """The slugs sanitized HTML shows as inline images, and whether one lacks alt.
+
+    Only images whose source is a file placeholder survive sanitizing, so
+    this sees every inline image in stored content.
+    """
+    slugs, missing_alt = set(), False
+    for tag in _IMAGE_TAG.finditer(html):
+        attributes = _image_attributes(tag)
+        source = attributes.get("src", "")
+        if FILE_PLACEHOLDER.fullmatch(source):
+            slugs.add(FILE_PLACEHOLDER.fullmatch(source)[1])
+            missing_alt = missing_alt or "alt" not in attributes
+    return frozenset(slugs), missing_alt
+
+
 def validate_template(value, *, subject=False):
-    """Only simple named placeholders; never evaluate Django/Jinja expressions."""
+    """Only simple named placeholders; never evaluate Django/Jinja expressions.
+
+    Returns the named placeholders. Hosted-file placeholders (#346) are
+    accepted in bodies and returned separately by ``file_references``; a
+    subject cannot carry one.
+    """
     bounded_text(value)
     if subject and (len(value) > 254 or any(char in value for char in "\r\n")):
         raise ValueError("Invalid email subject.")
     names = set(PLACEHOLDER.findall(value))
     remainder = PLACEHOLDER.sub("", value)
-    if names - PLACEHOLDERS or any(
-        marker in remainder for marker in ("{{", "}}", "{%", "%}", "{#", "#}")
+    files = FILE_PLACEHOLDER.findall(remainder)
+    remainder = FILE_PLACEHOLDER.sub("", remainder)
+    if (
+        (subject and files)
+        or names - PLACEHOLDERS
+        or any(marker in remainder for marker in ("{{", "}}", "{%", "%}", "{#", "#}"))
     ):
         raise ValueError("Unsupported template placeholder.")
     return frozenset(names)
 
 
-def render_template(value, substitutions, *, html=False, subject=False):
-    """Escape every substitution, then sanitize again at the output boundary."""
+@dataclass(frozen=True)
+class HostedLinks:
+    """The public link of every hosted file (#346), for one render.
+
+    ``origin`` is the deployment's public origin and ``urls`` maps each slug
+    to its absolute link. A slug with no file (possible only after a restore,
+    or for a reopened archived campaign) links to the unavailable page.
+    """
+
+    origin: str
+    urls: dict
+
+    def url(self, slug):
+        """The absolute link for ``slug``."""
+        return self.urls.get(slug) or self.origin + UNAVAILABLE_FILE_PATH
+
+
+def render_template(value, substitutions, *, html=False, subject=False, files=None):
+    """Escape every substitution, then sanitize again at the output boundary.
+
+    ``files`` (``HostedLinks``) expands hosted-file placeholders; content that
+    names a file cannot render without it.
+    """
     names = validate_template(value, subject=subject)
     if not names <= substitutions.keys():
         raise ValueError("A required template substitution is missing.")
+    if file_references(value):
+        if not isinstance(files, HostedLinks):
+            raise ValueError("Hosted file links are required.")
+        value = FILE_PLACEHOLDER.sub(
+            lambda match: escape(files.url(match[1]), quote=True), value
+        )
     replacements = {
         name: escape(bounded_text(substitutions[name]), quote=True)
         if html
@@ -508,7 +658,9 @@ def render_template(value, substitutions, *, html=False, subject=False):
     if subject and (len(rendered) > 254 or any(char in rendered for char in "\r\n")):
         raise ValueError("Invalid email subject substitution.")
     bounded_text(rendered)
-    return sanitize_html(rendered) if html else rendered
+    if not html:
+        return rendered
+    return sanitize_html(rendered, origin=files.origin if files else None)
 
 
 def family_email_problems(subject, html, text):
@@ -575,10 +727,15 @@ def validate_receipt_content(subject, html, text):
 
 
 def validate_admin_digest_content(subject, html, text):
-    """Digest templates use public parish/campaign facts, never a chosen Family."""
+    """Digest templates use public parish/campaign facts, never a chosen Family.
+
+    Hosted files (#346) are for parishioners, so Admin digests carry none.
+    """
     for value, header in ((subject, True), (html, False), (text, False)):
         if not validate_template(value, subject=header) <= ADMIN_DIGEST_PLACEHOLDERS:
             raise ValueError("Admin digests require public campaign placeholders.")
+        if file_references(value) or "<img" in value:
+            raise ValueError("Admin digests cannot link hosted files.")
         if any(
             marker in value
             for marker in (
@@ -595,7 +752,7 @@ def validate_share_label(value):
     """Share options permit only non-private parish, period and pronoun values."""
     if type(value) is not str or not value.strip() or len(value) > 1024:
         raise ValueError("A bounded share-option label is required.")
-    if not validate_template(value) <= SHARE_PLACEHOLDERS:
+    if not validate_template(value) <= SHARE_PLACEHOLDERS or file_references(value):
         raise ValueError("Unsupported share-option placeholder.")
     return value
 

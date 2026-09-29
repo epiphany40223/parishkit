@@ -108,10 +108,15 @@ def public_content_dependencies(document, configuration, campaign_id):
 
 
 def render_pages(configuration_id, campaign, slots, substitutions):
-    """Read only selected page revisions, then escape and sanitize every expansion."""
-    return {
-        row.slot: render_template(row.html, substitutions, html=True)
-        for row in ContentVersion.objects.filter(
+    """Read only selected page revisions, then escape and sanitize every expansion.
+
+    Hosted-file placeholders (#346) expand to this deployment's public links.
+    """
+    from parishkit.stewardship.accounts.hosted_file_content import links_for
+    from parishkit.stewardship.accounts.hosted_files import public_origin
+
+    rows = list(
+        ContentVersion.objects.filter(
             Q(record_id__in=campaign.values["content_versions"].values())
             | ~Q(slot__in=LEGACY_PAGE_REFERENCES),
             configuration_id=configuration_id,
@@ -119,4 +124,9 @@ def render_pages(configuration_id, campaign, slots, substitutions):
             kind="page",
             slot__in=slots,
         )
+    )
+    files = links_for(public_origin(), *(row.html for row in rows))
+    return {
+        row.slot: render_template(row.html, substitutions, html=True, files=files)
+        for row in rows
     }
