@@ -233,18 +233,30 @@ def _debug_details(record: logging.LogRecord) -> dict:
 # sign-in token in its path ("/access/<token>"), and the Admin OAuth callback
 # carries its one-time "code" and "state" in the query string. Debug logging
 # keeps free text (Django's "Service Unavailable: /access/<token>" record, the
-# runserver request line, exception messages), so every formatted line is
-# scrubbed here rather than trusting each log call to remember.
+# runserver request line, exception messages), so the formatter scrubs every
+# record here rather than trusting each log call to remember.
 REDACTED = "[redacted]"
 # Query parameters whose values are credentials, scrubbed wherever they appear.
 SECRET_QUERY_NAMES = ("code", "state", "token")
 # Literal scrubbing accepts only credential-shaped values: at least eight
-# URL-safe characters. Shorter values are not credentials, and a value holding
-# quotes or other punctuation could otherwise match (and break) the JSON line.
+# URL-safe characters. Shorter values are not credentials, and scrubbing them
+# would only mangle the log.
 _SECRET_SHAPE = re.compile(r"[\w\-.~%+/=]{8,}", re.ASCII)
+
+
+def _encoded(text: str) -> str:
+    """A pattern matching ``text`` with any character optionally %-encoded.
+
+    Raw request URIs (gunicorn's "Error handling request", the runserver
+    request line) are logged undecoded, and Django routes ``/access%2F<t>``
+    and ``/%61ccess/<t>`` to the same personal-link view.
+    """
+    return "".join(f"(?:{re.escape(char)}|%{ord(char):02x})" for char in text)
+
+
 # Values stop at quotes and backslashes so a match never spans a JSON escape,
-# which keeps the redacted JSONL line valid.
-_ACCESS_TOKEN = re.compile(r"(/access/)[^/?#&\s\"'\\]+")
+# which keeps a redacted JSONL line valid.
+_ACCESS_TOKEN = re.compile(rf"({_encoded('/access/')})[^/?#&\s\"'\\]+", re.IGNORECASE)
 _QUERY_VALUE = re.compile(r"([?&][^=?&#\s\"'\\]+=)[^&#\s\"'\\]+")
 _REQUEST_SECRETS: ContextVar[tuple[str, ...]] = ContextVar(
     "stewardship_request_secrets", default=()
@@ -280,15 +292,18 @@ def request_secrets(request) -> tuple[str, ...]:
 
 
 def redact_secrets(text: str, secrets: tuple[str, ...] = ()) -> str:
-    """Remove secret path segments and query values from any log text.
+    """Remove secret path segments and query values from free log text.
 
     Replaces each literal ``secrets`` value, the segment after ``/access/``
-    and every query-string value, keeping the route and parameter names so
-    the log still shows what was hit (``/access/[redacted]``,
+    (also when %-encoded) and every query-string value, keeping the route and
+    parameter names so the log still shows what was hit (``/access/[redacted]``,
     ``/admin/oauth/callback?code=[redacted]&state=[redacted]``). All query
     values are redacted, not just known names, so a future secret-bearing
     parameter cannot leak by default.
     """
+    # Literal values are attacker-chosen (any query value of the right shape),
+    # so only ever apply them to raw text, never to a serialized JSON line:
+    # there they could split an escape or rename a field.
     for secret in secrets:
         text = text.replace(secret, REDACTED)
     text = _ACCESS_TOKEN.sub(r"\g<1>" + REDACTED, text)
@@ -337,16 +352,21 @@ class SafeJsonFormatter(JsonLogFormatter):
         ):
             safe.extra["authentication_limits"] = list(context["authentication_limits"])
         if debug_logging_enabled():
-            safe.extra["debug"] = _debug_details(record)
-        # Last step, over the whole line: debug details carry free text, and
-        # Django's request records name the request that failed. The current
-        # request's secrets come from the middleware's context; a record
-        # logged after the middleware returned (django.request) carries its
-        # request instead.
-        secrets = _REQUEST_SECRETS.get() + request_secrets(
-            getattr(record, "request", None)
-        )
-        return redact_secrets(super().format(safe), secrets)
+            # The debug details are the only free text in a line. Scrub each
+            # value before serialization. The current request's secrets come
+            # from the middleware's context; a record logged after the
+            # middleware returned (django.request) carries its request instead.
+            # Outside any request there are no literals, only the URL patterns.
+            secrets = _REQUEST_SECRETS.get() + request_secrets(
+                getattr(record, "request", None)
+            )
+            safe.extra["debug"] = {
+                key: redact_secrets(value, secrets)
+                for key, value in _debug_details(record).items()
+            }
+        # Defense in depth for any future free-text field: the URL patterns
+        # alone stay inside one JSON string, so they cannot break the line.
+        return redact_secrets(super().format(safe))
 
 
 def configure_logging(config: dict | None = None) -> None:

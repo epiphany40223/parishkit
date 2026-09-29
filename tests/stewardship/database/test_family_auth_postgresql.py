@@ -528,7 +528,7 @@ def test_rate_limit_and_limiter_outage_render_temporary_unavailability(
 
 
 @pytest.fixture
-def debug_log(monkeypatch):
+def debug_log(monkeypatch, caplog):
     """Formatted debug-logging output, as a deployment with debugging on writes it.
 
     Routes every logger (Django's request records included) through the
@@ -547,12 +547,14 @@ def debug_log(monkeypatch):
     handler = logging.StreamHandler(buffer)
     handler.setFormatter(SafeJsonFormatter())
     root = logging.getLogger()
-    monkeypatch.setattr(root, "level", logging.DEBUG)
+    # caplog.set_level goes through setLevel (clearing the logging module's
+    # level cache) and restores each level afterwards.
+    caplog.set_level(logging.DEBUG)
     for name in ("django", "django.request", "parishkit.stewardship.debug"):
         logger = logging.getLogger(name)
         monkeypatch.setattr(logger, "propagate", True)
-        monkeypatch.setattr(logger, "level", logging.DEBUG)
         monkeypatch.setattr(logger, "disabled", False)
+        caplog.set_level(logging.DEBUG, logger=name)
     root.addHandler(handler)
     yield buffer
     root.removeHandler(handler)

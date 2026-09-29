@@ -285,6 +285,10 @@ TOKEN = "Synthetic-Link-Token_0123456789abcdef"
         (f'{{"m": "/access/{TOKEN}\\"x"}}', '{"m": "/access/[redacted]\\"x"}'),
         ("/admin/campaigns/", "/admin/campaigns/"),
         ("no url here", "no url here"),
+        # Raw, undecoded request URIs that Django still routes to the link view.
+        (f"GET /access%2F{TOKEN} HTTP/1.1", "GET /access%2F[redacted] HTTP/1.1"),
+        (f"GET /%61ccess/{TOKEN} HTTP/1.1", "GET /%61ccess/[redacted] HTTP/1.1"),
+        (f"GET %2faccess%2f{TOKEN}", "GET %2faccess%2f[redacted]"),
     ],
 )
 def test_redact_secrets_keeps_route_and_drops_secret_values(text, expected):
@@ -341,7 +345,7 @@ def test_django_request_record_never_writes_the_token(monkeypatch):
     )
 
 
-def test_middleware_scrubs_its_request_token_from_debug_tracebacks(monkeypatch):
+def test_middleware_scrubs_its_request_token_from_debug_tracebacks(monkeypatch, caplog):
     """A token inside exception text, logged during the request, is scrubbed."""
     from django.http import HttpResponse
     from django.test import RequestFactory
@@ -366,7 +370,7 @@ def test_middleware_scrubs_its_request_token_from_debug_tracebacks(monkeypatch):
 
     debug = logging.getLogger("parishkit.stewardship.debug")
     handler = Capture()
-    monkeypatch.setattr(debug, "level", logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=debug.name)
     debug.addHandler(handler)
     try:
         CorrelationMiddleware(view)(RequestFactory().get(f"/access/{TOKEN}"))
@@ -375,3 +379,62 @@ def test_middleware_scrubs_its_request_token_from_debug_tracebacks(monkeypatch):
     assert len(lines) == 1
     assert TOKEN not in lines[0]
     assert "ValueError: bad token [redacted]" in lines[0]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # A literal that would split the \u00e9 escape of an encoded "é".
+        "/caf%C3%A9abcd?code=u00e9abcd",
+        # Literals naming the line's own fields or values.
+        "/admin/?state=timestamp",
+        "/admin/?code=correlation_id",
+        "/admin/?token=unstructured_log_suppressed",
+        "/admin/?code=pk.stewardship",
+        f"/access/{TOKEN}?state=message_",
+    ],
+)
+def test_attacker_chosen_literals_cannot_break_or_rename_fields(monkeypatch, path):
+    """Literal scrubbing touches free text only, never the serialized line."""
+    from django.test import RequestFactory
+
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    request = RequestFactory().get(path)
+    record = logging.LogRecord(
+        "django.request",
+        logging.ERROR,
+        "path",
+        1,
+        "Service Unavailable: %s (café%s)",
+        (request.get_full_path(), "abcd"),
+        None,
+    )
+    record.request = request
+    record.extra = {"correlation_id": uuid4()}
+    output = SafeJsonFormatter().format(record)
+    payload = json.loads(output)
+    assert set(payload) >= {"timestamp", "level", "logger", "message", "extra"}
+    assert payload["message"] == "unstructured_log_suppressed"
+    assert payload["logger"] == "pk.stewardship"
+    assert set(payload["extra"]) == {"correlation_id", "debug"}
+    UUID(payload["extra"]["correlation_id"])
+    datetime.fromisoformat(payload["timestamp"])
+    assert set(payload["extra"]["debug"]) == {"logger", "message"}
+    assert "(caféabcd)" in payload["extra"]["debug"]["message"]
+    assert TOKEN not in output
+
+
+def test_literals_are_scrubbed_only_inside_a_request(monkeypatch):
+    """Outside any request only URL patterns apply; no stale literals linger."""
+    from django.http import HttpResponse
+    from django.test import RequestFactory
+
+    monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, "1")
+    CorrelationMiddleware(lambda request: HttpResponse())(
+        RequestFactory().get(f"/access/{TOKEN}")
+    )
+    record = logging.LogRecord(
+        "synthetic", logging.ERROR, "path", 1, "saw %s", (TOKEN,), None
+    )
+    message = json.loads(SafeJsonFormatter().format(record))["extra"]["debug"]
+    assert message["message"] == f"saw {TOKEN}"
