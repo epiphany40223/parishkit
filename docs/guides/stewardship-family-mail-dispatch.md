@@ -77,13 +77,24 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   retains them and blocks automatic resend. Task abandonment plus elapsed
   provider deadline is uncertainty, not proof of non-acceptance.
 - Shared temporary token/connection/handshake failures retain a definite-unsent
-  retry outcome and impose a 60-second process-wide new-send cooldown. Three
-  consecutive shared outages stop that sending run and log CRITICAL. An
-  observed healthy provider result resets the consecutive-failure count; local
-  unobserved outcomes do not. No result can undo an existing halt. Deterministic
-  shared TLS/configuration/protocol faults
-  stop immediately. Restart resets this process-owned circuit; BG-10 owns
-  durable operational escalation. Already-submitted outcomes can always drain.
+  retry outcome and impose a 60-second process-wide new-send cooldown. Such
+  an outage result is not the message's fault, so it is left out of the
+  attempt budget; a message kept unsent only by outages fails 7 days
+  (`LIMIT_GIVE_UP_ABSOLUTE`) after its first provider outcome (or its last
+  staff retry). Three
+  consecutive shared outages pause that sending run for 10 minutes
+  (`OUTAGE_RECOVERY_SECONDS`). After a pause exactly one message probes the
+  provider, and one more outage result pauses again at once, so a long
+  outage spends one probe per pause. The first pause since a healthy result
+  is logged CRITICAL and later ones WARNING. An observed healthy provider
+  result resets the consecutive-failure count; local unobserved outcomes do
+  not. No result can shorten an existing pause. Deterministic shared
+  TLS/configuration/protocol faults (SYSTEMIC) stop the run immediately and
+  stay stopped until the process restarts, since waiting cannot fix them.
+  The pause and the stop are process-local; the durable record is BG-10's
+  `mail_provider_failed` incident, which the same stored outcomes open and
+  the first healthy outcome after the pause resolves. Already-submitted
+  outcomes can always drain.
 - Delivery certainty and provider health are separate closed values in the
   private IPC and SQL evidence. A DATA connection fault can be both uncertain
   delivery and an unhealthy provider; it never becomes a safe resend. Earlier

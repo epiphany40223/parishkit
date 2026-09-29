@@ -174,12 +174,17 @@ consecutive unavailable results for the same provider configuration, and
 resolves the incident by itself only after a real healthy SMTP observation
 newer than the last failure, as the
 [mail health guide](stewardship-mail-health.md) explains. The same failure
-also stops campaign sending in the running `mail-dispatch` process, by
-design, until that process restarts: invitations, reminders, receipts and
-reports stay queued (`pending` or `retry_wait`) even after the provider
-recovers and the incident resolves, because the incident's health check
-runs elsewhere. A message that met a systemic failure becomes a failed
-delivery, as does one that used up its five provider attempts; one whose
+also pauses campaign sending in the running `mail-dispatch` process:
+invitations, reminders, receipts and reports stay queued (`pending` or
+`retry_wait`). After three unavailable results the pause lasts 10 minutes,
+then one message is sent as a probe; a healthy result resumes sending and
+resolves the incident, and another failure pauses again at once. Unavailable
+results do not use up a message's five provider attempts, so a long outage
+fails no message (unless it lasts 7 days). A systemic failure (a
+configuration or credential fault that waiting cannot fix) instead stops
+campaign sending until `mail-dispatch` restarts. A message that met a
+systemic failure becomes a failed delivery, as does one that used up its
+five provider attempts on other temporary refusals; one whose
 preparation retries ran out stays pending, or waiting to retry, with a
 failed task; one the provider may have accepted without confirming becomes
 `delivery_unknown` (below). None of these is retried automatically.
@@ -201,10 +206,12 @@ failed task; one the provider may have accepted without confirming becomes
    describes.
 4. If the outage is long during the live campaign and reminders would bunch
    up, pause delivery (below) and resume when the provider is back.
-5. Once the provider is healthy again (the smoke check says `valid`),
-   restart campaign sending: `restart mail-dispatch` on the deployment's
-   Compose file and project name. This clears the stopped state; nothing
-   else does.
+5. After a systemic failure, once the fault is fixed (the smoke check says
+   `valid`), restart campaign sending: `restart mail-dispatch` on the
+   deployment's Compose file and project name. Nothing else clears that
+   stop. After an outage of unavailable results no restart is needed:
+   sending resumes by itself within about 10 minutes of the provider
+   recovering.
 6. If you paused in step 4, first settle every **Delivery unknown** message
    (described below; confirming, recording it not sent and the held resend
    all work while paused), then resume once the page's other resume
@@ -222,10 +229,10 @@ failed task; one the provider may have accepted without confirming becomes
    records the last check of this step.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been
-restarted, and the **Pending** and **Waiting to retry** lists on the
-deliveries page are no longer growing and their messages move on as their
-due times pass. Do not resend by hand outside the portal, and do not resolve
-a `delivery_unknown` message without evidence. The
+restarted if the failure was systemic, and the **Pending** and **Waiting to
+retry** lists on the deliveries page are no longer growing and their
+messages move on as their due times pass. Do not resend by hand outside the
+portal, and do not resolve a `delivery_unknown` message without evidence. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this procedure was checked against the code.
 

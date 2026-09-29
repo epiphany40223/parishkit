@@ -75,3 +75,73 @@ def test_non_shared_outcome_resets_consecutive_probe_budget(monkeypatch):
     assert not health.blocks_new_send() and health.failures == 0
     assert health.observe(Health.SYSTEMIC) is True
     assert health.blocks_new_send()
+
+
+def test_family_handler_recovers_from_outages_but_not_systemic_faults():
+    """The compiled Family owner pauses for an outage and stops for SYSTEMIC."""
+    handler = worker.delivery_handler(None, credential_path=Path("/synthetic/x"))
+    circuit = handler.admit.keywords["circuit"]
+    assert circuit.recovery_seconds == worker.OUTAGE_RECOVERY_SECONDS == 600
+    assert circuit.systemic_stops
+
+
+@pytest.mark.parametrize("systemic_during_pause", [False, True])
+def test_an_outage_pause_lifts_unless_a_systemic_fault_stops_it(
+    monkeypatch, caplog, systemic_during_pause
+):
+    """Three outages pause sending for the cooldown; a SYSTEMIC fault stops it."""
+    clock = [100.0]
+    monkeypatch.setattr(worker, "monotonic", lambda: clock[0])
+    health = worker.DeliveryCircuit(recovery_seconds=600, systemic_stops=True)
+    for attempt in range(3):
+        assert not health.blocks_new_send()
+        assert health.observe(Health.UNAVAILABLE) is (attempt == 2)
+        clock[0] += 60
+    assert health.blocks_new_send() and not health.stopped
+    if systemic_during_pause:
+        # An in-flight result turns the pause into a stop, reported once.
+        assert health.observe(Health.SYSTEMIC) is True
+        assert health.observe(Health.SYSTEMIC) is False
+    clock[0] += 600
+    assert health.blocks_new_send() is systemic_during_pause
+    assert health.stopped is systemic_during_pause
+    resumed = "sending resumes" in caplog.text
+    assert resumed is not systemic_during_pause
+
+
+def test_a_systemic_fault_stops_until_restart(monkeypatch):
+    """No cooldown lifts a configuration fault: waiting cannot fix it."""
+    clock = [100.0]
+    monkeypatch.setattr(worker, "monotonic", lambda: clock[0])
+    health = worker.DeliveryCircuit(recovery_seconds=600, systemic_stops=True)
+    assert health.observe(Health.SYSTEMIC) is True
+    clock[0] += 3600 * 24
+    assert health.blocks_new_send() and health.stopped
+
+
+def test_a_failed_probe_pauses_again_at_once(monkeypatch):
+    """After a pause one probe is admitted; its outage result pauses again.
+
+    Only the first pause since a healthy result is reported as new
+    (``repeated`` stays false), so a long outage alerts once.
+    """
+    clock = [100.0]
+    monkeypatch.setattr(worker, "monotonic", lambda: clock[0])
+    health = worker.DeliveryCircuit(recovery_seconds=600, systemic_stops=True)
+    for _ in range(3):
+        health.observe(Health.UNAVAILABLE)
+        clock[0] += 60
+    assert health.halted.is_set() and not health.repeated
+    for _ in range(3):
+        clock[0] += 600
+        assert not health.blocks_new_send()
+        assert health.observe(Health.UNAVAILABLE) is True
+        assert health.blocks_new_send() and health.repeated
+    clock[0] += 600
+    assert not health.blocks_new_send()
+    assert health.observe(Health.HEALTHY) is False
+    for _ in range(3):
+        health.observe(Health.UNAVAILABLE)
+        clock[0] += 60
+    # A new outage after a healthy result is reported as new again.
+    assert health.halted.is_set() and not health.repeated

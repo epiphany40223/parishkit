@@ -234,21 +234,29 @@ def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
     # Pairs whose Task deferred in RECONCILING: the limit refusals. The last
     # limit refusal (fence 5) gave up and failed, so its Task never deferred.
     limited = {("r", 1), ("r", 2), ("r", 4)}
+    # An outage deferral (fence 7) is a hold too, but never a limit refusal.
+    limited |= {("r", 7)}
     outcome = [
-        ("retry_unaccepted", "submitting", "r", 1, t[0]),  # limit
-        ("retry_unaccepted", "submitting", "r", 2, t[1]),  # limit
-        ("retry_unaccepted", "submitting", "r", 3, t[2]),  # other transient
-        ("retry_unaccepted", "submitting", "r", 4, t[3]),  # limit
-        ("retry_unaccepted", "submitting", "r", 6, t[4]),  # other transient
-        ("retry_failed", "permanent_failure", None, None, t[5]),  # staff retry
+        ("retry_unaccepted", "submitting", "r", 1, t[0], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 2, t[1], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 3, t[2], False),  # other transient
+        ("retry_unaccepted", "submitting", "r", 4, t[3], False),  # limit
+        ("retry_unaccepted", "submitting", "r", 6, t[4], False),  # other transient
+        ("retry_failed", "permanent_failure", None, None, t[5], False),  # staff
+        ("retry_unaccepted", "submitting", "r", 7, t[6], True),  # outage
     ]
-    assert limit_run(outcome[:2], limited) == (2, t[0])
-    assert limit_run(outcome[:3], limited) == (2, None)
-    assert limit_run(outcome[:4], limited) == (3, t[3])
-    assert limit_run(outcome[:5], limited) == (3, None)
-    assert limit_run(outcome[:4] + outcome[5:], limited) == (3, None)
+    assert limit_run(outcome[:2], limited) == (2, t[0], t[0])
+    assert limit_run(outcome[:3], limited) == (2, None, t[0])
+    assert limit_run(outcome[:4], limited) == (3, t[3], t[0])
+    assert limit_run(outcome[:5], limited) == (3, None, t[0])
+    # A staff retry also restarts the outage clock (the 7-day cap).
+    assert limit_run(outcome[:4] + outcome[5:6], limited) == (3, None, None)
+    assert limit_run(outcome[:4] + outcome[5:7], limited) == (4, None, t[6])
+    # An outage is spared from the budget and ends a limit run.
+    assert limit_run(outcome[3:4] + outcome[6:], limited) == (2, None, t[3])
     # Submit events themselves (previous state pending) are not outcomes.
-    assert limit_run([("submit", "pending", "r", 1, t[0])], limited) == (0, None)
+    pending = [("submit", "pending", "r", 1, t[0], False)]
+    assert limit_run(pending, limited) == (0, None, None)
 
 
 @pytest.mark.parametrize(
@@ -390,6 +398,22 @@ def test_accepted_since_reads_real_acceptances(family_mail):  # noqa: F811
             )
 
 
+@pytest.mark.parametrize(
+    "reason,evidence,shared",
+    [
+        ("smtp_unavailable", '{"health":"unavailable","protocol":1}', True),
+        ("smtp_transient", '{"health":"unavailable","protocol":1}', True),
+        # An uncertain result is never retried, so it is never spared.
+        ("smtp_delivery_unknown", '{"health":"unavailable","protocol":1}', False),
+        ("smtp_transient", '{"health":"healthy","protocol":1}', False),
+        ("smtp_transient", None, False),
+    ],
+)
+def test_only_retryable_outage_results_are_shared_faults(reason, evidence, shared):
+    """The outage inference needs both unavailable health and a retryable result."""
+    assert family_mail_dispatch.shared_fault(reason, evidence) is shared
+
+
 def test_only_recent_acceptances_keep_a_limited_message_waiting(
     dispatch_worker,  # noqa: F811
     monkeypatch,
@@ -478,3 +502,33 @@ def test_a_data_rate_refusal_waits_without_pausing_other_mail(
     assert TaskRun.objects.get(pk=message.task_id).state == "retry_wait"
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
         assert family_mail_dispatch.limit_history(message)[0] == 4
+
+
+def test_a_long_outage_fails_no_message(dispatch_worker, monkeypatch):  # noqa: F811
+    """Outage results are definitely unsent shared faults, never the message's.
+
+    More of them than the attempt budget leave the message and its Task
+    waiting; only LIMIT_GIVE_UP_ABSOLUTE after its first outcome does it fail.
+    """
+    harness, path = dispatch_worker
+    calls = []
+    outage = FamilyDeliveryResult(Status.UNAVAILABLE, 1)
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider_returning(outage, calls))
+    monkeypatch.setattr(family_mail_dispatch, "MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(family_mail_dispatch, "RETRY_BASE_SECONDS", 1)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        for attempt in range(3):
+            # A fresh worker each time: this is about the budget, not the pause.
+            deliver(harness, path, message)
+            Event().wait(2**attempt + 0.1)
+        message.refresh_from_db()
+        assert message.state == "retry_wait" and message.attempt == 3
+        task = TaskRun.objects.get(pk=message.task_id)
+        assert task.state == "retry_wait"
+        monkeypatch.setattr(
+            family_mail_dispatch, "LIMIT_GIVE_UP_ABSOLUTE", timedelta(0)
+        )
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert len(calls) == 4 and message.state == "permanent_failure"

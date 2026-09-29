@@ -60,26 +60,46 @@ from .storage import _status
 LOG = logging.getLogger(__name__)
 # How soon an abandoned, still-unsent delivery may be claimed again.
 RECOVERY_RETRY_SECONDS = 30
+# How long Family mail pauses after a shared outage before one probe is sent.
+OUTAGE_RECOVERY_SECONDS = 600
 
 
 class DeliveryCircuit:
     """Bound shared-outage probes across Families within this worker lifetime.
 
     A known temporary handshake outage waits a minute before another probe;
-    three consecutive outages stop the run. No cooldown changes durable mail
-    outcomes or prevents settling work already in flight. Restart resets this
-    process-local circuit; durable Admin escalation belongs to BG-10. Operational
-    consumers opt into a finite recovery cooldown; existing campaign consumers
-    retain their stop-until-restart policy. Neither variant alters durable facts.
+    three consecutive outages (or one SYSTEMIC fault) halt the run. No cooldown
+    changes durable mail outcomes or prevents settling work already in flight.
+    Restart resets this process-local circuit.
+
+    With ``recovery_seconds`` a halt lifts by itself after that cooldown, so a
+    short Google or network outage during a send pauses mail instead of
+    stopping it until someone restarts the worker. After a pause exactly one
+    probe is admitted: one more outage result pauses again at once, so a long
+    outage costs one attempt per cooldown, not three. ``repeated`` tells the
+    caller a pause is not the first since the last healthy result, so it can
+    be reported quietly. ``systemic_stops`` keeps a
+    SYSTEMIC fault (a configuration or credential problem that waiting cannot
+    fix) stopped until restart even then. The durable record of both is the
+    provider evidence: the stored outcomes that halt the circuit also raise
+    the CRITICAL ``mail_provider_failed`` incident (schema/mail_health.sql), and
+    the first healthy outcome after the cooldown resolves it
+    (jobs/mail_health.py).
     """
 
-    def __init__(self, *, recovery_seconds=None):
+    def __init__(self, *, recovery_seconds=None, systemic_stops=False):
         """Keep circuit state shared by all dispatches using this handler."""
         if recovery_seconds is not None and (
             type(recovery_seconds) is not int or not 60 <= recovery_seconds <= 3600
         ):
             raise ValueError("Circuit recovery requires a bounded cooldown.")
         self.recovery_seconds = recovery_seconds
+        self.systemic_stops = systemic_stops
+        # A halt that no cooldown lifts (SYSTEMIC under systemic_stops).
+        self.stopped = False
+        # Whether a pause was already reported since the last healthy result.
+        self.paused_before = False
+        self.repeated = False
         self.recover_after = 0.0
         self.halted = Event()
         self.lock = Lock()
@@ -117,15 +137,21 @@ class DeliveryCircuit:
     def blocks_new_send(self):
         """Admission alone observes the circuit; draining never consults it."""
         with self.lock:
-            if (
+            recovered = (
                 self.halted.is_set()
                 and self.recovery_seconds is not None
+                and not self.stopped
                 and monotonic() >= self.recover_after
-            ):
+            )
+            if recovered:
                 self.halted.clear()
-                self.failures = 0
+                # One probe: its failure would be the third in a row again.
+                self.failures = 2
                 self.probe_after = 0.0
-            return self.halted.is_set() or monotonic() < self.probe_after
+            blocked = self.halted.is_set() or monotonic() < self.probe_after
+        if recovered:
+            LOG.warning("The mail provider cooldown has ended; sending resumes.")
+        return blocked
 
     def hold(self, seconds):
         """Hold new sends for ``seconds`` after a Gmail sending limit.
@@ -157,11 +183,21 @@ class DeliveryCircuit:
             else:
                 self.failures = 0
                 self.probe_after = 0.0
+                if health is ProviderHealth.HEALTHY:
+                    self.paused_before = False
             if health is ProviderHealth.SYSTEMIC or self.failures >= 3:
                 newly_halted = not self.halted.is_set()
                 self.halted.set()
+                if newly_halted:
+                    self.repeated = self.paused_before
+                    self.paused_before = True
                 if newly_halted and self.recovery_seconds is not None:
                     self.recover_after = monotonic() + self.recovery_seconds
+                # A SYSTEMIC fault seen during an outage pause (for example an
+                # in-flight result) still turns it into a stop; report that too.
+                if health is ProviderHealth.SYSTEMIC and self.systemic_stops:
+                    newly_halted = newly_halted or not self.stopped
+                    self.stopped = True
                 return newly_halted
         return False
 
@@ -301,7 +337,9 @@ def delivery_handler(
     """Schedulers own metadata only; mounted private keys stay in the mail worker."""
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Family dispatch requires an installed Workspace path.")
-    circuit = DeliveryCircuit()
+    circuit = DeliveryCircuit(
+        recovery_seconds=OUTAGE_RECOVERY_SECONDS, systemic_stops=True
+    )
     return Handler(
         queue=WorkQueue.MAIL,
         admit=partial(admit_task, store=store, circuit=circuit),
@@ -476,7 +514,20 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
         )
     status = finish_submission(message.pk, execution.claim, result)
     if circuit.observe(result.health):
-        LOG.critical("Family mail provider is unavailable; further sending is stopped.")
+        if circuit.stopped:
+            LOG.critical(
+                "Family mail provider refused this configuration; further sending "
+                "is stopped until the mail worker restarts."
+            )
+        else:
+            # Only the first pause of an outage is CRITICAL; later pauses, until
+            # a healthy result, are WARNING so a long outage alerts once.
+            LOG.log(
+                logging.WARNING if circuit.repeated else logging.CRITICAL,
+                "Family mail provider is unavailable; sending pauses for %d "
+                "minutes, then resumes automatically.",
+                OUTAGE_RECOVERY_SECONDS // 60,
+            )
     # A rate limit answering one message's DATA holds that message only.
     if result.limit in MAILBOX_LIMITS and circuit.hold(
         LIMIT_RETRY_SECONDS[result.limit]
@@ -488,10 +539,11 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
             result.limit,
         )
     if status.state.value == "retry_wait":
-        if result.limit is not None:
-            # A limit deferral is an admission hold, not a failed attempt: in
-            # the RECONCILING phase it is not counted by preparation_attempts,
-            # so a later crash cannot exhaust the budget early.
+        if result.limit is not None or result.health is ProviderHealth.UNAVAILABLE:
+            # A limit or outage deferral is an admission hold, not a failed
+            # attempt: in the RECONCILING phase it is not counted by
+            # preparation_attempts, so a later crash cannot exhaust the budget
+            # early (budget_spent spares it from the message's budget too).
             execution.progress(0, 0, phase=TaskPhase.RECONCILING)
         execution.transition(
             "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)

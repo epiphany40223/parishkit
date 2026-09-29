@@ -28,6 +28,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
+    ProviderHealth,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StorageInvariantError
@@ -137,22 +138,51 @@ def over_daily_limit(purpose, sent, recipients=1):
     return sent + recipients > limit
 
 
-def limit_history(message):
-    """Count a message's earlier sending-limit refusals and when the current run began.
+# Stored evidence is sorted compact JSON, so health is its first member (see
+# mail_health.health_filter).
+SHARED_FAULT = '{"health":"unavailable",'
 
-    Stored evidence deliberately never names a limit. A limit refusal is
-    recognized instead as a submission outcome whose Task then deferred in the
-    RECONCILING phase (see family_mail_delivery_tasks._execute), matched by the
-    attempt's (run, fence). Return ``(count, started)``: every limit refusal so
-    far, and the time of the first one in the current unbroken run of them. Any
-    other provider outcome, or a staff retry of a failed delivery, ends a run.
+
+def shared_fault(reason, evidence):
+    """Whether a stored outcome was a definitely unsent shared outage.
+
+    Only a retryable (unavailable or transient) result counts: an uncertain
+    one with unavailable health is never retried, so it is never spared.
+    """
+    return reason in {"smtp_unavailable", "smtp_transient"} and (
+        evidence or ""
+    ).startswith(SHARED_FAULT)
+
+
+def limit_history(message):
+    """Count a message's earlier spared outcomes and when its limit run began.
+
+    Two provider outcomes are not the message's fault and are spared from its
+    attempt budget: a shared outage (stored with unavailable health) and a
+    sending-limit refusal. Stored evidence deliberately never names a limit,
+    so a limit refusal is recognized instead as a healthy submission outcome
+    whose Task then deferred in the RECONCILING phase (see
+    family_mail_delivery_tasks._execute), matched by the attempt's (run,
+    fence). Return ``(spared, started, first)``: every spared outcome so far,
+    the time of the first limit refusal in the current unbroken run of them,
+    and the time of the message's first provider outcome since it was last
+    retried by staff. Any other provider outcome, or a staff retry of a
+    failed delivery, ends a limit run.
     """
     events = list(
         OutboxEvent.objects.filter(message_id=message.pk)
         .order_by("version")
-        .values_list("action", "previous_state", "run_id", "task_fence", "created_at")
+        .values_list(
+            "action",
+            "previous_state",
+            "run_id",
+            "task_fence",
+            "created_at",
+            "reason",
+            "evidence_note",
+        )
     )
-    runs = {run for _, _, run, _, _ in events if run is not None}
+    runs = {event[2] for event in events if event[2] is not None}
     limited = set(
         TaskRunEvent.objects.filter(
             run_id__in=runs,
@@ -160,26 +190,36 @@ def limit_history(message):
             phase=TaskPhase.RECONCILING,
         ).values_list("run_id", "fence")
     )
-    return limit_run(events, limited)
+    return limit_run(
+        [(*event[:5], shared_fault(*event[5:])) for event in events],
+        limited,
+    )
 
 
 def limit_run(events, limited):
     """The pure walk behind ``limit_history`` (see there), kept separately testable.
 
-    ``events`` are ``(action, previous_state, run, fence, created)`` in version
-    order; ``limited`` is the set of ``(run, fence)`` pairs deferred at a limit.
+    ``events`` are ``(action, previous_state, run, fence, created, shared)`` in
+    version order, ``shared`` marking a shared-outage result; ``limited`` is
+    the set of ``(run, fence)`` pairs whose Task deferred as a hold.
     """
-    count, started = 0, None
-    for action, previous, run, fence, created in events:
+    spared, started, first = 0, None, None
+    for action, previous, run, fence, created, shared in events:
         if action == DeliveryAction.RETRY_FAILED.value:
-            started = None
+            # A staff retry starts the message's give-up clocks afresh.
+            started = first = None
         elif previous == "submitting":
-            if (run, fence) in limited:
-                count += 1
+            first = first or created
+            if shared:
+                # Outage deferrals are holds too, but never limit refusals.
+                spared += 1
+                started = None
+            elif (run, fence) in limited:
+                spared += 1
                 started = started or created
             else:
                 started = None
-    return count, started
+    return spared, started, first
 
 
 def accepted_since(instant):
@@ -192,15 +232,23 @@ def accepted_since(instant):
 def budget_spent(message, result):
     """Whether this non-acceptance ends the message's automatic retries.
 
-    Limit refusals are not the message's fault: they are left out of the
-    attempt budget. Instead a message refused at a limit continuously for
-    LIMIT_GIVE_UP fails visibly, unless other mail was accepted recently, and
-    in any case after LIMIT_GIVE_UP_ABSOLUTE.
+    Limit refusals and shared outages are not the message's fault: they are
+    left out of the attempt budget. Instead a message refused at a limit
+    continuously for LIMIT_GIVE_UP fails visibly, unless other mail was
+    accepted recently, and in any case after LIMIT_GIVE_UP_ABSOLUTE; a message
+    kept unsent by outages fails LIMIT_GIVE_UP_ABSOLUTE after its first
+    provider outcome since any staff retry. (The delivery circuit, not this
+    budget, keeps a long outage from probing with every queued message.)
     """
-    count, started = limit_history(message)
+    spared, started, first = limit_history(message)
     now = database_now()
+    if result.limit is None and result.health is ProviderHealth.UNAVAILABLE:
+        if first is None or now - first <= LIMIT_GIVE_UP_ABSOLUTE:
+            return False
+        _log_give_up(message, now - first, "the mail provider was unavailable")
+        return True
     if result.limit is None:
-        return message.attempt - count >= MAX_ATTEMPTS
+        return message.attempt - spared >= MAX_ATTEMPTS
     if started is None:
         return False
     waited = now - started
