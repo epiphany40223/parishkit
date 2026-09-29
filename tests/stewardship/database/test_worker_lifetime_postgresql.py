@@ -1,6 +1,7 @@
 """Renewal uses real independent SQL sessions and cannot manufacture outcomes."""
 
 from threading import Event, get_ident
+from time import monotonic, sleep
 from uuid import uuid4
 
 import pytest
@@ -192,3 +193,72 @@ def test_exception_stops_background_renewal_and_preserves_claim(monkeypatch):
         run(task, execute)
     assert not controls[0].active
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
+
+
+def test_renewal_stopped_by_its_lock_limit_is_logged_before_the_task_ends(
+    monkeypatch,
+):
+    """The heartbeat's 2 s lock limit names the task and limit (#293)."""
+    from django.db import connections
+
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = queued()
+    monkeypatch.setattr(lifetime, "PULSE_SECONDS", 0.02)
+    blocker = connections["default"].copy(alias="renewal-blocker")
+    logged_first = []
+
+    def execute(context):
+        """Hold the task row so renewal waits past its lock limit."""
+        with blocker.cursor() as cursor:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT id FROM stewardship_task_run WHERE id=%s FOR UPDATE",
+                [task.run_id],
+            )
+            try:
+                assert context.control.failed.wait(10)
+                # New work is refused first; the entry follows while the task
+                # is still running.
+                deadline = monotonic() + 5
+                while monotonic() < deadline and not logged_first:
+                    if OperationalLog.objects.filter(event="task_timed_out").exists():
+                        logged_first.append(True)
+                    sleep(0.05)
+            finally:
+                cursor.execute("ROLLBACK")
+
+    try:
+        assert run(task, execute)
+    finally:
+        blocker.close()
+    assert logged_first == [True]
+    entry = OperationalLog.objects.get(event="task_timed_out")
+    assert entry.context["what"] == "lock_timeout"
+    assert entry.context["task_id"] == str(task.run_id)
+    assert entry.context["limit_seconds"] == 2
+    assert entry.context["elapsed_seconds"] >= 2
+
+
+def test_renewal_outliving_its_drain_limit_is_logged(monkeypatch):
+    """A renewer that will not drain is recorded before the consumer stops."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = queued()
+    renewing = Event()
+
+    def stuck(execution):
+        """A renewal still running when the task finishes."""
+        renewing.set()
+        sleep(1)
+
+    monkeypatch.setattr(lifetime, "PULSE_SECONDS", 0.02)
+    monkeypatch.setattr(lifetime, "RENEWAL_DRAIN_SECONDS", 0.1)
+    monkeypatch.setattr(lifetime, "renew_once", stuck)
+    with pytest.raises(lifetime.RenewalDrainFailure):
+        run(task, lambda context: renewing.wait(5))
+    entry = OperationalLog.objects.get(event="task_timed_out")
+    assert entry.context["what"] == "renewal_drain"
+    assert entry.context["task_id"] == str(task.run_id)
+    assert entry.context["limit_seconds"] == 0
+    sleep(1)
