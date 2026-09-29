@@ -1,11 +1,13 @@
 """Off-site backup copies to Google Drive, against an in-memory Drive."""
 
 import hashlib
+import json
+import logging
 
 import pytest
 
 from parishkit.config import ConfigError
-from parishkit.stewardship import backup_drive
+from parishkit.stewardship import backup_drive, observability
 from parishkit.stewardship.backup_drive import (
     DriveClient,
     DriveFailure,
@@ -20,6 +22,19 @@ from parishkit.stewardship.backup_offsite import SEALED_FILES, destination_from
 from .drive_fakes import FakeDrive
 
 FOLDER = "1AbCdEfGhIjKlMnOpQrStUv"
+
+
+def timeouts(caplog):
+    """The formatted timeout lines logged so far: their fields and level."""
+    lines = [
+        json.loads(observability.SafeJsonFormatter().format(record))
+        for record in caplog.records
+    ]
+    return [
+        {**line["extra"], "level": line["level"]}
+        for line in lines
+        if "timeout" in line.get("extra", {})
+    ]
 
 
 def make_set(root, name="20260927T020000Z", content=b"sealed"):
@@ -213,6 +228,27 @@ def test_no_retry_starts_past_the_deadline():
     assert pauses == []
 
 
+def test_a_retry_refused_by_the_budget_is_logged(caplog):
+    """The refused retry names the budget and how much of it had passed."""
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+
+    def unavailable():
+        raise DriveFailure("unavailable")
+
+    with pytest.raises(DriveFailure):
+        with_retries(
+            unavailable,
+            sleep=lambda seconds: None,
+            deadline=100,
+            clock=lambda: 95,
+            budget_seconds=100,
+        )
+    [line] = timeouts(caplog)
+    assert line["timeout"] == "drive_retry_budget"
+    assert (line["limit_seconds"], line["elapsed_seconds"]) == (100, 95)
+    assert line["level"] == "WARNING"
+
+
 class FakeResponse:
     """A minimal ``requests`` response."""
 
@@ -260,6 +296,37 @@ def test_client_classifies_errors(response, kind):
     with pytest.raises(DriveFailure) as caught:
         DriveClient(FakeSession(response)).folder(FOLDER)
     assert caught.value.kind == kind
+
+
+def test_a_request_timeout_is_logged_and_counts_as_unavailable(caplog):
+    """A request stopped by its own timeout says so in the process log."""
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    with pytest.raises(DriveFailure) as caught:
+        DriveClient(FakeSession(ReadTimeout("slow"))).folder(FOLDER)
+    assert caught.value.kind == "unavailable"
+    [line] = timeouts(caplog)
+    assert line["timeout"] == "drive_request"
+    assert line["limit_seconds"] == backup_drive.REQUEST_SECONDS
+    assert line["elapsed_seconds"] >= 0
+    assert "slow" not in json.dumps(line)
+
+
+def test_timeout_and_drive_fields_are_closed_values():
+    """Only reviewed words and whole seconds reach the process log."""
+    from parishkit.stewardship.jobs.backup_models import FAILURE_KINDS
+
+    assert set(FAILURE_KINDS) == observability.DRIVE_FAILURES
+    for bad in (
+        {"timeout": "free text"},
+        {"drive_failure": "Google said no"},
+        {"limit_seconds": -1},
+        {"elapsed_seconds": 1.5},
+        {"elapsed_seconds": True},
+    ):
+        with pytest.raises(ValueError):
+            observability.emit(observability.Event.TASK_FAILED, **bad)
 
 
 def test_client_maps_refused_delegation():

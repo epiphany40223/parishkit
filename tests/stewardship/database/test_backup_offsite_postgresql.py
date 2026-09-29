@@ -1,5 +1,7 @@
 """Off-site backup copies: recorded outcomes, access checks, alerts and the web."""
 
+import json
+import logging
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -8,7 +10,7 @@ import psycopg
 import pytest
 from django.db import DatabaseError, connection, transaction
 
-from parishkit.stewardship import backup_offsite, backup_probes
+from parishkit.stewardship import backup_offsite, backup_probes, observability
 from parishkit.stewardship.accounts import backup_destination, key_files
 from parishkit.stewardship.accounts.backup_destination import (
     latest_probe,
@@ -68,6 +70,14 @@ def offsite(tmp_path, monkeypatch):
         target=target,
         directory=directory,
     )
+
+
+def logged(caplog):
+    """The structured fields of each formatted process-log line so far."""
+    return [
+        json.loads(observability.SafeJsonFormatter().format(record)).get("extra", {})
+        for record in caplog.records
+    ]
 
 
 def copy(offsite):
@@ -178,8 +188,9 @@ def test_a_slow_upload_holds_no_lock_the_portals_need(offsite, monkeypatch):
     assert seen and all(item == (0, 0, True) for item in seen)
 
 
-def test_the_whole_copy_is_bounded_in_time(offsite):
+def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     """Past the copy's deadline no set is started; the outcome is recorded."""
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
     ticks = iter([0, backup_offsite.COPY_SECONDS + 1])
     with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
         result = copy_offsite(
@@ -190,12 +201,23 @@ def test_the_whole_copy_is_bounded_in_time(offsite):
         )
     assert result == {"state": "failed", "failure_kind": "unavailable"}
     assert offsite.drive.calls == []
+    # The log tells the stopped copy from a Drive outage: what, limit, elapsed.
+    [stopped] = [line for line in logged(caplog) if "timeout" in line]
+    assert stopped["timeout"] == "drive_copy_budget"
+    assert stopped["limit_seconds"] == backup_offsite.COPY_SECONDS
+    assert stopped["elapsed_seconds"] == backup_offsite.COPY_SECONDS + 1
 
 
-def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite):
+def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite, caplog):
     """A refused folder records a failure and opens a critical incident."""
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
     offsite.drive.fail["create_folder"] = ["permission"]
     assert copy(offsite) == {"state": "failed", "failure_kind": "permission"}
+    # The process log names the Drive category, not only that the copy failed.
+    assert {
+        "failure_kind": "backup_offsite_failed",
+        "drive_failure": "permission",
+    }.items() <= logged(caplog)[-1].items()
     assert BackupUpload.objects.get().failure_kind == "permission"
     with work_transaction():
         assert backup_health.needs_backup_observation()
@@ -249,6 +271,61 @@ def test_a_copy_that_records_nothing_still_alerts(offsite):
     # Once the next copy records that set's outcome, the silence is over.
     assert copy(offsite) == {"state": "uploaded", "sets": 1}
     assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+
+
+def configured_at(monkeypatch, instant):
+    """Say the applied configuration naming the folder was prepared then."""
+    monkeypatch.setattr(backup_health, "destination_configured_since", lambda: instant)
+
+
+def test_a_first_copy_that_records_nothing_still_alerts(offsite, monkeypatch):
+    """With no outcome at all yet, a silent first copy is noticed too (#324 M1).
+
+    The Drive folder was configured for the first time and every copy since
+    died before recording anything, so no row exists.
+    """
+    grace = backup_health.OFFSITE_GRACE
+    run = record_run(offsite.directory)
+    # Copies are off: a backup never copied is not a failure.
+    configured_at(monkeypatch, None)
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+    # A backup taken before the folder was configured is not expected on Drive.
+    configured_at(monkeypatch, run.completed_at + timedelta(seconds=1))
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+    # Within the grace the configuration is not even read.
+    monkeypatch.setattr(
+        backup_health,
+        "destination_configured_since",
+        lambda: pytest.fail("read the configuration too early"),
+    )
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    # One taken after it must record an outcome within the grace.
+    configured_at(monkeypatch, run.completed_at - timedelta(hours=1))
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert backup_health.offsite_failing(run.completed_at + grace * 2)
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert not backup_health.offsite_failing(run.completed_at + grace * 2)
+
+
+def test_a_reenabled_copy_that_records_nothing_still_alerts(offsite, monkeypatch):
+    """Turned off and back on, a silent copy is noticed despite "disabled"."""
+    grace = backup_health.OFFSITE_GRACE
+    assert copy(offsite)["state"] == "uploaded"
+    offsite.target[0] = None
+    assert copy(offsite) == {"state": "not_configured"}
+    # A backup while copies were off is not expected on Drive.
+    off = record_run(new_set(offsite, "20260928T020000Z"))
+    configured_at(monkeypatch, None)
+    assert not backup_health.offsite_failing(off.completed_at + grace * 2)
+    # Turned back on; the next backup's copy dies before recording anything.
+    configured_at(monkeypatch, off.completed_at + timedelta(microseconds=1))
+    assert not backup_health.offsite_failing(off.completed_at + grace * 2)
+    run = record_run(new_set(offsite, "20260929T020000Z"))
+    assert BackupUpload.objects.order_by("-created_at").first().state == "disabled"
+    assert not backup_health.offsite_failing(run.completed_at + grace / 2)
+    assert backup_health.offsite_failing(run.completed_at + grace * 2)
 
 
 def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypatch):
@@ -455,6 +532,9 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
         "preview",
     )
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
+    # The scheduler's alert sees the folder as configured from now on.
+    with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
+        assert backup_health.destination_configured_since() is not None
     # Saving the tested folder clears the earlier Test access result.
     assert b"Test access:" not in browser.get(URL).content
     assert backups(store) == [
@@ -478,12 +558,15 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     assert backups(store) == []
+    with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
+        assert backup_health.destination_configured_since() is None
 
 
-def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch):
+def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch, caplog):
     """The installer never runs a stale check; the page already said so."""
     from datetime import timedelta
 
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
     monkeypatch.setattr(backup_probes, "PROBE_WAIT", timedelta(0))
     monkeypatch.setattr(
         backup_probes, "DriveClient", lambda session: pytest.fail("contacted Drive")
@@ -499,6 +582,10 @@ def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch):
     assert checks == [1, 1]
     row.refresh_from_db()
     assert (row.state, row.failure_kind) == ("failed", "unanswered")
+    # Closing it at its limit is logged with the limit and how long it waited.
+    [closed] = [line for line in logged(caplog) if "timeout" in line]
+    assert closed["timeout"] == "drive_probe_wait"
+    assert closed["limit_seconds"] == 0 and closed["elapsed_seconds"] >= 0
     with transaction.atomic():
         assert latest_probe(actor, database_now()).kind == "unanswered"
 

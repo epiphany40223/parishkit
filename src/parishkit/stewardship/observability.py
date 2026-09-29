@@ -66,6 +66,39 @@ class FailureKind(StrEnum):
     BACKUP_REQUIRED = "upgrade_backup_required"
     # A set was taken but not copied to the off-site Drive folder.
     BACKUP_OFFSITE = "backup_offsite_failed"
+    # A backup sealed to a different public key than the previous run did.
+    BACKUP_RECIPIENT_CHANGED = "backup_recipient_changed"
+
+
+# The off-site copy's Drive failure categories, mirroring
+# jobs.backup_models.FAILURE_KINDS, so a backup_offsite_failed line names why.
+DRIVE_FAILURES = frozenset(
+    {
+        "authorization",
+        "api_disabled",
+        "not_found",
+        "permission",
+        "not_folder",
+        "credential",
+        "verification",
+        "unavailable",
+        "unexpected",
+        "unanswered",
+    }
+)
+# The time limits that can stop off-site backup work, named in the process
+# log with the limit and the elapsed seconds (the timeout-logging rule):
+# the whole copy's budget, a retry refused because it would pass that
+# budget, one Drive request's own timeout, and a "Test access" check closed
+# unanswered after waiting too long.
+TIMEOUT_LIMITS = frozenset(
+    {"drive_copy_budget", "drive_retry_budget", "drive_request", "drive_probe_wait"}
+)
+
+
+def _seconds(value):
+    """Whether a value is whole, non-negative seconds (a bool is not)."""
+    return type(value) is int and value >= 0
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(
@@ -100,6 +133,10 @@ def emit(
     failure_kind: FailureKind | None = None,
     source_loss: tuple | None = None,
     source_max_drop_percent: int | None = None,
+    drive_failure: str | None = None,
+    timeout: str | None = None,
+    limit_seconds: int | None = None,
+    elapsed_seconds: int | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -108,6 +145,10 @@ def emit(
     ``source_max_drop_percent`` is a source refresh's overridden loss limit,
     only with ``TASK_STARTED``. Event names are mirrored by a SQL constraint,
     so the override rides on that reviewed event rather than a new one.
+
+    ``drive_failure`` is an off-site copy's Drive category; ``timeout`` names
+    the limit that stopped work, with that limit and the elapsed time in
+    whole seconds. Each is a closed word or a number, never provider text.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -134,6 +175,15 @@ def emit(
         event is not Event.TASK_STARTED or not _safe_percent(source_max_drop_percent)
     ):
         raise ValueError("A source loss limit must be a whole percent.")
+    if drive_failure is not None and drive_failure not in DRIVE_FAILURES:
+        raise ValueError("Drive failure categories must be reviewed values.")
+    if timeout is not None and timeout not in TIMEOUT_LIMITS:
+        raise ValueError("Timeout limits must be reviewed names.")
+    if any(
+        value is not None and not _seconds(value)
+        for value in (limit_seconds, elapsed_seconds)
+    ):
+        raise ValueError("Timeout durations must be whole seconds.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -145,6 +195,10 @@ def emit(
                 "failure_kind": failure_kind,
                 "source_loss": source_loss,
                 "source_max_drop_percent": source_max_drop_percent,
+                "drive_failure": drive_failure,
+                "timeout": timeout,
+                "limit_seconds": limit_seconds,
+                "elapsed_seconds": elapsed_seconds,
             }
         ),
     )
@@ -386,6 +440,16 @@ class SafeJsonFormatter(JsonLogFormatter):
             context.get("failure_kind"), FailureKind
         ):
             safe.extra["failure_kind"] = context["failure_kind"].value
+        if isinstance(context, dict):
+            # Closed words and whole seconds only, re-checked here like the
+            # other fields so a hand-built record cannot smuggle text through.
+            if context.get("drive_failure") in DRIVE_FAILURES:
+                safe.extra["drive_failure"] = context["drive_failure"]
+            if context.get("timeout") in TIMEOUT_LIMITS:
+                safe.extra["timeout"] = context["timeout"]
+            for key in ("limit_seconds", "elapsed_seconds"):
+                if _seconds(context.get(key)):
+                    safe.extra[key] = context[key]
         if (
             record.msg is Event.AUTHENTICATION_LIMITS_WEAKENED
             and isinstance(context, dict)

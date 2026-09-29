@@ -14,6 +14,7 @@ from .backup_drive import (
     PROBE_WAIT,
     DriveClient,
     DriveFailure,
+    log_timeout,
     probe,
     workspace_session,
 )
@@ -74,7 +75,15 @@ def run_pending_probes(
             )
             if row is None:
                 return finished
-            stale = database_now() - row.created_at > PROBE_WAIT
+            waited = database_now() - row.created_at
+        stale = waited > PROBE_WAIT
+        if stale:
+            # Closed unanswered at its limit: say what waited and for how long.
+            log_timeout(
+                "drive_probe_wait",
+                limit_seconds=PROBE_WAIT.total_seconds(),
+                elapsed_seconds=waited.total_seconds(),
+            )
         kind = "unanswered" if stale else _check(credential_path, row, session_factory)
         with transaction.atomic():
             BackupDriveProbe.objects.filter(pk=row.pk, state="pending").update(

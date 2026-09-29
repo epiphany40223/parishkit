@@ -43,7 +43,9 @@ Collect, outside the runtime root and outside the repository:
   `public_origin`, `trusted_proxy_hops: 1`, and the absolute `paths.root`.
   Every field, default and validation rule is in the
   [settings reference](../development/stewardship-deployment.md#schema-version-1).
-  Keep it in an operator-controlled place; it holds no secrets. The offline
+  Keep it in an operator-controlled place, with a copy off the host beside
+  the backup's private key: restoring onto a new host needs it, and no
+  backup set holds it. It holds no secrets. The offline
   commands read it as UID `10001`, so it must be readable by that user (for
   example mode `0644`). Set `operational_alerts` now: a later change needs a
   reinstall.
@@ -171,8 +173,15 @@ either resumes with the same inputs or refuses; none deletes or adopts data.
    The wizard finishes by importing the parish's data; the deployment stays
    in Testing mode with a draft campaign and sends no Family mail.
 
-Record the release digest, the deployment UUID, the project name and the
-runtime root in the operators' notes: an upgrade and a restore both need them.
+Record the complete release image reference
+(`ghcr.io/<owner>/<repository>/stewardship@sha256:<64 hex>`, never only a
+version tag), the deployment UUID, the project name and the runtime root in
+the operators' notes: an upgrade and a restore both need them, and a
+restore onto a new host pulls the image by that reference.
+Keep those notes, and the deployment YAML, off the host with the backup's
+private key, as the
+[backup runbook](stewardship-backup-runbook.md#the-key) says: a restore onto
+a new host starts from them, and no backup set holds them.
 
 ## Validation in Testing mode
 
@@ -536,8 +545,10 @@ sequence with the commands that exist.
    work resumed: the home page's latest refresh time advances and the
    background task pages show the scheduler running.
 
-Record the new digest in the operators' notes. The old image stays in the
-registry; nothing here deletes it.
+Record the new release's complete `IMAGE@sha256:DIGEST` reference in the
+operators' notes, and keep the previous ones: a restore onto a new host
+pulls the image a set was taken under by that reference. The old image
+stays in the registry; nothing here deletes it.
 
 ## Rollback
 

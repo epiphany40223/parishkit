@@ -399,12 +399,15 @@ def test_keygen_and_open_commands_roundtrip_and_refuse_generically(
     monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     key = tmp_path / "operator.key"
     assert main(["backup-keygen", "--destination", str(key)]) == 0
-    public = json.loads(capsys.readouterr().out)["public_key"]
+    made = json.loads(capsys.readouterr().out)
+    public = made["public_key"]
     assert key.stat().st_mode & 0o777 == 0o600
     assert main(["backup-keygen", "--destination", str(key)]) == 2
     assert "refused" in capsys.readouterr().err
     (tmp_path / "public").write_text(public + "\n")
     recipient = backup_sealing.Recipient.load(tmp_path / "public")
+    # Keygen prints the fingerprint every backup sealed to this key reports.
+    assert made["recipient_fingerprint"] == recipient.fingerprint
     sealed = tmp_path / "set.sealed"
     with sealed.open("wb") as sink:
         backup_sealing.seal(
@@ -425,7 +428,10 @@ def test_keygen_and_open_commands_roundtrip_and_refuse_generically(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out)["kind"] == "database"
+    opened_set = json.loads(capsys.readouterr().out)
+    assert opened_set["kind"] == "database"
+    # A successful open names the key, which the drill records as proof.
+    assert opened_set["recipient_fingerprint"] == recipient.fingerprint
     assert out.read_bytes() == DUMP
     other = tmp_path / "other.key"
     other.write_text(backup_sealing.generate_keypair()[0])

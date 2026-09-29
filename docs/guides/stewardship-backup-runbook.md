@@ -18,8 +18,7 @@ Once, on a machine that is not the host, run
 private key owner-only to a new file and prints the public key. Keep the
 private key where the parish keeps its other recovery material, with a copy
 in a second place; whoever holds it can read every backup, and without it no
-backup can be read. Record its fingerprint from the first backup's manifest.
-The key is not rotated during v1.
+backup can be read. The key is not rotated during v1.
 
 The key machine runs the command from the release image, with Docker and no
 network; `backup-open` in [Restore for real](#restore-for-real) runs the same
@@ -35,13 +34,38 @@ docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
   IMAGE backup-keygen --destination /keys/stewardship-backup.key
 ```
 
-The command prints one JSON line, `{"public_key": "..."}`. On the host,
+The command prints one JSON line,
+`{"public_key": "...", "recipient_fingerprint": "..."}`. Record the
+fingerprint with the private key and each of its copies. On the host,
 install the public key as the `backup_data` credential: write only the
 `public_key` value, the bare base64 string on one line (for example the
 output of `jq -r .public_key`), to `credentials/backup_data/credential`
 under the runtime root, owned by UID/GID `10001:10001` in a `0700` directory
 with mode `0600`, as every credential file is. A file holding the whole JSON
 line is refused by every backup. Nothing else reads it.
+
+Every backup prints the `recipient_fingerprint` of the public key it sealed
+to; after the first one, confirm it equals the fingerprint `backup-keygen`
+printed. If `backup-keygen` ran twice during setup, a mismatch here is the
+sign that the kept private key is not the installed public key's pair:
+every backup would still succeed and none could be opened. A backup whose
+key differs from the previous run's (the `backup_data` file was replaced)
+still runs, prints `"recipient_changed": true` and logs a WARNING
+`configuration_digest_mismatch` line whose `failure_kind` is
+`backup_recipient_changed`; unless you installed a new key on purpose, find
+out why. The fingerprint names the installed public key, so on its own it
+proves nothing about the private key you kept. The
+[restore drill](#restore-drill) is the proof: `backup-open` opens a set only
+with the matching private key and then prints its `recipient_fingerprint`,
+so the drill records that each kept copy of the private key opened the set.
+
+Keep beside the private key, off the host, everything a restore onto a new
+host needs that no backup set holds: the deployment YAML, the deployment
+UUID, the Compose project name, the runtime root path and each release's
+image digest. The
+[deployment runbook](stewardship-deployment-runbook.md#first-installation)
+records them in the operators' notes; a copy of those notes that exists only
+on the host is lost with it.
 
 ## The nightly backup
 
@@ -52,8 +76,9 @@ project name the deployment uses:
 docker compose ... run --rm backup-worker
 ```
 
-It prints one JSON line naming the sizes, the recipient fingerprint and the
-manifest digest and exits `0`; on any refusal it prints one generic line and
+It prints one JSON line naming the sizes, the recipient fingerprint (and
+whether it changed since the previous run) and the manifest digest and
+exits `0`; on any refusal it prints one generic line and
 exits `2`, and the process log records only reviewed values: a
 `startup_rejected` line whose `failure_kind` is the category (a
 configuration refusal, for most causes). When the database dump itself
@@ -62,10 +87,15 @@ failed or produced nothing, a `startup_rejected` line with
 configuration refusal. `pg_dump`'s own text is never logged, since it can
 name hosts, roles and paths. A dump that never finishes has no time limit
 of its own; the overdue alert below is what reports it. Keep the printed
-manifest digest with the off-host copy (the cron job can append the line
-to a log there): the sealed files
-prove that they were not altered, not who made them, and the digest is how a
-restore proves it is restoring the set the deployment recorded. Schedule it
+manifest digest off the host: the sealed files prove that they were not
+altered, not who made them, and the digest is how a restore proves it is
+restoring the set the deployment recorded. The database records it too
+(`stewardship_backup_run`), but only on the host, and no set holds its own
+row. When the sets go off the host by `rsync` or `rclone`, the cron job can
+append the line to a log that goes with them. The Google Drive copy below
+sends only the set, so with it, send the line off the host yourself: for
+example, have cron mail the command's output to the operators, or append it
+to a file that another off-host copy picks up. Schedule it
 from the host's cron twice a day, twelve hours apart and in UTC (a host set
 to UTC, or `CRON_TZ=UTC` where the host's cron supports it; for example
 after the campaign's nightly work and again twelve hours later), and
@@ -140,13 +170,35 @@ by a Workspace administrator:
 The Backups page and the administration home show when a set was last
 copied. The scheduler raises the `backup_offsite_failed` operational incident
 (CRITICAL) when the newest copy attempt failed, or when a backup finished
-more than six hours ago and its copy recorded nothing (the copy was killed or
-lost its database connection before it could record an outcome). It resolves
+more than six hours ago and its copy recorded nothing (the copy was killed,
+lost its database connection or could not read the saved folder link before
+it could record an outcome). That holds from the first backup after the
+folder is first configured or turned back on, before any copy has succeeded;
+a backup taken while copies were off is not expected on Drive. It resolves
 the incident on the next successful copy or when off-site copies are turned
-off. The page names the
-cause in plain language; the process log records only the category
-(`authorization` for a missing Drive scope, `api_disabled`, `not_found`,
-`permission`, `credential`, `verification`, `unavailable` or `unexpected`).
+off. The page names the cause in plain language. The process log's
+WARNING `task_failed` line with `failure_kind` `backup_offsite_failed`
+carries only the category, as `drive_failure` (`authorization` for a
+missing Drive scope, `api_disabled`, `not_found`, `permission`,
+`credential`, `verification`, `unavailable` or `unexpected`).
+
+A copy stopped by a time limit is recorded, and shown on the page, as
+`unavailable`, like a Drive outage. What tells the two apart is a WARNING
+`task_failed` line logged when the limit stops the work, whose `timeout`
+names the limit, with `limit_seconds` and `elapsed_seconds`:
+`drive_copy_budget` (no new set starts after four hours),
+`drive_retry_budget` (a retry refused because it would start after those
+four hours), `drive_request` (one Drive request passed its own timeout and
+may still be retried) or `drive_probe_wait` (a **Test access** check waited
+more than five minutes and was closed unanswered; this line comes from the
+Google Workspace credential installer). Today these lines are in the
+process log of the `backup-worker` run (the cron job's output) or of the
+Google Workspace credential installer. Once the timeout logging from
+issue #293 is in the release, each is also written to the durable
+operational log in the database, as `work_budget_reached`
+(`drive_copy_budget`, `drive_retry_budget`) or `task_timed_out`
+(`drive_request`, `drive_probe_wait`) with the same limit and elapsed
+seconds.
 
 To check the setup by hand from the host, run the smoke check in the backup
 profile; `--send` also uploads the newest complete local set:
@@ -195,6 +247,35 @@ this checklist was checked against the code.
 
 ## Restore drill
 
+**Never back up from a disposable drill host.** A set restored onto a second
+host carries the source deployment's off-site Drive folder, its Google
+Workspace key and its deployment identity, so the copy's tag is the same.
+One `backup-worker` run there, whether by hand, from a copied cron job or by
+following step 9, uploads that host's restored state into the source
+deployment's live Drive folder and then prunes the source deployment's own
+sets as though they were its own. On a drill host, never run
+`backup-worker`, never install the backup or off-host copy cron jobs, never
+run `smoke --target backup_drive`, and skip step 9. Only the same-host run
+on the validation deployment itself backs up after the restore.
+
+Three more guards on every drill host:
+
+- **Build it fresh**, from a clean operating system image, never from a
+  snapshot or backup image of the live droplet. A clone carries the live
+  host's root crontab with its backup jobs, and every service is
+  `restart: unless-stopped`, so a clone boots the whole stack on its own
+  and its first cron backup uploads into the live folder and prunes it.
+- **Check the crontabs before step 4**: `sudo crontab -l -u root` and
+  `crontab -l` as the operator user must show no backup or off-host copy
+  job.
+- **Block outbound traffic** once step 3 has pulled the image, as a
+  backstop: with the provider's firewall (for example a DigitalOcean Cloud
+  Firewall on the droplet) allow outbound traffic only for your SSH
+  session, so nothing on the host can reach Google. A host firewall such
+  as `ufw` does not stop containers, because Docker's own rules bypass it;
+  on the host itself, the rule belongs in the `DOCKER-USER` chain. Step 7's
+  `pull` then fails harmlessly: the image is already there from step 3.
+
 A drill that only counts rows proves nothing about startup, so the drill
 rehearses [Restore for real](#restore-for-real). Before the pre-launch gate,
 and whenever the restore procedure changes:
@@ -206,7 +287,8 @@ and whenever the restore procedure changes:
   the replacement-host steps too: restore the same set onto a second,
   disposable host that is not on the public DNS, through web's health check
   in step 8, starting `web` alone there (`caddy` cannot obtain a certificate
-  for a host that is not on the public DNS), and destroy that host
+  for a host that is not on the public DNS), never running `backup-worker`
+  or its cron jobs there (see the warning above), and destroy that host
   afterwards. The same-host run skips steps 3 and 5, and a real replacement
   is when they matter. Testing mode has no delivery pause (the controls exist
   only for the Production campaign), so in the same-host run's step 8 keep
@@ -215,9 +297,10 @@ and whenever the restore procedure changes:
 - **After activation**, never start a second live copy of Production. Use a
   disposable host that is not on the public origin's DNS, run the procedure
   only up to starting web and checking its health in step 8, and never start
-  the scheduler, worker, mail-dispatch, installers or `caddy` there: the set
-  carries every Production credential and every Family's data. Destroy the
-  host and its disks afterwards.
+  the scheduler, worker, mail-dispatch, installers, `caddy` or
+  `backup-worker` there, nor install its cron jobs: the set carries every
+  Production credential, the live Drive folder and every Family's data.
+  Destroy the host and its disks afterwards.
 
 The drill returns the validation deployment to the backup's moment, so run
 it when staff have no unsaved work in progress, taking the backup
@@ -225,8 +308,14 @@ immediately before it. Run both pre-activation drills on the deployment
 that goes live: if a schema change forces a reinstall before the gate, run
 them again afterwards. The gate approves the evidence of both
 pre-activation runs. Record the date, the set name, the manifest digests,
-the image digest and the outcome in the parish's operations notes, then
-delete the decrypted files.
+the image digest, the set's `recipient_fingerprint`, which kept copies of
+the private key opened it and the outcome in the parish's operations notes,
+then delete the decrypted files. To check each copy, run step 2's
+`backup-open` once per copy, each time into a new, empty output directory:
+`backup-open` refuses to write over an existing file, and that refusal
+prints the same generic error as a key that does not match. A copy that
+does not match is refused; one that opens the set prints the same
+`recipient_fingerprint`.
 
 ## Restore for real
 
@@ -243,18 +332,47 @@ layout; where the deployment YAML overrides a path, use that path instead.
    restored files, record itself as the newest set and be copied off the
    host. Then stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
-   Leave `postgres` and `valkey` running. The scheduler, worker and
-   mail-dispatch services stay stopped until step 8. Unlike an upgrade,
+   Then wait for any backup already running to finish, as a reinstall
+   does: `docker ps --filter name=backup-worker` must list no container. A
+   backup keeps running after its dump while it copies to Google Drive, and
+   one still archiving files when step 4 moves the trees records a mixed set
+   as the newest. A copy can run for about four hours (no new set starts
+   after that, and an upload already under way can take a little longer),
+   so schedule a restore or a drill away from the backup cron times. Leave
+   `postgres` and `valkey` running. The scheduler,
+   worker and mail-dispatch services stay stopped until step 8. Unlike an upgrade,
    which keeps `caddy` up to show its maintenance page, a restore stops it
    too: step 4 replaces the configuration tree its Caddyfile comes from,
    and it must not keep serving the previous release's static files.
-2. **Open the set.** On the machine with the private key, confirm the set is
-   the one the deployment recorded (the SHA-256 of `manifest.json` equals the
-   digest the backup printed and the off-host log kept), then decrypt both
-   files with
+2. **Open the set.** First find the manifest digest the deployment
+   recorded for this set, before anything is restored: the restored
+   database will not hold it, because a set's own row is written after its
+   dump. Take it from the JSON line the backup printed, kept off the host.
+   While the source deployment's database still runs (a drill, or a
+   rollback on the same host), its record has it too. Run this on the
+   source deployment's host, never on a replacement or drill host, whose
+   database does not hold the row. `DATABASE_NAME` is the deployment YAML's
+   `postgres.name` (`stewardship` unless it sets another), and `set_name` is
+   the name of the set's directory:
+
+   ```sh
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE_NAME -c "SELECT to_char(started_at AT TIME ZONE 'UTC',
+     'YYYYMMDD\"T\"HH24MISS\"Z\"') AS set_name, manifest_digest,
+     recipient_fingerprint FROM stewardship_backup_run
+     ORDER BY completed_at DESC LIMIT 5"
+   ```
+
+   If the host is lost and no printed line was kept off it, nothing proves
+   where the set came from; say so in the restore notes. Then, on the
+   machine with the private key, confirm the SHA-256 of the set's
+   `manifest.json` (`sha256sum manifest.json`, or `shasum -a 256` on macOS)
+   equals that digest, and
+   decrypt both files with
    `pk-stewardship backup-open --key PRIVATE_KEY_FILE --input database.pgdump.sealed --destination database.pgdump`
    and the same for `files.tar.sealed`. Each prints the kind, size and
-   digest, which must match the manifest. From the release image, as for
+   digest, which must match the manifest, and the key's
+   `recipient_fingerprint`, which must match the one recorded with the key. From the release image, as for
    [the key](#the-key), mount the key directory and the set's directory
    read-only and an empty private output directory writable:
 
@@ -273,7 +391,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
 3. **Replacement host only: prepare it.** Never run `provision-runtime`
    here: it would generate new passwords that the restored roles and files
    do not have. Bring the operator's deployment YAML and the deployment UUID,
-   both kept off the host with the private key: `retarget-image` rebuilds its
+   both kept off the host with the private key (see [the key](#the-key)):
+   `retarget-image` rebuilds its
    plan from that YAML and refuses unless everything but the image matches
    the restored record, and the rendered documents hold absolute host paths.
    So use the same runtime root path, the same path overrides and the same
@@ -285,8 +404,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
    `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
    exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
-   backup was taken under (its digest is in the operators' notes; the
-   restored Compose files name it). For a real replacement, point the public
+   backup was taken under by the complete digest reference in the operators'
+   notes, `docker pull IMAGE@sha256:DIGEST`: the Compose files that name it
+   come back only in step 4. For a real replacement, point the public
    origin's DNS at this host (`caddy` obtains a new certificate; its store is
    not backed up); a drill host stays off the public DNS.
 4. **Restore the files, whole.** The archive holds the `config`,
@@ -357,17 +477,22 @@ layout; where the deployment YAML overrides a path, use that path instead.
    [upgrade](stewardship-deployment-runbook.md#upgrade) does. The static
    tree is not in the set, and a newer release's scripts must not be served
    with the restored release's pages.
-8. **Start web alone and review.** Start `web` and `caddy` only, and run the
-   health command. An Administrator pauses delivery on the campaign's
+8. **Start web alone and review.** **Disposable drill host: start `web` alone, stop
+   after web's health check and go straight to step 10.** Starting the
+   installers there would let the Google Workspace installer answer pending
+   **Test access** checks, which write into the live Drive folder. Otherwise,
+   start `web` and `caddy` only, and run the health command. An Administrator pauses delivery on the campaign's
    delivery control page if it is not already paused, then compares the
    restored deliveries with the mail provider's own sent log for the period
    after the backup, and notes every message the provider sent that the
    restored state does not show as delivered (see the limitations below).
    Then start `scheduler`, `worker`, `mail-dispatch`, `config-installer` and
    the credential installers, and resume delivery deliberately.
-9. **Take a fresh backup.** Run the backup at once, then re-enable the
-   backup and off-host copy cron jobs. The backup records a new run, which
-   later upgrade admissions require, and captures the restored state.
+9. **Take a fresh backup.** Never on a disposable drill host: skip this
+   step there (see the warning under [Restore drill](#restore-drill)). On the
+   deployment's own host, run the backup at once, then re-enable the backup
+   and off-host copy cron jobs. The backup records a new run, which later
+   upgrade admissions require, and captures the restored state.
 10. **Delete the decrypted copies.** Once the review in step 8 is complete,
     securely delete `database.pgdump`, `files.tar` and the staging directory
     on the host and on the machine that holds the private key. They hold

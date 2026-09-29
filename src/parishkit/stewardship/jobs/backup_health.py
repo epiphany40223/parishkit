@@ -67,27 +67,64 @@ def backup_overdue(instant):
     return instant - latest > REQUIRED_WITHIN
 
 
+def destination_configured_since():
+    """When the active configuration naming a Drive folder was activated, or None.
+
+    ``None`` means off-site copies are off now. A saved folder link that no
+    longer parses still counts as configured: every copy then fails before
+    it can record an outcome, which is exactly the silence to alert on.
+    """
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
+    from parishkit.stewardship.backup_offsite import destination_from
+
+    active = SystemConfiguration.objects.values_list(
+        "active_configuration_id", flat=True
+    ).first()
+    # Every active configuration has exactly one activation row, written in
+    # the same transaction that made it active.
+    row = (
+        ConfigurationActivation.objects.filter(configuration_id=active)
+        .values_list("created_at", "configuration__canonical_document")
+        .first()
+        if active is not None
+        else None
+    )
+    if row is None:
+        return None
+    try:
+        configured = destination_from(row[1]) is not None
+    except ConfigError:
+        configured = True
+    return row[0] if configured else None
+
+
 def offsite_failing(instant=None):
     """True while off-site copies are failing, or have silently stopped.
 
     The backup profile records one outcome per attempted set, and "disabled"
     when the destination is removed, so an old failure stops counting once a
     later copy succeeds or copies are turned off. A copy that is killed, or
-    loses its database connection, before recording anything leaves an older
-    set's "uploaded" row as the newest: so once copies have started, the
-    newest backup counts as failing when it completed more than
-    ``OFFSITE_GRACE`` ago and no outcome names its set. Keying on the set,
-    not on timestamps, also catches a catch-up run that copied an older set
-    and was then killed during the newest one.
+    loses its database connection, before recording anything leaves no row
+    for its set: so the newest backup counts as failing when it completed
+    more than ``OFFSITE_GRACE`` ago and no outcome names its set. Keying on
+    the set, not on timestamps, also catches a catch-up run that copied an
+    older set and was then killed during the newest one.
+
+    With no outcome yet, or "disabled" as the newest one, the destination
+    was just configured for the first time or turned back on. Every copy
+    since may have died silently, so the same rule applies to a backup that
+    completed after the configuration naming the folder was activated; one
+    taken before that had copies off and is not expected on Drive. The
+    configuration document is read only once a backup is silent past the
+    grace, so an idle collector's check stays a few small row reads.
     """
     newest = (
         BackupUpload.objects.order_by("-created_at")
-        .values_list("state", "created_at")
+        .values_list("state", flat=True)
         .first()
     )
-    if newest is None or newest[0] == "disabled":
-        return False
-    if newest[0] == "failed":
+    if newest == "failed":
         return True
     latest_run = (
         BackupRun.objects.order_by("-completed_at")
@@ -97,10 +134,15 @@ def offsite_failing(instant=None):
     if latest_run is None:
         return False
     instant = database_now() if instant is None else instant
-    return (
-        instant - latest_run[0] > OFFSITE_GRACE
-        and not BackupUpload.objects.filter(manifest_digest=latest_run[1]).exists()
-    )
+    if (
+        instant - latest_run[0] <= OFFSITE_GRACE
+        or BackupUpload.objects.filter(manifest_digest=latest_run[1]).exists()
+    ):
+        return False
+    if newest is None or newest == "disabled":
+        since = destination_configured_since()
+        return since is not None and latest_run[0] >= since
+    return True
 
 
 def observe_backup_health():
