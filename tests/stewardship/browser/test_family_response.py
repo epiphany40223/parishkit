@@ -233,38 +233,41 @@ def test_testing_submits_without_acknowledgment_checkboxes(page, component_origi
     review(page)
     assert page.locator("#family-confirmation input[type=checkbox]").count() == 0
     page.get_by_role("button", name="Submit test response").click()
-    expect(
-        show(
-            page,
-            page.get_by_role(
-                "heading",
-                name="Test response complete",
-                exact=True,
-                include_hidden=True,
-            ),
-        )
-    ).to_be_visible()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert "testing_acknowledged" not in submissions[0]["answers"]
-    assert (
-        "Your campaign response has not been recorded"
-        in page.locator("main").inner_text()
+
+
+def thank_you_page(page, origin, testing):
+    """Submit a response and return the thank-you page's content and banner."""
+    prepare(
+        page,
+        origin,
+        testing=testing,
+        submit=lambda route: route.fulfill(json={"accepted": True}),
     )
-    assert (
-        "will be deleted before the live campaign opens"
-        in page.locator("main").inner_text()
+    if not testing:
+        page.get_by_role("button", name="Begin reviewing").click()
+    review(page)
+    page.get_by_role(
+        "button", name="Submit test response" if testing else "Submit to Sample Parish"
+    ).click()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    return (
+        page.locator("#family-flow").inner_html(),
+        page.get_by_text("Testing mode:", exact=False).count(),
     )
-    assert "return to submit your response" in page.locator("main").inner_text()
-    assert "Production" not in page.locator("main").inner_text()
-    expect(
-        show(
-            page,
-            page.get_by_role(
-                "heading",
-                name="Preview only: parish Thank You message",
-                include_hidden=True,
-            ),
-        )
-    ).to_be_visible()
+
+
+def test_testing_thank_you_page_matches_production(page, component_origin):
+    """#289: only the Testing banner differs between the two thank-you pages."""
+    testing, banner = thank_you_page(page, component_origin, True)
+    assert banner == 1
+    page.goto("about:blank")
+    production, banner = thank_you_page(page, component_origin, False)
+    assert banner == 0
+    assert testing == production
+    for gone in ("Test response complete", "has not been recorded", "Preview only"):
+        assert gone not in testing
 
 
 def test_stale_response_keeps_only_actual_edits_and_requires_review(

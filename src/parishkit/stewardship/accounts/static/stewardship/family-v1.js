@@ -2021,13 +2021,11 @@
           document.dispatchEvent(new Event("stewardship:family-finished"));
           finished = true; clear(); cancel.hidden = true;
           say("");
-          heading(testing ? "Test response complete" : "Thank you!", "welcome");
-          node("p", testing ? "Your campaign response has not been recorded. This test response will be deleted before the live campaign opens. Please return to submit your response during the live campaign, or contact the parish if you expected to submit a real response. You are now signed out." :
-            "Your response was submitted. You are now signed out.", root);
-          if (submittedThankYou) {
-            if (testing) node("h2", "Preview only: parish Thank You message", root);
-            node("div", null, root).innerHTML = submittedThankYou;
-          }
+          // Testing shows exactly what Production shows; the Testing banner
+          // at the top of the page is the only difference (#289).
+          heading("Thank you!", "welcome");
+          node("p", "Your response was submitted. You are now signed out.", root);
+          if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
         } else if (finished) {
           expired();
           return;

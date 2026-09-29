@@ -455,10 +455,9 @@ separate acknowledgment checkbox (#243). The server takes the mode from the
 admitted session and its baseline, never from the browser, so a Testing
 baseline cannot back a live submission.
 
-Submissions are prominently marked Test on the Thank You page and administration
-views. The Thank You content explicitly says the campaign response has not been
-recorded, the test will be deleted, and the Family must return during Production
-or contact the parish if it expected to submit a real response. Test submissions
+The Testing Thank You page is identical to Production's (the same heading, the
+parish's Thank You content and layout); the Testing banner at the top is the
+only difference. Test submissions are marked Test in administration views and
 do not:
 
 - count as participation or pledge;
