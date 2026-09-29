@@ -640,6 +640,34 @@ def test_blocked_review_names_a_question_on_another_page(page, component_origin)
     )
 
 
+FIRST_CONTROL = """page => {
+  const control = [...page.querySelectorAll('input, select, textarea, button, summary')]
+    .find(e => e.getClientRects().length && !e.closest('.visually-hidden'));
+  const nav = document.querySelector('.family-nav').getBoundingClientRect();
+  return {top: control.getBoundingClientRect().top, visible: nav.top, id: control.id};
+}"""
+
+
+@pytest.mark.parametrize("census", [True, False])
+def test_member_page_first_control_fits_a_phone(page, component_origin, census):
+    """#292: at 390x844 the first Member control shows without scrolling."""
+    from parishkit.stewardship.accounts.content_defaults import PAGES
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    form = paged_form() if census else ministry_form(census=False)
+    form["content"]["member_census"] = PAGES["member_census"]
+    form["content"]["ministry"] = PAGES["ministry"]
+    begin(page, component_origin, form, None)
+    key = page.locator("[data-step-link^=member-]").first.get_attribute(
+        "data-step-link"
+    )
+    page.locator(f'[data-step-link="{key}"]').click()
+    found = page.locator(f'[data-page="{key}"]').evaluate(FIRST_CONTROL)
+    # Visible without scrolling: above the sticky navigation, and so also
+    # within the 844 px viewport.
+    assert found["top"] < found["visible"] <= 844, found
+
+
 def test_ministry_choice_labels_wrap_on_a_phone(page, component_origin):
     """The longer choice labels stay inside their row at 320 and 390 px."""
     page.set_viewport_size({"width": 320, "height": 844})
@@ -712,6 +740,19 @@ def test_welcome_order_banner_notice_family_icon(
         + ["family", "icon", "welcome"]
     )
     assert page.evaluate(WELCOME_ORDER) == expected
+    # The focused Welcome heading is described by the notice, so screen
+    # readers hear it even though it sits above the focus.
+    welcome_heading = page.locator('[data-page="intro"] h3')
+    if submitted:
+        expect(welcome_heading).to_have_attribute(
+            "aria-describedby", "family-last-submitted"
+        )
+        expect(welcome_heading).to_be_focused()
+        expect(welcome_heading).to_have_accessible_description(
+            re.compile("You last submitted your renewal")
+        )
+    else:
+        assert welcome_heading.get_attribute("aria-describedby") is None
     # The notice belongs to the Welcome page only.
     page.locator('[data-step-link="household"]').click()
     expect(page.locator(".family-submitted")).to_be_hidden()

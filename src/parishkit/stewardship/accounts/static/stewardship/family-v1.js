@@ -380,7 +380,7 @@
     return node("p", "You last submitted your renewal on " + form.last_submitted_display +
       ". You can review, change and submit again as many times as you like; " +
       "your most recent submission is the one we use.", parent,
-      {class: "notice family-submitted", role: "status"});
+      {class: "notice family-submitted", role: "status", id: "family-last-submitted"});
   }
   function paintTrack(activeKey) {
     // One segment per step, like the setup wizard's track. Each segment is a
@@ -1759,11 +1759,18 @@
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
     // The wide campaign banner is for emails only; the Welcome page shows just
-    // its icon, below the returning-Family summary and above the intro text.
+    // its icon, below the Family heading (and any "last submitted" notice
+    // above it) and above the intro text.
     const intro = addPage(editor, "intro", "Welcome", "welcome");
     // The welcome text carries its own heading; keep "Welcome" only for
     // screen readers and focus, so it isn't shown twice.
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
+    // The "last submitted" notice sits above the focused Welcome heading and
+    // is inserted already filled, so a live region may stay silent; the
+    // heading is described by it instead, and read when it takes focus.
+    if (form.last_submitted_display) {
+      intro.element.querySelector("h3").setAttribute("aria-describedby", "family-last-submitted");
+    }
     artwork("welcome", intro.element, "family-page-icon");
     // Without welcome text the visible "Welcome" heading follows the icon, so
     // the page reads icon, then heading or text, either way.

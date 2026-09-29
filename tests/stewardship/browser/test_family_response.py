@@ -252,19 +252,19 @@ def thank_you_page(page, origin, testing):
         "button", name="Submit test response" if testing else "Submit to Sample Parish"
     ).click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
-    return (
-        page.locator("#family-flow").inner_html(),
-        page.get_by_text("Testing mode:", exact=False).count(),
-    )
+    banner = page.get_by_text("Testing mode:", exact=False)
+    if testing:
+        expect(banner).to_be_visible()
+    else:
+        expect(banner).to_have_count(0)
+    return page.locator("#family-flow").inner_html()
 
 
 def test_testing_thank_you_page_matches_production(page, component_origin):
     """#289: only the Testing banner differs between the two thank-you pages."""
-    testing, banner = thank_you_page(page, component_origin, True)
-    assert banner == 1
+    testing = thank_you_page(page, component_origin, True)
     page.goto("about:blank")
-    production, banner = thank_you_page(page, component_origin, False)
-    assert banner == 0
+    production = thank_you_page(page, component_origin, False)
     assert testing == production
     for gone in ("Test response complete", "has not been recorded", "Preview only"):
         assert gone not in testing

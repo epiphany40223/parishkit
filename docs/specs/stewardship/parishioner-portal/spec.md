@@ -278,11 +278,11 @@ turn omission into a new leave/withdrawal action. Recheck the same policy at
 submission, including the linked stale-form reconfirmation requirement.
 
 Current memberships appear first (with no visible heading; screen readers get
-a "Current ministries" heading), each stating
-its choice once as "Continue in this ministry" (the default) or "Stop participating in this ministry". Leaving
+a "Current ministries" heading), each stating its choice once as "Continue in
+this ministry" (the default) or "Stop participating in this ministry". Leaving
 is always honored; the form does not describe it as a request that may be
-declined. A Ministry set to "Stop participating in this ministry" is highlighted in the
-attention (amber) colour. Existing memberships are excluded from join choices.
+declined. A Ministry set to "Stop participating in this ministry" is
+highlighted in the attention (amber) colour. Existing memberships are excluded from join choices.
 "Click here to join more ministries" ("Tap here…" on a touch-only device)
 expands/searches the potentially long selected-Ministry list only on demand and
 supports multiple choices, and the chosen ministries stay listed under
@@ -308,8 +308,8 @@ requires a short description, at most 200 characters. No talent is required.
 
 Above the Ministry choices, each Member may check "Because of physical
 limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating in this ministry", every join
-choice is cleared, the Ministry choices and the join-more-ministries disclosure
+checked, every current Ministry is set to "Stop participating in this
+ministry", every join choice is cleared, the Ministry choices and the join-more-ministries disclosure
 are disabled for pointer, keyboard and assistive technology alike, and the
 talents question is hidden and no talents are sent. Unchecking restores the
 Family's own earlier choices, talents included. The server rejects a response in which such a
