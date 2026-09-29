@@ -244,7 +244,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    host. Then stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
    Leave `postgres` and `valkey` running. The scheduler, worker and
-   mail-dispatch services stay stopped until step 8.
+   mail-dispatch services stay stopped until step 8. Unlike an upgrade,
+   which keeps `caddy` up to show its maintenance page, a restore stops it
+   too: step 4 replaces the configuration tree its Caddyfile comes from,
+   and it must not keep serving the previous release's static files.
 2. **Open the set.** On the machine with the private key, confirm the set is
    the one the deployment recorded (the SHA-256 of `manifest.json` equals the
    digest the backup printed and the off-host log kept), then decrypt both

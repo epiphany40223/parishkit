@@ -14,9 +14,14 @@
 #      The host must be logged in: docker login ghcr.io (a token with
 #      write:packages).
 #   3. Follows the deployment runbook's upgrade steps: backup (best effort;
-#      it refuses before setup), stop the online services, retarget-image in
-#      the new image, migration and grants, a fresh static tree, then start
-#      EVERY online service of the correct topology and check health.
+#      it refuses before setup), stop the online services except caddy,
+#      retarget-image in the new image, migration and grants, a fresh static
+#      tree, then start EVERY online service of the correct topology and
+#      check health. Caddy keeps running throughout and answers with its own
+#      maintenance page while web is down (#162); it is recreated only when
+#      its loaded Caddyfile differs from the host file. A failed deploy
+#      leaves the maintenance page up until the deploy is re-run or rolled
+#      back.
 #
 # The topology comes from the database, not from whatever happened to be
 # running: compose.json once the setup wizard has recorded completion (kept
@@ -132,7 +137,17 @@ if [ "${#wanted[@]}" -eq 0 ] || [ -z "${wanted[0]}" ]; then
     echo "$(basename "$compose") lists no online services; refusing to deploy." >&2
     exit 1
 fi
-online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey' || true)
+# caddy stays up to serve its maintenance page while web is down (#162). An
+# older caddy still holds the startup-interlock lease, which would make every
+# offline step refuse, so that one (the first deploy of this change) stops.
+online=$("${dc[@]}" ps --services --status running | grep -vxE 'postgres|valkey|caddy' || true)
+legacy_caddy=0
+caddy_id=$("${dc[@]}" ps -q caddy 2>/dev/null || true)
+if [ -n "$caddy_id" ] &&
+    grep -q startup.lock <<<"$(docker inspect -f '{{join .Config.Cmd " "}}' "$caddy_id")"; then
+    legacy_caddy=1
+    online="$online caddy"
+fi
 step "Project ${project} will run $(basename "$compose") (setup complete: ${completed})"
 [ -z "$running" ] || [ "$running" = "$compose" ] ||
     echo "    switching from $(basename "$running")"
@@ -141,7 +156,7 @@ step "Backup (best effort)"
 "${dc[@]}" run --rm -T backup-worker >/dev/null 2>&1 &&
     echo "    taken" || echo "    refused or unavailable; continuing"
 
-step "Stopping online services"
+step "Stopping online services (caddy keeps serving the maintenance page)"
 stopped_at=$(date -u +%s)
 # Stop whatever runs now, under whichever file started it; the start below
 # brings up the full target topology regardless.
@@ -160,13 +175,23 @@ step "Migration and grants"
     --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
 
 step "Static files"
+# Collect into a fresh tree, then refresh cache/static in place: the running
+# caddy has that directory bind-mounted, and a directory moved aside would
+# stay mounted in its place, still serving the previous release's scripts.
 # Disposable pre-launch data: keep only the previous tree.
-rm -rf "$root/cache/static.previous"
-mv "$root/cache/static" "$root/cache/static.previous"
-install -d -o 10001 -g 10001 -m 0700 "$root/cache/static"
+rm -rf "$root/cache/static.previous" "$root/cache/static.next"
+install -d -o 10001 -g 10001 -m 0700 "$root/cache/static.next"
 "${isolated[@]}" \
-    --mount "type=bind,source=$root/cache/static,target=$root/cache/static" \
-    "$image" collect-static --destination "$root/cache/static"
+    --mount "type=bind,source=$root/cache/static.next,target=$root/cache/static.next" \
+    "$image" collect-static --destination "$root/cache/static.next"
+cp -a "$root/cache/static" "$root/cache/static.previous"
+# If the in-place refresh stops partway, caddy serves a half-empty tree;
+# say how to put the previous one back.
+trap 'echo "Static refresh failed partway. Restore with: find $root/cache/static -mindepth 1 -delete && cp -a $root/cache/static.previous/. $root/cache/static/" >&2' ERR
+find "$root/cache/static" -mindepth 1 -delete
+cp -a "$root/cache/static.next/." "$root/cache/static/"
+trap - ERR
+rm -rf "$root/cache/static.next"
 
 step "Starting every online service"
 # caddy last, as first installation does: it fronts web, so the site returns
@@ -178,7 +203,18 @@ if [ "${#first[@]}" -gt 0 ]; then
     "${dc[@]}" up --detach --wait "${first[@]}" 2>&1 | quiet || true
 fi
 if printf '%s\n' "${wanted[@]}" | grep -qx caddy; then
-    "${dc[@]}" up --detach --wait caddy 2>&1 | quiet || true
+    # Caddy reads its Caddyfile only at start (admin off), so recreate it
+    # when the upgrade changed that file; otherwise `up` leaves the running
+    # caddy alone, or starts it if it was not running.
+    # Compare what the running caddy actually loaded with the host file, so a
+    # re-run after a failed deploy still recreates it.
+    loaded=$("${dc[@]}" exec -T caddy sha256sum /etc/caddy/Caddyfile 2>/dev/null | cut -d' ' -f1 || true)
+    wanted_sum=$(sha256sum "$services/Caddyfile" | cut -d' ' -f1)
+    if [ "$loaded" != "$wanted_sum" ] || [ "$legacy_caddy" -eq 1 ]; then
+        "${dc[@]}" up --detach --wait --force-recreate caddy 2>&1 | quiet || true
+    else
+        "${dc[@]}" up --detach --wait caddy 2>&1 | quiet || true
+    fi
 fi
 
 # Just-started services can report an incomplete dependency observation for a
@@ -191,7 +227,7 @@ for attempt in $(seq 1 12); do
     fi
     [ "$attempt" -eq 12 ] || sleep 5
 done
-step "Online services were down for $(( $(date -u +%s) - stopped_at ))s"
+step "Web was down for $(( $(date -u +%s) - stopped_at ))s (caddy served the maintenance page)"
 
 # Every online service of the target topology must be running, and healthy
 # where it has a healthcheck. Name each one that is not.
