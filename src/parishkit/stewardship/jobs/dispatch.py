@@ -6,13 +6,14 @@ Queue selection is an isolation check, not authorization: the handler rechecks
 its actual domain gates and completion/recovery evidence under TaskRun locks.
 """
 
+import time
 from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
-from threading import Event
+from threading import Event, Lock
 from uuid import UUID
 
-from django.db import transaction
+from django.db import OperationalError, connection, transaction
 
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -21,6 +22,76 @@ from .models import TaskRun
 from .ownership import TaskClaim, database_now, lock_task_claim
 from .queues import WorkQueue
 from .storage import _locked, _status, change_run
+
+# How long an in-flight ownership check may wait for this worker's control
+# lock, or for any one database statement (a lock wait included), before it
+# skips that tick instead (see Execution.check_inflight).
+INFLIGHT_LOCK_SECONDS = 1
+# SQLSTATEs of a statement stopped by lock_timeout and by statement_timeout.
+_LIMIT_STOPS = {"55P03": "lock_timeout", "57014": "statement_timeout"}
+
+
+def record_inflight_skip(facts):
+    """Persist skipped in-flight lease checks: what stopped, limit, time (#318).
+
+    ``facts`` has the task id, ``what`` stopped the check (``control_lock``,
+    ``lock_timeout`` or ``statement_timeout``), ``limit_seconds``,
+    ``elapsed_seconds`` and ``skipped``, the number of ticks it covers; a
+    summary of more than one tick carries that number as ``count``. The
+    write is a WARNING in the timeout log (#293), waited on for at most two
+    seconds so it never holds up the helper it reports on.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout_within
+    from parishkit.stewardship.observability import Event
+
+    record_timeout_within(
+        2,
+        Event.TASK_TIMED_OUT,
+        level="WARNING",
+        what=facts["what"],
+        task_id=facts["task_id"],
+        limit_seconds=facts["limit_seconds"],
+        elapsed_seconds=facts["elapsed_seconds"],
+        count=facts["skipped"] if facts["skipped"] > 1 else None,
+    )
+
+
+@dataclass
+class InflightSkips:
+    """This execution's run of skipped in-flight checks, reported sparingly.
+
+    The first skip of a run is reported at once; the rest are summed and
+    reported (count and total time) when the run ends: at the next full
+    check or the execution's next transition. Checks tick four times a
+    second, so reporting each one would flood the log under contention.
+    """
+
+    lock: Lock = field(default_factory=Lock)
+    facts: dict | None = None
+
+    def skipped(self, execution, what, limit, elapsed):
+        """Count one skipped tick, reporting it when it starts a run."""
+        with self.lock:
+            first = self.facts is None
+            if first:
+                self.facts = execution.task_facts() | {
+                    "what": what,
+                    "limit_seconds": limit,
+                    "elapsed_seconds": 0.0,
+                    "skipped": 0,
+                }
+            self.facts["skipped"] += 1
+            self.facts["elapsed_seconds"] += elapsed
+            report = dict(self.facts) if first else None
+        if report is not None:
+            record_inflight_skip(report)
+
+    def ended(self):
+        """Report the rest of a finished run of skipped ticks, if any."""
+        with self.lock:
+            facts, self.facts = self.facts, None
+        if facts is not None and facts["skipped"] > 1:
+            record_inflight_skip(facts)
 
 
 @dataclass(frozen=True)
@@ -94,6 +165,13 @@ class Execution:
     control: ExecutionControl = field(
         default_factory=ExecutionControl, repr=False, compare=False
     )
+    skips: InflightSkips = field(
+        default_factory=InflightSkips, repr=False, compare=False
+    )
+
+    def task_facts(self):
+        """Identify this execution's task in a timeout report."""
+        return {"task_id": self.claim.run_id}
 
     def check(self):
         """Call before each new external unit; SQL effects also recheck their fences."""
@@ -121,6 +199,7 @@ class Execution:
 
     def transition(self, action, **options):
         """Recheck ownership and owning evidence before any execution transition."""
+        self.skips.ended()
         with self.control.lock:
             self.control.check(allow_drain=True)
             with self.handler.scope(), transaction.atomic():
@@ -146,13 +225,59 @@ class Execution:
 
         This grants no scope in which to start a new effect. Renewal failure,
         lost SQL ownership or revoked domain admission still stops the helper.
+
+        The check never blocks for long (#318). The deployment-wide work-order
+        lock can be busy for seconds on launch day, and a check blocked past
+        the helper's deadline used to discard a finished (possibly accepted)
+        mail result. The wait for this worker's own control lock (held by a
+        heartbeat) is bounded by INFLIGHT_LOCK_SECONDS, and so is each
+        database statement in the check, lock waits included (lock_timeout
+        and statement_timeout, local to its transaction). The check runs a
+        handful of statements (the work-order lock, the task row locks, the
+        handler's admission reads), so a tick takes a few seconds at worst.
+        When a limit stops it, the tick is skipped and reported (see
+        InflightSkips): the helper is still bounded by its deadline, and
+        every later transition rechecks ownership under its locks.
         """
-        with self.control.lock:
+        if connection.in_atomic_block:
+            # The transaction-local limits below would leak into the caller's
+            # transaction, and its locks would be held across the helper.
+            raise StorageInvariantError("In-flight checks run outside transactions.")
+        started = time.monotonic()
+        if not self.control.lock.acquire(timeout=INFLIGHT_LOCK_SECONDS):
+            self.skips.skipped(
+                self,
+                "control_lock",
+                INFLIGHT_LOCK_SECONDS,
+                time.monotonic() - started,
+            )
+            return
+        try:
             self.control.check(allow_drain=True)
-            with self.handler.scope(), transaction.atomic():
-                row = lock_task_claim(self.claim)
-                if self.handler.admit("effect", _status(row)) is not True:
-                    raise PermissionError("This in-flight task is not admitted.")
+            try:
+                with transaction.atomic():
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT set_config('lock_timeout', %s, true),"
+                            " set_config('statement_timeout', %s, true)",
+                            [f"{INFLIGHT_LOCK_SECONDS}s"] * 2,
+                        )
+                    with self.handler.scope(), transaction.atomic():
+                        row = lock_task_claim(self.claim)
+                        admitted = self.handler.admit("effect", _status(row))
+            except OperationalError as error:
+                what = _LIMIT_STOPS.get(getattr(error.__cause__, "sqlstate", None))
+                if what is None:
+                    raise
+                self.skips.skipped(
+                    self, what, INFLIGHT_LOCK_SECONDS, time.monotonic() - started
+                )
+                return
+            self.skips.ended()
+            if admitted is not True:
+                raise PermissionError("This in-flight task is not admitted.")
+        finally:
+            self.control.lock.release()
 
     def heartbeat(self, *, seconds=60):
         """Only a still-current owner can extend its lease between bounded steps."""

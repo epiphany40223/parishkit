@@ -67,7 +67,9 @@ def helper_timeout_recorder(helper, *, what, seconds):
     return record
 
 
-def _exchange(process, payload, *, deadline, check, on_timeout=None):
+def _exchange(
+    process, payload, *, deadline, check, on_timeout=None, keep_finished=False
+):
     """One pipe owner completes partial writes while the caller checks its lease.
 
     Retrying communicate with no input can stop pumping a partially written
@@ -75,6 +77,13 @@ def _exchange(process, payload, *, deadline, check, on_timeout=None):
     the caller remains responsive and must join it before closing descriptors.
     When the deadline is what ends the exchange, ``on_timeout(stopped)`` runs
     right after the helper is killed, so logging never delays the kill.
+
+    A helper that has finished always has a real result, even if the lease
+    check waited past the deadline meanwhile (#318). With ``keep_finished`` (a
+    mail helper, whose finished result may be "accepted by the provider") that
+    result is returned even when a lease check fails after the helper
+    finished: discarding it would turn a known outcome into an uncertain one.
+    The caller's settlement rechecks ownership before recording anything.
     """
     stopped = []
 
@@ -107,13 +116,22 @@ def _exchange(process, payload, *, deadline, check, on_timeout=None):
     thread.start()
     try:
         while not completed.is_set():
-            _check_owner(check)
+            try:
+                _check_owner(check)
+            except ProviderCheckOwnershipLost:
+                if not (keep_finished and completed.is_set()):
+                    raise
+            # The check may have waited: a helper that finished meanwhile has
+            # a real result, whatever the deadline says now.
+            if completed.is_set():
+                break
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out()
                 raise CredentialValidationUnavailable()
             completed.wait(min(remaining, 0.25))
-        _check_owner(check)
+        if not keep_finished:
+            _check_owner(check)
         if not result:
             # communicate() itself may have given up at the deadline.
             timed_out()

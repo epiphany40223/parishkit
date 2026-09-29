@@ -293,3 +293,117 @@ def test_a_failure_to_record_a_lost_lease_never_blocks_recovery(monkeypatch):
     )
     assert recover_hint(task.run_id, **options)
     assert TaskRun.objects.get(pk=task.run_id).state == "failed"
+
+
+def test_inflight_check_skips_while_the_work_order_lock_is_busy():
+    """A busy writer cannot stall a helper's lease check past its deadline (#318).
+
+    While another transaction holds the deployment-wide work-order lock the
+    check gives up after INFLIGHT_LOCK_SECONDS and skips the tick; once the
+    lock is free it runs in full again and still enforces domain admission.
+    """
+    import threading
+    import time
+
+    from django.db import connections
+
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.dispatch import INFLIGHT_LOCK_SECONDS
+
+    task, effects, seen = queued(), [True], []
+    held, release = threading.Event(), threading.Event()
+
+    def hold():
+        """Another session's writer, holding the work-order lock for a while."""
+        try:
+            with work_transaction():
+                held.set()
+                release.wait(10)
+        finally:
+            connections.close_all()
+
+    def execute(context):
+        thread = threading.Thread(target=hold)
+        thread.start()
+        try:
+            held.wait(5)
+            effects[0] = False  # Would refuse, if the check got to run.
+            started = time.monotonic()
+            context.check_inflight()
+            seen.append(time.monotonic() - started)
+        finally:
+            release.set()
+            thread.join(10)
+        with pytest.raises(PermissionError):
+            context.check_inflight()
+        effects[0] = True
+        context.check_inflight()
+        context.transition("complete")
+
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda action, status: action != "effect" or effects[0],
+        execute,
+        scope=work_transaction,
+    )
+    assert execute_hint(
+        task.run_id,
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={"dispatch_probe": handler},
+    )
+    assert INFLIGHT_LOCK_SECONDS <= seen[0] < INFLIGHT_LOCK_SECONDS + 2
+    assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
+    # The one skipped tick left a durable entry: what stopped it, the limit
+    # and how long the tick ran (#293's timeout log).
+    (entry,) = OperationalLog.objects.filter(event="task_timed_out")
+    assert entry.level == "WARNING" and entry.schema == "timeout"
+    assert entry.context["what"] in {"lock_timeout", "statement_timeout"}
+    assert entry.context["task_id"] == str(task.run_id)
+    assert entry.context["task_type"] == "dispatch_probe"
+    assert entry.context["limit_seconds"] == INFLIGHT_LOCK_SECONDS
+    assert entry.context["elapsed_seconds"] >= INFLIGHT_LOCK_SECONDS
+    assert "count" not in entry.context
+
+
+def test_inflight_check_skips_a_slow_statement():
+    """statement_timeout bounds a slow admission read, not only lock waits.
+
+    Two skipped ticks leave two entries: the first at once, then a summary
+    with their count when the run ends at the next transition.
+    """
+    from django.db import connection as db
+
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    task = queued()
+    slow = [False]
+
+    def admit(action, status):
+        if action == "effect" and slow[0]:
+            with db.cursor() as cursor:
+                cursor.execute("SELECT pg_sleep(5)")
+        return True
+
+    def execute(context):
+        slow[0] = True
+        context.check_inflight()
+        context.check_inflight()
+        slow[0] = False
+        context.transition("complete")
+
+    handler = Handler(WorkQueue.GENERAL, admit, execute, scope=work_transaction)
+    assert execute_hint(
+        task.run_id,
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={"dispatch_probe": handler},
+    )
+    first, summary = OperationalLog.objects.filter(event="task_timed_out").order_by(
+        "created_at"
+    )
+    assert first.context["what"] == summary.context["what"] == "statement_timeout"
+    assert "count" not in first.context and summary.context["count"] == 2
+    assert summary.context["elapsed_seconds"] >= 2

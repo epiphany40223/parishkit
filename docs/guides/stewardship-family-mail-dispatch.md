@@ -33,7 +33,14 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
 - A finite private helper receives credentials and resolved content through
   anonymous pipes. It emits only a closed result and recipient positions,
   never addresses, provider prose, tokens or keys. Missing/malformed/late
-  acknowledgements remain uncertain.
+  acknowledgements remain uncertain. A result the helper has finished is
+  kept, even when the worker's lease check waited past the deadline or
+  failed afterwards; settling it still rechecks ownership. The lease check
+  never blocks for long: the worker's own lock and each of its few database
+  statements (lock waits included) get at most a second, so a tick takes a
+  few seconds at worst, and a tick stopped by one of those limits is skipped
+  and reported. A busy deployment cannot turn a known outcome into an
+  uncertain one.
 - Gmail's own sending limits are recognized by the enhanced status code that
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail

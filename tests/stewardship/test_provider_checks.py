@@ -550,3 +550,17 @@ def test_deadline_kill_is_logged_after_the_helper_is_killed(monkeypatch):
     with pytest.raises(parent.ProviderCheckOwnershipLost):
         invoke(check=Mock(side_effect=PermissionError("lost")))
     recorded.assert_not_called()
+
+
+def test_a_credential_verdict_still_needs_ownership_after_it_finishes(monkeypatch):
+    """Installer checks keep their final ownership check: a lost owner is fatal.
+
+    Only mail helpers keep a finished result past a failed check (#318); a
+    credential verdict for a lost installer is never used.
+    """
+    from .test_readiness_delivery_process import blocked_check, gated_helper
+
+    release, done = gated_helper(monkeypatch, b"valid\n")
+    check = blocked_check(release, done, then=PermissionError("private"))
+    with pytest.raises(parent.ProviderCheckOwnershipLost):
+        invoke(check=check)

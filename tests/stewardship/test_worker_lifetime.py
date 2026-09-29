@@ -143,3 +143,60 @@ def test_undrained_renewer_is_fatal_even_when_handler_already_failed(
     thread.join.assert_called_once_with(timeout=RENEWAL_DRAIN_SECONDS)
     if body_fails:
         assert isinstance(caught.value.__context__, ValueError)
+
+
+def test_inflight_check_skips_while_this_workers_lock_is_busy(monkeypatch):
+    """A heartbeat holding the control lock cannot stall a helper's lease check.
+
+    The tick is skipped (no SQL) instead of waiting past the helper's
+    deadline (#318).
+    """
+    import threading
+    import time
+
+    from parishkit.stewardship.jobs import dispatch
+
+    monkeypatch.setattr(dispatch, "INFLIGHT_LOCK_SECONDS", 0.1)
+    reports = []
+    monkeypatch.setattr(dispatch, "record_inflight_skip", reports.append)
+    context = execution()
+    held, done = threading.Event(), threading.Event()
+
+    def hold():
+        with context.control.lock:
+            held.set()
+            done.wait(5)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    try:
+        held.wait(5)
+        started = time.monotonic()
+        assert context.check_inflight() is None
+        assert time.monotonic() - started < 1
+        # A run of skips is reported once at its start ...
+        assert context.check_inflight() is None
+        assert len(reports) == 1
+        assert reports[0]["what"] == "control_lock" and reports[0]["skipped"] == 1
+        assert reports[0]["task_id"] == context.claim.run_id
+        assert reports[0]["limit_seconds"] == 0.1
+        assert 0.1 <= reports[0]["elapsed_seconds"] < 1
+    finally:
+        done.set()
+        thread.join(5)
+    # ... and summed up when it ends (here, at the next transition).
+    context.skips.ended()
+    assert len(reports) == 2 and reports[1]["skipped"] == 2
+    assert reports[1]["elapsed_seconds"] >= 0.2
+
+
+def test_inflight_check_refuses_to_run_inside_a_transaction(monkeypatch):
+    """Its transaction-local limits must never leak into a caller's transaction."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.jobs import dispatch
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    monkeypatch.setattr(dispatch, "connection", SimpleNamespace(in_atomic_block=True))
+    with pytest.raises(StorageInvariantError):
+        execution().check_inflight()
