@@ -1214,13 +1214,20 @@
     // One function per share method that redraws its checkbox (and details
     // box) from the answers, so they can change without a rebuild.
     const shareSyncs = [];
-    let shown = pledgePositive();
+    // An amount that doesn't parse yet ("1," on the way to "1,200", or a
+    // cleared field being retyped) changes nothing: only a positive pledge
+    // shows the details and only an exact zero hides and clears them, so a
+    // Family's methods and notes survive typing a comma. A fresh form with
+    // no amount starts hidden unless it already carries details.
+    const pledged = () => moneyCents(annual.value);
+    let shown = pledgePositive() || (pledged() === null &&
+      Boolean(answers.financial.frequency || Object.keys(answers.financial.shares).length));
     const setConditional = () => {
       // Show frequency and share methods only for a positive pledge. This
       // runs on every keystroke, so it changes what it must in place: a
       // rebuild (edit()) replaces the field being typed in, scrolls to the
       // top and refocuses it, which flickered and jumped on iOS Safari (#295).
-      const show = pledgePositive();
+      const cents = pledged(), show = cents === null ? shown : cents > 0;
       if (shown && !show) {
         // Clear hidden answers so a zero pledge never carries a stale
         // frequency or share method into review or submission.

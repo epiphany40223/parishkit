@@ -180,8 +180,8 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
     ).to_be_visible()
     assert not submissions
     page.locator(f"#financial-option-{CHECK}").check()
-    # Clearing the amount clears the hidden answers; they do not come back.
-    page.get_by_label("Annual pledge (USD)").fill("")
+    # A zero pledge clears the hidden answers; they do not come back.
+    page.get_by_label("Annual pledge (USD)").fill("0")
     page.get_by_label("Annual pledge (USD)").fill("1200")
     expect(page.get_by_label("Pledge frequency (required)")).to_have_value("")
     expect(page.locator(f"#financial-option-{CHECK}")).not_to_be_checked()

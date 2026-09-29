@@ -380,7 +380,11 @@ more. Proposed Members count, while terminal Members do not. The financial step
 remains available with the same validation when no Members remain; marking all
 Members terminal does not discard or clear the Family's pledge/share answers.
 With a zero (or not yet entered) pledge, the frequency and share-method fields
-are hidden, cleared and not required, and the form submits neither.
+are hidden, cleared and not required, and the form submits neither. Only an
+amount that is exactly zero clears them: while the amount is not yet a number
+(a half-typed "1," on the way to "1,200", or a cleared field being retyped)
+the fields and the Family’s answers stay as they are, and the amount is
+validated as usual.
 
 Typing the pledge and ticking share methods change the page in place: no
 control is rebuilt, the window does not scroll, and focus and the caret stay
