@@ -26,7 +26,8 @@ and the provisioning record (the media tree, the record and kept privileges
 come from the
 [restore correction](stewardship-restore-correction.md)), seals both to the operator's public key,
 writes a plaintext manifest of sizes and digests, records one row in
-`stewardship_backup_run`, and keeps the newest thirty complete sets on the
+`stewardship_backup_run`, and keeps the complete sets the runbook's
+[retention](stewardship-backup-runbook.md#retention) rules name on the
 host (a failed run's directory, without a manifest, neither counts nor is
 removed). Two
 console commands run wherever the operator keeps the private key:

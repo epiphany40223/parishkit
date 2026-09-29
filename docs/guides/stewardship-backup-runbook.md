@@ -104,10 +104,48 @@ overdue alert below fires after 24 hours without a completed backup, so a
 single nightly run would page on any late night, and a local-time schedule
 gains an hour at the daylight-saving change. Each run leaves a dated directory under
 `backups/` in the runtime root with `database.pgdump.sealed`,
-`files.tar.sealed` and `manifest.json`; the newest thirty complete sets are
-kept. A failed run leaves its directory without a manifest for inspection;
-it never counts toward the thirty and is not removed, so delete it by hand
-once the cause is understood.
+`files.tar.sealed` and `manifest.json`; the sets kept are those the
+[retention](#retention) rules below name. A failed run leaves its directory
+without a manifest for inspection; it never counts toward retention and is
+not removed, so delete it by hand once the cause is understood.
+
+### Retention
+
+Each run, after recording its set, removes the complete sets on the host
+that these rules do not keep, and the
+[off-site copy](#off-site-copies-to-google-drive) applies the same rules to
+its set folders. A set's date is its name: the run's start time in UTC. The
+rules look only at dates, never at why a set was taken, since a scheduled,
+pre-upgrade and manual backup are the same kind of set. Kept are:
+
+- every set from the last seven days, so a day of deploys or manual runs
+  does not push out the scheduled sets at once;
+- the newest set of each of the last 30 UTC days, today included;
+- the newest set of each of the last 12 UTC months, this month included;
+- the newest fourteen sets, however old.
+
+These are the operations specification's
+[30 daily and 12 monthly](../specs/stewardship/operations/spec.md) defaults,
+plus the seven-day window and the fourteen-set floor. The daily and monthly
+sets are each day's and month's last, so once a day or month ends the set
+kept for it never changes. A restore does not pin a set: stop the backup
+cron before restoring, as the restore steps below say, so no run prunes
+meanwhile.
+
+The host and Drive share one clock, so a clock that jumps would thin both
+at once. A run therefore prunes nothing when the newest set is more than
+two days after the one before it, or when a set is dated more than an hour
+after the current time. It logs a WARNING `task_failed` line whose
+`failure_kind` names the check that fired:
+`backup_retention_paused_gap` for the gap (the clock jumped forward, or
+backups stopped for days) and `backup_retention_paused_future_set` for a
+set dated after the clock. Check the host clock. After fixing a clock that
+ran ahead, move the future-dated sets (their names are later than the
+current UTC time) out of `backups/` on the host and out of the Drive
+folder, or delete them; until then every run pauses, since a set is still
+dated after the clock. Otherwise the next run prunes normally once its set
+is close to the previous one, and the fourteen-set floor bounds what a
+clock that stays wrong can remove.
 
 Get a copy of every set off the host, either with the application's
 [off-site copies to Google Drive](#off-site-copies-to-google-drive) or with
@@ -121,9 +159,26 @@ An Administrator can turn on off-site copies from the portal: Integrations,
 then **Off-site backups (Google Drive)**. After each successful backup, the
 same `backup-worker` run uploads the new set's three files (the two sealed
 files and `manifest.json`, never anything unencrypted) into a subfolder named
-like the set, inside the Drive folder the Administrator chose. It then keeps
-the newest thirty such subfolders and moves older ones to the Drive trash; it
-never touches a file or folder it did not create. Each subfolder is tagged
+like the set, inside the Drive folder the Administrator chose. It then moves
+the subfolders [retention](#retention) does not keep to the Drive trash; it
+never touches a file or folder it did not create. A subfolder from the last
+seven days is never trashed. Older subfolders count only if they hold all
+three files and the database records the set's copy as `uploaded` (and so
+verified): the daily and monthly sets are chosen among those, so a failed
+or partial copy never pushes a good one out. An older subfolder missing a
+file is trashed. An older complete one with no recorded copy is left alone,
+since it may be a copy that failed verification or one whose row a
+restored database lacks; delete it by hand once a verified copy of that
+day exists. The host and the Drive folder may therefore keep different sets
+for a day whose newest set failed to copy: the host keeps that set and
+Drive keeps the day's newest verified copy, so each day in the window still
+has a set in each place. Only one run copies and prunes at a time: a run
+that finds another still copying (a lock file, `.offsite-copy.lock`, in
+`backups/`) leaves the copy to it, and its JSON line's `offsite` field says
+`busy`; the run holding the lock looks for new sets once more after its
+uploads, so a set left to it this way is copied in the same run. The
+`smoke --target backup_drive --send` check takes the same lock and reports
+`busy` while a copy is running. Each subfolder is tagged
 with the deployment's identity, so two deployments pointed at the same folder
 (for example a validation server and production) each keep and prune only
 their own sets. Even so, give each deployment its own folder: a shared one
@@ -135,7 +190,7 @@ this tagging keep the old tag: they are never pruned, and the first copy
 after the change writes a new folder of the same name beside any old one
 (which may be a partial copy). Delete the old-tag folders by hand once newer
 copies exist. The run's JSON line gains
-an `offsite` field (`uploaded`, `failed` with a category, or
+an `offsite` field (`uploaded`, `failed` with a category, `busy`, or
 `not_configured`), and a failed copy never fails the backup itself: the local
 set is recorded as usual, and the next run copies any of the three newest
 sets not yet in the folder.
@@ -527,7 +582,7 @@ the following, and the pre-launch gate approves them as known limitations:
   configuration, credentials and media archive is taken after it, not
   atomically with it; all three change rarely and by operator or Admin
   action.
-- Off-host copy, retention beyond the host, the escrow workflow and
+- Off-host copy other than to Google Drive, the escrow workflow and
   automated restore are the operator's by hand; the deferred remainder is
   listed in the launch scope.
 - The private key is not rotated during v1.

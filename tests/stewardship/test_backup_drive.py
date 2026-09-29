@@ -3,11 +3,12 @@
 import hashlib
 import json
 import logging
+from datetime import UTC, datetime
 
 import pytest
 
 from parishkit.config import ConfigError
-from parishkit.stewardship import backup_drive, observability
+from parishkit.stewardship import backup, backup_drive, observability
 from parishkit.stewardship.backup_drive import (
     DriveClient,
     DriveFailure,
@@ -125,35 +126,182 @@ def test_mismatched_upload_fails_verification(tmp_path):
     assert caught.value.kind == "verification"
 
 
-def test_prune_keeps_newest_tagged_sets_only(tmp_path):
+NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+
+
+@pytest.fixture
+def no_floor(monkeypatch):
+    """Drop the newest-sets floor to one, so the date tiers alone decide."""
+    monkeypatch.setattr(backup, "MINIMUM_SETS", 1)
+
+
+def verified(drive, tag=None):
+    """Every live set folder's name, as if each had a recorded copy."""
+    return set(drive.sets(tag))
+
+
+def drive_set(drive, name, *, files=SEALED_FILES):
+    """Create one tagged set folder holding ``files``; return its ID."""
+    folder = drive.create_folder(name, FOLDER)
+    for file_name in files:
+        drive._new(name=file_name, mime="x", parent=folder, size="6", md5="0" * 32)
+    return folder
+
+
+def test_prune_keeps_the_tiers_among_tagged_sets_only(no_floor):
+    """Older sets beyond the anchors go; untagged and other names stay."""
     drive = FakeDrive(FOLDER)
     for day in range(1, 6):
-        drive.create_folder(f"202609{day:02d}T020000Z", FOLDER)
+        drive_set(drive, f"202608{day:02d}T020000Z")
+        drive_set(drive, f"202608{day:02d}T140000Z")
     drive._new(name="20260101T020000Z", mime=backup_drive.FOLDER_MIME, parent=FOLDER)
     drive.create_folder("notes", FOLDER)
-    prune(drive, FOLDER, keep=2)
-    assert drive.sets() == ["20260904T020000Z", "20260905T020000Z", "notes"]
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    # August 1-5 are older than the 30 daily anchors: only August's newest.
+    assert drive.sets() == ["20260805T140000Z", "notes"]
     untagged = [
         item for item in drive.items.values() if item.get("name") == "20260101T020000Z"
     ]
     assert not untagged[0]["trashed"]
 
 
-def test_prune_spares_another_deployments_sets():
+def test_prune_keeps_every_recent_set_and_each_days_newest(no_floor):
+    """A day of deploy backups stays a week; then only the day's newest."""
+    drive = FakeDrive(FOLDER)
+    deploys = [f"20260925T{hour:02d}0000Z" for hour in range(24)]
+    older = [f"20260920T{hour:02d}0000Z" for hour in range(24)]
+    for name in deploys + older:
+        drive_set(drive, name)
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    assert drive.sets() == ["20260920T230000Z", *deploys]
+
+
+def test_prune_counts_only_complete_folders(no_floor):
+    """Partial folders never displace a verified set, and old ones go."""
+    drive = FakeDrive(FOLDER)
+    good = drive_set(drive, "20260910T020000Z")
+    # Newer the same day, but each missing a file or a checksum: not copies.
+    drive_set(drive, "20260910T140000Z", files=SEALED_FILES[:2])
+    partial = drive_set(drive, "20260910T200000Z")
+    drive._new(name="extra", mime="x", parent=partial)
+    drive.items[
+        next(
+            key
+            for key, item in drive.items.items()
+            if item.get("parent") == partial and item["name"] == SEALED_FILES[0]
+        )
+    ]["md5"] = None
+    # A partial folder inside the recent window may be a copy in progress.
+    in_progress = drive_set(drive, "20260928T020000Z", files=())
+    drive_set(drive, "20260927T140000Z")
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    assert drive.sets() == [
+        "20260910T020000Z",
+        "20260927T140000Z",
+        "20260928T020000Z",
+    ]
+    assert not drive.items[good]["trashed"] and not drive.items[in_progress]["trashed"]
+
+
+def test_prune_always_keeps_the_newest_complete_set(no_floor):
+    """Even when every recent copy is partial and the newest good one is old."""
+    drive = FakeDrive(FOLDER)
+    drive_set(drive, "20240101T020000Z")
+    drive_set(drive, "20240102T020000Z")
+    drive_set(drive, "20240103T020000Z", files=SEALED_FILES[:1])
+    drive_set(drive, "20260927T140000Z", files=SEALED_FILES[:1])
+    drive_set(drive, "20260928T020000Z", files=SEALED_FILES[:1])
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    assert drive.sets() == [
+        "20240102T020000Z",
+        "20260927T140000Z",
+        "20260928T020000Z",
+    ]
+
+
+def test_prune_spares_another_deployments_sets(no_floor):
     """Two deployments sharing one folder each prune only their own sets."""
     drive = FakeDrive(FOLDER, tag="deployment-a")
     for day in range(1, 4):
-        drive.create_folder(f"202609{day:02d}T020000Z", FOLDER)
+        drive_set(drive, f"202608{day:02d}T020000Z")
     drive.tag = "deployment-b"
     for day in range(1, 4):
-        drive.create_folder(f"202609{day:02d}T120000Z", FOLDER)
-    prune(drive, FOLDER, keep=1)
-    assert drive.sets("deployment-b") == ["20260903T120000Z"]
+        drive_set(drive, f"202608{day:02d}T120000Z")
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    assert drive.sets("deployment-b") == ["20260803T120000Z"]
     assert drive.sets("deployment-a") == [
-        "20260901T020000Z",
-        "20260902T020000Z",
-        "20260903T020000Z",
+        "20260801T020000Z",
+        "20260802T020000Z",
+        "20260803T020000Z",
     ]
+
+
+def test_prune_keeps_only_recorded_copies_as_anchors(no_floor):
+    """A complete folder whose copy failed verification never replaces a good one."""
+    drive = FakeDrive(FOLDER)
+    good = drive_set(drive, "20260910T020000Z")
+    # Newer the same day and holding all three files, but no uploaded row:
+    # its copy failed verification (or its row is missing). Left alone.
+    unverified = drive_set(drive, "20260910T140000Z")
+    older = drive_set(drive, "20260909T020000Z")
+    drive_set(drive, "20260909T140000Z")
+    prune(
+        drive,
+        FOLDER,
+        verified={"20260910T020000Z", "20260909T020000Z", "20260909T140000Z"},
+        now=NOW,
+    )
+    assert not drive.items[good]["trashed"]
+    assert not drive.items[unverified]["trashed"]
+    assert drive.items[older]["trashed"]
+
+
+def test_a_failed_folder_listing_trashes_nothing(no_floor):
+    """A children() error while checking completeness stops the prune."""
+    drive = FakeDrive(FOLDER)
+    for day in range(1, 6):
+        drive_set(drive, f"202608{day:02d}T020000Z")
+    names = verified(drive)
+    listing = drive.children
+
+    def failing(parent, **kwargs):
+        if parent != FOLDER and parent == drive.children(FOLDER)[-1]["id"]:
+            raise DriveFailure("unavailable")
+        return listing(parent, **kwargs)
+
+    drive.children = failing
+    with pytest.raises(DriveFailure):
+        prune(drive, FOLDER, verified=names, now=NOW)
+    assert "trash" not in drive.calls
+    assert drive.sets() == sorted(names)
+
+
+def test_prune_keeps_a_floor_of_newest_sets():
+    """A forward clock jump still leaves the newest verified sets."""
+    drive = FakeDrive(FOLDER)
+    names = [f"202608{day:02d}T020000Z" for day in range(1, 21)]
+    for name in names:
+        drive_set(drive, name)
+    # Twelve hours after the newest set, a year on: the tiers keep one set.
+    drive_set(drive, "20260820T140000Z")
+    prune(drive, FOLDER, verified=verified(drive), now=datetime(2027, 9, 1, tzinfo=UTC))
+    assert len(drive.sets()) == backup.MINIMUM_SETS
+
+
+def test_a_suspect_clock_pauses_drive_retention(caplog, no_floor):
+    """Days between the newest two sets: nothing is trashed, with a WARNING."""
+    drive = FakeDrive(FOLDER)
+    for day in range(1, 6):
+        drive_set(drive, f"202608{day:02d}T020000Z")
+    drive_set(drive, "20260929T020000Z")
+    before = drive.sets()
+    prune(drive, FOLDER, verified=verified(drive), now=NOW)
+    assert drive.sets() == before
+    assert any(
+        getattr(record, "extra", {}).get("failure_kind")
+        == "backup_retention_paused_gap"
+        for record in caplog.records
+    )
 
 
 def test_client_queries_and_writes_the_deployment_tag():

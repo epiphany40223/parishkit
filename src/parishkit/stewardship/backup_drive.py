@@ -22,12 +22,20 @@ import json
 import logging
 import re
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 from parishkit.config import ConfigError
 
-from .backup import SET_NAME
+from .backup import (
+    DUMP,
+    FILES,
+    MANIFEST,
+    RECENT_WINDOW,
+    retained,
+    retention_paused,
+    set_started,
+)
 from .observability import Event, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
@@ -41,9 +49,6 @@ FOLDER_MIME = "application/vnd.google-apps.folder"
 TAG_KEY = "parishkitStewardshipBackup"
 TAG_VALUE = "v1"
 DEPLOYMENT_TAG = re.compile(r"^[A-Za-z0-9-]{1,100}$")
-# Off-site sets kept in the Drive folder, matching the host's retention
-# (backup.RETAINED_SETS); older tagged set folders go to the Drive trash.
-RETAINED_SETS = 30
 # Drive file and folder IDs are URL-safe base64-like tokens.
 FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
 REQUEST_SECONDS = 60
@@ -406,18 +411,65 @@ def upload_set(client, folder_id, directory, names):
     return subfolder
 
 
-def prune(client, folder_id, *, keep=RETAINED_SETS):
-    """Trash tagged set folders beyond the newest ``keep``; never touch others."""
-    sets = sorted(
-        (
-            item
-            for item in client.children(folder_id, tagged=True, folders=True)
-            if SET_NAME.fullmatch(item.get("name", ""))
-        ),
-        key=lambda item: item["name"],
-    )
-    for item in sets[:-keep] if keep else sets:
-        client.trash(item["id"])
+def _complete(client, folder):
+    """True when a set folder holds all three files, each with size and MD5.
+
+    A folder missing a file is a copy that failed or was interrupted. Having
+    all three is not proof the copy verified (``upload_set`` stops at the
+    first mismatched file but leaves it), which is why ``prune`` also needs
+    the recorded ``uploaded`` outcome.
+    """
+    stored = {
+        item.get("name")
+        for item in client.children(folder["id"])
+        if item.get("size") is not None and item.get("md5Checksum") is not None
+    }
+    return {DUMP, FILES, MANIFEST} <= stored
+
+
+def prune(client, folder_id, *, verified, now=None):
+    """Trash this deployment's set folders the host's retention would not keep.
+
+    ``verified`` names the sets with a recorded ``uploaded`` outcome for this
+    folder. The rules are ``backup.retained``'s, so the Drive copy keeps the
+    same daily and monthly anchors as the host, chosen only among folders
+    that are both verified and complete: a failed or partial copy can never
+    displace a good one. Beyond those:
+
+    - folders started within ``RECENT_WINDOW`` are never touched;
+    - an older folder missing a file is trashed (the caller holds the copy
+      lock, so it is not another run's copy in progress);
+    - an older complete folder without a recorded outcome is left alone: it
+      may be a good copy whose row a restored database lacks, or a copy that
+      failed verification; the operator removes it by hand;
+    - nothing is trashed while ``backup.retention_paused`` says the clock
+      looks wrong, or if any listing fails;
+    - folders without this deployment's tag, or not named like a set, are
+      never touched.
+    """
+    now = now or datetime.now(UTC)
+    folders = [
+        item
+        for item in client.children(folder_id, tagged=True, folders=True)
+        if set_started(item.get("name", ""))
+    ]
+    if retention_paused([item["name"] for item in folders], now):
+        return
+    older = [
+        item for item in folders if set_started(item["name"]) < now - RECENT_WINDOW
+    ]
+    # Every listing happens before the first trash, so a failed one trashes
+    # nothing.
+    complete = {item["id"] for item in older if _complete(client, item)}
+    good = [
+        item for item in older if item["id"] in complete and item["name"] in verified
+    ]
+    keep = retained([item["name"] for item in good], now)
+    for item in older:
+        if item["id"] not in complete or (
+            item["name"] in verified and item["name"] not in keep
+        ):
+            client.trash(item["id"])
 
 
 def probe(client, folder_id):

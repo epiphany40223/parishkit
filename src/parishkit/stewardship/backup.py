@@ -45,8 +45,20 @@ from .runtime_paths import (
 # The specification's window: a successful backup is required every 24 hours,
 # and the offline upgrade commands accept one no older than that.
 REQUIRED_WITHIN = timedelta(hours=24)
-# Complete sets kept on the host; the off-host copy is the operator's.
-RETAINED_SETS = 30
+# Retention, applied alike on the host and in the Google Drive copy (see
+# ``retained``): the operations specification's 30 daily and 12 monthly sets,
+# plus every set from the last week so deploy and manual backups are not lost
+# at once.
+RECENT_WINDOW = timedelta(days=7)
+DAILY_DAYS = 30
+MONTHLY_MONTHS = 12
+# A floor under the date rules: the newest sets kept whatever their dates, so
+# a clock that jumps forward cannot age every set out in one run.
+MINIMUM_SETS = 14
+# Retention pauses (see ``retention_paused``) when the newest set is this far
+# after the one before it, or when a set is dated this far after ``now``.
+CLOCK_GAP = timedelta(days=2)
+CLOCK_SKEW = timedelta(hours=1)
 # The archived trees are small (branding images are at most a few megabytes
 # each); anything larger is not what this backup was designed for and stops
 # before sealing.
@@ -223,23 +235,105 @@ def dump_database(configuration, sink, *, recipient):
     return count, digest
 
 
-def _prune(backups):
-    """Keep the newest retained complete sets; count and remove only those.
+def set_started(name):
+    """The UTC start time a set's name encodes, or None if it names no set.
+
+    A set is named by its run's ``started_at`` in UTC, so names sort in time
+    order. A name that matches the pattern but is not a real time is not
+    treated as a set, so retention never removes it.
+    """
+    if not SET_NAME.fullmatch(name):
+        return None
+    try:
+        return datetime.strptime(name, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def retained(names, now):
+    """The set names retention keeps out of ``names``, as of ``now`` (UTC).
+
+    ``names`` are complete sets only; the rules are keyed on each set's UTC
+    start date, never on why it was taken (the manifest does not record
+    whether a run was scheduled, a pre-upgrade or a manual one):
+
+    - every set started within ``RECENT_WINDOW`` of ``now``, so a day of
+      deploy or manual backups is not thinned at once;
+    - the newest set of each of the last ``DAILY_DAYS`` UTC days, today
+      included (the daily anchors);
+    - the newest set of each of the last ``MONTHLY_MONTHS`` UTC months, this
+      month included (the monthly anchors);
+    - the newest ``MINIMUM_SETS`` sets, whatever their age, so retention
+      never leaves too few sets behind (in particular, the newest set).
+
+    An anchor is the newest set of a day or month that has ended, so it
+    never changes once kept: a set pruned today is never one a later day's
+    rules would have wanted.
+    """
+    times = {name: set_started(name) for name in names}
+    keep = set(sorted(names)[-MINIMUM_SETS:])
+    first_day = now.date() - timedelta(days=DAILY_DAYS - 1)
+    first_month = now.year * 12 + now.month - MONTHLY_MONTHS
+    daily, monthly = {}, {}
+    # Oldest first, so each day's and month's entry ends as its newest set.
+    for name in sorted(names):
+        started = times[name]
+        if started >= now - RECENT_WINDOW:
+            keep.add(name)
+        if started.date() >= first_day:
+            daily[started.date()] = name
+        if started.year * 12 + started.month > first_month:
+            monthly[started.year, started.month] = name
+    return keep | set(daily.values()) | set(monthly.values())
+
+
+def retention_paused(names, now):
+    """True, after logging a WARNING, when the clock looks wrong for pruning.
+
+    Host and Drive retention share one clock, so a clock that jumped would
+    thin both copies in the same run. Pruning is skipped when any set is
+    dated more than ``CLOCK_SKEW`` after ``now`` (the clock went back), or
+    when the newest set is more than ``CLOCK_GAP`` after the one before it
+    (the clock jumped forward, or backups stopped for days). Either way the
+    next run prunes normally once its own set is close to the last one, and
+    ``MINIMUM_SETS`` still bounds what a persistent jump can remove.
+    """
+    times = sorted(set_started(name) for name in names)
+    if times and times[-1] > now + CLOCK_SKEW:
+        reason = FailureKind.BACKUP_RETENTION_FUTURE
+    elif len(times) > 1 and times[-1] - times[-2] > CLOCK_GAP:
+        reason = FailureKind.BACKUP_RETENTION_GAP
+    else:
+        return False
+    # The category names which check fired, so the operator knows whether
+    # to look for future-dated sets or at a jump (or a stop) in backups.
+    emit(Event.TASK_FAILED, level=logging.WARNING, failure_kind=reason)
+    return True
+
+
+def _prune(backups, now):
+    """Remove complete local sets that ``retained`` does not keep.
 
     A failed run's directory has no manifest: it is left for inspection and
     never counts toward retention, so a run of failures cannot evict good
-    sets. The operator removes failed directories by hand.
+    sets. The operator removes failed directories by hand. Nothing is
+    removed while ``retention_paused`` says the clock looks wrong.
     """
-    sets = sorted(
+    sets = [
         path
         for path in backups.iterdir()
         if path.is_dir()
         and not path.is_symlink()
-        and SET_NAME.match(path.name)
+        and set_started(path.name)
         and (path / MANIFEST).is_file()
-    )
-    for path in sets[:-RETAINED_SETS]:
-        shutil.rmtree(path)
+    ]
+    names = [path.name for path in sets]
+    if retention_paused(names, now):
+        return
+    keep = retained(names, now)
+    for path in sets:
+        if path.name not in keep:
+            shutil.rmtree(path)
 
 
 def run_backup(configuration, *, record):
@@ -319,7 +413,7 @@ def run_backup(configuration, *, record):
         recipient_fingerprint=recipient.fingerprint,
         application_version=__version__,
     )
-    _prune(backups)
+    _prune(backups, datetime.now(UTC))
     return manifest
 
 

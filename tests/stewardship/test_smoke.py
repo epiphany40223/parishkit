@@ -496,6 +496,16 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
     assert json.loads(capsys.readouterr().out)["copied_set"] == directory.name
     assert drive.sets() == [directory.name]
+    # While a backup's own copy holds the lock, --send copies nothing.
+    from parishkit.stewardship.backup_offsite import _copy_lock
+
+    uploads = drive.calls.count("upload")
+    with _copy_lock(backups) as held:
+        assert held
+        assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
+        assert json.loads(capsys.readouterr().out)["reason"] == "busy"
+    # Only the access check's own marker file was uploaded.
+    assert drive.calls.count("upload") == uploads + 1
     drive.can_add = False
     assert smoke.execute_smoke(args) == 0
     assert json.loads(capsys.readouterr().out)["reason"] == "permission"
