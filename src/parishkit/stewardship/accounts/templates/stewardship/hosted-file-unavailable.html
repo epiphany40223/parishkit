@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  The one page for any hosted-file link that serves nothing (#346): an unknown
+  token, a deleted file or a missing one look the same, so the page never
+  reveals whether a link ever worked.
+{% endcomment %}
+{% block title %}{% translate "File not available" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "This file is no longer available" %}</h1>
+  <p>{% translate "The parish may have removed it or replaced it with a newer version. Please contact the parish office if you need it." %}</p>
+  {% if parish %}<p>{{ parish.name }}{% if parish.website %} — <a href="{{ parish.website }}">{{ parish.website }}</a>{% endif %}</p>{% endif %}
+</section>{% endblock %}

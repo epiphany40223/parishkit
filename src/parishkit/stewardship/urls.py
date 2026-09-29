@@ -25,6 +25,7 @@ from .accounts import (
     family_authentication,
     family_maintenance_views,
     go_live_views,
+    hosted_file_serving,
     integration_selection_views,
     integration_views,
     ministry_views,
@@ -90,6 +91,8 @@ public_patterns = [
     ),
     path("", family_authentication.entry, name="entry"),
     path("access/<str:token>", family_authentication.access, name="access"),
+    # Hosted files (#346): public, by unguessable token.
+    path("files/<str:token>", hosted_file_serving.public_file, name="hosted_file"),
 ]
 family_patterns = [
     path("form", response_views.start, name="form"),

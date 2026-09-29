@@ -25,6 +25,9 @@ CSP = (
     "form-action 'self' https://accounts.google.com; base-uri 'none'; "
     "frame-ancestors 'none'; object-src 'none'"
 )
+# Hosted files (#346) are served under this policy instead: nothing may load
+# or run, and the bytes are never framed.
+FILE_CSP = "default-src 'none'; sandbox; frame-ancestors 'none'"
 FORWARDED = (
     "HTTP_FORWARDED",
     "HTTP_X_FORWARDED_FOR",
@@ -214,21 +217,30 @@ class SecurityBoundaryMiddleware:
             status = response.status_code
             response.close()
             response = error_response(request, status=status)
-        response["Content-Security-Policy"] = CSP
+        # A hosted file response (#346) keeps its own sandbox policy.
+        response["Content-Security-Policy"] = (
+            FILE_CSP if getattr(response, "stewardship_own_policy", False) else CSP
+        )
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
         # Same-origin never sends a Referer to another site, and lets browsers
         # send our real Origin with form POSTs; under no-referrer they send
         # "Origin: null", which fails every CSRF check. Access-token URLs keep
-        # no-referrer so the token itself is never a Referer, even to us.
+        # no-referrer so the token itself is never a Referer, even to us; so do
+        # hosted-file links (#346), whose documents may link elsewhere.
         response["Referrer-Policy"] = (
-            "no-referrer" if request.path_info.startswith("/access/") else "same-origin"
+            "no-referrer"
+            if request.path_info.startswith(("/access/", "/files/"))
+            else "same-origin"
         )
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if request.is_secure() and settings.SECURE_HSTS_SECONDS:
             response["Strict-Transport-Security"] = (
                 f"max-age={settings.SECURE_HSTS_SECONDS}"
             )
-        if not request.path_info.startswith(settings.STATIC_URL):
+        # A hosted file keeps its own revalidated caching (see its view).
+        if not request.path_info.startswith(settings.STATIC_URL) and not getattr(
+            response, "stewardship_own_policy", False
+        ):
             response["Cache-Control"] = "no-store"
         return response
