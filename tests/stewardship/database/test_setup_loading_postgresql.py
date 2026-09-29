@@ -78,7 +78,7 @@ def prepared(service, *, with_request=False):
     with target_login():
         assert relay_pending(private)
     handler = Handler(
-        WorkQueue.GENERAL, admit_setup_task, lambda _: None, scope=work_transaction
+        WorkQueue.SOURCE, admit_setup_task, lambda _: None, scope=work_transaction
     )
     values = (
         Execution(claim, handler, TaskRun.objects.get(pk=task.run_id).correlation_id),
@@ -269,7 +269,7 @@ def test_dispatched_setup_load_finishes_only_a_valid_corpus(
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             task.run_id,
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={"setup_source_load": setup_source_handler()},
         )
@@ -310,7 +310,7 @@ def test_original_cancel_during_provider_page_blocks_all_staging(
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             task.run_id,
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={"setup_source_load": setup_source_handler()},
         )
@@ -359,7 +359,7 @@ def test_cancel_during_private_handoff_settles_without_provider_reads(
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             task.run_id,
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={"setup_source_load": setup_source_handler()},
         )

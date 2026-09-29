@@ -549,6 +549,10 @@ sequence with the commands that exist.
    command and open the public origin. Confirm in the portal that background
    work resumed: the home page's latest refresh time advances and the
    background task pages show the scheduler running.
+   `docker compose ... top worker` lists two application processes: the
+   worker and its [source process](stewardship-runtime.md#the-workers-source-process)
+   (`runtime ... --queue source`). A release that adds or removes that
+   process changes no Compose service, so it needs no step beyond these.
 
 Record the new release's complete `IMAGE@sha256:DIGEST` reference in the
 operators' notes, and keep the previous ones: a restore onto a new host

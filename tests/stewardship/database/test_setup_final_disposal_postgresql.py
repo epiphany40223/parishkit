@@ -72,7 +72,7 @@ def cleanup(service, browser, attempt, task):
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             identifiers[0],
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={"setup_source_cleanup": cleanup_handler()},
         )

@@ -11,25 +11,33 @@ from .consumer_runtime import process_identity
 from .probe import DIRECTORY, HEARTBEAT, MAX_AGE_SECONDS
 from .runtime_paths import private_directory
 
+# The worker container's source consumer (#336) publishes its own liveness
+# here; the worker process checks it and stops when it goes stale.
+SOURCE_HEARTBEAT = DIRECTORY / "source-heartbeat.json"
 
-def publish_heartbeat():
-    """Only completion of a loop pass refreshes evidence; hangs become unhealthy."""
+
+def publish_heartbeat(path=None):
+    """Only completion of a loop pass refreshes evidence; hangs become unhealthy.
+
+    ``path`` selects a sibling process's own file; the default is the one the
+    container health probe reads.
+    """
     private_directory(DIRECTORY, create=True)
     pid = os.getpid()
     _, started = process_identity(pid)
     write_private(
-        HEARTBEAT,
+        path or HEARTBEAT,
         json.dumps({"pid": pid, "started": started, "time": monotonic()}).encode(
             "ascii"
         ),
     )
 
 
-def healthcheck():
+def healthcheck(path=None):
     """A bounded local read verifies live PID/start identity and recent progress."""
     try:
         private_directory(DIRECTORY)
-        value = json.loads(read_private(HEARTBEAT, maximum=1024))
+        value = json.loads(read_private(path or HEARTBEAT, maximum=1024))
         if type(value) is not dict or set(value) != {"pid", "started", "time"}:
             return 1
         if type(value["started"]) is not int or type(value["time"]) not in {int, float}:

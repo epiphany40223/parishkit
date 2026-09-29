@@ -49,7 +49,7 @@ def cleanup_claim(attempt_id):
     execution = Execution(
         claim,
         Handler(
-            WorkQueue.GENERAL, lambda *_: True, lambda _: None, scope=work_transaction
+            WorkQueue.SOURCE, lambda *_: True, lambda _: None, scope=work_transaction
         ),
         uuid4(),
     )
@@ -133,7 +133,7 @@ def test_scheduler_queues_once_and_worker_cancels_unstarted_load(setup_service):
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             identifiers[0],
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={"setup_source_cleanup": cleanup_handler()},
         )

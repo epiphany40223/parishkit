@@ -51,7 +51,7 @@ def refresh_handler(*, credential_path, reconcile):
     if not isinstance(credential_path, Path) or not callable(reconcile):
         raise TypeError("Source handler requires its private path and real effects.")
     return Handler(
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         admit=admit_refresh_metadata,
         execute=partial(_execute, credential_path=credential_path, reconcile=reconcile),
         recover=recovery_plan,

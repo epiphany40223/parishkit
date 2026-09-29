@@ -275,6 +275,24 @@ permissions, mount a whole credentials tree, reset a password or delete a journa
 as a troubleshooting shortcut. Retry the matching durable operation or use the
 authorized recovery procedure for the identified mismatch.
 
+### The worker's source process
+
+The `worker` container runs two processes: the main worker, and a source
+process it starts itself for ParishSoft refreshes and setup source loads, so
+a refresh never holds up exports or operational alert collection behind it.
+The source process uses the worker's own configuration, credentials, SQL
+login and broker identity; the Compose files contain no extra service, and
+`retarget-image` renders the same service list. Its log lines appear in
+`docker compose ... logs worker` beside the main process's. Treat the two as
+one service: stopping, recreating or acknowledging a credential in `worker`
+covers both. When the source process exits or stops reporting progress, the
+main process stops too and the container exits, so `worker` shows as not
+running (production restarts it); a source process that fails to start (for
+example, an unreadable credential) looks the same as the worker failing to
+start. The design and connection budget are in the background-processing
+specification's
+[worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes).
+
 ## Offline work and upgrade boundary
 
 Stop web and every online installer/worker before offline work. Dependency

@@ -158,14 +158,14 @@ def scheduler_handlers():
         SETUP_CLEANUP: setup_cleanup_handler(scheduler=True),
         SETUP_MAIL: setup_mail_handler(scheduler=True),
         SETUP_LOAD: Handler(
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             admit=admit_setup_task,
             execute=unavailable,
             recover=setup_recovery,
             scope=work_transaction,
         ),
         TASK_TYPE: Handler(
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             admit=admit_refresh_metadata,
             execute=unavailable,
             recover=recovery_plan,
@@ -174,8 +174,13 @@ def scheduler_handlers():
     }
 
 
-def configure_background(configuration, *, stop, heartbeat):
-    """Assemble in a fresh process only after kernel mounts and real SQL admission."""
+def configure_background(configuration, *, stop, heartbeat, queues=None):
+    """Assemble in a fresh process only after kernel mounts and real SQL admission.
+
+    ``queues`` narrows the broker to one process's share of the role's queues
+    (the worker container's source consumer, #336); the handler registry is
+    the same, and a hint for another queue's task type is refused.
+    """
     from .accounts.metrics_credentials import credential_receipt
     from .operator_commands import configure_operator_database
     from .runtime_grants import admit_runtime_database
@@ -471,6 +476,7 @@ def configure_background(configuration, *, stop, heartbeat):
         service=role,
         handlers=handlers,
         stop=stop,
+        queues=queues,
     )
     connections.close_all()
     return BackgroundRuntime(

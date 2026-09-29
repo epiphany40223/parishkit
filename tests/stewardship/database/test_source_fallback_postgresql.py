@@ -201,7 +201,7 @@ def waiting(execution):
 def claim_registered(run_id):
     """Use the real source claim/hint admission without executing the fixture body."""
     return claim_hint(
-        run_id, queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers=registry()
+        run_id, queue=WorkQueue.SOURCE, worker_id=uuid4(), handlers=registry()
     )
 
 

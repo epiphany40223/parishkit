@@ -26,13 +26,16 @@ def worker_options(runtime):
         not isinstance(runtime, BrokerRuntime)
         or runtime.service not in ROLE_QUEUES
         or not ROLE_QUEUES[runtime.service]
+        or type(runtime.consumed) is not frozenset
+        or not runtime.consumed
+        or not runtime.consumed <= ROLE_QUEUES[runtime.service]
     ):
         raise ConfigError("An isolated consumer transport is required.")
     return {
         "pool": "solo",
         "concurrency": 1,
         "prefetch_multiplier": 1,
-        "queues": [queue.value for queue in sorted(ROLE_QUEUES[runtime.service])],
+        "queues": [queue.value for queue in sorted(runtime.consumed)],
         "without_gossip": True,
         "without_mingle": True,
         "without_heartbeat": True,
@@ -48,7 +51,7 @@ def worker_options(runtime):
 IDLE_SECONDS = 30
 
 
-def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
+def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None, companion=None):
     """Use Celery's controller without its CLI banners or ambient signal handlers.
 
     Celery's ordinary warm-stop flag is set together with our execution event.
@@ -57,7 +60,13 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
     forced termination never records a made-up cancellation or external outcome.
     An optional ``idle`` callback, such as credential acknowledgement, runs on
     Celery's timer every ``IDLE_SECONDS``; its failures are logged and retried
-    on the next run rather than stopping the consumer.
+    on the next run rather than stopping the consumer. It is skipped while a
+    message executes, so it never adds a SQL connection beside a running task.
+
+    An optional ``companion`` is a sibling consumer process sharing this
+    container (see runtime_process.SourceConsumer): a stop request is
+    forwarded to it at once so both drain together, and each liveness tick
+    checks it, stopping this consumer if the sibling has exited or hung.
     """
     from celery import _state as app_state
     from celery.worker import state
@@ -81,11 +90,15 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
         """Request warm drainage without provider work, SQL or locks in a signal."""
         stop.set()
         state.should_stop = 0
+        if companion is not None:
+            companion.terminate()
 
     def tick():
         """Retain offline exclusion and local liveness without publishing events."""
         try:
             lease.check()
+            if companion is not None:
+                companion.check()
             heartbeat()
         except Exception as error:
             emit_failure(error)
@@ -93,7 +106,14 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
             state.should_stop = 1
 
     def maintain():
-        """Run the idle callback on its own connection, never failing the consumer."""
+        """Run the idle callback on its own connection, never failing the consumer.
+
+        The worker login's connection limit is shared by the container's two
+        consumer processes, each budgeted one task and one renewal connection
+        (#336), so this runs only while no message is executing.
+        """
+        if not runtime.busy.acquire(blocking=False):
+            return
         try:
             idle()
         except Exception as error:
@@ -102,6 +122,7 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None):
             # Celery's timer runs outside the task thread; release its
             # thread-local database connection between runs.
             connections.close_all()
+            runtime.busy.release()
 
     def ready(consumer):
         """Publish liveness only after the real isolated queues are connected."""

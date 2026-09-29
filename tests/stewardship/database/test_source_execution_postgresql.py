@@ -64,7 +64,7 @@ def run(receipt, compiled):
     """The real hint dispatcher owns the Task and independent renewal lifetime."""
     return execute_hint(
         receipt.task_root_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers={TASK_TYPE: compiled},
     )
@@ -287,7 +287,7 @@ def test_competing_owner_causes_safe_wait_without_another_observation(
     compiled = handler(tmp_path, credential, reconcile=permit)
     execution = claim_hint(
         receipt.task_root_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers={TASK_TYPE: compiled},
     )
@@ -312,7 +312,7 @@ def test_full_dependency_result_is_acknowledged_without_parent_observation(
     compiled = refresh_handler(credential_path=tmp_path / "absent", reconcile=permit)
     execution = claim_hint(
         parent.task_root_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers={TASK_TYPE: compiled},
     )
@@ -322,7 +322,7 @@ def test_full_dependency_result_is_acknowledged_without_parent_observation(
     remaining, calls = fake_provider(monkeypatch, pages() if succeed else [])
     assert execute_hint(
         target.task_root_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers={TASK_TYPE: full},
     )

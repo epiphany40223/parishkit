@@ -37,7 +37,9 @@ Production Compose contains:
 - target-specific `credential-installer-*` workers, each able to decrypt only
   its own staged replacement and write only its own credential subdirectory;
 - `worker`: general Celery workers for polls, rendering, exports, publication,
-  purge, and cleanup;
+  purge, and cleanup, with ParishSoft source work on a second process in the
+  same container (see
+  [worker queues and processes](../background-processing/spec.md#worker-queues-and-processes));
 - `backup-worker`: a dedicated queue/service with only database/media/config
   read access, backup-target credentials, and the active data-backup key;
 - `mail-dispatch`: a dedicated Celery worker for provider submission;

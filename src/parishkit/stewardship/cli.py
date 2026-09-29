@@ -28,7 +28,7 @@ _COMMAND_OPTIONS = {
     "health": {"config"},
     "load-check": {"config", "samples", "concurrency"},
     "source-form-check": {"config"},
-    "runtime": {"config"},
+    "runtime": {"config", "queue"},
     "acknowledge-credential": {"config", "request_id"},
     "collect-static": {"destination"},
     "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
@@ -103,6 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--checkout")
     parser.add_argument("--bind-source-root")
     parser.add_argument("--phase", choices=["prepare", "import"])
+    # Internal: the worker process starts its source-queue sibling with this.
+    parser.add_argument("--queue", choices=["source"])
     for option in (
         "deployment-id",
         "admin-email",

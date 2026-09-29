@@ -274,6 +274,8 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     targets = sorted(SECRET_NAMES - {"handoff_private"})
     # Configuration/target installers + worker/mail main/renewal + scheduler each
     # retain their own reserved SQL slots, independent of interactive headroom.
+    # The worker container's source process (#336) shares the worker login's
+    # slots, which never overlap a second worker container under Compose.
     budget.validate_topology(background_processes=1 + len(targets) + 5)
     image = _image(image, configuration.profile)
     if checkout is not None and (

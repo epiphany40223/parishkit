@@ -9,7 +9,7 @@ import functools
 import os
 from contextlib import suppress
 from dataclasses import dataclass, field
-from threading import Event
+from threading import Event, Lock
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
@@ -24,7 +24,7 @@ from parishkit.stewardship.observability import emit_failure
 
 from .dispatch import Handler, WorkQueue, execute_hint, recover_hint
 from .models import TaskRun
-from .queues import BROKER_PREFIX, HINT_TASK, ROLE_QUEUES
+from .queues import BROKER_PREFIX, HINT_TASK, ROLE_QUEUES, exchange
 from .scanning import ExecutionHint
 from .scheduler import HintPublicationUnavailable
 
@@ -44,12 +44,37 @@ class BrokerRuntime:
     app: Celery = field(repr=False)
     service: ServiceRole
     stop: Event | None = field(default=None, repr=False, compare=False)
+    # The queues this process consumes: its role's queues, or the subset
+    # startup selected for one of the worker container's two processes.
+    queues: frozenset | None = None
+    # Held while a message executes, so the idle callback never opens another
+    # SQL connection beside a running task (the login's limit, #336).
+    busy: Lock = field(default_factory=Lock, repr=False, compare=False)
+
+    @property
+    def consumed(self):
+        """The admitted queues this process actually consumes."""
+        return (
+            ROLE_QUEUES.get(self.service, frozenset())
+            if self.queues is None
+            else self.queues
+        )
 
 
-def build_broker(*, endpoint, password, service, handlers, stop=None):
-    """Construct a lazy authenticated broker client without a password-bearing URL."""
+def build_broker(*, endpoint, password, service, handlers, stop=None, queues=None):
+    """Construct a lazy authenticated broker client without a password-bearing URL.
+
+    ``queues`` narrows a consumer to a non-empty subset of its role's queues;
+    it can never add one.
+    """
     if not isinstance(service, ServiceRole) or service not in ROLE_QUEUES:
         raise ConfigError("This service cannot access background queues.")
+    if queues is not None and (
+        type(queues) is not frozenset
+        or not queues
+        or not queues <= ROLE_QUEUES[service]
+    ):
+        raise ConfigError("A consumer may only narrow its own queues.")
     if stop is not None and not isinstance(stop, Event):
         raise ConfigError("A process-owned worker stop event is required.")
     if not isinstance(endpoint, ValkeyConfiguration):
@@ -76,7 +101,7 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
     app = Celery(
         "parishkit.stewardship", loader=ClosedLoader, fixups=[], set_as_current=False
     )
-    queues = (
+    declared = (
         frozenset(WorkQueue)
         if service is ServiceRole.SCHEDULER
         else ROLE_QUEUES[service]
@@ -127,10 +152,10 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
         task_queues=tuple(
             Queue(
                 queue.value,
-                Exchange(queue.value, type="direct"),
+                Exchange(exchange(queue).value, type="direct"),
                 routing_key=queue.value,
             )
-            for queue in sorted(queues)
+            for queue in sorted(declared)
         ),
         worker_enable_remote_control=False,
         worker_send_task_events=False,
@@ -140,6 +165,9 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
         enable_utc=True,
         timezone="UTC",
     )
+
+    busy = Lock()
+    consumed = ROLE_QUEUES[service] if queues is None else queues
 
     @app.task(
         name=HINT_TASK, ignore_result=True, typing=False, shared=False, lazy=False
@@ -155,17 +183,25 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
         # wording, export text) uses the active configuration's choice. The
         # lookup is cached for this one message: a digest formats a date per
         # row, and each uncached call would query the configuration again.
-        token = dates.use(functools.cache(active_date_format))
-        try:
-            consume_hint(args, kwargs, service=service, handlers=registry, stop=stop)
-        except Exception as error:
-            emit_failure(error)
-            record_sql_timeout(error, args)
-        finally:
-            dates.reset(token)
-            from django.db import connections
+        with busy:
+            token = dates.use(functools.cache(active_date_format))
+            try:
+                consume_hint(
+                    args,
+                    kwargs,
+                    service=service,
+                    handlers=registry,
+                    stop=stop,
+                    queues=consumed,
+                )
+            except Exception as error:
+                emit_failure(error)
+                record_sql_timeout(error, args)
+            finally:
+                dates.reset(token)
+                from django.db import connections
 
-            connections.close_all()
+                connections.close_all()
         # No ORM objects, operational errors or business values enter a backend.
         return None
 
@@ -174,7 +210,7 @@ def build_broker(*, endpoint, password, service, handlers, stop=None):
     for name in tuple(app.tasks):
         if name != HINT_TASK:
             del app.tasks[name]
-    return BrokerRuntime(app, service, stop)
+    return BrokerRuntime(app, service, stop, queues, busy)
 
 
 # PostgreSQL errors that mean a time limit stopped the statement (#293).
@@ -220,10 +256,17 @@ def record_sql_timeout(error, args):
     record_timeout(Event.TASK_TIMED_OUT, what=kind, task_id=task_id)
 
 
-def consume_hint(args, kwargs, *, service, handlers, stop=None):
-    """Resolve service/queue from trusted startup and durable type, never headers."""
+def consume_hint(args, kwargs, *, service, handlers, stop=None, queues=None):
+    """Resolve service/queue from trusted startup and durable type, never headers.
+
+    ``queues`` is this process's admitted subset; a hint for a task type bound
+    to another of the role's queues is refused rather than run here.
+    """
     if service not in ROLE_QUEUES or not ROLE_QUEUES[service]:
         raise PermissionError("This service is not an execution consumer.")
+    consumed = ROLE_QUEUES[service] if queues is None else queues
+    if not consumed <= ROLE_QUEUES[service]:
+        raise PermissionError("A consumer may only narrow its own queues.")
     if stop is not None:
         if not isinstance(stop, Event):
             raise ValueError("A process-owned worker stop event is required.")
@@ -243,7 +286,7 @@ def consume_hint(args, kwargs, *, service, handlers, stop=None):
     if task_type is None:
         return False
     handler = handlers.get(task_type)
-    if not isinstance(handler, Handler) or handler.queue not in ROLE_QUEUES[service]:
+    if not isinstance(handler, Handler) or handler.queue not in consumed:
         raise PermissionError("Task type is unavailable to this isolated consumer.")
     options = dict(queue=handler.queue, worker_id=uuid4(), handlers=handlers)
     if execute_hint(run_id, **options, stop=stop):

@@ -49,7 +49,7 @@ def registry():
     """Only metadata/recovery is exercised; this fixture never executes fresh reads."""
     return {
         TASK_TYPE: Handler(
-            WorkQueue.GENERAL,
+            WorkQueue.SOURCE,
             admit_refresh_metadata,
             lambda execution: None,
             recover=recovery_plan,
@@ -62,7 +62,7 @@ def recover(execution):
     """Run the generic recovery dispatcher with the concrete source metadata owner."""
     return recover_hint(
         execution.claim.run_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers=registry(),
     )

@@ -65,11 +65,11 @@ def claim(receipt):
     """Exercise the real dispatcher and exact parent-bound admission."""
     return claim_hint(
         receipt.task_root_id,
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         worker_id=uuid4(),
         handlers={
             TASK_TYPE: Handler(
-                WorkQueue.GENERAL,
+                WorkQueue.SOURCE,
                 admit_refresh_request,
                 lambda execution: None,
                 scope=work_transaction,

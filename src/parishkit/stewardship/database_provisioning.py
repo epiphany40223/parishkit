@@ -51,7 +51,10 @@ def role_limit(configuration, role):
         return configuration.runtime_budget.rollout_overlap
     if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH, ServiceRole.SCHEDULER}:
         # Execution retains main and independent renewal SQL connections;
-        # the scheduler pins exactly one singleton session.
+        # the scheduler pins exactly one singleton session. The worker's
+        # container runs two consumer processes (#336) whose two connections
+        # each fill this limit; Compose never overlaps two worker containers
+        # (see runtime_process.split_source).
         return budget.rollout_overlap * (1 if role is ServiceRole.SCHEDULER else 2)
     return configuration.runtime_budget.operator_connections
 
