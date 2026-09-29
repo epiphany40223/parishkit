@@ -1,12 +1,14 @@
 """The backup record, the overdue alert and the upgrade admission on real SQL."""
 
+import json
+import logging
 from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
 
-from parishkit.stewardship import backup
+from parishkit.stewardship import backup, backup_commands
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -135,6 +137,92 @@ def test_upgrade_admission_reads_the_same_evidence():
         assert backup.recent_backup_recorded(cursor) is False
         recorded(age=timedelta(hours=23))
         assert backup.recent_backup_recorded(cursor) is True
+
+
+def test_a_changed_recipient_key_is_logged_as_a_warning(caplog):
+    """The first run and a same-key run are quiet; a different key warns."""
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+
+    def warnings():
+        """The recipient-change warnings logged so far."""
+        return [
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and record.extra.get("failure_kind") == "backup_recipient_changed"
+        ]
+
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+        assert backup_commands.recipient_changed("c" * 16) is False
+    recorded()
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+        assert (
+            backup_commands.recipient_changed(FACTS["recipient_fingerprint"]) is False
+        )
+        assert warnings() == []
+        assert backup_commands.recipient_changed("c" * 16) is True
+    assert len(warnings()) == 1
+
+
+def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
+    """The command's JSON line carries recipient_changed from the real record."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from parishkit.stewardship import (
+        backup_boundaries,
+        operator_commands,
+        runtime_database,
+        runtime_paths,
+        startup_interlock,
+    )
+    from parishkit.stewardship.cli import main
+
+    fingerprint = ["b" * 16]
+
+    def run_backup(configuration, *, record):
+        """Record one run with the current key, as the real backup does."""
+        with transaction.atomic():
+            started = database_now()
+        record(
+            started_at=started,
+            **{**FACTS, "recipient_fingerprint": fingerprint[0]},
+        )
+        return {
+            "database": {"plaintext_bytes": 1024},
+            "files": {"plaintext_bytes": 512},
+            "recipient_fingerprint": fingerprint[0],
+        }
+
+    # Everything around the record is the host's; the record is real SQL.
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
+    monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
+    monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
+    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
+    monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda c: None
+    )
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    monkeypatch.setattr(
+        runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
+    )
+    monkeypatch.setattr(
+        startup_interlock, "StartupLease", lambda path, offline: nullcontext()
+    )
+    monkeypatch.setattr(backup, "run_backup", run_backup)
+
+    def changed():
+        """Run the command once and return its recipient_changed field."""
+        with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+            assert main(["backup", "--config", "unused"]) == 0
+        return json.loads(capsys.readouterr().out)["recipient_changed"]
+
+    assert changed() is False
+    assert changed() is False
+    fingerprint[0] = "c" * 16
+    assert changed() is True
+    assert BackupRun.objects.count() == 3
 
 
 def test_worker_and_scheduler_read_the_record_and_cannot_write_it():

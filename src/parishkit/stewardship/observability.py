@@ -66,6 +66,8 @@ class FailureKind(StrEnum):
     BACKUP_REQUIRED = "upgrade_backup_required"
     # A set was taken but not copied to the off-site Drive folder.
     BACKUP_OFFSITE = "backup_offsite_failed"
+    # A backup sealed to a different public key than the previous run did.
+    BACKUP_RECIPIENT_CHANGED = "backup_recipient_changed"
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(

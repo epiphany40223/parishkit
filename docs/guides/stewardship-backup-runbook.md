@@ -34,7 +34,9 @@ docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
   IMAGE backup-keygen --destination /keys/stewardship-backup.key
 ```
 
-The command prints one JSON line, `{"public_key": "..."}`. On the host,
+The command prints one JSON line,
+`{"public_key": "...", "recipient_fingerprint": "..."}`. Record the
+fingerprint with the private key and each of its copies. On the host,
 install the public key as the `backup_data` credential: write only the
 `public_key` value, the bare base64 string on one line (for example the
 output of `jq -r .public_key`), to `credentials/backup_data/credential`
@@ -43,13 +45,19 @@ with mode `0600`, as every credential file is. A file holding the whole JSON
 line is refused by every backup. Nothing else reads it.
 
 Every backup prints the `recipient_fingerprint` of the public key it sealed
-to. That names the installed public key, not the private key you kept, so on
-its own it proves nothing about the pair: if `backup-keygen` ran twice
-during setup and the private half of one run was kept with the public half
-of the other, every backup still succeeds and none can be opened. The
+to; after the first one, confirm it equals the fingerprint `backup-keygen`
+printed. If `backup-keygen` ran twice during setup, a mismatch here is the
+sign that the kept private key is not the installed public key's pair:
+every backup would still succeed and none could be opened. A backup whose
+key differs from the previous run's (the `backup_data` file was replaced)
+still runs, prints `"recipient_changed": true` and logs a WARNING
+`configuration_digest_mismatch` line whose `failure_kind` is
+`backup_recipient_changed`; unless you installed a new key on purpose, find
+out why. The fingerprint names the installed public key, so on its own it
+proves nothing about the private key you kept. The
 [restore drill](#restore-drill) is the proof: `backup-open` opens a set only
-with the matching private key, so the drill records that each kept copy of
-the private key opened the set.
+with the matching private key and then prints its `recipient_fingerprint`,
+so the drill records that each kept copy of the private key opened the set.
 
 Keep beside the private key, off the host, everything a restore onto a new
 host needs that no backup set holds: the deployment YAML, the deployment
@@ -68,8 +76,9 @@ project name the deployment uses:
 docker compose ... run --rm backup-worker
 ```
 
-It prints one JSON line naming the sizes, the recipient fingerprint and the
-manifest digest and exits `0`; on any refusal it prints one generic line and
+It prints one JSON line naming the sizes, the recipient fingerprint (and
+whether it changed since the previous run) and the manifest digest and
+exits `0`; on any refusal it prints one generic line and
 exits `2`, and the process log records only reviewed values: a
 `startup_rejected` line whose `failure_kind` is the category (a
 configuration refusal, for most causes). When the database dump itself
@@ -340,7 +349,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    decrypt both files with
    `pk-stewardship backup-open --key PRIVATE_KEY_FILE --input database.pgdump.sealed --destination database.pgdump`
    and the same for `files.tar.sealed`. Each prints the kind, size and
-   digest, which must match the manifest. From the release image, as for
+   digest, which must match the manifest, and the key's
+   `recipient_fingerprint`, which must match the one recorded with the key. From the release image, as for
    [the key](#the-key), mount the key directory and the set's directory
    read-only and an empty private output directory writable:
 

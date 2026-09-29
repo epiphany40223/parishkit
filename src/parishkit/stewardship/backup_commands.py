@@ -8,19 +8,25 @@ key, which is never the host.
 """
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
 from parishkit.config import ConfigError
 
-from .backup_sealing import generate_keypair, load_private, open_sealed
+from .backup_sealing import fingerprint, generate_keypair, load_private, open_sealed
 from .deployment import load_deployment
-from .observability import Event, configure_logging, emit_failure
+from .observability import Event, FailureKind, configure_logging, emit, emit_failure
 
 
 def _keygen(destination):
-    """Write the private key owner-only to a new file; print the public half."""
+    """Write the private key owner-only to a new file; print the public half.
+
+    The printed fingerprint is the one every backup sealed to this key
+    reports, so the operator can record it with the private key and later
+    see that the installed public key is the kept pair's.
+    """
     if destination is None:
         raise ConfigError("An explicit private key destination is required.")
     private, public = generate_keypair()
@@ -29,7 +35,10 @@ def _keygen(destination):
     )
     with os.fdopen(descriptor, "w") as stream:
         stream.write(private)
-    return {"public_key": public.strip()}
+    return {
+        "public_key": public.strip(),
+        "recipient_fingerprint": fingerprint(load_private(destination).public_key),
+    }
 
 
 def _open(key, source, destination):
@@ -47,7 +56,14 @@ def _open(key, source, destination):
         # Partial output is never left where a restore could pick it up.
         Path(destination).unlink(missing_ok=True)
         raise
-    return {"kind": kind, "plaintext_bytes": count, "plaintext_sha256": digest}
+    # Opening succeeded, so this key is the set's recipient: the drill
+    # records the fingerprint as proof that the kept key opens the backups.
+    return {
+        "kind": kind,
+        "plaintext_bytes": count,
+        "plaintext_sha256": digest,
+        "recipient_fingerprint": fingerprint(private.public_key),
+    }
 
 
 def _admit_backup_identity():
@@ -80,6 +96,32 @@ def _admit_backup_identity():
     require_no_temporary_authority()
 
 
+def recipient_changed(current):
+    """Warn when this run seals to a different key than the previous run did.
+
+    A replaced ``backup_data`` file, or a public key that is not the kept
+    private key's pair, still backs up without complaint; only a restore
+    would notice. A change is legitimate only when the operator installed a
+    new key on purpose, so it is logged as a WARNING for them to confirm.
+    Returns whether the key changed.
+    """
+    from .jobs.backup_models import BackupRun
+
+    previous = (
+        BackupRun.objects.order_by("-completed_at")
+        .values_list("recipient_fingerprint", flat=True)
+        .first()
+    )
+    changed = previous is not None and previous != current
+    if changed:
+        emit(
+            Event.CONFIG_MISMATCH,
+            level=logging.WARNING,
+            failure_kind=FailureKind.BACKUP_RECIPIENT_CHANGED,
+        )
+    return changed
+
+
 def _backup(config):
     """Run one backup set in the admitted backup profile and record it."""
     from .backup import run_backup
@@ -105,7 +147,10 @@ def _backup(config):
 
         def record(**facts):
             """Persist the run and keep its digest for the operator's notes."""
-            recorded.update(facts)
+            recorded.update(
+                facts,
+                recipient_changed=recipient_changed(facts["recipient_fingerprint"]),
+            )
             BackupRun.objects.create(**facts)
 
         manifest = run_backup(configuration, record=record)
@@ -119,6 +164,7 @@ def _backup(config):
         "database_bytes": manifest["database"]["plaintext_bytes"],
         "files_bytes": manifest["files"]["plaintext_bytes"],
         "recipient_fingerprint": manifest["recipient_fingerprint"],
+        "recipient_changed": recorded["recipient_changed"],
         "manifest_digest": recorded["manifest_digest"],
         "offsite": offsite,
     }
