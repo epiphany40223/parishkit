@@ -189,23 +189,47 @@ def materialize_fact_set(fact_set_id, claim, *, admit, interactive=False):
         )
 
 
+def load_verification(fact_set_id, *, admit):
+    """Load one generation's calculation inputs and stored days, in memory.
+
+    Only these database reads need the generation lock and a read transaction.
+    The caller recalculates afterwards with ``differing_days``, outside any
+    transaction, just as ``materialize_fact_set`` calculates outside its work
+    transactions. A long calculation therefore never runs against a bounded
+    read guard's deadline. Unavailable inputs raise explicitly.
+    """
+    with read_fact_set(fact_set_id, admit=admit) as record:
+        return _load_calculation(record), _stored_days(record)
+
+
+def _stored_days(record):
+    """The generation's stored days, in date order, detached from the query."""
+    return tuple(
+        ParticipationDay(**values)
+        for values in record.days.order_by("local_date").values(*sorted(DAY_FIELDS))
+    )
+
+
+def differing_days(context, actual):
+    """Return the local dates whose recalculated facts differ from ``actual``."""
+    expected_by_date = {row.local_date: row for row in calculate_participation(context)}
+    actual_by_date = {row.local_date: row for row in actual}
+    return tuple(
+        day
+        for day in sorted(expected_by_date.keys() | actual_by_date.keys())
+        if expected_by_date.get(day) != actual_by_date.get(day)
+    )
+
+
 def verify_fact_set(fact_set_id, *, admit):
     """Return differing local dates while retaining the complete generation lock.
 
     An empty tuple proves parity, not a missing source or unavailable generation.
     Those conditions raise explicitly; verification never substitutes a newer
     cutoff and never changes facts. Durable drift reporting belongs to its task.
+    Direct callers keep the generation read lock through the recalculation, so
+    compaction skips a generation being recalculated. The scheduled task instead
+    uses ``load_verification``: its live request pins the generation.
     """
     with read_fact_set(fact_set_id, admit=admit) as record:
-        expected = calculate_participation(_load_calculation(record))
-        actual = tuple(
-            ParticipationDay(**values)
-            for values in record.days.order_by("local_date").values(*sorted(DAY_FIELDS))
-        )
-        expected_by_date = {row.local_date: row for row in expected}
-        actual_by_date = {row.local_date: row for row in actual}
-        return tuple(
-            day
-            for day in sorted(expected_by_date.keys() | actual_by_date.keys())
-            if expected_by_date.get(day) != actual_by_date.get(day)
-        )
+        return differing_days(_load_calculation(record), _stored_days(record))

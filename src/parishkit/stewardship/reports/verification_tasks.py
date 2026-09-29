@@ -5,7 +5,7 @@ from django.db import connection
 from parishkit.stewardship.audit.schemas import Action, ActorKind, ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational, record_action
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
-from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
+from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard, ReadLimits
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
@@ -21,10 +21,15 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .export_services import admit_campaign
 from .export_tasks import _abort_render_worker
 from .facts import FACT_READ_NAMESPACE, FactUnavailable, fact_inputs
-from .materialization import verify_fact_set
+from .materialization import differing_days, load_verification
 from .models import CampaignDailyFactSet
 from .verification_models import FactVerificationRequest, FactVerificationResult
 from .verification_production import INPUT_FIELDS, TASK_TYPE
+
+# A background check is not an interactive page view: give its guarded read
+# the largest bounded budget. Only database loading happens under the guard;
+# the recalculation runs after it closes (see _execute).
+VERIFICATION_READ_LIMITS = ReadLimits(interactive_seconds=120)
 
 
 def bound_request(status):
@@ -166,8 +171,15 @@ def _execute(execution):
                 "The original verification generation is unavailable."
             )
 
+    # The guard's deadline hard-stops this worker process (_abort_render_worker),
+    # so only the bounded database reads run inside it. Recalculating a whole
+    # campaign is CPU work on in-memory data and runs after the guard closes;
+    # the live verification request keeps the generation non-disposable.
     with CampaignReadGuard(
-        [request.campaign_id], authorize=authorize, abort=_abort_render_worker
+        [request.campaign_id],
+        authorize=authorize,
+        abort=_abort_render_worker,
+        limits=VERIFICATION_READ_LIMITS,
     ) as guard:
 
         def admit_read(action, inputs):
@@ -176,9 +188,11 @@ def _execute(execution):
             execution.check()
             return action == "read" and inputs == fact_inputs(request)
 
-        differences = verify_fact_set(request.fact_set_id, admit=admit_read)
+        context, actual = load_verification(request.fact_set_id, admit=admit_read)
         guard.check()
-        execution.check()
+    execution.check()
+    differences = differing_days(context, actual)
+    execution.check()
 
     with execution.effect():
         task = lock_task_claim(execution.claim)
