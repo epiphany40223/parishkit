@@ -300,12 +300,17 @@ docker compose ... exec -T web pk-stewardship source-form-check --config WEB_CON
 
 Like the load check it runs in the web container under the web database
 login, only reads, and needs a current campaign and promoted parish data,
-but not an open portal. It prints the Family DUID, Member DUID and field
-name of each refused value, never the value. Exit `0` (`"result":
-"clean"`) means none; exit `1` (`"result": "findings"`) means fix each listed
-field in ParishSoft, refresh the parish data and run it again; exit `2`
-means it was refused or failed, and the one-line error says which. A
-`member_record` finding means the Member record itself is unusable.
+but not an open portal. It prints the Family DUID, Member DUID, field name
+and kind of each refusal, never the value. Kind `value` is a field value to
+fix; kind `record` is a Member record (field `member`) or a Member's contact
+record that cannot be read at all. Exit `0` (`"result": "clean"`) means
+none; exit `1` (`"result": "findings"`) means fix each listed field in
+ParishSoft, refresh the parish data and run it again; exit `2` means it was
+refused or failed, and the one-line error says which.
+
+It checks Member and contact values only. A clean result does not rule out
+a form refused for Ministry or financial source data, or for the snapshot
+itself.
 
 **Not testable before activation.** Delivery pause and resume exist only for
 the Production campaign.

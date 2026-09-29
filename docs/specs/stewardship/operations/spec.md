@@ -639,8 +639,8 @@ The two HTTP health routes are internal-only and return no phase or reason
 detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
 without creating a public endpoint. `pk-stewardship source-form-check` is a
 read-only web-container diagnostic that lists, by Family DUID, Member DUID and
-field name only, each ParishSoft Member value that would refuse a current
-Family's form; the
+field name only, each ParishSoft Member or contact value or record that would
+refuse a current Family's form; the
 [deployment runbook](../../../guides/stewardship-deployment-runbook.md#staff-validation-checklist)
 says when to run it.
 

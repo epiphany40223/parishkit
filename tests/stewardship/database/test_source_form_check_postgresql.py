@@ -52,8 +52,18 @@ def test_scan_reports_refused_member_values_by_identifier_only(response_service)
     assert document["result"] == "findings"
     assert document["families_refused"] == 1
     assert document["findings"] == [
-        {"family_duid": family, "member_duid": 3, "field": "first_name"},
-        {"family_duid": family, "member_duid": 3, "field": "last_name"},
+        {
+            "family_duid": family,
+            "member_duid": 3,
+            "field": "first_name",
+            "kind": "value",
+        },
+        {
+            "family_duid": family,
+            "member_duid": 3,
+            "field": "last_name",
+            "kind": "value",
+        },
     ]
     assert "private" not in str(document)
     # Read-only: no baseline, pin or audit event was created by the scan.

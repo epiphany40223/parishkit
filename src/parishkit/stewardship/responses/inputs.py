@@ -275,6 +275,40 @@ def _member_field_value(member, contact, field):
     )
 
 
+def usable_member_record(member, family_duid):
+    """Whether a source Member record is structurally usable for this Family.
+
+    census_inputs refuses the whole form otherwise (it also refuses duplicate
+    DUIDs); the pre-launch source scan applies the same rule per Member.
+    """
+    identifier = member.get("memberDUID")
+    return (
+        member.get("family_key") == str(family_duid)
+        and type(identifier) is int
+        and 0 < identifier < 2**31
+        and type(member.get("active")) is bool
+        and type(member.get("deceased")) is bool
+    )
+
+
+def member_source_fields(census):
+    """The Member fields read from source, in order, each with its contact use.
+
+    With the census module every Member and request field is read, with the
+    Member's contact. Ministry-only screens identify the Member but never load
+    or validate unrelated birth, gender, email or phone census fields, so only
+    the names are read, without a contact. census_inputs and the pre-launch
+    source scan both use this, so the scan cannot drift from the form.
+    """
+    if census:
+        return tuple((field, True) for field in (*MEMBER_FIELDS, *REQUEST_FIELDS))
+    return tuple(
+        (field, False)
+        for field in MEMBER_FIELDS
+        if field.name in {"first_name", "last_name"}
+    )
+
+
 def family_field_value(field):
     """Keep unsupported source semantics unavailable rather than invent mappings.
 
@@ -352,14 +386,7 @@ def census_inputs(
         )
     for member in members:
         identifier = member.get("memberDUID")
-        if (
-            member.get("family_key") != str(family_duid)
-            or type(identifier) is not int
-            or not 0 < identifier < 2**31
-            or identifier in seen
-            or type(member.get("active")) is not bool
-            or type(member.get("deceased")) is not bool
-        ):
+        if not usable_member_record(member, family_duid) or identifier in seen:
             _unavailable()
         seen.add(identifier)
         if member["active"] and not member["deceased"]:
@@ -377,30 +404,18 @@ def census_inputs(
                 KnownValue("memberType" in member, member.get("memberType")),
             )
         )
-        for field in (*MEMBER_FIELDS, *REQUEST_FIELDS) if census else ():
+        for field, with_contact in member_source_fields(census):
             fields.append(
                 FieldInput(
-                    "member",
+                    "member" if census else "member_context",
                     identifier,
                     field.name,
                     field.kind,
-                    member_field_value(member, contact, field),
+                    member_field_value(
+                        member, contact if with_contact else None, field
+                    ),
                 )
             )
-        if not census:
-            # Ministry-only screens identify the Member but never load or
-            # validate unrelated birth, gender, email or phone census fields.
-            for field in MEMBER_FIELDS:
-                if field.name in {"first_name", "last_name"}:
-                    fields.append(
-                        FieldInput(
-                            "member_context",
-                            identifier,
-                            field.name,
-                            field.kind,
-                            member_field_value(member, None, field),
-                        )
-                    )
     identifiers = tuple(member["memberDUID"] for member in active)
     if "ministry" in configuration["modules"]:
         if (

@@ -24,82 +24,78 @@ from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupBusy, StartupLease
 
-# Structural problems census_inputs refuses before it reads any field: a
-# Member whose DUID or active/deceased flags are unusable. Reported under this
-# fixed name so the refused Family is not silently missed.
-MEMBER_RECORD = "member_record"
+# Finding kinds. A "value" finding is one Member field whose ParishSoft value
+# the form refuses (MemberSourceUnavailable). A "record" finding is a Member or
+# contact record the form cannot read at all: an unusable or duplicate Member
+# DUID or active/deceased flag (field "member"), or a malformed contact (the
+# field that reads it). Every refusal is reported; none aborts the scan.
+VALUE = "value"
+RECORD = "record"
+# Contact payload faults the form would hit reading a field: an owner mismatch
+# (FormInputsUnavailable) or a missing/mistyped key in the payload.
+_RECORD_FAULTS = (KeyError, TypeError, AttributeError, ValueError)
 
 
 class ScanRefused(ConfigError):
     """The scan cannot start: no current campaign or no promoted source."""
 
 
-def _scanned_fields(census):
-    """The Member fields ``census_inputs`` reads from source, and their contact use.
-
-    This mirrors census_inputs: with the census module every Member and
-    request field is read, with the contact; without it only the first and
-    last name are read, without a contact.
-    """
-    from .responses.inputs import MEMBER_FIELDS
-    from .responses.member_requests import REQUEST_FIELDS
-
-    if census:
-        return tuple((field, True) for field in (*MEMBER_FIELDS, *REQUEST_FIELDS))
-    return tuple(
-        (field, False)
-        for field in MEMBER_FIELDS
-        if field.name in {"first_name", "last_name"}
-    )
-
-
-def _usable_record(member):
-    """The checks census_inputs applies to each Member before reading fields."""
-    identifier = member.get("memberDUID")
-    return (
-        type(identifier) is int
-        and 0 < identifier < 2**31
-        and type(member.get("active")) is bool
-        and type(member.get("deceased")) is bool
-    )
+def _finding(family, member, field, kind):
+    """One output row: identifiers and fixed labels only, never a value."""
+    return {"family_duid": family, "member_duid": member, "field": field, "kind": kind}
 
 
 def member_source_findings(family_duids, members, contacts, *, census):
-    """Every (Family, Member, field) whose source value the form would refuse.
+    """Every Member field or record that would refuse a Family's form.
 
     ``members`` are snapshot Member payloads and ``contacts`` maps a Member
-    DUID string to its snapshot contact payload. Unlike census_inputs, which
-    stops at the first bad value, this checks every field of every active,
-    living Member, so one run lists everything that needs fixing. Returns
-    sorted dicts of ``family_duid``, ``member_duid`` and ``field``.
+    DUID string to its snapshot contact payload. The record check and the
+    field list are census_inputs' own (``usable_member_record`` and
+    ``member_source_fields``). Unlike census_inputs, which stops at the first
+    refusal, this checks every field of every active, living Member, so one
+    run lists everything that needs fixing. Returns sorted finding dicts.
     """
-    from .responses.inputs import MemberSourceUnavailable, member_field_value
+    from .responses.inputs import (
+        FormInputsUnavailable,
+        MemberSourceUnavailable,
+        member_field_value,
+        member_source_fields,
+        usable_member_record,
+    )
 
     eligible = {str(duid): duid for duid in family_duids}
-    fields = _scanned_fields(census)
-    findings = []
+    fields = member_source_fields(census)
+    findings, seen = [], set()
     for member in members:
         family = eligible.get(member.get("family_key"))
         if family is None:
             continue
-        if not _usable_record(member):
+        identifier = member.get("memberDUID")
+        if not usable_member_record(member, family) or (family, identifier) in seen:
+            valid = type(identifier) is int and 0 < identifier < 2**31
             findings.append(
-                {"family_duid": family, "member_duid": None, "field": MEMBER_RECORD}
+                _finding(family, identifier if valid else None, "member", RECORD)
             )
             continue
+        seen.add((family, identifier))
         if not member["active"] or member["deceased"]:
             continue
-        contact = contacts.get(str(member["memberDUID"]))
+        contact = contacts.get(str(identifier))
         for field, with_contact in fields:
             try:
                 member_field_value(member, contact if with_contact else None, field)
-            except MemberSourceUnavailable as error:
-                # The exception's context is already sanitized to the three
-                # identifiers; it never carries the unusable value.
-                findings.append(dict(error.context))
+            except MemberSourceUnavailable:
+                findings.append(_finding(family, identifier, field.name, VALUE))
+            except (FormInputsUnavailable, *_RECORD_FAULTS):
+                findings.append(_finding(family, identifier, field.name, RECORD))
     return sorted(
         findings,
-        key=lambda item: (item["family_duid"], item["member_duid"] or 0, item["field"]),
+        key=lambda item: (
+            item["family_duid"],
+            item["member_duid"] or 0,
+            item["field"],
+            item["kind"],
+        ),
     )
 
 
