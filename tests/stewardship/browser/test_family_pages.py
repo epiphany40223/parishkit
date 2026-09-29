@@ -10,7 +10,7 @@ from PIL import Image
 
 from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
-from .test_family_ministry import begin
+from .test_family_ministry import begin, ministry_form
 from .test_family_response import expect, review, show
 
 pytestmark = pytest.mark.parametrize(
@@ -195,7 +195,7 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
 
 
 def test_ministry_rows_state_each_choice_once(page, component_origin):
-    """Continuing is the default; stop and join choices read plainly on review."""
+    """Continuing in a ministry is the default; stop and join read plainly."""
     submissions = []
 
     def submit(route):
@@ -205,10 +205,10 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
 
     begin(page, component_origin, paged_form(), submit)
     choir = show(page, page.get_by_role("group", name="Choir", include_hidden=True))
-    expect(choir.get_by_label("Continuing")).to_be_checked()
+    expect(choir.get_by_label("Continue in this ministry")).to_be_checked()
     body = page.locator("main").inner_text()
     assert "These are requests" not in body and "wishes to stop" not in body
-    choir.get_by_label("Stop participating").check()
+    choir.get_by_label("Stop participating in this ministry").check()
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     expect(
@@ -217,7 +217,7 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
     capture(page, "member-ministries")
     show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
     review(page)
-    expect(page.get_by_text("Will continue: None", exact=True)).to_be_visible()
+    expect(page.get_by_text("Continuing: None", exact=True)).to_be_visible()
     # Stopping and joining are bulleted, one ministry per line.
     expect(page.locator(".stopping li", has_text="Choir")).to_be_visible()
     expect(page.locator(".ministry-joining li", has_text="Food pantry")).to_be_visible()
@@ -640,50 +640,122 @@ def test_blocked_review_names_a_question_on_another_page(page, component_origin)
     )
 
 
-def test_welcome_icon_sits_below_the_last_submitted_notice(page, component_origin):
-    """For a returning Family the icon follows the "last submitted" notice."""
-    page.route(
-        "**/branding/*.png",
-        lambda route: route.fulfill(body=png(256, 256), content_type="image/png"),
-    )
-    form = paged_form()
-    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
-    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
-    form["images"] = {
-        "banner": {"url": "/branding/banner.png", "width": 1024, "height": 217},
-        "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
-    }
-    form["content"]["welcome"] = "<p>Welcome to the renewal.</p>"
+FIRST_CONTROL = """page => {
+  const control = [...page.querySelectorAll('input, select, textarea, button, summary')]
+    .find(e => e.getClientRects().length && !e.closest('.visually-hidden'));
+  const nav = document.querySelector('.family-nav').getBoundingClientRect();
+  return {top: control.getBoundingClientRect().top, visible: nav.top, id: control.id};
+}"""
+
+
+@pytest.mark.parametrize("census", [True, False])
+def test_member_page_first_control_fits_a_phone(page, component_origin, census):
+    """#292: at 390x844 the first Member control shows without scrolling."""
+    from parishkit.stewardship.accounts.content_defaults import PAGES
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    form = paged_form() if census else ministry_form(census=False)
+    form["content"]["member_census"] = PAGES["member_census"]
+    form["content"]["ministry"] = PAGES["ministry"]
     begin(page, component_origin, form, None)
-    intro = page.locator('[data-page="intro"]')
-    expect(page.locator("img.family-banner")).to_have_count(0)
-    order = intro.evaluate(
-        """p => [...p.children].map(e => e.matches('.family-submitted') ? 'notice'
-          : e.matches('img.family-page-icon') ? 'icon'
-          : e.matches('.content-block') ? 'intro' : null).filter(Boolean)"""
+    key = page.locator("[data-step-link^=member-]").first.get_attribute(
+        "data-step-link"
     )
-    assert order == ["notice", "icon", "intro"]
+    page.locator(f'[data-step-link="{key}"]').click()
+    found = page.locator(f'[data-page="{key}"]').evaluate(FIRST_CONTROL)
+    # Visible without scrolling: above the sticky navigation, and so also
+    # within the 844 px viewport.
+    assert found["top"] < found["visible"] <= 844, found
 
 
-def test_welcome_icon_precedes_the_heading_without_welcome_text(page, component_origin):
-    """Without welcome text: notice, icon, then the visible Welcome heading."""
+def test_ministry_choice_labels_wrap_on_a_phone(page, component_origin):
+    """The longer choice labels stay inside their row at 320 and 390 px."""
+    page.set_viewport_size({"width": 320, "height": 844})
+    begin(page, component_origin, ministry_form(census=False), None)
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    stop = show(page, choir.get_by_label("Stop participating in this ministry"))
+    expect(stop).to_be_visible()
+    row = choir.bounding_box()
+    for label in choir.locator("label").all():
+        box = label.bounding_box()
+        assert (
+            box["x"] >= row["x"] and box["x"] + box["width"] <= row["x"] + row["width"]
+        )
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_review_lists_continuing_ministries_one_per_line(page, component_origin):
+    """Continuing ministries are bulleted on Review, like Stopping and Joining."""
+    form = ministry_form(census=False)
+    form["ministries"]["options"].append({"id": 11, "name": "Greeters"})
+    form["ministries"]["members"]["3"]["current"] = [4, 11]
+    begin(page, component_origin, form, None)
+    review(page)
+    expect(page.locator(".ministry-continuing > p")).to_have_text("Continuing:")
+    expect(page.locator(".ministry-continuing li")).to_have_text(["Choir", "Greeters"])
+
+
+WELCOME_ORDER = """() => {
+  const tag = e => e.matches('p.notice[role=status]')
+      && e.textContent.startsWith('Testing mode') ? 'banner'
+    : e.matches('.family-submitted') ? 'notice'
+    : e.matches('#family-flow > h2') ? 'family'
+    : e.matches('[data-page=intro] img.family-page-icon') ? 'icon'
+    : e.matches('[data-page=intro] h3:not(.visually-hidden)') ? 'welcome' : null;
+  return [...document.querySelectorAll('main *')].filter(e => e.getClientRects().length)
+    .map(tag).filter(Boolean);
+}"""
+
+
+@pytest.mark.parametrize("testing", [True, False])
+@pytest.mark.parametrize("submitted", [True, False])
+def test_welcome_order_banner_notice_family_icon(
+    page, component_origin, testing, submitted
+):
+    """#292: Testing banner, last-submitted notice, Family heading, then icon."""
+    from .test_family_response import prepare
+
     page.route(
         "**/branding/*.png",
         lambda route: route.fulfill(body=png(256, 256), content_type="image/png"),
     )
     form = paged_form()
+    form["testing"] = testing
     form["content"]["welcome"] = ""
-    form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
-    form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
     form["images"] = {
         "welcome": {"url": "/branding/welcome.png", "width": 256, "height": 256},
     }
-    begin(page, component_origin, form, None)
-    intro = page.locator('[data-page="intro"]')
-    order = intro.evaluate(
-        """p => [...p.children].map(e => e.matches('.family-submitted') ? 'notice'
-          : e.matches('img.family-page-icon') ? 'icon'
-          : e.matches('h3') ? 'heading' : null).filter(Boolean)"""
+    if submitted:
+        form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
+        form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
+    prepare(page, component_origin, testing=testing, form=form)
+    if not testing:
+        page.get_by_role("button", name="Begin reviewing").click()
+    expect(page.locator('[data-page="intro"]')).to_be_visible()
+    expected = (
+        (["banner"] if testing else [])
+        + (["notice"] if submitted else [])
+        + ["family", "icon", "welcome"]
     )
-    assert order == ["notice", "icon", "heading"]
-    expect(intro.get_by_role("heading", name="Welcome", level=3)).to_be_visible()
+    assert page.evaluate(WELCOME_ORDER) == expected
+    # The focused Welcome heading is described by the notice, so screen
+    # readers hear it even though it sits above the focus.
+    welcome_heading = page.locator('[data-page="intro"] h3')
+    if submitted:
+        expect(welcome_heading).to_have_attribute(
+            "aria-describedby", "family-last-submitted"
+        )
+        expect(welcome_heading).to_be_focused()
+        expect(welcome_heading).to_have_accessible_description(
+            re.compile("You last submitted your renewal")
+        )
+    else:
+        assert welcome_heading.get_attribute("aria-describedby") is None
+    # The notice belongs to the Welcome page only.
+    page.locator('[data-step-link="household"]').click()
+    expect(page.locator(".family-submitted")).to_be_hidden()
+    page.locator('[data-step-link="intro"]').click()
+    if submitted:
+        expect(page.locator(".family-submitted")).to_be_visible()

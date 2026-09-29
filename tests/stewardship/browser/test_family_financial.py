@@ -89,7 +89,7 @@ def test_retained_terminal_ministry_eligibility_without_census(
         show(
             page,
             page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
-                "Stop participating"
+                "Stop participating in this ministry"
             ),
         ).check()
         final_submit(page)
@@ -161,7 +161,7 @@ def test_concurrent_terminal_request_requires_explicit_ministry_discard(
         show(
             page,
             page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
-                "Stop participating"
+                "Stop participating in this ministry"
             ),
         ).check()
     final_submit(page)
@@ -330,7 +330,7 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     show(
         page,
         page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
-            "Stop participating"
+            "Stop participating in this ministry"
         ),
     ).check()
     review(page)

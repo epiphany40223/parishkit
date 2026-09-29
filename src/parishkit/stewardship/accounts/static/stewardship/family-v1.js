@@ -376,11 +376,11 @@
   function submittedBanner(parent) {
     // A returning Family learns when they last submitted and that submitting
     // again is fine: the most recent submission is the one the parish uses.
-    if (!form.last_submitted_display) return;
-    node("p", "You last submitted your renewal on " + form.last_submitted_display +
+    if (!form.last_submitted_display) return null;
+    return node("p", "You last submitted your renewal on " + form.last_submitted_display +
       ". You can review, change and submit again as many times as you like; " +
       "your most recent submission is the one we use.", parent,
-      {class: "notice family-submitted", role: "status"});
+      {class: "notice family-submitted", role: "status", id: "family-last-submitted"});
   }
   function paintTrack(activeKey) {
     // One segment per step, like the setup wizard's track. Each segment is a
@@ -937,9 +937,11 @@
       choices[action] = [...next].sort((a, b) => a - b);
     }
     // Current Ministries: each row states the choice once, as a pair of
-    // radio buttons defaulting to Continuing, instead of repeating a suffix
+    // radio buttons defaulting to "Continue in this ministry", instead of repeating a suffix
     // on every checkbox label.
-    node("h5", "Current ministries", choicesBox);
+    // No visible heading (#292): the rows speak for themselves on a phone, but
+    // screen readers still get a named heading for the list.
+    node("h5", "Current ministries", choicesBox, {class: "visually-hidden"});
     const currentOptions = form.ministries.options.filter((option) => current.has(option.id));
     if (!currentOptions.length) node("p", "No current ministries are included in this campaign.", choicesBox);
     currentOptions.forEach((option) => {
@@ -947,7 +949,7 @@
       row.disabled = locked;
       node("legend", option.name, row);
       const name = "ministry-" + member.id + "-" + option.id;
-      [["continue", "Continuing"], ["leave", "Stop participating"]].forEach(([value, label]) => {
+      [["continue", "Continue in this ministry"], ["leave", "Stop participating in this ministry"]].forEach(([value, label]) => {
         const wrapper = node("label", null, row);
         const input = node("input", null, wrapper, {type: "radio", name, value,
           id: name + "-" + value});
@@ -1037,7 +1039,9 @@
       if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }
-    node("p", "Will continue: " + (continuing.join(", ") || "None"), parent);
+    // Like Stopping and Joining: a heading and one ministry per line.
+    if (continuing.length) nameList("Continuing:", continuing, node("div", null, parent, {class: "ministry-continuing"}));
+    else node("p", "Continuing: None", parent);
     if (stopping.length) nameList("Stopping:", stopping, node("div", null, parent, {class: "changed stopping"}));
     if (joining.length) nameList("Joining:", joining, node("div", null, parent, {class: "changed ministry-joining"}));
   }
@@ -1650,6 +1654,8 @@
     const page = pages.find((entry) => entry.key === key) || pages[0];
     currentPage = page.key;
     navNote("");
+    const lastSubmitted = root.querySelector(".family-submitted");
+    if (lastSubmitted) lastSubmitted.hidden = page.key !== "intro";
     pages.forEach((entry) => { entry.element.hidden = entry !== page; });
     const index = pages.indexOf(page);
     session.dataset.presenceSection = page.presence;
@@ -1736,6 +1742,10 @@
   }
   function edit(target = null) {
     heading(familyTitle(), "welcome");
+    // The "last submitted" notice sits above the Family heading (below the
+    // Testing banner, which is outside the form) and shows on Welcome only.
+    const lastSubmitted = submittedBanner(root);
+    if (lastSubmitted) root.prepend(lastSubmitted);
     pages = [];
     stepHeader(root);
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
@@ -1749,15 +1759,21 @@
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
     // The wide campaign banner is for emails only; the Welcome page shows just
-    // its icon, below the returning-Family summary and above the intro text.
+    // its icon, below the Family heading (and any "last submitted" notice
+    // above it) and above the intro text.
     const intro = addPage(editor, "intro", "Welcome", "welcome");
     // The welcome text carries its own heading; keep "Welcome" only for
     // screen readers and focus, so it isn't shown twice.
     if (form.content.welcome) intro.element.querySelector("h3").classList.add("visually-hidden");
-    submittedBanner(intro.element);
+    // The "last submitted" notice sits above the focused Welcome heading and
+    // is inserted already filled, so a live region may stay silent; the
+    // heading is described by it instead, and read when it takes focus.
+    if (form.last_submitted_display) {
+      intro.element.querySelector("h3").setAttribute("aria-describedby", "family-last-submitted");
+    }
     artwork("welcome", intro.element, "family-page-icon");
-    // Without welcome text the visible "Welcome" heading follows the notice and
-    // icon, so the page reads notice, icon, heading or text either way.
+    // Without welcome text the visible "Welcome" heading follows the icon, so
+    // the page reads icon, then heading or text, either way.
     if (!form.content.welcome) intro.element.append(intro.element.querySelector("h3"));
     block("welcome", intro.element);
     const attend = node("label", null, intro.element, {for: "cannot-attend", class: "limitation"});
@@ -2021,13 +2037,11 @@
           document.dispatchEvent(new Event("stewardship:family-finished"));
           finished = true; clear(); cancel.hidden = true;
           say("");
-          heading(testing ? "Test response complete" : "Thank you!", "welcome");
-          node("p", testing ? "Your campaign response has not been recorded. This test response will be deleted before the live campaign opens. Please return to submit your response during the live campaign, or contact the parish if you expected to submit a real response. You are now signed out." :
-            "Your response was submitted. You are now signed out.", root);
-          if (submittedThankYou) {
-            if (testing) node("h2", "Preview only: parish Thank You message", root);
-            node("div", null, root).innerHTML = submittedThankYou;
-          }
+          // Testing shows exactly what Production shows; the Testing banner
+          // at the top of the page is the only difference (#289).
+          heading("Thank you!", "welcome");
+          node("p", "Your response was submitted. You are now signed out.", root);
+          if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
         } else if (finished) {
           expired();
           return;

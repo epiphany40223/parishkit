@@ -209,12 +209,13 @@ def test_ministry_instructions_match_the_family_form_controls():
         Path(accounts.__file__).parent / "static/stewardship/family-v1.js"
     ).read_text()
     for label in (
-        "Current ministries",
-        "Continuing",
-        "Stop participating",
+        "Continue in this ministry",
+        "Stop participating in this ministry",
         "here to join more ministries",
     ):
         assert label in script and f"<strong>{label}</strong>" in PAGES["ministry"]
+    # The "Current ministries" heading is no longer shown (#292).
+    assert "Current ministries" not in PAGES["ministry"]
 
 
 @pytest.mark.parametrize("kind,slot", SLOTS)

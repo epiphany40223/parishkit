@@ -128,8 +128,8 @@ explanation below and the pledge's "intention only" statement.
 Optional campaign images appear when the Admin has set them for the current
 campaign: a small icon (about 96 CSS pixels) above the heading of the Member,
 financial and closing pages, and on the Welcome page below the returning-Family
-"last submitted" notice (or, without one, first), above the parish's intro text
-or, when there is none, above the "Welcome" heading.
+"last submitted" notice and the Family's name heading, above the parish's intro
+text or, when there is none, above the "Welcome" heading.
 The wide campaign banner is used in emails only, not on the Family pages. They are
 decorative (empty text alternatives), since the headings and text already carry
 their meaning, and scale down to fit a phone screen.
@@ -140,7 +140,10 @@ Steps are assembled from enabled modules:
 2. Family census, when enabled.
 3. One Member page per current active Member when census or Ministry
    stewardship is enabled; its census and Ministry subsections appear only when
-   their respective modules are enabled.
+   their respective modules are enabled. The Member census and Ministry
+   introductions appear on the first Member page only; their defaults are one
+   short paragraph each so that, on a 390×844 phone, the page's first control
+   is visible without scrolling.
 4. Add and fully edit proposed Members, when census is enabled, including their
    enabled census and Ministry subsections.
 5. Financial stewardship, when enabled.
@@ -149,7 +152,8 @@ Steps are assembled from enabled modules:
 7. Additional information, when enabled.
 8. Review and final Submit.
 
-When the Family has submitted before, the welcome page opens with "You last
+When the Family has submitted before, the welcome page opens (above the
+Family's name heading, below the Testing banner) with "You last
 submitted your renewal on DATE AND TIME. You can review, change and submit
 again as many times as you like; your most recent submission is the one we
 use." The time is shown in the campaign's time zone. In Testing mode it reports
@@ -273,18 +277,19 @@ choices. Hiding an existing membership or earlier request does not delete it or
 turn omission into a new leave/withdrawal action. Recheck the same policy at
 submission, including the linked stale-form reconfirmation requirement.
 
-Current memberships appear first under "Current ministries", each stating
-its choice once as "Continuing" (the default) or "Stop participating". Leaving
+Current memberships appear first (with no visible heading; screen readers get
+a "Current ministries" heading), each stating its choice once as "Continue in
+this ministry" (the default) or "Stop participating in this ministry". Leaving
 is always honored; the form does not describe it as a request that may be
-declined. A Ministry set to "Stop participating" is highlighted in the
-attention (amber) colour. Existing memberships are excluded from join choices.
+declined. A Ministry set to "Stop participating in this ministry" is
+highlighted in the attention (amber) colour. Existing memberships are excluded from join choices.
 "Click here to join more ministries" ("Tap here…" on a touch-only device)
 expands/searches the potentially long selected-Ministry list only on demand and
 supports multiple choices, and the chosen ministries stay listed under
 "Joining:", one per line, while it is collapsed. Selecting and then
 deselecting returns to no requested change. Review lists each Member's
-ministries as "Will continue", "Stopping" and "Joining", the last two as
-bulleted lists.
+ministries under "Continuing", "Stopping" and "Joining", each as a bulleted
+list with one ministry per line.
 
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
@@ -303,8 +308,8 @@ requires a short description, at most 200 characters. No talent is required.
 
 Above the Ministry choices, each Member may check "Because of physical
 limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating", every join
-choice is cleared, the Ministry choices and the join-more-ministries disclosure
+checked, every current Ministry is set to "Stop participating in this
+ministry", every join choice is cleared, the Ministry choices and the join-more-ministries disclosure
 are disabled for pointer, keyboard and assistive technology alike, and the
 talents question is hidden and no talents are sent. Unchecking restores the
 Family's own earlier choices, talents included. The server rejects a response in which such a
@@ -455,10 +460,9 @@ separate acknowledgment checkbox (#243). The server takes the mode from the
 admitted session and its baseline, never from the browser, so a Testing
 baseline cannot back a live submission.
 
-Submissions are prominently marked Test on the Thank You page and administration
-views. The Thank You content explicitly says the campaign response has not been
-recorded, the test will be deleted, and the Family must return during Production
-or contact the parish if it expected to submit a real response. Test submissions
+The Testing Thank You page is identical to Production's (the same heading, the
+parish's Thank You content and layout); the Testing banner at the top is the
+only difference. Test submissions are marked Test in administration views and
 do not:
 
 - count as participation or pledge;

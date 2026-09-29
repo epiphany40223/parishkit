@@ -63,7 +63,7 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
     show(
         page,
         page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
-            "Stop participating"
+            "Stop participating in this ministry"
         ),
     ).check()
     show(
@@ -97,7 +97,7 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
     page.get_by_role("button", name="Back to edit").click()
     expect(
         page.get_by_role("group", name="Choir", include_hidden=True).get_by_label(
-            "Stop participating"
+            "Stop participating in this ministry"
         )
     ).to_be_checked()
     assert not submissions
@@ -257,7 +257,7 @@ def test_stopping_is_amber_and_joins_are_a_bulleted_list(page, component_origin)
     form["ministries"]["options"].append({"id": 11, "name": "Greeters"})
     begin(page, component_origin, form, None)
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
-    show(page, choir.get_by_label("Stop participating")).check()
+    show(page, choir.get_by_label("Stop participating in this ministry")).check()
     expect(choir).to_have_class("ministry-row stopping")
     amber = page.evaluate(
         "getComputedStyle(document.documentElement)"
