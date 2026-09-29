@@ -203,7 +203,10 @@ jobs:
     needs: validate
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.browser != 'false') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # WebKit alone now needs about 14 minutes for the ~480 browser cases plus
+    # browser install, so 15 minutes cancelled runs whose tests all passed.
+    # quality_browser.py bounds the test run itself at 21 minutes, inside this.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
