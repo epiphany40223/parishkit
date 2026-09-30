@@ -251,8 +251,12 @@ def emit(
     )
 
 
-def emit_failure(error, *, event=Event.TASK_FAILED):
-    """Classify a failure without serializing any exception-controlled field."""
+def emit_failure(error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id=None):
+    """Classify a failure without serializing any exception-controlled field.
+
+    ``level`` lowers the severity for a best-effort step whose failure the
+    caller absorbs; ``task_id`` names the task it happened in.
+    """
     from django.db import DatabaseError
 
     from parishkit.config import ConfigError
@@ -276,7 +280,7 @@ def emit_failure(error, *, event=Event.TASK_FAILED):
         ),
         FailureKind.UNEXPECTED,
     )
-    emit(event, level=logging.ERROR, failure_kind=kind)
+    emit(event, level=level, task_id=task_id, failure_kind=kind)
     if debug_logging_enabled():
         # The reviewed event above carries only the category; say what failed.
         logging.getLogger("parishkit.stewardship.debug").debug(

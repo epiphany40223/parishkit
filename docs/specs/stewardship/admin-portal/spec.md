@@ -1324,7 +1324,20 @@ words ("Downloading from ParishSoft", "Saving the downloaded records",
 no count, so while a refresh is downloading the page says so instead of a bare
 wait message; other steps without a count keep the general message. Counts are
 labeled as records checked, since every refresh places every record into a
-complete new copy and reuses unchanged records. A run that is still pending
+complete new copy and reuses unchanged records. Once a refresh has succeeded,
+its task page says how many records it checked and how many changed, by
+collection (for example, "Checked 30,639 records from ParishSoft; 12 changed
+(3 Families, 9 contacts)."); a refresh with no ParishSoft changes says 0
+changed. A record changed when its identity was added, removed or has a
+different payload digest than in the previous promoted snapshot (the base
+the new snapshot must still match to be promoted). Staging computes this
+once, when it validates the corpus, and stores the per-collection counts as
+`changes` in the snapshot's cursor, which the web role already reads, so no
+schema or grant change is needed. A first load counts every record as
+changed. The counts are display-only: if the comparison fails, staging omits
+them, logs a classified `report_shaping_failed` WARNING (no exception text)
+and the refresh continues; the page then says only how many were checked, as
+it does when a snapshot's changes name a collection it does not know. A run that is still pending
 or running after a restart explains why, from its newest restart event: an unexpected stop (for example a
 server restart, recorded as an expired lease) or a temporary problem (a
 retryable failure), with the attempt number. A finished run shows no such

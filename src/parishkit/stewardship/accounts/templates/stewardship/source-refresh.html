@@ -10,7 +10,7 @@
   {% if pending.running %}<p class="notice">{% translate "A refresh is running now. No second refresh starts beside it; the one you request will follow it as soon as it finishes." %}</p>
   {% elif pending.waiting %}<p class="notice">{% translate "A full refresh is already waiting to run. Your request may join that run rather than adding one; you will be taken to whichever run carries it." %}</p>
   {% else %}<p>{% translate "A full refresh reads every Family, Member and Ministry from ParishSoft again and promotes the result when it completes. It runs in the background; you will be taken to its progress page." %}</p>{% endif %}
-  <p>{% translate "A full refresh re-downloads everything, including Ministry rosters and giving, so it usually takes a few minutes. The automatic 15-minute updates read only the Families ParishSoft reports as changed, so they finish much sooner. Either way, the progress counts every record checked, not only the records that changed." %}</p>
+  <p>{% translate "A full refresh re-downloads everything, including Ministry rosters and giving, so it usually takes a few minutes. The automatic 15-minute updates read only the Families ParishSoft reports as changed, so they finish much sooner. Either way, the progress counts every record checked; when the refresh finishes, its page also says how many records changed." %}</p>
   <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail. Submitting this page again before the run finishes returns the same run." %}</p>
 </section>
 <form method="post" action="{% url 'admin:source_refresh' %}">

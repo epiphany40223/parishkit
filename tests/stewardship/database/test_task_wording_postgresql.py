@@ -5,10 +5,21 @@ from django.db import connection
 
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.jobs.task_wording import RETRY_REASONS, retry_reason
+from parishkit.stewardship.jobs.task_wording import (
+    RETRY_REASONS,
+    refresh_result,
+    retry_reason,
+)
+from parishkit.stewardship.source.leases import release_source
 
 from .auth_builders import signed_in
+from .source_builders import source_corpus
 from .test_background_grants_postgresql import task_login
+from .test_source_snapshots_postgresql import (
+    prepared,
+    publish,
+    source_singletons,  # noqa: F401
+)
 from .test_taskrun_postgresql import act, expire, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -72,3 +83,32 @@ def test_the_task_page_explains_a_restart_under_the_web_role(auth_service, googl
     assert page.status_code == 200
     body = page.content.decode()
     assert "temporary problem" in body and "This is attempt 2." in body
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_refresh_result_says_how_many_records_changed_under_the_web_role():
+    """The web role reads checked and changed counts from promoted snapshots."""
+    first, claim = prepared()
+    publish(first, claim)
+    release_source(claim)
+    same, claim = prepared()
+    publish(same, claim)
+    release_source(claim)
+    changed, claim = prepared(source_corpus(name="Changed"))
+    publish(changed, claim)
+    release_source(claim)
+    pending, claim = prepared(source_corpus(name="Pending"))
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert refresh_result(first.task_id) == (
+            "Checked 9 records from ParishSoft; 9 changed (1 Family, 1 Member, "
+            "1 contact, 1 address, 1 Ministry, 1 Ministry roster entry, 1 fund, "
+            "1 pledge, 1 contribution)."
+        )
+        assert refresh_result(same.task_id) == (
+            "Checked 9 records from ParishSoft; 0 changed."
+        )
+        assert refresh_result(changed.task_id) == (
+            "Checked 9 records from ParishSoft; 1 changed (1 Family)."
+        )
+        # A validated snapshot that was never promoted reports nothing.
+        assert refresh_result(pending.task_id) is None
