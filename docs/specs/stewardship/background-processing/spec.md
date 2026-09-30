@@ -177,6 +177,39 @@ instants before Production readiness. The timezone cannot change once the
 campaign is scheduled, so live and historical occurrences are never rebucketed
 or recomputed because the Parish default changes.
 
+### Worker queues and processes
+
+Each consumer process executes one message at a time. The `worker` container
+therefore runs two consumer processes so that long, provider-bound source work
+never delays short work queued behind it
+([#336](https://github.com/epiphany40223/parishkit/issues/336)):
+
+| Process | Queues | Work |
+| --- | --- | --- |
+| Main worker process | `general`, `restore-general` | Exports, report facts and verification, operational collection and alert fanout, digests, campaign lifecycle and every other general task |
+| Source process | `general-source` | ParishSoft refresh (full, delta and manual), setup source load, final setup load and setup staging cleanup: every task that holds the `SourceMutationLease` |
+
+The handler registered for a task type names its queue; the scheduler publishes
+each hint to that queue, and a process refuses a hint for a task type bound to
+the other process's queue, leaving the durable row for the right consumer.
+Both processes share the worker's configuration, credential mounts, SQL login
+and broker identity. The main process starts the source process, forwards stop
+requests to it so both drain within the container's grace period, and exits
+if the source process exits or stays silent too long, so the container is
+restarted as a whole. A stale heartbeat alone does not stop it: each late
+observation is logged as a `helper_timed_out` entry (`source_helper`) with
+the limit and the heartbeat's age, and only silence longer than twice the
+container probe's limit stops the worker, logged the same way at `ERROR`.
+Each process may hold a task connection, a lease-renewal connection and a
+private timeout-log connection, so the worker login's limit is three times
+the rollout overlap; because Compose stops a container before starting its
+replacement, the overlap's slots serve the second process. The main
+process's idle credential-acknowledgement pass runs only between messages.
+A runtime budget whose worker limit is
+below six keeps one process on all three queues. The source queue shares the
+general queue's broker exchange and name prefix, so the Valkey ACL generated
+at provisioning already grants it.
+
 ### Campaign lifecycle boundaries
 
 The scheduler owns persistence of date-driven campaign transitions. On every
@@ -454,6 +487,9 @@ monotonically increasing fencing token, phase, heartbeat, and expiry. Claim,
 renewal, release, and takeover use short row-locking transactions; no database
 connection is held while waiting on ParishSoft. No refresh may run concurrently
 with another refresh or with publication writes.
+Every task that holds this lease runs on the worker's separate source process
+([worker queues and processes](#worker-queues-and-processes)), so a refresh
+never delays exports or operational collection.
 
 The owner heartbeats throughout external work and revalidates its fence before
 each upstream write and immediately before snapshot promotion. Loss of ownership
@@ -894,7 +930,8 @@ Slack/logs remain. Sensitive values and full free text never enter Slack.
 ## Shutdown and upgrade behavior
 
 Workers stop claiming new jobs, finish or checkpoint within their termination
-grace, and release/expire leases. The scheduler may overlap an old/new process
+grace, and release/expire leases. The worker container's two processes drain
+together within the one grace period. The scheduler may overlap an old/new process
 during rollout without duplicate work because database occurrence keys are
 unique. Database migrations run before new web/worker versions receive traffic;
 mixed-version compatibility requirements are declared per migration.

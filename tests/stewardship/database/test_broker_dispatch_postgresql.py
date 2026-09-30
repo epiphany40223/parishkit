@@ -66,3 +66,94 @@ def test_general_worker_cannot_execute_a_durable_mail_task():
             handlers={"dispatch_probe": handler},
         )
     assert not calls and TaskRun.objects.get(pk=task.run_id).state == "queued"
+
+
+def test_general_process_claims_an_export_while_a_source_refresh_runs():
+    """A short task completes while a long source task holds its claim (#336).
+
+    The worker container's two processes each consume their own queues, so a
+    general-queue task (an export stand-in) is claimed and finished by the
+    general process while the source process is still inside a refresh.
+    """
+    from threading import Thread
+
+    from django.db import connections
+
+    from parishkit.stewardship.jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
+    from parishkit.stewardship.jobs.storage import enqueue
+
+    source_task = queued()
+    export_task = enqueue(
+        task_type="dispatch_export_probe",
+        domain_request_id=uuid4(),
+        actor_id=None,
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    events = []
+
+    def export(context):
+        """The short task: claimed and completed during the refresh."""
+        events.append("export")
+        context.transition("complete")
+
+    handlers = {
+        "dispatch_export_probe": Handler(WorkQueue.GENERAL, lambda *a: True, export)
+    }
+
+    def process(queues):
+        """One of the worker container's two consumer processes."""
+        return build_broker(
+            endpoint=ValkeyConfiguration("valkey", 6379, 0, None),
+            password="synthetic-password",
+            service=ServiceRole.WORKER,
+            handlers=handlers,
+            queues=queues,
+        )
+
+    def run_general():
+        """The general process's thread, on its own database connection."""
+        try:
+            general.app.tasks[HINT_TASK].run(str(export_task.run_id))
+        finally:
+            connections.close_all()
+
+    def refresh(context):
+        """The long task: mid-refresh, the export is claimed and finished."""
+        events.append("refresh started")
+        assert TaskRun.objects.get(pk=source_task.run_id).state == "running"
+        thread = Thread(target=run_general)
+        thread.start()
+        thread.join(30)
+        assert TaskRun.objects.get(pk=export_task.run_id).state == "succeeded"
+        events.append("refresh finished")
+        context.transition("complete")
+
+    handlers["dispatch_probe"] = Handler(WorkQueue.SOURCE, lambda *a: True, refresh)
+    # Each process's broker copies the registry when it is built.
+    general = process(ROLE_QUEUES[ServiceRole.WORKER] - SOURCE_QUEUES)
+    source = process(SOURCE_QUEUES)
+    source.app.tasks[HINT_TASK].run(str(source_task.run_id))
+    assert events == ["refresh started", "export", "refresh finished"]
+    assert TaskRun.objects.get(pk=source_task.run_id).state == "succeeded"
+
+
+@pytest.mark.parametrize("source_process", [False, True])
+def test_each_worker_process_refuses_the_other_process_queue(source_process):
+    """A hint for the other process's queue is refused and stays durable."""
+    from parishkit.stewardship.jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
+
+    task, calls = queued(), []
+    queue = WorkQueue.GENERAL if source_process else WorkQueue.SOURCE
+    handler = Handler(queue, lambda *args: True, calls.append)
+    with pytest.raises(PermissionError):
+        consume_hint(
+            (str(task.run_id),),
+            {},
+            service=ServiceRole.WORKER,
+            handlers={"dispatch_probe": handler},
+            queues=SOURCE_QUEUES
+            if source_process
+            else ROLE_QUEUES[ServiceRole.WORKER] - SOURCE_QUEUES,
+        )
+    assert not calls and TaskRun.objects.get(pk=task.run_id).state == "queued"

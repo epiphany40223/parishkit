@@ -70,14 +70,27 @@ def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
         for _, _, role, _ in database_identities()
         if role in roles
     )
-    assert used == config.runtime_budget.background_connections == 36
-    assert role_limit(config, ServiceRole.WORKER) == 4
+    # The worker's third slot per overlap (its container runs two consumer
+    # processes, #336) is the only ceiling beyond the reserved pool. Compose
+    # never overlaps two generations of a background service, so steady-state
+    # use is one generation: 22 of the 36 reserved slots.
+    overlap = config.runtime_budget.rollout_overlap
+    assert used == config.runtime_budget.background_connections + overlap == 38
+    steady = sum(
+        role_limit(config, role)
+        if role is ServiceRole.WORKER
+        else role_limit(config, role) // overlap
+        for _, _, role, _ in database_identities()
+        if role in roles
+    )
+    assert steady == 22 <= config.runtime_budget.background_connections
+    assert role_limit(config, ServiceRole.WORKER) == 6
     assert role_limit(config, ServiceRole.MAIL_DISPATCH) == 4
     assert role_limit(config, ServiceRole.SCHEDULER) == 2
     doubled = replace(
         config, runtime_budget=replace(config.runtime_budget, rollout_overlap=1)
     )
-    assert role_limit(doubled, ServiceRole.WORKER) == 2
+    assert role_limit(doubled, ServiceRole.WORKER) == 3
 
 
 @pytest.mark.parametrize(

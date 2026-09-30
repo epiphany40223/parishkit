@@ -3,8 +3,11 @@
 import logging
 import os
 import signal
+import subprocess
 import sys
+from contextlib import suppress
 from threading import Event as StopEvent
+from time import monotonic
 
 from parishkit.config import ConfigError
 
@@ -21,6 +24,7 @@ from .observability import (
     emit_failure,
     installer_request,
 )
+from .probe import MAX_AGE_SECONDS as PROBE_MAX_AGE
 from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
@@ -368,20 +372,149 @@ def independent_producer(guard, operation, *args):
     return result
 
 
-def serve_background(configuration, lease):
-    """Assemble one admitted queue process and retain exclusion through final drain."""
+def source_command(argv=None):
+    """This process's own invocation, narrowed to the source queue.
+
+    The sibling re-executes exactly how this worker was started (from
+    ``sys.orig_argv``) plus ``--queue source``, rather than a separately
+    constructed command, so whatever the entry point sets up before the CLI
+    runs applies to both processes alike.
+    """
+    argv = list(sys.orig_argv if argv is None else argv)
+    if "runtime" not in argv[1:] or "--queue" in argv:
+        raise ConfigError("The source consumer requires a worker runtime command.")
+    return [sys.executable, *argv[1:], "--queue", "source"]
+
+
+class SourceConsumer:
+    """The worker container's second consumer process: source work only (#336).
+
+    ParishSoft refreshes and setup source loads take minutes. On the general
+    consumer, which runs one message at a time, exports and operational
+    collection waited behind them. The worker process starts this sibling,
+    which re-executes the same admitted runtime (see ``source_command``) with the
+    same configuration, mounts, credentials and SQL login but consumes only
+    the source queue. Both share the container's lifetime: a stop request is
+    forwarded at once so both drain together, and a sibling that exits or
+    stops publishing liveness stops the worker, so the container exits (and
+    restarts, in production) instead of silently losing source work.
+    """
+
+    # Silence this long (twice the container probe's limit) stops the worker.
+    STALE_LIMIT = 2 * PROBE_MAX_AGE
+
+    def __init__(self, *, drain_seconds, argv=None):
+        self.drain_seconds = drain_seconds
+        self.started = monotonic()
+        self.stale = 0
+        # Same interpreter, environment and entry point; output joins the
+        # container's log.
+        self.process = subprocess.Popen(source_command(argv))
+
+    def check(self):
+        """Raise when the sibling has exited or has been silent far too long.
+
+        An exited sibling stops the worker at once. A stale heartbeat alone
+        does not: one slow window (a long promotion transaction, a loaded
+        host) can delay the sibling's liveness past the probe's limit, and
+        restarting the container would interrupt that very work. Each stale
+        observation is logged durably; only silence past ``STALE_LIMIT``
+        (twice the probe's limit) stops the worker, and that is logged too.
+        Before its first heartbeat the sibling's age counts from its start.
+        """
+        from .installer_health import MAX_AGE_SECONDS, SOURCE_HEARTBEAT, heartbeat_age
+
+        if self.process.poll() is not None:
+            raise ConfigError("The source consumer exited.")
+        age = heartbeat_age(SOURCE_HEARTBEAT)
+        if age is None:
+            age = monotonic() - self.started
+        if age <= MAX_AGE_SECONDS:
+            self.stale = 0
+            return
+        self.stale += 1
+        if age < self.STALE_LIMIT:
+            self._record("WARNING", MAX_AGE_SECONDS, age, count=self.stale)
+            return
+        self._record("ERROR", self.STALE_LIMIT, age, count=self.stale)
+        raise ConfigError("The source consumer stopped reporting progress.")
+
+    def _record(self, level, limit, elapsed, *, count=None):
+        """Log one stale-liveness observation or stop on the durable timeout log."""
+        from .audit.timeouts import record_timeout
+
+        # "source_helper" is the reviewed timeout kind for a source-work
+        # helper process; reusing it keeps the SQL context vocabulary fixed.
+        record_timeout(
+            Event.HELPER_TIMED_OUT,
+            what="source_helper",
+            level=level,
+            limit_seconds=limit,
+            elapsed_seconds=elapsed,
+            count=count,
+        )
+
+    def terminate(self):
+        """Ask the sibling to drain; safe to repeat and to call from a signal."""
+        if self.process.returncode is None:
+            with suppress(ProcessLookupError):
+                self.process.send_signal(signal.SIGTERM)
+
+    def close(self):
+        """Stop the sibling and wait for its drain, killing it only past the grace."""
+        self.terminate()
+        draining = monotonic()
+        try:
+            self.process.wait(timeout=self.drain_seconds)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+            self._record("ERROR", self.drain_seconds, monotonic() - draining)
+
+
+def split_source(configuration):
+    """Whether the worker login can hold two consumer processes' connections.
+
+    Each consumer process may hold a task connection, a lease-renewal
+    connection and a short-lived timeout-log connection. The worker login's
+    limit is ``rollout_overlap * 3``; Compose recreates a container by
+    stopping it before starting its replacement, so with the default overlap
+    of 2 those six connections serve the container's two processes. A budget
+    too small for both keeps one process on every queue.
+    """
+    from .database_provisioning import role_limit
+
+    return role_limit(configuration, ServiceRole.WORKER) >= 6
+
+
+def serve_background(configuration, lease, *, source=False):
+    """Assemble one admitted queue process and retain exclusion through final drain.
+
+    ``source`` selects the worker container's source-queue sibling, which the
+    worker's main process starts (see SourceConsumer).
+    """
     from uuid import uuid4
 
     from .consumer_runtime import publish_single_process_receipts
-    from .installer_health import publish_heartbeat
+    from .installer_health import SOURCE_HEARTBEAT, publish_heartbeat
+    from .jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
     from .runtime_background import configure_background, matching_authority
 
+    role = configuration.service_role
+    if source and role is not ServiceRole.WORKER:
+        raise ConfigError("Only the worker runs a source-queue consumer.")
+    queues = None
+    sibling = role is ServiceRole.WORKER and not source and split_source(configuration)
+    if source:
+        queues = SOURCE_QUEUES
+    elif sibling:
+        queues = ROLE_QUEUES[role] - SOURCE_QUEUES
     stop = StopEvent()
 
     def heartbeat():
         """Long task renewal and idle loop progress both retain lifecycle evidence."""
         lease.check()
-        publish_heartbeat()
+        publish_heartbeat(SOURCE_HEARTBEAT if source else None)
 
     def stopping(signum, frame):
         """Signals request drainage; no provider work or SQL runs in this handler."""
@@ -390,10 +523,12 @@ def serve_background(configuration, lease):
     previous = {
         sig: signal.signal(sig, stopping) for sig in (signal.SIGTERM, signal.SIGINT)
     }
-    assembled = None
+    assembled = companion = None
     try:
         lease.check()
-        assembled = configure_background(configuration, stop=stop, heartbeat=heartbeat)
+        assembled = configure_background(
+            configuration, stop=stop, heartbeat=heartbeat, queues=queues
+        )
         # Model-dependent runtime owners may be imported only after the fresh
         # process has configured Django and admitted its SQL identity.
         from .accounts.branding_cleanup import produce_cleanup
@@ -421,6 +556,14 @@ def serve_background(configuration, lease):
         from .source.setup_cleanup import produce_setup_cleanup
         from .source.setup_final_production import produce_finalization
 
+        if source:
+            # The main worker process owns the container's receipts and
+            # rotation acknowledgement; both processes load the same mounts
+            # at container start and are only ever recreated together.
+            emit(Event.STARTUP_VALIDATED)
+            return serve_consumer(
+                assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
+            )
         publish_single_process_receipts(configuration, assembled.receipts)
         emit(Event.STARTUP_VALIDATED)
         if configuration.service_role in {
@@ -429,6 +572,10 @@ def serve_background(configuration, lease):
         }:
             from .credential_runtime import acknowledge_rotations
 
+            if sibling and not stop.is_set():
+                companion = SourceConsumer(
+                    drain_seconds=configuration.runtime_budget.drain_seconds
+                )
             receipts = dict(assembled.receipts)
             return serve_consumer(
                 assembled.broker,
@@ -436,6 +583,7 @@ def serve_background(configuration, lease):
                 stop=stop,
                 heartbeat=heartbeat,
                 idle=lambda: acknowledge_rotations(configuration, receipts),
+                companion=companion,
             )
         producer = SourceProducer(uuid4())
         schedules = FamilyScheduleProducer(uuid4())
@@ -508,6 +656,8 @@ def serve_background(configuration, lease):
         stop.set()
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+        if companion is not None:
+            companion.close()
         if assembled is not None:
             assembled.broker.app.close()
         from django.conf import settings
@@ -535,10 +685,15 @@ def execute_runtime(args):
         runner = runners.get(configuration.service_role)
         if runner is None:
             raise ConfigError("This service's operational runtime is unavailable.")
+        options, queue = {}, getattr(args, "queue", None)
+        if configuration.service_role is ServiceRole.WORKER:
+            options = {"source": queue == "source"}
+        elif queue is not None:
+            raise ConfigError("Only the worker runs a source-queue consumer.")
         with StartupLease(
             RuntimeLayout(configuration).interlock, offline=False
         ) as lease:
-            return runner(configuration, lease)
+            return runner(configuration, lease, **options)
     except Exception:
         emit(Event.STARTUP_REJECTED, level=logging.ERROR)
         print(

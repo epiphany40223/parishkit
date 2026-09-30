@@ -505,3 +505,61 @@ def test_static_files_are_revalidated_on_every_use(tmp_path):
     assert "file_server" in block
     # Only static files: the application sets its own headers.
     assert output.count("Cache-Control") == 2  # this and the maintenance page
+
+
+# The service list before #336. The source consumer is a second process inside
+# the worker container, so the topology (and retarget-image's rendering of an
+# existing deployment) gains no service, mount, login or broker credential.
+ONLINE_SERVICES = {
+    "web",
+    "config-installer",
+    "worker",
+    "mail-dispatch",
+    "scheduler",
+    *(
+        "credential-installer-" + target.replace("_", "-")
+        for target in SECRET_NAMES - {"handoff_private"}
+    ),
+    "postgres",
+    "valkey",
+}
+PROFILED_SERVICES = {
+    "bootstrap",
+    "migration",
+    "admin-recovery",
+    "database-provision",
+    "backup-worker",
+}
+
+
+@pytest.mark.parametrize("production", [False, True])
+@pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
+def test_source_consumer_adds_no_service_to_any_compose_variant(
+    tmp_path, production, mode
+):
+    """The worker container starts its source sibling itself (#336)."""
+    from parishkit.stewardship.runtime_process import split_source
+
+    configuration = configuration_at(tmp_path, production=production)
+    compose, documents = render_runtime(
+        configuration,
+        image=IMAGE if production else "parishkit-stewardship:development",
+        provider_mode=mode,
+    )
+    services = compose["services"]
+    expected = ONLINE_SERVICES | PROFILED_SERVICES
+    assert set(services) == (expected | {"caddy"} if production else expected)
+    worker = services["worker"]
+    # One entry command; --queue is only ever passed to the sibling.
+    assert worker["command"][:2] == ["runtime", "--config"]
+    assert "--queue" not in worker["command"]
+    # Docker's init reaps the sibling, and the grace period covers both drains.
+    assert worker["init"] is True
+    assert worker["stop_grace_period"] == (
+        f"{configuration.runtime_budget.drain_seconds}s"
+    )
+    document = next(
+        value for path, value in documents.items() if str(path) == worker["command"][2]
+    )
+    rendered = load_deployment(document=document, environ={})
+    assert split_source(rendered)

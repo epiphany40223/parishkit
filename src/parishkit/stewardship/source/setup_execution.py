@@ -35,7 +35,7 @@ from .snapshot_models import SourceSnapshot
 def setup_source_handler():
     """Register a compiled setup-only owner, with no persistent provider key path."""
     return Handler(
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         admit=admit_setup_task,
         execute=_execute,
         recover=recovery_plan,

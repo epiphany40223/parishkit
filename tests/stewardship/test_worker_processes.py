@@ -15,7 +15,7 @@ from parishkit.stewardship.jobs.processes import serve_consumer, worker_options
 @pytest.mark.parametrize(
     "role,queues",
     [
-        (ServiceRole.WORKER, ["general", "restore-general"]),
+        (ServiceRole.WORKER, ["general", "general-source", "restore-general"]),
         (ServiceRole.MAIL_DISPATCH, ["mail-dispatch", "restore-mail"]),
         (ServiceRole.BACKUP_WORKER, ["backup-worker", "restore-backup"]),
     ],

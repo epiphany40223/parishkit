@@ -52,7 +52,7 @@ def finalization_handler(
             public=public,
         )
     return Handler(
-        queue=WorkQueue.GENERAL,
+        queue=WorkQueue.SOURCE,
         admit=finalization_admission(store),
         execute=execute,
         recover=partial(recovery_plan, store=store),

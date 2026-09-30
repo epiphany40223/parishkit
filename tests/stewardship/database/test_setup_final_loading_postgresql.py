@@ -109,7 +109,7 @@ def load(service, task, credential_path, *, finalize=None):
     """Use actual worker claim, renewal, page admission and staging transactions."""
     wait_for_source()
     handler = Handler(
-        WorkQueue.GENERAL,
+        WorkQueue.SOURCE,
         finalization_admission(service.store),
         lambda _: None,
         scope=work_transaction,
@@ -117,7 +117,7 @@ def load(service, task, credential_path, *, finalize=None):
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         execution = claim_hint(
             task.run_id,
-            queue=WorkQueue.GENERAL,
+            queue=WorkQueue.SOURCE,
             worker_id=uuid4(),
             handlers={TASK_TYPE: handler},
         )

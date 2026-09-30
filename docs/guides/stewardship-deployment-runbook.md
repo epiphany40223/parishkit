@@ -549,11 +549,76 @@ sequence with the commands that exist.
    command and open the public origin. Confirm in the portal that background
    work resumed: the home page's latest refresh time advances and the
    background task pages show the scheduler running.
+   `docker compose ... top worker` lists two application processes: the
+   worker and its [source process](stewardship-runtime.md#the-workers-source-process)
+   (`runtime ... --queue source`). A release that adds or removes that
+   process changes no Compose service. The release that introduced it also
+   raised the worker's SQL connection limit, which needs the one-time step
+   in [worker connection limit](#worker-connection-limit-339).
 
 Record the new release's complete `IMAGE@sha256:DIGEST` reference in the
 operators' notes, and keep the previous ones: a restore onto a new host
 pulls the image a set was taken under by that reference. The old image
 stays in the registry; nothing here deletes it.
+
+### Worker connection limit (#339)
+
+The release that runs ParishSoft source work on the worker's second process
+raises the `pk_stewardship_worker` login's connection limit from four to six
+(three per process: task, lease renewal and timeout log). Provisioning only
+creates roles and never alters one, and both `database-grants` and worker
+startup refuse a login whose limit differs from the release's, so a
+deployment provisioned earlier needs one `ALTER ROLE` by the operator
+superuser (`pk_stewardship_operator`, the login `database-roles` uses; the
+migration owner cannot alter another role). Run it *before* this release's
+`database-grants` step; the running worker is unaffected, because the limit
+is checked only at startup:
+
+```sh
+docker compose -f COMPOSE -p PROJECT exec -T postgres \
+  psql -U pk_stewardship_operator -d DATABASE -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+ALTER ROLE pk_stewardship_worker CONNECTION LIMIT 6;
+DO $check$
+BEGIN
+    IF (SELECT rolconnlimit FROM pg_roles WHERE rolname = 'pk_stewardship_worker')
+        IS DISTINCT FROM 6 THEN
+        RAISE EXCEPTION 'pk_stewardship_worker connection limit is not 6';
+    END IF;
+END
+$check$;
+COMMIT;
+SQL
+```
+
+`tools/stewardship-dev-deploy.sh` runs `database-grants` itself, so run the
+command before the script. Rolling back to an earlier image needs the same
+command with `4`, or its worker refuses to start. A fresh installation needs
+neither.
+
+While the new image starts, a refresh hint that the old scheduler queued on
+the `general` queue can reach the new main worker process, which logs one
+`Task type is unavailable to this isolated consumer` error and leaves the
+task in PostgreSQL. It is harmless: the next scheduler sweep re-publishes the
+task to the source queue.
+
+What to watch after deploying it:
+
+- `helper_timed_out` entries for `source_helper` in the operational log: a
+  `WARNING` is a late source heartbeat (usually a slow promotion), an
+  `ERROR` means the worker stopped the source process's container.
+- The general queue still waits behind a long general task (a large export or
+  fact rebuild); only source work moved. A promotion can also briefly wait
+  for, or delay, a general task's short write transaction (#147).
+- A hint delivered twice may be claimed by nobody the second time; the
+  durable row decides, so this shows only as a skipped duplicate.
+- The main process notices a source process that is alive but hung only
+  through its heartbeat; one blocked outside a renewal or tick shows as the
+  warnings above before it is stopped.
+- A ParishSoft read helper started by the source process may outlive that
+  process by up to its own deadline after a forced stop.
+- The worker container uses roughly one more Python process's memory
+  (about 150 to 250 MB); check `docker stats` on the 8 GB host.
 
 ## Rollback
 

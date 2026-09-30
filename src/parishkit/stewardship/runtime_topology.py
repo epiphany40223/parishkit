@@ -274,6 +274,11 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     targets = sorted(SECRET_NAMES - {"handoff_private"})
     # Configuration/target installers + worker/mail main/renewal + scheduler each
     # retain their own reserved SQL slots, independent of interactive headroom.
+    # The worker login's limit is rollout_overlap * 3 (two consumer processes,
+    # #336), one slot more per overlap than counted here. Compose never runs
+    # two generations of a background service at once, so in steady state
+    # these logins hold at most 13 installer + 6 worker + 3 mail + 1 scheduler
+    # = 23 connections, well inside the 36 this check reserves for them.
     budget.validate_topology(background_processes=1 + len(targets) + 5)
     image = _image(image, configuration.profile)
     if checkout is not None and (

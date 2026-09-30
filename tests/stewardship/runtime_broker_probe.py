@@ -58,7 +58,7 @@ def main():
     assert set(payload) == {"port", "expected", "mode"}
     stop, seen, ready, timers = Event(), [], [], []
 
-    def consume(args, kwargs, *, service, handlers, stop):
+    def consume(args, kwargs, *, service, handlers, stop, queues):
         """No broker metadata may substitute any identity or additional arguments."""
         assert service is ServiceRole.WORKER and not kwargs
         assert args == (payload["expected"],) or args == [payload["expected"]]

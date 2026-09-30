@@ -85,7 +85,7 @@ def test_application_instances_never_share_another_services_handler_closure(
     """Celery shared-task defaults must not bind future apps to a prior service."""
     calls = []
 
-    def consume(args, kwargs, *, service, handlers, stop):
+    def consume(args, kwargs, *, service, handlers, stop, queues):
         """Capture only the service identity passed by each app-local closure."""
         calls.append(service)
 
@@ -99,7 +99,7 @@ def test_application_instances_never_share_another_services_handler_closure(
 @pytest.mark.parametrize(
     "service,expected",
     [
-        (ServiceRole.WORKER, {"general", "restore-general"}),
+        (ServiceRole.WORKER, {"general", "general-source", "restore-general"}),
         (ServiceRole.MAIL_DISPATCH, {"mail-dispatch", "restore-mail"}),
         (ServiceRole.BACKUP_WORKER, {"backup-worker", "restore-backup"}),
     ],

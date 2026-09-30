@@ -5,7 +5,7 @@ import hashlib
 from parishkit.config import ConfigError
 
 from .deployment import ServiceRole
-from .jobs.queues import BROKER_PREFIX, ROLE_QUEUES, WorkQueue
+from .jobs.queues import BROKER_PREFIX, ROLE_QUEUES, WorkQueue, exchange
 
 
 def _password_digest(password):
@@ -57,7 +57,10 @@ def broker_acl(service, password):
     producer = service is ServiceRole.SCHEDULER
     queues = frozenset(WorkQueue) if producer else ROLE_QUEUES[service]
     keys = []
-    for queue in sorted(queues):
+    # One pattern per exchange: a queue sharing an exchange (the source queue)
+    # is already covered by that exchange's prefix and binding, so adding it
+    # leaves an existing deployment's ACL byte-for-byte unchanged.
+    for queue in sorted({exchange(queue) for queue in queues}):
         # Kombu appends binary priority separators. QoS lives under a separate
         # qos: namespace so these queue patterns cannot grant it to publishers.
         keys.extend(

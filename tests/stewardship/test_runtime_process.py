@@ -11,6 +11,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import runtime_process
 from parishkit.stewardship.cli import main
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.startup_interlock import StartupLease
 
 from .bootstrap_factory import bootstrap_fixture
@@ -53,8 +54,10 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
     monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
     called = []
 
-    def runner(config, lease):
+    def runner(config, lease, **options):
         """The lifecycle inode is real; only the process body is substituted."""
+        if role is ServiceRole.WORKER:
+            assert options == {"source": False}
         called.append(config)
         lease.check()
         with pytest.raises(ConfigError), StartupLease(lease.path, offline=True):
@@ -68,6 +71,26 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
 
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
         pass
+
+
+@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+def test_runtime_queue_option_selects_only_the_worker_source_consumer(
+    tmp_path, monkeypatch, role
+):
+    """``--queue source`` starts the worker's source sibling and nothing else."""
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=role)
+    monkeypatch.setattr(runtime_process, "load_deployment", lambda path: configuration)
+    monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
+    runner = Mock(return_value=0)
+    monkeypatch.setattr(runtime_process, "serve_background", runner)
+    result = main(["runtime", "--config", "operator-input.yaml", "--queue", "source"])
+    if role is ServiceRole.WORKER:
+        assert result == 0
+        assert runner.call_args.kwargs["source"] is True
+    else:
+        assert result == 2
+        runner.assert_not_called()
 
 
 @pytest.mark.parametrize("configured", [False, True])
@@ -391,12 +414,15 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     broker, lease, closes, receipts, healthy = Mock(), Mock(), Mock(), Mock(), Mock()
     assembled = SimpleNamespace(broker=broker, store=object(), handlers={}, receipts={})
-    stops = []
+    stops, selected = [], []
+    sibling = Mock()
+    monkeypatch.setattr(runtime_process, "SourceConsumer", sibling)
 
-    def configure(config, *, stop, heartbeat):
+    def configure(config, *, stop, heartbeat, queues=None):
         """Retain the common stop event and exercise the actual health callback."""
         assert config is configuration
         stops.append(stop)
+        selected.append(queues)
         heartbeat()
         return assembled
 
@@ -450,6 +476,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         else:
             # Consumers acknowledge rotated credentials from their idle timer.
             kwargs["idle"]()
+            assert kwargs["companion"] is (
+                sibling.return_value if role is ServiceRole.WORKER else None
+            )
             rotations.assert_called_once_with(configuration, assembled.receipts)
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
         assert stop.is_set()
@@ -628,6 +657,15 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     receipts.assert_called_once_with(configuration, assembled.receipts)
     healthy.assert_called_once()
     assert lease.check.call_count == 2
+    if role is ServiceRole.WORKER:
+        # The main worker process consumes everything but source work and
+        # starts, forwards stops to and finally closes its source sibling.
+        assert selected == [frozenset({WorkQueue.GENERAL, WorkQueue.RESTORE_GENERAL})]
+        sibling.assert_called_once()
+        sibling.return_value.close.assert_called_once()
+    else:
+        assert selected == [None]
+        sibling.assert_not_called()
     broker.app.close.assert_called_once()
     closes.assert_called_once()
     if role is ServiceRole.SCHEDULER:

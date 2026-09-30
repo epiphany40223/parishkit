@@ -259,3 +259,61 @@ def test_actual_worker_uses_closed_queues_and_drains_after_work_or_sigterm(
         "ready": True,
         "seen": [str(identifier)] if mode == "consume" else [],
     }
+
+
+def test_source_hints_reach_only_the_source_queue_under_the_existing_acl(
+    valkey_endpoint,
+):
+    """The source queue works with the ACL provisioned before it existed (#336).
+
+    The ACL has no source-specific key: the queue shares the general exchange
+    and extends its name. The general process never receives source work.
+    """
+    from parishkit.stewardship.jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
+
+    assert b"general-source" not in server_acl(PASSWORDS)
+    producer = build_broker(
+        endpoint=valkey_endpoint,
+        password=PASSWORDS[ServiceRole.SCHEDULER].decode(),
+        service=ServiceRole.SCHEDULER,
+        handlers={},
+    )
+    consumers = {
+        name: build_broker(
+            endpoint=valkey_endpoint,
+            password=PASSWORDS[ServiceRole.WORKER].decode(),
+            service=ServiceRole.WORKER,
+            handlers={},
+            queues=queues,
+        )
+        for name, queues in (
+            ("source", SOURCE_QUEUES),
+            ("general", ROLE_QUEUES[ServiceRole.WORKER] - SOURCE_QUEUES),
+        )
+    }
+    source_hint = ExecutionHint(uuid4(), WorkQueue.SOURCE)
+    general_hint = ExecutionHint(uuid4(), WorkQueue.GENERAL)
+    try:
+        # Both processes declare their queues at startup, as Celery does.
+        for runtime in consumers.values():
+            with runtime.app.connection_for_read() as channel_connection:
+                for queue in runtime.consumed:
+                    runtime.app.amqp.queues[queue.value](channel_connection).declare()
+        publish_hint(producer, source_hint)
+        publish_hint(producer, general_hint)
+        received = {}
+        for name, runtime in consumers.items():
+            with runtime.app.connection_for_read() as channel_connection:
+                for queue in sorted(runtime.consumed):
+                    bound = runtime.app.amqp.queues[queue.value](channel_connection)
+                    while (message := bound.get(no_ack=False)) is not None:
+                        received.setdefault(name, []).append(message.payload[0][0])
+                        message.ack()
+        assert received == {
+            "source": [str(source_hint.run_id)],
+            "general": [str(general_hint.run_id)],
+        }
+    finally:
+        producer.app.close()
+        for runtime in consumers.values():
+            runtime.app.close()

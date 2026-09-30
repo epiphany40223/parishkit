@@ -146,7 +146,7 @@ def cleanup_handler(*, scheduler=False):
         raise PermissionError("The scheduler cannot dispose source data.")
 
     return Handler(
-        WorkQueue.GENERAL,
+        WorkQueue.SOURCE,
         admit_cleanup,
         unavailable if scheduler else _execute,
         recover=recover_cleanup,
