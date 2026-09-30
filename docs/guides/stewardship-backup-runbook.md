@@ -289,7 +289,12 @@ by a Workspace administrator:
    API controls → Manage domain-wide delegation, edit the service account's
    client ID and add the scope `https://www.googleapis.com/auth/drive`
    alongside `https://mail.google.com/`. Changes can take several minutes
-   to take effect.
+   to take effect. Domain-wide delegation lets the key act as **any** user
+   in the Workspace domain, so with this scope it can reach every user's
+   Drive, not only the delegated mailbox user's (the mail scope already
+   reaches every mailbox the same way). Keep this service account in a
+   Google Cloud project used for nothing else, limit who can create or
+   download its keys, and replace a key that may have been exposed.
 3. Create the backup folder, preferably in a **shared drive** so it does not
    belong to one person, and add the delegated mailbox user to that shared
    drive as **Content manager** (a My Drive folder owned by that user also
