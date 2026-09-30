@@ -1,5 +1,6 @@
 """Policy races and exact-once behavior of the login-rule autosave queue."""
 
+from contextlib import nullcontext
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -21,7 +22,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .test_background_grants_postgresql import task_login
 from .test_configuration_service_postgresql import (
     as_config_installer,
@@ -164,9 +165,13 @@ def test_an_ended_session_stops_the_queue_and_records_nothing(
         receipt = state(apply(browser, intent(store)).json())
     row = PortalSession.objects.get(revoked_at__isnull=True)
     # Every update of a mutable record advances its version, as the owner does.
-    PortalSession.objects.filter(pk=row.pk, version=row.version).update(
-        **ending(row), version=F("version") + 1
-    )
+    # Expiry is immutable to every login (#306), so seed it as a superuser;
+    # revocation goes through the guard as the runtime does.
+    changes = ending(row)
+    with unguarded() if "expires_at" in changes else nullcontext():
+        PortalSession.objects.filter(pk=row.pk, version=row.version).update(
+            **changes, version=F("version") + 1
+        )
     before = ConfigurationChangeRequest.objects.count()
     with web():
         assert apply(browser, intent(store, role="administrator")).status_code == 403
