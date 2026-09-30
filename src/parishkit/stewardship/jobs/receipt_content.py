@@ -49,6 +49,24 @@ class ReceiptTemplate:
             raise ValueError("Receipt template requires a subject.")
 
 
+def fold_parts(html, text, note_html, note_text):
+    """One receipt body from an email body and a retired closing note (#260).
+
+    The HTML is simply joined. When both plain texts are exactly what their
+    HTML generates, the joined plain text is generated from the joined HTML
+    too, so the folded email stays "Generate plain text from HTML" content and
+    an Admin's later HTML edits carry into its plain text. Hand-written plain
+    text is joined after a blank line instead, and kept word for word.
+    """
+    joined = html + note_html
+    if (
+        prepare_content(html).text == text
+        and prepare_content(note_html).text == note_text
+    ):
+        return joined, prepare_content(joined).text
+    return joined, text + ("\n\n" + note_text if note_text else "")
+
+
 def render_receipt(
     *,
     identity,
@@ -106,11 +124,15 @@ def render_receipt(
         raise ValueError("Receipt block requires canonical safe content.")
     validate_receipt_content("", block.html, block.text)
     subject = render_template(template.subject, values, subject=True)
-    html = render_template(template.html, values, html=True, files=files)
-    text = render_template(template.text, values, files=files)
-    html += render_template(block.html, values, html=True, files=files)
-    if block.text:
-        text += "\n\n" + render_template(block.text, values, files=files)
+    # A closing note renders exactly as the folded email that replaces it
+    # would (accounts.receipt_note), so saving that email changes nothing.
+    body_html, body_text = (
+        fold_parts(template.html, template.text, block.html, block.text)
+        if block.html or block.text
+        else (template.html, template.text)
+    )
+    html = render_template(body_html, values, html=True, files=files)
+    text = render_template(body_text, values, files=files)
     facts = (
         f"Parish: {values['parish_name']}",
         f"Campaign: {values['campaign_name']}",

@@ -142,9 +142,16 @@ def deliver(campaign_test, *, public_origin=""):
 
 
 def test_confirmation_sample_includes_fixed_facts_and_selected_optional_block(
-    campaign_test,
+    campaign_test, monkeypatch
 ):
-    """The restricted Admin test-mail path previews the actual receipt composition."""
+    """The restricted Admin test-mail path previews the actual receipt composition.
+
+    The block is a retired closing note (#260) that an older applied
+    configuration can still carry; receipts keep appending it.
+    """
+    from parishkit.stewardship.accounts import content_schema
+
+    monkeypatch.setattr(content_schema, "RETIRED", None)
     service, browser, _, credential = campaign_test
     campaign = Campaign.objects.get()
     template = content(str(campaign.pk), kind="email", slot="confirmation")

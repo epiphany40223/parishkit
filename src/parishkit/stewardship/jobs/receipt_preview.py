@@ -14,7 +14,11 @@ from .receipt_content import ReceiptTemplate, render_receipt
 
 
 def confirmation_block(document, campaign_id):
-    """Read the optional selected block from an already validated configuration."""
+    """Read an optional retired closing note from a validated configuration.
+
+    Only configurations applied before the note was folded into the
+    confirmation email carry one (#260, accounts.receipt_note).
+    """
     for row in document["sections"].get("content", []):
         value = row["values"]
         if (value["campaign_id"], value["kind"], value["slot"]) == (

@@ -475,9 +475,8 @@ submission. The receipt gives parish, campaign, Family display name, UTC-derived
 submission time rendered in the campaign timezone snapshot with its timezone
 abbreviation as one compact block, but no census, Ministry, additional-text,
 pledge, code, or secure-token values. Contact and help information comes from
-the parish-authored confirmation email and its `submission_confirmation` block
-(see [data](../data/spec.md)); the default block gives the parish office phone
-and email. Browser confirmation/history pages
+the parish-authored confirmation email (see [data](../data/spec.md)), whose
+default text ends with the parish office phone and email. Browser confirmation/history pages
 still render timestamps in the browser timezone; email uses campaign time
 because no browser context exists when the worker renders it.
 

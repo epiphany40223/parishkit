@@ -37,7 +37,9 @@ from parishkit.stewardship.web.presentation import campaign_year
 
 from .campaign_factory import campaign, financial
 
-SLOTS = [("page", slot) for slot in sorted(PAGE_SLOTS)] + [
+# The retired receipt closing note (#260) has no default.
+LIVE_PAGE_SLOTS = PAGE_SLOTS - {"submission_confirmation"}
+SLOTS = [("page", slot) for slot in sorted(LIVE_PAGE_SLOTS)] + [
     ("email", slot) for slot in sorted(EMAIL_SLOTS)
 ]
 PARISH = {
@@ -66,7 +68,7 @@ def saved(kind, slot):
 
 def test_every_slot_has_a_default():
     """No named slot is left without approved text."""
-    assert set(PAGES) == PAGE_SLOTS and set(EMAILS) == EMAIL_SLOTS
+    assert set(PAGES) == LIVE_PAGE_SLOTS and set(EMAILS) == EMAIL_SLOTS
 
 
 @pytest.mark.parametrize("kind,slot", SLOTS)
@@ -91,7 +93,7 @@ def test_default_passes_every_content_validator(kind, slot):
     if slot in {"initial", "reminder"}:
         validate_family_email(value["subject"], value["html"], value["text"])
         FamilyMailTemplate(value["subject"], value["html"], value["text"])
-    if slot in {"confirmation", "submission_confirmation"}:
+    if slot == "confirmation":
         validate_receipt_content(value["subject"] or "", value["html"], value["text"])
     if slot in {"daily_digest", "weekly_digest", "critical_alert"}:
         # Critical alerts have no dedicated validator; they must still use only
@@ -118,9 +120,6 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "closing",
         # One instruction line; the page's Submit button names the parish.
         "review",
-        # Appended after the receipt email body, which already names the
-        # parish; this block carries only the contact sentence.
-        "submission_confirmation",
     }
 
 
@@ -241,7 +240,7 @@ def test_default_content_selects_new_page_revisions_for_a_new_campaign():
     assert [
         (row["values"]["kind"], row["values"]["slot"]) for row in records
     ] == applicable_slots(values)
-    assert len(records) == 11 + 6
+    assert len(records) == 10 + 6
     assert all(matches_default(row["values"]) for row in records)
     assert versions == {
         row["values"]["slot"]: row["id"]

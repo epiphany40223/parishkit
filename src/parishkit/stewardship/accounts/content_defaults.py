@@ -178,11 +178,6 @@ PAGES = {
         "office at {{ parish_phone }} or email {{ parish_email }}, and we’ll "
         "help.</p>"
     ),
-    # Appended to every receipt email after the "confirmation" email body,
-    # which already thanks the Family, so this block adds only what follows.
-    "submission_confirmation": (
-        f"<p>If anything needs to change, please contact {_CONTACT}.</p>"
-    ),
 }
 
 
@@ -252,7 +247,9 @@ EMAILS = {
         "{{ parish_name }}’s online service to fulfill your {{ campaign_year }} "
         'pledge, <a href="{{ online_giving_url }}">please click here</a>.</p>'
         "<p>Thank you for your continued support of our community!</p>"
-        "<p>Peace in Christ,<br>The Stewardship Team</p>",
+        "<p>Peace in Christ,<br>The Stewardship Team</p>"
+        # Formerly the separate receipt closing note (#260), still last.
+        f"<p>If anything needs to change, please contact {_CONTACT}.</p>",
     ),
     "daily_digest": DefaultEmail(
         "{{ campaign_name }}: daily progress report",

@@ -233,7 +233,9 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         )
     for step in CONTENT_STEPS:
         kind, _, slot = step.partition("_")
-        sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
+        # The retired receipt closing note (#260) can no longer be staged.
+        if step != "page_submission_confirmation":
+            sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
     sections["campaign"]["campaign"]["end_date"] = "2027-02-01"
     rows = []
     for index in range(100):

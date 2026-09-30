@@ -9,6 +9,7 @@ from copy import deepcopy
 from uuid import UUID, uuid5
 
 from .campaign_forms import initial_fields
+from .receipt_note import fold, legacy_note
 
 
 def clone_structures(document, source, target):
@@ -28,6 +29,7 @@ def clone_structures(document, source, target):
         for row in sections.get("content", [])
         if row["values"]["campaign_id"] == str(source["id"])
     ]
+    content = _fold_note(content, target)
     previous = {
         "modules": list(source["values"]["modules"]),
         "share_options": [
@@ -58,6 +60,40 @@ def clone_structures(document, source, target):
         if row["values"]["campaign_id"] == str(source["id"])
     ]
     return previous, content, schedules
+
+
+def _fold_note(content, target):
+    """Carry a retired receipt closing note inside the cloned confirmation email.
+
+    A clone's records are newly authored, and a new closing note is refused
+    (receipt_note), so the note's text moves into the confirmation email
+    instead of being dropped. The email keeps its cloned ID when it exists.
+    """
+    note = legacy_note(content, target)
+    if note is None:
+        return content
+    email = next(
+        (
+            row
+            for row in content
+            if (row["values"]["kind"], row["values"]["slot"])
+            == ("email", "confirmation")
+        ),
+        None,
+    )
+    # The folded email takes the email's place, or the note's without one.
+    target_row = email or note
+    folded = {
+        "id": target_row["id"],
+        "values": fold(
+            email["values"] if email else None, note["values"], campaign_id=target
+        ),
+    }
+    return [
+        folded if row is target_row else row
+        for row in content
+        if row is target_row or row is not note
+    ]
 
 
 def clone_initial(source, *, digest, timezone, ministries):

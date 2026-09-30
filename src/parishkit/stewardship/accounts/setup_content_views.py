@@ -17,7 +17,6 @@ from . import setup_help
 from .authentication import runtime
 from .content_defaults import default_initial
 from .content_forms import (
-    EMAIL_ADDITIONS,
     EMAIL_LABELS,
     ContentForm,
     applicable_slots,
@@ -162,10 +161,7 @@ def result_url(action, steps):
 
     ``_filled`` parses this back; the list then names the slots kept as-is.
     """
-    # Page slots only ever sent inside an email count as emails, matching
-    # where the content list shows them.
-    additions = {f"page_{slot}" for slot in EMAIL_ADDITIONS}
-    kinds = ["email" if step in additions else step.split("_", 1)[0] for step in steps]
+    kinds = [step.split("_", 1)[0] for step in steps]
     query = urlencode(
         {f"{action}_{kind}s": kinds.count(kind) for kind in ("page", "email")}
     )
@@ -186,25 +182,11 @@ def setup_content(request):
         filled = _filled(request.GET)
         draft, campaign = _draft(request, service)
         groups = []
-        pages = page_slots(campaign)
-        # Content only ever sent inside an email is listed right after that
-        # email, not with the Family pages; its kind and slot stay "page".
         listed = {
             "page": [
-                ("page", slot, label)
-                for slot, label in pages.items()
-                if slot not in EMAIL_ADDITIONS
+                ("page", slot, label) for slot, label in page_slots(campaign).items()
             ],
-            "email": [
-                entry
-                for slot, label in EMAIL_LABELS.items()
-                for entry in [("email", slot, label)]
-                + [
-                    ("page", page, pages[page])
-                    for page, email in EMAIL_ADDITIONS.items()
-                    if email == slot and page in pages
-                ]
-            ],
+            "email": [("email", slot, label) for slot, label in EMAIL_LABELS.items()],
         }
         for group, slots in listed.items():
             groups.append(

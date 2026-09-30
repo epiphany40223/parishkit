@@ -37,12 +37,9 @@ PAGE_LABELS = {
     "review": _("Review and attestation introduction"),
     "thank_you": _("Thank You page"),
     "access_denied": _("Access-denied contact help"),
-    "submission_confirmation": _("Confirmation email: closing note"),
+    # Retired (#260, see receipt_note): labels history only, never editable.
+    "submission_confirmation": _("Confirmation email: closing note (retired)"),
 }
-# Page slots whose content is only ever delivered inside an email. The content
-# lists show them under Email templates, after the email they are added to;
-# their storage kind and slot stay "page" (#259).
-EMAIL_ADDITIONS = {"submission_confirmation": "confirmation"}
 EMAIL_LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
@@ -66,7 +63,10 @@ LEGACY_PAGE_REFERENCES = frozenset(
 
 
 def page_slots(campaign):
-    """Expose enabled module introductions; retained disabled text stays inert."""
+    """Expose enabled module introductions; retained disabled text stays inert.
+
+    The retired receipt closing note is never offered (see receipt_note).
+    """
     excluded = {
         slot
         for slot, module in (
@@ -79,6 +79,7 @@ def page_slots(campaign):
     }
     if not campaign["additional_information"]:
         excluded.add("additional")
+    excluded.add("submission_confirmation")
     return {slot: label for slot, label in PAGE_LABELS.items() if slot not in excluded}
 
 
@@ -119,17 +120,6 @@ def family_access_message(part, problem, names, *, generated):
         else _(" Add it where the Family should see it.")
     )
     return _("%(part)s is missing %(names)s.") % {"part": label, "names": listed} + fix
-
-
-def has_plain_text(kind, slot):
-    """Whether a slot's plain-text version is ever delivered.
-
-    Emails carry HTML and plain-text alternatives, and the Submission receipt
-    message page slot is appended to the confirmation email. Every other page
-    slot is only rendered as HTML, so its stored plain text is always generated
-    and the editor does not offer it.
-    """
-    return kind == "email" or slot == "submission_confirmation"
 
 
 class ContentForm(forms.Form):
@@ -178,14 +168,12 @@ class ContentForm(forms.Form):
             )
         if kind == "page":
             del self.fields["subject"]
-        if not has_plain_text(kind, slot):
+        # Emails carry HTML and plain-text alternatives. Pages are only
+        # rendered as HTML, so their stored plain text is always generated
+        # and the editor does not offer it.
+        if kind != "email":
             del self.fields["generate_text"]
             del self.fields["text"]
-        elif slot == "submission_confirmation":
-            self.fields["text"].help_text = _(
-                "This message is added to the confirmation email, which is sent "
-                "with both HTML and plain-text versions."
-            )
         elif slot in {"initial", "reminder"}:
             self.fields["text"].help_text = _(
                 "Both body versions require {{ family_code }} and {{ family_url }}. "
@@ -227,10 +215,7 @@ class ContentForm(forms.Form):
             validate_template(prepared.text)
             if self.kind == "email":
                 validate_template(values["subject"], subject=True)
-            if (self.kind, self.slot) in {
-                ("email", "confirmation"),
-                ("page", "submission_confirmation"),
-            }:
+            if (self.kind, self.slot) == ("email", "confirmation"):
                 validate_receipt_content(
                     values.get("subject", ""), prepared.html, prepared.text
                 )

@@ -503,15 +503,16 @@ def component_origin():
                     "pk": uuid4(),
                     "active_configuration": {"name": "Sample campaign"},
                 },
-                "label": "Confirmation email: closing note",
+                "label": "Confirmation email",
                 "visual": "<p>Hello Sample Family</p>",
                 "placeholders": ["family_name", "parish_name"],
-                # Keeps the plain-text panel (#259) for component checks.
+                # An email keeps the plain-text panel (#259) for component checks.
                 "form": ContentForm(
-                    kind="page",
-                    slot="submission_confirmation",
+                    kind="email",
+                    slot="confirmation",
                     initial={
                         "base_digest": "a" * 64,
+                        "subject": "Received",
                         "html": "<p>Hello Sample Family</p>",
                         "text": "Hello Sample Family",
                         "generate_text": True,

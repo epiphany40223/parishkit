@@ -29,11 +29,16 @@ from .test_parish_views_postgresql import token
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def setup(store, *, archived=True):
-    """Archive with genuine lifecycle owners rather than editing protected state."""
+def setup(store, *, archived=True, before_archive=None):
+    """Archive with genuine lifecycle owners rather than editing protected state.
+
+    ``before_archive(owner_id)`` may apply extra source content first.
+    """
     actor = uuid4()
     result, owner, mail = add_draft(store, store.active(), actor)
     assert result.state == "applied"
+    if before_archive:
+        before_archive(owner["id"])
     row = content(owner["id"], kind="email", slot="initial")
     assert (
         change(
@@ -131,6 +136,47 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
         post(browser, path, {"action": "confirm", "preview": proposal})["Location"]
         == accepted["Location"]
     )
+
+
+def test_clone_folds_a_retired_closing_note_into_a_valid_email(
+    auth_service, google, monkeypatch
+):
+    """A source note (#260) arrives in the clone's confirmation email, validated."""
+    from parishkit.stewardship.accounts import content_schema
+
+    store = auth_service.store
+
+    def plant(owner):
+        """Apply an email and note as a configuration from before #260."""
+        email = content(owner, kind="email", slot="confirmation")
+        note = content(
+            owner,
+            slot="submission_confirmation",
+            html="<p>Call the office.</p>",
+            text="Call the office.",
+        )
+        with monkeypatch.context() as patched:
+            patched.setattr(content_schema, "RETIRED", None)
+            patch = [
+                {"operation": "add", "section": "content", **row}
+                for row in (email, note)
+            ]
+            assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+    source, path = setup(store, before_archive=plant)
+    browser, _ = signed_in()
+    preview = post(browser, path, fields(browser, path, store))
+    assert preview.status_code == 200 and b"Call the office." in preview.content
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    new = Campaign.objects.exclude(pk=source.pk).get()
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    cloned = rows.filter(campaign_id=new.pk)
+    assert not cloned.filter(slot="submission_confirmation").exists()
+    email = cloned.get(kind="email", slot="confirmation")
+    assert email.html == "<p>Welcome to {{ parish_name }}.</p><p>Call the office.</p>"
+    assert email.text == "Welcome to {{ parish_name }}.\n\nCall the office."
+    # The source's applied history keeps its note untouched.
+    assert rows.filter(campaign_id=source.pk, slot="submission_confirmation").exists()
 
 
 @pytest.mark.parametrize(

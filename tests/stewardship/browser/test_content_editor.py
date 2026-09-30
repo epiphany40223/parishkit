@@ -28,16 +28,17 @@ def editor_page(html):
         {
             "csrf_token": "a" * 64,
             "campaign": {"pk": uuid4(), "active_configuration": {"name": "Sample"}},
-            "label": "Confirmation email: closing note",
+            "label": "Confirmation email",
             "visual": visual,
             "placeholders": ["family_name"],
-            # The one page slot with a plain-text version (#259), so the
-            # editor renders the plain-text panel these tests exercise.
+            # An email, so the editor renders the plain-text panel (#259)
+            # these tests exercise.
             "form": ContentForm(
-                kind="page",
-                slot="submission_confirmation",
+                kind="email",
+                slot="confirmation",
                 initial={
                     "base_digest": "a" * 64,
+                    "subject": "Received",
                     "html": visual,
                     "generate_text": True,
                 },
