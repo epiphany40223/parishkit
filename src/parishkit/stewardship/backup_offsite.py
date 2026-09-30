@@ -270,14 +270,15 @@ def _copy_sets(
         credential = read_private(
             RuntimeLayout(configuration).credential("google_workspace")
         )
+        session = session_factory(credential, subject=subject)
+        del credential
         client = DriveClient(
-            session_factory(credential, subject=subject),
+            session,
             tag=set_tag(),
             deadline=deadline,
             budget_seconds=COPY_SECONDS,
             clock=clock,
         )
-        del credential
     except (CryptographicError, ConfigError, OSError, DriveFailure):
         return _failed(folder_id, None, None, "credential")
     copied, failure, attempted = 0, None, set()
@@ -317,8 +318,9 @@ def _copy_sets(
                 )
             except DriveFailure as error:
                 summary = _failed(folder_id, directory.name, digest, error.kind)
-                # Past the budget nothing more starts; the stop is logged.
-                if error.kind not in PER_SET_FAILURES or clock() >= deadline:
+                # Once the budget stopped a request, an upload or a retry,
+                # nothing more starts; the stop is already logged.
+                if error.kind not in PER_SET_FAILURES or error.budget_stop:
                     return summary
                 failure = error.kind
                 continue
@@ -335,9 +337,12 @@ def _copy_sets(
             "set_name", flat=True
         )
     )
-    # Retention is best effort; the next successful run prunes again.
+    # Retention is best effort; the next successful run prunes again. It is a
+    # few small listings and trashes, each bounded by its own request
+    # timeout, and runs outside the copy budget: a budget running out during
+    # prune would log a stopped copy after a run that copied every set.
     with suppress(DriveFailure):
-        prune(client, folder_id, verified=verified)
+        prune(DriveClient(session, tag=client.tag), folder_id, verified=verified)
     if failure is not None:
         return {"state": "failed", "failure_kind": failure, "sets": copied}
     return {"state": "uploaded", "sets": copied}

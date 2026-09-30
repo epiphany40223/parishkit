@@ -1,5 +1,6 @@
 """Off-site backup copies: recorded outcomes, access checks, alerts and the web."""
 
+import hashlib
 import json
 import logging
 from datetime import timedelta
@@ -216,25 +217,127 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     }
 
 
+class BudgetedDrive:
+    """A minimal Drive HTTP API for a real ``DriveClient`` under a copy budget.
+
+    Listings are empty, a folder is created, and each upload's body is read
+    in small blocks while the clock advances, as requests reads a file body
+    while sending it; the budget runs out part way through the first upload.
+    """
+
+    def __init__(self, now, *, block_seconds=3600):
+        self.now = now
+        self.block_seconds = block_seconds
+        self.puts = 0
+
+    def request(self, method, url, **kwargs):
+        from parishkit.stewardship import backup_drive
+
+        from ..test_backup_drive import FakeResponse
+
+        if method == "PUT":
+            self.puts += 1
+            body, sent = kwargs["data"], b""
+            while block := body.read(4):
+                sent += block
+                self.now[0] += self.block_seconds
+            digest = hashlib.md5(sent, usedforsecurity=False).hexdigest()
+            return FakeResponse(
+                200,
+                {"id": "file0123456", "size": str(len(sent)), "md5Checksum": digest},
+            )
+        if method == "POST" and url == backup_drive.UPLOAD:
+            location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+            return FakeResponse(200, headers={"Location": location})
+        if method == "POST":
+            return FakeResponse(200, {"id": "folder0123456"})
+        return FakeResponse(200, {"files": []})
+
+
 def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
     offsite, monkeypatch
 ):
     """An upload the budget stopped ends the run: one row, no further sets.
 
-    The client logs the stop itself (see test_backup_drive); the run must not
-    go on to record another failure for a set it never started.
+    A real client stops sending when the budget runs out and writes the
+    durable budget entry as the backup login; the run records that set only
+    and never starts the next one (#357 review L5a).
     """
-    from parishkit.stewardship.backup_drive import DriveFailure
+    from parishkit.stewardship import backup_drive
 
     new_set(offsite, "20260928T020000Z")
     now = [0]
+    drive = BudgetedDrive(now)
+    monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: drive,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "failed", "failure_kind": "unavailable"}
+    assert drive.puts == 1
+    row = BackupUpload.objects.get()
+    assert (row.set_name, row.failure_kind) == (offsite.directory.name, "unavailable")
+    entry = OperationalLog.objects.get(event="work_budget_reached")
+    assert entry.context["what"] == "drive_copy_budget"
+    assert entry.context["limit_seconds"] == backup_offsite.COPY_SECONDS
+    assert entry.context["elapsed_seconds"] >= backup_offsite.COPY_SECONDS
 
-    def stopped(*args, **kwargs):
-        """The budget runs out while this upload is sending."""
-        now[0] = backup_offsite.COPY_SECONDS + 1
-        raise DriveFailure("unavailable", retryable=False)
 
-    monkeypatch.setattr(offsite.drive, "upload", stopped)
+def test_a_budget_spent_after_every_set_copied_logs_no_stop(offsite, monkeypatch):
+    """Prune runs outside the copy budget (#357 review L4).
+
+    Every set copied; the budget then ran out. Retention must not write a
+    budget entry that reads like a stopped copy.
+    """
+    from parishkit.stewardship import backup_drive
+
+    now = [0]
+    drive = BudgetedDrive(now, block_seconds=0)
+    original = drive.request
+
+    def request(method, url, **kwargs):
+        """The last upload finishes just as the budget runs out."""
+        response = original(method, url, **kwargs)
+        if drive.puts == len(SEALED_FILES):
+            now[0] = backup_offsite.COPY_SECONDS + 60
+        return response
+
+    drive.request = request
+    monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: drive,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "uploaded", "sets": 1}
+    assert not OperationalLog.objects.filter(event="work_budget_reached").exists()
+
+
+def test_a_retry_refused_by_the_budget_starts_nothing_more(offsite, caplog):
+    """A retry that would start too late ends the run (#357 review L1).
+
+    Some budget may be left, but not enough for the pause before a retry; the
+    next set must not start with a few seconds to spare.
+    """
+    from parishkit.stewardship.backup_drive import DriveFailure
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    new_set(offsite, "20260928T020000Z")
+    now = [0]
+
+    def unavailable(*args, **kwargs):
+        """Drive fails with seconds left: too few for the retry's pause."""
+        now[0] = backup_offsite.COPY_SECONDS - 5
+        raise DriveFailure("unavailable")
+
+    offsite.drive.upload = unavailable
     with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
@@ -243,8 +346,11 @@ def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
             clock=lambda: now[0],
         )
     assert result == {"state": "failed", "failure_kind": "unavailable"}
-    row = BackupUpload.objects.get()
-    assert (row.set_name, row.failure_kind) == (offsite.directory.name, "unavailable")
+    assert offsite.drive.calls.count("create_folder") == 1
+    assert BackupUpload.objects.get().set_name == offsite.directory.name
+    assert [line["timeout"] for line in logged(caplog) if "timeout" in line] == [
+        "drive_retry_budget"
+    ]
 
 
 def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite, caplog):

@@ -140,12 +140,15 @@ class DriveFailure(Exception):
         ),
     }
 
-    def __init__(self, kind, *, retryable=None):
+    def __init__(self, kind, *, retryable=None, budget_stop=False):
         super().__init__(kind)
         self.kind = kind
         # A failure that trying again cannot fix (a local set that no longer
         # matches its manifest) overrides the category's usual answer.
         self._retryable = retryable
+        # The copy budget stopped this work (a request, an upload, or a retry
+        # refused because it would start too late); nothing more may start.
+        self.budget_stop = budget_stop
 
     def __str__(self):
         """Only the fixed category is ever shown or logged."""
@@ -289,7 +292,7 @@ class DriveClient:
             limit_seconds=self.budget_seconds,
             elapsed_seconds=self.budget_seconds - self._remaining(),
         )
-        return DriveFailure("unavailable", retryable=False)
+        return DriveFailure("unavailable", retryable=False, budget_stop=True)
 
     def _call(self, method, url, *, params=None, timeout=None, **kwargs):
         """Send one request and map every failure to a fixed category.
@@ -650,6 +653,7 @@ def with_retries(
                         limit_seconds=budget_seconds,
                         elapsed_seconds=now - (deadline - budget_seconds),
                     )
+                failure.budget_stop = True
                 raise
             sleep(delay)
     raise AssertionError("unreachable")
