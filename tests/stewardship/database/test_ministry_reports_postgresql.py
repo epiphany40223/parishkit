@@ -166,6 +166,25 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         response, body = search(browser, route, {"ministry": "9", "search": "Example"})
         assert response.status_code == 200 and b"Member Middle Example" in body
         assert b"?search=" not in body
+        # Shared table (#203): sortable headings and the navigator are POST
+        # forms carrying the private search, never links; only the installed
+        # selection's own sort values are accepted.
+        assert b"Page 1 of 1" in body and b'aria-sort="ascending"' in body
+        assert b'<a class="sort-link"' not in body and b'rel="next"' not in body
+        assert b'name="sort" value="name_desc"' in body
+        assert b'name="search" value="Example"' in body
+        response, body = search(
+            browser, route, {"ministry": "9", "sort": "newest", "size": "25"}
+        )
+        assert response.status_code == 200 and b'aria-sort="descending"' in body
+        for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
+            response, _ = search(browser, route, {"ministry": "9"} | invalid)
+            assert response.status_code == 400
+        # The summary sorts by Ministry name only, within the leader's scope.
+        response, body = search(browser, root, {"sort": "name_desc"})
+        assert response.status_code == 200 and b"Food pantry" in body
+        assert b"Choir" not in body and b'aria-sort="descending"' in body
+        assert search(browser, root, {"sort": "newest"})[0].status_code == 400
         response, body = read(browser, route + "?search=Private")
         assert response.status_code == 400 and b"Private" not in body
         assert read(browser, route)[0].status_code == 400

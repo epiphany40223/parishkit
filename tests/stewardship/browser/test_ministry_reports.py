@@ -38,7 +38,30 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "activity"
-    visible(page.get_by_role("button", name="Next page"))
+    visible(page.get_by_role("button", name="Next").first)
+    heading = page.get_by_role("columnheader", name="Member")
+    assert heading.get_attribute("aria-sort") == "ascending"
+
+
+def test_ministry_sort_heading_without_scripts(browser_engine, component_origin):
+    """A heading re-sorts through a native POST that keeps the private search."""
+    context = browser_engine.new_context(java_script_enabled=False)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/ministry-detail")
+        page.route("**/ministries/join/", lambda route: route.fulfill(body="Sorted"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("columnheader", name="Member").get_by_role(
+                "button"
+            ).click()
+        assert "sort=name_desc" in sent.value.post_data
+        assert "search=Example" in sent.value.post_data
+        assert "ministry=9" in sent.value.post_data and "page=" not in (
+            sent.value.post_data
+        )
+        assert "?" not in sent.value.url
+    finally:
+        context.close()
 
 
 def test_ministry_search_without_scripts(browser_engine, component_origin):

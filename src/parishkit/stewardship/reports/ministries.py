@@ -13,11 +13,30 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import out_of
+from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 
 from .directories import address_lines
 from .information import parse_page
 
 PAGE_SIZE = 50
+# The installed selection (schema/ministry_reports.sql) orders and pages the
+# rows, so a heading can only choose one of its existing sort values; the
+# schema is frozen for v1. The summary sorts by Ministry name only; Joining,
+# Leaving, Unresolved and Follow-up progress are not sortable because the
+# selection has no order for them. Detail rows sort by Member name or by
+# submission time; the status and contact columns have no selection order.
+SUMMARY_SORTING = Sorting(
+    {"name": ("ministry", False), "name_desc": ("ministry", True)}, "name"
+)
+DETAIL_SORTING = Sorting(
+    {
+        "name": ("member", False),
+        "name_desc": ("member", True),
+        "newest": ("submitted", True),
+        "oldest": ("submitted", False),
+    },
+    "name",
+)
 STATES = {
     "any": "All states",
     "unresolved": "Unresolved",
@@ -51,6 +70,9 @@ class MinistryQuery:
     end: str = ""
     sort: str = "name"
     page: int = 1
+    # Rows per page (web/tables.py PAGE_SIZES). The selection takes any
+    # LIMIT; "All" is not offered, so a page view stays bounded.
+    size: str = str(PAGE_SIZE)
 
     @classmethod
     def parse(cls, parameters, *, detail=False):
@@ -71,6 +93,7 @@ class MinistryQuery:
             or query.history not in {"current", "all"}
             or query.state not in STATES
             or query.sort not in {"name", "name_desc", "newest", "oldest"}
+            or query.size not in {str(size) for size in PAGE_SIZES}
             or (
                 not detail
                 and (
@@ -91,12 +114,21 @@ class MinistryQuery:
         return query
 
     def form_values(self):
-        """Keep applied selection through native pagination without query strings."""
+        """Keep applied selection through native pagination without query strings.
+
+        Page and size choose only the screen's window, so they are left out:
+        the SQL filters and an export capture accept exactly these keys.
+        """
         return {
             key: getattr(self, key)
             for key in self.__dataclass_fields__
-            if key != "page"
+            if key not in {"page", "size"}
         }
+
+    @property
+    def page_size(self):
+        """The validated rows-per-page choice as an integer."""
+        return int(self.size)
 
 
 def can_report(principal):
@@ -174,8 +206,8 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
                 sorted(value for value in principal.ministries if value < 2**31),
                 ministry_id,
                 action,
-                PAGE_SIZE,
-                (query.page - 1) * PAGE_SIZE,
+                query.page_size,
+                (query.page - 1) * query.page_size,
             ],
         )
         value = cursor.fetchone()

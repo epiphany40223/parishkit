@@ -21,12 +21,14 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.tables import report_table
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .ministries import (
-    PAGE_SIZE,
+    DETAIL_SORTING,
     STATES,
+    SUMMARY_SORTING,
     MinistryQuery,
     campaign_ids,
     can_report,
@@ -254,13 +256,26 @@ def report(request, campaign_id, *, action=None):
                 "ministry_id": ministry_id,
                 "action": action,
                 "query": query,
-                "query_fields": query.form_values()
-                | ({"ministry": ministry_id} if ministry_id is not None else {}),
                 "states": STATES,
                 "report_url": request.path_info,
                 "summary_url": reverse("admin:ministry_report", args=[campaign_id]),
-                "previous_page": query.page - 1 if query.page > 1 else None,
-                "next_page": query.page + 1 if query.page * PAGE_SIZE < total else None,
+                # One shared navigator and sortable headings for whichever
+                # list this page pages: the summary, or one Ministry's rows.
+                "table": report_table(
+                    result["rows"] if ministry_id is not None else result["summaries"],
+                    number=query.page,
+                    size=query.page_size,
+                    total=total,
+                    carry=[
+                        (key, value)
+                        for key, value in query.form_values().items()
+                        if key != "sort"
+                    ]
+                    + ([("ministry", str(ministry_id))] if ministry_id else []),
+                    sorting=DETAIL_SORTING if ministry_id else SUMMARY_SORTING,
+                    sort=query.sort,
+                    action=request.path_info,
+                ),
             }
             return iter(
                 (

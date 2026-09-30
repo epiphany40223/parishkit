@@ -29,7 +29,7 @@ def create(request, campaign_id):
         if (
             request.GET
             or set(parameters)
-            != fields | (set(MinistryQuery.__dataclass_fields__) - {"page"})
+            != fields | (set(MinistryQuery.__dataclass_fields__) - {"page", "size"})
             or any(len(parameters.getlist(key)) != 1 for key in parameters)
         ):
             raise ValueError("Invalid Ministry export fields.")
