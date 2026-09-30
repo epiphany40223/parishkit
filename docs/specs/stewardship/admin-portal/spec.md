@@ -282,6 +282,14 @@ In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
 smaller non-dismissible Testing indicator so report interpretation is clear.
 
+In Production mode, while the web process has debug logging on
+(`PARISHKIT_DEBUG_LOGGING=1`), every Admin page, for every role, shows a
+prominent non-dismissible error banner saying in plain language that debug
+logging must be off in Production, because debug logs can hold personal data,
+and that the operator turns it off by recreating the application containers
+with the variable `0` or unset. It is a warning only: no process refuses to
+start with the switch on.
+
 Every Admin page also shows a critical-problems banner while CRITICAL
 operational events from the last 24 hours are unacknowledged. It names each
 kind of problem in plain language with its count (for example "ParishSoft data

@@ -14,6 +14,7 @@ from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+from parishkit.stewardship.observability import debug_logging_enabled
 
 from . import admin_navigation, family_maintenance
 from .authentication import runtime
@@ -107,6 +108,7 @@ def portal_chrome(request):
             "back": admin_navigation.back(match, placed),
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
+            "debug_in_production": _debug_in_production(configuration),
             "restored": configuration.restore_review_required,
             "paused": bool(campaign and campaign.delivery_paused),
             "delivery_pause": delivery_pause,
@@ -220,6 +222,17 @@ def _navigation_items(actor, admin, campaign, configuration):
     return items
 
 
+def _debug_in_production(configuration):
+    """Whether this process logs debug detail while the deployment is in Production.
+
+    Debug logs can hold personal data, so they are for disposable pre-launch
+    data only. Nothing refuses to start with the switch on; every Admin page
+    warns instead, so whoever sees it can ask the operator to turn it off.
+    Only this web process's own environment is visible here.
+    """
+    return configuration.mode == "production" and debug_logging_enabled()
+
+
 def _setup_pending():
     """Whether initial setup is incomplete; an unreadable marker counts as pending.
 
@@ -265,6 +278,7 @@ def _setup_chrome(actor, configuration, session):
         "back": None,
         "testing": configuration.mode == "testing",
         "testing_recipient": None,
+        "debug_in_production": _debug_in_production(configuration),
         "restored": configuration.restore_review_required,
         "paused": False,
         "delivery_pause": None,

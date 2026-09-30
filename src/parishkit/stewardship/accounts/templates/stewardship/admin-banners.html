@@ -5,6 +5,11 @@
   {% if admin_chrome.admin %}<p>{% translate "All outgoing email is redirected to:" %} {{ admin_chrome.testing_recipient }}. <a href="{% url 'admin:parish_settings' %}#testing-mode">{% translate "Mode configuration" %}</a></p>{% endif %}
 </aside>
 {% endif %}
+{% if admin_chrome.debug_in_production %}<aside class="notice notice-error" role="alert" data-debug-in-production>
+  <strong>{% translate "Debug logging is on in Production" %}</strong>
+  <p>{% translate "The server is recording extra detail in its logs that can include Families' personal information. That is only acceptable while testing with disposable data, so debug logging must be off in Production." %}</p>
+  <p>{% translate "To turn it off, ask the server operator to set PARISHKIT_DEBUG_LOGGING to 0 (or leave it unset) and recreate every application container, as the deployment runbook describes. This notice disappears once it is off." %}</p>
+</aside>{% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
 {% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}
 {% if admin_chrome.delivery_pause %}<p>{% translate "Paused by" %}: {{ admin_chrome.delivery_pause.actor|default:"—" }}. {% translate "Reason" %}: {{ admin_chrome.delivery_pause.reason }}</p>
