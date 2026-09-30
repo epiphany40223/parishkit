@@ -249,6 +249,11 @@ pair, leaves every backup green but impossible to restore. The incident
 stays open for two days after the change and then resolves by itself; that
 does not mean anyone confirmed the key.
 
+A key an Administrator replaced on the **Backup encryption key** page
+also sends a "Backup encryption key replaced" security alert, and this
+incident opens as a WARNING that escalates about 15 minutes later; one
+that was CRITICAL from the start means the key changed some other way.
+
 **You do:** ask the server operator who holds the private key. Unless they
 installed a new key on purpose, they find out why the key file changed.
 Either way they open the newest backup with each kept copy of the private

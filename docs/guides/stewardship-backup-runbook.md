@@ -18,7 +18,8 @@ Once, on a machine that is not the host, run
 private key owner-only to a new file and prints the public key. Keep the
 private key where the parish keeps its other recovery material, with a copy
 in a second place; whoever holds it can read every backup, and without it no
-backup can be read. The key is not rotated during v1.
+backup can be read. To replace it later, see
+[Replacing the key](#replacing-the-key).
 
 The key machine runs the command from the release image, with Docker and no
 network; `backup-open` in [Restore for real](#restore-for-real) runs the same
@@ -54,7 +55,10 @@ still runs, prints `"recipient_changed": true` and logs a WARNING
 `configuration_digest_mismatch` line whose `failure_kind` is
 `backup_recipient_changed`. The scheduler then raises the
 `backup_key_changed` operational incident (CRITICAL) through the configured
-alert routes, and writes one System log entry
+alert routes (when an Administrator applied that key on the portal's
+**Backup encryption key** page before the backup completed, it opens as a
+WARNING and is routed once it escalates, about 15 minutes later; see
+[Replacing the key](#replacing-the-key)), and writes one System log entry
 (`configuration_digest_mismatch`, outcome `changed`) that says in plain
 words what happened; the entry cannot name the fingerprints, so compare
 each backup's printed `recipient_fingerprint` (or its row in
@@ -70,6 +74,62 @@ about the private key you kept. The
 [restore drill](#restore-drill) is the proof: `backup-open` opens a set only
 with the matching private key and then prints its `recipient_fingerprint`,
 so the drill records that each kept copy of the private key opened the set.
+
+### Replacing the key
+
+An Administrator can replace the public key new backups are sealed to from
+the Admin portal: **Integrations → Backup encryption key**. The page shows
+the fingerprint of the key in use; before a key is set there, that is the
+key the newest backup used from the installed `backup_data` file. The
+private key never goes to the server, and the page refuses to continue until
+the Administrator proves they hold it:
+
+1. On the key machine, make a new pair with `backup-keygen` into a new file,
+   as in [The key](#the-key), and record its fingerprint with it.
+2. Paste only the printed `public_key` value on the page and select
+   **Continue** (a Google sign-in from the last five minutes is needed, and
+   again to confirm; the page asks for it after the code if it has gone
+   stale, and the code expires after 15 minutes).
+   The page shows the new fingerprint and a challenge line starting with
+   `PKBKP1:`.
+3. On the key machine, run `backup-prove` with the new private key and paste
+   the challenge line when it waits for input (or save the line to a file in
+   `KEY_DIRECTORY` and pass `--input /keys/FILE`):
+
+   ```text
+   docker run --rm -i --network none --user "$(id -u):$(id -g)" --read-only \
+     --cap-drop ALL --security-opt no-new-privileges:true \
+     --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly \
+     IMAGE backup-prove --key /keys/NEW_PRIVATE_KEY_FILE
+   ```
+
+   It prints one JSON line with the `code` and the key's
+   `recipient_fingerprint`; a key that is not the pasted key's pair is
+   refused.
+4. Type the code on the page, review the old and new fingerprints and
+   confirm. The change is applied like any other settings change.
+
+The next backup seals to the new key and prints `"recipient_source":
+"configured"`; the `backup_data` file is no longer used, and the key cannot
+be removed from the portal, only replaced. Applying it sends every
+Administrator of the last 30 days a "Backup encryption key replaced"
+security alert naming who changed it, when, and the key IDs before and
+after; it stays on the Admin home page until an Administrator other than
+the one who made it acknowledges it. The next backup opens the
+`backup_key_changed` incident as a WARNING, which escalates to CRITICAL
+and is routed about 15 minutes later like any other; a different key
+appearing any other way is CRITICAL at once. If nobody at the
+parish planned the change, replace the key again with the parish's own key
+and find out who made it. Open that backup with the
+new private key, as in [Checking the kept keys](#checking-the-kept-keys).
+
+Keep every old private key, and its copies, until every set sealed to it
+has left retention on the host and in Google Drive (the monthly sets keep
+it up to about a year). A set names the fingerprint of the key it needs in
+its manifest; a lost private key makes its sets unreadable. If a private
+key may have been exposed (for example it was pasted into a web page),
+replace the key at once; the sets already sealed to it stay readable to
+whoever has it until they leave retention.
 
 Keep beside the private key, off the host, everything a restore onto a new
 host needs that no backup set holds: the deployment YAML, the deployment
@@ -638,7 +698,9 @@ the following, and the pre-launch gate approves them as known limitations:
 - Off-host copy other than to Google Drive, the escrow workflow and
   automated restore are the operator's by hand; the deferred remainder is
   listed in the launch scope.
-- The private key is not rotated during v1.
+- Replacing the key changes only the key new backups are sealed to: sets
+  already made are not re-encrypted, and old private keys are the
+  operator's to keep and retire by hand.
 - The set covers the default locations: the `config`, `credentials` and
   `media` trees and the provisioning record. A deployment that overrides an
   individual credential or password file to a path outside the credentials

@@ -472,7 +472,9 @@ def _remove(request, service, configuration, actor, target):
     )
 
 
-@sensitive_post_parameters("candidate")
+# A private key pasted by mistake into the backup key field must not reach an
+# error report either.
+@sensitive_post_parameters("candidate", "public_key", "intent", "code")
 @require_http_methods(["GET", "HEAD", "POST"])
 def integration_settings(request, target=None):
     """List configured integrations or submit an exact non-secret YAML preview."""
@@ -495,6 +497,12 @@ def integration_settings(request, target=None):
                     ]
                 },
             )
+        elif target == "backup_key":
+            # The backup encryption key has its own proof-of-possession steps.
+            from .backup_key import backup_key_page
+
+            filters(request.GET, allowed=set())
+            response = backup_key_page(request, service, actor)
         elif request.method == "POST" and request.POST.get("action") == "remove":
             response = _remove(request, service, configuration, actor, target)
         elif (

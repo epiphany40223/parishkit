@@ -15,6 +15,7 @@ LABELS = {
     "email": _("Outgoing email addresses"),
     "slack": _("Slack notifications"),
     "backup": _("Off-site backups (Google Drive)"),
+    "backup_key": _("Backup encryption key"),
 }
 
 
