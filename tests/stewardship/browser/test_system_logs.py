@@ -37,34 +37,52 @@ def test_logs_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/logs")
     # Worker processes are named as such, not as an unknown person.
     visible(page.get_by_role("cell", name="Background worker", exact=False).first)
-    # Severity is a word beside its symbol, so it never depends on color.
+    # Severity is a word beside its icon, so it never depends on color; the
+    # icon is decorative and hidden from assistive technology.
     for word in ("Debug", "Information", "Warning", "Error"):
         assert page.locator(".log-level", has_text=word).count() == 1
-    assert page.locator(".log-level span[aria-hidden=true]").count() == 4
+    assert page.locator(".log-level svg.level-icon[aria-hidden=true]").count() == 4
+    # The level choices carry the same icons beside their words.
+    assert page.locator(".log-level-choices svg.level-icon").count() == 5
     # Recorded detail is shown as text, never interpreted as markup.
     assert page.get_by_text("<b>safe</b>", exact=True).count() == 4
     assert page.locator("td b").count() == 0
     entry = page.get_by_role("row", name="dashboard_viewed", exact=False)
-    # A resolved actor still shows the identifier the Actor filter needs.
-    actor = entry.get_by_role("cell", name="admin@example.org", exact=False)
-    assert "00000000-0000-0000-0000-00000000012d" in actor.inner_text()
+    # A resolved actor is named; its identifier moves under Technical details,
+    # closed by default, and the entry cross-links by actor and campaign.
+    assert entry.get_by_role("cell", name="admin@example.org", exact=False).count()
+    details = entry.locator("details.technical-details")
+    assert details.get_attribute("open") is None
+    assert "00000000-0000-0000-0000-00000000012d" in details.text_content()
+    assert entry.get_by_role("button", name="Same actor").count() == 1
+    assert entry.get_by_role("button", name="Same campaign").count() == 1
+    details.locator("summary").click()
+    visible(details.get_by_text("00000000-0000-0000-0000-00000000012d"))
     assert entry.get_by_text("Audit record", exact=True).count() == 1
     # The chosen filters are kept, including a ticked DEBUG.
-    assert page.get_by_label("Debug").is_checked()
+    assert page.get_by_label("Debug", exact=True).is_checked()
     assert page.get_by_label("Task or request correlation identifier").input_value()
     assert page.get_by_role("button", name="Older entries").count() == 1
     assert page.get_by_role("button", name="Back to the newest entries").count() == 0
     search = page.get_by_label("Source")
     search.focus()
+    # The type's help bubble sits between its label and its field. WebKit's
+    # default Tab order skips buttons (a macOS setting), so allow either.
     page.keyboard.press("Tab")
+    if page.locator(":focus").get_attribute("aria-controls") == "log-event-tip":
+        page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "event"
 
     page.goto(component_origin + "/logs-default")
     # DEBUG is excluded until chosen.
-    assert not page.get_by_label("Debug").is_checked()
-    assert page.get_by_label("Critical").is_checked()
+    assert not page.get_by_label("Debug", exact=True).is_checked()
+    assert page.get_by_label("Critical", exact=True).is_checked()
     page.goto(component_origin + "/logs-older")
     assert page.get_by_role("button", name="Back to the newest entries").count() == 1
+    # A CRITICAL entry stands out: its own icon on a highlighted row.
+    critical = page.locator("tr.log-row-critical")
+    assert critical.count() == 1
+    assert critical.locator("svg.level-icon-critical").count() == 1
     departed = page.get_by_role("row", name="admin_login", exact=False)
     assert (
         departed.get_by_text("Service, or a former portal user", exact=False).count()
@@ -96,12 +114,15 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
     try:
         page = context.new_page()
         page.goto(component_origin + "/logs-default")
-        page.get_by_label("Debug").check()
-        page.get_by_label("Information").uncheck()
+        page.get_by_label("Debug", exact=True).check()
+        page.get_by_label("Information", exact=True).uncheck()
         page.get_by_label("Source").select_option("audit")
         # A type written directly by its owner, which no fixed list would offer.
         page.get_by_label("Event or action type", exact=False).fill("admin_login")
         actor = "1abcdef0-0000-4000-8000-000000000000"
+        # Identifier filters are folded away until asked for.
+        assert not page.get_by_label("Actor identifier").is_visible()
+        page.get_by_text("Filter by identifier", exact=True).click()
         page.get_by_label("Actor identifier").fill(actor)
         # Answer only the form posts; the page itself shares this path.
         page.route(

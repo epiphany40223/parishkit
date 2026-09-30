@@ -1367,7 +1367,14 @@ and publication follow the [data workflow](../data/spec.md#review-and-publicatio
 Only Admins access the combined log screen. It supports:
 
 - levels DEBUG, INFO, WARNING, ERROR, and CRITICAL with accessible, distinct
-  indicators;
+  indicators: one matched, self-hosted icon set (a blue "i", an amber warning
+  triangle, a red cross and a dark red stop sign for CRITICAL) beside the
+  level word, with the icon decorative so meaning never depends on color, and
+  CRITICAL rows highlighted;
+- a compact filter bar: levels, source, type and date range fit in one or two
+  rows at desktop width, and the actor, correlation and campaign identifier
+  filters are folded under "Filter by identifier" until one is used. The
+  page's longer explanation is in its "About this page" panel;
 - default exclusion of DEBUG;
 - operational/audit source, action/type, campaign, entity, actor, task/request
   correlation, text, date range, and level filters;
@@ -1384,8 +1391,13 @@ Only Admins access the combined log screen. It supports:
   operator), and any remaining identity as a service or former user;
 - recorded detail shown with each field named in words, such as "Lag
   microseconds", while exports keep the stored field names;
-- a "Show related entries" action that filters by the entry's correlation
-  identifier, and a link from each task entry to its background task page; and
+- cross-links from every entry: "Show related entries" (same correlation
+  identifier), "Same actor", "Same campaign" (audit records) and, for task
+  entries and views of one task's page, "Open task" to the background task
+  page. Each filter travels in a POST body like the form's. The raw
+  identifiers themselves (correlation, actor, campaign, subject) are under a
+  per-row "Technical details" disclosure, closed by default; the table uses
+  the shared Admin table styling; and
 - text or structured JSONL export of the filtered result.
 
 Ministry filtering includes both interactive event identifiers and the

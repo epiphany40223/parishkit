@@ -249,6 +249,22 @@ def audit_row(record):
     }
 
 
+def task_subject(row):
+    """Whether the entry's subject is a background task with its own page.
+
+    Task entries name the task as their subject, and so does a view of one
+    task's page; other subjects (sessions, link generations and the like)
+    have no Admin page to open.
+    """
+    return bool(
+        row["subject_id"]
+        and (
+            row["event"].startswith("task_")
+            or row["event"] == Action.BACKGROUND_VIEWED.value
+        )
+    )
+
+
 def merge(operational, audit, *, size=PAGE_SIZE):
     """Newest first across both sources, with a cursor for the entries after.
 

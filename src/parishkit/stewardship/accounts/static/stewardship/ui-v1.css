@@ -344,8 +344,31 @@ progress::-webkit-progress-bar { background: #e3e8e7; border-radius: 999px; }
 progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
 progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
-/* Log levels: the word and symbol carry meaning; color only reinforces it. */
-.log-level { display: inline-block; margin-top: .25rem; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); font-size: .8125rem; font-weight: 600; }
+/* Log levels: the word and icon carry meaning; color only reinforces it. The
+   icons are one matched set (components/level-icon.html): a blue "i", an amber
+   warning triangle, a red cross and, for CRITICAL, a dark red stop sign on a
+   highlighted row. */
+.log-level { display: inline-flex; align-items: center; gap: .3rem; margin-top: .25rem; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); font-size: .8125rem; font-weight: 600; }
+.level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
+.level-icon-debug { color: var(--muted); }
+.level-icon-info { color: #1d5fbf; }
+.level-icon-warning { color: #e3a008; }
+.level-icon-error { color: #c62828; }
+.level-icon-critical { color: #7f0000; }
+.log-row-critical > th, .log-row-critical > td { background: var(--error-bg); }
+.log-row-critical > th:first-child { box-shadow: inset .35rem 0 0 #7f0000; }
+.log-table th, .log-table td { vertical-align: top; }
+.log-filters { margin-block: 1rem; }
+.log-level-choices { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; padding: 0; border: 0; }
+.log-level-choices legend { float: left; margin: 0 .5rem 0 0; padding: 0; font-size: .925rem; font-weight: 600; }
+.log-level-choices label { display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-weight: 400; }
+details.log-more-filters { margin-block: .75rem 0; }
+details.log-more-filters > .filter-bar { margin-top: .5rem; }
+.log-related { min-width: 11rem; }
+.log-related > form, .log-related > a { display: block; margin-block: .1rem; }
+details.technical-details { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
+details.technical-details[open] { padding-bottom: 0; }
+details.technical-details dd { overflow-wrap: anywhere; }
 .log-level-info { background: var(--accent-soft); color: var(--accent-strong); }
 .log-level-warning { background: var(--warning-bg); color: var(--warning-ink); }
 .log-level-error, .log-level-critical { background: var(--error-bg); color: var(--error-ink); }

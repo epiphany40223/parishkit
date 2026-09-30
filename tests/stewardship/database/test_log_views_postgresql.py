@@ -74,7 +74,8 @@ def identifiers(response):
     return [
         UUID(value)
         for value in re.findall(
-            r"Correlation ([0-9a-f-]{36})", response.content.decode()
+            r'<dd class="log-correlation">([0-9a-f-]{36})</dd>',
+            response.content.decode(),
         )
     ]
 

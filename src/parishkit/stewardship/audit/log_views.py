@@ -33,6 +33,7 @@ from .log_rows import (
     merge,
     operational_row,
     page_context,
+    task_subject,
 )
 from .models import AuditEvent, OperationalLog
 from .schemas import Action, ActorKind, Outcome
@@ -181,10 +182,7 @@ def _load(query, *, size=None):
     for row in page:
         row["actor"] = actors.get(row["actor_id"])
         row["actor_worker"] = row["actor_id"] in workers
-        # Task entries name the task as their subject; link to its page.
-        row["task_subject"] = bool(
-            row["subject_id"] and row["event"].startswith("task_")
-        )
+        row["task_subject"] = task_subject(row)
     return page, following
 
 
