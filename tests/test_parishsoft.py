@@ -1057,3 +1057,10 @@ def test_no_oauth2client_imports():
     root = Path(__file__).parents[1] / "src" / "parishkit"
     for path in root.rglob("*.py"):
         assert "oauth2client" not in path.read_text(encoding="utf-8")
+
+
+def test_config_repr_never_shows_the_api_key(tmp_path):
+    """A repr (for example in a traceback of locals) must not reveal the key."""
+    config = ParishSoftConfig(api_key="SECRET-KEY-VALUE", cache_dir=tmp_path)
+    assert "SECRET-KEY-VALUE" not in repr(config)
+    assert config.api_key == "SECRET-KEY-VALUE"
