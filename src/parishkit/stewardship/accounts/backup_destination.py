@@ -269,7 +269,11 @@ def request_probe(actor_id, folder_id, subject):
     delegated mailbox user. The page read that user from the configuration
     a moment before, so a refusal means another Administrator applied new
     Google Workspace settings in between: a stale page, reported as such
-    ("reload before trying again") rather than as a generic failure.
+    ("reload before trying again") rather than as a generic failure. The
+    table's other 23514 checks cannot fail from here: the folder ID was
+    already parsed by ``folder_id_from_url``, and the ORM inserts a pending
+    row. A new CHECK that could fail here needs its own mapping, or it
+    would be misreported as a stale page.
     """
     try:
         with transaction.atomic():

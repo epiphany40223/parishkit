@@ -733,6 +733,64 @@ def test_the_token_fetch_tries_its_connection_once(monkeypatch):
     assert adapter.max_retries.total == 0
 
 
+def test_the_budget_stops_a_real_requests_upload_mid_body():
+    """Pin the requests/urllib3 behavior the upload budget relies on.
+
+    requests reads a file body in blocks while sending, and an exception
+    raised by the body's read comes out of the request unchanged, not
+    wrapped as a connection error (#357 review L5b). A local server stands
+    in for Drive.
+    """
+    import io
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import requests
+
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers["Content-Length"])
+            data = self.rfile.read(length)
+            received.append(len(data))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):
+            pass  # the aborted upload's half-read body
+
+    server = Server(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/"
+    data = b"x" * (1024 * 1024)
+    try:
+        reads = []
+
+        def remaining():
+            reads.append(1)
+            return 3 - len(reads)
+
+        body = backup_drive._BoundedBody(io.BytesIO(data), len(data), remaining)
+        with pytest.raises(backup_drive._BudgetSpent):
+            requests.put(
+                url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
+            )
+        assert len(reads) == 3
+        body = backup_drive._BoundedBody(io.BytesIO(data), len(data), lambda: 60)
+        response = requests.put(
+            url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
+        )
+        assert response.status_code == 200 and received[-1] == len(data)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_timeout_and_drive_fields_are_closed_values():
     """Only reviewed words and whole seconds reach the process log."""
     from parishkit.stewardship.jobs.backup_models import FAILURE_KINDS
