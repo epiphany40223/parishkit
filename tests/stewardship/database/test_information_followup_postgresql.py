@@ -169,6 +169,20 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
             assert b"?search=" not in body
         for suffix in ("?search=Private", "?page=1"):
             assert read(browser, route + suffix)[0].status_code == 400
+        # The shared table (#203): Family and Submitted headings sort through
+        # the selection's closed vocabulary as POST forms, a page past the end
+        # shows the last page, and unknown tokens and sizes are refused.
+        response, body = search(
+            browser,
+            route,
+            {"search": "Called", "sort": "name", "size": "25", "page": "7"},
+        )
+        assert response.status_code == 200 and b"Please contact" in body
+        assert b"Page 1 of 1" in body and b'aria-sort="ascending"' in body
+        assert b'value="name_desc"' in body and b'value="newest"' in body
+        assert b"search=" not in body
+        for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
+            assert search(browser, route, invalid)[0].status_code == 400
         update_path = route + f"{item.pk}/update"
         values = {
             "expected_version": str(item.version),

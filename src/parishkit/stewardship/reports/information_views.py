@@ -7,6 +7,7 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -23,17 +24,21 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import report_table
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import (
+    INFORMATION_SORTING,
     PAGE_SIZE,
+    PAGE_SIZES,
     InformationQuery,
     information_history,
     information_page,
     parse_page,
 )
 from .read_admission import admit_report_read
+from .report_paging import carried_filters, clamp_query, pop_page_size
 
 
 def _principal(request, store, *, read_only=False):
@@ -98,12 +103,14 @@ def _page_response(request, campaign_id, *, item_id=None):
                 raise ValueError("Search and filters require a POST body.")
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
+            size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
             query = InformationQuery.parse(parameters)
             history_page = 1
         else:
             values = filters(request.GET, allowed={"page"})
             history_page = parse_page(values.get("page", "1"))
             query = InformationQuery(disposition="all")
+            size = PAGE_SIZE
         admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
         finalized = False
@@ -132,7 +139,15 @@ def _page_response(request, campaign_id, *, item_id=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
-            result = information_page(campaign_id, query, item_id=item_id)
+            nonlocal query
+            result = information_page(
+                campaign_id, query, item_id=item_id, page_size=size
+            )
+            # A stale Next click after the queue shrank shows the last page.
+            moved = None if item_id else clamp_query(query, result["total"], size)
+            if moved is not None:
+                query = moved
+                result = information_page(campaign_id, query, page_size=size)
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)
@@ -177,10 +192,19 @@ def _page_response(request, campaign_id, *, item_id=None):
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
                 export_timezones=sorted(timezone_names()) if not item_id else (),
-                previous_page=query.page - 1 if query.page > 1 else None,
-                next_page=query.page + 1
-                if query.page * PAGE_SIZE < result["total"]
-                else None,
+                table=None
+                if item_id
+                else report_table(
+                    result["rows"],
+                    number=query.page,
+                    size=size,
+                    total=result["total"],
+                    carry=carried_filters(query),
+                    sorting=INFORMATION_SORTING,
+                    sort=query.sort,
+                    action=reverse("admin:information_queue", args=(campaign_id,)),
+                    sizes=PAGE_SIZES,
+                ),
             )
             return iter(
                 (

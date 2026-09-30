@@ -47,8 +47,9 @@
 <label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}">
 <label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}">
 <label for="info-sort">{% translate "Sort order" %}</label><select id="info-sort" name="sort"><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Oldest first" %}</option><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option></select>
+<input type="hidden" name="size" value="{{ table.size_value }}">
 <button type="submit">{% translate "Apply filters" %}</button></form>
-<p>{% translate "Matching requests:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<p>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
 <p>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. Complete text is captured when you queue the export; later changes do not alter that capture." %}</p>
@@ -63,13 +64,13 @@
 <label><input type="checkbox" name="history" value="yes"> {% translate "Include complete Staff workflow history" %}</label>
 <button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+{% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Additional-information results' %}"><table>
-<caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Submitted" %}</th><th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
-{% for row in rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
+<caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
+{% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.disposition_label }}{% if row.previously_reported %}<br>{% translate "Previously emailed" %}{% endif %}</td><td>{{ row.text|truncatechars:240 }}</td>
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching requests." %}</td></tr>{% endfor %}</tbody></table></div>
-<nav aria-label="{% translate 'Information result pages' %}"><form method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-{% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endif %}
 {% endblock %}

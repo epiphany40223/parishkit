@@ -23,7 +23,8 @@ def test_staff_queue_detail_history_and_accessibility(
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "disposition"
-    visible(page.get_by_role("button", name="Next page"))
+    visible(page.get_by_role("button", name="Next", exact=True).first)
+    assert page.locator("th[aria-sort=descending]").inner_text().startswith("Submitted")
     assert page.locator("form").evaluate_all(
         "nodes => nodes.every(node => node.method === 'post')"
     )
