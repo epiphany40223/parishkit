@@ -25,9 +25,12 @@ The host is one Linux virtual machine with a supported Docker Engine and the
 Compose plugin, reachable from the Internet on TCP 80 and 443 only. Everything
 else (SSH, the Docker socket, PostgreSQL, Valkey, the application's port 8000)
 stays closed at the host firewall; the rendered topology publishes no other
-port. Create the DNS `A`/`AAAA` records for the public hostname before the
-proxy starts, because Caddy obtains its certificate from Let's Encrypt on
-first start and needs the name to resolve to this host.
+port. Create the DNS `A` record for the public hostname before the proxy
+starts, because Caddy obtains its certificate from Let's Encrypt on first
+start and needs the name to resolve to this host. Publish no `AAAA` record:
+the rendered ingress network has no IPv6, so Docker would forward every IPv6
+visitor from one bridge address, and the per-address sign-in limits would
+treat all of those Families as one client and start refusing them.
 
 Collect, outside the runtime root and outside the repository:
 
