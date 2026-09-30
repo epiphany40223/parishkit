@@ -481,6 +481,65 @@ without creating a new backup or resetting retention, as defined by the
 are recorded durably with sanitized diagnostics; no backup credentials or
 decrypted contents are returned to the web process.
 
+### Dedicated off-site uploader (planned, post-launch)
+
+Planned by [#235](https://github.com/epiphany40223/parishkit/issues/235),
+not yet implemented. It removes the v1 exception above: the backup profile
+gets no network route out again, and a separate one-shot `backup-uploader`
+profile copies finished sets to Google Drive. The copy's behavior does not
+change: ciphertext and manifest only, the same budgets, retries, outcome rows,
+`backup_offsite_failed` alert and Admin status (see the
+[runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)).
+
+- **Networks.** `backup-worker` joins only the internal `backend` network.
+  `backup-uploader` joins `backend` (for PostgreSQL) and
+  `application-egress`. Restricting its egress to Google's API hosts needs an
+  egress proxy or host firewall rules and stays later hardening.
+- **Credentials.** Only the uploader mounts the Google Workspace key, through
+  the same read-only rotating directory mount other consumers use, plus its
+  own database password and configuration document. It does not mount the
+  credentials tree, the configuration tree, media or `backup_data`. The
+  backup worker still reads the whole credentials tree, because it archives
+  it, but has no route out.
+- **Handoff.** The uploader mounts the backups directory read-only. A set is
+  finished when its manifest exists, which the backup writes last after
+  `fsync`. The uploader copies only a set whose manifest digest has a
+  `stewardship_backup_run` row, and it already checks each file against the
+  manifest's SHA-256. The per-host copy lock becomes an exclusive `flock` on
+  a read-only descriptor of the backups directory itself, so the uploader
+  writes nothing there. Local retention takes the same lock without waiting
+  and skips pruning while a copy holds it. The host cron job runs
+  `backup-worker`, then `backup-uploader`, even when the backup failed, so a
+  missed copy catches up. `smoke --send` moves to the uploader.
+- **Database login.** A new `pk_stewardship_backup_uploader` login: NOINHERIT,
+  NOBYPASSRLS, no memberships, connection limit `rollout_overlap * 2` (a task
+  connection and the private timeout-log connection). Its grants are SELECT
+  and INSERT on `stewardship_backup_upload`, SELECT on
+  `stewardship_backup_run (manifest_digest)`, INSERT on
+  `stewardship_operational_log` (the writer trigger admits this login for
+  timeout events only, as it does the backup login), and EXECUTE on a new
+  SECURITY DEFINER function that returns only the deployment ID, the backup
+  folder link and the delegated mailbox from the applied configuration, not
+  the whole canonical document. The backup login loses INSERT on
+  `stewardship_backup_upload`. The `disabled` row moves to the uploader.
+  Startup admits the login's exact attributes and grants, as the backup
+  command does its own.
+- **Deploying a new identity.** `retarget-image` refuses a missing
+  generated password, and provisioning is create-only, so this needs one new
+  step. Retarget generates the password file of an identity the running
+  release adds, once and owner-only, like provisioning does, and never
+  replaces an existing one. The operator then runs the offline
+  `database-roles` profile, which already creates missing roles on a marked
+  database behind a recent backup; applies the self-checking in-place SQL
+  (writer trigger, new function, REVOKE from the backup login, because
+  `database-grants` refuses grants it did not intend); runs
+  `database-grants`; and changes the cron job. A fresh development install
+  gets all of this from provisioning.
+- **Rollback.** Retarget to the previous image, restore the one-line cron
+  job, and re-run that release's `database-grants`, which grants the backup
+  login's INSERT again. The unused login, its password file and the extra
+  trigger clause are harmless to the older release and can be dropped later.
+
 ## Restore
 
 Restore is operator-driven and unavailable as an ordinary web action. It has two
