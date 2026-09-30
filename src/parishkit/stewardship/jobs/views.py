@@ -77,10 +77,33 @@ TASK_SORTING = Sorting.by_column(
 )
 
 
+# A task page's history sorts by every column too. Version is unique within
+# one run and indexed with it (task_event_version, run_id + version), so it
+# is the default (newest first) and the tiebreak; the other columns are
+# top-N sorts over a single task's events, a set bounded by that task.
+EVENT_SORTING = Sorting.by_column(
+    {
+        "version": ("version",),
+        "time": ("created_at",),
+        "action": ("action",),
+        "state": ("state",),
+        "progress": (
+            "phase",
+            Cast(F("progress_current"), FloatField()) / NullIf(F("progress_total"), 0),
+        ),
+    },
+    default="-version",
+    descending_first={"version", "time"},
+    tiebreak=("version",),
+)
+
+
 def _window(parameters, *, listing):
     """Reject repeated/unknown/oversized inputs before selecting any task rows."""
     allowed = (
-        {"page", "size", "sort", "state", "task_type"} if listing else {"page", "size"}
+        {"page", "size", "sort", "state", "task_type"}
+        if listing
+        else {"page", "size", "sort"}
     )
     selected = filters(parameters, allowed=allowed)
     window = PageWindow(
@@ -96,10 +119,10 @@ def _window(parameters, *, listing):
         and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", task_type) is None
     ):
         raise ValueError("Invalid task type filter.")
-    if listing:
-        # The sort token is validated here with the filters; _listing reads it.
-        TASK_SORTING.parse(selected)
-    return window, state, task_type, selected.get("sort", TASK_SORTING.default)
+    # The sort token is validated here with the filters; _listing and
+    # _detail read it.
+    sorting = TASK_SORTING if listing else EVENT_SORTING
+    return window, state, task_type, sorting.parse(selected)
 
 
 def _progress(row):
@@ -173,14 +196,17 @@ def _listing(window, state, task_type, sort, instant):
     }, len(rows)
 
 
-def _detail(identifier, window, instant):
-    """Freeze the event upper version to match the captured current task metadata."""
+def _detail(identifier, window, sort, instant):
+    """Freeze the event upper version to match the captured current task metadata.
+
+    ``matching`` is a bounded count of that history, for "Page N of M".
+    """
     row = TaskRun.objects.filter(pk=identifier).first()
     if row is None:
         return None, 0
-    events, has_next = window.rows(
-        row.events.filter(version__lte=row.version).order_by("-version")
-    )
+    history = row.events.filter(version__lte=row.version)
+    events, has_next = window.rows(EVENT_SORTING.order(history, sort))
+    matching, capped = bounded_count(history)
     return {
         "as_of": instant,
         "task": _task(row, instant),
@@ -192,7 +218,10 @@ def _detail(identifier, window, instant):
         ),
         "page": window.page,
         "size": window.size,
+        "sort": sort,
         "has_next": has_next,
+        "matching": matching,
+        "matching_capped": capped,
         "events": [
             {
                 "version": event.version,
@@ -237,7 +266,7 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
                 data, count = (
                     _listing(window, state, task_type, sort, instant)
                     if identifier is None
-                    else _detail(identifier, window, instant)
+                    else _detail(identifier, window, sort, instant)
                 )
             current = authenticated_admin(request, store=service.store, read_only=True)
             if not allows(current, Capability.BACKGROUND_WORK):
@@ -439,8 +468,15 @@ def task_page(request, task_id):
     if context is None:
         return result
     work, task = context["work"], context["task"]
-    following = request.GET.copy()
-    following["page"] = str(work["page"] + 1)
+    # _read already validated every query value; the history has no filters.
+    history = window_table(
+        PageWindow(work["page"], work["size"]),
+        work["events"],
+        work["has_next"],
+        total=(work["matching"], work["matching_capped"]),
+        sorting=EVENT_SORTING,
+        sort=work["sort"],
+    )
     kinds = refresh_kinds([task["root_id"]]) if task["type"] == REFRESH else {}
     response = render(
         request,
@@ -473,7 +509,7 @@ def task_page(request, task_id):
             "digest_retry_route": "admin:retry_weekly_digest"
             if work["task"]["type"].startswith("weekly_digest_")
             else "admin:retry_daily_digest",
-            "next_query": following.urlencode(),
+            "history": history,
         },
     )
     return _finish_html(request, result, response, task_id)

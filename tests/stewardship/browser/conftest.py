@@ -52,7 +52,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.jobs.views import TASK_SORTING
+from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
@@ -94,6 +94,31 @@ BACKGROUND_TASK = {
         "display": Percentage(1000, 3000),
     },
 }
+# One history row of the background-task page, and its shared-table model.
+HISTORY_EVENT = {
+    "version": 2,
+    "at": NOW.isoformat(),
+    "action": "progress",
+    "state": "running",
+    "progress": {
+        "phase": "fetching",
+        "current": 1000,
+        "total": 4000,
+        "display": Percentage(1000, 4000),
+    },
+}
+
+
+def _history(events):
+    """The sorted, counted history table task_page builds for these events."""
+    return window_table(
+        PageWindow(1, 20),
+        events,
+        False,
+        total=(len(events), False),
+        sorting=EVENT_SORTING,
+        sort=EVENT_SORTING.default,
+    )
 
 
 def finishing_context(**status):
@@ -1134,6 +1159,7 @@ def component_origin():
                     "progress": {"phase": "queued", "current": 0, "total": 0},
                 },
                 "work": {"events": [], "latest_run_id": str(uuid4())},
+                "history": _history([]),
             },
         ),
         (
@@ -1150,6 +1176,7 @@ def component_origin():
                     "progress": {"phase": "queued", "current": 0, "total": 0},
                 },
                 "work": {"events": []},
+                "history": _history([]),
                 "export_cleanup_retry_key": str(uuid4()),
             },
         ),
@@ -1179,22 +1206,8 @@ def component_origin():
                         "display": Percentage(1000, 4000),
                     },
                 },
-                "work": {
-                    "events": [
-                        {
-                            "version": 2,
-                            "at": NOW.isoformat(),
-                            "action": "progress",
-                            "state": "running",
-                            "progress": {
-                                "phase": "fetching",
-                                "current": 1000,
-                                "total": 4000,
-                                "display": Percentage(1000, 4000),
-                            },
-                        }
-                    ]
-                },
+                "work": {"events": [HISTORY_EVENT]},
+                "history": _history([HISTORY_EVENT]),
             },
         ),
         (

@@ -263,8 +263,11 @@ def test_task_html_detail_is_bounded_passive_and_preserves_history_filters(
     response = browser.get(path, {"page": 1, "size": 1})
     assert response.status_code == 200 and response["Cache-Control"] == "no-store"
     assert b"1,000 out of 4,000 (25%)" in response.content
-    assert b"Task history (newest first)" in response.content
-    assert b"page=2&amp;size=1" in response.content
+    assert b"Task history" in response.content and b"Page 1 of 3" in response.content
+    assert b"sort=-version&amp;size=1&amp;page=2" in response.content
+    oldest = browser.get(path, {"size": 1, "sort": "version"}).content.decode()
+    assert 'aria-sort="ascending"' in oldest and '<td class="numeric">1</td>' in oldest
+    assert browser.get(path, {"sort": "created_at"}).status_code == 400
     assert PortalSession.objects.get().last_activity_at == before
     assert browser.get(f"/admin/background/task/{uuid4()}").status_code == 404
     assert Client().get(path).status_code == 403
