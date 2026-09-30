@@ -14,6 +14,7 @@ from ..campaign_factory import campaign, financial
 from ..test_share_forms import data_for
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, command
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, fields, post
 from .test_parish_views_postgresql import token
@@ -42,14 +43,18 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
     store = auth_service.store
     row, previous, path = setup(store)
     browser, _ = signed_in()
-    assert browser.get(path).status_code == 200
+    page = browser.get(path)
+    assert page.status_code == 200
+    assert flow_steps(page.content) == (STEPS, "Make changes")
     data = data_for(previous) | {
         "base_digest": store.active().digest,
         "options-0-label": "Updated option",
         "options-0-ORDER": "2",
         "options-1-ORDER": "1",
     }
-    proposal = token(post(browser, path, data))
+    preview = post(browser, path, data)
+    assert flow_steps(preview.content) == (STEPS, "Review")
+    proposal = token(preview)
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)
     row.refresh_from_db()

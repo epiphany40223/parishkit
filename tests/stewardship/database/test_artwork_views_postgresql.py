@@ -21,6 +21,7 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, command
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_branding_views_postgresql import post, preview_token
 from .test_campaign_views_postgresql import apply
@@ -72,14 +73,21 @@ def select(browser, service, path, slot, upload):
         )
         assert staged.status_code == 302, staged.content
         preview = staged["Location"]
-        token = preview_token(browser.get(preview))
-        return post(browser, preview, {"action": "confirm", "preview": token})
+        review = browser.get(preview)
+        assert flow_steps(review.content) == (STEPS, "Review")
+        token = preview_token(review)
+        response = post(browser, preview, {"action": "confirm", "preview": token})
+        # Where the one-time review was, for checks after it is confirmed.
+        response.review_path = preview
+        return response
 
 
 def remove(browser, path, slot):
     """Review and confirm removing one slot's image."""
     with task_login(ServiceRole.WEB):
-        token = preview_token(browser.get(f"{path}/{slot}/remove"))
+        review = browser.get(f"{path}/{slot}/remove")
+        assert flow_steps(review.content) == (STEPS, "Review")
+        token = preview_token(review)
         return post(
             browser, f"{path}/{slot}/remove", {"action": "confirm", "preview": token}
         )
@@ -92,7 +100,16 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     browser, _ = signed_in()
     page = browser.get(path)
     assert page.status_code == 200 and b"No image is set." in page.content
-    apply(store, select(browser, auth_service, path, "banner", image(1625, 345)))
+    assert flow_steps(page.content) == (STEPS, "Make changes")
+    accepted = select(browser, auth_service, path, "banner", image(1625, 345))
+    apply(store, accepted)
+    # The staged image's review refuses once confirmed, so the change's
+    # status names it without a link and returns to Campaign images (#196).
+    status = browser.get(accepted["Location"]).content
+    assert b"<li><span>Review campaign image</span></li>" in status
+    assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
+    # That review no longer opens now its image is chosen.
+    assert browser.get(accepted.review_path).status_code != 200
     apply(store, select(browser, auth_service, path, "financial", image(600, 600)))
     images = artwork(row)["images"]
     banner = BrandingAsset.objects.get(pk=images["banner"])
@@ -114,7 +131,15 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert banner_for_email(values, "initial", origin=ORIGIN) == resolved["banner"]
     # Selected images are pinned against staging cleanup.
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
-    apply(store, remove(browser, path, "financial"))
+    removed = remove(browser, path, "financial")
+    apply(store, removed)
+    # The removal review now refuses (nothing left to remove): named, not
+    # linked, and Return goes to Campaign images (#196).
+    assert browser.get(f"{path}/financial/remove").status_code != 200
+    status = browser.get(removed["Location"]).content
+    assert flow_steps(status) == (STEPS, "Apply")
+    assert b"<li><span>Remove campaign image</span></li>" in status
+    assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
     apply(store, remove(browser, path, "banner"))
     # With no image left, the optional value is absent, not empty.
     assert artwork(row) == {}

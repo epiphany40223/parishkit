@@ -20,6 +20,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import stale_page
 
+from . import admin_navigation
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
 from .campaign_views import _state, _target
@@ -58,6 +59,8 @@ def _describe(values, campaign):
 
 def _page(request, campaign, window, schedules, digest, *, editable, status=200):
     """Show civil dates/timezone separately from browser-local audit timestamps."""
+    # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/schedule-settings.html",
@@ -157,6 +160,7 @@ def _preview(
         for row in schedule_changes
     ]
     blocking = sum(change["impact"].get("blocking", 0) for change in changes)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/schedule-preview.html",

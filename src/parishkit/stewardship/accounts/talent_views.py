@@ -21,6 +21,7 @@ from parishkit.stewardship.responses.service import default_talent_options
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
 from .campaign_views import _scope, _state, _target
@@ -42,6 +43,8 @@ def current_talents(campaign):
 
 def _page(request, configuration, campaign, formset, *, status=200):
     """Show the ordered talents with a blank row for adding one."""
+    # The first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/talent-settings.html",
@@ -68,6 +71,8 @@ def _preview(request, service, actor, state, campaign, formset, salt):
     options = formset.values()
     before = current_talents(campaign)
     if options == before:
+        # A shown review, even of no change, is the second step (#196).
+        admin_navigation.place(request, flow="change", step="review")
         return render(
             request,
             "stewardship/talent-preview.html",
@@ -85,6 +90,7 @@ def _preview(request, service, actor, state, campaign, formset, salt):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     build_candidate(base, patch, candidate_id=uuid4())
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/talent-preview.html",

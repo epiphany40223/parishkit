@@ -23,6 +23,7 @@ from .campaign_builders import (
     close_campaign,
     command,
 )
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, post
 from .test_parish_views_postgresql import token
 
@@ -103,13 +104,20 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
     old_schedule = ScheduleDefinition.objects.get()
     browser, _ = signed_in()
     assert path.encode() in browser.get("/admin/campaign/new").content
+    assert flow_steps(browser.get(path).content) == (STEPS, "Make changes")
     preview = post(browser, path, fields(browser, path, store))
     assert b"Welcome to" in preview.content
+    assert flow_steps(preview.content) == (STEPS, "Review")
     assert b"2027-10-02T13:00:00+00:00" in preview.content
     assert b"data-local-instant" in preview.content
     proposal = token(preview)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)
+    # Copying is refused once the copy is current: named, never linked (#196).
+    status = browser.get(accepted["Location"]).content
+    assert b"<li><span>Copy campaign</span></li>" in status
+    assert f'href="{path}"'.encode() not in status
+    assert browser.get(path).status_code != 200
     new = Campaign.objects.exclude(pk=source.pk).get()
     source.refresh_from_db()
     assert source.active_configuration_id == old_version

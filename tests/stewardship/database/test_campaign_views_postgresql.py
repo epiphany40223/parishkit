@@ -22,6 +22,7 @@ from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, command
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_current_chair_postgresql import publish
 from .test_parish_views_postgresql import token
@@ -75,8 +76,10 @@ def test_new_draft_requires_confirmation_and_applied_receipt(auth_service, googl
     store = auth_service.store
     response = browser.get(NEW)
     assert response.status_code == 200 and b"Create campaign draft" in response.content
+    assert flow_steps(response.content) == (STEPS, "Make changes")
     preview = post(browser, NEW, fields(store))
     assert b"starts with the default text" in preview.content
+    assert flow_steps(preview.content) == (STEPS, "Review")
     proposal = token(preview)
     assert (
         not Campaign.objects.exists()
@@ -85,6 +88,13 @@ def test_new_draft_requires_confirmation_and_applied_receipt(auth_service, googl
     accepted = post(browser, NEW, {"action": "confirm", "preview": proposal})
     assert not Campaign.objects.exists()
     apply(store, accepted)
+    # The status page names the new-campaign editor, which now refuses, but
+    # never links it (#196): Return goes Home.
+    status = browser.get(accepted["Location"]).content
+    assert flow_steps(status) == (STEPS, "Apply")
+    assert b"<li><span>New campaign</span></li>" in status
+    assert f'href="{NEW}"'.encode() not in status
+    assert b'<a href="/admin/">Return to Home</a>' in status
     row = Campaign.objects.get()
     assert row.state == "draft" and not row.structural_locked
     assert SystemConfiguration.objects.get().current_campaign_id == row.pk
@@ -262,6 +272,8 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
     response = browser.get(url(row))
     assert response.status_code == 200 and b"read-only" in response.content
     assert b"Preview changes" not in response.content
+    # A read-only page is not a step of any flow (#196).
+    assert flow_steps(response.content) is None
 
 
 def test_source_replacement_requires_fresh_preview(auth_service, google):

@@ -33,9 +33,11 @@ class Section:
 class Page:
     """One Admin page: its section, its parent page (URL name) and its label.
 
-    ``linkable`` is False for a page that only answers a POST (a review
-    step): its crumb is shown for orientation but never linked, because a
-    GET would fail.
+    ``linkable`` is False for a page a link cannot reliably reopen: one that
+    only answers a POST (a review step), or one that reviews a single
+    pending change and refuses once that change is confirmed (a staged
+    image, a new campaign). Its crumb is shown for orientation but never
+    linked, and "Return to" skips it, because a GET would fail.
     """
 
     section: str | None
@@ -81,8 +83,12 @@ PAGES = {
     "index": Page(None, _("Home")),
     # Campaign
     "campaign_settings": Page("campaign", _("Campaign settings")),
-    "campaign_new": Page("campaign", _("New campaign")),
-    "campaign_clone": Page("campaign", _("Copy campaign"), "campaign_settings"),
+    # Creating or copying a campaign is refused once a campaign is current,
+    # so a change's status page names these editors but never links them.
+    "campaign_new": Page("campaign", _("New campaign"), linkable=False),
+    "campaign_clone": Page(
+        "campaign", _("Copy campaign"), "campaign_settings", linkable=False
+    ),
     "content_catalog": Page("campaign", _("Pages and emails")),
     "content_edit": Page("campaign", _("Edit page or email"), "content_catalog"),
     "content_revision": Page("campaign", _("Content revision"), "content_catalog"),
@@ -100,8 +106,13 @@ PAGES = {
     "share_settings": Page("campaign", _("Share options")),
     "artwork_settings": Page("campaign", _("Campaign images")),
     "artwork_upload": Page("campaign", _("Campaign image upload"), "artwork_settings"),
-    "artwork_preview": Page("campaign", _("Review campaign image"), "artwork_settings"),
-    "artwork_remove": Page("campaign", _("Remove campaign image"), "artwork_settings"),
+    # Each reviews one staged or current image and refuses once confirmed.
+    "artwork_preview": Page(
+        "campaign", _("Review campaign image"), "artwork_settings", linkable=False
+    ),
+    "artwork_remove": Page(
+        "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
+    ),
     "talent_settings": Page("campaign", _("Member talents")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing Families"), "go_live"),

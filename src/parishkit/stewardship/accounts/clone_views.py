@@ -17,7 +17,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import expired_preview, stale_page
 
-from . import setup_help
+from . import admin_navigation, setup_help
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
 from .campaign_cloning import clone_initial, clone_patch, clone_structures
@@ -57,6 +57,8 @@ def _seed(request, actor, configuration, salt):
 
 def _page(request, source, form, schedules, seed, *, status=200):
     """Render unapplied structures with all new civil dates intentionally empty."""
+    # The first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/clone-settings.html",
@@ -121,6 +123,7 @@ def _preview(
             "content in smaller requests.",
         )
         return _page(request, source, form, schedules, seed, status=400)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/clone-preview.html",

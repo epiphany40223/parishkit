@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
 from .campaign_views import _scope, _state, _target
@@ -27,6 +28,8 @@ from .share_forms import ShareOptions, share_action
 
 def _page(request, configuration, campaign, formset, *, status=200):
     """Show explicit stable rows, order inputs and deletions with a blank new row."""
+    # The first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/share-settings.html",
@@ -54,6 +57,8 @@ def _preview(request, service, actor, state, campaign, formset, salt):
     if options == campaign.active_configuration.values["share_options"]:
         # Keep a clear, non-mutating no-op error without reaching into formset
         # private error storage or creating an empty configuration request.
+        # A shown review, even of no change, is the second step (#196).
+        admin_navigation.place(request, flow="change", step="review")
         return render(
             request,
             "stewardship/share-preview.html",
@@ -74,6 +79,7 @@ def _preview(request, service, actor, state, campaign, formset, salt):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     build_candidate(base, patch, candidate_id=uuid4())
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/share-preview.html",

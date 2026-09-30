@@ -122,7 +122,7 @@ def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     assert f'<a href="{catalog}" aria-current="true">'.encode() in edit.content
 
 
-def _steps(body):
+def flow_steps(body):
     """The step indicator's labels and the current step, from a rendered page."""
     body = body.decode()
     if 'class="flow-steps"' not in body:
@@ -149,9 +149,9 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     content = f"/admin/campaign/{Campaign.objects.get().pk}/content/email/initial"
-    assert _steps(browser.get(content).content) == (STEPS, "Make changes")
+    assert flow_steps(browser.get(content).content) == (STEPS, "Make changes")
     # The settings pages without a placed flow show no indicator.
-    assert _steps(browser.get(parish.URL).content) is None
+    assert flow_steps(browser.get(parish.URL).content) is None
     review = parish.post(browser, parish.fields(store, name="Renamed Parish"))
     confirmed = parish.post(
         browser, {"action": "confirm", "preview": parish.token(review)}
@@ -160,7 +160,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     status = browser.get(confirmed["Location"])
     assert status.status_code == 200
     body = status.content
-    assert _steps(body) == (STEPS, "Apply")
+    assert flow_steps(body) == (STEPS, "Apply")
     assert f'<li><a href="{parish.URL}">Parish settings</a></li>'.encode() in body
     assert b'<span aria-current="page">Configuration change</span>' in body
     assert f'<a href="{parish.URL}">Return to Parish settings</a>'.encode() in body
