@@ -382,6 +382,44 @@ def test_transient_failures_are_retried_then_recorded(offsite):
     assert copy(offsite)["state"] == "uploaded"
 
 
+def test_a_failure_of_one_set_does_not_hold_back_the_newer_ones(offsite, caplog):
+    """A damaged older set is recorded as failed and the newest still copies.
+
+    Before, the first failure ended the run, so a set that could never copy
+    blocked every newer set until it left the catch-up window.
+    """
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    newest = new_set(offsite, "20260928T020000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert offsite.drive.sets() == [newest.name]
+    rows = BackupUpload.objects.order_by("created_at").values_list(
+        "state", "set_name", "failure_kind"
+    )
+    assert list(rows) == [
+        ("failed", offsite.directory.name, "verification"),
+        ("uploaded", newest.name, None),
+    ]
+    # The newest outcome is the newest set's own, so the page says so.
+    assert offsite_status().kind == "uploaded"
+    assert ("backup_set_mismatch", None) in {
+        (line.get("failure_kind"), line.get("drive_failure")) for line in logged(caplog)
+    }
+
+
+def test_a_configuration_failure_stops_the_whole_copy(offsite):
+    """A refused folder would refuse every set alike, so the run stops."""
+    new_set(offsite, "20260928T020000Z")
+    offsite.drive.fail["create_folder"] = ["permission"]
+    assert copy(offsite) == {"state": "failed", "failure_kind": "permission"}
+    assert offsite.drive.calls.count("create_folder") == 1
+    assert BackupUpload.objects.get().failure_kind == "permission"
+
+
 def test_removing_the_destination_records_that_copies_stopped(offsite):
     """A deliberate turn-off clears an old failure without repeating rows."""
     offsite.drive.fail["create_folder"] = ["permission"]

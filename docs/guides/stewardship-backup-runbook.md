@@ -193,7 +193,10 @@ copies exist. The run's JSON line gains
 an `offsite` field (`uploaded`, `failed` with a category, `busy`, or
 `not_configured`), and a failed copy never fails the backup itself: the local
 set is recorded as usual, and the next run copies any of the three newest
-sets not yet in the folder.
+sets not yet in the folder. A failure that belongs to one set (its copy did
+not verify, or Drive stayed unreachable through the retries) is recorded
+and the run moves on to the next set; any other failure (the key, the
+delegation or the folder) stops the run, since every set would fail alike.
 
 The copy never blocks the Admin or Family portals: it runs only in this
 one-shot profile, after the backup has released its startup lease, and

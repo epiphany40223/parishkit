@@ -10,7 +10,8 @@ copy leaves the local set and its record in place, appends a ``failed``
 outcome the scheduler alerts on, and the next run tries again.
 
 Only the newest few sets not yet copied to the current folder are attempted,
-oldest first, so a long outage catches up without re-uploading history.
+oldest first, so a long outage catches up without re-uploading history; a
+failure that belongs to one set does not stop the others.
 
 The copy never blocks the portals. It runs only in the one-shot backup
 profile, after the backup's startup lease is released, and outside any
@@ -52,6 +53,8 @@ CATCH_UP_SETS = 3
 # No new set or retry starts after this long; the backup runs twice a day.
 COPY_SECONDS = 4 * 3600
 SEALED_FILES = ("database.pgdump.sealed", "files.tar.sealed", MANIFEST)
+# Failures that belong to one set; the copy records them and moves on.
+PER_SET_FAILURES = frozenset({"verification", "unavailable"})
 # One copy at a time per host: a file in the backups directory, locked for
 # the whole copy and prune. Retention ignores it (it is not a directory).
 COPY_LOCK = ".offsite-copy.lock"
@@ -226,6 +229,15 @@ def _copy_sets(
 ):
     """Upload the newest sets not yet in this folder, oldest first, then prune.
 
+    A failure that belongs to one set (``PER_SET_FAILURES``: its copy did
+    not verify, or Drive stayed unreachable through the retries) is recorded
+    and the copy moves on to the next set, so one damaged or unlucky set
+    cannot hold every newer one back until it leaves the catch-up window.
+    Any other failure (the key, the delegation, the folder) would fail every
+    set alike and stops the run. Oldest first keeps the newest set's outcome
+    the last row recorded, which is what the pages and the off-site alert
+    read as "the newest backup"; a failed older set is tried again next run.
+
     After the first batch it scans once more and copies any set that became
     pending meanwhile: a backup that finished while this run was uploading
     found the copy lock held and left its set to this run. One re-scan is
@@ -262,11 +274,13 @@ def _copy_sets(
         del credential
     except (CryptographicError, ConfigError, OSError, DriveFailure):
         return _failed(folder_id, None, None, "credential")
-    copied = 0
+    copied, failure, attempted = 0, None, set()
     for batch in range(2):
         if batch:
-            pending = pending_sets()
+            # A set that failed in the first batch waits for the next run.
+            pending = [item for item in pending_sets() if item not in attempted]
         for directory in pending:
+            attempted.add(directory)
             # Each upload can take hours and the connection would sit idle
             # meanwhile; closing it first frees the slot and lets each
             # outcome insert reconnect cleanly instead of failing on a
@@ -295,8 +309,12 @@ def _copy_sets(
                     clock=clock,
                     budget_seconds=COPY_SECONDS,
                 )
-            except DriveFailure as failure:
-                return _failed(folder_id, directory.name, digest, failure.kind)
+            except DriveFailure as error:
+                summary = _failed(folder_id, directory.name, digest, error.kind)
+                if error.kind not in PER_SET_FAILURES:
+                    return summary
+                failure = error.kind
+                continue
             _record(
                 "uploaded",
                 set_name=directory.name,
@@ -313,6 +331,8 @@ def _copy_sets(
     # Retention is best effort; the next successful run prunes again.
     with suppress(DriveFailure):
         prune(client, folder_id, verified=verified)
+    if failure is not None:
+        return {"state": "failed", "failure_kind": failure, "sets": copied}
     return {"state": "uploaded", "sets": copied}
 
 
