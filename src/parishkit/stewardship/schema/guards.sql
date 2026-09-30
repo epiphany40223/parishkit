@@ -2740,6 +2740,9 @@ CREATE TRIGGER stewardship_population_manifest_v1 BEFORE INSERT OR UPDATE ON pub
 -- TRIGGER: stewardship_family_campaign stewardship_population_update_dirty_v1
 CREATE TRIGGER stewardship_population_update_dirty_v1 AFTER UPDATE ON public.stewardship_family_campaign REFERENCING OLD TABLE AS old_families NEW TABLE AS new_families FOR EACH STATEMENT EXECUTE FUNCTION public.stewardship_population_update_dirty_v1();
 
+-- TRIGGER: stewardship_portal_session stewardship_portal_session_admission_v1
+CREATE TRIGGER stewardship_portal_session_admission_v1 BEFORE INSERT ON public.stewardship_portal_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_portal_session_admission_v1();
+
 -- TRIGGER: stewardship_portal_session stewardship_portal_session_mutable_guard_v1
 CREATE TRIGGER stewardship_portal_session_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_portal_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_portal_session_mutable_v1();
 
@@ -5783,3 +5786,141 @@ CREATE TRIGGER stewardship_source_snapshot_statistics_v1 AFTER UPDATE OF state
     WHEN (OLD.state = 'staging' AND NEW.state = 'ready')
     EXECUTE FUNCTION public.stewardship_source_snapshot_statistics_v1();
 REVOKE ALL ON FUNCTION public.stewardship_source_snapshot_statistics_v1() FROM PUBLIC;
+-- #306 M3: a Family session is created only here, by proving a presented
+-- credential against the stored digest under the same admission rules as
+-- Python's Family sign-in. Web has no INSERT on stewardship_family_session;
+-- database-grants gives it EXECUTE on this function alone. The code path is
+-- a partial proof: SQL holds no MAC key, so it accepts web's per-key code
+-- MACs, and web can already read those digests and decrypt Family codes by
+-- design. A personal link token is proved here from the token itself.
+-- Every refusal returns NULL rather than raising, so the caller gives the
+-- same uniform denial; the caller binds the token server-side so it never
+-- appears in statement text. Deploying: once this function and the grant
+-- change commit, an older web image can neither sign Families in nor start
+-- (its admission refuses any definer EXECUTE), so Admins lose access too
+-- until the new release is deployed; apply it immediately before deploying.
+CREATE FUNCTION public.stewardship_family_login_v1(session_key character varying, family_uuid uuid, correlation uuid, code_digests jsonb, link_token text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    runtime_row public.stewardship_system_configuration;
+    campaign_row public.stewardship_campaign;
+    config_row public.stewardship_campaign_configuration;
+    credential_row public.stewardship_campaign_credentials;
+    link_epoch uuid;
+    testing boolean;
+    epoch uuid;
+    matched uuid[];
+    link_digest text;
+    instant timestamptz := statement_timestamp();
+    session_uuid uuid := gen_random_uuid();
+BEGIN
+    -- Exactly one credential, for a fresh live Django session of this login.
+    IF (code_digests IS NULL) = (link_token IS NULL) OR family_uuid IS NULL
+       OR correlation IS NULL
+       OR NOT EXISTS (SELECT 1 FROM public.django_session
+                      WHERE django_session.session_key=stewardship_family_login_v1.session_key
+                        AND expire_date>instant)
+       OR EXISTS (SELECT 1 FROM public.stewardship_portal_session
+                  WHERE session_id=stewardship_family_login_v1.session_key)
+       OR EXISTS (SELECT 1 FROM public.stewardship_family_session
+                  WHERE session_id=stewardship_family_login_v1.session_key) THEN
+        RETURN NULL;
+    END IF;
+    -- The Python sign-in already holds these share locks; they keep source,
+    -- restore, mode and credential writers out until the session commits.
+    SELECT * INTO runtime_row FROM public.stewardship_system_configuration FOR SHARE;
+    SELECT family_link_epoch INTO link_epoch FROM public.stewardship_credential_deployment FOR SHARE;
+    SELECT * INTO campaign_row FROM public.stewardship_campaign WHERE id=runtime_row.current_campaign_id;
+    SELECT * INTO config_row FROM public.stewardship_campaign_configuration
+        WHERE id=campaign_row.active_configuration_id;
+    SELECT * INTO credential_row FROM public.stewardship_campaign_credentials
+        WHERE campaign_id=campaign_row.id FOR SHARE;
+    testing := runtime_row.mode='testing';
+    epoch := CASE WHEN testing THEN credential_row.rehearsal_epoch_id END;
+    -- The same admission as accounts/family_authentication.py _scope and
+    -- campaigns/lifecycle.py portal_admitted, checked at this statement.
+    IF runtime_row.id IS NULL OR runtime_row.restore_review_required OR link_epoch IS NULL
+       OR campaign_row.id IS NULL OR config_row.id IS NULL OR credential_row.id IS NULL
+       OR credential_row.go_live_gate OR credential_row.population_dirty
+       OR NOT (config_row.starts_at<=public.stewardship_campaign_now_v1()
+               AND public.stewardship_campaign_now_v1()<config_row.ends_at)
+       OR (testing AND (campaign_row.state<>'draft' OR NOT EXISTS (
+            SELECT 1 FROM public.stewardship_rehearsal_epoch
+            WHERE id=epoch AND campaign_id=campaign_row.id AND state='active')))
+       OR (NOT testing AND campaign_row.state NOT IN ('scheduled','active'))
+       OR NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign
+                      WHERE id=family_uuid AND campaign_id=campaign_row.id AND portal_eligible) THEN
+        RETURN NULL;
+    END IF;
+    IF code_digests IS NOT NULL THEN
+        -- One MAC per accepted key, at most MAX_RING_KEYS (32,
+        -- accounts/cryptography.py); the presented set must identify exactly
+        -- this one eligible Family, as the Python lookup requires.
+        IF jsonb_typeof(code_digests)<>'object'
+           OR (SELECT count(*) FROM jsonb_object_keys(code_digests)) NOT BETWEEN 1 AND 32 THEN
+            RETURN NULL;
+        END IF;
+        IF testing THEN
+            SELECT array_agg(DISTINCT credential.family_id) INTO matched
+            FROM jsonb_each_text(code_digests) presented
+            JOIN public.stewardship_rehearsal_code_mac mac
+                ON mac.key_id=presented.key AND mac.digest=presented.value AND mac.epoch_id=epoch
+            JOIN public.stewardship_rehearsal_credential credential
+                ON credential.id=mac.credential_id AND credential.epoch_id=epoch
+            JOIN public.stewardship_family_campaign eligible
+                ON eligible.id=credential.family_id AND eligible.portal_eligible;
+        ELSE
+            SELECT array_agg(DISTINCT mac.family_id) INTO matched
+            FROM jsonb_each_text(code_digests) presented
+            JOIN public.stewardship_family_code_mac mac
+                ON mac.key_id=presented.key AND mac.digest=presented.value
+                AND mac.campaign_id=campaign_row.id
+            JOIN public.stewardship_family_campaign eligible
+                ON eligible.id=mac.family_id AND eligible.portal_eligible;
+        END IF;
+        IF matched IS DISTINCT FROM ARRAY[family_uuid] THEN
+            RETURN NULL;
+        END IF;
+    ELSE
+        -- accounts/cryptography.py token_digest: SHA-256 over length-prefixed
+        -- purpose, campaign, mode and the 32-byte token payload.
+        IF link_token !~ '^(test\.)?[A-Za-z0-9_-]{43}$'
+           OR (left(link_token, 5)='test.') IS DISTINCT FROM testing THEN
+            RETURN NULL;
+        END IF;
+        link_digest := encode(sha256(
+            int4send(14) || convert_to('family-link-v1', 'UTF8')
+            || int4send(16) || uuid_send(campaign_row.id)
+            || int4send(length(runtime_row.mode)) || convert_to(runtime_row.mode, 'UTF8')
+            || int4send(32) || decode(translate(right(link_token, 43), '-_', '+/') || '=', 'base64')
+        ), 'hex');
+        IF testing THEN
+            PERFORM 1 FROM public.stewardship_rehearsal_credential
+                WHERE epoch_id=epoch AND token_digest=link_digest AND family_id=family_uuid
+                FOR SHARE;
+        ELSE
+            PERFORM 1 FROM public.stewardship_family_token token
+                JOIN public.stewardship_family_token_generation generation
+                    ON generation.id=token.generation_id
+                WHERE token.campaign_id=campaign_row.id
+                    AND token.generation_id=campaign_row.active_token_generation_id
+                    AND generation.credential_epoch=link_epoch AND generation.state='active'
+                    AND token.destroyed_at IS NULL AND token.digest=link_digest
+                    AND token.family_id=family_uuid
+                FOR SHARE OF token;
+        END IF;
+        IF NOT FOUND THEN
+            RETURN NULL;
+        END IF;
+    END IF;
+    -- FAMILY_ABSOLUTE is 4 hours (accounts/session_policy.py).
+    INSERT INTO public.stewardship_family_session(id, actor_id, correlation_id, version, mode,
+        authenticated_at, last_activity_at, expires_at, family_id, session_id,
+        rehearsal_epoch_id, credential_epoch, presence_section)
+    VALUES (session_uuid, NULL, correlation, 1, runtime_row.mode, instant, instant,
+        instant + interval '4 hours', family_uuid, session_key, epoch, link_epoch, '');
+    RETURN session_uuid;
+END $$;
+REVOKE ALL ON FUNCTION public.stewardship_family_login_v1(character varying, uuid, uuid, jsonb, text) FROM PUBLIC;

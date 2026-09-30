@@ -25,6 +25,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 
 from ..policy_factory import address
 from ..test_request_patch import parish_patch
+from .auth_builders import unguarded
 from .campaign_builders import change, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -57,13 +58,15 @@ def session():
     store = SessionStore()
     store.save()
     now = timezone.now()
-    return PortalSession.objects.create(
-        session_id=store.session_key,
-        principal_id=uuid4(),
-        authenticated_at=now,
-        last_activity_at=now,
-        expires_at=now + timedelta(hours=1),
-    )
+    # Revocation targets any session row; its principal is synthetic here.
+    with unguarded():
+        return PortalSession.objects.create(
+            session_id=store.session_key,
+            principal_id=uuid4(),
+            authenticated_at=now,
+            last_activity_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
 
 
 def test_additive_recovery_is_attributed_revoking_and_idempotent(tmp_path):
@@ -220,9 +223,11 @@ def test_future_dated_activity_cannot_block_recovery(tmp_path):
     store, _, _ = initialized(tmp_path)
     portal = session()
     future = timezone.now() + timedelta(minutes=30)
-    PortalSession.objects.filter(pk=portal.pk).update(
-        last_activity_at=future, version=F("version") + 1
-    )
+    # The session guard refuses future activity (#306); seed it as the owner.
+    with unguarded():
+        PortalSession.objects.filter(pk=portal.pk).update(
+            last_activity_at=future, version=F("version") + 1
+        )
     assert recover_admin(store, **arguments()).state == "applied"
     portal.refresh_from_db()
     assert portal.revoked_at >= future

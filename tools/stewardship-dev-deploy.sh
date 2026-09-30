@@ -118,6 +118,17 @@ if [ "$guard" != 1 ]; then
     exit 1
 fi
 
+# database-grants also refuses while web still holds the INSERT on Family
+# sessions that the SQL Family login function replaced (#306); say so now too.
+family_login=$(docker compose -f "$services/compose-initial.json" -p "$project" \
+    exec -T postgres psql -U pk_stewardship_operator -d stewardship -Atc \
+    "SELECT to_regprocedure('public.stewardship_family_login_v1(character varying, uuid, uuid, jsonb, text)') IS NOT NULL AND NOT has_table_privilege('pk_stewardship_web', 'public.stewardship_family_session', 'INSERT')" \
+    2>/dev/null || true)
+if [ "$family_login" != t ]; then
+    echo "The SQL Family login (#306) is not installed; apply its in-place SQL first." >&2
+    exit 1
+fi
+
 echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
 docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \
     --tag "${repo}:${tag}" "$build" >/dev/null

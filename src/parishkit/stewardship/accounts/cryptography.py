@@ -85,6 +85,12 @@ class Key:
         return hashlib.sha256(self.material).hexdigest()
 
 
+# The most keys any ring holds. The SQL Family login accepts at most this
+# many code MACs (schema/guards.sql, stewardship_family_login_v1), one per
+# lookup key, so the two limits must stay equal.
+MAX_RING_KEYS = 32
+
+
 class _Ring:
     """Immutable inventory with exactly one active writer and no duplicate keys."""
 
@@ -94,7 +100,7 @@ class _Ring:
     def __init__(self, keys):
         keys = tuple(keys)
         if (
-            not 1 <= len(keys) <= 32
+            not 1 <= len(keys) <= MAX_RING_KEYS
             or any(
                 not isinstance(key, Key) or key.usage not in self.usages for key in keys
             )

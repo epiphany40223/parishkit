@@ -240,8 +240,61 @@ def lookup(service, *, code=None, token=None, lock=False, current=None):
         )
 
 
+class _SessionRefused(Exception):
+    """SQL refused to mint the session; roll back the new Django session."""
+
+
+def _mint_session(session_key, family_id, *, digests=None, token=None):
+    """Create the Family session row in SQL, which re-proves the credential.
+
+    Web has no INSERT on the Family session table (#306 M3); the SECURITY
+    DEFINER login function checks the code MACs or the link token and the
+    admission rules itself, and returns the new row's id or None. The call
+    uses a server-side-bound psycopg cursor, so a personal link token travels
+    only as a bound parameter and never appears in statement text that
+    PostgreSQL might log with an error.
+    """
+    from psycopg import Cursor
+    from psycopg.types.json import Jsonb
+
+    from parishkit.stewardship.observability import current_correlation
+
+    connection.ensure_connection()
+    with connection.wrap_database_errors, Cursor(connection.connection) as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_family_login_v1("
+            "%s::varchar, %s::uuid, %s::uuid, %s::jsonb, %s::text)",
+            [
+                session_key,
+                family_id,
+                current_correlation(),
+                None if digests is None else Jsonb(digests),
+                token,
+            ],
+        )
+        return cursor.fetchone()[0]
+
+
 def issue_family(request, service, identity, *, code=None, token=None):
-    """Mint a token-free, mode-bound session after checking current admission."""
+    """Mint a token-free, mode-bound session after checking current admission.
+
+    Python keeps the lookup, rate limiting, prior-session revocation, audit
+    and CSRF rotation; SQL creates the session row only after proving the
+    same credential again (``_mint_session``). A SQL refusal rolls this whole
+    sign-in back and restores the browser's previous session, so it ends in
+    the same uniform denial as any other rejected credential.
+    """
+    previous = request.session
+    try:
+        return _issue_family(request, service, identity, code=code, token=token)
+    except _SessionRefused:
+        request.session = previous
+        return False
+
+
+def _issue_family(request, service, identity, *, code=None, token=None):
+    """The transaction behind ``issue_family``; see there."""
+    digests = None
     with transaction.atomic(), connection.cursor() as cursor:
         # Shared locks allow unrelated logins concurrently while keeping source,
         # restore and mode writers from changing admission during session minting.
@@ -261,6 +314,9 @@ def issue_family(request, service, identity, *, code=None, token=None):
                 != identity
             ):
                 return False
+            if code is not None:
+                # The same per-key MACs the lookup matched, for SQL to re-match.
+                digests = service.mac.lookups(identity[1], code)
         configuration, campaign, scope, deployment = current
         family_id, campaign_id, mode, epoch, credential_epoch = identity
         if (
@@ -284,18 +340,13 @@ def issue_family(request, service, identity, *, code=None, token=None):
         request.session["family"] = str(family_id)
         request.session.set_expiry(now + FAMILY_ABSOLUTE)
         request.session.save()
-        row = FamilySession.objects.create(
-            session_id=request.session.session_key,
-            family_id=family_id,
-            mode=mode,
-            rehearsal_epoch_id=epoch,
-            credential_epoch=credential_epoch,
-            authenticated_at=now,
-            last_activity_at=now,
-            expires_at=now + FAMILY_ABSOLUTE,
+        row_id = _mint_session(
+            request.session.session_key, family_id, digests=digests, token=token
         )
+        if row_id is None:
+            raise _SessionRefused
         AuditEvent.objects.create(
-            event_type="family_login", subject_id=row.pk, actor_id=family_id
+            event_type="family_login", subject_id=row_id, actor_id=family_id
         )
         rotate_token(request)
         return True

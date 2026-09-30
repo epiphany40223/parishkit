@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection
-from django.utils import timezone
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
@@ -26,7 +25,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import runtime_grants
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
 
@@ -369,10 +368,7 @@ def test_stale_configuration_and_authentication_deny_secret_intake(
         ],
     )
     assert save_key(browser, SECRET, page).status_code == 409
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.sessions.database_now",
-        lambda: timezone.now() + timedelta(minutes=6),
-    )
+    stale_sign_in()
     assert save_key(browser, SECRET).status_code == 403
     assert not SecretReplacementRequest.objects.exists()
 

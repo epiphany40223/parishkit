@@ -34,6 +34,8 @@ from parishkit.stewardship.storage import (
     mutate_record,
 )
 
+from .auth_builders import unguarded
+
 
 @pytest.fixture
 def portal_session(db):
@@ -42,13 +44,15 @@ def portal_session(db):
     store["principal_id"] = str(uuid4())
     store.save()
     instant = datetime(2026, 9, 8, 12, tzinfo=UTC)
-    return PortalSession.objects.create(
-        session_id=store.session_key,
-        principal_id=uuid4(),
-        authenticated_at=instant,
-        last_activity_at=instant,
-        expires_at=instant + timedelta(hours=1),
-    )
+    # Storage semantics, not Admin admission: the principal is synthetic.
+    with unguarded():
+        return PortalSession.objects.create(
+            session_id=store.session_key,
+            principal_id=uuid4(),
+            authenticated_at=instant,
+            last_activity_at=instant,
+            expires_at=instant + timedelta(hours=1),
+        )
 
 
 def test_durable_sessions_and_safe_audit_references(portal_session):
@@ -283,7 +287,11 @@ def test_explicit_existing_uuid_never_overwrites_audit(db):
 
 def test_duplicate_session_metadata_is_rejected(portal_session):
     """There is only one attribution record per Django session."""
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        unguarded(),
+        pytest.raises(IntegrityError),
+        transaction.atomic(),
+    ):
         PortalSession.objects.create(
             session_id=portal_session.session_id,
             principal_id=uuid4(),
@@ -822,13 +830,14 @@ def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
     monkeypatch.setattr(
         "django.utils.timezone.now", lambda: datetime(2100, 1, 1, tzinfo=UTC)
     )
-    record = PortalSession.objects.create(
-        session_id=key,
-        principal_id=uuid4(),
-        authenticated_at=datetime(2026, 1, 1, tzinfo=UTC),
-        last_activity_at=datetime(2026, 1, 1, tzinfo=UTC),
-        expires_at=datetime(2026, 1, 2, tzinfo=UTC),
-    )
+    with unguarded():
+        record = PortalSession.objects.create(
+            session_id=key,
+            principal_id=uuid4(),
+            authenticated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            last_activity_at=datetime(2026, 1, 1, tzinfo=UTC),
+            expires_at=datetime(2026, 1, 2, tzinfo=UTC),
+        )
     event = AuditEvent.objects.create(event_type="server_clock")
     assert record.created_at == record.updated_at
     assert record.created_at.year < 2100
@@ -896,7 +905,6 @@ def test_session_authentication_advances_only_to_a_past_instant(portal_session):
         PortalSession.objects.filter(pk=portal_session.pk).update(
             authenticated_at=future,
             last_activity_at=future,
-            expires_at=future + timedelta(hours=1),
             version=F("version") + 1,
         )
     revoked = later + timedelta(minutes=1)
@@ -961,7 +969,11 @@ def test_activity_after_revocation_is_rejected(portal_session, insert):
     if insert:
         key = portal_session.session_id
         portal_session.delete()
-        with pytest.raises(IntegrityError), transaction.atomic():
+        with (
+            unguarded(),
+            pytest.raises(IntegrityError),
+            transaction.atomic(),
+        ):
             PortalSession.objects.create(
                 session_id=key,
                 principal_id=uuid4(),

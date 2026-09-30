@@ -33,6 +33,7 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 
+from .auth_builders import unguarded
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
@@ -319,7 +320,11 @@ def test_work_gate_and_revoked_actor_close_mutation(response_service):
     PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
     with pytest.raises((PermissionError, ObjectDoesNotExist)):
         edit(harness, admin, join, notes="Disabled")
-    PortalUser.objects.filter(pk=admin).update(disabled=False, version=F("version") + 1)
+    # Re-enabling is refused in SQL (#306); only the owner can undo it.
+    with unguarded():
+        PortalUser.objects.filter(pk=admin).update(
+            disabled=False, version=F("version") + 1
+        )
     # Only the future purge owner's sentinel is synthetic in this disposable DB.
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(

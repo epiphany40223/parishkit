@@ -30,6 +30,7 @@ from parishkit.stewardship.campaigns.rehearsals import (
     token_context,
 )
 
+from .auth_builders import unguarded
 from .campaign_builders import add_draft, campaign_clock
 from .credential_builders import keys, populate
 
@@ -276,16 +277,26 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(
     )
 
 
-def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(
-    family_service, monkeypatch
-):
-    from parishkit.stewardship.accounts import family_authentication
+def backdate_session(minutes):
+    """Age the one Family session instead of moving the clock forward.
 
+    The session guard refuses activity recorded in the future (#306), so a
+    later keepalive is modelled by an earlier sign-in, written as the owner.
+    """
+    shift = timedelta(minutes=minutes)
+    with unguarded():
+        FamilySession.objects.update(
+            authenticated_at=F("authenticated_at") - shift,
+            last_activity_at=F("last_activity_at") - shift,
+            expires_at=F("expires_at") - shift,
+        )
+    return FamilySession.objects.get()
+
+
+def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(family_service):
     client, _ = login(family_service.code)
-    row = FamilySession.objects.get()
+    row = backdate_session(10)
     original = row.last_activity_at
-    instant = original + timedelta(minutes=10)
-    monkeypatch.setattr(family_authentication, "database_now", lambda: instant)
     assert (
         client.post(
             "/family/keepalive", b"", content_type="application/json"
@@ -307,7 +318,7 @@ def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(
     )
     assert response.status_code == 200
     row.refresh_from_db()
-    assert row.last_activity_at == instant
+    assert row.last_activity_at >= original + timedelta(minutes=10)
     version = row.version
     assert (
         client.post(
@@ -327,16 +338,15 @@ def test_keepalive_leaves_the_campaign_row_alone_during_maintenance(
     family_service, monkeypatch
 ):
     """While closed, keepalive refreshes only the session, not FamilyCampaign."""
-    from parishkit.stewardship.accounts import family_authentication, family_maintenance
+    from parishkit.stewardship.accounts import family_maintenance
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
     client, _ = login(family_service.code)
-    row = FamilySession.objects.get()
+    row = backdate_session(10)
     before = FamilyCampaign.objects.values("last_activity_at", "version").get(
         pk=row.family_id
     )
-    instant = row.last_activity_at + timedelta(minutes=10)
-    monkeypatch.setattr(family_authentication, "database_now", lambda: instant)
+    original = row.last_activity_at
     monkeypatch.setattr(
         family_maintenance,
         "current_state",
@@ -350,7 +360,7 @@ def test_keepalive_leaves_the_campaign_row_alone_during_maintenance(
     )
     assert response.status_code == 200
     row.refresh_from_db()
-    assert row.last_activity_at == instant
+    assert row.last_activity_at >= original + timedelta(minutes=10)
     assert (
         FamilyCampaign.objects.values("last_activity_at", "version").get(
             pk=row.family_id

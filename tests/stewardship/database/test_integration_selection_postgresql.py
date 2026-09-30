@@ -27,7 +27,7 @@ from parishkit.stewardship.accounts.request_models import ConfigurationChangeReq
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 
 from . import campaign_builders
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
@@ -293,10 +293,7 @@ def test_selection_rechecks_proof_intent_and_fresh_auth(
             ],
         )
     elif failure == "freshness":
-        monkeypatch.setattr(
-            "parishkit.stewardship.accounts.sessions.database_now",
-            lambda: timezone.now() + timedelta(minutes=6),
-        )
+        stale_sign_in()
     count = ConfigurationChangeRequest.objects.count()
     data = {"action": "confirm", "preview": preview}
     if failure == "hidden":

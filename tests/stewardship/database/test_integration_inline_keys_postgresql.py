@@ -26,6 +26,7 @@ from parishkit.stewardship.accounts.key_files import (
     read_private,
     write_private,
 )
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.audit.models import AuditEvent
@@ -33,7 +34,7 @@ from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
 from . import campaign_builders
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
@@ -471,12 +472,9 @@ def test_worker_acknowledges_only_bytes_it_reads_from_its_mount(working, tmp_pat
     assert working["published"] == []
 
 
-def test_stale_sign_in_gets_step_up_and_stages_nothing(working, monkeypatch):
+def test_stale_sign_in_gets_step_up_and_stages_nothing(working):
     """A key is never read or sealed without a recent Google sign-in."""
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.sessions.database_now",
-        lambda: timezone.now() + timedelta(minutes=6),
-    )
+    stale_sign_in()
     response = save(working)
     assert response.status_code == 403
     assert CANDIDATE not in response.content
@@ -492,16 +490,13 @@ def test_blank_key_keeps_the_settings_preview(working):
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_stale_key_save_page_says_nothing_was_done(working, monkeypatch):
+def test_stale_key_save_page_says_nothing_was_done(working):
     """A browser save refused for a stale sign-in explains itself plainly.
 
     The key is never kept for after the step-up (secrets are not stored), so
     the page says nothing was done and the key must be entered again.
     """
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.sessions.database_now",
-        lambda: timezone.now() + timedelta(minutes=6),
-    )
+    stale_sign_in()
     browser, store = working["browser"], working["service"].store
     page = browser.get(URL)
     assert not page.context["fresh"]
@@ -540,7 +535,6 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
     window is refused like any other expired login.
     """
     from parishkit.stewardship.accounts import sessions
-    from parishkit.stewardship.accounts.models import PortalSession
 
     browser = working["browser"]
     assert save(working).status_code == 302

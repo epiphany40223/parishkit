@@ -144,7 +144,9 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_secret_request",
         "stewardship_secret_checkpoint",
         "stewardship_credential_consumer_ack",
-        "stewardship_family_session",
+        # No stewardship_family_session: only stewardship_family_login_v1
+        # creates a Family session, after proving the presented credential
+        # (#306 M3). Web keeps UPDATE for activity, presence and revocation.
         "stewardship_audit_event",
         "stewardship_audit_context",
         "stewardship_operational_log",
@@ -206,6 +208,20 @@ DOWNLOAD_READ_TABLES = frozenset(
         "stewardship_portal_session",
     }
 )
+
+
+# SECURITY DEFINER routines a login may call directly, as PostgreSQL's
+# oidvectortypes spells their signatures. Admission otherwise refuses every
+# definer EXECUTE, and database-grants grants exactly these.
+FAMILY_LOGIN_FUNCTION = (
+    "stewardship_family_login_v1(character varying, uuid, uuid, jsonb, text)"
+)
+
+
+def runtime_functions(role, *, target=None):
+    """Return the definer routines this login may EXECUTE (web's Family login)."""
+    role = _identity_role(role, target)
+    return frozenset({FAMILY_LOGIN_FUNCTION} if role is ServiceRole.WEB else ())
 
 
 def _identity_role(role, target):
@@ -562,7 +578,7 @@ def admit_runtime_database(configuration):
         allowed = {table: set(grants) for table, grants in tables.items()}
         for table, grants in columns.items():
             allowed.setdefault(table, set()).update(grants)
-        admit_grants(allowed)
+        admit_grants(allowed, functions=runtime_functions(role))
         if role is ServiceRole.WEB:
             admit_web_staging_grants()
         from django.db import connection

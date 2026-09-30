@@ -298,7 +298,7 @@ def provision_roles(configuration, deployment_id):
 
 def provision_grants(configuration, deployment_id):
     """Grant only the explicit foundation registry after its migrations exist."""
-    from .runtime_grants import runtime_grants
+    from .runtime_grants import runtime_functions, runtime_grants
 
     if not isinstance(deployment_id, UUID):
         raise ConfigError("Database provisioning requires a deployment UUID.")
@@ -351,6 +351,13 @@ def provision_grants(configuration, deployment_id):
                             sql.Identifier(login),
                         )
                     )
+            # Signatures are fixed registry constants, never caller input.
+            for function in sorted(runtime_functions(role, target=target)):
+                cursor.execute(
+                    sql.SQL("GRANT EXECUTE ON FUNCTION public.{} TO {}").format(
+                        sql.SQL(function), sql.Identifier(login)
+                    )
+                )
     return {"database_grants_provisioned": True}
 
 

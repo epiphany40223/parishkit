@@ -9,7 +9,7 @@ from django.db.models import F
 
 from parishkit.stewardship.accounts.presence import visible_sessions
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.accounts.sessions import FAMILY_ABSOLUTE, database_now
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilySession
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
@@ -17,7 +17,7 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address
 from ..test_source_corpus import source
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change
 from .credential_builders import populate
 from .test_background_grants_postgresql import task_login
@@ -257,16 +257,18 @@ def test_presence_sql_rejects_idle_renewal_and_clamps_timestamp(family_service):
 
 
 @pytest.mark.parametrize("idle_minutes", [45, 61])
-def test_presence_uses_the_family_idle_deadline(
-    family_service, monkeypatch, idle_minutes
-):
+def test_presence_uses_the_family_idle_deadline(family_service, idle_minutes):
     """The real SQL clock accepts 45-minute idle sessions but refuses expired ones."""
-    from parishkit.stewardship.accounts import family_authentication
-
     instant = database_now() - timedelta(minutes=idle_minutes)
-    with monkeypatch.context() as patch:
-        patch.setattr(family_authentication, "database_now", lambda: instant)
-        browser, _ = login(family_service.code)
+    browser, _ = login(family_service.code)
+    # SQL stamps a new session with its own clock (#306 M3), so back-date
+    # the whole session as the owner to model one idle since `instant`.
+    with unguarded():
+        FamilySession.objects.update(
+            authenticated_at=instant,
+            last_activity_at=instant,
+            expires_at=instant + FAMILY_ABSOLUTE,
+        )
     row = FamilySession.objects.get()
     assert row.last_activity_at == instant
     with task_login(ServiceRole.WEB):

@@ -314,6 +314,8 @@ The #308 review then added `(created_at, id)` indexes on
 `stewardship_audit_event` and `stewardship_operational_log`, which System
 logs and its export read newest first, so no page sorts either whole table
 (Indexes digest only).
+Ministry name repair (#345) then added the `source_ministry_name_repaired`
+operational event (the operational event check; Constraints digest only).
 Export admission (#147) then stopped taking the global work-order lock: it
 takes a per-campaign export lock, which the work gate, lifecycle transition,
 configuration activation and go-live gate paths also take (one new lock
@@ -324,16 +326,30 @@ login that executes each task type: a new task login guard replaced the
 scheduler-only cancel guard, web may cancel only a waiting cleanup, and a
 login may create only a known type (one new mapping function and one
 replaced trigger function and trigger; Functions and Triggers digests).
+The #306 review (M2) then guarded the Admin identity rows the SQL Admin
+checks trust: an Admin session insert needs a live principal with a current
+Admin rule and at most the 12-hour absolute limit, its deadline is
+immutable, activity never moves into the future, disabling a portal user is
+one-way, and its email or hosted domain changes only with a re-verification
+stamped in the same transaction (two guard bodies and one new trigger;
+Functions and Triggers digests).
+The same review (M3) moved Family session creation into SQL: the SECURITY
+DEFINER `stewardship_family_login_v1` re-proves the presented code MACs or
+personal link token against the stored digests under the Family admission
+rules and creates the session itself, and web lost INSERT on
+`stewardship_family_session` for EXECUTE on that one function, and Family
+session activity can no longer be recorded in the future (one new function
+and one guard body; Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `5ee21d05` |
+| Constraints | 3398 | `d7b9c846` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 606 | `271adefa` |
-| Triggers | 556 | `e8cb79b7` |
+| Functions | 608 | `fb68052b` |
+| Triggers | 557 | `c9546d79` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

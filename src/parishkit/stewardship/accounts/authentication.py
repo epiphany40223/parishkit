@@ -5,11 +5,13 @@ This application deliberately exposes none of its signup/password/connect/token
 endpoints and never persists SocialAccount, SocialToken or Django User objects.
 """
 
+import logging
 import secrets
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
 
 import jwt
 from allauth.core.exceptions import ImmediateHttpResponse
@@ -24,7 +26,7 @@ from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 from django.conf import settings
 from django.core.exceptions import MultipleObjectsReturned
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import F
 from django.http import HttpResponseRedirect
 from django.middleware.csrf import rotate_token
@@ -298,6 +300,22 @@ class GoogleCallback(OAuth2CallbackView):
         return state, response
 
 
+LOGGER = logging.getLogger(__name__)
+
+# The message and SQLSTATE of stewardship_portal_session_admission_v1's
+# refusal (schema/functions.sql); only that refusal becomes a sign-in denial.
+_ADMISSION_REFUSAL = "Admin session requires a current authorized principal"
+
+
+def _session_admission_refused(error):
+    """Say whether an IntegrityError is the Admin session insert guard's refusal."""
+    cause = error.__cause__
+    message = getattr(getattr(cause, "diag", None), "message_primary", None) or ""
+    return getattr(cause, "sqlstate", None) == "23514" and message.startswith(
+        _ADMISSION_REFUSAL
+    )
+
+
 def complete_identity(request, subject, email, hosted, *, authenticated_at):
     """Only a verified Google identity can be created or refresh its email claims.
 
@@ -347,22 +365,41 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
         if principal is not None and principal.roles:
-            if (
-                reauthenticate_admin(
-                    request,
-                    user.pk,
-                    store=service.store,
-                    authenticated_at=authenticated_at,
+            try:
+                if (
+                    reauthenticate_admin(
+                        request,
+                        user.pk,
+                        store=service.store,
+                        authenticated_at=authenticated_at,
+                    )
+                    is None
+                ):
+                    issue_admin(
+                        request,
+                        user.pk,
+                        store=service.store,
+                        authenticated_at=authenticated_at,
+                    )
+            except IntegrityError as error:
+                # The SQL session guard (#306) re-checks the Admin rule at the
+                # insert. A policy activation that removed it after
+                # current_principal ends in the ordinary denial, not a 500;
+                # the insert's savepoint has already rolled back. Any other
+                # integrity violation is a bug and still fails loudly.
+                if not _session_admission_refused(error):
+                    LOGGER.warning(
+                        "Admin sign-in failed an unexpected database invariant"
+                    )
+                    raise
+                LOGGER.warning(
+                    "Admin sign-in denied: the SQL session guard found no "
+                    "current Admin rule"
                 )
-                is None
-            ):
-                issue_admin(
-                    request,
-                    user.pk,
-                    store=service.store,
-                    authenticated_at=authenticated_at,
-                )
-            rotate_token(request)
+                request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+                principal = None
+            else:
+                rotate_token(request)
     if principal is None or not principal.roles:
         delay = record_failure(request, identity=fingerprint, counter=counter)
         return denial(status=429 if delay else 403, retry=delay)

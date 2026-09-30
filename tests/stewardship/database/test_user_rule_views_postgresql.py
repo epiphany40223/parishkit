@@ -27,7 +27,7 @@ from parishkit.stewardship.runtime_process import next_configuration_request
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..policy_factory import address, assignment, domain
-from .auth_builders import auth_runtime, signed_in
+from .auth_builders import auth_runtime, signed_in, unguarded
 from .test_background_grants_postgresql import task_login
 from .test_configuration_service_postgresql import (
     as_config_installer,
@@ -232,9 +232,11 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
     assert "grant@example.org" not in rules(store)
     # The same for an actor whose Administrator rule another Administrator
     # removed meanwhile: the base moved, so it is stale before it is anything.
-    PortalUser.objects.filter(pk=admin.pk).update(
-        disabled=False, version=F("version") + 1
-    )
+    # Re-enabling is refused in SQL (#306); only the owner can undo it.
+    with unguarded():
+        PortalUser.objects.filter(pk=admin.pk).update(
+            disabled=False, version=F("version") + 1
+        )
     with web():
         signed = token(
             post(
@@ -330,10 +332,14 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
             return install_request(store, request_id=request.pk, correlation_id=uuid4())
 
     def set_disabled(value):
-        """Flip the confirming Administrator's identity."""
-        PortalUser.objects.filter(pk=admin.pk).update(
-            disabled=value, version=F("version") + 1
-        )
+        """Flip the confirming Administrator's identity.
+
+        Re-enabling is refused in SQL (#306), so only the owner can undo it.
+        """
+        with unguarded():
+            PortalUser.objects.filter(pk=admin.pk).update(
+                disabled=value, version=F("version") + 1
+            )
 
     # The plain activation-time read needs only the installer's SELECT grant.
     assert install(queued("plain@example.org")).state == "applied"

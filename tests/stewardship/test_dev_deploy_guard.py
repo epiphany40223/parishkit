@@ -33,3 +33,14 @@ def test_the_writer_guard_check_runs_before_anything_changes():
     assert "exit 1" in text[refusal : text.index("\nfi\n", refusal)]
     for step in ("docker build", "docker push", '"${dc[@]}" stop'):
         assert check < text.index(step), step
+
+
+def test_the_family_login_check_runs_before_anything_changes():
+    """A host without the #306 Family login SQL is refused before any step."""
+    text = SCRIPT.read_text()
+    check = text.index("to_regprocedure('public.stewardship_family_login_v1(")
+    assert "NOT has_table_privilege('pk_stewardship_web'" in text[check:]
+    refusal = text.index('if [ "$family_login" != t ]; then', check)
+    assert "exit 1" in text[refusal : text.index("\nfi\n", refusal)]
+    for step in ("docker build", "docker push", '"${dc[@]}" stop'):
+        assert check < text.index(step), step

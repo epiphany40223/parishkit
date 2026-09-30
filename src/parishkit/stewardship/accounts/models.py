@@ -85,9 +85,12 @@ class PortalSession(MutableRecord):
     moves backwards, and the SQL guard also refuses a future instant.
     """
 
+    # The absolute deadline is fixed at issue; the SQL guard also refuses an
+    # insert whose deadline exceeds the 12-hour limit (#306 M2).
     immutable_fields = MutableRecord.immutable_fields + (
         "principal_id",
         "session_id",
+        "expires_at",
     )
     write_once_fields = ("revoked_at",)
     forward_only_fields = ("authenticated_at",)

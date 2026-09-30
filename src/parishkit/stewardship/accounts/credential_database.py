@@ -97,12 +97,14 @@ def admit_installer_database(target):
             raise ConfigError("Credential installer metadata grants are excessive.")
 
 
-def admit_grants(allowed, *, database=None):
+def admit_grants(allowed, *, database=None, functions=frozenset()):
     """Inspect all application schemas, including indirect definer authority.
 
     System routines and ordinary SECURITY INVOKER helpers do not add authority:
     their table access is checked as this same restricted login. Definer routines,
-    sequence privileges, schema creation and relations outside public are denied.
+    sequence privileges, schema creation and relations outside public are denied,
+    except the public definer ``functions`` named by signature, which this
+    login must then hold EXECUTE on (web's Family login, #306 M3).
     """
     database = connection if database is None else database
     with database.cursor() as cursor:
@@ -125,10 +127,21 @@ def admit_grants(allowed, *, database=None):
                 or privilege not in allowed.get(table, set())
             ):
                 raise ConfigError("Installer database grants are excessive.")
+        signature = "p.proname||'('||oidvectortypes(p.proargtypes)||')'"
+        cursor.execute(
+            "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
+            "ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef "
+            f"AND {signature}=ANY(%s) "
+            "AND has_function_privilege(current_user,p.oid,'EXECUTE')",
+            [sorted(functions)],
+        )
+        if cursor.fetchone()[0] != len(functions):
+            raise ConfigError("Required database function grants are missing.")
         cursor.execute(
             "SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n "
             "ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' "
             "AND n.nspname<>'information_schema' AND p.prosecdef "
+            f"AND NOT (n.nspname='public' AND {signature}=ANY(%s)) "
             "AND has_function_privilege(current_user,p.oid,'EXECUTE')) OR "
             "EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n "
             "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
@@ -137,7 +150,8 @@ def admit_grants(allowed, *, database=None):
             "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
             "AND n.nspname<>'information_schema' "
             "AND has_schema_privilege(current_user,n.oid,'CREATE')) OR "
-            "has_database_privilege(current_user,current_database(),'CREATE')"
+            "has_database_privilege(current_user,current_database(),'CREATE')",
+            [sorted(functions)],
         )
         if cursor.fetchone()[0]:
             raise ConfigError("Installer database grants are excessive.")
