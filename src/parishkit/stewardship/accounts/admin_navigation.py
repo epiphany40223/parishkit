@@ -18,6 +18,8 @@ from functools import cache
 from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
+
 NAMESPACE = "admin"
 
 
@@ -350,7 +352,13 @@ def place(request, **values):
 
 
 def placement(request):
-    """The placement a view recorded for this request, or None."""
+    """The placement a view recorded for this request, or None.
+
+    An error page ignores it: a view may record its step and then fail a
+    later access recheck, and the refusal must not show that step.
+    """
+    if getattr(request, ERROR_PAGE_ATTRIBUTE, False):
+        return None
     return getattr(request, PLACEMENT_ATTRIBUTE, None)
 
 

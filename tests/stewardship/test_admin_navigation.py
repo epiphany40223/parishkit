@@ -452,6 +452,17 @@ def test_a_sidebar_page_is_linked_only_while_the_sidebar_offers_it(offered):
     assert navigation.build(match, items, other)[1][-2]["url"] is None
 
 
+def test_an_error_page_shows_no_step_or_placed_trail():
+    """A view that recorded a step and then failed a recheck shows neither."""
+    from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
+
+    request = SimpleNamespace()
+    navigation.place(request, flow="go_live", step="confirm")
+    assert navigation.placement(request).step == "confirm"
+    setattr(request, ERROR_PAGE_ATTRIBUTE, True)
+    assert navigation.placement(request) is None
+
+
 def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
     """An unknown target places nothing, so the trail and Return stop there."""
     from parishkit.stewardship.accounts.integration_views import place_key_page

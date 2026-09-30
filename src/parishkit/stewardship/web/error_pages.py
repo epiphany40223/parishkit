@@ -105,8 +105,15 @@ def _back_path(request):
     return path
 
 
+# Set on a request whose response became an error page, so the Admin chrome
+# drops the step indicator and placed trail the failed view recorded
+# (accounts.admin_navigation): a refusal is not a step of any flow.
+ERROR_PAGE_ATTRIBUTE = "_stewardship_error_page"
+
+
 def error_page(request, response):
     """Render a typed error response's closed messages as an HTML page."""
+    setattr(request, ERROR_PAGE_ATTRIBUTE, True)
     errors = response.stewardship_errors
     admin = is_admin(request)
     code = errors[0].code
