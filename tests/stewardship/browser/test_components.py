@@ -9,7 +9,7 @@ from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
 from .conftest import NOW, load_collections
-from .waits import visible
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -43,6 +43,8 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
     page, component_origin, clock_skew_hours
 ):
     """Visible-page polling carries only CSRF and stops at local deadlines."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW + timedelta(hours=clock_skew_hours))
     requests = []
 
@@ -68,10 +70,7 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
 
     page.route("**/admin/setup/source/*?format=json", observe)
     page.goto(component_origin + "/setup-source-progress")
-    page.wait_for_function(
-        "() => document.querySelector('[data-task-counts]')"
-        ".textContent.includes('1,234')"
-    )
+    expect(page.locator("[data-task-counts]")).to_contain_text("1,234")
     assert page.locator("[data-task-counts]").inner_text() == "1,234 of 5,000 (25%)"
     visible(page.locator("[data-load-records]"))
     assert "Done" in page.locator('[data-load-phase="fetching"]').inner_text()
@@ -97,6 +96,8 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
 
 def test_setup_progress_terminal_response_stops_automatic_posts(page, component_origin):
     """Expired setup does not look successful or keep sending renewal requests."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     requests = []
 
@@ -122,8 +123,8 @@ def test_setup_progress_terminal_response_stops_automatic_posts(page, component_
 
     page.route("**/admin/setup/source/*?format=json", expired)
     page.goto(component_origin + "/setup-source-progress")
-    page.wait_for_function(
-        "() => document.querySelector('[data-task-state]').textContent === 'cancelled'"
+    expect(page.locator("[data-task-state]")).to_have_js_property(
+        "textContent", "cancelled"
     )
     page.clock.fast_forward(60000)
     assert len(requests) == 1
@@ -140,6 +141,8 @@ def test_setup_progress_shows_each_collection_then_offers_continue(
     page, component_origin
 ):
     """The download lists finished collections; completion reveals Continue."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     state = {"done": False}
 
@@ -169,10 +172,7 @@ def test_setup_progress_shows_each_collection_then_offers_continue(
 
     page.route("**/admin/setup/source/*?format=json", respond)
     page.goto(component_origin + "/setup-source-progress")
-    page.wait_for_function(
-        "() => document.querySelector('[data-progress-elapsed]')"
-        ".textContent.includes('1 min')"
-    )
+    expect(page.locator("[data-progress-elapsed]")).to_contain_text("1 min")
     assert "downloading" in page.locator("[data-progress-summary]").inner_text()
     assert "3 seconds ago" in page.locator("[data-progress-quiet]").inner_text()
     families = page.locator('[data-collection="families"]')
@@ -188,9 +188,7 @@ def test_setup_progress_shows_each_collection_then_offers_continue(
     state["done"] = True
     with page.expect_response("**/admin/setup/source/*?format=json"):
         page.clock.fast_forward(15000)
-    page.wait_for_function(
-        "() => !document.querySelector('[data-progress-done]').hidden"
-    )
+    expect(page.locator("[data-progress-done]")).to_have_js_property("hidden", False)
     assert (
         "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
     )
@@ -244,7 +242,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
     # Chromium schedules a navigation before CSP cancels it; do not wait for
     # that nonexistent navigation, but do wait for the actual violation event.
     page.get_by_role("button", name="Sign in with Google").click(no_wait_after=True)
-    page.wait_for_function("() => window.formViolations.includes('form-action')")
+    eventually(page, "() => window.formViolations.includes('form-action')")
     assert requests == []
     assert page.url == component_origin + "/login"
 
@@ -516,7 +514,7 @@ def test_activity_keepalive_is_empty_csrf_protected_and_bounded(page, component_
     page.goto(component_origin + "/family")
     page.keyboard.press("Tab")
     page.clock.fast_forward(6 * 60 * 1000)
-    page.wait_for_function("document.readyState === 'complete'")
+    eventually(page, "() => document.readyState", "complete")
     assert len(attempts) == 1
     assert attempts[0].method == "POST" and not attempts[0].post_data
     assert attempts[0].headers["x-csrftoken"] == "a" * 64
@@ -647,7 +645,7 @@ def test_admin_dialog_defers_to_activity_in_another_tab(page, component_origin):
     page.route("**/admin/session/status", status)
     page.goto(component_origin + "/home")
     page.clock.fast_forward(56 * 60 * 1000)
-    page.wait_for_function("() => true")
+    page.evaluate("() => true")  # one round trip after the clock jump
     expect(page.locator("dialog.session-dialog")).to_be_hidden()
     assert statuses and all(request.method == "GET" for request in statuses)
 
@@ -808,6 +806,8 @@ def test_admin_presence_poll_is_passive_and_shows_service_failure(
     page, component_origin
 ):
     """Header polling is read-only and a failure is not represented as zero presence."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     requests = []
 
@@ -823,14 +823,14 @@ def test_admin_presence_poll_is_passive_and_shows_service_failure(
     page.route("**/admin/presence?format=count", observe)
     with page.expect_response("**/admin/presence?format=count"):
         page.goto(component_origin + "/home")
-    page.wait_for_function(
-        "() => document.querySelector('[data-presence-count]').textContent === '1,234'"
+    expect(page.locator("[data-presence-count]")).to_have_js_property(
+        "textContent", "1,234"
     )
     assert requests[0].method == "GET" and not requests[0].post_data
     with page.expect_response("**/admin/presence?format=count"):
         page.clock.fast_forward(30000)
-    page.wait_for_function(
-        "() => !document.querySelector('[data-presence-unavailable]').hidden"
+    expect(page.locator("[data-presence-unavailable]")).to_have_js_property(
+        "hidden", False
     )
     assert page.locator("[data-presence-count]").inner_text() == "1,234"
 
@@ -937,6 +937,8 @@ def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_ori
 @pytest.mark.parametrize("width", [390, 1280])
 def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin, width):
     """Sign out ends the menu; on phones it sits behind the Menu disclosure."""
+    from playwright.sync_api import expect
+
     page.route(
         "**/admin/logout",
         lambda route: route.fulfill(content_type="text/html", body="Signed out"),
@@ -947,7 +949,7 @@ def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin,
     button = menu.get_by_role("button", name="Sign out", exact=True)
     if width < 900:
         # Narrow screens collapse the menu until the Admin opens it.
-        page.wait_for_function("!document.querySelector('[data-admin-menu]').open")
+        expect(page.locator("[data-admin-menu]")).to_have_js_property("open", False)
         menu.locator("summary").click()
     visible(button)
     assert page.get_by_role("button", name="Sign out", exact=True).count() == 1

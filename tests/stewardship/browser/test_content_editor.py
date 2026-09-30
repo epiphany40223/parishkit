@@ -187,6 +187,8 @@ def test_generated_plain_text_is_shown_read_only_and_never_silently_dropped(
     page, component_origin
 ):
     """Checked: read-only server preview. Edit: unchecks and keeps the text."""
+    from playwright.sync_api import expect
+
     from parishkit.stewardship.web.content import prepare_content
 
     posted = []
@@ -201,20 +203,14 @@ def test_generated_plain_text_is_shown_read_only_and_never_silently_dropped(
     box = page.locator('input[name="generate_text"]')
     text = page.locator('textarea[name="text"]')
     assert box.is_checked()
-    page.wait_for_function(
-        "() => document.querySelector('textarea[name=\"text\"]').value === "
-        "'Hello Sample Family'"
-    )
+    expect(text).to_have_value("Hello Sample Family")
     assert not text.is_editable()
     visible(page.get_by_text("Generated from the HTML version"))
     # Editing the visual content refreshes the generated preview.
     caret_to_end(page)
     page.keyboard.press("Enter")
     page.keyboard.type("Second paragraph")
-    page.wait_for_function(
-        "() => document.querySelector('textarea[name=\"text\"]').value === "
-        "'Hello Sample Family\\n\\nSecond paragraph'"
-    )
+    expect(text).to_have_value("Hello Sample Family\n\nSecond paragraph")
     # "Edit plain text" unchecks generation and keeps the generated text.
     page.get_by_role("button", name="Edit plain text").click()
     assert not box.is_checked() and text.is_editable()
@@ -242,15 +238,15 @@ def test_generated_plain_text_is_shown_read_only_and_never_silently_dropped(
 
 def test_typing_into_generated_text_switches_to_editing(page, component_origin):
     """A keystroke in the read-only preview unchecks generation, keeping text."""
+    from playwright.sync_api import expect
+
     page.route(
         "**/admin/content/plain-text",
         lambda route: route.fulfill(json={"text": "Hello Sample Family"}),
     )
     page.goto(component_origin + "/content-settings")
     text = page.locator('textarea[name="text"]')
-    page.wait_for_function(
-        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
-    )
+    expect(text).not_to_have_value("")
     text.click()
     text.press("End")
     page.keyboard.press("x")
@@ -276,6 +272,8 @@ def serve_preview(route):
 
 def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_origin):
     """The pane stays visible, redraws from sanitized HTML and never runs script."""
+    from playwright.sync_api import expect
+
     requests = []
 
     def preview(route):
@@ -285,9 +283,7 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
 
     page.route("**/admin/content/plain-text", preview)
     page.goto(component_origin + "/content-settings")
-    page.wait_for_function(
-        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
-    )
+    expect(page.locator('textarea[name="text"]')).not_to_have_value("")
     requests.clear()
     visual = page.locator("[data-visual-content]")
     editor = page.locator("[data-content-editor]")
@@ -301,9 +297,8 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
     visible(visual)
     assert visual.get_attribute("aria-busy") == "true"
     assert editor.get_attribute("contenteditable") == "false"
-    page.wait_for_function(
-        "() => document.querySelector('[data-visual-content]')"
-        ".getAttribute('aria-busy') === 'false'"
+    expect(page.locator("[data-visual-content]")).to_have_attribute(
+        "aria-busy", "false"
     )
     visible(visual)
     assert editor.get_attribute("contenteditable") == "true"
@@ -325,9 +320,8 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
     assert len(requests) == 1
     # Clean source clears the removal notice.
     page.locator('textarea[name="html"]').fill("<p>Hello again</p>")
-    page.wait_for_function(
-        "() => document.querySelector('[data-content-editor]').textContent"
-        " === 'Hello again'"
+    expect(page.locator("[data-content-editor]")).to_have_js_property(
+        "textContent", "Hello again"
     )
     assert not notice.is_visible()
 
@@ -351,6 +345,8 @@ def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
 
 def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_origin):
     """Typing after a request was sent invalidates it; only current answers apply."""
+    from playwright.sync_api import expect
+
     held = []
 
     def hold_first(route):
@@ -363,9 +359,7 @@ def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_o
 
     page.route("**/admin/content/plain-text", hold_first)
     page.goto(component_origin + "/content-settings")
-    page.wait_for_function(
-        "() => document.querySelector('textarea[name=\"text\"]').value !== ''"
-    )
+    expect(page.locator('textarea[name="text"]')).not_to_have_value("")
     page.get_by_text("HTML source", exact=True).click()
     source = page.locator('textarea[name="html"]')
     source.fill("<p>First</p>")
@@ -381,8 +375,8 @@ def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_o
     # The stale answer was ignored: the pane stayed locked and unchanged.
     assert editor.get_attribute("contenteditable") == "false"
     assert "First" not in editor.inner_text()
-    page.wait_for_function(
-        "() => document.querySelector('[data-content-editor]').textContent === 'Second'"
+    expect(page.locator("[data-content-editor]")).to_have_js_property(
+        "textContent", "Second"
     )
     assert editor.get_attribute("contenteditable") == "true"
     assert bold.is_enabled()

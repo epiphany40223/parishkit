@@ -41,6 +41,8 @@ def test_terminal_status_is_passive_and_never_resends(
     page, component_origin, unknown, delivery_channel
 ):
     """Terminal polling stops; uncertainty requires a deliberate checked form."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     requests = []
 
@@ -51,9 +53,8 @@ def test_terminal_status_is_passive_and_never_resends(
 
     page.route(f"**/admin/setup/{delivery_channel}-test/status", respond)
     page.goto(component_origin + f"/setup-{delivery_channel}-test")
-    page.wait_for_function(
-        "label => document.querySelector('[data-mail-state]').textContent === label",
-        arg=status(unknown=unknown)["items"][0]["label"],
+    expect(page.locator("[data-mail-state]")).to_have_js_property(
+        "textContent", status(unknown=unknown)["items"][0]["label"]
     )
     assert len(requests) == 1 and requests[0].method == "GET"
     assert requests[0].post_data is None
