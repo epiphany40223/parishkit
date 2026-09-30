@@ -54,7 +54,10 @@ DESCRIPTIONS = {
     "chair_reconciled": _("Ministry chairs were matched to the new ParishSoft data."),
     "facts_verified": _("Report totals were recalculated and checked."),
     # Sign-in and sessions.
-    "admin_login": _("An Administrator or Staff member signed in with Google."),
+    # The portal session covers every portal role, not just Administrators.
+    "admin_login": _(
+        "A portal user (Administrator, Staff or Ministry leader) signed in with Google."
+    ),
     "admin_step_up": _(
         "An Administrator confirmed their sign-in again for a protected action."
     ),
@@ -211,7 +214,10 @@ DESCRIPTIONS = {
         "Stored keys were re-encrypted with the current encryption key."
     ),
     "limiter_recovered": _("Sign-in attempt limiting is working again."),
-    "admin_timeout": _("An Administrator or Staff session ended after inactivity."),
+    "admin_timeout": _(
+        "A portal user's session (Administrator, Staff or Ministry leader) ended "
+        "after inactivity."
+    ),
     # Families and their links.
     "family_link_invalid": _(
         "Someone opened a Family link that is not valid (mistyped, expired or "
