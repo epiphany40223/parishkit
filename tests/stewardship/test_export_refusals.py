@@ -1,5 +1,10 @@
-"""A reused one-time export form is a 409 on every export page (#388 L3)."""
+"""Export refusals say what happened, not a sign-in denial (#388 L3 and L4).
 
+A reused one-time export form is a 409 on every export page, and an authorized
+download of an expired file is a 410 that points at regeneration.
+"""
+
+import json
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -16,7 +21,10 @@ from parishkit.stewardship.reports import (
     information_export_views,
     ministry_export_views,
 )
-from parishkit.stewardship.reports.export_services import ExportRequestBound
+from parishkit.stewardship.reports.export_services import (
+    ExportExpired,
+    ExportRequestBound,
+)
 
 BOUND = b"already used for a different export"
 # Every create view, native and JSON, that allocates an export from a form key.
@@ -59,3 +67,34 @@ def test_regeneration_form_reuse_is_a_conflict(monkeypatch):
     )
     assert response.status_code == 409 and BOUND in response.content
     assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+
+
+def test_native_expired_download_points_to_regeneration(monkeypatch):
+    """The requester sees expiry and a way back, not the sign-in denial."""
+    identifier = uuid4()
+    _failing(monkeypatch, export_ui, ExportExpired("This export has expired."))
+    response = export_ui.command(
+        RequestFactory().post("/"), identifier, action="download"
+    )
+    assert response.status_code == 410
+    assert response.stewardship_safe_error
+    assert b"file has expired" in response.content
+    assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [(ExportExpired("private detail"), 410), (PermissionError("private detail"), 403)],
+    ids=["expired", "denied"],
+)
+@pytest.mark.parametrize("name", ["download", "download_grant"])
+def test_json_expired_download_is_not_a_denial(monkeypatch, name, error, status):
+    """Expiry is its own answer; every other refusal stays the uniform denial."""
+    _failing(monkeypatch, export_views, error)
+    view = getattr(export_views, name)
+    request = RequestFactory().post("/")
+    response = view(request) if name == "download" else view(request, uuid4())
+    assert response.status_code == status
+    assert b"private detail" not in response.content
+    if status == 410:
+        assert json.loads(response.content) == {"error": export_views.EXPIRED}

@@ -25,6 +25,7 @@ from .directories import REACH, testing_codes_context
 from .export_models import ExportRequest
 from .export_services import (
     ExportConflict,
+    ExportExpired,
     ExportRequestBound,
     admit_campaign,
     authorize,
@@ -56,10 +57,12 @@ def _error(
     status=409,
     busy=False,
     bound=False,
+    expired=False,
 ):
     """Fixed-text recovery never reflects a submitted value or internal failure.
 
-    ``bound`` explains a reused one-time form (``ExportRequestBound``).
+    ``bound`` explains a reused one-time form (``ExportRequestBound``) and
+    ``expired`` an authorized download of an expired file (``ExportExpired``).
     """
     debug_swallowed("report request refused")
     # No request context processors: a database outage must not trigger another
@@ -73,6 +76,7 @@ def _error(
                 "exact_id": exact_id,
                 "busy": busy,
                 "bound": bound,
+                "expired": expired,
                 "temporary": status == 503,
             },
         ),
@@ -316,6 +320,10 @@ def command(request, request_id, *, action):
         # A stale Regenerate form on the status page; the shared notice's
         # "reload the page" means that page here, not the report.
         return _error(request, request_id=request_id, status=409, bound=True)
+    except ExportExpired:
+        # Only the authorized requester reaches this; tell them to regenerate
+        # rather than showing a sign-in denial they cannot act on.
+        return _error(request, request_id=request_id, status=410, expired=True)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

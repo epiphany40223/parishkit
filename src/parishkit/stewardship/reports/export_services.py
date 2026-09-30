@@ -48,6 +48,16 @@ class ExportRequestBound(ValueError):
     """
 
 
+class ExportExpired(PermissionError):
+    """The authorized requester asked to download an export whose file expired.
+
+    Raised only after authorization succeeds, so the message discloses nothing
+    to anyone else. It stays a PermissionError so a caller that does not know
+    it still refuses; views that do know it show the expiry instead of the
+    sign-in denial page.
+    """
+
+
 def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
@@ -374,7 +384,7 @@ def issue_download(store, user_id, request_id):
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.get(request=request)
         if publication.expires_at <= database_now():
-            raise PermissionError("This export has expired.")
+            raise ExportExpired("This export has expired.")
         return ExportDownloadGrant.objects.create(
             publication_id=publication.pk,
             requester_id=user_id,
@@ -393,7 +403,9 @@ def consume_download(store, user_id, grant_id):
         request = publication.request
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
-        if min(grant.expires_at, publication.expires_at) <= database_now():
+        if publication.expires_at <= database_now():
+            raise ExportExpired("This export has expired.")
+        if grant.expires_at <= database_now():
             raise PermissionError("This download grant is unavailable.")
         # A unique constraint wins concurrent uses without exposing grant material
         # in audit. A failed/aborted response consumes its grant, not the artifact.
