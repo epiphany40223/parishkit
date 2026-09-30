@@ -184,3 +184,30 @@ class BackupDriveProbe(models.Model):
                 name="backup_probe_failure_kind",
             ),
         ]
+
+
+# Sets the off-site copy keeps retrying (backup_offsite.CATCH_UP_SETS).
+RECENT_SETS = 3
+
+
+def failed_recent_set():
+    """The failed outcome of one of the newest tried sets, or None.
+
+    The copy moves on past a set whose own copy failed, so the newest outcome
+    row can be a newer set's success while an older set (one damaged on the
+    host, say) keeps failing on every run. Among the ``RECENT_SETS`` newest
+    sets with any outcome, a set whose own newest outcome is ``failed`` is
+    still not off-site: the pages and the off-site alert must say so (#357
+    review M1). A few small reads.
+    """
+    names = (
+        BackupUpload.objects.exclude(set_name=None)
+        .order_by("-set_name")
+        .values_list("set_name", flat=True)
+        .distinct()[:RECENT_SETS]
+    )
+    for name in names:
+        row = BackupUpload.objects.filter(set_name=name).order_by("-created_at").first()
+        if row.state == "failed":
+            return row
+    return None

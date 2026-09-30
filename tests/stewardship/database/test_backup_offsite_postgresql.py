@@ -1,5 +1,6 @@
 """Off-site backup copies: recorded outcomes, access checks, alerts and the web."""
 
+import hashlib
 import json
 import logging
 from datetime import timedelta
@@ -34,7 +35,7 @@ from parishkit.stewardship.jobs.operational_content import IncidentKind
 from parishkit.stewardship.jobs.operational_models import OperationalIncident
 from parishkit.stewardship.jobs.ownership import database_now
 
-from ..drive_fakes import FakeDrive
+from ..drive_fakes import FakeDrive, write_sealed_set
 from . import campaign_builders
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
@@ -54,12 +55,11 @@ def offsite(tmp_path, monkeypatch):
     backups.mkdir(mode=0o700)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
-    for name in SEALED_FILES:
-        (directory / name).write_bytes(b"sealed " + name.encode())
+    write_sealed_set(directory)
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
     monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
-    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, tag: drive)
+    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, **options: drive)
     monkeypatch.setattr(backup_offsite, "set_tag", lambda: drive.tag)
     monkeypatch.setattr(
         backup_offsite, "RuntimeLayout", lambda c: SimpleNamespace(credential=str)
@@ -217,6 +217,142 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     }
 
 
+class BudgetedDrive:
+    """A minimal Drive HTTP API for a real ``DriveClient`` under a copy budget.
+
+    Listings are empty, a folder is created, and each upload's body is read
+    in small blocks while the clock advances, as requests reads a file body
+    while sending it; the budget runs out part way through the first upload.
+    """
+
+    def __init__(self, now, *, block_seconds=3600):
+        self.now = now
+        self.block_seconds = block_seconds
+        self.puts = 0
+
+    def request(self, method, url, **kwargs):
+        from parishkit.stewardship import backup_drive
+
+        from ..test_backup_drive import FakeResponse
+
+        if method == "PUT":
+            self.puts += 1
+            body, sent = kwargs["data"], b""
+            while block := body.read(4):
+                sent += block
+                self.now[0] += self.block_seconds
+            digest = hashlib.md5(sent, usedforsecurity=False).hexdigest()
+            return FakeResponse(
+                200,
+                {"id": "file0123456", "size": str(len(sent)), "md5Checksum": digest},
+            )
+        if method == "POST" and url == backup_drive.UPLOAD:
+            location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+            return FakeResponse(200, headers={"Location": location})
+        if method == "POST":
+            return FakeResponse(200, {"id": "folder0123456"})
+        return FakeResponse(200, {"files": []})
+
+
+def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
+    offsite, monkeypatch
+):
+    """An upload the budget stopped ends the run: one row, no further sets.
+
+    A real client stops sending when the budget runs out and writes the
+    durable budget entry as the backup login; the run records that set only
+    and never starts the next one (#357 review L5a).
+    """
+    from parishkit.stewardship import backup_drive
+
+    new_set(offsite, "20260928T020000Z")
+    now = [0]
+    drive = BudgetedDrive(now)
+    monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: drive,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "failed", "failure_kind": "unavailable"}
+    assert drive.puts == 1
+    row = BackupUpload.objects.get()
+    assert (row.set_name, row.failure_kind) == (offsite.directory.name, "unavailable")
+    entry = OperationalLog.objects.get(event="work_budget_reached")
+    assert entry.context["what"] == "drive_copy_budget"
+    assert entry.context["limit_seconds"] == backup_offsite.COPY_SECONDS
+    assert entry.context["elapsed_seconds"] >= backup_offsite.COPY_SECONDS
+
+
+def test_a_budget_spent_after_every_set_copied_logs_no_stop(offsite, monkeypatch):
+    """Prune runs outside the copy budget (#357 review L4).
+
+    Every set copied; the budget then ran out. Retention must not write a
+    budget entry that reads like a stopped copy.
+    """
+    from parishkit.stewardship import backup_drive
+
+    now = [0]
+    drive = BudgetedDrive(now, block_seconds=0)
+    original = drive.request
+
+    def request(method, url, **kwargs):
+        """The last upload finishes just as the budget runs out."""
+        response = original(method, url, **kwargs)
+        if drive.puts == len(SEALED_FILES):
+            now[0] = backup_offsite.COPY_SECONDS + 60
+        return response
+
+    drive.request = request
+    monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
+    monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: drive,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "uploaded", "sets": 1}
+    assert not OperationalLog.objects.filter(event="work_budget_reached").exists()
+
+
+def test_a_retry_refused_by_the_budget_starts_nothing_more(offsite, caplog):
+    """A retry that would start too late ends the run (#357 review L1).
+
+    Some budget may be left, but not enough for the pause before a retry; the
+    next set must not start with a few seconds to spare.
+    """
+    from parishkit.stewardship.backup_drive import DriveFailure
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    new_set(offsite, "20260928T020000Z")
+    now = [0]
+
+    def unavailable(*args, **kwargs):
+        """Drive fails with seconds left: too few for the retry's pause."""
+        now[0] = backup_offsite.COPY_SECONDS - 5
+        raise DriveFailure("unavailable")
+
+    offsite.drive.upload = unavailable
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: None,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "failed", "failure_kind": "unavailable"}
+    assert offsite.drive.calls.count("create_folder") == 1
+    assert BackupUpload.objects.get().set_name == offsite.directory.name
+    assert [line["timeout"] for line in logged(caplog) if "timeout" in line] == [
+        "drive_retry_budget"
+    ]
+
+
 def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite, caplog):
     """A refused folder records a failure and opens a critical incident."""
     caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
@@ -243,9 +379,7 @@ def new_set(offsite, name):
     """Add one more complete local set and return its directory."""
     directory = offsite.directory.with_name(name)
     directory.mkdir(mode=0o700)
-    for file in SEALED_FILES:
-        (directory / file).write_bytes(name.encode() + b" " + file.encode())
-    return directory
+    return write_sealed_set(directory, name.encode())
 
 
 def record_run(directory):
@@ -385,6 +519,125 @@ def test_transient_failures_are_retried_then_recorded(offsite):
     assert copy(offsite)["state"] == "uploaded"
 
 
+def test_a_failure_of_one_set_does_not_hold_back_the_newer_ones(offsite, caplog):
+    """A damaged older set is recorded as failed and the newest still copies.
+
+    Before, the first failure ended the run, so a set that could never copy
+    blocked every newer set until it left the catch-up window.
+    """
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    newest = new_set(offsite, "20260928T020000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert offsite.drive.sets() == [newest.name]
+    rows = BackupUpload.objects.order_by("created_at").values_list(
+        "state", "set_name", "failure_kind"
+    )
+    assert list(rows) == [
+        ("failed", offsite.directory.name, "verification"),
+        ("uploaded", newest.name, None),
+    ]
+    assert ("backup_set_mismatch", None) in {
+        (line.get("failure_kind"), line.get("drive_failure")) for line in logged(caplog)
+    }
+    # The newest set's success does not hide the older one (#357 review M1):
+    # the page names it and the off-site alert opens.
+    status = offsite_status()
+    assert status.kind == "failed" and offsite.directory.name in str(status.message)
+    assert status.set_name == newest.name
+    observe()
+    assert episode() is not None
+
+
+def test_a_damaged_set_keeps_alerting_across_runs_until_it_copies(offsite):
+    """Each run copies its own new set; the damaged one keeps the alert open.
+
+    A backup makes a new set and then copies, so every run sees the damaged
+    older set fail and its own new set succeed. Only a good copy of the
+    damaged set (or its leaving the catch-up window) resolves the alert.
+    """
+    damaged = offsite.directory / SEALED_FILES[0]
+    original = damaged.read_bytes()
+    damaged.write_bytes(b"damaged on disk")
+    new_set(offsite, "20260928T020000Z")
+    assert copy(offsite)["state"] == "failed"
+    observe()
+    opened = episode()
+    assert opened is not None
+    later = new_set(offsite, "20260928T140000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert BackupUpload.objects.order_by("-created_at").first().set_name == later.name
+    observe()
+    assert episode().pk == opened.pk
+    assert offsite_status().kind == "failed"
+    # The disk is repaired: the next run copies the set and the alert resolves.
+    damaged.write_bytes(original)
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    observe()
+    assert episode() is None
+    assert offsite_status().kind == "uploaded"
+
+
+def test_a_damaged_set_ages_out_of_the_alert_after_three_newer_sets(offsite):
+    """A never-repaired set stops alerting once three newer sets have outcomes.
+
+    The copy stops retrying it when it leaves the three newest local sets,
+    and the alert's window (``failed_recent_set``) matches that.
+    """
+    from parishkit.stewardship.jobs.backup_models import failed_recent_set
+
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    for name in ("20260928T020000Z", "20260928T140000Z"):
+        new_set(offsite, name)
+        assert copy(offsite)["failure_kind"] == "verification"
+        assert failed_recent_set().set_name == offsite.directory.name
+        observe()
+        assert episode() is not None
+    new_set(offsite, "20260929T020000Z")
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert failed_recent_set() is None
+    assert offsite_status().kind == "uploaded"
+    observe()
+    assert episode() is None
+
+
+def test_two_failing_sets_in_the_window_name_the_newer_one(offsite):
+    """With two damaged sets, the page names the newer of them."""
+    from parishkit.stewardship.jobs.backup_models import failed_recent_set
+
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    newer = new_set(offsite, "20260928T020000Z")
+    (newer / SEALED_FILES[0]).write_bytes(b"damaged too")
+    newest = new_set(offsite, "20260928T140000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert offsite.drive.sets() == [newest.name]
+    assert failed_recent_set().set_name == newer.name
+    status = offsite_status()
+    assert status.kind == "failed" and newer.name in str(status.message)
+    assert offsite.directory.name not in str(status.message)
+
+
+def test_a_configuration_failure_stops_the_whole_copy(offsite):
+    """A refused folder would refuse every set alike, so the run stops."""
+    new_set(offsite, "20260928T020000Z")
+    offsite.drive.fail["create_folder"] = ["permission"]
+    assert copy(offsite) == {"state": "failed", "failure_kind": "permission"}
+    assert offsite.drive.calls.count("create_folder") == 1
+    assert BackupUpload.objects.get().failure_kind == "permission"
+
+
 def test_removing_the_destination_records_that_copies_stopped(offsite):
     """A deliberate turn-off clears an old failure without repeating rows."""
     offsite.drive.fail["create_folder"] = ["permission"]
@@ -409,8 +662,9 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
     broken = request_probe(actor, FOLDER, "mail@example.org")
     calls = []
 
-    def client(session):
+    def client(session, request_seconds):
         """The third check's Drive reply is malformed."""
+        assert request_seconds == backup_probes.PROBE_REQUEST_SECONDS
         calls.append(session)
         if len(calls) == 3:
             raise ValueError("malformed provider reply")
@@ -420,11 +674,20 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
         assert latest_probe(actor, database_now()).kind == "pending"
     monkeypatch.setattr(backup_probes, "DriveClient", client)
     with target_login("google_workspace"):
+        # One check per installer pass, so a hung Drive cannot hold one pass
+        # past the installer's heartbeat limit.
+        for _ in range(3):
+            assert (
+                backup_probes.run_pending_probes(
+                    "unused", session_factory=lambda value, subject: None
+                )
+                == 1
+            )
         assert (
             backup_probes.run_pending_probes(
                 "unused", session_factory=lambda value, subject: None
             )
-            == 3
+            == 0
         )
     for row in (first, missing, broken):
         row.refresh_from_db()
@@ -609,7 +872,7 @@ def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch, 
             backup_probes.run_pending_probes("unused", check=lambda: checks.append(1))
             == 1
         )
-    assert checks == [1, 1]
+    assert checks == [1]
     row.refresh_from_db()
     assert (row.state, row.failure_kind) == ("failed", "unanswered")
     # Closing it at its limit is logged with the limit and how long it waited.
@@ -642,6 +905,48 @@ def test_a_check_may_only_name_the_applied_workspace_mailbox(workspace):
         BackupDriveProbe.objects.filter(pk=row.pk).update(
             subject="someone.else@example.org"
         )
+
+
+def test_a_check_queued_across_a_workspace_change_is_a_stale_page(workspace):
+    """The guard's refusal after a concurrent re-configuration says "reload".
+
+    The page named the mailbox user it had read; the applied one changed
+    before the insert, so the refusal is a stale page, not an outage.
+    """
+    from parishkit.stewardship.storage import StaleRecordError
+
+    with task_login(ServiceRole.WEB, exact=True):
+        with pytest.raises(StaleRecordError):
+            request_probe(uuid4(), FOLDER, "old.mailbox@example.org")
+        assert request_probe(uuid4(), FOLDER, "mail@example.org").state == "pending"
+
+
+def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
+    """``smoke --send`` tags its set folder as a real copy would (#305 L3).
+
+    It admits the backup login first; the real login reads the runtime row
+    through pg_read_all_data, which the test role does not model.
+    """
+    from parishkit.stewardship import (
+        backup_commands,
+        operator_commands,
+        runtime_database,
+        smoke,
+    )
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.backup_drive import deployment_tag
+
+    admitted = []
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", admitted.append
+    )
+    monkeypatch.setattr(
+        backup_commands, "_admit_backup_identity", lambda: admitted.append("login")
+    )
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    expected = deployment_tag(SystemConfiguration.objects.get().pk)
+    assert smoke._deployment_tag("configuration") == expected
+    assert admitted == ["configuration", "login"]
 
 
 def test_a_check_needs_an_applied_workspace_integration():
@@ -803,8 +1108,7 @@ def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypat
         result = upload(client, folder_id, directory, names)
         if not later.exists():
             later.mkdir(mode=0o700)
-            for name in SEALED_FILES:
-                (later / name).write_bytes(b"later " + name.encode())
+            write_sealed_set(later, b"later")
         return result
 
     monkeypatch.setattr(backup_offsite, "upload_set", upload_then_back_up)

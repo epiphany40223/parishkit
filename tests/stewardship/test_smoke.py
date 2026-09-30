@@ -466,9 +466,8 @@ def backup_args(tmp_path, **changed):
 def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, capsys):
     """The off-site check runs as the backup profile; --send copies one set."""
     from parishkit.stewardship import backup_drive
-    from parishkit.stewardship.backup_offsite import SEALED_FILES
 
-    from .drive_fakes import FakeDrive
+    from .drive_fakes import FakeDrive, write_sealed_set
 
     drive = FakeDrive("1AbCdEfGhIjKlMnOpQrStUv")
     sessions = []
@@ -477,7 +476,17 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
         "workspace_session",
         lambda value, subject: sessions.append((value, subject)),
     )
-    monkeypatch.setattr(backup_drive, "DriveClient", lambda session: drive)
+    tags = []
+
+    def client(session, **options):
+        """Record the set tag each client is given."""
+        tags.append(options.get("tag"))
+        return drive
+
+    monkeypatch.setattr(backup_drive, "DriveClient", client)
+    # --send reads this deployment's tag from its database; the check alone
+    # never opens the database.
+    monkeypatch.setattr(smoke, "_deployment_tag", lambda c: "deployment-abc")
     monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
     monkeypatch.setattr(smoke, "configure_logging", lambda: None)
     configuration, args = backup_args(tmp_path)
@@ -491,11 +500,12 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     backups = private_directory(configuration.paths["backups"], create=True)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
-    for name in SEALED_FILES:
-        (directory / name).write_bytes(b"sealed")
+    write_sealed_set(directory)
     assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
     assert json.loads(capsys.readouterr().out)["copied_set"] == directory.name
     assert drive.sets() == [directory.name]
+    # The copied set is tagged as this deployment's, like a real copy (#305 L3).
+    assert tags == [None, "deployment-abc"]
     # While a backup's own copy holds the lock, --send copies nothing.
     from parishkit.stewardship.backup_offsite import _copy_lock
 

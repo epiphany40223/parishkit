@@ -23,7 +23,7 @@ deployed consumer and reads only the credential that consumer already mounts:
 | `google_workspace` | `mail-dispatch` | The service account can act as the delegated mailbox (`--delegated-email`) and authenticate to Gmail SMTP | `--send-to ADDRESS` sends one fixed plain-text message |
 | `slack` | `worker` (Slack-configured) | The bot token authenticates | `--channel-id ID --send` posts one fixed message |
 | `google_oauth` | `web` | The OAuth client document has the expected shape; prints the redirect URI to register | none; the human signs in |
-| `backup_drive` | `backup-worker` (`docker compose run`) | The Workspace key, acting as `--delegated-email` with the Drive scope, can write to and trash in the folder at `--folder-link` | `--send` uploads the newest complete local backup set |
+| `backup_drive` | `backup-worker` (`docker compose run`) | The Workspace key, acting as `--delegated-email` with the Drive scope, can write to and trash in the folder at `--folder-link` | `--send` uploads the newest complete local backup set, tagged as this deployment's like a real copy (it also reads the database, as the backup login) |
 
 The result is one JSON line, `{"target": ..., "credential": "valid" |
 "invalid" | "unavailable", "sent": true | false}` (plus `redirect_uri` for

@@ -20,8 +20,17 @@ from .backup_drive import (
 )
 from .observability import Event, emit_failure
 
-# Checks answered per installer pass; each is one small write and trash.
-PER_PASS = 3
+# Checks answered per installer pass. The installer publishes its health
+# heartbeat only between passes, and the container is unhealthy once it is
+# 90 seconds old (probe.MAX_AGE_SECONDS). A check fetches an access token and
+# makes four Drive requests (folder, upload start, upload, trash), each
+# waiting at most PROBE_REQUEST_SECONDS with no connection retries
+# (``workspace_session``), so one check per pass stays around 75 seconds even
+# when Google hangs; only name resolution is outside those timeouts. Passes
+# follow every couple of seconds, so a queue of checks still drains well
+# within PROBE_WAIT.
+PER_PASS = 1
+PROBE_REQUEST_SECONDS = 15
 
 
 def _check(credential_path, row, session_factory):
@@ -40,7 +49,10 @@ def _check(credential_path, row, session_factory):
     except (CryptographicError, ConfigError, OSError):
         return "credential"
     try:
-        client = DriveClient(session_factory(credential, subject=row.subject))
+        client = DriveClient(
+            session_factory(credential, subject=row.subject),
+            request_seconds=PROBE_REQUEST_SECONDS,
+        )
         del credential
         probe(client, row.folder_id)
     except DriveFailure as failure:

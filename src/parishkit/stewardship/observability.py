@@ -76,6 +76,9 @@ class FailureKind(StrEnum):
     BACKUP_OFFSITE = "backup_offsite_failed"
     # A backup sealed to a different public key than the previous run did.
     BACKUP_RECIPIENT_CHANGED = "backup_recipient_changed"
+    # A local set's sealed file no longer matches the SHA-256 its manifest
+    # recorded, so it is not copied off-site.
+    BACKUP_SET_MISMATCH = "backup_set_mismatch"
     # Backup retention skipped a run because the clock looked wrong: the
     # newest set is days after the one before it, or a set is dated after
     # the clock.

@@ -193,13 +193,18 @@ copies exist. The run's JSON line gains
 an `offsite` field (`uploaded`, `failed` with a category, `busy`, or
 `not_configured`), and a failed copy never fails the backup itself: the local
 set is recorded as usual, and the next run copies any of the three newest
-sets not yet in the folder.
+sets not yet in the folder. A failure that belongs to one set (its copy did
+not verify, or Drive stayed unreachable through the retries) is recorded
+and the run moves on to the next set; any other failure (the key, the
+delegation or the folder) stops the run, since every set would fail alike.
 
 The copy never blocks the Admin or Family portals: it runs only in this
 one-shot profile, after the backup has released its startup lease, and
 outside any database transaction, so it holds no work-order or row lock
 while files are in flight. Every request has a timeout, retries are
-bounded, and no new set or retry starts after four hours; a slow or failed
+bounded, and the whole copy stops after four hours, an upload still sending
+included (a network operation stalled at that moment can hold it up to five
+minutes longer); a slow or failed
 copy only records its outcome for the pages and the alert below.
 
 The copy acts as the Google Workspace mail integration's delegated mailbox
@@ -224,7 +229,9 @@ by a Workspace administrator:
 
 The Backups page and the administration home show when a set was last
 copied. The scheduler raises the `backup_offsite_failed` operational incident
-(CRITICAL) when the newest copy attempt failed, or when a backup finished
+(CRITICAL) when the newest copy attempt failed, when one of the three newest
+sets tried still has a failed copy of its own (the Backups page then names
+it, even though newer sets were copied), or when a backup finished
 more than six hours ago and its copy recorded nothing (the copy was killed,
 lost its database connection or could not read the saved folder link before
 it could record an outcome). That holds from the first backup after the
@@ -237,26 +244,41 @@ carries only the category, as `drive_failure` (`authorization` for a
 missing Drive scope, `api_disabled`, `not_found`, `permission`,
 `credential`, `verification`, `unavailable` or `unexpected`).
 
+Before uploading a set, the copy checks each sealed file against the
+SHA-256 the set's manifest recorded when it was written. A set that no
+longer matches (a failing disk, or a file changed by hand) is never
+uploaded: its copy is recorded as `verification`, an ERROR `task_failed`
+line names `failure_kind` `backup_set_mismatch`, and the copy moves on to
+the next set. That set on the host is damaged and cannot be restored;
+check the host's disk, and do not rely on it.
+
 A copy stopped by a time limit is recorded, and shown on the page, as
 `unavailable`, like a Drive outage. What tells the two apart is a WARNING
 `task_failed` line logged when the limit stops the work, whose `timeout`
 names the limit, with `limit_seconds` and `elapsed_seconds`:
-`drive_copy_budget` (no new set starts after four hours),
-`drive_retry_budget` (a retry refused because it would start after those
-four hours), `drive_request` (one Drive request passed its own timeout and
-may still be retried) or `drive_probe_wait` (a **Test access** check waited
-more than five minutes and was closed unanswered; this line comes from the
-Google Workspace credential installer). Today these lines are in the
-process log of the `backup-worker` run (the cron job's output) or of the
-Google Workspace credential installer. Once the timeout logging from
-issue #293 is in the release, each is also written to the durable
+`drive_copy_budget` (the four hours ran out: no new set or request
+starts, a request's timeout is cut to the time left, and an upload still
+sending stops, or a network operation that stalled past them timed out), `drive_retry_budget` (a retry refused because it would
+start after those four hours), `drive_request` (one Drive request passed
+its own timeout and may still be retried) or `drive_probe_wait` (a **Test
+access** check waited more than five minutes and was closed unanswered;
+this line comes from the Google Workspace credential installer). The
+Drive request timeouts (one minute, or five minutes for each wait while
+a file uploads, 15 seconds for a **Test access** check) apply to each
+network operation, not to a whole upload, which only the four-hour budget
+bounds. These lines are in the process
+log of the `backup-worker` run (the cron job's output) or of the Google
+Workspace credential installer, and each is also written to the durable
 operational log in the database, as `work_budget_reached`
 (`drive_copy_budget`, `drive_retry_budget`) or `task_timed_out`
 (`drive_request`, `drive_probe_wait`) with the same limit and elapsed
 seconds.
 
 To check the setup by hand from the host, run the smoke check in the backup
-profile; `--send` also uploads the newest complete local set:
+profile; `--send` also uploads the newest complete local set, into a set
+folder tagged with this deployment's identity as a real copy would, so the
+next backup's copy finds it complete and reuses it and retention prunes it
+like any other:
 
 ```text
 docker compose ... run --rm --entrypoint pk-stewardship backup-worker \
@@ -299,6 +321,22 @@ confirm the off-host copy holds the newest set's three files (for Google
 Drive, the Backups page shows the newest copied set). The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this checklist was checked against the code.
+
+### Checking the kept keys
+
+Every backup succeeds, is copied and stays green whether or not a kept
+private key can open it: only opening a set proves that. After the
+pre-activation drills, check the kept keys every three months, and again
+whenever the `backup_recipient_changed` warning appears or a key copy moves
+to new storage. Download the newest set's folder from the Google Drive
+folder (or copy it from the host) to the machine that holds the keys, and
+run [Restore for real](#restore-for-real) step 2's `backup-open` on
+`database.pgdump.sealed` once per kept copy of the private key, each time
+into a new, empty output directory. Each copy must open the file and print
+the `recipient_fingerprint` recorded with the key. Record the date, the set
+name and which copies opened it in the parish's operations notes, then
+delete the decrypted files. A copy that is refused is not the installed
+public key's pair: find out why before relying on any backup.
 
 ## Restore drill
 

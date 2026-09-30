@@ -14,7 +14,7 @@ from datetime import timedelta
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
-from .backup_models import BackupRun, BackupUpload
+from .backup_models import BackupRun, BackupUpload, failed_recent_set
 from .operational_content import IncidentKind, IncidentLevel
 from .operational_models import OperationalIncident
 from .operational_sources import configured_policy
@@ -24,8 +24,9 @@ from .ownership import database_now
 # The specification's window: a successful backup is required every 24 hours.
 REQUIRED_WITHIN = timedelta(hours=24)
 # A completed backup's off-site copy must record an outcome within this long.
-# The copy stops starting work after four hours (backup_offsite.COPY_SECONDS),
-# so a longer silence means it was killed or lost its database connection.
+# The whole copy stops within five minutes after four hours
+# (backup_offsite.COPY_SECONDS and backup_drive.UPLOAD_SECONDS), so a longer
+# silence means it was killed or lost its database connection.
 OFFSITE_GRACE = timedelta(hours=6)
 
 
@@ -104,7 +105,8 @@ def offsite_failing(instant=None):
 
     The backup profile records one outcome per attempted set, and "disabled"
     when the destination is removed, so an old failure stops counting once a
-    later copy succeeds or copies are turned off. A copy that is killed, or
+    later copy of that set succeeds, the set leaves the copy's catch-up
+    window (``failed_recent_set``), or copies are turned off. A copy that is killed, or
     loses its database connection, before recording anything leaves no row
     for its set: so the newest backup counts as failing when it completed
     more than ``OFFSITE_GRACE`` ago and no outcome names its set. Keying on
@@ -124,7 +126,9 @@ def offsite_failing(instant=None):
         .values_list("state", flat=True)
         .first()
     )
-    if newest == "failed":
+    # A failed older set counts too, while copies are on: its newer sets'
+    # successes do not put it off-site.
+    if newest == "failed" or (newest == "uploaded" and failed_recent_set()):
         return True
     latest_run = (
         BackupRun.objects.order_by("-completed_at")

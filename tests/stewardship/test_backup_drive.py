@@ -20,7 +20,7 @@ from parishkit.stewardship.backup_drive import (
 )
 from parishkit.stewardship.backup_offsite import SEALED_FILES, destination_from
 
-from .drive_fakes import FakeDrive
+from .drive_fakes import FakeDrive, write_sealed_set
 
 FOLDER = "1AbCdEfGhIjKlMnOpQrStUv"
 
@@ -42,9 +42,7 @@ def make_set(root, name="20260927T020000Z", content=b"sealed"):
     """Write one complete local sealed set and return its directory."""
     directory = root / name
     directory.mkdir()
-    for file_name in SEALED_FILES:
-        (directory / file_name).write_bytes(content + file_name.encode())
-    return directory
+    return write_sealed_set(directory, content)
 
 
 @pytest.mark.parametrize(
@@ -124,6 +122,63 @@ def test_mismatched_upload_fails_verification(tmp_path):
     with pytest.raises(DriveFailure) as caught:
         upload_set(drive, FOLDER, make_set(tmp_path), SEALED_FILES)
     assert caught.value.kind == "verification"
+
+
+def logged_kinds(caplog):
+    """The failure_kind of each formatted process-log line so far, with its level."""
+    lines = [
+        json.loads(observability.SafeJsonFormatter().format(record))
+        for record in caplog.records
+    ]
+    return [
+        (line["level"], line["extra"]["failure_kind"])
+        for line in lines
+        if "failure_kind" in line.get("extra", {})
+    ]
+
+
+@pytest.mark.parametrize("damage", ["sealed_file", "manifest", "unreadable"])
+def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
+    tmp_path, caplog, monkeypatch, damage
+):
+    """A damaged local set is refused before any upload, and never retried.
+
+    Uploading it would verify the damaged bytes against themselves and record
+    a good copy (#305 L1).
+    """
+    drive = FakeDrive(FOLDER)
+    directory = make_set(tmp_path)
+    if damage == "sealed_file":
+        (directory / backup.DUMP).write_bytes(b"flipped bits")
+    elif damage == "manifest":
+        (directory / backup.MANIFEST).write_text("not json", encoding="utf-8")
+    else:
+        # An I/O error on a failing disk is per-set damage too (#357 review
+        # L2), not an unexpected failure that stops the whole copy.
+        opened = type(directory).open
+
+        def failing_open(path, *args, **kwargs):
+            if path.name == backup.FILES:
+                raise OSError(5, "Input/output error")
+            return opened(path, *args, **kwargs)
+
+        monkeypatch.setattr(type(directory), "open", failing_open)
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    with pytest.raises(DriveFailure) as caught:
+        upload_set(drive, FOLDER, directory, SEALED_FILES)
+    assert caught.value.kind == "verification"
+    assert not caught.value.retryable
+    assert drive.calls.count("upload") == 0 and not drive.sets()
+    assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
+    attempts = []
+
+    def attempt():
+        attempts.append(1)
+        return upload_set(drive, FOLDER, directory, SEALED_FILES)
+
+    with pytest.raises(DriveFailure):
+        with_retries(attempt, sleep=lambda seconds: None)
+    assert len(attempts) == 1
 
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
@@ -459,6 +514,281 @@ def test_a_request_timeout_is_logged_and_counts_as_unavailable(caplog):
     assert line["limit_seconds"] == backup_drive.REQUEST_SECONDS
     assert line["elapsed_seconds"] >= 0
     assert "slow" not in json.dumps(line)
+
+
+class Clock:
+    """A settable monotonic clock for budget tests."""
+
+    def __init__(self, now=0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def budgeted(session, clock, budget=100):
+    """A client whose copy budget started at time 0 and lasts ``budget``."""
+    return DriveClient(session, deadline=budget, budget_seconds=budget, clock=clock)
+
+
+def test_a_request_timeout_is_cut_to_the_time_left_in_the_budget(caplog):
+    """Near the deadline a request may not wait its full timeout (#305 L5).
+
+    When the shortened timeout fires, the budget is what stopped the copy:
+    it is logged as the copy budget and no retry follows.
+    """
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession(ReadTimeout("slow"))
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(70)).folder(FOLDER)
+    assert session.requests[0][2]["timeout"] == 30
+    assert caught.value.kind == "unavailable" and not caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_copy_budget", 100)
+    assert line["elapsed_seconds"] == 70
+
+
+def test_a_request_far_from_the_deadline_keeps_its_own_timeout(caplog):
+    """Its own timeout firing is still a retryable Drive request timeout."""
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession(ReadTimeout("slow"))
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(0), budget=1000).folder(FOLDER)
+    assert session.requests[0][2]["timeout"] == backup_drive.REQUEST_SECONDS
+    assert caught.value.retryable
+    assert [line["timeout"] for line in timeouts(caplog)] == ["drive_request"]
+
+
+def test_an_upload_that_stalls_past_the_deadline_is_a_budget_stop(tmp_path, caplog):
+    """A stall that outlasts the budget is the budget's stop (#357 review M2).
+
+    The upload started with most of the budget left, so its own per-socket
+    timeout (``UPLOAD_SECONDS``) applied; it sent for a long time and then
+    stalled past the deadline. It is logged as the budget and not retried,
+    and the overrun is at most that short timeout.
+    """
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    path = tmp_path / "file"
+    path.write_bytes(b"x" * 8)
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    clock = Clock(0)
+
+    class Stalling(FakeSession):
+        """Sends for most of the budget, then stalls until the timeout fires."""
+
+        def request(self, method, url, **kwargs):
+            if method == "PUT":
+                clock.now += 950 + kwargs["timeout"]
+            return super().request(method, url, **kwargs)
+
+    session = Stalling(
+        FakeResponse(200, headers={"Location": location}), ReadTimeout("stalled")
+    )
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, clock, budget=1000).upload(path, "file", FOLDER)
+    assert session.requests[1][2]["timeout"] == backup_drive.UPLOAD_SECONDS
+    assert not caught.value.retryable
+    assert [line["timeout"] for line in timeouts(caplog)] == ["drive_copy_budget"]
+    assert backup_drive.UPLOAD_SECONDS <= 300
+
+
+def test_no_request_starts_once_the_budget_is_spent(caplog):
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession()
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(101)).folder(FOLDER)
+    assert session.requests == [] and not caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["elapsed_seconds"]) == ("drive_copy_budget", 101)
+
+
+class ReadingSession(FakeSession):
+    """Reads the upload body in small blocks, as requests does while sending."""
+
+    def __init__(self, clock, *responses):
+        super().__init__(*responses)
+        self.clock = clock
+        self.sent = b""
+
+    def request(self, method, url, **kwargs):
+        body = kwargs.get("data")
+        if hasattr(body, "read"):
+            assert len(body) == int(kwargs["headers"]["Content-Length"])
+            while block := body.read(4):
+                self.sent += block
+                self.clock.now += 10
+        return super().request(method, url, **kwargs)
+
+
+def test_an_upload_stops_sending_when_the_budget_runs_out(tmp_path, caplog):
+    """A long upload started near the deadline does not run past it (#305 L5).
+
+    A requests timeout bounds each socket operation, not the upload; the
+    body itself checks the budget between blocks.
+    """
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    path = tmp_path / "file"
+    path.write_bytes(b"x" * 40)
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    clock = Clock(60)
+    session = ReadingSession(
+        clock,
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "40", "md5Checksum": "m"}),
+    )
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, clock).upload(path, "file", FOLDER)
+    assert not caught.value.retryable
+    assert session.sent == b"x" * 16
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_copy_budget", 100)
+    assert line["elapsed_seconds"] == 100
+    # With time to spare, the same upload sends every byte.
+    clock.now = 0
+    session.responses = [
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "40", "md5Checksum": "m"}),
+    ]
+    session.sent = b""
+    budgeted(session, clock, budget=1000).upload(path, "file", FOLDER)
+    assert session.sent == b"x" * 40
+
+
+def test_an_access_check_waits_at_most_its_short_timeout_per_request():
+    """Every request of a "Test access" check, the upload too, uses the
+    client's short timeout, so a hung Drive cannot stall the installer."""
+    from parishkit.stewardship.backup_probes import PROBE_REQUEST_SECONDS
+
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    session = FakeSession(
+        FakeResponse(
+            200,
+            {
+                "id": FOLDER,
+                "mimeType": backup_drive.FOLDER_MIME,
+                "capabilities": {"canAddChildren": True},
+            },
+        ),
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "marker0123456", "size": "1", "md5Checksum": "m"}),
+        FakeResponse(200, {"id": "marker0123456"}),
+    )
+    probe(DriveClient(session, request_seconds=PROBE_REQUEST_SECONDS), FOLDER)
+    assert [request[2]["timeout"] for request in session.requests] == [
+        PROBE_REQUEST_SECONDS
+    ] * 4
+
+
+def test_a_token_fetch_timeout_is_logged_like_a_request_timeout(caplog):
+    """The access token fetch reports its timeout wrapped as a TransportError.
+
+    It is the same kind of stop as a Drive request's own timeout, so it is
+    logged with its limit and may be retried (#357 review L3).
+    """
+    from google.auth.exceptions import TransportError
+    from requests import ConnectTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    try:
+        raise TransportError("token") from ConnectTimeout("slow")
+    except TransportError as wrapped:
+        failure = wrapped
+    with pytest.raises(DriveFailure) as caught:
+        DriveClient(FakeSession(failure), request_seconds=15).folder(FOLDER)
+    assert caught.value.kind == "unavailable" and caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_request", 15)
+    # Any other transport failure is an outage, not a timeout.
+    caplog.clear()
+    with pytest.raises(DriveFailure):
+        DriveClient(FakeSession(TransportError("refused"))).folder(FOLDER)
+    assert timeouts(caplog) == []
+
+
+def test_the_token_fetch_tries_its_connection_once(monkeypatch):
+    """Google's default token session retries a connection three more times.
+
+    A "Test access" check must fit the installer's heartbeat limit, so the
+    token fetch gets a plain session: one attempt per request timeout.
+    """
+    from google.oauth2 import credentials as oauth_credentials
+
+    from parishkit.google import auth
+    from parishkit.stewardship.accounts import integration_candidates
+
+    monkeypatch.setattr(integration_candidates, "workspace_info", lambda value: {})
+    monkeypatch.setattr(
+        auth,
+        "load_service_account_info",
+        lambda info, **kwargs: oauth_credentials.Credentials(token="t"),
+    )
+    session = backup_drive.workspace_session(b"key", subject="mail@example.org")
+    adapter = session._auth_request.session.get_adapter("https://oauth2.example")
+    assert adapter.max_retries.total == 0
+
+
+def test_the_budget_stops_a_real_requests_upload_mid_body():
+    """Pin the requests/urllib3 behavior the upload budget relies on.
+
+    requests reads a file body in blocks while sending, and an exception
+    raised by the body's read comes out of the request unchanged, not
+    wrapped as a connection error (#357 review L5b). A local server stands
+    in for Drive.
+    """
+    import io
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import requests
+
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers["Content-Length"])
+            data = self.rfile.read(length)
+            received.append(len(data))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):
+            pass  # the aborted upload's half-read body
+
+    server = Server(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/"
+    data = b"x" * (1024 * 1024)
+    try:
+        reads = []
+
+        def remaining():
+            reads.append(1)
+            return 3 - len(reads)
+
+        body = backup_drive._BoundedBody(io.BytesIO(data), len(data), remaining)
+        with pytest.raises(backup_drive._BudgetSpent):
+            requests.put(
+                url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
+            )
+        assert len(reads) == 3
+        body = backup_drive._BoundedBody(io.BytesIO(data), len(data), lambda: 60)
+        response = requests.put(
+            url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
+        )
+        assert response.status_code == 200 and received[-1] == len(data)
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_timeout_and_drive_fields_are_closed_values():

@@ -8,10 +8,16 @@ checks that the Google Workspace credential installer completes.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
-from parishkit.stewardship.jobs.backup_models import BackupDriveProbe, BackupUpload
+from parishkit.stewardship.jobs.backup_models import (
+    BackupDriveProbe,
+    BackupUpload,
+    failed_recent_set,
+)
+from parishkit.stewardship.storage import StaleRecordError
 
 # A finished check (passed, failed or unanswered) is shown on the page for at
 # most this long after it finished, and not at all once settings have been
@@ -50,6 +56,23 @@ def offsite_status():
             None,
             None,
             None,
+        )
+    if newest.state == "uploaded" and (older := failed_recent_set()) is not None:
+        # The newest set is off-site but an older one in the copy's window
+        # is not; the page must not read as all clear.
+        return OffsiteStatus(
+            "failed",
+            _(
+                "The newest backup was copied, but the earlier backup "
+                "%(set)s was not. %(reason)s"
+            )
+            % {
+                "set": older.set_name,
+                "reason": DriveFailure(older.failure_kind).message,
+            },
+            older.created_at,
+            last_copy_at,
+            set_name,
         )
     if newest.state == "uploaded":
         return OffsiteStatus(
@@ -240,7 +263,26 @@ def saved_folder_since(since):
 
 
 def request_probe(actor_id, folder_id, subject):
-    """Queue one access check; the Workspace installer completes it."""
-    return BackupDriveProbe.objects.create(
-        requested_by_id=actor_id, folder_id=folder_id, subject=subject
-    )
+    """Queue one access check; the Workspace installer completes it.
+
+    The SQL guard refuses (23514) a check whose subject is not the applied
+    delegated mailbox user. The page read that user from the configuration
+    a moment before, so a refusal means another Administrator applied new
+    Google Workspace settings in between: a stale page, reported as such
+    ("reload before trying again") rather than as a generic failure. The
+    table's other 23514 checks cannot fail from here: the folder ID was
+    already parsed by ``folder_id_from_url``, and the ORM inserts a pending
+    row. A new CHECK that could fail here needs its own mapping, or it
+    would be misreported as a stale page.
+    """
+    try:
+        with transaction.atomic():
+            return BackupDriveProbe.objects.create(
+                requested_by_id=actor_id, folder_id=folder_id, subject=subject
+            )
+    except IntegrityError as error:
+        if getattr(error.__cause__, "sqlstate", None) == "23514":
+            raise StaleRecordError(
+                "The Google Workspace settings changed; reload the page."
+            ) from None
+        raise

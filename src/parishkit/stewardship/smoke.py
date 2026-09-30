@@ -166,13 +166,39 @@ def check_google_oauth(configuration):
     }
 
 
+def _deployment_tag(configuration):
+    """This deployment's Drive set tag, read as the backup login (``--send``).
+
+    A set folder written with the tag a real copy uses is found complete and
+    reused by the next backup's copy, and retention prunes it like any other
+    (#305 L3). Without it the folder kept the legacy tag: never pruned, and
+    a real copy wrote a second folder of the same name beside it.
+    """
+    from django.db import connection
+
+    from .backup_commands import _admit_backup_identity
+    from .backup_offsite import set_tag
+    from .operator_commands import configure_operator_database
+    from .runtime_database import require_current_schema
+
+    configure_operator_database(configuration)
+    try:
+        _admit_backup_identity()
+        require_current_schema()
+        return set_tag()
+    finally:
+        # The uploads that follow can take a long time; hold no connection.
+        connection.close()
+
+
 def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
     """The backup profile can write to the off-site Drive folder.
 
     Runs in the backup-worker container, which reads the installed Google
     Workspace key through its read-only credentials tree. The check writes
     one small file and trashes it; ``--send`` also copies the newest complete
-    local backup set, exactly as the backup command would.
+    local backup set, exactly as the backup command would, into a set folder
+    tagged with this deployment's identity (so it reads the database too).
     """
     from .backup_drive import (
         DriveClient,
@@ -188,10 +214,12 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
     if configuration.service_role is not ServiceRole.BACKUP_WORKER:
         raise ConfigError("Run the off-site backup check in the backup profile.")
     folder = folder_id_from_url(folder_link or "")
+    tag = {"tag": _deployment_tag(configuration)} if send else {}
     value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
     try:
         client = DriveClient(
-            workspace_session(value, subject=normalized_email(delegated_email))
+            workspace_session(value, subject=normalized_email(delegated_email)),
+            **tag,
         )
         probe(client, folder)
         copied = None
