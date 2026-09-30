@@ -24,8 +24,9 @@ from .ownership import database_now
 # The specification's window: a successful backup is required every 24 hours.
 REQUIRED_WITHIN = timedelta(hours=24)
 # A completed backup's off-site copy must record an outcome within this long.
-# The whole copy stops after four hours (backup_offsite.COPY_SECONDS),
-# so a longer silence means it was killed or lost its database connection.
+# The whole copy stops within five minutes after four hours
+# (backup_offsite.COPY_SECONDS and backup_drive.UPLOAD_SECONDS), so a longer
+# silence means it was killed or lost its database connection.
 OFFSITE_GRACE = timedelta(hours=6)
 
 

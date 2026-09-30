@@ -57,9 +57,12 @@ REQUEST_SECONDS = 60
 PROBE_WAIT = timedelta(minutes=5)
 # A sealed dump can be large; the single-request body upload streams the file.
 # Like every requests timeout this bounds each socket operation (connecting,
-# each send, each wait for a reply), not the whole upload; a copy's budget
-# (``DriveClient``'s ``deadline``) bounds the upload as a whole.
-UPLOAD_SECONDS = 3600
+# each block sent, the wait for Drive's reply), not the whole upload; a copy's
+# budget (``DriveClient``'s ``deadline``) bounds the upload as a whole. Only
+# a stalled operation can outlast the budget, and by at most this long, so it
+# is short: a healthy link never stalls one block, or Drive's reply, for
+# minutes.
+UPLOAD_SECONDS = 300
 
 
 def log_timeout(what, *, limit_seconds, elapsed_seconds):
@@ -242,7 +245,9 @@ class DriveClient:
     ordinary request's timeout. With a ``deadline`` (a ``clock`` value ending
     a budget of ``budget_seconds``), no request starts after it, each
     request's timeout is cut to the time left, and an upload stops sending
-    when it passes, so a copy never runs far past its budget (#305 L5).
+    when it passes (#305 L5). The budget is checked between blocks, so one
+    stalled socket operation can still outlast it by at most the timeout it
+    started with (``UPLOAD_SECONDS`` for an upload, five minutes).
     """
 
     def __init__(
@@ -313,9 +318,10 @@ class DriveClient:
         except _BudgetSpent:
             raise self._budget_spent() from None
         except (Timeout, TimeoutError):
-            if limit < timeout:
+            if limit < timeout or self._remaining() <= 0:
                 # The time left in the budget, not the request's own
-                # timeout, was the limit that fired.
+                # timeout, was the limit that fired, or the budget ran out
+                # while this request stalled: either way the budget stops it.
                 raise self._budget_spent() from None
             log_timeout(
                 "drive_request",

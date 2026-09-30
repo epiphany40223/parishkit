@@ -203,7 +203,8 @@ one-shot profile, after the backup has released its startup lease, and
 outside any database transaction, so it holds no work-order or row lock
 while files are in flight. Every request has a timeout, retries are
 bounded, and the whole copy stops after four hours, an upload still sending
-included; a slow or failed
+included (a network operation stalled at that moment can hold it up to five
+minutes longer); a slow or failed
 copy only records its outcome for the pages and the alert below.
 
 The copy acts as the Google Workspace mail integration's delegated mailbox
@@ -257,14 +258,15 @@ A copy stopped by a time limit is recorded, and shown on the page, as
 names the limit, with `limit_seconds` and `elapsed_seconds`:
 `drive_copy_budget` (the four hours ran out: no new set or request
 starts, a request's timeout is cut to the time left, and an upload still
-sending stops), `drive_retry_budget` (a retry refused because it would
+sending stops, or a network operation that stalled past them timed out), `drive_retry_budget` (a retry refused because it would
 start after those four hours), `drive_request` (one Drive request passed
 its own timeout and may still be retried) or `drive_probe_wait` (a **Test
 access** check waited more than five minutes and was closed unanswered;
 this line comes from the Google Workspace credential installer). The
-Drive request timeouts (one minute, or an hour for each wait while a
-file uploads) apply to each network operation, not to a whole upload,
-which only the four-hour budget bounds. These lines are in the process
+Drive request timeouts (one minute, or five minutes for each wait while
+a file uploads, 15 seconds for a **Test access** check) apply to each
+network operation, not to a whole upload, which only the four-hour budget
+bounds. These lines are in the process
 log of the `backup-worker` run (the cron job's output) or of the Google
 Workspace credential installer, and each is also written to the durable
 operational log in the database, as `work_budget_reached`

@@ -552,6 +552,41 @@ def test_a_request_far_from_the_deadline_keeps_its_own_timeout(caplog):
     assert [line["timeout"] for line in timeouts(caplog)] == ["drive_request"]
 
 
+def test_an_upload_that_stalls_past_the_deadline_is_a_budget_stop(tmp_path, caplog):
+    """A stall that outlasts the budget is the budget's stop (#357 review M2).
+
+    The upload started with most of the budget left, so its own per-socket
+    timeout (``UPLOAD_SECONDS``) applied; it sent for a long time and then
+    stalled past the deadline. It is logged as the budget and not retried,
+    and the overrun is at most that short timeout.
+    """
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    path = tmp_path / "file"
+    path.write_bytes(b"x" * 8)
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    clock = Clock(0)
+
+    class Stalling(FakeSession):
+        """Sends for most of the budget, then stalls until the timeout fires."""
+
+        def request(self, method, url, **kwargs):
+            if method == "PUT":
+                clock.now += 950 + kwargs["timeout"]
+            return super().request(method, url, **kwargs)
+
+    session = Stalling(
+        FakeResponse(200, headers={"Location": location}), ReadTimeout("stalled")
+    )
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, clock, budget=1000).upload(path, "file", FOLDER)
+    assert session.requests[1][2]["timeout"] == backup_drive.UPLOAD_SECONDS
+    assert not caught.value.retryable
+    assert [line["timeout"] for line in timeouts(caplog)] == ["drive_copy_budget"]
+    assert backup_drive.UPLOAD_SECONDS <= 300
+
+
 def test_no_request_starts_once_the_budget_is_spent(caplog):
     caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
     session = FakeSession()

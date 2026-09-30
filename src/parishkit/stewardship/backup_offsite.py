@@ -18,9 +18,10 @@ profile, after the backup's startup lease is released, and outside any
 transaction: it takes no work-order lock and holds no row lock, and each
 ORM read or outcome insert commits on its own before or after the network
 calls. Every request has a timeout, retries are bounded, and the whole copy,
-an upload in flight included, stops at ``COPY_SECONDS``; a slow or failed
-copy only records an outcome, which the pages show and the scheduler alerts
-on.
+an upload in flight included, stops at ``COPY_SECONDS``, or at most
+``backup_drive.UPLOAD_SECONDS`` later when a socket operation stalls just
+then; a slow or failed copy only records an outcome, which the pages show
+and the scheduler alerts on.
 """
 
 import fcntl
