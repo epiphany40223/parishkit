@@ -32,6 +32,8 @@ from .export_cleanup import retry_cleanup
 from .export_models import ExportPublication
 from .export_services import (
     ExportConflict,
+    ExportExpired,
+    ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
@@ -58,6 +60,11 @@ SAFE_FAILURES = (
     ReadUnavailable,
     FactUnavailable,
 )
+
+
+BOUND = "This request key was already used for a different export."
+# Only the authorized requester reaches an ExportExpired, so it can be told.
+EXPIRED = "This export has expired. Regenerate it from its status page."
 
 
 def _json(value, *, status=200):
@@ -110,6 +117,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _json({"id": str(result.pk)}, status=202)
+    except ExportRequestBound:
+        return _json({"error": BOUND}, status=409)
     except SAFE_FAILURES:
         return denial()
     except ValueError:
@@ -159,6 +168,8 @@ def download_grant(request, request_id):
         return _json(
             {"grant": str(grant.pk), "expires_at": grant.expires_at.isoformat()}
         )
+    except ExportExpired:
+        return _json({"error": EXPIRED}, status=410)
     except SAFE_FAILURES:
         return denial()
     except ValueError:
@@ -217,6 +228,8 @@ def download(request):
         principal = _principal(request, service.store, ministry_jobs=True)
         values = _body(request, {"grant"})
         return download_with_grant(request, service, principal, UUID(values["grant"]))
+    except ExportExpired:
+        return _json({"error": EXPIRED}, status=410)
     except SAFE_FAILURES:
         return denial()
     except ValueError:

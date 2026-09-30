@@ -10,7 +10,13 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .export_models import ExportRequest, InformationExportSnapshot
-from .export_services import TASK_TYPE, admit_campaign, audit, authorize
+from .export_services import (
+    TASK_TYPE,
+    ExportRequestBound,
+    admit_campaign,
+    audit,
+    authorize,
+)
 from .information import InformationQuery
 
 REPORT = "additional_information"
@@ -75,7 +81,7 @@ def create_information_export(
             ) != (REPORT, campaign_id, parameters, format, browser_timezone) or (
                 snapshot is not None and previous.information_snapshot_id != snapshot.pk
             ):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()

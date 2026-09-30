@@ -19,7 +19,11 @@ from parishkit.stewardship.reports.export_models import (
     ExportAttempt,
     ExportPublication,
 )
-from parishkit.stewardship.reports.export_services import cancel_export
+from parishkit.stewardship.reports.export_services import (
+    ExportExpired,
+    cancel_export,
+    issue_download,
+)
 from parishkit.stewardship.reports.models import CampaignFactPin
 
 from .test_background_grants_postgresql import task_login
@@ -58,6 +62,16 @@ def expire_publication(request):
         )
         cursor.execute("ALTER TABLE stewardship_export_publication ENABLE TRIGGER USER")
     return publication
+
+
+def test_expired_download_is_reported_as_expiry(scenario):  # noqa: F811
+    """The authorized requester learns the file expired, not that access ended."""
+    store, principal, _, _ = scenario
+    request = request_export(scenario)
+    run_export(scenario, request)
+    expire_publication(request)
+    with pytest.raises(ExportExpired, match="expired"):
+        issue_download(store, principal.pk, request.pk)
 
 
 def test_expired_artifact_cleanup_keeps_requests_publication_and_pin(scenario):  # noqa: F811

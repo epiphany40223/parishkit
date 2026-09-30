@@ -16,21 +16,13 @@ from .export_models import DirectoryExportSnapshot, ExportRequest
 from .export_services import (
     FAMILY_CODE_REPORTS,
     TASK_TYPE,
+    ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
 )
 
 REPORTS = FAMILY_CODE_REPORTS
-
-
-class ExportRequestBound(ValueError):
-    """A form's one-time request key was already used for a different export.
-
-    Typically the page came back from the browser cache and was submitted again
-    with another format. It is refused (never rebound) but, unlike malformed
-    filters, the Admin can simply reload the page and submit again.
-    """
 
 
 def create_directory_export(

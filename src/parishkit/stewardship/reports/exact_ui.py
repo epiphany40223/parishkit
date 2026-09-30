@@ -23,7 +23,12 @@ from .exact_services import (
     exact_export_status,
     retry_exact_export,
 )
-from .export_services import ExportConflict, admit_campaign, authorize
+from .export_services import (
+    ExportConflict,
+    ExportRequestBound,
+    admit_campaign,
+    authorize,
+)
 from .export_ui import _error
 from .export_views import SAFE_FAILURES, _body, _principal
 from .read_admission import admit_report_read
@@ -56,6 +61,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _redirect(job.pk)
+    except ExportRequestBound:
+        return _error(request, campaign_id=campaign_id, status=409, bound=True)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

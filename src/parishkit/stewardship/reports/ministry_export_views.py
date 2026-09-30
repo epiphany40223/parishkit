@@ -10,11 +10,18 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
+from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
 from .ministries import MinistryQuery
 from .ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
 from .ministry_views import _principal
+
+# Same meaning as the shared export-request-bound.html notice on the HTML pages.
+BOUND = (
+    "This export form was already used for a different export. Nothing new was"
+    " queued. Reload the page and try again.\n"
+)
 
 
 @require_POST
@@ -55,6 +62,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _redirect(result.pk)
+    except ExportRequestBound:
+        return private_response(BOUND, status=409)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
@@ -119,6 +128,8 @@ def create_packet(request, campaign_id):
             request_key=UUID(parameters["request_key"]),
         )
         return _redirect(result.pk)
+    except ExportRequestBound:
+        return private_response(BOUND, status=409)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

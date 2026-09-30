@@ -51,8 +51,11 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, item_id=None, status=400):
-    """No private form/exception values or database-dependent context processors."""
+def _error(campaign_id, *, item_id=None, status=400, bound=False):
+    """No private form/exception values or database-dependent context processors.
+
+    ``bound`` marks a reused export form, whose 409 differs from an item edit's.
+    """
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
@@ -61,6 +64,7 @@ def _error(campaign_id, *, item_id=None, status=400):
                 "campaign_id": campaign_id,
                 "item_id": item_id,
                 "status": status,
+                "bound": bound,
             },
         ),
         status=status,

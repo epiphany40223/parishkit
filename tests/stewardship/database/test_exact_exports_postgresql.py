@@ -21,6 +21,7 @@ from parishkit.stewardship.reports.exact_services import (
 )
 from parishkit.stewardship.reports.exact_tasks import exact_handler
 from parishkit.stewardship.reports.export_models import ExportPublication
+from parishkit.stewardship.reports.export_services import ExportRequestBound
 from parishkit.stewardship.reports.export_tasks import export_handler, load_document
 from parishkit.stewardship.reports.facts import fact_inputs
 from parishkit.stewardship.reports.models import CampaignDailyFactSet, CampaignFactPin
@@ -146,7 +147,7 @@ def test_replay_does_not_recapture_newer_inputs(response_service, monkeypatch):
         request_exact(response_service, principal, request_key=request.request_key).pk
         == request.pk
     )
-    with pytest.raises(ValueError, match="already bound"):
+    with pytest.raises(ExportRequestBound):
         request_exact(
             response_service, principal, request_key=request.request_key, format="pdf"
         )

@@ -8,6 +8,7 @@ from django.views.decorators.http import require_POST
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
 from .financial import FinancialQuery
@@ -46,6 +47,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _redirect(result.pk)
+    except ExportRequestBound:
+        return _error(campaign_id, status=409)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

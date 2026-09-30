@@ -38,6 +38,26 @@ class ExportConflict(ValueError):
     """A valid command conflicts with an already completed export."""
 
 
+class ExportRequestBound(ValueError):
+    """A form's one-time request key was already used for a different export.
+
+    Typically the page came back from the browser cache and was submitted again
+    with another format. It is refused (never rebound) but, unlike malformed
+    filters, the Admin can simply reload the page and submit again, so every
+    export view answers it with 409 rather than the invalid-filters page.
+    """
+
+
+class ExportExpired(PermissionError):
+    """The authorized requester asked to download an export whose file expired.
+
+    Raised only after authorization succeeds, so the message discloses nothing
+    to anyone else. It stays a PermissionError so a caller that does not know
+    it still refuses; views that do know it show the expiry instead of the
+    sign-in denial page.
+    """
+
+
 def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
@@ -138,7 +158,7 @@ def create_export(
                 previous.format,
                 previous.browser_timezone,
             ) != ("participation", campaign_id, fact_set_id, format, browser_timezone):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         facts = (
             CampaignDailyFactSet.objects.select_for_update()
@@ -364,7 +384,7 @@ def issue_download(store, user_id, request_id):
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.get(request=request)
         if publication.expires_at <= database_now():
-            raise PermissionError("This export has expired.")
+            raise ExportExpired("This export has expired.")
         return ExportDownloadGrant.objects.create(
             publication_id=publication.pk,
             requester_id=user_id,
@@ -383,7 +403,9 @@ def consume_download(store, user_id, grant_id):
         request = publication.request
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
-        if min(grant.expires_at, publication.expires_at) <= database_now():
+        if publication.expires_at <= database_now():
+            raise ExportExpired("This export has expired.")
+        if grant.expires_at <= database_now():
             raise PermissionError("This download grant is unavailable.")
         # A unique constraint wins concurrent uses without exposing grant material
         # in audit. A failed/aborted response consumes its grant, not the artifact.
