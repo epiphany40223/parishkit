@@ -82,7 +82,13 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   Temporary System Problem`), in reply to RCPT or DATA is the provider's
   temporary trouble and is a `"message"` limit too, so a partial Google
   incident cannot spend every queued message's attempt budget. Per-address
-  `45x 4.7.x` RCPT refusals are unchanged.
+  `45x 4.7.x` RCPT refusals are unchanged. One message carries all of a
+  Family's head addresses, so a `4.3.x` or `4.4.x` refusal that really
+  concerns one of them holds the whole message (sending to the others on a
+  session the provider is closing could send a duplicate later). A
+  persistently flaky address can therefore keep the invitation from reaching
+  the Family's other, working address until the message is accepted or
+  reaches the 7-day cap below.
 - Limit refusals are left out of the attempt budget. A message refused at a
   limit continuously for over 48 hours (`LIMIT_GIVE_UP`), measured from the
   first refusal of an unbroken run (another outcome or a staff retry starts
