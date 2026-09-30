@@ -6,7 +6,7 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.db import connections, transaction
+from django.db import DatabaseError, connections, transaction
 
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.source import compaction, snapshots
@@ -529,3 +529,90 @@ def test_a_days_final_content_survives_an_unchanged_run(monkeypatch):
     assert reconstruct_snapshot(first[2].pk)["family"]["1"]["name"] == "Synthetic same"
     assert reconstruct_snapshot()["family"]["1"]["name"] == "Synthetic changed"
     assert SourceSnapshot.objects.get(pk=changed[0].pk).compacted_at is None
+
+
+def _rejected_snapshot():
+    """Stage one synthetic corpus under a full claim, then reject it."""
+    from parishkit.stewardship.source.rejection import reject_snapshot
+
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    SourceCurrent.objects.get_or_create(singleton=True)
+    claim = acquire_source(**running_source_task(), phase="full")
+    corpus = source_corpus(name="Rejected")
+    snapshot = begin_snapshot(claim, organization_id=100, admit=permit)
+    for kind, entities in corpus.items():
+        stage_entities(snapshot.pk, claim, kind=kind, entities=entities, admit=permit)
+    reject_snapshot(snapshot.pk, claim, admit=permit)
+    release_source(claim)
+    return snapshot.pk
+
+
+@pytest.mark.parametrize(
+    "lease, role",
+    [
+        ("none", "worker"),
+        ("expired", "worker"),
+        ("full", "worker"),
+        ("delta", "worker"),
+        ("compaction", "scheduler"),
+        ("compaction", "worker"),
+    ],
+)
+def test_rejected_membership_delete_requires_the_live_compaction_lease(lease, role):
+    """#269: only the worker, under a live compaction lease, reclaims rejected staging.
+
+    Rejected corpora skip the pin checks (see ``_reclaim_memberships``), so
+    the SQL guard's lease and role conditions are all that admit the delete.
+    The last case is the positive control that proves the others are refused
+    by the guard, not by some unrelated setup problem.
+    """
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .auth_builders import unguarded
+    from .test_background_grants_postgresql import task_login
+
+    snapshot_id = _rejected_snapshot()
+    membership = ENTITY_MODELS["family"][1]
+    table = membership._meta.db_table
+    claim = None
+    if lease != "none":
+        claim = acquire_source(
+            **running_source_task(), phase="compaction" if lease == "expired" else lease
+        )
+    if lease == "expired":
+        with unguarded(), connections["default"].cursor() as cursor:
+            cursor.execute(
+                "UPDATE stewardship_source_lease SET "
+                "acquired_at=clock_timestamp()-interval '3 minutes', "
+                "heartbeat_at=clock_timestamp()-interval '2 minutes', "
+                "expires_at=clock_timestamp()-interval '1 second'"
+            )
+    service = ServiceRole.WORKER if role == "worker" else ServiceRole.SCHEDULER
+    allowed = lease == "compaction" and role == "worker"
+    try:
+        with task_login(service, exact=True):
+            if allowed:
+                with connections["default"].cursor() as cursor:
+                    cursor.execute(
+                        f"DELETE FROM {table} WHERE snapshot_id=%s", [snapshot_id]
+                    )
+            else:
+                with (
+                    pytest.raises(DatabaseError) as refused,
+                    transaction.atomic(),
+                    connections["default"].cursor() as cursor,
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {table} WHERE snapshot_id=%s", [snapshot_id]
+                    )
+                expected = (
+                    "permission denied"
+                    if role == "scheduler"
+                    else "Worker deletion requires exact expired setup membership"
+                )
+                assert expected in str(refused.value)
+    finally:
+        if claim is not None and lease != "expired":
+            release_source(claim)
+    remaining = membership.objects.filter(snapshot_id=snapshot_id).exists()
+    assert remaining is not allowed
