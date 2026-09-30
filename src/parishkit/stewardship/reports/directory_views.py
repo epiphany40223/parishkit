@@ -34,8 +34,10 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import report_table
 
 from .directories import (
+    DIRECTORY_SORTING,
     PAGE_SIZE,
     REACH,
     REASONS,
@@ -47,6 +49,7 @@ from .directory_documents import export_headings, head_names
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
+from .report_paging import carried_filters, clamp_query, pop_page_size
 
 
 def _principal(request, store, *, read_only=False):
@@ -165,6 +168,8 @@ def directory(request, campaign_id, *, postal=False):
         parameters = (request.GET if request.GET else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
         postal = mailing_option(parameters, default=postal)
+        # The selection pages 50 rows at a time, so that is the only size.
+        pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
         query = DirectoryQuery.parse(parameters)
         admit_report_read(campaign_id)
         _audit(
@@ -206,11 +211,21 @@ def directory(request, campaign_id, *, postal=False):
 
         def content():
             """No source query, key operation or rendering escapes the read guard."""
-            nonlocal count, total
+            nonlocal count, total, query
             rings = family_runtime()
             report = directory_page(
                 campaign_id, query, postal=postal, general=rings.general, mac=rings.mac
             )
+            moved = clamp_query(query, report["total"], PAGE_SIZE)
+            if moved is not None:
+                query = moved
+                report = directory_page(
+                    campaign_id,
+                    query,
+                    postal=postal,
+                    general=rings.general,
+                    mac=rings.mac,
+                )
             count = len(report["rows"])
             total = report["total"]
             if postal:
@@ -221,6 +236,7 @@ def directory(request, campaign_id, *, postal=False):
             except PermissionError:
                 mutable = False
             testing = testing_codes_context(campaign_id)
+            report_url = reverse("admin:family_directory", args=(campaign_id,))
             context = (
                 report
                 | testing
@@ -233,8 +249,19 @@ def directory(request, campaign_id, *, postal=False):
                     "query": query,
                     "query_fields": query.form_values()
                     | {"mailing": "yes" if postal else "no"},
-                    "report_url": reverse(
-                        "admin:family_directory", args=(campaign_id,)
+                    "report_url": report_url,
+                    "table": report_table(
+                        report["rows"],
+                        number=query.page,
+                        size=PAGE_SIZE,
+                        total=report["total"],
+                        carry=carried_filters(
+                            query, ("mailing", "yes" if postal else "no")
+                        ),
+                        sorting=DIRECTORY_SORTING,
+                        sort=query.sort,
+                        action=report_url,
+                        sizes=(PAGE_SIZE,),
                     ),
                     "reasons": REASONS,
                     "reaches": REACH,
@@ -248,10 +275,6 @@ def directory(request, campaign_id, *, postal=False):
                     "mutable": mutable,
                     "request_key": uuid4(),
                     "export_timezones": sorted(timezone_names()),
-                    "previous_page": query.page - 1 if query.page > 1 else None,
-                    "next_page": query.page + 1
-                    if query.page * PAGE_SIZE < report["total"]
-                    else None,
                 }
             )
             return iter(

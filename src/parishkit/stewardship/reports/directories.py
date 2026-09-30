@@ -20,6 +20,7 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.source.family_names import family_heads_name
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import Sorting
 
 from .directory_query import DIRECTORY
 from .information import parse_page
@@ -39,6 +40,23 @@ REACH = {
     "mail": "By postal mail only",
     "neither": "Neither email nor postal mail",
 }
+
+# The installed selection (stewardship_directory_report_v1) orders and pages
+# the directory itself, 50 rows at a time, so its closed ``sort`` vocabulary
+# is the whole list of column sorts: Family by the shown name (surname
+# first) either way, and DUID ascending. The other columns cannot be sorted
+# without changing that frozen SQL (schema freeze, #203): Family code would
+# also mean decrypting every Family's code per page view, and email
+# deliverability, response, addressee, mailing address and contact details
+# are computed per row inside the selection.
+DIRECTORY_SORTING = Sorting(
+    {
+        "name": ("family", False),
+        "name_desc": ("family", True),
+        "duid": ("duid", False),
+    },
+    "name",
+)
 
 
 @dataclass(frozen=True, repr=False)
@@ -72,7 +90,7 @@ class DirectoryQuery:
             or query.reason not in {"any", *REASONS}
             or query.phone not in {"any", "yes", "no"}
             or query.response not in {"any", "yes", "no"}
-            or query.sort not in {"name", "name_desc", "duid"}
+            or query.sort not in DIRECTORY_SORTING.tokens
             or query.reach not in {"any", *REACH}
         ):
             raise ValueError("Invalid directory filters.")

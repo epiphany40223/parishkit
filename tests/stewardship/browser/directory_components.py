@@ -5,9 +5,38 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.directories import REACH, REASONS, DirectoryQuery
+from parishkit.stewardship.reports.directories import (
+    DIRECTORY_SORTING,
+    REACH,
+    REASONS,
+    DirectoryQuery,
+)
 from parishkit.stewardship.reports.directory_documents import export_headings
 from parishkit.stewardship.source.family_names import family_heads_name
+from parishkit.stewardship.web.tables import report_table
+
+
+def _table(rows, total, mailing):
+    """The shared POST report table the view builds around one SQL page."""
+    query = DirectoryQuery(search="Example")
+    return report_table(
+        rows,
+        number=1,
+        size=50,
+        total=total,
+        carry=[
+            *(
+                (key, value)
+                for key, value in query.form_values().items()
+                if key != "sort"
+            ),
+            ("mailing", mailing),
+        ],
+        sorting=DIRECTORY_SORTING,
+        sort=query.sort,
+        action=f"/admin/reports/{UUID(int=80)}/families/",
+        sizes=(50,),
+    )
 
 
 def components(context, admin):
@@ -22,7 +51,7 @@ def components(context, admin):
             "source_generation": 1234,
             "source_as_of": datetime(2026, 9, 19, tzinfo=UTC),
         },
-        "rows": [
+        "table_rows": [
             {
                 "family_name": "Example <Family>",
                 "display_name": family_heads_name("Example <Family>", heads),
@@ -55,7 +84,6 @@ def components(context, admin):
         "reaches": REACH,
         "report_url": f"/admin/reports/{campaign}/families/",
         "total": 51,
-        "next_page": 2,
         "postal_proportion": "51 out of 1,000 (5.1%)",
         "mutable": True,
         "request_key": UUID(int=81),
@@ -66,6 +94,7 @@ def components(context, admin):
         "mailing": False,
         "query_fields": query.form_values() | {"mailing": "no"},
         "export_headings": export_headings(postal=False, reach="any"),
+        "table": _table(values["table_rows"], 51, "no"),
     }
     mailing = {
         "mailing": True,
@@ -73,6 +102,7 @@ def components(context, admin):
         "export_headings": export_headings(postal=True, reach="any"),
         "unreachable_total": 2,
         "unreachable_url": f"/admin/reports/{campaign}/families/?reach=neither",
+        "table": _table(values["table_rows"], 51, "yes"),
     }
     pages = {
         "/directory-gated": values | code_list | {"mutable": False},
@@ -80,7 +110,7 @@ def components(context, admin):
         "/postal-directory": values | mailing,
         "/directory-empty": values
         | mailing
-        | {"rows": [], "total": 0, "next_page": None},
+        | {"table": _table([], 0, "yes"), "total": 0},
     }
     return {
         path: (
