@@ -574,7 +574,7 @@ def test_closing_note_without_confirmation_email_is_listed_and_folded(
     confirmation = body.split(">Confirmation email<", 1)[1].split("<h3>", 1)[0]
     fallback = ReceiptTemplate()
     assert fallback.subject in confirmation
-    assert "No template configured." not in confirmation
+    assert "No template yet." not in confirmation
     path = catalog + "/email/confirmation"
     editor = browser.get(path)
     assert "Call the office." in editor.content.decode()

@@ -97,7 +97,7 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert departed.get_by_text("An Administrator or Staff member signed in").count()
     assert departed.get_by_role("button", name="Show related entries").count() == 1
     page.goto(component_origin + "/logs-empty")
-    visible(page.get_by_text("No matching entries.", exact=True))
+    visible(page.get_by_text("No matching entries."))
     page.goto(component_origin + "/logs-error-400")
     assert page.get_by_role("alert").count() == 1
     assert page.get_by_text("Identifiers must be complete", exact=False).count() == 1

@@ -3,7 +3,7 @@
 {% block content %}
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 <h1>{% translate "Refused addresses" %}</h1>
-<p>{% translate "Each refusal suppresses an address for one Family only. Verify the mailbox before clearing it. Clearance does not itself send a message." %}</p>
+<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
 <form method="get" class="panel">
   <label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
@@ -27,7 +27,7 @@
     <td class="numeric">{{ refusal.family_duid|duid }}</td>
     <td><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
     <td><code>{{ refusal.id }}</code></td>
-  </tr>{% empty %}<tr><td colspan="4">{% translate "No unresolved refusals match this view." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="4">{% translate "No unresolved refusals match this view. That is good news: no address is being skipped." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

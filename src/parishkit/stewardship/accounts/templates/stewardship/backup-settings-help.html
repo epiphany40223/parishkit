@@ -1,7 +1,7 @@
 {% load i18n %}{% comment %}
   Plain-language setup help for off-site backup copies. The same steps are in
   the backup runbook; keep them in step.
-{% endcomment %}<p>{% translate "Every backup is encrypted on the server and can only be opened with the backup decryption key you keep. Off-site copies put those encrypted files in a Google Drive folder too, so a lost or damaged server does not lose the backups." %}</p>
+{% endcomment %}<p>{% translate "Every backup is encrypted on the server and can only be opened with the private key your parish keeps off this server" %} ({% translate "see" %} <a href="{% url 'admin:integration_settings' 'backup_key' %}">{% translate "Backup encryption key" %}</a>). {% translate "Off-site copies put those encrypted files in a Google Drive folder too, so a lost or damaged server does not lose the backups." %}</p>
 {% if not workspace_configured %}<p class="notice notice-error">{% translate "Set up Google Workspace mail first: off-site copies use the same Google service account and delegated mailbox user." %}</p>{% endif %}
 <details class="panel"><summary>{% translate "One-time setup in Google (for your Google Workspace administrator)" %}</summary>
 <ol>

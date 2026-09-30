@@ -31,7 +31,7 @@ from parishkit.stewardship.web.refusals import (
     stale_page,
 )
 
-from . import admin_navigation
+from . import admin_navigation, setup_help
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
 from .artwork_views import artwork_patch
 from .authentication import runtime
@@ -432,6 +432,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                     initial=initial,
                     banner=_shows_banner(campaign, kind, slot),
                 )
+                # The same plain-language field help the setup wizard shows;
+                # long help opens from an "i" beside the label.
+                setup_help.apply(form, setup_help.CONTENT)
                 response = (
                     _preview(
                         request,

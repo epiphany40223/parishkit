@@ -443,6 +443,14 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help stays beside the box.
 
+Internal identifiers and bookkeeping fields that matter only for
+troubleshooting (delivery, refusal and test references, a retained
+configuration version, an export's requester reference and data-load
+numbers, and the log cross-link identifiers) sit in a "Technical details"
+disclosure, closed by default, instead of in the page's main text. Nothing
+is removed, and exports keep every field. An empty list says what to do
+next rather than only that it is empty.
+
 ## Background indicators
 
 Admins have two always-visible indicators:

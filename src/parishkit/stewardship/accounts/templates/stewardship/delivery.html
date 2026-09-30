@@ -5,16 +5,16 @@
 <h1>{% translate "Mail delivery" %}</h1>
 <p>{% if delivery.family__family_duid %}{% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</p>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
-<p>{% translate "Delivery ID:" %} {{ delivery.id }}</p>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_label }}</p>{% endif %}
 {% if delivery.state == 'delivery_unknown' %}
 <aside class="notice">
   <h2>{% translate "Delivery is unknown, not failed" %}</h2>
-  <p>{% translate "Automatic retries have stopped. The SMTP provider has no reliable delivery-status query or idempotent-send guarantee. Check external evidence before resolving this attempt; a resend could create a duplicate." %}</p>
+  <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
 </aside>
 {% endif %}
 {% for command in commands %}
-{% if forloop.first and retry_unavailable %}<p class="notice">{% translate "Retry is currently unavailable. Check campaign dates, delivery pause, source reconciliation, and existing delivery coverage before retrying." %}</p>{% endif %}
+{% if forloop.first and retry_unavailable %}<p class="notice">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>{% endif %}
 <form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}" class="panel">
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command.id }}">

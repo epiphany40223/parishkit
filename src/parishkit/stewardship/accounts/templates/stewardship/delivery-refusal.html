@@ -4,8 +4,8 @@
 <p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Refused addresses" %}</a></p>
 <h1>{% translate "Verify refused address" %}</h1>
 <p>{{ refusal.address }} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
-<p>{% translate "Refusal ID:" %} {{ refusal.id }}</p>
-<p>{% translate "Clearance applies to this refusal only. Other unresolved refusals may still suppress this address; review the refused-address list afterward. Clearing a refusal does not send mail or repeat an invitation already accepted for another Family member." %}</p>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Refusal ID" %}</dt><dd>{{ refusal.id }}</dd></dl></details>
+<p>{% translate "Clearing removes only this refusal. The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email, and does not resend an invitation another member of the Family already received." %}</p>
 {% if resolved %}
 <section class="panel"><h2>{% translate "This refusal has been resolved" %}</h2>
 <p>{{ resolved.reason|delivery_label }}</p><p>{{ resolved.evidence_note }}</p>
@@ -23,5 +23,5 @@
   <label><input type="checkbox" name="verified" value="yes" required data-acknowledgment> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
   <button type="submit">{% translate "Clear verified refusal" %}</button>
 </form>
-{% else %}<p>{% translate "Verification is unavailable. Current reconciled source data and an admitted campaign are required." %}</p>{% endif %}
+{% else %}<p>{% translate "Clearing is not available right now. It needs up-to-date parish data from ParishSoft and a current campaign." %}</p>{% endif %}
 {% endblock %}

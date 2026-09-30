@@ -176,9 +176,10 @@ class ContentForm(forms.Form):
             del self.fields["text"]
         elif slot in {"initial", "reminder"}:
             self.fields["text"].help_text = _(
-                "Both body versions require {{ family_code }} and {{ family_url }}. "
-                "Generated plain text writes each link as “label: URL”. "
-                "Keep credentials out of the subject."
+                "Both the formatted and plain-text versions must include "
+                "{{ family_code }} and {{ family_url }}, which give each Family "
+                "its own code and link. Generated plain text writes each link as "
+                "“label: URL”. Never put the code or link in the subject."
             )
 
     def clean(self):

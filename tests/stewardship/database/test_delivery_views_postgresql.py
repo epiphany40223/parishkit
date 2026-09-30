@@ -336,7 +336,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             assert b"&lt;script&gt;evidence&lt;/script&gt;" in result.content
             assert b"<script>evidence</script>" not in result.content
             if action == "accept":
-                assert b"Retry is currently unavailable" not in result.content
+                assert b"Retry is not available right now" not in result.content
             if action == "confirm_unsent":
                 # The Admin record is not presented as a provider refusal.
                 assert b"Not sent, per provider records; no resend" in result.content
