@@ -13,6 +13,7 @@ from io import BytesIO
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
 
@@ -29,12 +30,17 @@ class DailyDigestDocument:
     Statistics describe the current population at generation. The chart uses
     historical daily populations, so their totals need not be identical. Their
     source and submission cutoffs must nevertheless come from one observation.
+
+    ``date_format`` is the parish date format of the configuration the
+    snapshot pinned (None means the default style), so a compile retried
+    after an Admin changes the format still renders as first captured.
     """
 
     snapshot_id: UUID
     participation: ParticipationDocument
     statistics: CampaignStatistics
     covered_dates: tuple[date, ...]
+    date_format: str | None = None
 
     def __post_init__(self):
         """Reject mixed cutoffs or incomplete coverage before rendering any output."""
@@ -43,6 +49,7 @@ class DailyDigestDocument:
             not isinstance(self.snapshot_id, UUID)
             or not isinstance(chart, ParticipationDocument)
             or not isinstance(statistics, CampaignStatistics)
+            or not isinstance(self.date_format, str | None)
         ):
             raise ValueError("Daily digest requires typed immutable report inputs.")
         if (
@@ -179,6 +186,13 @@ def render_daily_digest(document, *, public_origin):
     """
     if not isinstance(document, DailyDigestDocument):
         raise TypeError("Daily digest rendering requires an immutable document.")
+    # Pin the snapshot configuration's style, not the worker's active one.
+    with dates.using(document.date_format):
+        return _render_daily_digest(document, public_origin=public_origin)
+
+
+def _render_daily_digest(document, *, public_origin):
+    """Compile the report body; the caller has pinned the parish date format."""
     chart = document.participation
     url = _report_url(document, public_origin)
     headings = ["Campaign date", "First submissions", "Cumulative participation"]

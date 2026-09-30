@@ -4,6 +4,7 @@ from parishkit.stewardship.accounts.branding_context import banner_for_email
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import SafeContent, email_banner
 
 from .campaign_mail_values import document_parish
@@ -19,9 +20,13 @@ def current_receipt_render(
     The submission supplies its immutable instant and campaign identity, not its
     answers. Current source addresses and applied public settings govern sending.
     No template uses a Family credential and no private key is loaded.
+
+    The submitted stamp uses the date format of the configuration this render
+    pins (its ``configuration_id``), never a separately resolved active one.
     """
     require_work_order()
     version = runtime.active_configuration
+    parish = document_parish(version.canonical_document)
     selected = ContentVersion.objects.filter(
         configuration=version, campaign_id=campaign.pk
     )
@@ -44,12 +49,13 @@ def current_receipt_render(
         block=SafeContent(block.html, block.text) if block else SafeContent("", ""),
         values=public_values(
             source,
-            parish=document_parish(version.canonical_document),
+            parish=parish,
             campaign=campaign.active_configuration.values,
             public_origin=public_origin,
         ),
         submitted_at=submission.submitted_at,
         campaign_timezone=campaign.active_configuration.timezone,
+        date_format=dates.normalized(parish.get("date_format")),
         sender=integration.settings["sender"],
         reply_to=integration.settings["reply_to"],
         intended_recipients=source.recipients.deliverable,

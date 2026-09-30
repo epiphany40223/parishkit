@@ -299,7 +299,14 @@ US numeric (month first), European long, European medium, European numeric
 clock and the others with a 24-hour clock. Admin pages, Family pages, email
 and page placeholders, and PDF exports all use it; dense tables such as
 System logs, background work and deliveries use its compact variant (short
-month names or two-digit years, no time-zone abbreviation). One Python
+month names or two-digit years, no time-zone abbreviation). Background output
+uses the format of the configuration it pinned, not whichever is active when
+it runs (issue #280): a PDF export uses its requesting configuration, a daily
+or weekly digest its snapshot's configuration, and a receipt the configuration
+its render records, so a retry after an Admin changes the format keeps the
+captured style. The Admin pages for a retained daily or weekly digest are
+ordinary Admin pages and use the live format, so after a change they can show
+the same retained data in a different style from the emailed copy. One Python
 formatter (`web/dates.py`) and one browser script (`date-format-v1.js`, which
 reads `<body data-date-format>`) implement the same table. Exports that
 programs read are exempt: CSV files always use ISO 8601 (`2027-01-31`, and

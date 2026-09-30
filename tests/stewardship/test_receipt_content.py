@@ -9,6 +9,7 @@ import pytest
 from parishkit.stewardship.family_delivery import FamilyDeliveryMail
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
 from parishkit.stewardship.jobs.receipt_content import ReceiptTemplate, render_receipt
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import SafeContent
 
 
@@ -249,3 +250,15 @@ def test_text_html_normalizes_line_endings_like_the_sanitizer(name):
 
     fragment = "<p>" + text_html(name) + "</p>"
     assert fragment == sanitize_html(fragment) == "<p>Smith\nFamily</p>"
+
+
+def test_submitted_stamp_uses_the_pinned_date_format():
+    """An explicit style wins over the ambient one; None defers to the request."""
+    submitted = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
+    with dates.using("iso"):
+        pinned = render(date_format="eu_dot")
+        preview = render()
+    stamp = dates.format_instant(submitted, "America/New_York", "eu_dot")
+    assert f"Submitted: {stamp}" in pinned.text
+    stamp = dates.format_instant(submitted, "America/New_York", "iso")
+    assert f"Submitted: {stamp}" in preview.text

@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -14,6 +15,7 @@ from parishkit.stewardship.reports.weekly_digest import (
     excerpt,
     render_weekly_digest,
 )
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
 INSTANT = datetime(2026, 11, 2, 5, 15, tzinfo=UTC)
@@ -254,3 +256,21 @@ def test_report_link_rejects_noncompiler_routes(path):
     """An allowed origin cannot launder an external or caller-controlled route."""
     with pytest.raises(ValueError):
         report_url("https://campaign.example.org", path)
+
+
+def test_pinned_date_format_overrides_the_ambient_style():
+    """The snapshot's style wins over a worker's active one; None means default."""
+    local = INSTANT.astimezone(ZoneInfo("America/New_York"))
+    with dates.using("iso"):
+        pinned = render(replace(document(), date_format="eu_dot"))
+        unset = render()
+    assert pinned.subject.endswith(dates.format_date(local.date(), "eu_dot"))
+    assert dates.format_local(local, "eu_dot") in pinned.text
+    assert unset.subject.endswith(dates.format_date(local.date(), "us_long"))
+    assert dates.format_local(local, "iso") not in pinned.text + unset.text
+
+
+def test_date_format_must_be_text_or_unset():
+    """A non-string style is rejected before anything is rendered."""
+    with pytest.raises(ValueError, match="typed report identity"):
+        replace(document(), date_format=5)
