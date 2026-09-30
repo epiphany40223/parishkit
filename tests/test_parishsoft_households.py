@@ -17,6 +17,7 @@ def values():
                 "familyDUID": 1,
                 "middleName": "Middle",
                 "birthdate": "1960-01-01",
+                "dateOfDeath": "2020-02-02",
                 "ssn": "PRIVATE-SSN",
             }
         ],
@@ -33,6 +34,7 @@ def test_slice_reads_exact_ids_and_preserves_only_contact_fallbacks(tmp_path):
         "memberDUID": 3,
         "middleName": "Middle",
         "dateOfBirth": "1960-01-01",
+        "dateOfDeath": "2020-02-02",
     }
     assert "PRIVATE" not in str(result)
     assert [call[1].rsplit("/api/v2/", 1)[1] for call in client.session.calls[1:]] == [
