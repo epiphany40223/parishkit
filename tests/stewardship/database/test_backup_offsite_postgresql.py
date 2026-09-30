@@ -734,6 +734,34 @@ def test_a_check_queued_across_a_workspace_change_is_a_stale_page(workspace):
         assert request_probe(uuid4(), FOLDER, "mail@example.org").state == "pending"
 
 
+def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
+    """``smoke --send`` tags its set folder as a real copy would (#305 L3).
+
+    It admits the backup login first; the real login reads the runtime row
+    through pg_read_all_data, which the test role does not model.
+    """
+    from parishkit.stewardship import (
+        backup_commands,
+        operator_commands,
+        runtime_database,
+        smoke,
+    )
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.backup_drive import deployment_tag
+
+    admitted = []
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", admitted.append
+    )
+    monkeypatch.setattr(
+        backup_commands, "_admit_backup_identity", lambda: admitted.append("login")
+    )
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    expected = deployment_tag(SystemConfiguration.objects.get().pk)
+    assert smoke._deployment_tag("configuration") == expected
+    assert admitted == ["configuration", "login"]
+
+
 def test_a_check_needs_an_applied_workspace_integration():
     """With no Workspace mail applied there is no user a check may name."""
     assert insert_probe("mail@example.org") == "23514"

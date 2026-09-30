@@ -271,7 +271,10 @@ operational log in the database, as `work_budget_reached`
 seconds.
 
 To check the setup by hand from the host, run the smoke check in the backup
-profile; `--send` also uploads the newest complete local set:
+profile; `--send` also uploads the newest complete local set, into a set
+folder tagged with this deployment's identity as a real copy would, so the
+next backup's copy finds it complete and reuses it and retention prunes it
+like any other:
 
 ```text
 docker compose ... run --rm --entrypoint pk-stewardship backup-worker \
