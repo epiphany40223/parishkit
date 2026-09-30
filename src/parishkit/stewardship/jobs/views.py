@@ -32,7 +32,12 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.tables import Sorting, bounded_count, window_table
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    bounded_count,
+    read_window,
+    window_table,
+)
 
 from .models import NONTERMINAL_STATES, TASK_STATES, TaskRun
 from .ownership import database_now
@@ -181,8 +186,10 @@ def _listing(window, state, task_type, sort, instant):
         )
     if task_type:
         query = query.filter(task_type=task_type)
-    rows, has_next = window.rows(TASK_SORTING.order(query, sort))
     matching, capped = bounded_count(query)
+    window, rows, has_next = read_window(
+        window, TASK_SORTING.order(query, sort), (matching, capped)
+    )
     return {
         "as_of": instant,
         "counts": _counts(instant),
@@ -205,8 +212,10 @@ def _detail(identifier, window, sort, instant):
     if row is None:
         return None, 0
     history = row.events.filter(version__lte=row.version)
-    events, has_next = window.rows(EVENT_SORTING.order(history, sort))
     matching, capped = bounded_count(history)
+    window, events, has_next = read_window(
+        window, EVENT_SORTING.order(history, sort), (matching, capped)
+    )
     return {
         "as_of": instant,
         "task": _task(row, instant),

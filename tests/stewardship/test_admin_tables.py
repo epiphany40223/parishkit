@@ -338,3 +338,35 @@ def test_never_signed_in_users_sort_after_the_latest_sign_in():
         )
         emails = [row["email"].split("@")[0] for row in table.rows]
         assert emails == [*expected, "never"]
+
+
+def test_a_window_past_the_end_reads_the_last_page():
+    """Windowed reads clamp to the last page of a known, uncapped count."""
+    from parishkit.stewardship.web.contracts import PageWindow
+    from parishkit.stewardship.web.tables import clamp_window, read_window
+
+    assert clamp_window(PageWindow(9, 25), (60, False)).page == 3
+    assert clamp_window(PageWindow(9, 25), (0, False)).page == 1
+    assert clamp_window(PageWindow(2, 25), (60, False)).page == 2
+    # A capped count is only a lower bound, so the requested page stands.
+    assert clamp_window(PageWindow(900, 25), (10, True)).page == 900
+    window, rows, has_next = read_window(PageWindow(5, 2), list(range(5)), (5, False))
+    assert (window.page, rows, has_next) == (3, [4], False)
+
+
+def test_report_pages_past_the_end_move_back_even_for_empty_results():
+    """A POST report asked for a page past its result reads the last page,
+    which is page 1 when a filter change emptied the result."""
+    from dataclasses import dataclass
+
+    from parishkit.stewardship.reports.report_paging import clamp_query
+
+    @dataclass(frozen=True)
+    class Query:
+        """Just the page field every report query has."""
+
+        page: int
+
+    assert clamp_query(Query(5), 0, 50) == Query(1)
+    assert clamp_query(Query(5), 120, 50) == Query(3)
+    assert clamp_query(Query(3), 120, 50) is None

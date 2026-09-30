@@ -491,6 +491,10 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
         )
         assert response.status_code == 200 and str(leave.pk).encode() not in body
         assert b'aria-sort="ascending"' in body
+        # A page past the end of the queue shows its last page.
+        response, body = search(browser, route, {"state": "any", "page": "9"})
+        assert response.status_code == 200 and b"Page 1 of 1" in body
+        assert body.count(b"ministries/follow-up/" + str(join.pk).encode()) == 1
         for invalid in ({"sort": "state"}, {"sort": "-ministry"}, {"size": "all"}):
             assert search(browser, route, invalid)[0].status_code == 400
         # Filtering to a Ministry outside the leader's scope must not list who

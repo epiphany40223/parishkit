@@ -7,7 +7,7 @@ from uuid import UUID
 from django.db import connection
 from django.db.models import Q
 
-from parishkit.stewardship.web.tables import Sorting, bounded_count
+from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
 
@@ -112,9 +112,10 @@ def alert_counts(since):
 def listing(window, *, state, query, sort=DELIVERY_SORTING.default):
     """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
 
-    Returns (rows, has_next, total): ``total`` is a bounded count of every
-    matching message (``web.tables.bounded_count``). ``sort`` is a
-    DELIVERY_SORTING token the caller already validated.
+    Returns (window, rows, has_next, total): ``total`` is a bounded count of
+    every matching message (``web.tables.bounded_count``), and ``window`` the
+    page actually read (the last one when the requested page is past it).
+    ``sort`` is a DELIVERY_SORTING token the caller already validated.
     """
     if state not in STATES or type(query) is not str or len(query) > 64:
         raise ValueError("Invalid delivery filter.")
@@ -130,8 +131,11 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default):
             except ValueError:
                 raise ValueError("Use an exact Family DUID or delivery ID.") from None
             selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
-    rows, has_next = window.rows(DELIVERY_SORTING.order(selected, sort).values(*FIELDS))
-    return rows, has_next, bounded_count(selected)
+    total = bounded_count(selected)
+    window, rows, has_next = read_window(
+        window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
+    )
+    return window, rows, has_next, total
 
 
 def family_duid(value):

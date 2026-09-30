@@ -223,7 +223,7 @@ def testing_families(request, campaign_id):
                 if source.reason in {"ready", "full_refresh_stale"}
                 else None
             )
-            rows, has_next, total = cleanup_families(
+            window, rows, has_next, total = cleanup_families(
                 campaign_id, source_id=source_id, window=window, sort=sort
             )
         response = render(

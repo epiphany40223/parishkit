@@ -46,7 +46,8 @@ def clamp_query(query, total, size):
 
     A typed page number or a stale Next click after the result shrank would
     otherwise show an empty page; like every other Admin table, a page past
-    the end shows the last page instead. Returns None when no move is needed.
+    the end shows the last page instead; an empty result's last page is 1.
+    Returns None when no move is needed.
     """
     last = last_page(total, size)
-    return replace(query, page=last) if query.page > last and total else None
+    return replace(query, page=last) if query.page > last else None

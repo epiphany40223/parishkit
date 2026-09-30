@@ -47,6 +47,7 @@ from .ministry_followup import (
     valid_ministry,
 )
 from .read_admission import admit_report_read
+from .report_paging import clamp_query
 
 TEMPLATE = "stewardship/ministry-followup.html"
 FORMER = "Former portal user"
@@ -155,7 +156,18 @@ def _page_response(request, campaign_id, *, request_id=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
+            nonlocal query
             result = followup_page(campaign_id, query, principal, request_id=request_id)
+            # A page past the end of the queue shows its last page, as on
+            # every other Admin table; one open request is not paged.
+            moved = (
+                None
+                if request_id
+                else clamp_query(query, result["total"], query.page_size)
+            )
+            if moved is not None:
+                query = moved
+                result = followup_page(campaign_id, query, principal)
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)

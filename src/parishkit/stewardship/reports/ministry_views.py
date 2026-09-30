@@ -35,6 +35,7 @@ from .ministries import (
     ministry_page,
 )
 from .read_admission import admit_report_read
+from .report_paging import clamp_query
 
 
 def _principal(request, store, *, read_only=False):
@@ -224,14 +225,25 @@ def report(request, campaign_id, *, action=None):
 
         def content():
             """Only detached authorized data is passed to the native report template."""
-            nonlocal count, total, scope
-            result = ministry_page(
-                campaign_id,
-                query,
-                actor,
-                ministry_id=ministry_id,
-                action=action or "join",
-            )
+            nonlocal count, total, scope, query
+
+            def read():
+                """One page of the role-scoped selection for the current query."""
+                return ministry_page(
+                    campaign_id,
+                    query,
+                    actor,
+                    ministry_id=ministry_id,
+                    action=action or "join",
+                )
+
+            result = read()
+            # A page past the end (typed, bookmarked or a stale Next) shows
+            # the last page, as on every other Admin table.
+            moved = clamp_query(query, result["total"], query.page_size)
+            if moved is not None:
+                query = moved
+                result = read()
             count = len(
                 result["rows"] if ministry_id is not None else result["summaries"]
             )

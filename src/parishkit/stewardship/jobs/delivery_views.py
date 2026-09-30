@@ -34,7 +34,12 @@ from parishkit.stewardship.web.contracts import (
     expected_version,
     filters,
 )
-from parishkit.stewardship.web.tables import Sorting, bounded_count, window_table
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    bounded_count,
+    read_window,
+    window_table,
+)
 
 from .delivery_admin import clear_recipient_refusal
 from .delivery_metadata import (
@@ -262,7 +267,7 @@ def delivery_list(request):
         """Capture one filtered page without reading any private message payload."""
         values, window = _window(request, {"state", "q"}, DELIVERY_SORTING)
         state, query = values.get("state", "all"), values.get("q", "")
-        rows, following, total = listing(
+        window, rows, following, total = listing(
             window, state=state, query=query, sort=values["sort"]
         )
         return dict(
@@ -373,14 +378,17 @@ def refusal_list(request):
         )
         if values.get("duid"):
             query = query.filter(family_duid=family_duid(values["duid"]))
-        rows, following = window.rows(REFUSAL_SORTING.order(query, values["sort"]))
+        total = bounded_count(query)
+        window, rows, following = read_window(
+            window, REFUSAL_SORTING.order(query, values["sort"]), total
+        )
         return dict(
             table=_table(
                 request,
                 window,
                 rows,
                 following,
-                total=bounded_count(query),
+                total=total,
                 sorting=REFUSAL_SORTING,
                 sort=values["sort"],
             ),

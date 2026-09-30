@@ -17,7 +17,7 @@ from django.db.models.functions import Cast, Coalesce, Concat, Lower, NullIf, Tr
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.version_models import SnapshotFamily
-from parishkit.stewardship.web.tables import Sorting, bounded_count
+from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .cleanup_catalog import (
     CleanupCategory,
@@ -132,8 +132,10 @@ def _source_name(source_id):
 def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
     """Read one bounded page of distinct affected Families, never their answers.
 
-    Returns (rows, has_next, total); ``sort`` is a TESTING_FAMILY_SORTING
-    token and ``total`` a ``bounded_count`` of every affected Family.
+    Returns (window, rows, has_next, total); ``sort`` is a
+    TESTING_FAMILY_SORTING token, ``total`` a ``bounded_count`` of every
+    affected Family and ``window`` the page actually read (the last one when
+    the requested page is past it).
     """
     require_work_order()
     responses = inventory_queries(campaign_id)[CleanupCategory.SUBMISSION]
@@ -148,7 +150,10 @@ def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
                 _source_name(source_id), Value(""), output_field=TextField()
             )
         )
-    rows, has_next = window.rows(TESTING_FAMILY_SORTING.order(query, sort))
+    total = bounded_count(families)
+    window, rows, has_next = read_window(
+        window, TESTING_FAMILY_SORTING.order(query, sort), total
+    )
     names = {}
     if source_id is not None:
         for row in SnapshotFamily.objects.filter(
@@ -158,10 +163,11 @@ def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
             value = row.payload.payload
             names[int(row.source_key)] = family_display_name(value)
     return (
+        window,
         [
             {"duid": row.family_duid, "name": names.get(row.family_duid, "")}
             for row in rows
         ],
         has_next,
-        bounded_count(families),
+        total,
     )

@@ -25,7 +25,12 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import Sorting, bounded_count, window_table
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    bounded_count,
+    read_window,
+    window_table,
+)
 
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
@@ -122,7 +127,10 @@ def family_codes(request, campaign_id):
                     active=True,
                     code_ciphertext__isnull=False,
                 )
-                rows, has_next = window.rows(CODE_SORTING.order(families, sort))
+                total = bounded_count(families)
+                shown, rows, has_next = read_window(
+                    window, CODE_SORTING.order(families, sort), total
+                )
                 table = [
                     {
                         "duid": row.family_duid,
@@ -137,10 +145,10 @@ def family_codes(request, campaign_id):
                     "stewardship/codes.html",
                     {
                         "table": window_table(
-                            window,
+                            shown,
                             table,
                             has_next,
-                            total=bounded_count(families),
+                            total=total,
                             sorting=CODE_SORTING,
                             sort=sort,
                         ),

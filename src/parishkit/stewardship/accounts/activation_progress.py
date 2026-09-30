@@ -27,7 +27,7 @@ from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.storage import TaskRetryConflict, retry_failed
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.tables import bounded_count
+from parishkit.stewardship.web.tables import bounded_count, read_window
 
 from .go_live_progress import _current
 
@@ -75,7 +75,12 @@ def progress(request, service, campaign_id, request_id, *, window):
             inputs = None
         preparations = ProductionTokenPreparation.objects.filter(transition=row)
         available = inputs is not None and preparation_available(row)
-        records, has_next = window.rows(preparations.order_by("-created_at", "-id"))
+        # Preparations of one transition are few; the bounded count only
+        # lets the shared navigator show "Page N of M".
+        total = bounded_count(preparations)
+        window, records, has_next = read_window(
+            window, preparations.order_by("-created_at", "-id"), total
+        )
         results = []
         for preparation in records:
             task = _latest(preparation.task_id)
@@ -133,9 +138,8 @@ def progress(request, service, campaign_id, request_id, *, window):
             "previous_page": window.page - 1,
             "next_page": window.page + 1,
             "has_next": has_next,
-            # Preparations of one transition are few; the bounded count only
-            # lets the shared navigator show "Page N of M".
-            "total": bounded_count(preparations),
+            "window": window,
+            "total": total,
         }
 
 

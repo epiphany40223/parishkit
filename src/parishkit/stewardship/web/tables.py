@@ -25,7 +25,7 @@ cut, with the total that selection returned.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import ceil
 from urllib.parse import urlencode
 
@@ -398,6 +398,28 @@ def bounded_count(query, limit=COUNT_LIMIT):
     """
     count = query.order_by()[: limit + 1].count()
     return (limit, True) if count > limit else (count, False)
+
+
+def read_window(window, query, total):
+    """Read one PageWindow page of an ordered ``query``, clamped to the end.
+
+    ``total`` is the query's ``bounded_count``. A page number past the last
+    page of a known (uncapped) total reads the last page instead, so a
+    typed, bookmarked or stale page number never lands on an empty page.
+    Returns (window, rows, has_next); the window is the one actually read,
+    for ``window_table``.
+    """
+    window = clamp_window(window, total)
+    rows, has_next = window.rows(query)
+    return window, rows, has_next
+
+
+def clamp_window(window, total):
+    """The requested PageWindow, or the last page when it is past the end of
+    a known (uncapped) ``bounded_count`` total."""
+    count, capped = total
+    last = max(1, ceil(count / window.size))
+    return replace(window, page=last) if not capped and window.page > last else window
 
 
 def window_table(

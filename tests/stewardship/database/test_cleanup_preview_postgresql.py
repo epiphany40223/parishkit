@@ -35,7 +35,7 @@ def test_web_preview_reports_unresolved_testing_only_without_starting_cleanup(
     messages = mixed_mail(response_service)
     with task_login(ServiceRole.WEB), work_transaction():
         before = cleanup_preview(response_service.campaign.pk)
-        families, has_next, total = cleanup_families(
+        _, families, has_next, total = cleanup_families(
             response_service.campaign.pk,
             source_id=SourceCurrent.objects.get().snapshot_id,
             window=PageWindow(1, 50),
@@ -86,7 +86,7 @@ def test_testing_families_sort_on_the_server_by_name_or_duid(
         with task_login(ServiceRole.WEB), work_transaction():
             return cleanup_families(
                 campaign_id, source_id=source_id, window=PageWindow(1, size), sort=sort
-            )
+            )[1:]
 
     rows, _, (total, capped) = read("duid")
     assert total == len(rows) > 1 and not capped

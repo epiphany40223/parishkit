@@ -184,6 +184,11 @@ def test_task_listing_sorts_on_the_server_and_counts_its_pages(auth_service, goo
     assert (oldest["matching"], oldest["matching_capped"]) == (2, False)
     newest = browser.get(BASE, {"size": 1, "sort": "-created", "page": 2}).json()
     assert newest["tasks"][0]["id"] == str(first.run_id)
+    # A page past the end shows the last page instead of an empty one.
+    past = browser.get(BASE, {"size": 1, "page": 9}).json()
+    assert past["page"] == 2 and past["tasks"][0]["id"] == str(first.run_id)
+    page = browser.get("/admin/background", {"size": 25, "page": 9}).content
+    assert b"Page 1 of 1" in page and b"No rows on this page" not in page
     # A queued task has no heartbeat; newest heartbeat first lists the
     # claimed task first, never the tasks without one.
     claimed = act(new(), "claim")

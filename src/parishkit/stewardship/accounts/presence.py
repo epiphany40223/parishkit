@@ -30,7 +30,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
-from parishkit.stewardship.web.tables import Sorting, window_table
+from parishkit.stewardship.web.tables import Sorting, clamp_window, window_table
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime as admin_runtime
@@ -212,6 +212,9 @@ def active_families(request):
             configuration = editable_configuration(service)
             instant = database_now()
             query = visible_sessions(configuration, instant)
+            count = query.count()
+            # A page past the end of the (small, exact) count shows the last.
+            window = clamp_window(window, (count, False))
             if count_only:
                 rows, has_next, names = [], False, {}
             elif PRESENCE_SORTING.tokens[sort][0] == "name":
@@ -222,7 +225,7 @@ def active_families(request):
                 )
                 names = _names(configuration, rows) if rows else {}
             data = {
-                "count": query.count(),
+                "count": count,
                 "page": window.page,
                 "has_next": has_next,
                 "as_of": instant,

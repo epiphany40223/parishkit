@@ -177,6 +177,10 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             browser, route, {"ministry": "9", "sort": "newest", "size": "25"}
         )
         assert response.status_code == 200 and b'aria-sort="descending"' in body
+        # A page past the end (a stale Next or a typed number) shows the last.
+        response, body = search(browser, route, {"ministry": "9", "page": "7"})
+        assert response.status_code == 200 and b"Member Middle Example" in body
+        assert b"Page 1 of 1" in body
         for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
             response, _ = search(browser, route, {"ministry": "9"} | invalid)
             assert response.status_code == 400

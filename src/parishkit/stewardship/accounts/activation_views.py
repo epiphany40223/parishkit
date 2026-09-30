@@ -53,7 +53,10 @@ def links(request, campaign_id, request_id):
             # controls), so there are no column headings to sort by; only the
             # paging, with its page count, uses the shared navigator.
             context["table"] = window_table(
-                window, context["records"], context["has_next"], total=context["total"]
+                context["window"],
+                context["records"],
+                context["has_next"],
+                total=context["total"],
             )
             response = render(request, "stewardship/go-live-links.html", context)
         return _checked(request, service, response)
