@@ -34,7 +34,15 @@ console commands run wherever the operator keeps the private key:
 `backup-keygen` makes the key pair and `backup-open` decrypts one sealed file.
 The scheduler's operational collection opens the existing
 `backup_rpo_breach` incident when no backup completed in the last 24 hours
-and resolves it when one has. The migration profile and `database-grants`
+and resolves it when one has, and the `backup_key_changed` incident
+(CRITICAL) for two days after a backup sealed to a different public key
+than the one before it, as the
+[runbook](stewardship-backup-runbook.md#the-key) explains. Source snapshot
+retention, which runs with each ParishSoft refresh, has its own
+`source_retention_failing` incident (WARNING, escalating) when three
+refreshes in a row skipped it, as the
+[launch runbooks](stewardship-launch-runbooks.md#parishsoft-outage)
+describe. The migration profile and `database-grants`
 admit a configured deployment when a backup completed within that window.
 `retarget-image` re-renders every generated document, so a release whose
 renderer changed reaches a deployment through the same command.

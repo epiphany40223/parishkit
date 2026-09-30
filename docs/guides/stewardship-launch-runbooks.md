@@ -273,6 +273,12 @@ unexpected share of records or of eligible Families). The application holds
 those refreshes and does not overwrite the snapshot; stop and investigate
 before touching the credential or the source. For a destructive change, see
 [Accepting a large ParishSoft change](#accepting-a-large-parishsoft-change).
+A third, `source_retention_failing` (WARNING, escalating to CRITICAL if it
+persists), is housekeeping: the last three refreshes each skipped removing
+old ParishSoft copies (the System log shows a `source_retention_skipped`
+entry per refresh). Refreshes still work, but the database keeps growing
+until the cause is fixed; the worker's log names its failure category. It
+resolves after a refresh gets through the cleanup without a skip.
 
 **You do:**
 

@@ -459,6 +459,13 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
     """
     from .leases import acquire_source, release_source
 
+    skipped = []
+
+    def skip(error):
+        """Log one failure now; the run's durable entry is written once, below."""
+        _skipped(error)
+        skipped.append(True)
+
     try:
         with execution.effect():
             claim = acquire_source(
@@ -478,7 +485,7 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                 try:
                     _compact_superseded_facts(execution, deadline=deadline)
                 except Exception as error:
-                    _skipped(error)
+                    skip(error)
                 for _ in range(batches):
                     if monotonic() >= deadline:
                         _budget_reached(execution, deadline)
@@ -502,7 +509,10 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
             with execution.effect():
                 release_source(claim)
     except Exception as error:
-        _skipped(error)
+        skip(error)
+    if skipped:
+        _record_skipped()
+    _observe_health()
 
 
 def _budget_reached(execution, deadline):
@@ -523,11 +533,45 @@ def _budget_reached(execution, deadline):
     )
 
 
+def _record_skipped():
+    """Keep one durable entry per skipped run for the retention incident.
+
+    The ``source_retention_failing`` incident counts these entries by run
+    (``retention_health``). Best effort, like the skip itself: a database
+    that cannot take the entry already has the process-log line.
+    """
+    from parishkit.stewardship.audit.services import operational
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    try:
+        with transaction.atomic():
+            operational(Event.SOURCE_RETENTION_SKIPPED, level="ERROR")
+    except Exception as error:
+        emit_failure(error, event=Event.SOURCE_RETENTION_SKIPPED)
+
+
+def _observe_health():
+    """Open or resolve the retention incident now that this run's outcome is known.
+
+    Best effort: a failure here is logged and the next refresh observes again.
+    """
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    from .retention_health import observe_retention_health
+
+    try:
+        with transaction.atomic():
+            observe_retention_health()
+    except Exception as error:
+        emit_failure(error, event=Event.TASK_FAILED)
+
+
 def _skipped(error):
     """Log a classified retention failure without exception text; next run retries.
 
     This goes to the worker's structured log (level ERROR, message
-    source_retention_skipped) only, not to stewardship_operational_log.
+    source_retention_skipped); the run then keeps one durable entry
+    (``_record_skipped``).
     """
     from parishkit.stewardship.observability import Event, emit_failure
 
