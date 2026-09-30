@@ -79,8 +79,28 @@ still the design record for preparation and disposal),
   during cleanup's hold. The home page's last-refreshed time shows when a
   refresh finished.
 
-1. **Operator: back up.** Run the backup by hand and confirm its off-host
-   copy, as the [backup runbook](stewardship-backup-runbook.md) says.
+1. **Operator: back up and check debug logging.** Run the backup by hand and
+   confirm its off-host copy, as the [backup runbook](stewardship-backup-runbook.md)
+   says. Then confirm that debug logging is off in every running container,
+   since debug logs can hold Families' personal data and the validation
+   deployment tool turns it on by default
+   ([deployment runbook](stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
+   Check again whenever a container is recreated later:
+
+   ```sh
+   for id in $(docker compose ... ps --quiet); do
+     printf '%s ' "$(docker inspect --format '{{.Name}}' "$id")"
+     docker inspect --format '{{join .Config.Env "\n"}}' "$id" |
+       grep '^PARISHKIT_DEBUG_LOGGING=' || echo '(not set)'
+   done
+   ```
+
+   Every application service and the proxy must show
+   `PARISHKIT_DEBUG_LOGGING=0`; the database and Valkey show `(not set)`. For any `=1`, recreate that
+   service from a shell where the variable is unset or `0`
+   (`PARISHKIT_DEBUG_LOGGING=0 docker compose ... up --detach --force-recreate
+   SERVICE`) and check again before going on. After activation, every Admin page shows a "Debug
+   logging is on in Production" notice if the web service still has it on.
 2. **Administrator: clear readiness.** From the campaign's settings page,
    choose **Review go-live readiness and Testing cleanup impact**
    (`/admin/campaign/<campaign id>/go-live`). The page lists what still needs

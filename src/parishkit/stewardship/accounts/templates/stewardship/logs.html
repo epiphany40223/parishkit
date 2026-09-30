@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "System logs" %}</h1>
 {% aboutpage "system-logs" %}<p>{% translate "What the system did (operational entries) and who changed what (the audit trail), together, newest first unless you sort by Time the other way. Entries hold identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
-<p>{% translate "Times show in your computer's time zone when your browser allows it, otherwise in UTC. The From and Through dates are whole days in UTC. Audit records have no level, so the level choices apply only to operational entries; use Source to include or leave out audit records." %}</p>
+<p>{% translate "Times show to the second in your computer's time zone, with its difference from UTC, when your browser allows it, otherwise in UTC. The From and Through dates are whole days in UTC. Audit records have no level, so the level choices apply only to operational entries; use Source to include or leave out audit records." %}</p>
 <p>{% translate "Each entry's type is followed by a short explanation. An actor shown as Background worker is one of the system's own processes, not a person. The Related column lists everything recorded for the same task or request, the same actor or the same campaign, and opens a task's own page. Identifiers are under Technical details." %}</p>{% endaboutpage %}
 <form method="post" action="{% url 'admin:logs' %}" class="log-filters">{% csrf_token %}
 <input type="hidden" name="applied" value="yes">
@@ -38,7 +38,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Log entries' %}"><table class="data-table log-table">
 <caption>{% translate "Operational and audit entries" %}</caption><thead><tr>{% translate "Time" as heading %}{% sort_heading table "time" heading %}<th scope="col">{% translate "Level" %}</th><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Actor" %}</th><th scope="col">{% translate "Related" %}</th><th scope="col">{% translate "Recorded detail" %}</th></tr></thead><tbody>
 {% for row in rows %}<tr{% if row.level == "CRITICAL" %} class="log-row-critical"{% endif %}>
-<th scope="row"><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></th>
+<th scope="row"><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact data-precise>{{ row.created_at|instant }}</time></th>
 <td>{% if row.level %}<span class="log-level log-level-{{ row.level|lower }}">{% include "stewardship/components/level-icon.html" with level=row.level|lower %} {{ row.level_label }}</span>{% else %}<span class="log-kind">{{ row.level_label }}</span>{% endif %}<br><span class="help">{{ row.source }}</span></td>
 <td>{{ row.event }}<br><span class="help">{{ row.description }}</span></td>
 <td>{% if row.actor %}{{ row.actor }}{% elif row.actor_worker %}{% translate "Background worker" %}{% elif row.actor_kind_label %}{{ row.actor_kind_label }}{% elif row.actor_id %}{% translate "Service, or a former portal user" %}{% else %}{% translate "System" %}{% endif %}</td>

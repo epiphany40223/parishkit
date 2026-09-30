@@ -5,6 +5,11 @@
   {% if admin_chrome.admin %}<p>{% translate "All outgoing email is redirected to:" %} {{ admin_chrome.testing_recipient }}. <a href="{% url 'admin:parish_settings' %}#testing-mode">{% translate "Mode configuration" %}</a></p>{% endif %}
 </aside>
 {% endif %}
+{% if admin_chrome.debug_in_production %}<aside class="notice notice-error" role="alert" data-debug-in-production>
+  <strong>{% translate "Debug logging is on in Production" %}</strong>
+  <p>{% translate "The server is recording extra detail in its logs that can include Families' personal information. That is only acceptable while testing with disposable data, so debug logging must be off in Production." %}</p>
+  <p>{% translate "To turn it off, ask the server operator to set PARISHKIT_DEBUG_LOGGING to 0 (or leave it unset) and recreate every application container, as the deployment runbook describes. This notice disappears once it is off." %}</p>
+</aside>{% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
 {% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}
 {% if admin_chrome.delivery_pause %}<p>{% translate "Paused by" %}: {{ admin_chrome.delivery_pause.actor|default:"—" }}. {% translate "Reason" %}: {{ admin_chrome.delivery_pause.reason }}</p>
@@ -18,9 +23,9 @@
   <ul>{% for group in admin_chrome.critical_events %}<li>{{ group.label }}{% if group.count > 1 %} ({{ group.count|number }}×){% endif %}</li>{% endfor %}</ul>
   <div class="actions">
     <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes"><input type="hidden" name="source" value="operational">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}">{% endif %}<button type="submit" class="button-secondary">{% translate "View these events in System logs" %}</button></form>
-    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}">{% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button></form>
+    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
   </div>
-  <p class="help">{% translate "Acknowledging hides this notice for every Administrator until a new critical problem is recorded. It is recorded in the audit log." %}</p>
+  <p class="help">{% translate "Acknowledging hides the problems listed here for every Administrator; a critical problem recorded after this page was shown still appears. It is recorded in the audit log." %}{% if admin_chrome.critical_count > admin_chrome.critical_limit %} {% blocktranslate with limit=admin_chrome.critical_limit|number %}Only the oldest {{ limit }} are acknowledged at a time, so this notice stays for the rest; acknowledge again to clear them.{% endblocktranslate %}{% endif %}</p>
 </aside>{% endif %}
 {% if not suppress_admin_session_chrome %}
 {% comment %}
@@ -53,7 +58,8 @@
         <div class="session-dialog-actions"><a class="button" href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></div>
       </div>
     </form>
+    {% comment %}Inside the modal: a modal dialog makes the rest of the page inert, so a live region outside it would go unannounced.{% endcomment %}
+    <p class="visually-hidden" aria-live="polite" data-session-announce></p>
   </dialog>
-  <p class="visually-hidden" aria-live="polite" data-session-announce></p>
 </div>
 {% endif %}

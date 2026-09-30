@@ -1,7 +1,21 @@
 """Plain-language grouping for the critical-events banner."""
 
-from parishkit.stewardship.audit.critical_events import label, summary
+from uuid import UUID
+
+import pytest
+from django.core import signing
+
+from parishkit.stewardship.audit.critical_events import (
+    ACKNOWLEDGE_LIMIT,
+    SALT,
+    label,
+    shown,
+    sign,
+    summary,
+)
 from parishkit.stewardship.observability import Event
+
+IDS = [UUID(int=1), UUID(int=2)]
 
 
 def test_known_events_read_as_plain_language():
@@ -27,3 +41,39 @@ def test_summary_orders_by_frequency_then_name():
         {"label": "Background task failed", "count": 1},
         {"label": "Email sending failed", "count": 1},
     ]
+
+
+def test_signed_ids_round_trip():
+    """The form carries exactly the ids the banner counted, in order."""
+    assert shown(sign(IDS)) == IDS
+    assert shown(sign([UUID(int=n) for n in range(ACKNOWLEDGE_LIMIT)]))
+
+
+# Each forged token is built inside the test, once settings are loaded.
+FORGED = {
+    "missing": lambda: None,
+    "empty": lambda: "",
+    "garbage": lambda: "not-a-token",
+    "other-salt": lambda: signing.dumps([IDS[0].hex], salt="other"),
+    "empty-list": lambda: signing.dumps([], salt=SALT),
+    "not-a-list": lambda: signing.dumps({"id": IDS[0].hex}, salt=SALT),
+    "not-an-id": lambda: signing.dumps(["not-an-id"], salt=SALT),
+    "over-limit": lambda: signing.dumps(
+        [UUID(int=n).hex for n in range(ACKNOWLEDGE_LIMIT + 1)], salt=SALT
+    ),
+}
+
+
+@pytest.mark.parametrize("forged", sorted(FORGED))
+def test_shown_refuses_anything_but_a_genuine_list(forged):
+    """Every forged, altered or malformed list is a bad signature."""
+    with pytest.raises(signing.BadSignature):
+        shown(FORGED[forged]())
+
+
+def test_an_edited_token_is_refused():
+    """Changing the signed payload by one character breaks the signature."""
+    token = sign(IDS)
+    edited = token[:1] + ("A" if token[1] != "A" else "B") + token[2:]
+    with pytest.raises(signing.BadSignature):
+        shown(edited)

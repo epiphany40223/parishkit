@@ -282,17 +282,29 @@ In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
 smaller non-dismissible Testing indicator so report interpretation is clear.
 
+In Production mode, while the web process has debug logging on
+(`PARISHKIT_DEBUG_LOGGING=1`), every Admin page, for every role, shows a
+prominent non-dismissible error banner saying in plain language that debug
+logging must be off in Production, because debug logs can hold personal data,
+and that the operator turns it off by recreating the application containers
+with the variable `0` or unset. It is a warning only: no process refuses to
+start with the switch on.
+
 Every Admin page also shows a critical-problems banner while CRITICAL
 operational events from the last 24 hours are unacknowledged. It names each
 kind of problem in plain language with its count (for example "ParishSoft data
 refresh failed (2×)"), links to the [log screen](#logs) filtered to CRITICAL
 operational entries from that window, and offers Acknowledge to Administrators
 (the System logs capability). One acknowledgement is shared: it records each
-CRITICAL entry the banner counts and the acknowledging Administrator in
-append-only rows with one audit event, hides those entries for every Admin, and
-changes no log entry. Any other CRITICAL entry, including one a long-running
-transaction commits after the acknowledgement, brings the banner back. The banner costs the Admin page one query, shared with the delivery
-warning count. It is distinct from security-event acknowledgement, which is
+CRITICAL entry the rendered banner counted and the acknowledging Administrator
+in append-only rows with one audit event, hides those entries for every Admin,
+and changes no log entry. The banner's form carries a signed list of those
+entries' ids (at most 500, oldest first; any beyond stay counted and remain
+after the acknowledgement), and an altered list is refused, so Acknowledge
+never hides an entry the Administrator was not shown. Any other CRITICAL
+entry, including one recorded after the page was shown or one a long-running
+transaction commits after the acknowledgement, brings the banner back. The
+banner costs the Admin page one query, shared with the delivery warning count. It is distinct from security-event acknowledgement, which is
 per recipient.
 
 ### Admin navigation
@@ -1602,7 +1614,9 @@ authorization after the file is built and records a count-only audit event. An
 unbounded export is never assembled in a web request; moving log exports onto
 the asynchronous export-job pipeline used by large report exports is deferred.
 
-Stored timestamps are UTC. The screen renders browser-local timestamps. Export
+Stored timestamps are UTC. The screen renders browser-local timestamps to the
+second, with the zone name and UTC offset, since the date filters are whole
+UTC days. Export
 requires choosing UTC or the browser's timezone (offered by the page); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
