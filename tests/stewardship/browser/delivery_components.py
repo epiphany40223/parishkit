@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+from parishkit.stewardship.jobs.delivery_metadata import DELIVERY_SORTING
+from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
@@ -17,6 +19,7 @@ def components(now):
         version=4,
         attempt=1,
         updated_at=now,
+        created_at=now,
     )
     refusal = dict(
         id=uuid4(), family_duid=12345, address="head@example.org", created_at=now
@@ -31,6 +34,9 @@ def components(now):
                 [message],
                 True,
                 carry=[("state", "delivery_unknown")],
+                total=(26, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
             ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
@@ -75,7 +81,16 @@ def components(now):
     yield (
         "/delivery-refusals",
         "delivery-refusals",
-        dict(table=window_table(PageWindow(1, 25), [refusal], False)),
+        dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [refusal],
+                False,
+                total=(1, False),
+                sorting=REFUSAL_SORTING,
+                sort=REFUSAL_SORTING.default,
+            )
+        ),
     )
     yield (
         "/delivery-refusal",
