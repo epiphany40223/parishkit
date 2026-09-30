@@ -162,6 +162,44 @@ again needs the whole cycle above, including a new cleanup.
 The [review ledger](stewardship-activation-runbook-reviews.md) records how
 this procedure was checked against the code.
 
+## Measuring the launch send
+
+The launch sends one invitation to each eligible Family, about 1,100
+messages. Measure it with the read-only
+[mail send report](stewardship-mail-send-report.md#running-it), so the
+next large send (the reminders) can be planned from real numbers.
+
+**Before it starts.** Note the time you confirm Production (or the start
+date, for a scheduled campaign). Check that `docker compose ... top
+mail-dispatch` lists two application processes: the mail worker and its
+second mail consumer (`runtime ... --queue mail`; see
+[two mail consumers](stewardship-family-mail-dispatch.md#two-mail-consumers)).
+The daily limit counts every recipient sent in the last 24 hours, Testing
+sends included, and holds back 200 of its 1,800 for receipts and digests.
+The launch's roughly 1,400 recipients fit the remaining 1,600 only if little
+else was sent in the 24 hours before it.
+
+**While it runs.** Run the report with `purpose='initial'`, `since` a few
+minutes before the confirmation and `until` a time in the future. Its
+**Overview** shows how many invitations have gone out so far and the rate.
+
+**Afterwards.** Once the progress page is settled, run it again with
+`until` after the last outcome, and record in the operators' notes:
+
+- **Overview:** the message count, `wall_clock` and `accepted_per_minute`.
+  With two mail consumers the send is expected to take about 20 minutes, at
+  roughly 50 to 60 accepted per minute. One consumer manages about half
+  that.
+- **Phase timings:** `request_ms` (preparation) and `data_ms` (Gmail's
+  DATA) at p50 and p90. Before the guard-planning fix, `request_ms` was
+  about 2.4 s at p50 on the validation host and most of each message's
+  time. A large `wait_ms` only means messages queued behind each other.
+- **Limits, retries and unknowns:** these should be empty. A limit
+  refusal pauses sending and resumes it by itself. Messages left in
+  `delivery_unknown` need the [procedure below](#messages-in-delivery_unknown).
+
+Then take the backup that step 8 of the activation asks for.
+
 ## Mail-provider outage
 
 **You see:** the `mail_provider_unavailable` incident opens, reaching you by
@@ -569,4 +607,5 @@ two or none.
 | Check a credential against its provider | [Smoke tools guide](stewardship-smoke-tools.md) |
 | Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
+| Measure the launch send | [Above](#measuring-the-launch-send), with the [mail send report](stewardship-mail-send-report.md) |
 | Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
