@@ -1,9 +1,11 @@
 """Detached complete financial values shared by CSV, XLSX and paginated PDF.
 
 The document is built from the read model's shaped projection, so an export
-cell says exactly what the page's cell says: exact money as text, unavailable
-source totals as the word, never a zero, and share wording versioned with the
-configuration each Family answered under.
+cell says exactly what the page's cell says: exact money, unavailable source
+totals as the word, never a zero, and share wording versioned with the
+configuration each Family answered under. Money cells stay ``MoneyAmount``
+values, so CSV and PDF write the page's text and XLSX writes a summable number
+(see ``information_rendering.xlsx_cell``).
 """
 
 import json
@@ -13,6 +15,8 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.web import dates
+
+from .money import MoneyAmount
 
 HEADINGS = (
     "Family",
@@ -49,8 +53,8 @@ CONTINUED = "(continued) "
 class FinancialDocument:
     """All captured values, with no live queries, clocks or mutable nested rows."""
 
-    metadata: tuple[tuple[str, str], ...]
-    rows: tuple[tuple[str, ...], ...]
+    metadata: tuple[tuple[str, object], ...]
+    rows: tuple[tuple[str | MoneyAmount | datetime, ...], ...]
     item_count: int
     requested_at: datetime
     headings: ClassVar[tuple[str, ...]] = HEADINGS
@@ -139,7 +143,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             through if isinstance(through, date) else UNPROVEN,
         ),
         ("Matching Families", f"{result['total']:,}"),
-        ("Total annual pledges", summary["annual_total"].display),
+        ("Total annual pledges", summary["annual_total"]),
         ("Pledges by frequency", _counts(summary["frequencies"])),
         ("Pledges by share method", _counts(summary["shares"])),
         ("No share method chosen", f"{summary['no_share']:,}"),
@@ -166,12 +170,13 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 row["family_name"],
                 str(row["family_duid"]),
                 STATUS[row["active"]],
-                row["annual"].display,
+                row["annual"],
                 row["frequency_label"],
-                row["installment"].display if row["installment"].available else "",
+                # No installment (no pledge or no frequency) stays blank.
+                row["installment"] if row["installment"].available else "",
                 first,
-                row["source_pledge"].display,
-                row["source_contributions"].display,
+                row["source_pledge"],
+                row["source_contributions"],
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
                 f"{row['family_version']:,}",
