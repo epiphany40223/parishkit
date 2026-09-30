@@ -19,6 +19,7 @@ import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -97,7 +98,9 @@ class ParishSoftConfig:
     must neither reuse cached responses nor leave private response files.
     """
 
-    api_key: str
+    # Never in a repr: a future %r or a traceback formatter that dumps local
+    # variables must not print the key.
+    api_key: str = dataclass_field(repr=False)
     cache_dir: Path
     expected_organization: str | None = None
     cache_limit: float | None = None

@@ -88,6 +88,10 @@ def load_family_slice(client, *, family_id, maximum_members=200):
                     ("nickName", "nickName"),
                     ("maidenName", "maidenName"),
                     ("dateOfBirth", "birthdate"),
+                    # A full load reads the death date from contact/list; a
+                    # delta slice must keep it too, or the census loses it
+                    # (and the payload digest flips) until the next full load.
+                    ("dateOfDeath", "dateOfDeath"),
                     ("gender", "sex"),
                     ("emailAddress", "emailAddress"),
                     ("homePhone", "homePhone"),

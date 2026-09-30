@@ -10,7 +10,10 @@ from uuid import UUID
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.families import FamilyRecipients, family_recipients
-from parishkit.stewardship.source.family_names import family_display_name
+from parishkit.stewardship.source.family_names import (
+    family_display_name,
+    name_series,
+)
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshots import read_snapshot
 from parishkit.stewardship.source.version_models import (
@@ -111,7 +114,8 @@ def load_family_mail_source(family):
             current.generation,
             projection,
             family_display_name(value, "Family"),
-            " and ".join(name for name in names if name),
+            # "A, B and C", as the directory writes the heads (#303 L11).
+            name_series(names),
             sum(member["active"] is True for member in members.values()),
         )
 
