@@ -416,20 +416,36 @@ def route_parameters():
     }
 
 
-def _link(name, arguments):
-    """Reverse an Admin page with the arguments it needs, or None if unavailable."""
+def _sidebar_page(name):
+    """Whether a page is a sidebar entry: a sectioned page with no parent."""
+    return PAGES[name].section is not None and PAGES[name].parent is None
+
+
+def _link(name, arguments, offered=None):
+    """Reverse an Admin page with the arguments it needs, or None if unavailable.
+
+    ``offered`` is the set of URLs the viewer's sidebar offers now. A sidebar
+    page is linked only when the sidebar offers that exact URL: the sidebar
+    already hides entries its page would refuse (Share options once the
+    campaign is locked, Campaign images for a campaign no longer current,
+    Go-live readiness after the draft), so a trail or "Return to" link
+    reuses that decision instead of repeating it (#196). None skips the check.
+    """
     if not PAGES[name].linkable:
         return None
     needed = route_parameters().get(name, ())
     if any(parameter not in arguments for parameter in needed):
         return None
     try:
-        return reverse(
+        url = reverse(
             f"{NAMESPACE}:{name}",
             kwargs={parameter: arguments[parameter] for parameter in needed},
         )
     except NoReverseMatch:
         return None
+    if offered is not None and _sidebar_page(name) and url not in offered:
+        return None
+    return url
 
 
 def _chain(name, parent=None):
@@ -492,16 +508,18 @@ def steps(placed):
     ]
 
 
-def back(match, placed=None):
+def back(match, placed=None, items=None):
     """``{"label", "url"}`` of the nearest linked ancestor, falling back to Home.
 
     Multi-step pages use it for their "Return to …" link, so the link and
-    the trail always agree about where the flow started.
+    the trail always agree about where the flow started. ``items`` are the
+    sidebar entries, as for ``build``.
     """
     _name, chain, arguments = _resolved(match, placed)
     labels = placed.labels if placed else {}
+    offered = _offered(items)
     for ancestor in reversed(chain[:-1]):
-        url = _link(ancestor, arguments)
+        url = _link(ancestor, arguments, offered)
         if url:
             return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
     return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
@@ -554,10 +572,17 @@ def build(match, items, placed=None):
                 }
             )
     labels = placed.labels if placed else {}
-    return sections, _breadcrumbs(name, chain, arguments, sections, labels)
+    return sections, _breadcrumbs(
+        name, chain, arguments, sections, labels, _offered(items)
+    )
 
 
-def _breadcrumbs(name, chain, arguments, sections, labels):
+def _offered(items):
+    """The URLs of the sidebar entries, or None when none were given."""
+    return None if items is None else {entry[3] for entry in items}
+
+
+def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
     """Home, the section, then each ancestor page, ending at the current page."""
     if name is None or name not in PAGES:
         return []
@@ -577,7 +602,7 @@ def _breadcrumbs(name, chain, arguments, sections, labels):
         trail.append(
             {
                 "label": labels.get(ancestor, PAGES[ancestor].label),
-                "url": _link(ancestor, arguments),
+                "url": _link(ancestor, arguments, offered),
             }
         )
     trail.append({"label": PAGES[name].label, "url": None})

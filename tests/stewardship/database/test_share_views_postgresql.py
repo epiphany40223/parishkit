@@ -57,6 +57,8 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
     proposal = token(preview)
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)
+    status = browser.get(response["Location"]).content
+    assert f'<a href="{path}">Return to Share options</a>'.encode() in status
     row.refresh_from_db()
     options = row.active_configuration.values["share_options"]
     assert [item["id"] for item in options[:2]] == [
@@ -68,6 +70,13 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
         post(browser, path, {"action": "confirm", "preview": proposal})["Location"]
         == response["Location"]
     )
+    # Once the campaign goes live the page refuses and the sidebar hides it,
+    # so the status page names it without a link (#196).
+    command(row, uuid4(), Action.ACTIVATE)
+    assert browser.get(path).status_code == 409
+    status = browser.get(response["Location"]).content
+    assert b"<li><span>Share options</span></li>" in status
+    assert f'href="{path}"'.encode() not in status
 
 
 @pytest.mark.parametrize(

@@ -41,10 +41,19 @@ def _arguments(name):
     }
 
 
-def _items():
-    """One sidebar entry per root page, as if the actor could see everything."""
+def _items(arguments=None):
+    """One sidebar entry per root page, as if the actor could see everything.
+
+    Each entry's URL is the page's own, built from ``arguments`` where its
+    route needs them, so trails may link it.
+    """
     return [
-        (page.section, name, page.label, f"/nav/{name}")
+        (
+            page.section,
+            name,
+            page.label,
+            navigation._link(name, arguments or {}) or f"/nav/{name}",
+        )
         for name, page in navigation.PAGES.items()
         if page.section and page.parent is None
     ]
@@ -84,7 +93,7 @@ def test_every_admin_page_renders_a_breadcrumb_trail(name):
     match = SimpleNamespace(
         url_name=name, namespace=navigation.NAMESPACE, kwargs=arguments
     )
-    sections, trail = navigation.build(match, _items())
+    sections, trail = navigation.build(match, _items(arguments))
     page = navigation.PAGES[name]
     assert trail[0]["label"] == navigation.PAGES["index"].label
     assert trail[-1] == {"label": page.label, "url": None}
@@ -124,7 +133,7 @@ def test_current_item_and_section_follow_the_page_chain():
         namespace=navigation.NAMESPACE,
         kwargs={"campaign_id": campaign, "kind": "email", "slot": "initial"},
     )
-    sections, trail = navigation.build(match, _items())
+    sections, trail = navigation.build(match, _items({"campaign_id": campaign}))
     current = [section for section in sections if section["current"]]
     assert [section["key"] for section in current] == ["campaign"]
     # The listed ancestor is marked as the current location, not the page.
@@ -395,6 +404,54 @@ def test_change_origins_need_a_session():
     assert navigation.change_origin(request, uuid4()) is None
 
 
+def test_go_live_steps_run_from_readiness_to_activation():
+    """Going live shows its five steps; earlier ones are done, none are links."""
+    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
+    assert [item["state"] for item in shown] == [
+        "done",
+        "done",
+        "current",
+        "upcoming",
+        "upcoming",
+    ]
+    html = render_to_string(
+        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
+    )
+    assert "<a " not in html and html.count("<li") == 5
+
+
+@pytest.mark.parametrize("offered", [True, False])
+def test_a_sidebar_page_is_linked_only_while_the_sidebar_offers_it(offered):
+    """A remembered origin the sidebar no longer offers is named, not linked.
+
+    Share options, say, refuses once its campaign is locked, and the sidebar
+    then hides it; the trail and Return link follow the sidebar (#196).
+    """
+    campaign = uuid4()
+    share = reverse("admin:share_settings", args=[campaign])
+    items = [
+        ("campaign", "campaign_settings", "Campaign settings", "/c"),
+        *([("campaign", "share_settings", "Share options", share)] if offered else []),
+    ]
+    placed = navigation.Placement(
+        parent="share_settings", arguments={"campaign_id": campaign}
+    )
+    match = _match("configuration_request", request_id=uuid4())
+    _, trail = navigation.build(match, items, placed)
+    assert trail[-2] == {
+        "label": navigation.PAGES["share_settings"].label,
+        "url": share if offered else None,
+    }
+    assert navigation.back(match, placed, items)["url"] == (
+        share if offered else reverse("admin:index")
+    )
+    # Another campaign's page is not the one the sidebar offers.
+    other = navigation.Placement(
+        parent="share_settings", arguments={"campaign_id": uuid4()}
+    )
+    assert navigation.build(match, items, other)[1][-2]["url"] is None
+
+
 def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
     """An unknown target places nothing, so the trail and Return stop there."""
     from parishkit.stewardship.accounts.integration_views import place_key_page
@@ -415,19 +472,3 @@ def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
     # A step still shows without a known integration.
     place_key_page(request, "nonsense", flow="change", step="review")
     assert navigation.placement(request).step == "review"
-
-
-def test_go_live_steps_run_from_readiness_to_activation():
-    """Going live shows its five steps; earlier ones are done, none are links."""
-    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
-    assert [item["state"] for item in shown] == [
-        "done",
-        "done",
-        "current",
-        "upcoming",
-        "upcoming",
-    ]
-    html = render_to_string(
-        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
-    )
-    assert "<a " not in html and html.count("<li") == 5
