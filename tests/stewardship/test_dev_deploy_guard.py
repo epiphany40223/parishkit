@@ -5,6 +5,7 @@ the guard's query and its place: before the build, the push and the first
 service stop, and exiting on anything but a clear "not activated".
 """
 
+import json
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "stewardship-dev-deploy.sh"
@@ -21,8 +22,14 @@ def test_the_production_guard_runs_before_anything_changes():
     assert "exit 1" in text[refusal : text.index("\nfi\n", refusal)]
     for step in ("docker build", "docker push", '"${dc[@]}" stop'):
         assert guard < text.index(step), step
-    # The refusal names where a Production upgrade is described.
-    assert "stewardship-deployment-runbook.md#upgrade" in text[refusal:]
+    # The refusal names where a Production upgrade is described, but only
+    # when the deployment is in Production: an unreadable answer (usually a
+    # stopped database) says to start the database instead.
+    production = text.index('if [ "$activated" = t ]; then', refusal)
+    unreadable = text.index("    else\n", production)
+    assert "stewardship-deployment-runbook.md#upgrade" in text[production:unreadable]
+    rest = text[unreadable : text.index("\nfi\n", refusal)]
+    assert "#upgrade" not in rest and "up --detach --wait postgres" in rest
 
 
 def test_the_writer_guard_check_runs_before_anything_changes():
@@ -49,9 +56,14 @@ def test_the_family_login_check_runs_before_anything_changes():
 # A stand-in for docker (and for the root-only `install -o`) that records
 # every call and answers as a healthy, set-up deployment would. FAKE_NOOP is
 # what the upgrade-check query answers; FAKE_RENDER_FAIL makes rendering
-# it fail, and FAKE_WEB_FAIL makes web never turn healthy.
+# it fail, FAKE_WEB_FAIL makes web never turn healthy, and FAKE_STOP_FAIL
+# makes every `compose stop` fail.
 FAKE_DOCKER = r"""#!/usr/bin/env bash
 echo "$*" >>"$FAKE_LOG"
+if [ -n "$FAKE_STOP_FAIL" ] && [[ "$*" == *" stop "* ]]; then
+    echo "stop refused by the stand-in" >&2
+    exit 1
+fi
 if [ -n "$FAKE_RENDER_FAIL" ] && [[ "$*" == *" upgrade-check "* ]]; then
     exit 2
 fi
@@ -85,11 +97,11 @@ exit 0
 """
 
 
-def run_remote(tmp_path, noop, *, status=0, **fake):
+def run_remote(tmp_path, noop, *, status=0, compose=None, **fake):
     """Run the host-side half against the stand-in; return the docker calls.
 
     `fake` sets the stand-in's FAKE_* switches; `status` is the exit status
-    the script must end with.
+    the script must end with; `compose` is the rendered compose.json text.
     """
     import os
     import shutil
@@ -108,6 +120,8 @@ def run_remote(tmp_path, noop, *, status=0, **fake):
     services = root / "config" / "services"
     services.mkdir(parents=True)
     (services / "Caddyfile").write_text("caddy\n")
+    if compose is not None:
+        (services / "compose.json").write_text(compose)
     (root / "cache" / "static").mkdir(parents=True)
     (root / "cache" / "static" / "old.js").write_text("old")
     bin_dir = tmp_path / "bin"
@@ -220,3 +234,19 @@ def test_web_that_never_turns_healthy_fails_the_deploy(tmp_path):
     assert "Web was down for" not in output
     assert "web health check still failing" in output
     assert "web: running unhealthy" in output
+
+
+def test_the_replaced_image_is_named_before_retargeting(tmp_path):
+    """A failed deploy can be rolled back to the digest the log names (#309)."""
+    old = "ghcr.io/example/stewardship@sha256:" + "a" * 64
+    compose = json.dumps({"services": {"web": {"image": old}}})
+    _, output = run_remote(tmp_path, "t", compose=compose)
+    assert f"replacing {old}" in output
+    assert output.index(f"replacing {old}") < output.index("Migration and grants")
+
+
+def test_a_failed_stop_ends_the_deploy_and_says_why(tmp_path):
+    """A stop error is shown, and nothing is retargeted after it (#309)."""
+    calls, output = run_remote(tmp_path, "t", status=1, stop_fail=True)
+    assert "stop refused by the stand-in" in output
+    assert not any(" retarget-image " in call for call in calls)
