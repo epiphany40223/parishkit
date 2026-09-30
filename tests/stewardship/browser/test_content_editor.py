@@ -10,7 +10,7 @@ from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.web.content import sanitize_html
 from parishkit.stewardship.web.security import CSP
 
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -324,7 +324,7 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
     expect(page.locator("[data-content-editor]")).to_have_js_property(
         "textContent", "Hello again"
     )
-    assert not notice.is_visible()
+    hidden(notice)
 
 
 def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
@@ -341,7 +341,7 @@ def test_unavailable_source_preview_keeps_the_pane_visible_and_read_only(
     editor = page.locator("[data-content-editor]")
     assert editor.get_attribute("contenteditable") == "false"
     assert editor.inner_text() == "Hello Sample Family"
-    assert page.locator("[data-visual-updating]").is_hidden()
+    hidden(page.locator("[data-visual-updating]"))
 
 
 def test_a_late_answer_for_older_source_never_unlocks_the_pane(page, component_origin):

@@ -9,7 +9,7 @@ from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
 from .conftest import NOW, load_collections
-from .waits import eventually, visible
+from .waits import eventually, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -500,7 +500,7 @@ def test_timestamp_and_passive_presence_never_keep_session_alive(
     assert attempts == []
     page.clock.fast_forward(5 * 60 * 1000)
     visible(page.locator("#session-expired"))
-    assert not page.locator("#session-warning").is_visible()
+    hidden(page.locator("#session-warning"))
     assert attempts == []
 
 
@@ -726,7 +726,8 @@ def test_shared_table_selection_enables_bulk_actions(page, component_origin):
     page.get_by_role("button", name="Select all").click()
     rows = page.locator("input[data-select-row]")
     assert rows.evaluate_all("nodes => nodes.every(node => node.checked)")
-    assert page.get_by_text("2 selected").is_visible() and review.is_enabled()
+    visible(page.get_by_text("2 selected"))
+    assert review.is_enabled()
     page.get_by_role("button", name="Clear selection").click()
     assert review.is_disabled()
     rows.first.check()

@@ -18,6 +18,19 @@ def visible(locator):
     expect(locator).to_be_visible()
 
 
+def hidden(locator):
+    """Assert that ``locator`` becomes hidden, waiting like Playwright's expect.
+
+    An immediate ``assert locator.is_hidden()`` (or ``not is_visible()``) right
+    after an action races the script that hides the element, and fails
+    intermittently on slower engines. ``expect(...).to_be_hidden()`` retries
+    until its timeout.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_be_hidden()
+
+
 def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
     """Poll ``page.evaluate(expression, arg)`` until it returns ``expected``.
 

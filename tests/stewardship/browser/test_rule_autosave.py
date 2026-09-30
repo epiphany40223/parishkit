@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -398,12 +398,12 @@ def test_the_pause_panel_discards_or_continues(page, component_origin):
     page.get_by_role("button", name="Discard the remaining changes").click()
     assert leader.get_by_label("Staff").is_checked()
     visible(leader.get_by_text("Change discarded", exact=True))
-    assert page.get_by_role("alert").is_hidden()
+    hidden(page.get_by_role("alert"))
     # A refusal with nothing else waiting offers a plain Continue.
     leader.get_by_label("Administrator").click()
     page.get_by_role("button", name="Continue", exact=True).wait_for()
     page.get_by_role("button", name="Continue", exact=True).click()
-    assert page.get_by_role("alert").is_hidden()
+    hidden(page.get_by_role("alert"))
     leader.get_by_label("Ministry leader").uncheck()
     leader.get_by_text("Applied", exact=True).wait_for()
     assert [item["role"] for item in sent] == [

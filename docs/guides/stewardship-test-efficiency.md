@@ -91,8 +91,12 @@ wrapper runs every job group, like changing `ci.yml`.
 Browser assertions that follow a navigation, a disclosure or a script render
 use the auto-waiting `visible()` helper in `tests/stewardship/browser/waits.py`
 (Playwright's `expect(...).to_be_visible()`), not an immediate
-`assert locator.is_visible()`, which raced on slower engines. Negative
-visibility checks stay immediate so they still prove an element never shows.
+`assert locator.is_visible()`, which raced on slower engines. A check that an
+element is hidden right after a click, fill, clock advance or script update
+uses the matching `hidden()` helper (`expect(...).to_be_hidden()`), because
+the script that hides it can lag the same way. Initial-state checks right
+after a navigation, and negative checks that prove an element never shows,
+stay immediate.
 
 ## Measured bottlenecks
 
