@@ -106,3 +106,46 @@ def test_kinds_match_the_dashboard_wording():
     from parishkit.stewardship.accounts.security_events import KINDS as DASHBOARD
 
     assert dict(KINDS) == DASHBOARD
+
+
+def test_a_replaced_backup_key_names_both_key_ids():
+    """A key change is worded with its key IDs, not login roles (#198)."""
+    content = render_security_alert(
+        alert(
+            kind="backup_key_replaced",
+            target="Backup encryption key",
+            before_roles=("0123456789abcdef",),
+            after_roles=("fedcba9876543210",),
+        )
+    )
+    assert content.subject == "[PRODUCTION] SECURITY: Backup encryption key replaced"
+    assert "only the matching private key can open them" in content.text
+    assert (
+        "Key before: 0123456789abcdef\nKey after: fedcba9876543210\n"
+        "By: admin@example.org" in content.text
+    )
+    assert "Roles" not in content.text and "Target" not in content.text
+    unknown = render_security_alert(
+        alert(
+            kind="backup_key_replaced",
+            target="Backup encryption key",
+            before_roles=(),
+            after_roles=("fedcba9876543210",),
+        )
+    )
+    assert "Key before: not known\n" in unknown.text
+    with pytest.raises(ValueError):
+        alert(kind="backup_key_replaced", before_roles=(), after_roles=())
+
+
+def test_instructions_need_no_escaping():
+    """The SQL twin inserts instructions unescaped, so they hold no markup."""
+    from html import escape
+
+    from parishkit.stewardship.jobs.security_content import (
+        INSTRUCTION,
+        KEY_INSTRUCTION,
+    )
+
+    for text in (INSTRUCTION, KEY_INSTRUCTION):
+        assert escape(text) == text

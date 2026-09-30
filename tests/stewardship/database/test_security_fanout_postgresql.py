@@ -110,6 +110,187 @@ def test_an_expansion_allocates_one_durable_outbox_per_recorded_recipient(routin
     assert TaskRun.objects.filter(task_type="outbox_delivery").count() == 2
 
 
+def replaced_key(routing):
+    """Apply a new backup key in the portal; return the event and its key ID."""
+    import base64
+
+    from parishkit.stewardship.backup_sealing import generate_keypair, parse_public_key
+
+    store, actor, _, _ = routing
+    public = generate_keypair()[1].strip()
+    document = store.active().document()
+    record = next(
+        (
+            item
+            for item in document["sections"]["integrations"]
+            if item["values"]["kind"] == "backup_key"
+        ),
+        None,
+    )
+    patch = (
+        {
+            "operation": "update",
+            "section": "integrations",
+            "id": record["id"],
+            "values": {"settings": {"public_key": public}},
+        }
+        if record
+        else {
+            "operation": "add",
+            "section": "integrations",
+            "id": str(uuid4()),
+            "values": {
+                "kind": "backup_key",
+                "settings": {"public_key": public},
+                "credential_fingerprint": None,
+            },
+        }
+    )
+    assert change(store, store.active(), actor, [patch]).state == "applied"
+    assert base64.b64decode(public)
+    event = PolicySecurityEvent.objects.filter(kind="backup_key_replaced").latest(
+        "created_at"
+    )
+    return event, parse_public_key(public).fingerprint
+
+
+def test_a_replaced_backup_key_emails_every_prior_administrator(routing):
+    """A portal key change is a security event with both key IDs (#198)."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.backup_models import BackupRun
+
+    store, actor, _, _ = routing
+    now = timezone.now()
+    BackupRun.objects.create(
+        started_at=now - timedelta(minutes=1),
+        completed_at=now,
+        database_bytes=1,
+        files_bytes=1,
+        manifest_digest="a" * 64,
+        recipient_fingerprint="c" * 16,
+        application_version="0.1.0",
+    )
+    event, first = replaced_key(routing)
+    # Before a key is configured, the key before is the newest backup's.
+    assert (event.before_roles, event.after_roles) == (["c" * 16], [first])
+    assert event.actor_id == actor and event.target == "Backup encryption key"
+    assert event.recipients == ["admin@example.org", "second@example.org"]
+    (identifier,) = schedule()
+    assert consume(identifier, store)
+    messages = OutboxMessage.objects.filter(purpose="security_event")
+    assert messages.count() == 2
+    for message in messages.select_related("render"):
+        assert message.render.subject == (
+            "[TESTING] SECURITY: Backup encryption key replaced"
+        )
+        assert f"Key before: {'c' * 16}\nKey after: {first}" in message.render.text
+    # A second change names the previously configured key as the key before.
+    second, after = replaced_key(routing)
+    assert (second.before_roles, second.after_roles) == ([first], [after])
+
+
+def test_a_removed_administrator_still_hears_of_a_key_change(routing):
+    """Removing the other Administrator first does not hide a key change.
+
+    The re-review's probe (#367): one activation removes second@, the next
+    replaces the key. Every Administrator of the last 30 days is told, and
+    the maker's own acknowledgement settles it for nobody else.
+    """
+    from parishkit.stewardship.accounts.security_events import cleared
+
+    store, actor, _, _ = routing
+    rule = next(
+        item
+        for item in store.active().document()["sections"]["login_rules"]
+        if item["values"].get("email") == "second@example.org"
+    )
+    removal = [{"operation": "remove", "section": "login_rules", "id": rule["id"]}]
+    assert change(store, store.active(), actor, removal).state == "applied"
+    event, _ = replaced_key(routing)
+    assert event.recipients == ["admin@example.org", "second@example.org"]
+    (identifier,) = schedule()
+    assert consume(identifier, store)
+    assert sorted(
+        message.render.intended_recipients
+        for message in OutboxMessage.objects.filter(
+            purpose="security_event"
+        ).select_related("render")
+    ) == [["admin@example.org"], ["second@example.org"]]
+    own = [{"email": "admin@example.org", "own": True}]
+    assert not cleared(event, own, viewer_email="later@example.org")
+
+
+def remove_second(routing):
+    """Activate a configuration without second@'s Administrator rule."""
+    store, actor, _, _ = routing
+    rule = next(
+        item
+        for item in store.active().document()["sections"]["login_rules"]
+        if item["values"].get("email") == "second@example.org"
+    )
+    removal = [{"operation": "remove", "section": "login_rules", "id": rule["id"]}]
+    assert change(store, store.active(), actor, removal).state == "applied"
+
+
+def age_activations(days):
+    """Move every activation so far back, as months of history would have."""
+    from .auth_builders import unguarded
+
+    # Raw SQL: the model refuses any update of an append-only record, and
+    # replica mode skips the database's own immutability trigger.
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_config_activation "
+            "SET created_at = created_at - make_interval(days => %s)",
+            [days],
+        )
+
+
+def test_a_long_standing_configuration_counts_when_the_others_are_removed(routing):
+    """The configuration in effect when the window opened is in it (#367 round 3).
+
+    A has been live for 60 days with admin@ and second@; admin@ activates B
+    without second@, then C with a new key. second@ was an Administrator
+    until yesterday, so second@ is told.
+    """
+    age_activations(60)
+    remove_second(routing)
+    event, _ = replaced_key(routing)
+    assert event.recipients == ["admin@example.org", "second@example.org"]
+
+
+def test_a_removal_older_than_the_window_is_the_documented_residual(routing):
+    """Someone removed 31 or more days ago is no longer told, as the spec says."""
+    remove_second(routing)
+    age_activations(31)
+    event, _ = replaced_key(routing)
+    assert event.recipients == ["admin@example.org"]
+
+
+def test_an_unrelated_change_with_a_key_configured_records_no_key_event(routing):
+    """Each configuration carries the key forward; only a change is announced."""
+    store, actor, _, _ = routing
+    replaced_key(routing)
+    before = PolicySecurityEvent.objects.filter(kind="backup_key_replaced").count()
+    slack = next(
+        item
+        for item in store.active().document()["sections"]["integrations"]
+        if item["values"]["kind"] == "slack"
+    )
+    patch = [
+        {
+            "operation": "update",
+            "section": "integrations",
+            "id": slack["id"],
+            "values": {"settings": {"channel_id": "C999"}},
+        }
+    ]
+    assert change(store, store.active(), actor, patch).state == "applied"
+    after = PolicySecurityEvent.objects.filter(kind="backup_key_replaced").count()
+    assert after == before == 1
+
+
 def test_sql_binds_the_cohort_to_the_recorded_recipients(routing, monkeypatch):
     """A cohort naming anyone but the event's recipients is refused by SQL."""
     store, _, _, _ = routing
@@ -237,9 +418,11 @@ def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
         ).state
         == "applied"
     )
+    replaced_key(routing)
     events = list(PolicySecurityEvent.objects.exclude(recipients=[]))
     assert sorted(event.kind for event in events) == [
         "administrator_granted",
+        "backup_key_replaced",
         "domain_created",
         "domain_staff_granted",
     ]

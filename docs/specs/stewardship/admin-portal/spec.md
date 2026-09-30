@@ -563,6 +563,111 @@ completion panel points to it. The copies themselves, their retention and
 their alert are defined by the
 [backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive).
 
+**Backup encryption key** lets an Administrator set or replace the public key
+every backup is sealed to (#198). Backups are sealed to an X25519 public
+(recipient) key whose private half the parish keeps off the server; the
+operator installs the first public key by hand as the `backup_data`
+credential file, and only the one-shot `backup-worker` profile reads it
+(see the [backup guide](../../../guides/stewardship-backup.md)). The design:
+
+- **Storage.** The page stores the public key, never a private key, as the
+  one setting of a key-less `backup_key` integration record in the applied
+  configuration (the same configuration-request path as every other
+  integration setting). The record cannot be removed, only replaced. The
+  `backup_data` file stays the install-time key: a backup seals to the
+  configured key when one is applied, and to the file otherwise.
+- **Pick-up.** Each `backup-worker` run reads the active configuration when
+  it starts, as it already does for the off-site folder, so the next backup
+  after the change is applied uses the new key. No service restarts and no
+  file changes.
+- **Validation.** The key must be exactly one standard base64 line of 32
+  bytes that is a canonical, usable X25519 public key: below 2^255 - 19
+  (so never with the top bit set, which about half of all private keys
+  have) and not the all-zero or another low-order point. The web and the
+  configuration schema both check it. The Administrator must then prove
+  they hold the matching private key: the page seals a short random code to
+  the pasted key and shows the sealed text, the Administrator runs
+  `pk-stewardship backup-prove` with the private key on their key machine
+  (off the server, as `backup-keygen` and `backup-open` do) and types the
+  code it prints. The code's keyed hash and the pasted key, encrypted under
+  a server-derived key, travel only in the page's signed intent, which
+  expires after 15 minutes. Nothing unproved is stored, and the pasted text
+  is never shown back, so a private key pasted by mistake (which cannot pass
+  the proof) never reaches the page source. Only then is the change offered
+  for review and confirmation; the review shows the old and new
+  fingerprints.
+- **Authority and audit.** Only Administrators with the Configure capability
+  may use the page. Starting a change and confirming it each need a Google
+  sign-in within the last five minutes. When the sign-in went stale while
+  the Administrator was at the key machine, a correctly typed code asks for
+  the Google step-up first; the proved change waits in the session (a
+  proved public key only) and is shown for review on return.
+  Confirmation uses the configuration-request path: its
+  `config_request_staged` audit entry is written by the database in the
+  same transaction as the request, and each later checkpoint
+  (`config_request_applied`, `configuration_activated`) is audited as for
+  any settings change. The request's patch names the public key, from which
+  the fingerprint follows. A pasted text with the top bit set, or that is
+  the private half of the key in use, is refused with a warning to treat it
+  as exposed.
+- **Announcement.** Applying a changed key records a `backup_key_replaced`
+  security event in the same activation transaction, like a widened
+  sign-in rule: it names the Administrator, the time and the key IDs before
+  and after (the key before is the previous configured key, or before one
+  was set the key the newest backup used, when the activating login may
+  read it). Its recipients are every address that held Administrator in
+  any configuration in effect during the last 30 days (the activation
+  trigger's `key_alert_window`): each configuration activated in that
+  window, the configuration each of them replaced (so the one in effect
+  when the window opened counts, however long ago it was activated), and
+  the configuration just before this one. So an Administrator who first
+  removes the others cannot keep it from anyone who was an Administrator
+  in the last 30 days. Each is emailed through the security-alert path
+  (a removed Administrator is asked to contact the parish or its other
+  Administrators, since they can no longer acknowledge it), and
+  the event stays on every Administrator's home page, audited as
+  `policy_security_event`, until a recipient other than the Administrator
+  who made the change acknowledges it. That Administrator's own
+  acknowledgement clears it only from their own page, even when they are
+  the only recipient; then it stays on each other Administrator's page
+  until that Administrator acknowledges it. **Residual risk:** a single
+  compromised Administrator account, when no other address has been an
+  Administrator in any configuration in effect during the last 30 days
+  (for example, the others were removed 31 or more days earlier), can
+  still replace the key with nobody else told: the
+  email and the page reach that account, and the incident below notifies
+  the current Administrators and a Slack channel that same account can
+  change. Keeping a second Administrator, and checking the backup key's
+  fingerprint in each restore drill, are the remedies.
+- **The key-change alert.** The scheduler's `backup_key_changed` incident
+  exists to catch a key file replaced by hand. A backup whose new key is the
+  key in a configuration applied (activated) before that backup completed
+  was announced above, so it opens the incident as a WARNING with its one
+  System log entry and no notice of its own. Like every WARNING episode it
+  escalates to CRITICAL, and is then sent through the configured alert
+  routes (Slack when configured), once it has lasted the escalation window
+  (15 minutes by default) and is observed again; the episode stays open
+  for the two-day key-change window, so a portal rotation is also paged,
+  about 15 minutes later. Any other change opens it as CRITICAL at once.
+  The web reads only the backup record's ID, completion time and key
+  fingerprint.
+- **What the page says.** It shows the fingerprint of the key in use (the
+  configured key, or, before one is configured, the key the newest backup
+  used) and says in plain words that: existing backups stay sealed to the
+  old key, so the old private key must be kept until every backup made with
+  it has expired (30 daily and 12 monthly sets, about a year); losing a
+  private key makes its backups unrecoverable; the private key is never
+  pasted into the server; and the new key takes effect at the next backup.
+  The page links to the runbook's
+  [key rotation](../../../guides/stewardship-backup-runbook.md#replacing-the-key)
+  steps.
+
+The setup wizard does not gain a step: the first key is installed with the
+deployment, before the wizard runs, and adding a step would reopen the
+frozen setup-draft guards and finalization patch. Instead the wizard's
+completion panel points to this page, as it does for off-site backups. A
+browser-side key-pair generator is not offered.
+
 ### Ministry activity management
 
 Admins can mark a Ministry inactive or reactivate it through an Admin web

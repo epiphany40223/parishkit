@@ -361,15 +361,24 @@ selection's `postal` flag choose only the mail-merge columns and export kind,
 no longer narrowing the rows to Families without deliverable email, so
 mailing details cover exactly the filtered Families (one function body,
 `stewardship_directory_report_v1`; Functions digest only).
+Replacing the backup encryption key from the portal (#198) admitted a
+`backup_key` integration kind, whose one setting is the public key new
+backups are sealed to, and, after its security review, announces each
+change: the activation trigger records a `backup_key_replaced` security
+event naming the key IDs before and after, addressed to every
+Administrator of any configuration in effect in the last 30 days, and
+the security-alert content
+function words it (the integration kind constraint and two function
+bodies; Constraints and Functions digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 225 | `8c9d2c89` |
 | Columns | 2482 | `2dde0916` |
-| Constraints | 3425 | `3259f4cb` |
+| Constraints | 3425 | `05bbe07f` |
 | Indexes | 1012 | `8caf56fe` |
-| Functions | 610 | `7b895cb4` |
+| Functions | 610 | `9ac85cd6` |
 | Triggers | 559 | `b255c7ec` |
 | Policies | 28 | `1c9c3b2d` |
 

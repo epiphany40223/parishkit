@@ -193,6 +193,7 @@ class AppliedIntegration(ImmutableRecord):
                         "email",
                         "slack",
                         "backup",
+                        "backup_key",
                     ]
                 ),
                 name="integration_known_kind",

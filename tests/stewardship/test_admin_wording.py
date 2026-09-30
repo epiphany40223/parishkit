@@ -24,6 +24,11 @@ FORBIDDEN = re.compile(
 # The setup-finishing page still carries instructions for whoever runs the
 # server itself, where these words name real things they operate on.
 OPERATOR_PAGES = {"setup-cancel.html"}
+# The backup encryption key page (#198) shows the key's fingerprint because it
+# is the one thing the Administrator compares with the fingerprint recorded
+# beside the private key off the server; there it is the outcome, not
+# machinery. Every other forbidden word is still checked there.
+FINGERPRINT_PAGES = {"backup-key.html"}
 TRANSLATED = re.compile(
     r"{%\s*translate\s+\"([^\"]*)\"|{%\s*blocktranslate[^%]*%}(.*?){%\s*endblocktranslate",
     re.DOTALL,
@@ -43,5 +48,13 @@ def test_admin_templates_avoid_implementation_wording(path):
     """No template tells an Admin about files, installers or preview lifetimes."""
     if path.name in OPERATOR_PAGES:
         pytest.skip("operator instructions for the server itself")
-    offending = [text for text in _messages(path) if FORBIDDEN.search(text)]
+    offending = [
+        text
+        for text in _messages(path)
+        if FORBIDDEN.search(
+            re.sub(r"(?i)\bfingerprint\b", "", text)
+            if path.name in FINGERPRINT_PAGES
+            else text
+        )
+    ]
     assert offending == []

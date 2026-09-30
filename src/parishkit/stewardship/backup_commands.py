@@ -3,8 +3,8 @@
 Every refusal is one fixed sentence, and the process log records only a
 reviewed failure category, never paths, keys or database error text.
 `backup` runs in the rendered backup profile beside the online services;
-`backup-keygen` and `backup-open` run wherever the operator keeps the private
-key, which is never the host.
+`backup-keygen`, `backup-open` and `backup-prove` run wherever the operator
+keeps the private key, which is never the host.
 """
 
 import json
@@ -15,7 +15,15 @@ from pathlib import Path
 
 from parishkit.config import ConfigError
 
-from .backup_sealing import fingerprint, generate_keypair, load_private, open_sealed
+from .backup_sealing import (
+    MAX_PROOF_TEXT,
+    display_code,
+    fingerprint,
+    generate_keypair,
+    load_private,
+    open_proof,
+    open_sealed,
+)
 from .deployment import load_deployment
 from .observability import Event, FailureKind, configure_logging, emit, emit_failure
 
@@ -62,6 +70,29 @@ def _open(key, source, destination):
         "kind": kind,
         "plaintext_bytes": count,
         "plaintext_sha256": digest,
+        "recipient_fingerprint": fingerprint(private.public_key),
+    }
+
+
+def _prove(key, source):
+    """Print the code a portal challenge hides, proving this key opens it.
+
+    The Admin portal's **Backup encryption key** page seals a short code to
+    the public key being installed; typing the code back proves the
+    Administrator holds its private key before any backup is sealed to it.
+    The challenge comes from a file, or from standard input when no file is
+    named, so it can be pasted into ``docker run -i``.
+    """
+    if key is None:
+        raise ConfigError("An explicit private key file is required.")
+    private = load_private(key)
+    if source is None:
+        text = sys.stdin.readline(MAX_PROOF_TEXT + 2)
+    else:
+        with Path(source).open(encoding="ascii") as stream:
+            text = stream.readline(MAX_PROOF_TEXT + 2)
+    return {
+        "code": display_code(open_proof(text, private)),
         "recipient_fingerprint": fingerprint(private.public_key),
     }
 
@@ -124,7 +155,7 @@ def recipient_changed(current):
 
 def _backup(config):
     """Run one backup set in the admitted backup profile and record it."""
-    from .backup import run_backup
+    from .backup import configured_recipient, run_backup
     from .backup_boundaries import admit_backup_service
     from .operator_commands import configure_operator_database
     from .runtime_paths import RuntimeLayout
@@ -153,7 +184,10 @@ def _backup(config):
             )
             BackupRun.objects.create(**facts)
 
-        manifest = run_backup(configuration, record=record)
+        # Read before the run starts, so the recorded start time follows the
+        # configuration the key came from (see backup_health.key_changed).
+        configured = configured_recipient()
+        manifest = run_backup(configuration, record=record, recipient=configured)
     # The off-site copy runs after the lease: it reads only the finished set
     # and appends its outcome, so a slow upload never holds offline work back.
     offsite = _copy_offsite(configuration)
@@ -165,6 +199,9 @@ def _backup(config):
         "files_bytes": manifest["files"]["plaintext_bytes"],
         "recipient_fingerprint": manifest["recipient_fingerprint"],
         "recipient_changed": recorded["recipient_changed"],
+        # "configured" when an Administrator set the key in the portal,
+        # "file" when the installed backup_data key was used.
+        "recipient_source": "file" if configured is None else "configured",
         "manifest_digest": recorded["manifest_digest"],
         "offsite": offsite,
     }
@@ -187,13 +224,15 @@ def _copy_offsite(configuration):
 
 
 def execute_backup_command(args):
-    """Dispatch the three backup commands with one generic refusal each."""
+    """Dispatch the four backup commands with one generic refusal each."""
     configure_logging()
     try:
         if args.command == "backup-keygen":
             result = _keygen(args.destination)
         elif args.command == "backup-open":
             result = _open(args.key, args.input, args.destination)
+        elif args.command == "backup-prove":
+            result = _prove(args.key, args.input)
         else:
             result = _backup(args.config)
     except Exception as error:
@@ -204,6 +243,9 @@ def execute_backup_command(args):
                 "owner-only destination outside the runtime root",
                 "backup-open": "ERROR: the sealed backup could not be opened; "
                 "check the key and the file and use a new destination",
+                "backup-prove": "ERROR: the challenge could not be opened; check "
+                "that the key is the private key for the public key you pasted "
+                "and that the whole challenge line was copied",
             }.get(
                 args.command,
                 "ERROR: backup refused or incomplete; check the backup profile's "

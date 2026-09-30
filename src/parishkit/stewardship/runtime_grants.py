@@ -125,6 +125,11 @@ WEB_READ_TABLES = frozenset(
     ]
 )
 
+# The newest backup's key and when it completed (#198): what the Backup
+# encryption key page shows, and what a portal key change's security alert
+# names as the key before it. Sizes, digests and versions stay unread.
+BACKUP_KEY_COLUMNS = frozenset({"id", "completed_at", "recipient_fingerprint"})
+
 WEB_INSERT_TABLES = frozenset(
     [
         "stewardship_hosted_file",
@@ -348,6 +353,9 @@ def runtime_grants(role, *, target=None):
                 "correlation_id",
             }
         }
+        # The Backup encryption key page names the key the newest backup used
+        # until an Administrator sets one (#198): those columns only.
+        columns["stewardship_backup_run"] = {"SELECT": set(BACKUP_KEY_COLUMNS)}
         # Setup progress observes live source ownership, never mutates the lease.
         columns["stewardship_source_lease"] = {
             "SELECT": {

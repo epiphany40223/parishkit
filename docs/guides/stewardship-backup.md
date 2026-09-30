@@ -31,7 +31,8 @@ writes a plaintext manifest of sizes and digests, records one row in
 host (a failed run's directory, without a manifest, neither counts nor is
 removed). Two
 console commands run wherever the operator keeps the private key:
-`backup-keygen` makes the key pair and `backup-open` decrypts one sealed file.
+`backup-keygen` makes the key pair, `backup-open` decrypts one sealed file
+and `backup-prove` answers the portal's key-replacement challenge.
 The scheduler's operational collection opens the existing
 `backup_rpo_breach` incident when no backup completed in the last 24 hours
 and resolves it when one has, and the `backup_key_changed` incident
@@ -79,10 +80,18 @@ credential file, can produce a file that opens. A set's origin is therefore
 proved by its manifest digest, which the backup records in its row and
 prints for the operator to keep off the host, and which the restore drill
 compares; this is a known v1 limitation in place of a host-held signing key.
-The public key is installed as the `backup_data`
+The first public key is installed as the `backup_data`
 credential file by hand, since it is not secret and no installer flow exists
-for it; the private key is written owner-only by `backup-keygen` to a place
-the operator chooses off the host and is never read by the application.
+for it. An Administrator may replace it from the portal's **Backup
+encryption key** page after proving they hold the new private key with
+`backup-prove`; the key is then stored in the applied configuration, and
+each backup run reads it there before it starts, falling back to the file
+only while none is set (the
+[Admin portal specification](../specs/stewardship/admin-portal/spec.md#parish-and-integration-configuration)
+has the design and the
+[runbook](stewardship-backup-runbook.md#replacing-the-key) the steps). The
+private key is written owner-only by `backup-keygen` to a place the operator
+chooses off the host and is never read by the application.
 
 ### The whole trees, read-only, by one identity
 

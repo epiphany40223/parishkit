@@ -18,10 +18,11 @@
   </section>
   {% if dashboard.security_events %}<section class="panel" id="security-events" aria-labelledby="security-events-heading">
     <h2 id="security-events-heading">{% translate "Security events awaiting acknowledgement" %}</h2>
-    <p>{% translate "Each of these widened who may sign in the moment it was activated. It stays here until an Administrator acknowledges it." %}</p>
+    <p>{% translate "Each of these widened who may sign in, or changed which key can open the backups, the moment it was activated. It stays here until an Administrator acknowledges it." %}</p>
     <ul>{% for event in dashboard.security_events %}<li>
       <p><strong>{{ event.label }}</strong>: {{ event.target }} — <time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time>{% if event.actor %} {% translate "by" %} {{ event.actor }}{% endif %}</p>
-      <p>{% translate "Roles before:" %} {% if event.before %}{{ event.before|join:", " }}{% else %}{% translate "none" %}{% endif %}. {% translate "Roles after:" %} {% if event.after %}{{ event.after|join:", " }}{% else %}{% translate "none" %}{% endif %}.</p>
+      {% if event.key_ids %}<p>{% translate "Key before:" %} <code>{{ event.key_ids.0|default:_("not known") }}</code>. {% translate "Key after:" %} <code>{{ event.key_ids.1 }}</code>. {% translate "If this was not planned with the parish's key holder, replace the key again and ask the server operator to check the newest backup." %}</p>
+      {% else %}<p>{% translate "Roles before:" %} {% if event.before %}{{ event.before|join:", " }}{% else %}{% translate "none" %}{% endif %}. {% translate "Roles after:" %} {% if event.after %}{{ event.after|join:", " }}{% else %}{% translate "none" %}{% endif %}.</p>{% endif %}
       <form method="post" action="{% url 'admin:security_event_acknowledge' event.id %}">
         {% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button>
       </form>

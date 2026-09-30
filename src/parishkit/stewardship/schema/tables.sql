@@ -71,7 +71,7 @@ CREATE TABLE public.stewardship_applied_integration (
     settings jsonb NOT NULL,
     credential_fingerprint character varying(64),
     configuration_id uuid NOT NULL,
-    CONSTRAINT integration_known_kind CHECK (((kind)::text = ANY ((ARRAY['parishsoft'::character varying, 'google_oauth'::character varying, 'google_workspace'::character varying, 'email'::character varying, 'slack'::character varying, 'backup'::character varying])::text[]))),
+    CONSTRAINT integration_known_kind CHECK (((kind)::text = ANY ((ARRAY['parishsoft'::character varying, 'google_oauth'::character varying, 'google_workspace'::character varying, 'email'::character varying, 'slack'::character varying, 'backup'::character varying, 'backup_key'::character varying])::text[]))),
     CONSTRAINT integration_safe_fingerprint CHECK (((credential_fingerprint IS NULL) OR ((credential_fingerprint)::text ~ '^[0-9a-f]{64}$'::text)))
 );
 

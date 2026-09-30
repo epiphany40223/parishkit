@@ -94,6 +94,11 @@ CONFIGURATION_COLUMNS = {
     # Recording a confirmed seed's retained evidence share-locks the current
     # source pointer the same way; the pointer's own guards keep it read-only.
     "stewardship_source_current": {"UPDATE": {"id"}},
+    # A portal backup key change's security alert names the key the newest
+    # backup used as the key before it (#198); the activation trigger reads it.
+    "stewardship_backup_run": {
+        "SELECT": {"id", "completed_at", "recipient_fingerprint"}
+    },
 }
 
 

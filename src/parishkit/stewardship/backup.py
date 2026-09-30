@@ -2,7 +2,9 @@
 
 One run writes a dated directory under the backups path holding the
 PostgreSQL custom-format dump and a tar of the configuration and credentials
-trees, each sealed to the human-held recipient key, and a plaintext manifest
+trees, each sealed to the human-held recipient key (the one an Administrator
+configured in the portal, or else the installed ``backup_data`` file), and a
+plaintext manifest
 naming sizes, digests, durations and the key, never contents. Only a completed
 run records a row; the scheduler reads the newest row to alert when a backup
 is overdue, and the offline upgrade commands read it as the verified-backup
@@ -33,7 +35,7 @@ from parishkit.config import ConfigError
 
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private
-from .backup_sealing import Recipient, seal
+from .backup_sealing import Recipient, parse_public_key, seal
 from .observability import Event, FailureKind, emit
 from .runtime_paths import (
     PROVISIONING_RECORD,
@@ -336,12 +338,46 @@ def _prune(backups, now):
             shutil.rmtree(path)
 
 
-def run_backup(configuration, *, record):
+def recipient_from(document):
+    """The backup key configured in one canonical configuration document, or None.
+
+    An Administrator sets it on the portal's **Backup encryption key** page
+    (#198) as the only setting of the key-less ``backup_key`` integration.
+    A stored key that no longer parses refuses the backup rather than
+    silently falling back to the installed file.
+    """
+    for record in document["sections"].get("integrations", []):
+        if record["values"]["kind"] == "backup_key":
+            return parse_public_key(record["values"]["settings"]["public_key"])
+    return None
+
+
+def configured_recipient():
+    """The configured backup key from the active configuration, or None.
+
+    The backup command reads it before the run starts, so a key applied
+    before a backup's recorded start is the key that backup seals to.
+    """
+    from .accounts.runtime_models import SystemConfiguration
+
+    runtime = (
+        SystemConfiguration.objects.select_related("active_configuration")
+        .only("active_configuration__canonical_document")
+        .first()
+    )
+    if runtime is None or runtime.active_configuration is None:
+        return None
+    return recipient_from(runtime.active_configuration.canonical_document)
+
+
+def run_backup(configuration, *, record, recipient=None):
     """Write one sealed backup set and record it; return the manifest.
 
     `record` persists the completed run's facts (the caller owns the database
     session) and runs only after every output is durable, so a row never
     names a set that does not exist. Retention runs after the record.
+    `recipient` is the Administrator-configured key, when there is one;
+    otherwise the set is sealed to the installed ``backup_data`` file.
     """
     layout = RuntimeLayout(configuration)
     # An authority moved outside the archived trees would be silently left out
@@ -353,7 +389,8 @@ def run_backup(configuration, *, record):
         for name in ARCHIVED_TREES
     ):
         raise ConfigError("The authority store must live inside an archived tree.")
-    recipient = Recipient.load(layout.credential("backup_data"))
+    if recipient is None:
+        recipient = Recipient.load(layout.credential("backup_data"))
     backups = private_directory(explicit_path(configuration.paths["backups"]))
     started = datetime.now(UTC)
     directory = private_directory(

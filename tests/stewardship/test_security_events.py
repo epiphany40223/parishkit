@@ -9,9 +9,9 @@ from parishkit.stewardship.accounts.security_events import KINDS, cleared
 ACTOR, OTHER, NEWCOMER = "admin@example.org", "second@example.org", "new@example.org"
 
 
-def event(recipients, target=NEWCOMER):
+def event(recipients, target=NEWCOMER, kind="administrator_granted"):
     """One expansion recorded at activation with the Administrators of the time."""
-    return SimpleNamespace(recipients=recipients, target=target)
+    return SimpleNamespace(recipients=recipients, target=target, kind=kind)
 
 
 def acknowledgement(email, *, own=False):
@@ -94,9 +94,29 @@ def test_a_recovery_with_nobody_else_is_settled_by_its_target():
 
 
 def test_every_expansion_kind_the_trigger_records_has_a_label():
-    """The dashboard words each of the specification's three expansions."""
+    """The dashboard words the three expansions and a replaced backup key."""
     assert set(KINDS) == {
         "administrator_granted",
         "domain_created",
         "domain_staff_granted",
+        "backup_key_replaced",
     }
+
+
+def test_a_key_change_is_never_settled_by_its_own_maker():
+    """A lone Administrator's own acknowledgement hides a key change from no one.
+
+    Its recipients are every Administrator of the last 30 days (#198); when
+    that is only the Administrator who made it, everyone else still sees it
+    until they acknowledge it themselves.
+    """
+    alone = event([ACTOR], target="Backup encryption key", kind="backup_key_replaced")
+    own = [acknowledgement(ACTOR, own=True)]
+    assert cleared(alone, own, viewer_email=ACTOR)
+    assert not cleared(alone, own, viewer_email=NEWCOMER)
+    assert cleared(alone, own + [acknowledgement(NEWCOMER)], viewer_email=NEWCOMER)
+    both = event(
+        [ACTOR, OTHER], target="Backup encryption key", kind="backup_key_replaced"
+    )
+    assert not cleared(both, own, viewer_email=NEWCOMER)
+    assert cleared(both, [acknowledgement(OTHER)], viewer_email=NEWCOMER)

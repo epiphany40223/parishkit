@@ -75,14 +75,64 @@ def backup_overdue(instant):
     return instant - latest > REQUIRED_WITHIN
 
 
+def configured_keys(before):
+    """Fingerprints of every backup key applied in the portal before ``before``.
+
+    A key an Administrator set on the **Backup encryption key** page (#198)
+    was proved against its private key before it could be applied, so a
+    backup that switched to it is a deliberate rotation. Each applied
+    configuration version carries its own copy of the record, so the keys
+    are read distinct; the set is small and read only when a change is seen.
+    """
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedIntegration,
+    )
+    from parishkit.stewardship.accounts.runtime_models import (
+        ConfigurationActivation,
+    )
+    from parishkit.stewardship.backup_sealing import SealError, parse_public_key
+
+    activated = ConfigurationActivation.objects.filter(created_at__lte=before).values(
+        "configuration_id"
+    )
+    keys = set()
+    for text in (
+        AppliedIntegration.objects.filter(
+            kind="backup_key", configuration_id__in=activated
+        )
+        .values_list("settings__public_key", flat=True)
+        .distinct()
+    ):
+        try:
+            keys.add(parse_public_key(text).fingerprint)
+        except SealError:
+            continue
+    return keys
+
+
 def key_changed(instant=None):
-    """True when a backup in the last ``KEY_CHANGE_WINDOW`` changed the key.
+    """True when a backup in the last ``KEY_CHANGE_WINDOW`` changed the key."""
+    return key_change(instant) is not None
+
+
+def key_change(instant=None):
+    """How a backup in the last ``KEY_CHANGE_WINDOW`` changed the key, or None.
+
+    Returns "unexpected" when any change was not made in the portal, else
+    "portal" when every change was, and None when no backup changed the key.
 
     Every backup still succeeds and stays green with a replaced ``backup_data``
     file, or a public key that is not the kept private key's pair; only a
     restore would notice (#305 M4). A change is legitimate only when the
     operator installed a new key on purpose, so it raises a CRITICAL incident
-    for them to confirm by opening a set with the kept key.
+    for them to confirm by opening a set with the kept key. A change to a key
+    an Administrator applied in the portal before that backup completed
+    (``configured_keys``) was also announced to every Administrator as a
+    security event, so it opens the incident as a WARNING instead. That
+    sends nothing by itself, but like any WARNING episode it escalates to
+    CRITICAL (and is routed) after the escalation window, since the episode
+    stays open for ``KEY_CHANGE_WINDOW``: a reminder to open the new backup
+    with the new key, not an immediate page.
 
     Each backup completed within the window is compared with the one before
     it (the run just before the window included), in completion order with
@@ -90,25 +140,34 @@ def key_changed(instant=None):
     window after a change and is not missed when later backups used the new
     key before this check ran. Resolving says only that no backup in the
     window changed the key, not that anyone confirmed the kept key opens
-    them. A few small row reads.
+    them. A few small row reads, and one more per change.
     """
     instant = database_now() if instant is None else instant
     since = instant - KEY_CHANGE_WINDOW
     runs = BackupRun.objects.order_by("-completed_at", "-id")
     recent = list(
         runs.filter(completed_at__gte=since).values_list(
-            "recipient_fingerprint", flat=True
+            "recipient_fingerprint", "completed_at"
         )
     )
     if not recent:
-        return False
+        return None
     before = (
         runs.filter(completed_at__lt=since)
-        .values_list("recipient_fingerprint", flat=True)
+        .values_list("recipient_fingerprint", "completed_at")
         .first()
     )
     keys = recent + ([before] if before is not None else [])
-    return any(newer != older for newer, older in zip(keys, keys[1:], strict=False))
+    # Changes are rare (normally none), so each one reads the keys applied
+    # before its own backup completed.
+    changes = [
+        newer[0] in configured_keys(newer[1])
+        for newer, older in zip(keys, keys[1:], strict=False)
+        if newer[0] != older[0]
+    ]
+    if not changes:
+        return None
+    return "portal" if all(changes) else "unexpected"
 
 
 def destination_configured_since():
@@ -234,10 +293,11 @@ def observe_backup_health():
         )
     else:
         record_recovery(IncidentKind.BACKUP_OFFSITE_FAILED)
-    if key_changed():
+    change = key_change()
+    if change is not None:
         episode = record_observation(
             IncidentKind.BACKUP_KEY_CHANGED,
-            IncidentLevel.CRITICAL,
+            IncidentLevel.CRITICAL if change == "unexpected" else IncidentLevel.WARNING,
             policy=configured_policy(),
         )
         if episode.occurrences == 1:

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import timedelta
 from uuid import uuid4
 
@@ -60,6 +61,24 @@ def observe():
     """Observe as the worker that runs the operational collection."""
     with task_login(ServiceRole.WORKER, exact=True), work_transaction():
         backup_health.observe_backup_health()
+
+
+@contextmanager
+def backup_login():
+    """The backup login as provisioned: its grants plus reading everything.
+
+    Production makes it a member of pg_read_all_data (with inheritance) that
+    bypasses row-level security, which ``task_login`` does not model; the
+    backup command reads the active configuration through them.
+    """
+    name = "pk_stewardship_backup_worker"
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f"GRANT pg_read_all_data TO {name} WITH INHERIT TRUE")
+            cursor.execute(f"ALTER ROLE {name} BYPASSRLS")
+            cursor.execute(f"SET SESSION AUTHORIZATION {name}")
+        yield
 
 
 def test_the_backup_login_writes_one_row_and_nothing_edits_it():
@@ -261,8 +280,9 @@ def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
 
     fingerprint = ["b" * 16]
 
-    def run_backup(configuration, *, record):
+    def run_backup(configuration, *, record, recipient):
         """Record one run with the current key, as the real backup does."""
+        assert recipient is None  # no key configured in the portal
         with transaction.atomic():
             started = database_now()
         record(
@@ -295,9 +315,11 @@ def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
 
     def changed():
         """Run the command once and return its recipient_changed field."""
-        with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+        with backup_login():
             assert main(["backup", "--config", "unused"]) == 0
-        return json.loads(capsys.readouterr().out)["recipient_changed"]
+        output = json.loads(capsys.readouterr().out)
+        assert output["recipient_source"] == "file"
+        return output["recipient_changed"]
 
     assert changed() is False
     assert changed() is False

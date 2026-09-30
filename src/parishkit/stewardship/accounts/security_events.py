@@ -1,4 +1,4 @@
-"""High-impact login-policy expansions awaiting an Administrator's acknowledgement.
+"""High-impact policy changes awaiting an Administrator's acknowledgement.
 
 The activation trigger records each expansion the specification names, an
 Administrator added to an exact address, a hosted-domain rule created or Staff
@@ -6,7 +6,8 @@ added to one, as a durable security event carrying the addresses of the
 Administrators who existed before it. This module decides which of those
 events an Administrator's dashboard still shows and records the
 acknowledgement that clears one, audited; the operational email is a separate
-delivery.
+delivery. A backup encryption key replaced in the portal (#198) is recorded
+the same way, since it decides who can open every later backup.
 """
 
 from django.contrib.postgres.expressions import ArraySubquery
@@ -29,6 +30,8 @@ KINDS = {
     "administrator_granted": "Administrator added to an exact address",
     "domain_created": "Hosted-domain rule created",
     "domain_staff_granted": "Staff added to a hosted-domain rule",
+    # A replaced backup encryption key (#198): before and after hold key IDs.
+    "backup_key_replaced": "Backup encryption key replaced",
 }
 
 
@@ -47,6 +50,8 @@ def cleared(event, acknowledgements, *, viewer_email):
     grant cannot be waved through by its beneficiary: a recovery event names
     the account it grants among its recipients, since that account must be
     told, but it was not an Administrator at activation and settles nothing.
+    For a replaced backup key the actor's own acknowledgement settles
+    nothing for anyone else, even as the only recipient.
     """
     recipients = set(event.recipients) - {event.target}
     for acknowledgement in acknowledgements:
@@ -55,7 +60,12 @@ def cleared(event, acknowledgements, *, viewer_email):
         if acknowledgement["email"] == event.target:
             continue
         if acknowledgement["own"]:
-            if len(recipients) <= 1:
+            # A replaced backup key is never settled by the Administrator who
+            # made it: if their account was taken over, that is exactly who
+            # would wave it through. It stays on every other Administrator's
+            # panel until one of the other recipients (every Administrator of
+            # the last 30 days) acknowledges it, or each viewer does.
+            if len(recipients) <= 1 and event.kind != "backup_key_replaced":
                 return True
         elif acknowledgement["email"] in recipients:
             return True
@@ -94,6 +104,14 @@ def open_events(viewer):
                 "target": event.target,
                 "before": role_labels(event.before_roles),
                 "after": role_labels(event.after_roles),
+                # Key IDs, for a replaced backup key only. Not "keys": the
+                # template would then fall back to a plain dict's .keys().
+                "key_ids": (
+                    (event.before_roles[:1] or [None])[0],
+                    event.after_roles[0],
+                )
+                if event.kind == "backup_key_replaced"
+                else None,
                 "created_at": event.created_at,
                 "actor": event.actor_address,
             }

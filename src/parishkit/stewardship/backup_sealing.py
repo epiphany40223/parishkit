@@ -13,6 +13,7 @@ database: the callers own what is sealed and where it goes.
 import base64
 import hashlib
 import json
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -195,3 +196,105 @@ def open_sealed(source, sink, *, private):
         index += 1
         if len(chunk) < CHUNK:
             return header["kind"], total, digest.hexdigest()
+
+
+# A key-possession proof: the Admin portal seals a short random code to a
+# pasted public key, and only the matching private key, on the operator's key
+# machine, can print it again (``backup-prove``). Crockford base32 without
+# the easily confused letters; twelve characters are 60 random bits, far
+# beyond guessing within the page's one-hour window.
+PROOF_PREFIX = "PKBKP1:"
+PROOF_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+PROOF_LENGTH = 12
+# Sealed boxes add a 32-byte ephemeral key and a 16-byte tag.
+MAX_PROOF_TEXT = len(PROOF_PREFIX) + 4 * ((PROOF_LENGTH + 48 + 2) // 3)
+
+
+# X25519 public keys are field elements below 2^255 - 19, so a canonical one
+# never has the top bit of its last byte set. Private keys are random bytes
+# (libsodium clamps them only when used), so about half of them do.
+FIELD_PRIME = 2**255 - 19
+
+
+def looks_private(text):
+    """True when pasted text is 32 bytes no public key could be: a private key.
+
+    Catches about half of mistaken private-key pastes without knowing the
+    pair; the rest are caught by the proof, which such a key cannot pass.
+    """
+    try:
+        raw = base64.b64decode(text.strip(), validate=True)
+    except (AttributeError, ValueError, TypeError):
+        return False
+    return len(raw) == PublicKey.SIZE and bool(raw[31] & 0x80)
+
+
+def parse_public_key(text):
+    """Admit one pasted public key: 32 bytes as one canonical base64 line.
+
+    Anything else is refused, including the whole JSON line
+    ``backup-keygen`` prints and any non-canonical encoding (the top bit
+    set, or a value of at least 2^255 - 19). A private key's text has the
+    same shape, so the page warns never to paste one. libsodium refuses to
+    seal to the all-zero and other low-order points, so a trial seal rejects
+    keys no private key could open.
+    Returns the ``Recipient``; its canonical text is ``public_text``.
+    """
+    try:
+        value = text.strip()
+        raw = base64.b64decode(value, validate=True)
+        if len(raw) != PublicKey.SIZE or base64.b64encode(raw).decode() != value:
+            raise ValueError
+        # Only the canonical encoding: another encoding of the same point
+        # would get a fingerprint its private key never reports.
+        if int.from_bytes(raw, "little") >= FIELD_PRIME:
+            raise ValueError
+        public = PublicKey(raw)
+        SealedBox(public).encrypt(b"\0")
+    except (AttributeError, ValueError, TypeError, RuntimeError, CryptoError):
+        raise SealError("This is not a backup public key.") from None
+    return Recipient(public)
+
+
+def public_text(recipient):
+    """The canonical one-line base64 form a public key is stored in."""
+    return base64.b64encode(bytes(recipient.public)).decode()
+
+
+def seal_proof(recipient):
+    """Return ``(challenge, code)``: a random code and its sealed text."""
+    code = "".join(secrets.choice(PROOF_ALPHABET) for _ in range(PROOF_LENGTH))
+    sealed = SealedBox(recipient.public).encrypt(code.encode("ascii"))
+    return PROOF_PREFIX + base64.b64encode(sealed).decode(), code
+
+
+def normalize_code(text):
+    """Read a typed code leniently: any case, spaces or dashes, O for 0, I/L for 1."""
+    value = "".join(text.split()).replace("-", "").upper()
+    return value.translate(str.maketrans({"O": "0", "I": "1", "L": "1"}))
+
+
+def display_code(code):
+    """Group a code in fours so it is easy to read aloud and type."""
+    return "-".join(code[index : index + 4] for index in range(0, len(code), 4))
+
+
+def open_proof(text, private):
+    """Open a portal challenge with the private key; return its code.
+
+    A challenge sealed to any other key, or anything that is not a challenge,
+    is one clear refusal: the Administrator pasted the wrong key or text.
+    """
+    if not isinstance(private, PrivateKey):
+        raise TypeError("A private key is required.")
+    value = text.strip()
+    try:
+        if not value.startswith(PROOF_PREFIX) or len(value) > MAX_PROOF_TEXT:
+            raise ValueError
+        sealed = base64.b64decode(value.removeprefix(PROOF_PREFIX), validate=True)
+        code = SealedBox(private).decrypt(sealed).decode("ascii")
+    except (ValueError, CryptoError):
+        raise SealError("This challenge was not sealed to this key.") from None
+    if len(code) != PROOF_LENGTH or any(c not in PROOF_ALPHABET for c in code):
+        raise SealError("This challenge was not sealed to this key.")
+    return code

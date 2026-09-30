@@ -15,6 +15,7 @@ from django.template.loader import render_to_string
 from PIL import Image
 
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
+from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
@@ -381,6 +382,30 @@ def component_origin():
                 "changes": [
                     {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
                 ],
+            },
+        ),
+        (
+            "/backup-key",
+            "backup-key",
+            {
+                "label": "Backup encryption key",
+                "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
+                "fresh": False,
+                "key_error": "This is not a backup public key.",
+            },
+        ),
+        (
+            "/backup-key-proof",
+            "backup-key",
+            {
+                "label": "Backup encryption key",
+                "current": KeyStatus("configured", "0123456789abcdef"),
+                "fresh": True,
+                "new_fingerprint": "fedcba9876543210",
+                # A real challenge line is one unbroken 87-character word.
+                "challenge": "PKBKP1:" + "A" * 80,
+                "intent": "synthetic-intent",
+                "code_error": "That code does not match.",
             },
         ),
         (

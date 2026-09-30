@@ -1,0 +1,62 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% comment %}
+  The backup encryption key (#198): the key in use, then the two steps of a
+  change: paste the new public key, then type the code backup-prove prints
+  from the challenge. The same steps are in the backup runbook's "Replacing
+  the key"; keep them in step. Never show a posted value back except the
+  sealed challenge and fingerprints; the pasted key travels in the intent
+  only encrypted.
+{% endcomment %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
+<h1>{{ label }}</h1>
+<p>{% translate "Every backup is encrypted with a public key before it is written. Only the matching private key, which your parish keeps off this server, can open it. This server never has, and must never be given, the private key." %}</p>
+<section class="panel" aria-labelledby="current-key">
+<h2 id="current-key">{% translate "Key in use" %}</h2>
+{% if current.source == 'configured' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Set on this page. The next backup uses it." %}</p>
+{% elif current.source == 'installed' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Installed on the server with the deployment; this is the key the newest backup used, on" %} <time datetime="{{ current.backup_at|instant }}" data-local-instant>{{ current.backup_at|instant }}</time>.</p>
+{% else %}<p>{% translate "The key installed on the server with the deployment. No backup has run yet, so its fingerprint is not known here; each backup prints it as recipient_fingerprint." %}</p>{% endif %}
+<p>{% translate "Compare the fingerprint with the one recorded next to your private key. If they differ, the backups cannot be opened with the key you kept." %}</p>
+</section>
+<details class="panel"><summary>{% translate "Before you replace the key" %}</summary>
+<ul>
+<li>{% translate "Backups already made stay encrypted with the old key. Keep the old private key, and every copy of it, until all of those backups have been deleted by retention (about a year: 30 daily and 12 monthly backups are kept)." %}</li>
+<li>{% translate "If a private key is lost, every backup made with it can never be opened. Keep each private key in two safe places off this server." %}</li>
+<li>{% translate "Make the new key pair on the key machine, not on this server:" %} <code>pk-stewardship backup-keygen</code>, {% translate "as the backup runbook describes. Paste only its public_key value here." %}</li>
+<li>{% translate "The new key is used from the next backup. After it runs, open that backup with the new private key, as the restore drill does." %}</li>
+</ul>
+</details>
+{% if proved %}
+<section class="panel" aria-labelledby="prove-done">
+<h2 id="prove-done">{% translate "Code accepted" %}</h2>
+<p>{% translate "For security, confirm your Google sign-in before reviewing the change. You will come back to this page to review and confirm it; the code does not need to be typed again." %}</p>
+{% include 'stewardship/components/reauthenticate.html' with next=next %}
+</section>
+{% elif challenge %}
+<section class="panel" aria-labelledby="prove-key">
+<h2 id="prove-key">{% translate "Prove you have the new private key" %}</h2>
+<p>{% translate "New key fingerprint:" %} <code>{{ new_fingerprint }}</code></p>
+<ol>
+<li>{% translate "Copy this whole line. It is a code sealed to the new public key:" %}<br><code>{{ challenge }}</code></li>
+<li>{% translate "On the key machine, run backup-prove with the new private key and paste the line when it waits for input:" %}<br><code>docker run --rm -i --network none --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly IMAGE backup-prove --key /keys/NEW_PRIVATE_KEY_FILE</code></li>
+<li>{% translate "Type the code it prints below. The code proves the private key opens what is sealed to this public key; the private key itself never leaves your machine." %}</li>
+</ol>
+<form method="post" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
+{% if code_error %}<p class="notice notice-error" role="alert">{{ code_error }}</p>{% endif %}
+<div><label for="backup-key-code">{% translate "Code from backup-prove" %}</label>
+<input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required></div>
+<button type="submit">{% translate "Check code and review" %}</button></form>
+<p><a href="{% url 'admin:integration_settings' 'backup_key' %}">{% translate "Start over" %}</a></p>
+</section>
+{% else %}
+<form method="post" class="panel" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="challenge">
+<h2>{% translate "Replace the key" %}</h2>
+{% if not fresh %}<p class="help">{% translate "For security, replacing the key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}</p>{% endif %}
+{% if key_error %}<p class="notice notice-error" role="alert">{{ key_error }}</p>{% endif %}
+<div><label for="backup-key-public">{% translate "New public key" %}</label>
+<input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required>
+<p class="help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p></div>
+<button type="submit">{% translate "Continue" %}</button></form>
+{% endif %}
+{% endblock %}

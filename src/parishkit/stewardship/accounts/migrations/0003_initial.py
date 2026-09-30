@@ -976,6 +976,7 @@ class Migration(migrations.Migration):
                                     "email",
                                     "slack",
                                     "backup",
+                                    "backup_key",
                                 ],
                             )
                         ),

@@ -436,7 +436,12 @@ reads the whole credentials tree and all database data, has application
 egress, a wider exfiltration surface the v1 scope accepts), and the
 consistent manifests, isolated
 backup-worker routing, purge-triggered backup, revalidation, escrow workflow
-and key rotation described here are deferred past the launch.
+and key rotation described here are deferred past the launch. In their
+place, an Administrator may replace the public key new backups are sealed to,
+after proving they hold its private key, as the
+[Admin portal specification](../admin-portal/spec.md#parish-and-integration-configuration)
+describes under **Backup encryption key**; old private keys stay with the
+operator until the backups sealed to them expire.
 
 The application provides a shared backup service invoked by its scheduled task,
 operator command, or guarded campaign-purge web workflow. Each invocation

@@ -39,6 +39,8 @@ INTEGRATION_FIELDS = {
     "email": {"sender": "email", "reply_to": "email"},
     "slack": {"channel_id": "text"},
     "backup": {"target": "url"},
+    # The public key backups are sealed to (#198); never a private key.
+    "backup_key": {"public_key": "text"},
 }
 
 
@@ -117,6 +119,8 @@ def _validate_v1_sections(document):
                 invalid()
         if kind == "backup":
             _drive_folder(settings["target"])
+        if kind == "backup_key":
+            _backup_public_key(settings["public_key"], values)
         fingerprint = values["credential_fingerprint"]
         if fingerprint is not None and (
             type(fingerprint) is not str
@@ -138,6 +142,32 @@ def _drive_folder(target):
     except ValueError:
         invalid()
     if target != f"https://drive.google.com/drive/folders/{folder}":
+        invalid()
+
+
+def _backup_public_key(text, values):
+    """Admit only a canonical, usable backup public key, with no fingerprint.
+
+    No stored configuration has ever held a ``backup_key`` record, so this
+    new kind changes no historical document's meaning. The key is public
+    and key-less in the credential sense: no installer holds a file for it.
+    """
+    from parishkit.stewardship.backup_sealing import (
+        SealError,
+        parse_public_key,
+        public_text,
+    )
+
+    if values["credential_fingerprint"] is not None:
+        invalid()
+    try:
+        canonical = public_text(parse_public_key(text))
+    except SealError:
+        invalid()
+    # Exactly the canonical text, not merely one that parses: the parser
+    # strips Unicode whitespace that PostgreSQL's base64 decoding (in the
+    # activation trigger) refuses, and a re-save must compare equal.
+    if text != canonical:
         invalid()
 
 

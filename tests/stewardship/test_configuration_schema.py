@@ -13,6 +13,9 @@ from parishkit.stewardship.accounts.configuration_snapshots import prepare_snaps
 
 from .configuration_factory import configuration_document, configuration_version
 
+# A usable X25519 public key (the base point), as backup-keygen prints one.
+PUBLIC_KEY = "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 
 @pytest.mark.parametrize("kind,fields", INTEGRATION_FIELDS.items())
 def test_supported_integration_shapes(kind, fields):
@@ -24,7 +27,7 @@ def test_supported_integration_shapes(kind, fields):
             name: {
                 "email": "staff@example.org",
                 "url": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMn",
-                "text": "example-id",
+                "text": PUBLIC_KEY if kind == "backup_key" else "example-id",
             }[value_type]
             for name, value_type in fields.items()
         },
@@ -49,6 +52,36 @@ def test_backup_target_must_be_a_canonical_drive_folder_link(target):
         "kind": "backup",
         "settings": {"target": target},
         "credential_fingerprint": None,
+    }
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
+@pytest.mark.parametrize(
+    "key,fingerprint",
+    [
+        ("example-id", None),
+        (PUBLIC_KEY.rstrip("="), None),
+        ("A" * 43 + "=", None),  # the all-zero point no private key opens
+        # The same point with the top bit set: a non-canonical encoding.
+        ("CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=", None),
+        # 2^255 - 19 + 9: at least the field prime, so non-canonical.
+        ("9v///////////////////////////////////////38=", None),
+        # Surrounding whitespace the parser would strip, Unicode or not.
+        (PUBLIC_KEY + "\u00a0", None),
+        (PUBLIC_KEY + "\n", None),
+        ('{"public_key": "' + PUBLIC_KEY + '"}', None),
+        (PUBLIC_KEY, "a" * 64),
+        (7, None),
+    ],
+)
+def test_backup_key_must_be_one_canonical_usable_public_key(key, fingerprint):
+    """The stored backup key is a usable public key and nothing else (#198)."""
+    document = configuration_document()
+    document["sections"]["integrations"][0]["values"] = {
+        "kind": "backup_key",
+        "settings": {"public_key": key},
+        "credential_fingerprint": fingerprint,
     }
     with pytest.raises(ConfigError):
         configuration_version(document)
