@@ -30,7 +30,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
-from parishkit.stewardship.web.tables import window_table
+from parishkit.stewardship.web.tables import Sorting, window_table
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime as admin_runtime
@@ -49,6 +49,26 @@ from .sessions import FAMILY_IDLE, authenticated_admin, database_now
 SECTIONS = frozenset(PRESENCE_SECTIONS)
 INTERVAL = timedelta(seconds=30)
 VISIBLE = timedelta(seconds=90)
+# Every column sorts on the server over the visible set, which the
+# family_session_presence index (presence_at, id) bounds to sessions seen in
+# the last 90 seconds before any sort runs; only Last heartbeat is itself
+# that index's order. Family is the name from the current source snapshot,
+# not a session column, so a Family sort names every visible session and
+# sorts them in memory (see _by_name); the others order in SQL. The session
+# id is the unique tiebreak.
+PRESENCE_SORTING = Sorting.by_column(
+    {
+        "name": (),
+        "duid": ("family__family_duid",),
+        "started": ("authenticated_at",),
+        "activity": ("last_activity_at",),
+        "heartbeat": ("presence_at",),
+        "section": ("presence_section",),
+    },
+    default="-heartbeat",
+    descending_first={"started", "activity", "heartbeat"},
+    tiebreak=("id",),
+)
 
 
 @require_POST
@@ -145,6 +165,25 @@ def _names(configuration, rows):
     )
 
 
+def _by_name(configuration, query, window, token):
+    """One page of visible sessions sorted by Family name, with their names.
+
+    Names come from the source snapshot, so every visible session is named
+    and sorted here; the 90-second presence window keeps that set small.
+    Session id order first makes equal names deterministic.
+    """
+    rows = list(query.select_related("family").order_by("id"))
+    names = _names(configuration, rows) if rows else {}
+    ordered = sorted(
+        rows,
+        key=lambda row: (names.get(row.family.family_duid) or "").casefold(),
+        reverse=PRESENCE_SORTING.tokens[token][1],
+    )
+    start = (window.page - 1) * window.size
+    page = ordered[start : start + window.size]
+    return page, len(ordered) > start + window.size, names
+
+
 @require_safe
 def active_families(request):
     """Admin-only passive read with one coherent eligibility/source observation.
@@ -160,7 +199,8 @@ def active_families(request):
     try:
         service = admin_runtime()
         actor = principal(request, service, passive=True)
-        selected = filters(request.GET, allowed={"page", "size", "format"})
+        selected = filters(request.GET, allowed={"page", "size", "sort", "format"})
+        sort = PRESENCE_SORTING.parse(selected)
         if selected.get("format", "html") not in {"html", "json", "count"}:
             raise ValueError("Invalid presence format.")
         count_only = selected.get("format") == "count"
@@ -172,14 +212,15 @@ def active_families(request):
             configuration = editable_configuration(service)
             instant = database_now()
             query = visible_sessions(configuration, instant)
-            rows, has_next = (
-                ([], False)
-                if count_only
-                else window.rows(
-                    query.select_related("family").order_by("-presence_at", "id")
+            if count_only:
+                rows, has_next, names = [], False, {}
+            elif PRESENCE_SORTING.tokens[sort][0] == "name":
+                rows, has_next, names = _by_name(configuration, query, window, sort)
+            else:
+                rows, has_next = window.rows(
+                    PRESENCE_SORTING.order(query.select_related("family"), sort)
                 )
-            )
-            names = _names(configuration, rows) if rows else {}
+                names = _names(configuration, rows) if rows else {}
             data = {
                 "count": query.count(),
                 "page": window.page,
@@ -208,7 +249,17 @@ def active_families(request):
                 "stewardship/presence.html",
                 {
                     "presence": data,
-                    "table": window_table(window, data["sessions"], has_next),
+                    "table": window_table(
+                        window,
+                        data["sessions"],
+                        has_next,
+                        # The visible set is small and already counted
+                        # exactly above, so no bounded count is needed.
+                        total=(data["count"], False),
+                        carry=[("format", selected.get("format", ""))],
+                        sorting=PRESENCE_SORTING,
+                        sort=sort,
+                    ),
                 },
             )
         )

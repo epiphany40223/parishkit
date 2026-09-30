@@ -28,6 +28,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.parish_views import ParishForm
+from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
 from parishkit.stewardship.accounts.schedule_views import _describe
 from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
@@ -1223,6 +1224,9 @@ def component_origin():
                         }
                     ],
                     False,
+                    total=(1, False),
+                    sorting=PRESENCE_SORTING,
+                    sort="-heartbeat",
                 ),
             },
         ),

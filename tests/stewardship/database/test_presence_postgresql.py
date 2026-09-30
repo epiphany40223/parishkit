@@ -119,6 +119,33 @@ def test_admin_detail_has_names_and_no_answers_or_credentials(family_service, go
     assert b"Families on the form now:" in browser.get("/admin/").content
 
 
+def test_admin_roster_sorts_every_column_on_the_server(family_service, google):
+    """Each whitelisted token orders the whole visible set before paging."""
+    publish(source())
+    for _ in range(2):
+        family, _ = login(family_service.code)
+        assert beat(family).status_code == 200
+    browser, _ = signed_in()
+
+    def sessions(token):
+        """The JSON roster under one sort token."""
+        response = browser.get(ADMIN, {"format": "json", "sort": token})
+        assert response.status_code == 200, response.content
+        return response.json()["sessions"]
+
+    oldest = sessions("started")
+    assert len(oldest) == 2 and oldest[0]["started_at"] <= oldest[1]["started_at"]
+    assert sessions("-started") == oldest[::-1]
+    for token in ("name", "-name", "duid", "-activity", "section", "-heartbeat"):
+        assert len(sessions(token)) == 2
+    page = browser.get(ADMIN, {"sort": "-started", "size": 25}).content
+    assert b'aria-sort="descending"' in page and b"Page 1 of 1" in page
+    assert b"Showing 1\xe2\x80\x932 of 2" in page
+    first = browser.get(ADMIN, {"format": "json", "sort": "started", "size": 1})
+    assert first.json()["has_next"]
+    assert first.json()["sessions"][0]["started_at"] == oldest[0]["started_at"]
+
+
 def test_visibility_expires_independently_of_logged_in_session(family_service, google):
     """Abandoned visible tabs disappear at 90 seconds without changing login state."""
     browser, _ = login(family_service.code)
@@ -335,6 +362,9 @@ def test_header_count_poll_never_fetches_family_names(family_service, google):
         "?page=0",
         "?page=not-a-number",
         "?unknown=value",
+        "?sort=presence_at",
+        "?sort=name%3B",
+        "?sort=-id",
     ],
 )
 def test_presence_invalid_navigation_is_rejected(family_service, google, query):
