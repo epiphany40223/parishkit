@@ -365,7 +365,7 @@ def test_directory_export_staff_gates_and_service_boundaries(
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
         response, body = read(browser, route + "?mailing=yes")
         assert response.status_code == 200 and b"<fieldset disabled>" in body
-        assert b"Campaign work is gated" in body
+        assert b"Other campaign work" in body
         assert (
             read(browser, f"/admin/reports/exports/{request.pk}/")[0].status_code == 200
         )
