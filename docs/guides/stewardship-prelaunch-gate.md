@@ -345,15 +345,22 @@ optional `stats` object, stripped before the result is checked as before:
 at most 48 values, each a boolean, a whole number of at most 12 digits, a
 helper id or a closed word for its key (one function body; Functions digest
 only).
+Backup and retention incidents (#305 M4, #269) then added the
+`backup_key_changed` and `source_retention_failing` operational incident
+kinds, each with its own title and, since the operational log alone cannot
+explain them, its own instruction in the alert, and for the key change its
+own resolved wording, since that episode ends when the change is no longer
+recent rather than when anyone confirmed the key (the kind constraint and
+the incident render function; Constraints and Functions digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
 | Relations | 223 | `5493b41e` |
 | Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `d7b9c846` |
+| Constraints | 3398 | `972d346c` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 608 | `9281d990` |
+| Functions | 608 | `68f2ff3c` |
 | Triggers | 557 | `c9546d79` |
 | Policies | 28 | `1c9c3b2d` |
 

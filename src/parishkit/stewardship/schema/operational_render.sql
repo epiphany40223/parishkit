@@ -30,13 +30,19 @@ BEGIN
       WHEN 'production_cleanup_failed' THEN 'Campaign preparation cleanup failed'
       WHEN 'backup_rpo_breach' THEN 'Required backup is overdue'
       WHEN 'backup_offsite_failed' THEN 'Off-site backup copy failed'
+      WHEN 'backup_key_changed' THEN 'Backup encryption key changed'
+      WHEN 'source_retention_failing' THEN 'Parish data cleanup keeps failing'
       WHEN 'purge_inconsistency' THEN 'Campaign purge is inconsistent'
       WHEN 'purge_cleanup_failed' THEN 'Campaign purge cleanup failed'
     END;
     IF title IS NULL THEN RAISE EXCEPTION 'Operational kind is invalid' USING ERRCODE='23514'; END IF;
     status:=CASE n.phase WHEN 'resolved' THEN 'RESOLVED' ELSE n.level END;
-    instruction:=CASE n.phase WHEN 'resolved'
+    instruction:=CASE WHEN n.phase='resolved' AND kind='backup_key_changed'
+      THEN 'The backup encryption key change is no longer recent. If you have not already, ask the server operator to confirm that each kept copy of the private key opens a new backup, as the backup runbook describes.'
+      WHEN n.phase='resolved'
       THEN 'This condition has recovered. Review the operational log if follow-up is needed.'
+      WHEN kind='backup_key_changed' THEN 'A backup in the last two days was sealed to a different encryption key than the backup before it. Unless the server operator installed a new key on purpose, new backups may not open with the kept private key. Ask the operator to open the newest backup with each kept copy of the private key, as the backup runbook describes.'
+      WHEN kind='source_retention_failing' THEN 'Removing old ParishSoft copies was skipped by the last three refreshes, so the database keeps growing. Refreshes still work. Ask the server operator to check the worker log for the cause.'
       ELSE 'Administrator attention is required. Review the operational log for details.' END;
     labels:=ARRAY['Status','Notification','Deployment mode','First observed',
       'Latest observation','Occurrences','Incident reference'];
