@@ -406,3 +406,79 @@ def test_invitation_banner_resolves_under_the_exact_mail_role(family_mail):  # n
                 message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
             )
     assert f"https://parish.example.org/branding/{banner}.png" in mail.html
+
+
+def test_guarded_submission_writes_plan_with_the_fixed_join_order(
+    family_mail,  # noqa: F811
+    monkeypatch,
+):
+    """The live-scope guard's writes see the settings; commit ends them."""
+    from django.db import connection
+
+    from parishkit.stewardship.jobs import family_mail_dispatch
+
+    seen = []
+    real = family_mail_dispatch.prepare_message
+
+    def settings():
+        """This session's two planner settings."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT current_setting('join_collapse_limit'),"
+                "current_setting('from_collapse_limit')"
+            )
+            return cursor.fetchone()
+
+    def recording(**kwargs):
+        """Note the settings the first guarded write plans under."""
+        seen.append(settings())
+        return real(**kwargs)
+
+    monkeypatch.setattr(family_mail_dispatch, "prepare_message", recording)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            before = settings()
+            begin_submission(
+                message.pk,
+                execution.claim,
+                private=family_mail.rings.private,
+                public_origin="http://localhost:8000",
+            )
+            after = settings()
+    assert seen == [("1", "1")]
+    # Transaction-local: nothing else in the worker's session is affected.
+    assert before == after != ("1", "1")
+
+
+def test_live_scope_guard_still_decides_under_the_submission_settings(
+    family_mail,  # noqa: F811
+    sql_plan_mode,
+):
+    """The fixed join order changes only the plan, never the guard's answer."""
+    from datetime import timedelta
+
+    from django.db import connection
+
+    from parishkit.stewardship.jobs.family_mail_dispatch import (
+        plan_submission_guards,
+    )
+
+    due = ScheduleDefinition.objects.get().current_revision.due_at
+
+    def live(message):
+        """The guard's verdict, planned exactly as a submission plans it."""
+        with work_transaction(), connection.cursor() as cursor:
+            plan_submission_guards()
+            cursor.execute(
+                "SELECT public.stewardship_family_dispatch_live_v1(%s)", [message.pk]
+            )
+            return cursor.fetchone()[0]
+
+    with campaign_clock(due):
+        message = prepare(family_mail)
+        assert live(message) is True
+    # Not yet due: the same guard refuses under the same settings.
+    with campaign_clock(due - timedelta(minutes=1)):
+        assert live(message) is False
