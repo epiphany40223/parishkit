@@ -137,9 +137,9 @@ def logged_kinds(caplog):
     ]
 
 
-@pytest.mark.parametrize("damage", ["sealed_file", "manifest"])
+@pytest.mark.parametrize("damage", ["sealed_file", "manifest", "unreadable"])
 def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
-    tmp_path, caplog, damage
+    tmp_path, caplog, monkeypatch, damage
 ):
     """A damaged local set is refused before any upload, and never retried.
 
@@ -150,8 +150,19 @@ def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
     directory = make_set(tmp_path)
     if damage == "sealed_file":
         (directory / backup.DUMP).write_bytes(b"flipped bits")
-    else:
+    elif damage == "manifest":
         (directory / backup.MANIFEST).write_text("not json", encoding="utf-8")
+    else:
+        # An I/O error on a failing disk is per-set damage too (#357 review
+        # L2), not an unexpected failure that stops the whole copy.
+        opened = type(directory).open
+
+        def failing_open(path, *args, **kwargs):
+            if path.name == backup.FILES:
+                raise OSError(5, "Input/output error")
+            return opened(path, *args, **kwargs)
+
+        monkeypatch.setattr(type(directory), "open", failing_open)
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
     with pytest.raises(DriveFailure) as caught:
         upload_set(drive, FOLDER, directory, SEALED_FILES)

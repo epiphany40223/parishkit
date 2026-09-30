@@ -476,7 +476,17 @@ def _local_files(directory, names):
     good copy (#305 L1). Such a set is refused as ``verification`` without a
     retry, since trying again uploads the same bytes, and logged as an ERROR
     so the operator can find the damaged set; the copy moves on to the next.
+    A file that cannot be read at all (an I/O error on a failing disk) is the
+    same per-set damage, not a reason to stop the whole copy.
     """
+    try:
+        return _checked_files(directory, names)
+    except OSError:
+        return _set_mismatch()
+
+
+def _checked_files(directory, names):
+    """Hash each file and compare the sealed ones with the manifest."""
     try:
         manifest = json.loads((directory / MANIFEST).read_bytes())
         expected = {
@@ -497,13 +507,18 @@ def _local_files(directory, names):
         if name != MANIFEST:
             sealed[name] = sha256.hexdigest()
     if expected != sealed:
-        emit(
-            Event.TASK_FAILED,
-            level=logging.ERROR,
-            failure_kind=FailureKind.BACKUP_SET_MISMATCH,
-        )
-        raise DriveFailure("verification", retryable=False)
+        _set_mismatch()
     return local
+
+
+def _set_mismatch():
+    """Log a damaged local set and refuse it as a non-retryable verification."""
+    emit(
+        Event.TASK_FAILED,
+        level=logging.ERROR,
+        failure_kind=FailureKind.BACKUP_SET_MISMATCH,
+    )
+    raise DriveFailure("verification", retryable=False)
 
 
 def upload_set(client, folder_id, directory, names):
