@@ -128,3 +128,23 @@ def test_followup_edit_and_bulk_assignment_without_scripts(
         assert "?" not in sent.value.url
     finally:
         context.close()
+
+
+def test_followup_sort_heading_without_scripts(browser_engine, component_origin):
+    """A heading re-sorts the queue by native POST, keeping private filters."""
+    context = browser_engine.new_context(java_script_enabled=False)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/followup-queue")
+        heading = page.get_by_role("columnheader", name="Request")
+        assert heading.get_attribute("aria-sort") == "descending"
+        page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("columnheader", name="Member").get_by_role(
+                "button"
+            ).click()
+        body = sent.value.post_data
+        assert "sort=name" in body and "search=Example" in body
+        assert "ministry=9" in body and "?" not in sent.value.url
+    finally:
+        context.close()

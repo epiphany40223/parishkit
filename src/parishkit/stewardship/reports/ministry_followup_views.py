@@ -8,6 +8,7 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -20,6 +21,7 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import (
     MAX_BULK,
     WorkflowChange,
@@ -35,7 +37,7 @@ from .information import parse_page
 from .ministry_followup import (
     CHANNELS,
     OUTCOMES,
-    PAGE_SIZE,
+    SORTING,
     STATES,
     FollowupQuery,
     assignable,
@@ -208,7 +210,22 @@ def _page_response(request, campaign_id, *, request_id=None):
                 result,
                 campaign_id=campaign_id,
                 query=query,
-                query_fields=query.form_values(),
+                # The queue's shared navigator and sortable headings, as
+                # private POST forms back to the queue (web/tables.py).
+                table=report_table(
+                    result["rows"],
+                    number=query.page,
+                    size=query.page_size,
+                    total=result["total"],
+                    carry=[
+                        (key, value)
+                        for key, value in query.form_values().items()
+                        if key != "sort"
+                    ],
+                    sorting=SORTING,
+                    sort=query.sort,
+                    action=reverse("admin:ministry_followup", args=[campaign_id]),
+                ),
                 mutable=mutable,
                 item=item,
                 stale_assignee=stale_assignee,
@@ -223,10 +240,6 @@ def _page_response(request, campaign_id, *, request_id=None):
                 outcomes=OUTCOMES,
                 channels=CHANNELS,
                 viewer=str(principal.identity),
-                previous_page=query.page - 1 if query.page > 1 else None,
-                next_page=query.page + 1
-                if query.page * PAGE_SIZE < result["total"]
-                else None,
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)

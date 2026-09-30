@@ -14,6 +14,7 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
+from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 from parishkit.stewardship.workflows.models import (
     RESOLVED_OUTCOMES,
     MinistryWorkflowRevision,
@@ -22,6 +23,21 @@ from parishkit.stewardship.workflows.models import (
 from .information import parse_page
 
 PAGE_SIZE = 50
+# The installed selection (schema/ministry_followup.sql) orders and pages the
+# queue, so a heading can only choose one of its existing sort values; the
+# schema is frozen for v1. Member and Ministry sort A-Z only (the selection
+# has no Z-A order for them), and Request sorts by submission time. Status,
+# Assigned to and Last contact are not sortable: the selection has no order
+# for them.
+SORTING = Sorting(
+    {
+        "newest": ("request", True),
+        "oldest": ("request", False),
+        "name": ("member", False),
+        "ministry": ("ministry", False),
+    },
+    "newest",
+)
 STATES = {
     "new": "New",
     "assigned": "Assigned",
@@ -62,6 +78,8 @@ class FollowupQuery:
     history: str = "current"
     sort: str = "newest"
     page: int = 1
+    # Rows per page (web/tables.py PAGE_SIZES); the selection takes any LIMIT.
+    size: str = str(PAGE_SIZE)
 
     @classmethod
     def parse(cls, parameters):
@@ -81,7 +99,8 @@ class FollowupQuery:
             or query.state not in {"any", "unresolved", *STATES}
             or query.outcome not in {"any", *RESOLVED_OUTCOMES, "no_response"}
             or query.history not in {"current", "all"}
-            or query.sort not in {"newest", "oldest", "name", "ministry"}
+            or query.sort not in SORTING.tokens
+            or query.size not in {str(size) for size in PAGE_SIZES}
             or (query.ministry and not valid_ministry(query.ministry))
             or (
                 query.assignee not in {"any", "mine", "unassigned"}
@@ -93,12 +112,17 @@ class FollowupQuery:
         return query
 
     def form_values(self):
-        """Return escaped-by-template values for CSRF-protected page navigation."""
+        """The filters and sort the selection reads; page and size only window it."""
         return {
             key: getattr(self, key)
             for key in self.__dataclass_fields__
-            if key != "page"
+            if key not in {"page", "size"}
         }
+
+    @property
+    def page_size(self):
+        """The validated rows-per-page choice as an integer."""
+        return int(self.size)
 
 
 def valid_ministry(value):
@@ -141,8 +165,8 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
                 sorted(value for value in principal.ministries if value < 2**31),
                 principal.identity,
                 request_id,
-                PAGE_SIZE,
-                (query.page - 1) * PAGE_SIZE,
+                query.page_size,
+                (query.page - 1) * query.page_size,
             ],
         )
         value = cursor.fetchone()

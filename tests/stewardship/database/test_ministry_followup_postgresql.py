@@ -479,6 +479,20 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
         assert response.status_code == 200 and b'name="selected"' in body
         assert b"?search=" not in body and b"Assign selected" in body
         assert b"admin@example.org" in body and b'datetime=""' not in body
+        # Shared table (#203): headings choose the selection's own sort values
+        # through POST forms carrying the private filters; sorting stays
+        # within the leader's scope and any other value is refused.
+        assert b"Page 1 of 1" in body and b'aria-sort="descending"' in body
+        assert b'<a class="sort-link"' not in body
+        assert b'name="sort" value="oldest"' in body
+        assert b'form="followup-assign" name="selected"' in body
+        response, body = search(
+            browser, route, {"state": "any", "sort": "ministry", "size": "25"}
+        )
+        assert response.status_code == 200 and str(leave.pk).encode() not in body
+        assert b'aria-sort="ascending"' in body
+        for invalid in ({"sort": "state"}, {"sort": "-ministry"}, {"size": "all"}):
+            assert search(browser, route, invalid)[0].status_code == 400
         # Filtering to a Ministry outside the leader's scope must not list who
         # may follow it up: that would reveal other Ministries' leaders.
         _, hidden = search(browser, route, {"ministry": "4"})
