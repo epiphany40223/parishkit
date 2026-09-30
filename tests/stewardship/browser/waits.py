@@ -31,6 +31,23 @@ def hidden(locator):
     expect(locator).to_be_hidden()
 
 
+def recorded(page, requests, count, *, timeout=10000):
+    """Wait until a route handler has appended ``count`` requests to ``requests``.
+
+    A request the page sends from a timer fired by ``page.clock`` reaches the
+    Python route handler only while Playwright is processing events, so an
+    immediate ``assert len(requests) == count`` after ``fast_forward`` races
+    it, and loses on slower engines. Waiting in short steps lets Playwright
+    dispatch the route. More than ``count`` requests fails at once.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout / 1000
+    while len(requests) < count and time.monotonic() < deadline:
+        page.wait_for_timeout(50)
+    assert len(requests) == count, f"{len(requests)} requests, not {count}"
+
+
 def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
     """Poll ``page.evaluate(expression, arg)`` until it returns ``expected``.
 
