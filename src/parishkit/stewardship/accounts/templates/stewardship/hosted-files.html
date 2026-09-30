@@ -31,12 +31,12 @@
     <thead><tr>
       <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every file on this page' %}"></th>
       <th scope="col">{% translate "Preview" %}</th>
-      <th scope="col">{% translate "Name" %}</th>
-      <th scope="col">{% translate "Placeholder" %}</th>
-      <th scope="col">{% translate "Type" %}</th>
-      <th scope="col" class="numeric">{% translate "Size" %}</th>
-      <th scope="col">{% translate "Uploaded" %}</th>
-      <th scope="col">{% translate "Used in" %}</th>
+      {% translate "Name" as heading %}{% sort_heading table "name" heading %}
+      {% translate "Placeholder" as heading %}{% sort_heading table "placeholder" heading %}
+      {% translate "Type" as heading %}{% sort_heading table "type" heading %}
+      {% translate "Size" as heading %}{% sort_heading table "size" heading "numeric" %}
+      {% translate "Uploaded" as heading %}{% sort_heading table "uploaded" heading %}
+      {% translate "Used in" as heading %}{% sort_heading table "uses" heading %}
       <th scope="col">{% translate "Actions" %}</th>
     </tr></thead>
     <tbody>

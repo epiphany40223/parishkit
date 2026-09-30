@@ -7,7 +7,7 @@ from uuid import uuid4
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.hosted_file_uses import Use
-from parishkit.stewardship.accounts.hosted_file_views import UploadForm
+from parishkit.stewardship.accounts.hosted_file_views import LIBRARY_SORTING, UploadForm
 from parishkit.stewardship.accounts.hosted_files import placeholder
 from parishkit.stewardship.web.tables import paginate
 
@@ -58,7 +58,7 @@ def components(context, admin):
         | admin
         | {
             "form": UploadForm(),
-            "table": paginate(rows, {}),
+            "table": paginate(rows, {}, sorting=LIBRARY_SORTING),
             "uploaded": None,
             "uploaded_placeholder": "",
             "example_link": (
