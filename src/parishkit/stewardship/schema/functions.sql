@@ -3924,6 +3924,16 @@ DECLARE
     alert_kind text;
     expanded boolean := false;
     event_id uuid;
+    key_record uuid;
+    new_key text;
+    old_key text;
+    old_id text;
+    key_recipients jsonb;
+    -- Who hears of a replaced backup key: everyone who was an Administrator
+    -- in any configuration in effect this recently (activated in the window,
+    -- or replaced by one that was), so one who first removed the others
+    -- within the window cannot hide it.
+    key_alert_window CONSTANT interval := interval '30 days';
 BEGIN
     SELECT COALESCE(jsonb_agg(email ORDER BY email), '[]'::jsonb) INTO recipients
     FROM public.stewardship_address_rule
@@ -3972,6 +3982,59 @@ BEGIN
                 'policy_security_event', event_id);
         END IF;
     END LOOP;
+    -- A replaced backup encryption key (#198) decides who can open every
+    -- later backup, so it is announced to the Administrators like a widened
+    -- sign-in rule. The key before is the previous configured key or, before
+    -- one was set, the key the newest backup used, read only by a login that
+    -- may. Key IDs are the first 16 hex digits of the key's SHA-256.
+    SELECT record_id, settings->>'public_key' INTO key_record, new_key
+    FROM public.stewardship_applied_integration
+    WHERE configuration_id = NEW.configuration_id AND kind = 'backup_key';
+    IF new_key IS NOT NULL THEN
+        SELECT settings->>'public_key' INTO old_key
+        FROM public.stewardship_applied_integration
+        WHERE configuration_id = NEW.predecessor_id AND kind = 'backup_key';
+        IF old_key IS DISTINCT FROM new_key THEN
+            IF old_key IS NOT NULL THEN
+                old_id := left(encode(sha256(decode(old_key, 'base64')), 'hex'), 16);
+            ELSIF has_column_privilege('public.stewardship_backup_run', 'id', 'SELECT')
+               AND has_column_privilege('public.stewardship_backup_run', 'completed_at', 'SELECT')
+               AND has_column_privilege('public.stewardship_backup_run', 'recipient_fingerprint', 'SELECT') THEN
+                SELECT recipient_fingerprint INTO old_id
+                FROM public.stewardship_backup_run
+                ORDER BY completed_at DESC, id DESC LIMIT 1;
+            END IF;
+            SELECT COALESCE(jsonb_agg(DISTINCT admins.email ORDER BY admins.email),
+                    '[]'::jsonb) INTO key_recipients
+            FROM (
+                -- Each activation in the window, and the configuration it
+                -- replaced: that one was in effect when the window opened.
+                SELECT rule.email FROM public.stewardship_address_rule rule
+                JOIN public.stewardship_config_activation activation
+                  ON rule.configuration_id IN (activation.configuration_id,
+                                               activation.predecessor_id)
+                WHERE rule.roles ? 'administrator' AND activation.id <> NEW.id
+                  AND activation.created_at >= NEW.created_at - key_alert_window
+                UNION
+                SELECT email FROM public.stewardship_address_rule
+                WHERE configuration_id = NEW.predecessor_id
+                  AND roles ? 'administrator'
+            ) admins;
+            event_id := gen_random_uuid();
+            INSERT INTO public.stewardship_policy_security_event
+                (id, created_at, actor_id, correlation_id, activation_id,
+                 rule_record_id, target, kind, before_roles, after_roles, recipients)
+            VALUES (event_id, NEW.created_at, NEW.actor_id, NEW.correlation_id, NEW.id,
+                key_record, 'Backup encryption key', 'backup_key_replaced',
+                CASE WHEN old_id IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(old_id) END,
+                jsonb_build_array(left(encode(sha256(decode(new_key, 'base64')), 'hex'), 16)),
+                key_recipients);
+            INSERT INTO public.stewardship_audit_event
+                (id, actor_id, correlation_id, event_type, subject_id)
+            VALUES (gen_random_uuid(), NEW.actor_id, NEW.correlation_id,
+                'policy_security_event', event_id);
+        END IF;
+    END IF;
     expanded := expanded OR EXISTS (
         SELECT 1 FROM public.stewardship_address_rule previous_rule
         JOIN public.stewardship_domain_rule domain

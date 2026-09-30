@@ -22,9 +22,25 @@ BEGIN
       WHEN 'administrator_granted' THEN 'Administrator added to an exact address'
       WHEN 'domain_created' THEN 'Hosted-domain rule created'
       WHEN 'domain_staff_granted' THEN 'Staff added to a hosted-domain rule'
+      WHEN 'backup_key_replaced' THEN 'Backup encryption key replaced'
     END;
     IF title IS NULL THEN RAISE EXCEPTION 'Security alert kind is invalid' USING ERRCODE='23514'; END IF;
     SELECT email INTO actor FROM stewardship_portal_user WHERE id=e.actor_id;
+    IF e.kind='backup_key_replaced' THEN
+      instruction:='An Administrator replaced the public key that backups are encrypted '
+        'with. From the next backup on, only the matching private key can open them. '
+        'If the parish key holder did not plan this, replace the key again with the '
+        'parish key and ask the server operator to check the newest backup. If you '
+        'can still sign in as an Administrator, acknowledge it on the Admin dashboard; '
+        'it stays there until an Administrator other than the one who made the change '
+        'does. If you no longer can, contact the parish or its other Administrators.';
+      labels:=ARRAY['Key before','Key after','By','When','Deployment mode',
+        'Event reference'];
+      vals:=ARRAY[COALESCE(e.before_roles->>0,'not known'),e.after_roles->>0,
+        COALESCE(actor,'Operator recovery'),
+        to_char(e.created_at AT TIME ZONE 'UTC','MM/DD/YYYY HH24:MI:SS "UTC"'),
+        initcap(deployment_mode),e.id::text];
+    ELSE
     instruction:='This change to who may sign in took effect on activation. Acknowledge it '
       'on the Admin dashboard; it stays there until an Administrator who existed '
       'before the change does.';
@@ -34,6 +50,7 @@ BEGIN
       stewardship_security_role_words_v1(e.after_roles),COALESCE(actor,'Operator recovery'),
       to_char(e.created_at AT TIME ZONE 'UTC','MM/DD/YYYY HH24:MI:SS "UTC"'),
       initcap(deployment_mode),e.id::text];
+    END IF;
     body:=title||E'\n\n'||instruction||E'\n\n';
     html:='<h2>'||title||'</h2><p>'||instruction||'</p><dl>';
     FOR i IN 1..array_length(labels,1) LOOP
