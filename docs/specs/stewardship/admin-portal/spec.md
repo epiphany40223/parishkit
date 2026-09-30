@@ -328,7 +328,7 @@ viewer may open:
   links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
   report.
 - **Parish and integrations**: Parish settings, Parish logos, Hosted files,
-  Integrations and Ministry activity.
+  Integrations, ParishSoft refresh and Ministry activity.
 - **Users**: Portal users.
 - **System**: Background work, Outgoing mail, Families on the form now and
   System logs.
@@ -365,17 +365,36 @@ came from. A configuration change's status page sits under the settings page
 the change was confirmed on: confirming remembers that page in the signed-in
 session (never in the URL), and the status page shows its trail and a "Return
 to" link to it. Without that memory, as in another sign-in, the page stands
-under Home. A page that only answers a POST, such as the login rule review, is
-named in trails but never linked.
+under Home. A key's replacement status and its Finish switching page sit under
+the integration the key belongs to, never under each other, because only the
+Administrator who saved a key may read its status. Some pages are named in
+trails but never linked, and "Return to" skips them: those that only answer a
+POST (the login rule, chair suggestion, chair review and assignment reviews);
+one-time reviews that refuse once their change is confirmed (New campaign,
+Copy campaign, and the campaign image and logo reviews); and Finish switching,
+which still opens afterward but needs a fresh Google sign-in and has nothing
+left to do. A sidebar page is linked in a trail or "Return to" only while the
+viewer's sidebar offers that same page, so a page the sidebar hides because it
+would now refuse (Share options once the campaign is locked, Campaign images
+for a campaign that is no longer current) is named without a link.
 
 Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
-Apply) for campaign pages and emails, login rule reviews and every change's
-status page; sending to chosen Families (Choose Families, Review, Send and
-follow); and report exports (Choose report, Prepare file, Download). Placement
-and steps are presentation only and grant nothing.
+Apply) on every settings editor (campaign settings, Copy campaign, pages and
+emails, mail schedules, share options, member talents, campaign images, Parish
+settings, Parish logos, each integration, Ministry activity and Finish
+switching), the reviews started on Portal users (login rules, chair
+suggestions, chair reviews and assignments) and every change's status page;
+going live (Check readiness, Testing cleanup, Family links, Confirm
+Production, Activation); sending to chosen Families (Choose Families, Review,
+Send and follow); and report exports (Choose report, Prepare file, Download).
+A locked campaign's read-only settings page is not in a flow. The reviews
+started on Portal users show only Review and Apply as current: Portal users
+itself is a list, not step 1, and a refused review shows its error page
+rather than going back to a form. An error page never shows a step or a
+placed trail. Placement and steps are presentation only and grant nothing.
 
 ### Admin tables
 
@@ -1500,9 +1519,10 @@ closes the task with an audit event.
 
 ## Manual ParishSoft refresh
 
-Admins may request an immediate full refresh from a confirmation dialog, or
-with the "Run a full refresh now" button on the ParishSoft settings page and in
-the Admin home page's refresh notice (same capability and CSRF rules). The
+Admins may request an immediate full refresh from a confirmation page (the
+ParishSoft refresh menu entry), or with the "Run a full refresh now" button on
+the ParishSoft settings page and in the Admin home page's refresh notice (same
+capability and CSRF rules). The
 action inserts a durable task and returns immediately to its status page. If a
 poll is running, no concurrent poll starts; one manual full refresh may be
 queued to follow it. Repeated clicks return/link to the existing queued run.
