@@ -33,6 +33,7 @@ _COMMAND_OPTIONS = {
     "collect-static": {"destination"},
     "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
     "retarget-image": {"config", "image"},
+    "upgrade-check": {"config", "confirm_deployment"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
@@ -264,6 +265,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 2
         print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.command == "upgrade-check":
+        from .operator_commands import _uuid
+        from .upgrade_check import upgrade_noop_query
+
+        # Prints the read-only query an upgrade runs as the database
+        # superuser, once the online services are stopped, to learn whether
+        # this image's migration and grants would change nothing. Rendering
+        # it opens no database, so it runs before anything stops.
+        try:
+            if args.config is None:
+                raise ConfigError("Explicit deployment configuration required.")
+            query = upgrade_noop_query(
+                load_deployment(args.config), _uuid(args.confirm_deployment)
+            )
+        except Exception:
+            print(
+                "ERROR: upgrade check unavailable; run migration and grants",
+                file=sys.stderr,
+            )
+            return 2
+        print(query, end="")
         return 0
     if args.command == "service":
         if args.bind_all_interfaces and (

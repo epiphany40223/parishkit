@@ -15,15 +15,19 @@
 #      ghcr.io/...@sha256: digest and a digest exists only after a push.
 #      The host must be logged in: docker login ghcr.io (a token with
 #      write:packages).
-#   3. Follows the deployment runbook's upgrade steps: backup (best effort;
-#      it refuses before setup), stop the online services except caddy,
-#      retarget-image in the new image, migration and grants, a fresh static
-#      tree, then start EVERY online service of the correct topology and
-#      check health. Caddy keeps running throughout and answers with its own
-#      maintenance page while web is down (#162); it is recreated only when
-#      its loaded Caddyfile differs from the host file. A failed deploy
-#      leaves the maintenance page up until the deploy is re-run or rolled
-#      back.
+#   3. Follows the deployment runbook's upgrade steps, keeping web's
+#      downtime to the steps that need it (#162). While web still serves:
+#      render the new image's upgrade check, collect its static tree into
+#      cache/static.next, stop the background services (web serves while
+#      they drain) and take the backup (best effort; it refuses before
+#      setup). Then stop web, retarget-image in the new image, run migration and
+#      grants unless the upgrade check proves both would change nothing,
+#      swap the static tree in, start web and wait for it, then start EVERY
+#      other online service of the correct topology and check health. Caddy
+#      keeps running throughout and answers with its own maintenance page
+#      while web is down; it is recreated only when its loaded Caddyfile
+#      differs from the host file. A failed deploy leaves the maintenance
+#      page up until the deploy is re-run or rolled back.
 #
 # The topology comes from the database, not from whatever happened to be
 # running: compose.json once the setup wizard has recorded completion (kept
@@ -32,7 +36,7 @@
 # are started, so a deploy also repairs a deployment an interrupted run left
 # half-stopped, and the run fails loudly naming any service that is not
 # running and healthy at the end. Each step prints a UTC timestamp, and the
-# run reports how long the online services were down.
+# run reports how long web was down.
 #
 # Configuration (environment variables):
 #   STEWARDSHIP_HOST        ssh destination (required)
@@ -198,16 +202,55 @@ step "Project ${project} will run $(basename "$compose") (setup complete: ${comp
 [ -z "$running" ] || [ "$running" = "$compose" ] ||
     echo "    switching from $(basename "$running")"
 
+# Work that needs only the new image runs while the site is still up, so
+# none of it counts as downtime (#162): the query that tells whether this
+# image's migration and grants would change anything, and the new static
+# tree, collected into a directory nothing serves yet.
+step "Preparing the new release while web still serves"
+check_sql=$(mktemp)
+trap 'rm -f "$check_sql"' EXIT
+if ! "${isolated[@]}" \
+    --mount "type=bind,source=$root,target=$root,readonly" \
+    --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+    "$image" upgrade-check --config /run/operator.yaml --confirm-deployment "$uuid" \
+    >"$check_sql"; then
+    # No proof means migration and grants simply run, as they always did.
+    : >"$check_sql"
+    echo "    upgrade check could not be rendered; migration and grants will run"
+fi
+# Disposable pre-launch data: keep only the previous tree.
+rm -rf "$root/cache/static.previous" "$root/cache/static.next"
+install -d -o 10001 -g 10001 -m 0700 "$root/cache/static.next"
+"${isolated[@]}" \
+    --mount "type=bind,source=$root/cache/static.next,target=$root/cache/static.next" \
+    "$image" collect-static --destination "$root/cache/static.next"
+
+# Stop the background services first: web keeps serving while they drain,
+# which can take up to the worker's grace period when a task is running.
+# Everything online is still stopped before retarget-image runs. A legacy
+# caddy (see above) goes down with web, since it fronts web.
+# shellcheck disable=SC2086 # one service name per word
+background=$(printf '%s\n' $online | grep -vxE 'web|caddy' || true)
+# shellcheck disable=SC2086
+front=$(printf '%s\n' $online | grep -xE 'web|caddy' || true)
+step "Stopping the background services (web keeps serving)"
+# shellcheck disable=SC2086 # one service name per word
+[ -z "$background" ] || "${dc[@]}" stop $background >/dev/null 2>&1
+
+# The backup comes after the drain and just before web stops, so the only
+# writes a database-restore rollback could lose are those web accepts while
+# the backup runs (#162). backup-worker runs beside web under the shared
+# interlock.
 step "Backup (best effort)"
 "${dc[@]}" run --rm -T backup-worker >/dev/null 2>&1 &&
     echo "    taken" || echo "    refused or unavailable; continuing"
 
-step "Stopping online services (caddy keeps serving the maintenance page)"
+step "Stopping web (caddy serves the maintenance page from here)"
 stopped_at=$(date -u +%s)
 # Stop whatever runs now, under whichever file started it; the start below
 # brings up the full target topology regardless.
 # shellcheck disable=SC2086 # one service name per word
-[ -z "$online" ] || "${dc[@]}" stop $online >/dev/null 2>&1
+[ -z "$front" ] || "${dc[@]}" stop $front >/dev/null 2>&1
 
 step "Retargeting"
 "${isolated[@]}" \
@@ -216,20 +259,31 @@ step "Retargeting"
     "$image" retarget-image --config /run/operator.yaml --image "$image"
 
 step "Migration and grants"
-"${dc[@]}" run --rm -T migration 2>&1 | tail -1
-"${dc[@]}" run --rm -T database-provision database-grants \
-    --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+# The query runs now, with every online service stopped, so nothing can
+# change the answer before the start below. It is read-only, and anything
+# but a clear "t" (including an error) runs both commands.
+noop="no query (the render failed)"
+if [ -s "$check_sql" ]; then
+    noop=$("${dc[@]}" exec -T -e PGOPTIONS='-c default_transaction_read_only=on' \
+        postgres psql -U pk_stewardship_operator -d stewardship -At \
+        -v ON_ERROR_STOP=1 <"$check_sql" 2>&1 || true)
+fi
+if [ "$noop" = t ]; then
+    echo "    skipped: the upgrade check answered t (the schema and every grant"
+    echo "    already match this image)"
+else
+    # Say why both commands run: "f" means something would change; anything
+    # else is the query's own error, shown so a broken check is noticed.
+    echo "    running both: the upgrade check answered: $(printf '%s' "$noop" | head -3)"
+    "${dc[@]}" run --rm -T migration 2>&1 | tail -1
+    "${dc[@]}" run --rm -T database-provision database-grants \
+        --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+fi
 
 step "Static files"
-# Collect into a fresh tree, then refresh cache/static in place: the running
+# Refresh cache/static in place from the tree collected above: the running
 # caddy has that directory bind-mounted, and a directory moved aside would
 # stay mounted in its place, still serving the previous release's scripts.
-# Disposable pre-launch data: keep only the previous tree.
-rm -rf "$root/cache/static.previous" "$root/cache/static.next"
-install -d -o 10001 -g 10001 -m 0700 "$root/cache/static.next"
-"${isolated[@]}" \
-    --mount "type=bind,source=$root/cache/static.next,target=$root/cache/static.next" \
-    "$image" collect-static --destination "$root/cache/static.next"
 cp -a "$root/cache/static" "$root/cache/static.previous"
 # If the in-place refresh stops partway, caddy serves a half-empty tree;
 # say how to put the previous one back.
@@ -239,14 +293,16 @@ cp -a "$root/cache/static.next/." "$root/cache/static/"
 trap - ERR
 rm -rf "$root/cache/static.next"
 
-step "Starting every online service"
-# caddy last, as first installation does: it fronts web, so the site returns
-# only once everything behind it is up.
-mapfile -t first < <(printf '%s\n' "${wanted[@]}" | grep -vx caddy || true)
-# A service that never turns healthy fails `up --wait`; keep going so caddy
-# still starts and the check below names exactly what is wrong.
-if [ "${#first[@]}" -gt 0 ]; then
-    "${dc[@]}" up --detach --wait "${first[@]}" 2>&1 | quiet || true
+# Web first, alone: every other service imports the application and runs
+# health probes at the same time, which on a small host roughly quadruples
+# the time web needs to turn healthy. The site is back once web is healthy
+# (and caddy, when it must be recreated, is up), so that is where the
+# downtime ends; the background services start afterwards.
+step "Starting web"
+web_healthy=0
+if printf '%s\n' "${wanted[@]}" | grep -qx web &&
+    "${dc[@]}" up --detach --wait web 2>&1 | quiet; then
+    web_healthy=1
 fi
 if printf '%s\n' "${wanted[@]}" | grep -qx caddy; then
     # Caddy reads its Caddyfile only at start (admin off), so recreate it
@@ -262,6 +318,19 @@ if printf '%s\n' "${wanted[@]}" | grep -qx caddy; then
         "${dc[@]}" up --detach --wait caddy 2>&1 | quiet || true
     fi
 fi
+if [ "$web_healthy" -eq 1 ]; then
+    step "Web was down for $(( $(date -u +%s) - stopped_at ))s (caddy served the maintenance page)"
+else
+    step "Web is still not healthy after $(( $(date -u +%s) - stopped_at ))s"
+fi
+
+step "Starting the background services"
+mapfile -t rest < <(printf '%s\n' "${wanted[@]}" | grep -vxE 'web|caddy' || true)
+# A service that never turns healthy fails `up --wait`; keep going so the
+# check below names exactly what is wrong.
+if [ "${#rest[@]}" -gt 0 ]; then
+    "${dc[@]}" up --detach --wait "${rest[@]}" 2>&1 | quiet || true
+fi
 
 # Just-started services can report an incomplete dependency observation for a
 # few seconds; retry before calling the deploy failed.
@@ -273,7 +342,6 @@ for attempt in $(seq 1 12); do
     fi
     [ "$attempt" -eq 12 ] || sleep 5
 done
-step "Web was down for $(( $(date -u +%s) - stopped_at ))s (caddy served the maintenance page)"
 
 # Every online service of the target topology must be running, and healthy
 # where it has a healthcheck. Name each one that is not.

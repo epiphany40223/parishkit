@@ -367,10 +367,21 @@ Before launch, while the validation deployment holds only disposable data,
 moves it onto the current checkout in a few minutes, without CI or a release.
 It sends the tracked files (including uncommitted edits) to the host, builds
 the image there, pushes it to GHCR to obtain the digest production admits,
-and then follows this runbook's [upgrade](#upgrade) steps: a best-effort
-backup, stop, `retarget-image`, migration and grants, a fresh static tree,
-start and health. The host must be logged in to GHCR with a token that can
-write packages (`docker login ghcr.io`).
+and then follows this runbook's [upgrade](#upgrade) steps: the upgrade
+check and a fresh static tree prepared while the site still serves, the
+background services stopped, a best-effort backup, then `web` stopped,
+`retarget-image`, migration and grants (skipped when the upgrade check
+answers `t`), the static tree swapped in, `web` started and then the rest,
+and health. The host must be logged in to GHCR with a token that can write
+packages (`docker login ghcr.io`).
+
+Only the steps between stopping `web` and `web` turning healthy again are
+downtime, and the script reports that span. Before #162 that span was 65–80
+seconds: about 6 for stopping, 3–4 for `retarget-image`, 12 for migration
+and grants, 3 for static collection and 50 for starting every service at
+once and checking health. Without a schema or grant change it should now be
+about 15–20 seconds (stopping `web`, `retarget-image`, the no-op query and
+`web`'s own start), and about 12 seconds more when migration and grants run.
 
 It chooses the Compose file from the database's setup completion marker, not
 from whatever happens to be running: `compose.json` once setup has completed
@@ -379,7 +390,7 @@ already runs under it), otherwise `compose-initial.json`. It then starts every
 online service of that file, so a run also repairs a deployment that an
 interrupted deploy left partly stopped. It finishes by checking that each
 online service is running and healthy, naming any that is not, and prints a
-timestamp for every step plus how long the online services were down. If the
+timestamp for every step plus how long `web` was down. If the
 database itself is not running, it refuses before stopping anything and says
 how to start it. Run it from the checkout:
 
@@ -426,22 +437,66 @@ procedure is the only way forward. It applies the operations specification's
 [production upgrade](../specs/stewardship/operations/spec.md#production-upgrades-deferred)
 sequence with the commands that exist.
 
-1. **Check the release, then back up.** Read the release notes first: a
-   release that narrows a runtime grant cannot be taken by this procedure
-   (see step 4). Then run the backup (`run --rm backup-worker`, as the
-   [backup runbook](stewardship-backup-runbook.md#the-nightly-backup) says)
-   and confirm its off-host copy. Do not continue without it: it is the only
-   rollback, and step 4 refuses a configured deployment whose newest recorded
-   backup is more than 24 hours old.
-2. **Stop the online services**: `web`, `worker`, `scheduler`,
+1. **Check and prepare the release, stop the background services, then back
+   up.** Read the release notes first: a release that narrows a runtime
+   grant cannot be taken by this procedure (see step 4). While the site is
+   still up, do everything that needs only the new image, so none of it adds
+   to the time `web` is down:
+   - Pull it: `docker pull NEW_DIGEST`.
+   - Collect its static files: create an empty `cache/static.next` owned by
+     `10001:10001` with mode `0700` and run `collect-static` into it in the
+     new image, exactly as first installation does. Nothing serves that
+     directory until step 5.
+   - Render its upgrade check: in the new image, with the same isolation as
+     step 3 but the runtime root mounted read-only, run
+     `pk-stewardship upgrade-check --config /run/operator.yaml --confirm-deployment UUID`
+     and save its output as `upgrade-check.sql`. It opens no database; it
+     prints the read-only query step 4 runs. You can also run that query now,
+     exactly as step 4 does, as an advisory preflight: `f` tells you step 4
+     will run migration and grants. For a release whose notes promise no
+     schema or grant change, or one that narrows a grant, `f` is the cue to
+     stop and investigate before anything stops. Only step 4's answer
+     decides anything.
+
+   Then stop the background services: `worker`, `scheduler`,
    `mail-dispatch`, `config-installer` and every credential installer, with
-   `stop` on the current Compose file and project name. Leave `postgres` and
-   `valkey` running, and leave `caddy` running too: it holds no startup
-   interlock, and while `web` is down it answers every request with its own
-   self-contained "We're updating the site" page (HTTP 503 with
-   `Retry-After`) instead of a refused connection. A `caddy` from a release
-   before that change still holds the interlock and makes every offline
-   step refuse, so stop it too on the first upgrade to this release. Stopping, not restarting, matters: online services use
+   `stop` on the current Compose file and project name. `web` keeps serving
+   while they drain, which can take up to their stop grace period (360
+   seconds by default) when the worker is finishing a task. While they are
+   stopped, background work waits:
+   - outgoing mail (Family confirmations and receipts, personal-link and
+     setup mail) and Slack alerts queue until step 6;
+   - configuration and credential requests an Admin submits wait for their
+     installers. Time-limited ones can expire meanwhile: an integration
+     setup intent lasts an hour, and a fresh re-authentication five
+     minutes.
+
+   Keep the gap short, and tell Admins not to start credential changes
+   during the upgrade.
+
+   Then run the backup (`run --rm backup-worker`, as the
+   [backup runbook](stewardship-backup-runbook.md#the-nightly-backup) says;
+   it runs beside `web` under the shared interlock) and confirm its off-host
+   copy. Taking it now, after the drain and just before `web` stops, keeps
+   the loss window small. A database-restore rollback loses only what `web`
+   accepted after the backup's snapshot: Family submissions during the
+   backup's own run (about half a minute on the validation host) and the
+   moment until step 2. Do not continue without the backup: it is the only
+   rollback. When step 4 runs migration and grants, they refuse a configured
+   deployment whose newest recorded backup is more than 24 hours old. When
+   step 4's check lets them be skipped, nothing checks the backup's age, so
+   confirm yourself that this backup completed.
+2. **Stop `web`** with `stop` on the same Compose file and project name. The
+   site is down from this moment. If a background service was restarted
+   since step 1, stop it again too: every online service must be stopped
+   before step 3. Leave `postgres` and `valkey` running, and leave `caddy`
+   running too: it holds no startup interlock, and while `web` is down it
+   answers every request with its own self-contained "We're updating the
+   site" page (HTTP 503 with `Retry-After`) instead of a refused
+   connection. A `caddy` from a release before that change still holds the
+   interlock and makes every offline step refuse, so stop it too on the
+   first upgrade to this release. Stopping, not restarting, matters (here
+   and in step 1): online services use
    `unless-stopped`, so a crashed service would otherwise come back during
    the offline work, as
    [Offline work and upgrade boundary](stewardship-runtime.md#offline-work-and-upgrade-boundary)
@@ -461,8 +516,19 @@ sequence with the commands that exist.
    section above). If the command was interrupted, run it again with
    the same digest. Details:
    [release image guide](stewardship-release-image.md#retargeting-re-renders-the-generated-documents).
-4. **Migrate.** Pull the new image (`pull` on the rewritten Compose file).
-   Then, *only when the release changed the schema or the runtime grants*,
+4. **Migrate.** First run step 1's query as the database superuser, in a
+   read-only session, now that nothing online can change the answer:
+   `docker compose -f COMPOSE_FILE -p PROJECT exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres psql -U pk_stewardship_operator -d DATABASE -At -v ON_ERROR_STOP=1 < upgrade-check.sql`,
+   where `DATABASE` is the deployment's configured database name (the
+   query itself also refuses any other database).
+   It prints `t` only when both commands below would change nothing: the
+   applied migrations are exactly the new image's, the download capacity is
+   the budgeted one, and every foundation login already has exactly the
+   attributes, connection limit and grants that the new image's
+   `database-grants` requires, installs and admits, with this release's
+   operational log writer guard in place. Then skip both commands; every
+   service still verifies the schema and its own grants when it starts. On
+   anything else, including an error, run both:
    `run --rm migration`, which applies forward migrations with the schema
    owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
    which installs new runtime grants. On a deployment that has completed
@@ -509,13 +575,14 @@ sequence with the commands that exist.
    provider's logs. The
    [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) records
    how this recovery was checked. A release that changes neither the
-   schema nor a grant still pulls, but skips the migration and grant
-   commands. `database-grants` never revokes: for a release that
+   schema nor a grant makes the query print `t`, so both commands are
+   skipped. `database-grants` never revokes: for a release that
    *narrows* a runtime grant on a table that still exists, it refuses the
    whole run, because a login already holds a privilege the new release no
    longer lists, and the new release's services would refuse that excess
-   privilege anyway. Step 1's check
-   catches such a release before anything stops: before the schema freeze it
+   privilege anyway. Reading the release notes in step 1 (and step 1's
+   advisory run of the query, which answers `f` for such a release)
+   catches it before `web` stops: before the schema freeze it
    is taken by reinstalling, and after it the release must bring its own
    revocation step. `migration` runs first and commits, so if
    `database-grants` refuses after a successful migration, start neither
@@ -524,10 +591,9 @@ sequence with the commands that exist.
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
-   otherwise ship its templates with the previous release's scripts. Create
-   an empty `cache/static.next` owned by `10001:10001` with mode `0700` and
-   run `collect-static` into it in the *new* image, exactly as first
-   installation does. Copy the current `cache/static` aside under the name
+   otherwise ship its templates with the previous release's scripts. Step 1
+   collected the new tree into `cache/static.next`. Copy the current
+   `cache/static` aside under the name
    of the release being replaced (for example
    `cache/static.PREVIOUS_DIGEST`, never deleting it), then refresh
    `cache/static` *in place*: empty it and copy `cache/static.next`'s
@@ -535,9 +601,13 @@ sequence with the commands that exist.
    itself: the running `caddy` has it bind-mounted, and a directory moved
    aside stays mounted in its place. Keep the old tree until the release is
    accepted; a rollback copies it back the same way.
-6. **Start and check.** Bring the online services back with `up --detach`
+6. **Start and check.** Start `web` alone first with `up --detach --wait web`
    on the same Compose file (`compose.json` or `compose-slack.json`, whichever
-   the deployment uses) and project name, then `caddy`. Caddy reads its
+   the deployment uses) and project name: every other online service imports
+   the application and runs its health probes at the same time, so starting
+   them together makes `web` take several times longer to turn healthy. Then
+   `caddy`, then, once the site answers again, the remaining online services
+   with `up --detach --wait`. Caddy reads its
    Caddyfile only when it starts, so compare what the running `caddy`
    loaded (`exec -T caddy sha256sum /etc/caddy/Caddyfile`) with the host's
    `Caddyfile`; when they differ, use `up --detach --force-recreate caddy`,
