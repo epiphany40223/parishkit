@@ -505,6 +505,115 @@ def test_a_request_timeout_is_logged_and_counts_as_unavailable(caplog):
     assert "slow" not in json.dumps(line)
 
 
+class Clock:
+    """A settable monotonic clock for budget tests."""
+
+    def __init__(self, now=0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def budgeted(session, clock, budget=100):
+    """A client whose copy budget started at time 0 and lasts ``budget``."""
+    return DriveClient(session, deadline=budget, budget_seconds=budget, clock=clock)
+
+
+def test_a_request_timeout_is_cut_to_the_time_left_in_the_budget(caplog):
+    """Near the deadline a request may not wait its full timeout (#305 L5).
+
+    When the shortened timeout fires, the budget is what stopped the copy:
+    it is logged as the copy budget and no retry follows.
+    """
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession(ReadTimeout("slow"))
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(70)).folder(FOLDER)
+    assert session.requests[0][2]["timeout"] == 30
+    assert caught.value.kind == "unavailable" and not caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_copy_budget", 100)
+    assert line["elapsed_seconds"] == 70
+
+
+def test_a_request_far_from_the_deadline_keeps_its_own_timeout(caplog):
+    """Its own timeout firing is still a retryable Drive request timeout."""
+    from requests import ReadTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession(ReadTimeout("slow"))
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(0), budget=1000).folder(FOLDER)
+    assert session.requests[0][2]["timeout"] == backup_drive.REQUEST_SECONDS
+    assert caught.value.retryable
+    assert [line["timeout"] for line in timeouts(caplog)] == ["drive_request"]
+
+
+def test_no_request_starts_once_the_budget_is_spent(caplog):
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    session = FakeSession()
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, Clock(101)).folder(FOLDER)
+    assert session.requests == [] and not caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["elapsed_seconds"]) == ("drive_copy_budget", 101)
+
+
+class ReadingSession(FakeSession):
+    """Reads the upload body in small blocks, as requests does while sending."""
+
+    def __init__(self, clock, *responses):
+        super().__init__(*responses)
+        self.clock = clock
+        self.sent = b""
+
+    def request(self, method, url, **kwargs):
+        body = kwargs.get("data")
+        if hasattr(body, "read"):
+            assert len(body) == int(kwargs["headers"]["Content-Length"])
+            while block := body.read(4):
+                self.sent += block
+                self.clock.now += 10
+        return super().request(method, url, **kwargs)
+
+
+def test_an_upload_stops_sending_when_the_budget_runs_out(tmp_path, caplog):
+    """A long upload started near the deadline does not run past it (#305 L5).
+
+    A requests timeout bounds each socket operation, not the upload; the
+    body itself checks the budget between blocks.
+    """
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    path = tmp_path / "file"
+    path.write_bytes(b"x" * 40)
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    clock = Clock(60)
+    session = ReadingSession(
+        clock,
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "40", "md5Checksum": "m"}),
+    )
+    with pytest.raises(DriveFailure) as caught:
+        budgeted(session, clock).upload(path, "file", FOLDER)
+    assert not caught.value.retryable
+    assert session.sent == b"x" * 16
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_copy_budget", 100)
+    assert line["elapsed_seconds"] == 100
+    # With time to spare, the same upload sends every byte.
+    clock.now = 0
+    session.responses = [
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "40", "md5Checksum": "m"}),
+    ]
+    session.sent = b""
+    budgeted(session, clock, budget=1000).upload(path, "file", FOLDER)
+    assert session.sent == b"x" * 40
+
+
 def test_timeout_and_drive_fields_are_closed_values():
     """Only reviewed words and whole seconds reach the process log."""
     from parishkit.stewardship.jobs.backup_models import FAILURE_KINDS

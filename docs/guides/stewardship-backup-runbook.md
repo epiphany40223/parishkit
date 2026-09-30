@@ -202,7 +202,8 @@ The copy never blocks the Admin or Family portals: it runs only in this
 one-shot profile, after the backup has released its startup lease, and
 outside any database transaction, so it holds no work-order or row lock
 while files are in flight. Every request has a timeout, retries are
-bounded, and no new set or retry starts after four hours; a slow or failed
+bounded, and the whole copy stops after four hours, an upload still sending
+included; a slow or failed
 copy only records its outcome for the pages and the alert below.
 
 The copy acts as the Google Workspace mail integration's delegated mailbox
@@ -252,15 +253,18 @@ A copy stopped by a time limit is recorded, and shown on the page, as
 `unavailable`, like a Drive outage. What tells the two apart is a WARNING
 `task_failed` line logged when the limit stops the work, whose `timeout`
 names the limit, with `limit_seconds` and `elapsed_seconds`:
-`drive_copy_budget` (no new set starts after four hours),
-`drive_retry_budget` (a retry refused because it would start after those
-four hours), `drive_request` (one Drive request passed its own timeout and
-may still be retried) or `drive_probe_wait` (a **Test access** check waited
-more than five minutes and was closed unanswered; this line comes from the
-Google Workspace credential installer). Today these lines are in the
-process log of the `backup-worker` run (the cron job's output) or of the
-Google Workspace credential installer. Once the timeout logging from
-issue #293 is in the release, each is also written to the durable
+`drive_copy_budget` (the four hours ran out: no new set or request
+starts, a request's timeout is cut to the time left, and an upload still
+sending stops), `drive_retry_budget` (a retry refused because it would
+start after those four hours), `drive_request` (one Drive request passed
+its own timeout and may still be retried) or `drive_probe_wait` (a **Test
+access** check waited more than five minutes and was closed unanswered;
+this line comes from the Google Workspace credential installer). The
+Drive request timeouts (one minute, or an hour for each wait while a
+file uploads) apply to each network operation, not to a whole upload,
+which only the four-hour budget bounds. These lines are in the process
+log of the `backup-worker` run (the cron job's output) or of the Google
+Workspace credential installer, and each is also written to the durable
 operational log in the database, as `work_budget_reached`
 (`drive_copy_budget`, `drive_retry_budget`) or `task_timed_out`
 (`drive_request`, `drive_probe_wait`) with the same limit and elapsed

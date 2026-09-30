@@ -17,9 +17,10 @@ The copy never blocks the portals. It runs only in the one-shot backup
 profile, after the backup's startup lease is released, and outside any
 transaction: it takes no work-order lock and holds no row lock, and each
 ORM read or outcome insert commits on its own before or after the network
-calls. Every request has a timeout, retries are bounded, and the whole copy
-stops starting new work after ``COPY_SECONDS``; a slow or failed copy only
-records an outcome, which the pages show and the scheduler alerts on.
+calls. Every request has a timeout, retries are bounded, and the whole copy,
+an upload in flight included, stops at ``COPY_SECONDS``; a slow or failed
+copy only records an outcome, which the pages show and the scheduler alerts
+on.
 """
 
 import fcntl
@@ -269,7 +270,11 @@ def _copy_sets(
             RuntimeLayout(configuration).credential("google_workspace")
         )
         client = DriveClient(
-            session_factory(credential, subject=subject), tag=set_tag()
+            session_factory(credential, subject=subject),
+            tag=set_tag(),
+            deadline=deadline,
+            budget_seconds=COPY_SECONDS,
+            clock=clock,
         )
         del credential
     except (CryptographicError, ConfigError, OSError, DriveFailure):
@@ -311,7 +316,8 @@ def _copy_sets(
                 )
             except DriveFailure as error:
                 summary = _failed(folder_id, directory.name, digest, error.kind)
-                if error.kind not in PER_SET_FAILURES:
+                # Past the budget nothing more starts; the stop is logged.
+                if error.kind not in PER_SET_FAILURES or clock() >= deadline:
                     return summary
                 failure = error.kind
                 continue

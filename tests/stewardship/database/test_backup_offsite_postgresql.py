@@ -58,7 +58,7 @@ def offsite(tmp_path, monkeypatch):
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
     monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
-    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, tag: drive)
+    monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, **options: drive)
     monkeypatch.setattr(backup_offsite, "set_tag", lambda: drive.tag)
     monkeypatch.setattr(
         backup_offsite, "RuntimeLayout", lambda c: SimpleNamespace(credential=str)
@@ -214,6 +214,37 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
         "limit_seconds": backup_offsite.COPY_SECONDS,
         "elapsed_seconds": backup_offsite.COPY_SECONDS + 1,
     }
+
+
+def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
+    offsite, monkeypatch
+):
+    """An upload the budget stopped ends the run: one row, no further sets.
+
+    The client logs the stop itself (see test_backup_drive); the run must not
+    go on to record another failure for a set it never started.
+    """
+    from parishkit.stewardship.backup_drive import DriveFailure
+
+    new_set(offsite, "20260928T020000Z")
+    now = [0]
+
+    def stopped(*args, **kwargs):
+        """The budget runs out while this upload is sending."""
+        now[0] = backup_offsite.COPY_SECONDS + 1
+        raise DriveFailure("unavailable", retryable=False)
+
+    monkeypatch.setattr(offsite.drive, "upload", stopped)
+    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+        result = copy_offsite(
+            offsite.configuration,
+            session_factory=lambda value, subject: None,
+            sleep=lambda seconds: None,
+            clock=lambda: now[0],
+        )
+    assert result == {"state": "failed", "failure_kind": "unavailable"}
+    row = BackupUpload.objects.get()
+    assert (row.set_name, row.failure_kind) == (offsite.directory.name, "unavailable")
 
 
 def test_a_failed_copy_alerts_until_a_copy_succeeds(offsite, caplog):

@@ -56,6 +56,9 @@ REQUEST_SECONDS = 60
 # ones unanswered without contacting Drive, and the page says so meanwhile.
 PROBE_WAIT = timedelta(minutes=5)
 # A sealed dump can be large; the single-request body upload streams the file.
+# Like every requests timeout this bounds each socket operation (connecting,
+# each send, each wait for a reply), not the whole upload; a copy's budget
+# (``DriveClient``'s ``deadline``) bounds the upload as a whole.
 UPLOAD_SECONDS = 3600
 
 
@@ -203,39 +206,116 @@ def workspace_session(credential_value, *, subject):
     return AuthorizedSession(credentials)
 
 
+class _BudgetSpent(Exception):
+    """Raised from inside an upload's body once the copy budget has run out."""
+
+
+class _BoundedBody:
+    """An upload body that stops sending once the copy budget runs out.
+
+    requests reads a file body in small blocks while it sends it, so checking
+    the budget on each read bounds the whole upload, which a requests timeout
+    (per socket operation) cannot. The exception reaches ``_call`` unchanged.
+    """
+
+    def __init__(self, stream, size, remaining):
+        self.stream = stream
+        self.size = size
+        self.remaining = remaining
+
+    def __len__(self):
+        return self.size
+
+    def read(self, size=-1):
+        """Read the next block, unless the budget has run out."""
+        if self.remaining() <= 0:
+            raise _BudgetSpent()
+        return self.stream.read(size)
+
+
 class DriveClient:
     """The few Drive v3 calls the off-site copy needs, over one HTTP session.
 
     Every call names ``supportsAllDrives`` so shared drives work, and maps
-    failures to :class:`DriveFailure` categories.
+    failures to :class:`DriveFailure` categories. ``request_seconds`` is each
+    ordinary request's timeout. With a ``deadline`` (a ``clock`` value ending
+    a budget of ``budget_seconds``), no request starts after it, each
+    request's timeout is cut to the time left, and an upload stops sending
+    when it passes, so a copy never runs far past its budget (#305 L5).
     """
 
-    def __init__(self, session, *, tag=TAG_VALUE):
+    def __init__(
+        self,
+        session,
+        *,
+        tag=TAG_VALUE,
+        request_seconds=REQUEST_SECONDS,
+        deadline=None,
+        budget_seconds=None,
+        clock=time.monotonic,
+    ):
         # The tag goes into a Drive query string, so it must stay plain.
         if type(tag) is not str or not DEPLOYMENT_TAG.fullmatch(tag):
             raise ValueError("A Drive set tag is letters, digits and hyphens.")
+        if (deadline is None) != (budget_seconds is None):
+            raise ValueError("A Drive budget needs both its deadline and length.")
         self.session = session
         self.tag = tag
+        self.request_seconds = request_seconds
+        self.deadline = deadline
+        self.budget_seconds = budget_seconds
+        self.clock = clock
 
-    def _call(self, method, url, *, params=None, timeout=REQUEST_SECONDS, **kwargs):
+    def _remaining(self):
+        """Seconds left in the copy budget (infinite when there is none)."""
+        if self.deadline is None:
+            return float("inf")
+        return self.deadline - self.clock()
+
+    def _budget_spent(self):
+        """Log that the copy budget stopped a request; return its failure.
+
+        The failure is ``unavailable`` (the stored categories are fixed) but
+        not retryable: no retry may start past the budget either.
+        """
+        log_timeout(
+            "drive_copy_budget",
+            limit_seconds=self.budget_seconds,
+            elapsed_seconds=self.budget_seconds - self._remaining(),
+        )
+        return DriveFailure("unavailable", retryable=False)
+
+    def _call(self, method, url, *, params=None, timeout=None, **kwargs):
         """Send one request and map every failure to a fixed category.
 
         A request stopped by its own timeout is logged with the limit and
-        how long it ran, then counts as ``unavailable`` like any outage.
+        how long it ran, then counts as ``unavailable`` like any outage. One
+        stopped because the copy budget ran out is logged as the budget.
         """
         from google.auth.exceptions import RefreshError, TransportError
         from requests import RequestException, Timeout
 
+        timeout = self.request_seconds if timeout is None else timeout
+        remaining = self._remaining()
+        if remaining <= 0:
+            raise self._budget_spent()
+        limit = min(timeout, remaining)
         params = {"supportsAllDrives": "true", **(params or {})}
         started = time.monotonic()
         try:
             response = self.session.request(
-                method, url, params=params, timeout=timeout, **kwargs
+                method, url, params=params, timeout=limit, **kwargs
             )
         except RefreshError:
             # An unauthorized client means the delegation lacks the Drive scope.
             raise DriveFailure("authorization") from None
+        except _BudgetSpent:
+            raise self._budget_spent() from None
         except (Timeout, TimeoutError):
+            if limit < timeout:
+                # The time left in the budget, not the request's own
+                # timeout, was the limit that fired.
+                raise self._budget_spent() from None
             log_timeout(
                 "drive_request",
                 limit_seconds=timeout,
@@ -336,7 +416,7 @@ class DriveClient:
                 "PUT",
                 location,
                 params=fields,
-                data=stream,
+                data=_BoundedBody(stream, size, self._remaining),
                 headers={
                     "Content-Type": content_type,
                     "Content-Length": str(size),
@@ -527,7 +607,7 @@ def probe(client, folder_id):
             "parishkit-backup-access-check.txt",
             folder_id,
             content_type="text/plain",
-            timeout=REQUEST_SECONDS,
+            timeout=client.request_seconds,
         )
     client.trash(result["id"])
 

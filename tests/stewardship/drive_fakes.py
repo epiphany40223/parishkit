@@ -5,7 +5,12 @@ import json
 from itertools import count
 
 from parishkit.stewardship.backup import DUMP, FILES, MANIFEST
-from parishkit.stewardship.backup_drive import FOLDER_MIME, TAG_VALUE, DriveFailure
+from parishkit.stewardship.backup_drive import (
+    FOLDER_MIME,
+    REQUEST_SECONDS,
+    TAG_VALUE,
+    DriveFailure,
+)
 
 
 def write_sealed_set(directory, content=b"sealed"):
@@ -38,6 +43,7 @@ class FakeDrive:
         # ``tag`` is the deployment tag this client writes and lists; set it
         # to another value to act as a second deployment sharing the folder.
         self.tag = tag
+        self.request_seconds = REQUEST_SECONDS
         self.ids = count(1)
         self.items = {root: {"name": "root", "mime": FOLDER_MIME, "parent": None}}
         self.root = root
