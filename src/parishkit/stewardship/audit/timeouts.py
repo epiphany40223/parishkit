@@ -11,6 +11,7 @@ never replaces the original failure.
 
 import json
 import logging
+from contextvars import copy_context
 from copy import deepcopy
 from threading import BoundedSemaphore, Thread
 from time import monotonic
@@ -253,11 +254,13 @@ def record_timeout_within(seconds, event, **values):
 
     For callers about to stop work that must not outlive its limit (a read
     guard's abort): the write runs on a daemon thread, and the caller moves on
-    after ``seconds`` even if the database is slow or unreachable.
+    after ``seconds`` even if the database is slow or unreachable. The thread
+    runs in a copy of the caller's context, so the entry keeps the caller's
+    correlation id and bound task instead of a fresh id and no task.
     """
     writer = Thread(
-        target=record_timeout,
-        args=(event,),
+        target=copy_context().run,
+        args=(record_timeout, event),
         kwargs=values,
         name="stewardship-timeout-log",
         daemon=True,

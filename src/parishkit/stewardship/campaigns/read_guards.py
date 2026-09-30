@@ -7,6 +7,7 @@ that terminates its transport on deadline. No view is exposed by this module.
 
 import hashlib
 from contextlib import ExitStack
+from contextvars import copy_context
 from copy import deepcopy
 from dataclasses import dataclass
 from threading import BoundedSemaphore, Event, Lock, Timer, get_ident
@@ -228,7 +229,10 @@ class CampaignReadGuard:
                     cursor.execute(
                         "SELECT set_config(%s, %s, true)", [name, str(seconds * 1000)]
                     )
-            self._timer = Timer(remaining, self._expire)
+            # A Timer thread starts with an empty context; run the expiry in
+            # a copy of this one so its timeout entry keeps the request's
+            # correlation id (#302).
+            self._timer = Timer(remaining, copy_context().run, args=(self._expire,))
             self._timer.daemon = True
             self._timer.start()
             with self.db.cursor() as cursor:
