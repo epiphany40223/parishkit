@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from datetime import timedelta
 from threading import Event
+from time import monotonic
 from uuid import uuid4
 
 import pytest
@@ -67,6 +68,26 @@ def family_owner(harness, path):
         public_origin="http://localhost:8000",
         credential_path=path,
     )
+
+
+def wait_until_due(message, limit=10):
+    """Wait until PostgreSQL's own clock says the message's retry is due.
+
+    The retry's due time is written with the database clock, so polling that
+    same clock (never the test host's) cannot flake on clock skew.
+    """
+    deadline = monotonic() + limit
+    while monotonic() < deadline:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT not_before <= clock_timestamp() FROM stewardship_task_run "
+                "WHERE id=%s",
+                [message.task_id],
+            )
+            if cursor.fetchone()[0]:
+                return
+        Event().wait(0.1)
+    pytest.fail(f"The retry was not due within {limit} s by the database clock.")
 
 
 def deliver(harness, path, message, owner=None):
@@ -158,7 +179,6 @@ def test_mixed_refusals_retry_same_occurrence_only_to_remaining_address(
     dispatch_worker, monkeypatch
 ):
     """Definitive non-acceptance does not fabricate a deliverability recovery edge."""
-    from threading import Event
 
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
     from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
@@ -196,7 +216,7 @@ def test_mixed_refusals_retry_same_occurrence_only_to_remaining_address(
         assert message.state == "retry_wait"
         assert RecipientRefusal.objects.get().address == "valid@example.org"
         assert FamilyCampaign.objects.get(pk=message.family_id).email_deliverable
-        Event().wait(1.1)
+        wait_until_due(message)
         deliver(harness, path, message)
     message.refresh_from_db()
     assert calls == [
@@ -261,7 +281,6 @@ def test_definitive_retry_budget_ends_without_uncertain_resend(
     dispatch_worker, monkeypatch
 ):
     """Bounded non-acceptance retries leave a terminal reviewable delivery outcome."""
-    from threading import Event
 
     harness, path = dispatch_worker
     calls = []
@@ -282,7 +301,7 @@ def test_definitive_retry_budget_ends_without_uncertain_resend(
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = prepare(harness)
         deliver(harness, path, message)
-        Event().wait(1.1)
+        wait_until_due(message)
         deliver(harness, path, message)
     message.refresh_from_db()
     assert calls == [message.semantic_key, message.semantic_key]
@@ -502,7 +521,7 @@ def test_key_change_mid_switch_holds_mail_without_spending_attempts(
         deliver(harness, path, message)
         if change is not None:
             # Past the (one-attempt) budget, it is still waiting.
-            Event().wait(1.1)
+            wait_until_due(message)
             deliver(harness, path, message)
     task = TaskRun.objects.get(pk=message.task_id)
     message.refresh_from_db()
