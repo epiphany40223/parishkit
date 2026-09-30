@@ -345,22 +345,53 @@ the setup wizard), and a test requires every new route to be classified.
 
 ### Admin tables
 
-Admin list tables share one component, so paging, selection and styling behave
-the same everywhere. A long table has a row navigator above and below it: a
-count of the rows shown, a rows-per-page choice (25, 50, 100, 250 or All),
-Previous and Next, and a page-number field. A page number past the end shows
-the last page. Page and size are query parameters, optionally prefixed so two
-tables on one page keep their own place, and navigator links keep the page's
-filters. Only lists whose query strings carry no private values use them;
-report views that hold filters in POST state keep their own paging.
+Admin tables share one component, so paging, sorting, selection and styling
+behave the same everywhere. A long table has a row navigator above and below
+it: the rows shown and "Page N of M", a rows-per-page choice (25, 50, 100, 250
+or All, where the table's source allows it), Previous and Next, and a
+page-number field. A page number past the end shows the last page.
 
-Lists read straight from a growing database table (Background work, Outgoing
-mail, Refused addresses, Families on the form now, Testing Families, Family link
-preparation and Family campaign codes) page on the server without counting
-every matching row: each page reads one extra row to learn whether a next page
-exists. Their navigator therefore shows the rows on the page but no total or
-page count, and offers 25, 50 or 100 rows. The participation workspace's daily
-table is already in memory, so it shows the total and offers every size.
+Column headings sort the table on the server. Each sortable heading is a
+control that sorts by that column; choosing the sorted column again reverses
+it, and times and counts sort newest or largest first on the first choice.
+The sorted heading carries `aria-sort`, a small arrow marks it, and each
+control's accessible name says which direction it will choose. A table accepts
+only its own whitelisted sort tokens, each mapped to server-owned ordering, and
+appends a unique tiebreak so rows with equal values never move between pages.
+Rows with no value in the sorted column (a task without a heartbeat, a user
+who never signed in) sort last in either direction.
+A new sort starts again at page 1.
+
+Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
+prefixed so two tables on one page keep their own place, and every navigator
+link, heading and filter form keeps the page's filters and the others' choices.
+Reports whose filters are private (the Family directory, System logs and the
+campaign reports) keep them in POST state: their navigator and headings are
+small CSRF-protected forms that carry the filters as hidden fields, so no
+private value reaches a URL. A report whose rows an installed SQL selection
+orders offers that selection's sort orders on the columns they order and its
+page sizes; its other columns do not sort, since the schema owns those
+orders. In v1 that covers:
+
+- the Family directory (Family and DUID, 50 rows; Family code would need
+  every code decrypted per view);
+- Financial stewardship detail (Family, Annual pledge and latest response);
+- the Additional information queue (Family and Submitted);
+- the Ministry report (Ministry; Member and Submitted in one Ministry's view);
+- the Ministry follow-up queue (Request, Member and Ministry).
+
+Extending those vocabularies is a schema change. Columns that are only
+controls (selection, actions, previews) never sort. Two short before/after
+lists of pending setting changes (credential selection and integration
+preview), the campaign mail test's at most ten reviewed Families, and link
+preparation history (panels, not columns) have no sortable columns.
+
+Lists read straight from a growing database table page on the server with one
+extra row to learn whether a next page exists, and count matching rows only up
+to 10,000. Past that the navigator says "more than 10,000", omits the page
+count and keeps paging by the extra row. They offer 25, 50 or 100 rows. On the
+largest tables only indexed columns sort, so a page view never sorts or counts
+a whole log.
 
 A table with bulk actions has a selection column. Its header checkbox and a
 Select all button choose every row on the current page; the bar above the
@@ -1510,7 +1541,22 @@ Only Admins access the combined log screen. It supports:
   page. Each filter travels in a POST body like the form's. The raw
   identifiers themselves (correlation, actor, campaign, subject) are under a
   per-row "Technical details" disclosure, closed by default; the table uses
-  the shared Admin table styling; and
+  the shared Admin table styling;
+- the shared [table navigator](#admin-tables) in POST mode. The first view
+  records a snapshot instant, and every later page, size or sort change lists
+  only entries created at or before it, so new entries never shift pages. An
+  entry whose transaction was already running when the snapshot was taken
+  can still appear on a later view and shift a page by one entry; that
+  overlap is rare and brief. Applying the filters again starts a new
+  snapshot at page 1 and keeps the rows-per-page and sort choices. Time is
+  the only sortable column (newest or oldest first, both read through the
+  `(created_at, id)` indexes on both logs). Level exists only on operational
+  entries; no index orders the two logs together by Type (the operational
+  log's type is unindexed); Actor is looked up for display rather than
+  stored; and Related and Recorded detail are not single values. None of
+  them sort. The count stops at 10,000 entries per log, and paging reaches at
+  most 10,000 entries deep in either order; past that the page suggests a
+  narrower date range or the other order; and
 - text or structured JSONL export of the filtered result.
 
 Ministry filtering includes both interactive event identifiers and the
