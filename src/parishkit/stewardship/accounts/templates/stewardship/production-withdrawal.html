@@ -4,29 +4,29 @@
 <h1>{% translate "Withdraw from Production" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 {% if withdrawal %}<section class="panel" role="status"><h2>{% translate "Withdrawal completed" %}</h2>
-<p>{% translate "The campaign was returned to draft in Testing mode. Structural settings were unlocked and readiness was invalidated. Going live again requires a complete new readiness, test, cleanup and confirmation cycle." %}</p>
+<p>{% translate "The campaign is a draft in Testing mode again, and its settings can be changed. Going live again needs the full cycle: readiness check, tests, Testing cleanup and final confirmation." %}</p>
 <p>{% translate "Withdrawn at" %}: <time data-local-instant datetime="{{ withdrawal.created_at|instant }}">{{ withdrawal.created_at|instant }}</time></p>
 <p>{% translate "Reason" %}: {{ withdrawal.reason }}</p></section>{% endif %}
-<p class="notice">{% translate "Testing data deleted during the previous Production transition cannot be restored. Withdrawal does not undo cleanup or erase prior activation and delivery history." %}</p>
+<p class="notice">{% translate "Testing data deleted during the earlier go-live cannot be restored. Withdrawing does not undo cleanup, and the history of the go-live and of mail already sent is kept." %}</p>
 {% if available %}
 <p>{% translate "Withdrawal is available only before" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>.</p>
-{% if not fresh %}<div class="notice"><p>{% translate "For your security, confirm it's you with Google before withdrawing. Confirmation requires Google authentication within the last five minutes. You will return here; then prepare a new preview." %}</p>{% url 'admin:production_withdrawal' campaign.pk as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
+{% if not fresh %}<div class="notice"><p>{% translate "Withdrawing needs a Google sign-in from the last five minutes. Confirm it's you with Google; you will come back here, then preview the withdrawal again." %}</p>{% url 'admin:production_withdrawal' campaign.pk as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
 <label for="withdrawal-reason">{% translate "Reason for withdrawal" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
 <label><input type="checkbox" name="acknowledged" value="yes" required data-acknowledgment> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
 <button type="submit">{% translate "Preview withdrawal" %}</button></form>
-{% if preview %}<section class="panel"><h2>{% translate "Exact withdrawal preview" %}</h2>
+{% if preview %}<section class="panel"><h2>{% translate "What withdrawing will do" %}</h2>
 <p>{% translate "Reason" %}: {{ preview.reason }}</p>
-<dl><dt>{% translate "Recorded live occurrences" %}</dt><dd>{{ preview.inventory.occurrences|number }}</dd>
-<dt>{% translate "Occurrences to cancel" %}</dt><dd>{{ preview.inventory.cancellable|number }}</dd>
+<dl><dt>{% translate "Scheduled mail runs recorded" %}</dt><dd>{{ preview.inventory.occurrences|number }}</dd>
+<dt>{% translate "Scheduled mail runs to cancel" %}</dt><dd>{{ preview.inventory.cancellable|number }}</dd>
 <dt>{% translate "Unsent messages to cancel" %}</dt><dd>{{ preview.inventory.messages|number }}</dd>
-<dt>{% translate "Failed occurrences retained" %}</dt><dd>{{ preview.inventory.failed|number }}</dd>
-<dt>{% translate "Delivered messages retained" %}</dt><dd>{{ preview.inventory.delivered|number }}</dd>
-<dt>{% translate "Blocking work checks" %}</dt><dd>{{ preview.inventory.blocking|number }}</dd></dl>
-{% if preview.inventory.blocking %}<p role="alert">{% translate "Work is in flight, uncertain, or requires separate recovery. Resolve it before preparing a new withdrawal preview. Nothing has been cancelled." %}</p>{% else %}
-<p>{% translate "Confirmation cancels safely unsent work and returns this campaign to draft in Testing. Any intervening change or the campaign start invalidates this preview." %}</p>
+<dt>{% translate "Failed mail runs kept in history" %}</dt><dd>{{ preview.inventory.failed|number }}</dd>
+<dt>{% translate "Delivered messages kept in history" %}</dt><dd>{{ preview.inventory.delivered|number }}</dd>
+<dt>{% translate "Items blocking withdrawal" %}</dt><dd>{{ preview.inventory.blocking|number }}</dd></dl>
+{% if preview.inventory.blocking %}<p role="alert">{% translate "Some mail is being sent right now, has an uncertain delivery, or needs recovery. Resolve it on the Delivery controls and Outgoing mail pages, then preview again. Nothing has been cancelled." %}</p>{% else %}
+<p>{% translate "Confirming cancels mail that has not been sent and makes this campaign a draft in Testing mode again. If anything changes, or the campaign starts, before you confirm, preview again." %}</p>
 {% if withdrawal_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ withdrawal_token }}"><button type="submit">{% translate "Confirm withdrawal from Production" %}</button></form>{% endif %}
 {% endif %}</section>{% endif %}
-{% elif not withdrawal %}<p role="alert">{% translate "This campaign is not eligible for pre-start withdrawal. An active campaign cannot be withdrawn, even if this page was opened earlier." %}</p>{% endif %}
+{% elif not withdrawal %}<p role="alert">{% translate "This campaign can't be withdrawn: withdrawing is possible only before the campaign starts. A live campaign cannot be withdrawn, even if this page was opened earlier." %}</p>{% endif %}
 <p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a></p>
 {% endblock %}

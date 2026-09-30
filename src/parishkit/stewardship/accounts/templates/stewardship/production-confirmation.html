@@ -3,29 +3,28 @@
 {% block content %}
 <h1>{% translate "Final Production confirmation" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
-<p class="notice">{% translate "Completed Testing cleanup cannot be undone. The campaign remains in Testing until you confirm Production below. Prepared links are still inactive." %}</p>
+<p class="notice">{% translate "Testing data deleted by cleanup cannot be restored. The campaign stays in Testing mode until you confirm below, and the prepared Family links stay inactive until then." %}</p>
 <p>{% if state.target_state == 'active' %}{% translate "Confirmation will activate Family access immediately. Initial campaign mail will be prepared separately in the background." %}{% else %}{% translate "Confirmation will schedule the campaign for Production. Family access and ordinary scheduled mail remain closed until the campaign starts." %}{% endif %}</p>
 <p>{% translate "Campaign starts" %}: <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time></p>
 <p>{% translate "Campaign closes" %}: <time data-local-instant datetime="{{ campaign.active_configuration.ends_at|instant }}">{{ campaign.active_configuration.ends_at|instant }}</time></p>
 {% if problems %}<section class="panel"><h2>{% translate "Readiness needs attention" %}</h2><ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul></section>{% endif %}
-{% if not fresh %}<section class="panel"><h2>{% translate "Fresh Google authentication required" %}</h2><p>{% translate "For your security, confirm it's you with Google after cleanup has completed, then verify the preview on this page. Confirmation requires Google authentication within the last five minutes; you will return here." %}</p>{% include 'stewardship/components/reauthenticate.html' with next=here %}</section>{% endif %}
+{% if not fresh %}<section class="panel"><h2>{% translate "Confirm it's you with Google" %}</h2><p>{% translate "Going live needs a Google sign-in from the last five minutes. Confirm it's you with Google; you will come back here, then check the impact below." %}</p>{% include 'stewardship/components/reauthenticate.html' with next=here %}</section>{% endif %}
 <section class="panel"><h2>{% translate "Verify current impact" %}</h2>
-<p>{% translate "This explicit check verifies the public URL and DNS and counts immediately due mail. It does not activate Production or send any email." %}</p>
-{% if origin_verified is True %}<p role="status">{% translate "Public URL and DNS checks passed. External TLS and deployment smoke tests are still separate requirements." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "Public-origin verification failed or timed out. Check the deployment settings and retry." %}</p>{% endif %}
+<p>{% translate "Checks the site's public web address and DNS record, and counts the mail that would be sent right away. It does not take the campaign live or send any email." %}</p>
+{% if origin_verified is True %}<p role="status">{% translate "The public web address passed the URL and DNS checks. Still check separately that the site's HTTPS certificate works and that the site opens in a browser." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "The public web address check failed or timed out. Check the site's configured URL and its DNS record, then try again." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Verify final readiness and mail impact" %}</button></form></section>
-{% if preview %}<section class="panel"><h2>{% translate "Exact preview" %}</h2>
+{% if preview %}<section class="panel"><h2>{% translate "What going live will do" %}</h2>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ state.observed_at|instant }}">{{ state.observed_at|instant }}</time></p>
-<dl><dt>{% translate "Impact revision" %}</dt><dd>{{ state.impact_revision|number }}</dd>
-<dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
+<dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
 <dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
 <dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
 <dt>{% translate "Immediately due Family messages" %}</dt><dd>{{ counts.messages|number }}</dd>
 <dt>{% translate "Immediately due daily report messages" %}</dt><dd>{{ preview.digests.daily_messages|number }}</dd>
 <dt>{% translate "Immediately due weekly report messages" %}</dt><dd>{{ preview.digests.weekly_messages|number }}</dd>
-<dt>{% translate "Coalesced Family slots (not additional messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
-<dt>{% translate "Coalesced report slots (not additional messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd></dl>
-<p>{% translate "Changed eligibility or schedule inputs require a new preview. Background execution rechecks eligibility, so actual counts may differ from this as-of preview." %}</p>
-
+<dt>{% translate "Family sends combined into one message (not extra messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
+<dt>{% translate "Report sends combined into one message (not extra messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd></dl>
+<p>{% translate "If Families, eligibility or mail schedules change, check again before confirming. Who gets mail is checked again when it is prepared, so the actual counts may differ slightly from these." %}</p>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Impact revision" %}</dt><dd>{{ state.impact_revision|number }}</dd></dl></details>
 </section>{% endif %}
 {% if confirmation_token and fresh %}<section class="panel"><h2>{% translate "Confirm Production" %}</h2>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">

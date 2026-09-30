@@ -43,7 +43,7 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert "mail_template_unavailable" in preview.problems
         assert "family_test_mail_required" in preview.problems
         assert preview.target_state == "scheduled"
-        assert b"No Testing records" in response.content
+        assert b"no Testing records to delete" in response.content
         again = browser.get(path)
         assert again.context["preview"].digest == preview.digest
         assert PortalSession.objects.get().last_activity_at == before

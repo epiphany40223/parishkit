@@ -4,21 +4,20 @@
 {% block content %}
 <h1>{% translate "Testing cleanup progress" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
-<p class="notice">{% translate "The campaign remains in Testing. Completed deletions cannot be undone, even if you cancel. Production activation is a separate final confirmation and is not available here." %}</p>
-<section class="panel" role="status" aria-live="polite" data-live-status="cleanup" data-live-state="{{ status.state }}"{% if live_pending %} data-live-pending{% endif %}><h2>{% translate "Durable progress" %}</h2>
+<p class="notice">{% translate "The campaign stays in Testing mode. Deleted data cannot be restored, even if you cancel. Going live is a separate final confirmation, after Family links are prepared." %}</p>
+<section class="panel" role="status" aria-live="polite" data-live-status="cleanup" data-live-state="{{ status.state }}"{% if live_pending %} data-live-pending{% endif %}><h2>{% translate "Progress" %}</h2>
 {% if live_pending %}{% translate "Testing cleanup is running…" as running %}{% include 'stewardship/live-running.html' with message=running since=task.updated_at %}{% endif %}
 {% if status.state == 'cleanup_failed' %}<p class="notice notice-error live-failed" role="alert">{% translate "Cleanup failed. You can retry it from its last checkpoint below." %}</p>{% endif %}
-<dl><dt>{% translate "State" %}</dt><dd>{{ status.state }}</dd>
-<dt>{% translate "Deleted inventory records" %}</dt><dd>{{ completion|out_of }}</dd>
-<dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd>
-<dt>{% translate "Worker task state" %}</dt><dd>{{ task.state }}</dd>
-<dt>{% translate "Last task update" %}</dt><dd><time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time></dd></dl>
-{% if cancelling %}<p role="status">{% translate "Cancellation has been requested. Any running worker stops at a safe batch boundary; completed deletions remain permanent." %}</p>{% endif %}
-{% if status.state == 'cleanup_complete' %}<p class="live-done">{% translate "Cleanup is complete. The hold remains until cancellation or a separately verified Production activation." %}</p>{% endif %}
-{% if status.state == 'cancelled' %}<p role="status">{% translate "Cleanup was cancelled and the hold was released. Deleted data was not restored. A new transition requires a new readiness preview." %}</p>{% endif %}
+<dl><dt>{% translate "Status" %}</dt><dd>{% include "stewardship/cleanup-state.html" with state=status.state %}</dd>
+<dt>{% translate "Testing records deleted" %}</dt><dd>{{ completion|out_of }}</dd>
+<dt>{% translate "Last update" %}</dt><dd><time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time></dd></dl>
+{% if cancelling %}<p role="status">{% translate "Cancelling. Cleanup stops at the next safe point; records already deleted stay deleted." %}</p>{% endif %}
+{% if status.state == 'cleanup_complete' %}<p class="live-done">{% translate "Cleanup is complete. New Testing work stays blocked until the campaign goes live or you cancel. Next, prepare the Family links." %}</p>{% endif %}
+{% if status.state == 'cancelled' %}<p role="status">{% translate "Cleanup was cancelled and Testing work can start again. Deleted data was not restored. To go live later, start again from the readiness page." %}</p>{% endif %}
 {% if controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.retry }}"><button type="submit">{% translate "Retry failed cleanup from its checkpoints" %}</button></form>{% endif %}
 {% if controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.cancel }}"><button type="submit">{% translate "Cancel cleanup without restoring deleted data" %}</button></form>{% endif %}
 {% if status.state == 'cleanup_complete' %}<p><a href="{% url 'admin:go_live_links' campaign.pk status.request_id %}">{% translate "Prepare inactive Family links" %}</a></p>{% endif %}
 </section>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Cleanup state" %}</dt><dd><code>{{ status.state }}</code></dd><dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd></dl><p>{% translate "Values are as of when this page was opened; select Refresh cleanup progress to update them." %}</p></details>
 <p><a href="">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to readiness" %}</a></p>
 {% endblock %}
