@@ -2133,7 +2133,12 @@ installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate
 someone else); the page follows the result with the passive live-status
-pattern and explains each failure in plain language. A pending check shows
+pattern and explains each failure in plain language. Planned with the
+[dedicated off-site uploader](../operations/spec.md#dedicated-off-site-uploader-planned-post-launch):
+when the applied delegated mailbox changes while a check is still queued,
+the installer closes the check without contacting Drive, and the page says
+"The Google Workspace settings changed after this check was asked for. Run
+Test access again." A pending check shows
 until it finishes; a finished result shows for up to ten minutes and
 disappears as soon as the tested folder is saved after it (other
 configuration changes don't hide it). The folder that was tested stays in the
