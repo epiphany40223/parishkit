@@ -5,6 +5,8 @@ ownership prevents concurrent promotion; shared snapshot locks protect active
 readers through lazy queries. Only explicit normalized source tables are targets.
 """
 
+from contextlib import suppress
+from dataclasses import dataclass
 from time import monotonic
 
 from django.db import connection, transaction
@@ -149,6 +151,27 @@ def _reclaim_memberships(limit=MEMBERSHIP_CHUNK):
     membership guard admits the worker only under the live compaction lease
     and only for a compacted manifest or rejected staging. Picks up rows a
     previous run left behind, so an interrupted run loses nothing.
+
+    A rejected snapshot's memberships are deleted without the pin, live
+    reference and anchor checks that ``_select_compaction`` applies before
+    marking a promoted snapshot compacted (#269). That is safe because no
+    reader can ever need a rejected corpus, and the schema enforces each
+    reason:
+
+    - ``rejected`` is terminal: the snapshot guard admits only
+      staging/ready -> rejected, and nothing leaves ``rejected``, so the
+      corpus can never become promoted or current later;
+    - the pin guard admits a pin only on a promoted, uncompacted snapshot,
+      so no pin, however long-lived, can name a rejected one;
+    - ``read_snapshot`` (every corpus read) takes its shared lock only on a
+      promoted, uncompacted snapshot and refuses anything else;
+    - the few places that name a rejected snapshot (a delta fallback's
+      attempt, a failed refresh's classification) read only its manifest
+      row, which is permanent, never its memberships; setup cleanup only
+      checks whether its memberships are gone, since it deletes them too.
+
+    Payload versions a rejected corpus shared with a live one survive: the
+    payload reclaimer deletes only versions no membership references.
     """
     deleted = 0
     with transaction.atomic(), connection.cursor() as cursor:
@@ -196,16 +219,18 @@ def _reclaim_payloads(limit=PAYLOAD_CHUNK):
     return deleted
 
 
-def _drain(reclaim, deadline, between):
-    """Repeat one chunked reclaimer until it runs dry or the budget is spent."""
-    total = 0
+def _drain(reclaim, deadline, between, tally, key):
+    """Repeat one chunked reclaimer until it runs dry or the budget is spent.
+
+    Each committed chunk is added to ``tally[key]`` as it commits, so a
+    caller interrupted part-way still knows exactly what was deleted.
+    """
     while monotonic() < deadline:
         between()
         count = reclaim()
-        total += count
+        tally[key] += count
         if count == 0:
             break
-    return total
 
 
 def _mark_compacted(candidates, now, worker_id):
@@ -215,6 +240,64 @@ def _mark_compacted(candidates, now, worker_id):
         snapshot.version += 1
         snapshot.actor_id = worker_id
         snapshot.save()
+
+
+@dataclass(frozen=True)
+class CompactionResult:
+    """One batch's evidence: the marking row and, if rows went, the reclaim row."""
+
+    marked: SourceCompactionBatch
+    reclaimed: SourceCompactionBatch | None
+
+    @property
+    def snapshot_count(self):
+        """Snapshots this batch marked compacted."""
+        return self.marked.snapshot_count
+
+    @property
+    def membership_count(self):
+        """Membership rows this batch deleted (from any compacted corpus)."""
+        return self.reclaimed.membership_count if self.reclaimed else 0
+
+    @property
+    def payload_count(self):
+        """Payload versions this batch deleted."""
+        return self.reclaimed.payload_count if self.reclaimed else 0
+
+
+def _record_batch(claim, cutoffs, *, generation, snapshots, memberships, payloads):
+    """Write one immutable evidence row and its audit event; return the row.
+
+    The caller supplies the transaction. The audit ``count`` is the
+    membership rows the row reports, as it always has been.
+    """
+    now, recent, yearly = cutoffs
+    evidence = SourceCompactionBatch.objects.create(
+        task_id=claim.task_id,
+        source_fence=claim.fence,
+        cutoff_at=now,
+        recent_cutoff=recent,
+        yearly_cutoff=yearly,
+        snapshot_count=snapshots,
+        membership_count=memberships,
+        payload_count=payloads,
+        actor_id=claim.worker_id,
+    )
+    # Name no Parish here: the audit ownership trigger requires any named
+    # parish_id to be the active configuration's, and a stale one would roll
+    # back the compaction marking in this transaction too (see #344).
+    record_action(
+        Action.SOURCE_COMPACTED,
+        actor_kind=ActorKind.SYSTEM,
+        actor_id=claim.worker_id,
+        subject_id=evidence.pk,
+        context={
+            "count": memberships,
+            "version": generation,
+            "outcome": Outcome.SUCCEEDED,
+        },
+    )
+    return evidence
 
 
 def compact_source(
@@ -230,11 +313,21 @@ def compact_source(
 
     Marking runs in one short transaction under the verified source claim:
     candidate rows are locked, late pins are rechecked, and readers holding
-    their shared lock are skipped. Deletion then runs in separate bounded
-    transactions that hold no task or lease row, so it can never starve the
-    heartbeat; a compacted manifest is unreadable, so a partly reclaimed corpus
-    is never observed. ``deadline`` (a monotonic instant) bounds the deletion
-    and ``between`` runs before each chunk (the execution's liveness check).
+    their shared lock are skipped. The same transaction writes the batch's
+    evidence row (the snapshot count) and its audit event, so no snapshot is
+    ever compacted without both, however the run ends (#269).
+
+    Deletion then runs in separate bounded transactions that hold no task or
+    lease row, so it can never starve the heartbeat; a compacted manifest is
+    unreadable, so a partly reclaimed corpus is never observed. What it
+    deleted is recorded afterwards in a second evidence row (only when rows
+    went), counting exactly the chunks that committed. That row is written
+    even when a chunk or liveness check fails part-way, as long as the claim
+    is still verified; only a process killed outright, or a claim that was
+    lost, leaves those chunks uncounted, and the next run reclaims and counts
+    whatever they left. ``deadline`` (a monotonic instant) bounds the
+    deletion and ``between`` runs before each chunk (the execution's liveness
+    check).
     """
     if claim.phase != "compaction":
         raise ValueError("Source cleanup requires dedicated compaction ownership.")
@@ -252,35 +345,47 @@ def compact_source(
         recent, yearly = retention_cutoffs(now)
         candidates = _select_compaction(current, now, snapshot_limit)
         _mark_compacted(candidates, now, claim.worker_id)
-    memberships = _drain(_reclaim_memberships, deadline, between)
-    payloads = _drain(
-        lambda: _reclaim_payloads(min(PAYLOAD_CHUNK, payload_limit)), deadline, between
-    )
-    with transaction.atomic():
-        verify_source(claim)
-        evidence = SourceCompactionBatch.objects.create(
-            task_id=claim.task_id,
-            source_fence=claim.fence,
-            cutoff_at=now,
-            recent_cutoff=recent,
-            yearly_cutoff=yearly,
-            snapshot_count=len(candidates),
-            membership_count=memberships,
-            payload_count=payloads,
-            actor_id=claim.worker_id,
+        marked = _record_batch(
+            claim,
+            (now, recent, yearly),
+            generation=current.generation,
+            snapshots=len(candidates),
+            memberships=0,
+            payloads=0,
         )
-        record_action(
-            Action.SOURCE_COMPACTED,
-            actor_kind=ActorKind.SYSTEM,
-            actor_id=claim.worker_id,
-            subject_id=evidence.pk,
-            context={
-                "count": memberships,
-                "version": current.generation,
-                "outcome": Outcome.SUCCEEDED,
-            },
+    tally = {"memberships": 0, "payloads": 0}
+
+    def record_reclaimed():
+        """Record the committed chunks, if any, under the verified claim."""
+        if not (tally["memberships"] or tally["payloads"]):
+            return None
+        with transaction.atomic():
+            verify_source(claim)
+            return _record_batch(
+                claim,
+                (now, recent, yearly),
+                generation=current.generation,
+                snapshots=0,
+                memberships=tally["memberships"],
+                payloads=tally["payloads"],
+            )
+
+    try:
+        _drain(_reclaim_memberships, deadline, between, tally, "memberships")
+        _drain(
+            lambda: _reclaim_payloads(min(PAYLOAD_CHUNK, payload_limit)),
+            deadline,
+            between,
+            tally,
+            "payloads",
         )
-        return evidence
+    except BaseException:
+        # Count what did commit before re-raising the original failure; a
+        # refused or failed record must never replace it.
+        with suppress(Exception):
+            record_reclaimed()
+        raise
+    return CompactionResult(marked, record_reclaimed())
 
 
 def _compact_superseded_facts(execution, limit=500, deadline=None):

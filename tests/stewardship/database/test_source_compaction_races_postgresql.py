@@ -51,7 +51,10 @@ def test_failed_deletion_chunk_is_never_readable_and_the_next_run_finishes(
     with pytest.raises(InvalidSourcePayload, match="unavailable"):
         reconstruct_snapshot(history[0].pk)
     assert SourceFamily.objects.count() == 3
-    assert not SourceCompactionBatch.objects.exists()
+    # The marking and its evidence commit together (#269): the compacted
+    # snapshot is audited even though no chunk committed.
+    (marked,) = SourceCompactionBatch.objects.all()
+    assert (marked.snapshot_count, marked.membership_count) == (1, 0)
     again = cleanup()
     assert (again.snapshot_count, again.membership_count, again.payload_count) == (
         0,
@@ -141,3 +144,27 @@ def test_compaction_winning_the_row_lock_rejects_later_pin(history, monkeypatch)
         assert cleaning_future.result().snapshot_count == 1
         with pytest.raises(InvalidSourcePayload, match="reconstructable"):
             pin_future.result()
+
+
+def test_chunks_committed_before_a_failure_are_still_counted(history, monkeypatch):
+    """#269: a drain that fails part-way records exactly the chunks that committed."""
+    original = compaction._reclaim_memberships
+    calls = []
+
+    def second_fails(*args, **kwargs):
+        """Commit one small chunk, then fail the next one."""
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("synthetic interruption")
+        return original(4)
+
+    with monkeypatch.context() as context:
+        context.setattr(compaction, "_reclaim_memberships", second_fails)
+        with pytest.raises(RuntimeError, match="synthetic interruption"):
+            cleanup()
+    counts = sorted(
+        SourceCompactionBatch.objects.values_list("snapshot_count", "membership_count")
+    )
+    assert counts == [(0, 4), (1, 0)]
+    again = cleanup()
+    assert (again.snapshot_count, again.membership_count) == (0, 5)
