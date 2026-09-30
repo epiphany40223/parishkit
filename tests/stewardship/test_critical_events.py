@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest
 from django.core import signing
+from django.template.loader import render_to_string
 
 from parishkit.stewardship.audit.critical_events import (
     ACKNOWLEDGE_LIMIT,
@@ -77,3 +78,25 @@ def test_an_edited_token_is_refused():
     edited = token[:1] + ("A" if token[1] != "A" else "B") + token[2:]
     with pytest.raises(signing.BadSignature):
         shown(edited)
+
+
+def test_standing_banners_are_labelled_not_announced_on_every_page():
+    """role="alert" would be read out again on every Admin page load (#391 L8)."""
+    html = render_to_string(
+        "stewardship/admin-banners.html",
+        {
+            "suppress_admin_session_chrome": True,
+            "admin_chrome": {
+                "admin": True,
+                "debug_in_production": True,
+                "critical_count": 1,
+                "critical_limit": 50,
+                "critical_shown": "shown",
+                "critical_events": [{"label": "A backup failed", "count": 1}],
+            },
+        },
+    )
+    assert "A backup failed" in html and "Debug logging is on" in html
+    assert 'role="alert"' not in html
+    for name in ("critical-events-title", "debug-in-production-title"):
+        assert f'aria-labelledby="{name}"' in html and f'id="{name}"' in html
