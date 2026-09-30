@@ -427,6 +427,8 @@ def _task_read(request, task_id):
     for item in [task, *work["events"]]:
         progress = item["progress"]
         progress["display"] = Percentage(progress["current"], progress["total"])
+        # The history names each step in words, as the status line does.
+        item["phase_text"] = phase_words(task["type"], progress["phase"])
     return result, {
         "work": work,
         "task": task,

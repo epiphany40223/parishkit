@@ -3,11 +3,13 @@
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Background task details" %}</h1>
-<p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}{% if task.name != task.type %} (<code>{{ task.type }}</code>){% endif %} — {{ task.id }}</p>
+<p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
+{% if is_refresh %}{% aboutpage "refresh-task" %}<p>{% translate "Every refresh places every ParishSoft record into a complete new copy, so the progress counts records checked, not records changed. Unchanged records are reused, not stored again. When the refresh finishes, this page also says how many records changed." %}</p>
+<p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 {% include 'stewardship/background-task-status.html' %}
 {% if export_cleanup_retry_key %}
 <section class="panel"><h2>{% translate "Retry export cleanup" %}</h2>
-<p>{% translate "After correcting the storage or access problem, retry removal of this expired export. Retained report history and source calculations will not be deleted." %}</p>
+<p>{% translate "After fixing the storage or access problem, retry removing this expired export file. The report's history and the data it was built from are kept." %}</p>
 <form method="post" action="{% url 'admin:retry_export_cleanup' task.id %}">
 {% csrf_token %}<input type="hidden" name="request_key" value="{{ export_cleanup_retry_key }}">
 <button type="submit">{% translate "Retry export cleanup" %}</button>
@@ -15,7 +17,7 @@
 {% endif %}
 {% if family_preparation_retry_key %}
 <section class="panel"><h2>{% translate "Retry Family mail preparation" %}</h2>
-<p>{% translate "After correcting the template or configuration problem, queue a new preparation attempt. Failed history is retained; this action does not send mail immediately." %}</p>
+<p>{% translate "After fixing the email content or campaign settings problem, try preparing the Family emails again. The failed attempt stays in the history, and retrying does not send any email right away." %}</p>
 <form method="post" action="{% url 'admin:retry_family_preparation' task.id %}">
 {% csrf_token %}<input type="hidden" name="command_id" value="{{ family_preparation_retry_key }}">
 <button type="submit">{% translate "Retry preparation" %}</button>
@@ -23,7 +25,7 @@
 {% endif %}
 {% if digest_retry_key %}
 <section class="panel"><h2>{% translate "Retry report work" %}</h2>
-<p>{% translate "After correcting the problem, queue a new attempt using the original retained report inputs. Failed history remains available. This action cannot resend a message with an unknown delivery outcome." %}</p>
+<p>{% translate "After fixing the problem, try again using the same report data as the original. The failed attempt stays in the history. A report email whose delivery is uncertain is never sent a second time by this retry." %}</p>
 <form method="post" action="{% url digest_retry_route task.id %}">
 {% csrf_token %}<input type="hidden" name="command_id" value="{{ digest_retry_key }}">
 <button type="submit">{% translate "Retry report work" %}</button>
@@ -32,9 +34,22 @@
 {% if history %}{% translate "Task history pages" as history_label %}{% include "stewardship/table-navigator.html" with table=history label=history_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="task-history-caption"><table class="data-table"><caption id="task-history-caption">{% translate "Task history" %}</caption>
 <thead><tr>{% translate "Version" as heading %}{% sort_heading history "version" heading "numeric" %}{% translate "Time" as heading %}{% sort_heading history "time" heading %}{% translate "Action" as heading %}{% sort_heading history "action" heading %}{% translate "State" as heading %}{% sort_heading history "state" heading %}{% translate "Phase and progress" as heading %}{% sort_heading history "progress" heading %}</tr></thead>
-<tbody>{% for event in history.rows %}<tr><td class="numeric">{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{{ event.action }}</td><td>{{ event.state }}</td><td>{{ event.progress.phase }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No history on this page." %}</td></tr>{% endfor %}</tbody></table></div>
+<tbody>{% for event in history.rows %}<tr><td class="numeric">{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{% include "stewardship/task-action.html" with action=event.action %}</td><td>{% include "stewardship/task-state.html" with state=event.state %}</td><td>{{ event.phase_text }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No history on this page. Use the page controls to see other pages of history." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=history label=history_label %}{% endif %}
 {% if work.latest_run_id and work.latest_run_id != task.id %}<p><a href="{% url 'admin:background_task_page' work.latest_run_id %}">{% translate "View the latest retry" %}</a></p>{% endif %}
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<dl><dt>{% translate "Task ID" %}</dt><dd>{{ task.id }}</dd>
+<dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd>
+<dt>{% translate "State" %}</dt><dd><code>{{ task.state }}</code></dd>
+<dt>{% translate "Phase" %}</dt><dd><code>{{ task.progress.phase }}</code></dd>
+<dt>{% translate "Attempt" %}</dt><dd>{{ task.attempt|number }}</dd>
+<dt>{% translate "Retry sequence" %}</dt><dd>{{ task.retry_sequence|number }}</dd>
+<dt>{% translate "Initiator ID" %}</dt><dd>{{ task.initiator_id|default:_("System") }}</dd>
+<dt>{% translate "Created" %}</dt><dd><time datetime="{{ task.created_at }}" data-local-instant>{{ task.created_at }}</time></dd>
+{% if task.heartbeat_at %}<dt>{% translate "Last heartbeat" %}</dt><dd><time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></dd>{% endif %}
+{% if task.lease_expires_at %}<dt>{% translate "Lease expires" %}</dt><dd><time datetime="{{ task.lease_expires_at }}" data-local-instant>{{ task.lease_expires_at }}</time></dd>{% endif %}</dl>
+<p>{% translate "These values are as of when this page was opened; select Refresh task to update them. The heartbeat is the last time the worker checked in; the lease is how long it may keep the task before recovery takes over." %}</p>
+</details>
 <p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Refresh task" %}</a> · <a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
-<p>{% translate "Refreshing this status does not extend your login session." %}</p>
+<p class="help">{% translate "Refreshing this status does not extend your sign-in." %}</p>
 {% endblock %}
