@@ -2,8 +2,8 @@
 {% block title %}{% translate "System logs" %}{% endblock %}
 {% block content %}
 <h1>{% translate "System logs" %}</h1>
-{% aboutpage "system-logs" %}<p>{% translate "Operational diagnostics and the audit trail together, newest first unless you sort by Time the other way. Entries hold reviewed identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
-<p>{% translate "Times are UTC, as stored; they use your browser timezone when available. Audit records have no severity level, so the level choices apply to operational entries and the source choice decides whether audit records are listed." %}</p>
+{% aboutpage "system-logs" %}<p>{% translate "What the system did (operational entries) and who changed what (the audit trail), together, newest first unless you sort by Time the other way. Entries hold identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
+<p>{% translate "Times show in your computer's time zone when your browser allows it, otherwise in UTC. The From and Through dates are whole days in UTC. Audit records have no level, so the level choices apply only to operational entries; use Source to include or leave out audit records." %}</p>
 <p>{% translate "Each entry's type is followed by a short explanation. An actor shown as Background worker is one of the system's own processes, not a person. The Related column lists everything recorded for the same task or request, the same actor or the same campaign, and opens a task's own page. Identifiers are under Technical details." %}</p>{% endaboutpage %}
 <form method="post" action="{% url 'admin:logs' %}" class="log-filters">{% csrf_token %}
 <input type="hidden" name="applied" value="yes">
@@ -20,6 +20,7 @@
 <button type="submit">{% translate "Apply filters" %}</button>
 </div>
 <details class="log-more-filters"{% if query.actor or query.correlation or query.campaign %} open{% endif %}><summary>{% translate "Filter by identifier" %}</summary>
+<p class="help">{% translate "Usually easier: select Show related entries, Same actor or Same campaign on any entry below. To filter by hand, copy an identifier from an entry's Technical details." %}</p>
 <div class="filter-bar">
 <div><label for="log-actor">{% translate "Actor identifier" %}</label><input id="log-actor" name="actor" maxlength="36" value="{{ query.actor }}" autocomplete="off" spellcheck="false"></div>
 <div><label for="log-correlation">{% translate "Task or request correlation identifier" %}</label><input id="log-correlation" name="correlation" maxlength="36" value="{{ query.correlation }}" autocomplete="off" spellcheck="false"></div>
@@ -48,6 +49,6 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Correlation" %}</dt><dd class="log-correlation">{{ row.correlation_id }}</dd>{% if row.actor_id %}<dt>{% translate "Actor" %}</dt><dd>{{ row.actor_id }}</dd>{% endif %}{% if row.campaign_id %}<dt>{% translate "Campaign" %}</dt><dd>{{ row.campaign_id }}</dd>{% endif %}{% if row.subject_id %}<dt>{% translate "Subject" %}</dt><dd>{{ row.subject_id }}</dd>{% endif %}</dl></details></td>
 <td>{% if row.detail_rows %}<dl>{% for key,value in row.detail_rows %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}{% translate "None" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="6">{% translate "No matching entries." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="6">{% translate "No matching entries. Try a wider date range, more levels, or clearing the type and identifier filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}
