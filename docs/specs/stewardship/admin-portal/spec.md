@@ -437,6 +437,24 @@ the page records one view however long it stays open. The page never replaces
 a control the Admin is using and never re-sends a form; its manual refresh
 link remains for browsers without JavaScript.
 
+While a report export's, exact export's or background task's run is still
+queued (no worker has claimed it), its status says why it has not started and
+how long it has been queued
+([#340](https://github.com/epiphany40223/parishkit/issues/340)). When a task
+with a live lease holds the consumer process that takes the queued task's
+queue, the page names it, e.g. "Waiting for the ParishSoft update to finish
+(started 10:00 PM)"; otherwise it says "Waiting for other background work to
+finish". The reason follows the real
+[worker queues and processes](../background-processing/spec.md#worker-queues-and-processes):
+a ParishSoft refresh is named only when the worker login's actual connection
+limit (read from `pg_roles` on each status read, which worker startup requires
+to match the worker's budget) is too small for a separate source process. A
+missing or unlimited login proves nothing, so a refresh is then never named.
+Only a reader who may see background work learns what runs ahead; a Ministry
+leader viewing their own export sees only the generic reason. The reason is
+read from rows the web login already reads and records no audit row. Once the
+run is claimed the page shows its normal progress text.
+
 ## Parish and integration configuration
 
 Only Admins may view/edit configuration. Required values cannot be cleared.

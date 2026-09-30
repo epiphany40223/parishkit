@@ -483,8 +483,9 @@ def split_source(configuration):
     too small for both keeps one process on every queue.
     """
     from .database_provisioning import role_limit
+    from .jobs.queues import SOURCE_SPLIT_CONNECTIONS
 
-    return role_limit(configuration, ServiceRole.WORKER) >= 6
+    return role_limit(configuration, ServiceRole.WORKER) >= SOURCE_SPLIT_CONNECTIONS
 
 
 def serve_background(configuration, lease, *, source=False):

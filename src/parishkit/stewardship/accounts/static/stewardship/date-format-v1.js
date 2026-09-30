@@ -43,16 +43,21 @@
     return part ? part.value : "";
   }
 
-  // A Date shown in this browser's time zone with the style's paired clock:
-  // 12-hour for US styles, 24-hour otherwise. Compact drops the zone name.
+  // The style's paired clock alone: 12-hour for US styles, 24-hour otherwise.
+  function clock(date) {
+    const hours = date.getHours(), minutes = two(date.getMinutes());
+    return style().startsWith("us_")
+      ? `${hours % 12 || 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`
+      : `${two(hours)}:${minutes}`;
+  }
+
+  // A Date shown in this browser's time zone with the style's paired clock.
+  // Compact drops the zone name.
   function instant(date, options) {
     const compact = Boolean(options && options.compact);
     const code = style();
     const text = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), compact);
-    const hours = date.getHours(), minutes = two(date.getMinutes());
-    const time = code.startsWith("us_")
-      ? `${hours % 12 || 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`
-      : `${two(hours)}:${minutes}`;
+    const time = clock(date);
     if (compact) return `${text} ${time}`;
     const worded = code.endsWith("_long") || code.endsWith("_medium");
     const separator = worded ? (code.startsWith("us_") ? " at " : ", ") : " ";
@@ -69,12 +74,15 @@
   }
 
   // Rewrite every <time data-local-instant> in scope; data-compact marks the
-  // dense-table cells (logs, background work, deliveries).
+  // dense-table cells (logs, background work, deliveries) and data-time-only
+  // a recent instant shown as its clock time ("started 10:00 PM").
   function localize(scope) {
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (Number.isFinite(date.getTime())) {
-        node.textContent = instant(date, {compact: node.hasAttribute("data-compact")});
+        node.textContent = node.hasAttribute("data-time-only")
+          ? clock(date)
+          : instant(date, {compact: node.hasAttribute("data-compact")});
       }
     });
   }

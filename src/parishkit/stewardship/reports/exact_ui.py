@@ -8,6 +8,8 @@ from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 from parishkit.stewardship.storage import StorageInvariantError
@@ -106,6 +108,10 @@ def detail(request, request_id):
                 "mutable": mutable,
                 "retry_key": uuid4(),
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
+                # Why a still-queued calculation has not started (#340).
+                "wait": queue_wait(TaskRun.objects.filter(root_id=job.task_id))
+                if state["state"] == "queued"
+                else None,
                 "report_url": ReportQuery(
                     scope=job.population_scope, timezone=job.browser_timezone
                 ).url(campaign_id),

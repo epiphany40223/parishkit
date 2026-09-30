@@ -8,6 +8,8 @@
   queued or running (it re-reads this passive page, which never extends the
   login session). When the file becomes ready while the page watches, the
   download starts once by itself. Without script, Refresh status reloads.
+  While the export's task is still queued (not yet claimed by a worker),
+  ``wait`` says why it has not started and how long it has waited (#340).
 {% endcomment %}
 <section class="panel export-live" aria-live="polite" data-live-status="export" data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-live-pending{% endif %}>
 {% if status.state == 'ready' %}
@@ -15,7 +17,7 @@
   <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit>{% csrf_token %}<button type="submit" class="button-large">{% translate "Download export" %}</button></form>
   <p class="help">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 {% elif status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %}
-  <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
+  <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% elif wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
   <p class="help">{% translate "This usually takes a few seconds. This page updates by itself and the download starts when the file is ready." %}</p>
 {% elif status.state == 'failed' or status.state == 'abandoned' %}
   <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>

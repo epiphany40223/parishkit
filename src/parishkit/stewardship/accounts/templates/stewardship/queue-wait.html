@@ -1,0 +1,7 @@
+{% load i18n %}{% comment %}
+  Why a queued task has not started yet (jobs/queue_wait.py), shared by the
+  report export, exact export and background task status regions. The
+  reason is announced; the waiting time ticks forward in live-status-v1.js
+  every second, so it is hidden from screen readers like the running
+  indicator's "started" time.
+{% endcomment %}{% if wait.blocker %}{% blocktranslate with name=wait.blocker %}Waiting for {{ name }} to finish{% endblocktranslate %} ({% translate "started" %} <time datetime="{{ wait.blocker_started|date:'c' }}" data-local-instant data-time-only>{{ wait.blocker_started|date:'c' }}</time>).{% else %}{% translate "Waiting for other background work to finish." %}{% endif %} <span class="live-since queue-waited" aria-hidden="true">({% translate "queued" %} <time datetime="{{ wait.since|date:'c' }}" data-live-since>{{ wait.waited }}</time>)</span>

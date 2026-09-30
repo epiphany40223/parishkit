@@ -2,6 +2,7 @@
 
 import json
 import re
+from types import SimpleNamespace
 from uuid import uuid4
 
 from django.db import DatabaseError, transaction
@@ -9,6 +10,7 @@ from django.db.models import Count, Q
 from django.http import JsonResponse, QueryDict
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_safe
 
@@ -33,6 +35,7 @@ from parishkit.stewardship.web.tables import window_table
 
 from .models import NONTERMINAL_STATES, TASK_STATES, TaskRun
 from .ownership import database_now
+from .queue_wait import explain
 from .task_wording import (
     REFRESH,
     phase_words,
@@ -349,6 +352,17 @@ def _task_read(request, task_id):
         "is_refresh": task["type"] == REFRESH,
         "phase_text": phase_words(task["type"], task["progress"]["phase"]),
         "retry_text": retry_reason(task),
+        # Why a still-queued task has not started (#340), from the metadata
+        # already read above rather than a second read of the same row.
+        "wait": explain(
+            SimpleNamespace(
+                pk=task["id"],
+                task_type=task["type"],
+                state=task["state"],
+                created_at=parse_datetime(task["created_at"]),
+                not_before=parse_datetime(task["not_before"]),
+            )
+        ),
     }
 
 

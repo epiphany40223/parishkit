@@ -11,6 +11,9 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
@@ -205,6 +208,15 @@ def detail(request, request_id):
                 "report_title": title,
                 "report_url": report_url,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
+                # Why a still-queued export has not started (#340). Ministry
+                # leaders may open their own exports but not background work,
+                # so only a reader who may see that work learns what runs ahead.
+                "wait": queue_wait(
+                    TaskRun.objects.filter(root_id=job.task_id),
+                    named=allows(principal, Capability.BACKGROUND_WORK),
+                )
+                if state["state"] == "queued"
+                else None,
             }
             return iter(
                 (

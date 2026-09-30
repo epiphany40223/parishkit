@@ -5,6 +5,7 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.digest_presentation import participation_context
 from parishkit.stewardship.reports.workspace import ReportQuery
@@ -72,6 +73,24 @@ def components(context, admin):
         {
             "job": job,
             "status": {"state": "queued"},
+            "mutable": True,
+            "can_cancel": True,
+            "report_url": "/participation",
+        },
+    )
+    # Queued behind a named task (#340): its start shows as a clock time and
+    # the time queued ticks forward.
+    pages["/report-export-waiting"] = (
+        "report-export",
+        {
+            "job": job,
+            "status": {"state": "queued"},
+            "wait": QueueWait(
+                chart.requested_at,
+                "3 minutes ago",
+                "the ParishSoft update",
+                chart.requested_at,
+            ),
             "mutable": True,
             "can_cancel": True,
             "report_url": "/participation",
