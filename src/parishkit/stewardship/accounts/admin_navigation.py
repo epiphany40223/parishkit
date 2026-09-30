@@ -116,8 +116,7 @@ PAGES = {
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),
-    "family_directory": Page("reports", _("Family codes")),
-    "postal_directory": Page("reports", _("Postal outreach")),
+    "family_directory": Page("reports", _("Family directory")),
     "family_codes": Page("reports", _("Family campaign codes"), "family_directory"),
     # Parish and integrations
     "parish_settings": Page("parish", _("Parish settings")),
@@ -197,6 +196,9 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
+        # The old postal-outreach routes: a bookmark redirects to the Family
+        # directory, and forms rendered before the merge still submit.
+        "postal_directory",
         "postal_directory_export",
         "report_exact_cancel",
         "report_exact_create",

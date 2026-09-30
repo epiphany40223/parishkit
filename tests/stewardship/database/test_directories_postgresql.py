@@ -58,7 +58,13 @@ def test_native_directory_code_filters_contacts_and_response(
     assert (
         item["email_deliverable"] and item["email_eligible"] and not item["responded"]
     )
-    assert page(harness, postal=True)["total"] == 0
+    # Mailing columns ('postal') no longer narrow the rows (#202): the one
+    # Family, reachable by email, is listed with its mailing details.
+    mailing = page(harness, postal=True)
+    assert mailing["total"] == 1 and mailing["rows"][0]["email_deliverable"]
+    assert mailing["rows"][0]["mailable"] and mailing["postal_total"] == 0
+    assert page(harness, postal=True, reach="email")["total"] == 1
+    assert page(harness, postal=True, reach="mail")["total"] == 0
     for filters in (
         {"search": "EXAMP"},
         {"search": "1"},
@@ -104,7 +110,11 @@ def test_native_directory_code_filters_contacts_and_response(
         assert b'class="family-code"' in body
         assert response["Cache-Control"] == "no-store"
         assert f'href="{route}"'.encode() in body
-        assert f'href="/admin/reports/{harness.campaign.pk}/postal/"'.encode() in body
+        # One page covers both uses: mailing columns are a checkbox, off by
+        # default, and the page no longer links a separate postal page.
+        assert b'name="mailing" value="yes"' in body
+        assert b'name="mailing" value="yes" checked' not in body
+        assert b"/postal/" not in body and b"Mailing address" not in body
         assert browser.post(route, {"exact_code": harness.code}).status_code == 403
         response, body = search(browser, route, {"exact_code": harness.code.lower()})
         assert response.status_code == 200 and harness.code.encode() in body
@@ -141,6 +151,61 @@ def test_native_directory_code_filters_contacts_and_response(
             assert cursor.fetchone()[0] is False
 
 
+def test_mailing_columns_merge_postal_outreach_into_the_directory(
+    live_response_service, google
+):
+    """One page serves both uses; old postal links redirect to its preset (#202)."""
+    harness = live_response_service
+    browser, _ = signed_in()
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    legacy = f"/admin/reports/{harness.campaign.pk}/postal/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # A bookmarked postal page opens the merged page with mailing columns
+        # and the Families that need postal mail, keeping only a known reach.
+        response = browser.get(legacy)
+        assert response.status_code == 302
+        assert response["Location"] == route + "?reach=mail&mailing=yes"
+        response = browser.get(legacy + "?reach=neither&search=private")
+        assert response["Location"] == route + "?reach=neither&mailing=yes"
+        response = browser.get(legacy + "?reach=private-text")
+        assert response["Location"] == route + "?reach=mail&mailing=yes"
+        # Mailing columns are independent of the filters: the one Family,
+        # reachable by email, shows its addressee and mailing address.
+        for response, body in (
+            read(browser, route + "?mailing=yes"),
+            search(browser, route, {"mailing": "yes", "reach": "email"}),
+            search(browser, route, {"mailing": "yes", "reason": "deliverable"}),
+        ):
+            assert response.status_code == 200 and harness.code.encode() in body
+            assert b"<td>Member Example</td>" in body
+            assert b"<td>1 Example Street<br>" in body
+            assert b'<option value="email"' in body
+            assert b'<option value="deliverable"' in body
+            assert b'<input type="hidden" name="mailing" value="yes">' in body
+        response, body = search(browser, route, {"mailing": "yes", "reach": "mail"})
+        assert response.status_code == 200 and b"No matching Families." in body
+        # Without mailing columns the same filter finds the Family, without
+        # the mailing columns.
+        response, body = search(browser, route, {"reach": "email"})
+        assert response.status_code == 200 and harness.code.encode() in body
+        assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
+        # A form rendered before the merge still posts to the old route and
+        # keeps its mailing columns.
+        response, body = search(browser, legacy, {"reach": "any"})
+        assert response.status_code == 200 and b"Addressee" in body
+        for values in ({"mailing": "maybe"}, {"mailing": ["yes", "no"]}):
+            response, body = search(browser, route, values)
+            assert response.status_code == 400
+        assert read(browser, route + "?mailing=yes&search=x")[0].status_code == 400
+    events = list(
+        AuditContext.objects.filter(
+            event__event_type="postal_outreach_viewed"
+        ).values_list("context", flat=True)
+    )
+    # Mailing-column views keep the postal-outreach audit event.
+    assert len(events) >= 3 and all("mailing" not in item for item in events)
+
+
 def test_postal_reasons_and_exact_statistics_complement(live_response_service):
     """Changed source and actual refusal evidence share the card's population."""
     harness = live_response_service
@@ -159,7 +224,8 @@ def test_postal_reasons_and_exact_statistics_complement(live_response_service):
         assert report["rows"][0]["code"] == harness.code
         postal = page(harness, postal=True)
         stats = calculate_statistics(capture_statistics(harness.campaign.pk))
-        assert postal["total"] == stats.active.no_deliverable_email
+        assert postal["postal_total"] == stats.active.no_deliverable_email
+        assert postal["total"] == report["total"]
         assert report["active_total"] == stats.active.families == 1
         assert page(harness, reason=reason)["total"] == 1
     # No synthetic denial flags: write immutable provider refusal evidence using
@@ -167,7 +233,8 @@ def test_postal_reasons_and_exact_statistics_complement(live_response_service):
     remember(refused(harness))
     postal = page(harness, postal=True)
     stats = calculate_statistics(capture_statistics(harness.campaign.pk))
-    assert postal["total"] == stats.active.no_deliverable_email == 1
+    assert postal["postal_total"] == stats.active.no_deliverable_email == 1
+    assert postal["total"] == 1
     assert postal["rows"][0]["reason"] == "provider_refused"
     assert postal["rows"][0]["email_eligible"]
     assert not postal["rows"][0]["email_deliverable"]
@@ -205,7 +272,8 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
         1,
         *range(10, 61),
     ]
-    postal = page(harness, postal=True)
+    assert page(harness, postal=True)["total"] == 52
+    postal = page(harness, postal=True, reach="mail")
     assert postal["total"] == 51 and len(postal["rows"]) == 50
     assert all(row["reason"] == "no_head" and row["code"] for row in postal["rows"])
     assert page(harness, search="Repeated")["total"] == 51
@@ -299,10 +367,9 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
     # Restore the outage before the provider fixture scans its own disposable
     # namespace during teardown; report assertions still run fully offline.
     request.addfinalizer(monkeypatch.undo)
-    routes = [
-        f"/admin/reports/{harness.campaign.pk}/{kind}/"
-        for kind in ("families", "postal")
-    ]
+    # The directory without and with its mailing columns (once postal outreach).
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    routes = [route, route + "?mailing=yes"]
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for route in routes:
             assert read(browser, route)[0].status_code == 200

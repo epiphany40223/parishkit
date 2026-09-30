@@ -1,10 +1,19 @@
-"""Native private-POST Family directories with response-lifetime read admission."""
+"""The native private-POST Family directory with response-lifetime read admission.
 
+One page serves both uses that used to be separate pages: the Family-code
+directory and postal outreach. The "Include mailing columns" checkbox
+(``mailing``, off by default) adds the addressee and mailing-address columns
+and makes the export a postal mail merge. It is independent of the filters:
+the selection's ``postal`` flag chooses columns and the export kind, never
+which Families are listed (#202).
+"""
+
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -34,6 +43,7 @@ from .directories import (
     directory_page,
     testing_codes_context,
 )
+from .directory_documents import export_headings, head_names
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -47,6 +57,25 @@ def _principal(request, store, *, read_only=False):
     if not allows(principal, Capability.FAMILY_CODES):
         raise PermissionError("Family directory access is unavailable.")
     return principal
+
+
+# Closed, non-private values a link may carry (GET): the reach presets (such
+# as "no campaign mail can reach") and the mailing-columns preset.
+LINK_PRESETS = frozenset({"reach", "mailing"})
+
+
+def mailing_option(parameters, *, default):
+    """Remove and return the mailing-columns choice from the submitted form.
+
+    ``parameters`` is a mutable QueryDict. The checkbox sends ``mailing=yes``
+    only when checked; hidden fields carry ``yes`` or ``no``. ``default``
+    applies when the field is absent: the old postal route and forms rendered
+    before the pages merged default to mailing columns on.
+    """
+    values = parameters.pop("mailing", ["yes" if default else "no"])
+    if len(values) != 1 or values[0] not in {"yes", "no"}:
+        raise ValueError("Invalid mailing-columns choice.")
+    return values[0] == "yes"
 
 
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
@@ -70,19 +99,13 @@ def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
         )
 
 
-def _error(campaign_id, *, postal, status):
+def _error(campaign_id, *, status):
     """Render fixed recovery text without reflecting private input or DB failures."""
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/directory-error.html",
-            {
-                "campaign_id": campaign_id,
-                "report_route": "admin:postal_directory"
-                if postal
-                else "admin:family_directory",
-                "status": status,
-            },
+            {"campaign_id": campaign_id, "status": status},
         ),
         status=status,
         headers={"Cache-Control": "no-store"},
@@ -93,20 +116,55 @@ def _error(campaign_id, *, postal, status):
     return response
 
 
+def _legacy_postal_redirect(request, campaign_id):
+    """Send a bookmarked postal-outreach link to the merged page's preset.
+
+    The old page listed the Families that need postal mail, so the preset is
+    mailing columns with reach "By postal mail only" (the Families its mail
+    merge held) unless the link named another known reach. Anything else is
+    dropped, so no private value ever enters the new URL.
+    """
+    reach = request.GET.getlist("reach")
+    reach = reach[0] if len(reach) == 1 and reach[0] in REACH else "mail"
+    presets = {"reach": reach}
+    return HttpResponseRedirect(
+        reverse("admin:family_directory", args=(campaign_id,))
+        + "?"
+        + urlencode(presets | {"mailing": "yes"})
+    )
+
+
+def _mailing_rows(rows):
+    """Add each row's mail-merge addressee, as the postal export names it."""
+    for row in rows:
+        row["addressee"] = head_names(row["heads"]) or row["family_name"]
+
+
 @require_http_methods(["GET", "POST"])
 def directory(request, campaign_id, *, postal=False):
-    """Recheck roles/scope through rendering and streaming; audit after guard close."""
+    """Recheck roles/scope through rendering and streaming; audit after guard close.
+
+    ``postal`` is set only by the old postal-outreach route: a GET there
+    redirects to this page with mailing columns on, and a POST from a form
+    rendered before the pages merged is served here with mailing columns on.
+    """
+    if postal and request.method == "GET":
+        return _legacy_postal_redirect(request, campaign_id)
     finish, handed_off = None, False
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        # Filters are private POST state. The one exception is the closed
-        # reach preset (?reach=neither), which carries no private value and
-        # lets other pages link to "Families no campaign mail can reach".
-        if request.GET and (request.method != "GET" or set(request.GET) != {"reach"}):
+        # Filters are private POST state. The exceptions are the closed link
+        # presets (?reach=neither, ?mailing=yes), which carry no private value
+        # and let other pages link to "Families no campaign mail can reach"
+        # and to the mailing columns.
+        if request.GET and (
+            request.method != "GET" or not set(request.GET) <= LINK_PRESETS
+        ):
             raise ValueError("Directory filters require private POST state.")
         parameters = (request.GET if request.GET else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
+        postal = mailing_option(parameters, default=postal)
         query = DirectoryQuery.parse(parameters)
         admit_report_read(campaign_id)
         _audit(
@@ -155,12 +213,13 @@ def directory(request, campaign_id, *, postal=False):
             )
             count = len(report["rows"])
             total = report["total"]
+            if postal:
+                _mailing_rows(report["rows"])
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            route = "admin:postal_directory" if postal else "admin:family_directory"
             testing = testing_codes_context(campaign_id)
             context = (
                 report
@@ -170,12 +229,18 @@ def directory(request, campaign_id, *, postal=False):
                         Percentage(report["postal_total"], report["active_total"])
                     ),
                     "campaign_id": campaign_id,
-                    "postal": postal,
+                    "mailing": postal,
                     "query": query,
-                    "query_fields": query.form_values(),
-                    "report_url": reverse(route, args=(campaign_id,)),
+                    "query_fields": query.form_values()
+                    | {"mailing": "yes" if postal else "no"},
+                    "report_url": reverse(
+                        "admin:family_directory", args=(campaign_id,)
+                    ),
                     "reasons": REASONS,
                     "reaches": REACH,
+                    "export_headings": export_headings(
+                        postal=postal, reach=query.reach
+                    ),
                     "unreachable_url": reverse(
                         "admin:family_directory", args=(campaign_id,)
                     )
@@ -207,15 +272,15 @@ def directory(request, campaign_id, *, postal=False):
         if response.status_code == 503 and not response.streaming:
             # The shared guard has already released its read transaction. Give
             # this report its safe recovery navigation, never private contents.
-            return _error(campaign_id, postal=postal, status=503)
+            return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError, UnicodeError):
-        return _error(campaign_id, postal=postal, status=503)
+        return _error(campaign_id, status=503)
     except ValueError:
-        return _error(campaign_id, postal=postal, status=400)
+        return _error(campaign_id, status=400)
     finally:
         if finish is not None and not handed_off:
             finish(False)

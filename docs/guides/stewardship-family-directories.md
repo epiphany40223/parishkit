@@ -3,7 +3,7 @@
 This coherent Phase 5 increment starts from verified main `75a20c0a`, after
 [PR #67 protected delivery](stewardship-information-exports.md#protected-delivery).
 It implements the interactive portion of [RPT-05](../tasks/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports),
-under the [report specification](../specs/stewardship/reports/spec.md#family-code-lookup)
+under the [report specification](../specs/stewardship/reports/spec.md#family-directory)
 and [implementation plan](../plans/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports).
 
 ## Scope and sequencing

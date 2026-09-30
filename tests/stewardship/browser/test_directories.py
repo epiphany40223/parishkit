@@ -42,11 +42,16 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "exact_code"
     page.get_by_label("Exact Family code").fill("abcd-efgh")
+    # Mailing columns are one checkbox on the same page, off by default.
+    mailing = page.get_by_label("Include mailing columns")
+    assert not mailing.is_checked()
+    mailing.check()
     page.route("**/families/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
     assert "exact_code=abcd-efgh" in sent.value.post_data
+    assert "mailing=yes" in sent.value.post_data
     assert "Private" not in sent.value.url and "abcd" not in sent.value.url
 
 
@@ -57,12 +62,15 @@ def test_directory_pagination_works_without_scripts(browser_engine, component_or
         page = context.new_page()
         page.goto(component_origin + "/postal-directory")
         visible(page.get_by_text("ABCDEFGH", exact=True))
-        page.route("**/postal/", lambda route: route.fulfill(body="Next page"))
+        visible(page.get_by_role("columnheader", name="Mailing address"))
+        page.route("**/families/", lambda route: route.fulfill(body="Next page"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Next page").click()
+        # Paging keeps the mailing columns on.
         assert (
             "page=2" in sent.value.post_data
             and "search=Example" in sent.value.post_data
+            and "mailing=yes" in sent.value.post_data
         )
         assert "Example" not in sent.value.url and "?" not in sent.value.url
     finally:

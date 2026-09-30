@@ -1426,7 +1426,19 @@ def component_origin():
             self.send_response(405)
             self.end_headers()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class Server(ThreadingHTTPServer):
+        """A listen backlog deep enough for a page's parallel asset requests.
+
+        Each HTTP/1.0 response closes its connection, so a page opens one
+        connection per asset at once. With the default backlog of 5 the
+        kernel reset the overflow now and then (net::ERR_CONNECTION_RESET), a
+        script such as information-export-v1.js never ran, and tests that
+        depend on it failed intermittently.
+        """
+
+        request_queue_size = 128
+
+    server = Server(("127.0.0.1", 0), Handler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

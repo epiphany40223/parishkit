@@ -13,7 +13,7 @@
 <p><a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional-information staff queue" %}</a></p>
 {% if 'financial' in campaign.active_configuration.values.modules %}<p><a href="{% url 'admin:financial_report' campaign.pk %}">{% translate "Financial stewardship detail" %}</a></p>{% endif %}
 <p><a href="{% url 'admin:talents_report' campaign.pk %}">{% translate "Talents and limitations" %}</a></p>
-<p><a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family-code directory" %}</a> · <a href="{% url 'admin:postal_directory' campaign.pk %}">{% translate "Families without deliverable email" %}</a></p>
+<p><a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family directory (codes and postal mail)" %}</a></p>
 <form method="get" action="{% url 'admin:participation' campaign.pk %}" data-report-options>
 <label for="scope">{% translate "Chart population" %}</label>
 <select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>

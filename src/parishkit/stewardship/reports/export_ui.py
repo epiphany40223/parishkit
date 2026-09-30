@@ -1,5 +1,6 @@
 """Accessible native controls over the compiled participation export services."""
 
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -19,7 +20,7 @@ from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
-from .directories import testing_codes_context
+from .directories import REACH, testing_codes_context
 from .export_models import ExportRequest
 from .export_services import (
     ExportConflict,
@@ -179,16 +180,19 @@ def detail(request, request_id):
                 report_url = reverse("admin:financial_report", args=(campaign_id,))
             elif job.report in {"family_directory", "postal_outreach"}:
                 title = (
-                    "Postal-outreach export"
+                    "Family-directory mail-merge export"
                     if job.parameters["postal"]
                     else "Family-directory export"
                 )
-                report_url = reverse(
-                    "admin:postal_directory"
-                    if job.parameters["postal"]
-                    else "admin:family_directory",
-                    args=(campaign_id,),
-                )
+                report_url = reverse("admin:family_directory", args=(campaign_id,))
+                # Return with the closed link presets the export used: its reach
+                # filter and, for a mail merge, the mailing columns.
+                reach = job.parameters["filters"].get("reach", "any")
+                presets = {"reach": reach} if reach in REACH else {}
+                if job.parameters["postal"]:
+                    presets["mailing"] = "yes"
+                if presets:
+                    report_url += "?" + urlencode(presets)
             else:
                 title = "Participation export"
                 report_url = ReportQuery(

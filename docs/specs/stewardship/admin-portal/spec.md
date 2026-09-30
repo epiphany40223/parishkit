@@ -310,8 +310,9 @@ viewer may open:
   schedules, Share options (financial campaigns), Member talents (Ministry
   campaigns), Go-live readiness (drafts)
   and Delivery controls (Production).
-- **Reports**: Campaign reports, Ministry reports, Family codes, Postal
-  outreach and the Manual information report. The campaign reports page also
+- **Reports**: Campaign reports, Ministry reports, Family directory (Family
+  codes and, with its mailing columns, postal outreach) and the Manual
+  information report. The campaign reports page also
   links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
   report.
 - **Parish and integrations**: Parish settings, Parish logos, Hosted files,
@@ -396,7 +397,7 @@ Admins have two always-visible indicators:
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
-  lists the Family name as on the Family codes directory (surname, then the
+  lists the Family name as on the Family directory (surname, then the
   active heads of household, e.g. "Squyres, Jeff and Tracy"), DUID, start
   time, last activity, and form section; it never shows answers or
   credentials.
@@ -841,7 +842,7 @@ For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
 to the page **Send this email to chosen Families**: a freshly authenticated
 Administrator enters up to ten Family IDs, reviews each Family's eligibility
-(each reviewed row names the Family as the Family codes directory does, the
+(each reviewed row names the Family as the Family directory does, the
 surname then the heads of household), and confirms that real Family data goes to the Testing recipient. Each eligible
 Family's real message for a template its invitation or reminder schedules use is
 prepared with that Family's own Testing credential (reusing the credential

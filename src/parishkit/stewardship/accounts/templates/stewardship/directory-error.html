@@ -6,5 +6,5 @@
 {% elif status == 409 %}<p role="alert">{% translate "This export form was already used for a different export. Nothing new was queued. Return to the directory, which gives the form a fresh start, and queue the export again." %}</p>
 {% else %}<p role="alert">{% translate "Invalid report filters. Return to the directory and check the values." %}</p>{% endif %}
 {% if status == 503 %}<p><a href="{% url 'admin:family_codes' campaign_id %}">{% translate "Try the code-only recovery listing" %}</a> — {% translate "Retained campaign DUIDs and manual codes only; names and contact details require an available source. Normal access checks still apply." %}</p>{% endif %}
-<p><a href="{% url report_route campaign_id %}">{% translate "Return to this campaign directory" %}</a></p>
+<p><a href="{% url 'admin:family_directory' campaign_id %}">{% translate "Return to this campaign directory" %}</a></p>
 {% endblock %}

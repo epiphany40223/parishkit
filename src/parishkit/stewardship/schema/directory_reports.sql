@@ -149,9 +149,10 @@ WITH selected AS MATERIALIZED (
                     ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
     FROM base b LEFT JOIN head_names n ON n.source_key=b.source_key
 ), filtered AS MATERIALIZED (
+    -- 'postal' selects the mail-merge columns only; it does not narrow the
+    -- rows, so mailing details cover exactly the filtered Families (#202).
     SELECT r.* FROM rows r CROSS JOIN options o
-    WHERE (NOT (parameters->>'postal')::boolean OR NOT email_deliverable)
-      AND (NOT (parameters->>'exact')::boolean OR family_id=(parameters->>'family_id')::uuid)
+    WHERE (NOT (parameters->>'exact')::boolean OR family_id=(parameters->>'family_id')::uuid)
       AND (o.f->>'reason'='any' OR reason=o.f->>'reason')
       AND (o.f->>'phone'='any' OR (
           EXISTS(SELECT 1 FROM contacts c WHERE c.source_key='family:'||r.source_key

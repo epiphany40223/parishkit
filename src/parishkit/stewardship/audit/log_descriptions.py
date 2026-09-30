@@ -71,8 +71,10 @@ DESCRIPTIONS = {
     "system_logs_viewed": _("An Administrator opened System logs."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
-    "family_directory_viewed": _("Someone opened the Family codes directory."),
-    "postal_outreach_viewed": _("Someone opened the postal outreach list."),
+    "family_directory_viewed": _("Someone opened the Family directory."),
+    "postal_outreach_viewed": _(
+        "Someone opened the Family directory with mailing columns."
+    ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
     "participation_viewed": _("Someone opened the participation report."),
     "export_requested": _("A report download was requested."),
