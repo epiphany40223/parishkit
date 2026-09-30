@@ -26,7 +26,7 @@ class SetupScheduleWindow(ScheduleWindow):
         """Only the campaign's already-admitted original timezone is displayed."""
         super().__init__(*args, editable=True, **kwargs)
         self.fields["timezone"].disabled = True
-        setup_help.apply(self, setup_help.WINDOW)
+        setup_help.apply(self, setup_help.WINDOW, replace=True)
 
 
 def revised_schedules(previous, formset):

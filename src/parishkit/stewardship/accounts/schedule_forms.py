@@ -58,16 +58,33 @@ def schedulable(templates):
 class ScheduleWindow(forms.Form):
     """Draft dates may change together with mail; locked structural inputs are inert."""
 
-    timezone = forms.ChoiceField(label=_("Campaign timezone"))
+    timezone = forms.ChoiceField(
+        label=_("Campaign timezone"),
+        help_text=_(
+            "Every send date and time on this page is in this time zone, not "
+            "your computer's."
+        ),
+    )
     start_date = forms.DateField(
-        label=_("Campaign start date"), widget=forms.DateInput(attrs={"type": "date"})
+        label=_("Campaign start date"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text=_(
+            "The first day Families can respond. Invitations and reminders must "
+            "be scheduled between the start and end dates."
+        ),
     )
     end_date = forms.DateField(
-        label=_("Campaign end date"), widget=forms.DateInput(attrs={"type": "date"})
+        label=_("Campaign end date"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text=_("The last day Families can respond."),
     )
     overlap_confirmed = forms.BooleanField(
         required=False,
         label=_("Acknowledge that the financial period overlaps the campaign"),
+        help_text=_(
+            "Needed only when the campaign dates and the upcoming financial "
+            "period overlap. Check it to confirm that is intended."
+        ),
     )
 
     def __init__(self, *args, previous, editable, proposed=None, **kwargs):

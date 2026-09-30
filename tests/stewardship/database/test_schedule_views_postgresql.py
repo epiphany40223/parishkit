@@ -114,7 +114,7 @@ def test_schedule_pending_work_is_counted_then_cancelled_with_replacement(
     data, indexes = fields(store, campaign)
     data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
     preview = post(browser, path, data)
-    assert b"Safely cancellable occurrences" in preview.content
+    assert b"Planned sends not started yet" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     row.refresh_from_db()
     assert row.state == "skipped" and row.reason == "schedule_replaced"
@@ -138,7 +138,7 @@ def test_date_only_digest_change_includes_cancellation_inventory(auth_service, g
     data["window-end_date"] = "2026-10-30"
     preview = post(browser, path, data)
     assert preview.status_code == 200
-    assert b"Safely cancellable occurrences" in preview.content
+    assert b"Planned sends not started yet" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     row.refresh_from_db()
     assert row.state == "skipped" and row.reason == "schedule_replaced"
@@ -161,7 +161,7 @@ def test_preview_resolves_applied_and_proposed_times_in_their_own_campaign_zones
     assert b"America/New_York" in response.content
     assert b"America/Los_Angeles" in response.content
     assert b"data-local-instant" in response.content
-    assert b"not recipient eligibility or permission to send" in response.content
+    assert b"not a list of who will receive it" in response.content
     # Merely inspecting candidate instants cannot allocate or apply anything.
     assert ConfigurationChangeRequest.objects.count() == requests_before
     campaign.refresh_from_db()
@@ -204,8 +204,8 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
     response = post(browser, path, data)
     assert response.status_code == 200
-    assert b"Only the first five schedule dates are previewed" in response.content
-    assert b"campaign day being reported" in response.content
+    assert b"Only the first five dates are shown" in response.content
+    assert b"campaign day the digest reports on" in response.content
     assert b"2026-10-02T04:15:00+00:00" in response.content
     assert b"2026-10-02T04:30:00+00:00" in response.content
     assert response.content.count(b"data-local-instant") == 10
@@ -227,7 +227,7 @@ def test_running_work_blocks_confirmation_without_claiming_it_can_be_cancelled(
     data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
     response = post(browser, path, data)
     assert response.status_code == 200
-    assert b"blocks this change" in response.content
+    assert b"Sends blocking the change" in response.content
     assert b'name="preview"' not in response.content
 
 
@@ -283,7 +283,7 @@ def test_campaign_window_change_replaces_cadence_even_when_mail_fields_are_uncha
     data[f"window-{change_field}"] = new_value
     preview = post(browser, path, data)
     if change_field == "timezone":
-        assert b"Safely cancellable occurrences" in preview.content
+        assert b"Planned sends not started yet" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     definition.refresh_from_db()
     work.refresh_from_db()

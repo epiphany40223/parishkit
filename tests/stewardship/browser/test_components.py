@@ -34,7 +34,7 @@ def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
         parish_clock = parish_time("09:00:00")
     assert parish_clock == "9:00 AM"
     assert parish_clock in text and "America/New_York" in text
-    assert "not recipient eligibility or permission to send" in text
+    assert "not a list of who will receive it" in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
