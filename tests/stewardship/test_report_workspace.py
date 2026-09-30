@@ -169,6 +169,20 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     book.close()
 
 
+def test_zero_pledge_total_is_a_number_not_text():
+    """A zero Decimal is falsy but still an exact, summable amount."""
+    value = document().participation
+    day = replace(value.days[0], pledge_total=Decimal("0"))
+    stream = BytesIO()
+    participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
+    stream.seek(0)
+    book = load_workbook(stream)
+    cell = book["Participation"]["I2"]
+    assert cell.data_type == "n" and cell.value == 0
+    assert cell.number_format == '"$"#,##0.00'
+    book.close()
+
+
 def test_daily_table_size_is_carried_only_when_not_default():
     """Existing report links stay unchanged; a chosen size survives navigation."""
     campaign = document().participation.campaign_id

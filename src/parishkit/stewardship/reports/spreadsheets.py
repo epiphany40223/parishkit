@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from .information_rendering import xlsx_cell
+from .information_rendering import MONEY_FORMAT, excel_amount, xlsx_cell
 from .participation import participation_table
 
 
@@ -57,8 +57,9 @@ def participation_xlsx(document, output):
                     ZoneInfo(document.browser_timezone)
                 )
             elif heading == "pledge_usd" and value is not None:
-                amount = Decimal(value)
-                value = amount if len(amount.as_tuple().digits) <= 15 else value
+                # Test None explicitly: a zero Decimal is falsy but still a number.
+                amount = excel_amount(value)
+                value = value if amount is None else amount
             if isinstance(value, date):
                 # Excel's built-in date (14) and date-time (22) formats.
                 xlsx_cell(sheet, index, column, value)
@@ -67,7 +68,7 @@ def participation_xlsx(document, output):
                 sheet, index, column, "Unavailable" if value is None else value
             )
             if heading == "pledge_usd" and isinstance(value, Decimal):
-                cell.number_format = '"$"#,##0.00'
+                cell.number_format = MONEY_FORMAT
             elif type(value) is int:
                 cell.number_format = "#,##0"
     sheet.freeze_panes = "A2"

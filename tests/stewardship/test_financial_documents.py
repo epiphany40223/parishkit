@@ -109,26 +109,27 @@ def test_rows_word_money_status_shares_and_local_instants():
         "Example <Family>",
         "1234567",
         "Active",
-        "$1,234.50",
+        MoneyAmount(123450),
         "Monthly",
-        "$102.88",
+        MoneyAmount(10288),
         "Online giving; Another way: Stock gift",
-        "$1,200.00",
-        "$100.00",
+        MoneyAmount(120000),
+        MoneyAmount(10000),
         datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK),
         datetime(2026, 9, 1, 11, 4, tzinfo=NEW_YORK),
         "2",
         str(UUID(int=97)),
     )
-    # A zero pledge has no frequency or installment; unproven money is the word.
+    # A zero pledge has no frequency or installment; unproven money is typed
+    # unavailable, which every renderer words, never a zero.
     assert built.rows[1][2:9] == (
         "Status unavailable",
-        "$0.00",
+        MoneyAmount(0),
         "No frequency",
         "",
         "None chosen",
-        "Unavailable",
-        "Unavailable",
+        MoneyAmount(None),
+        MoneyAmount(None),
     )
     assert built.rows[2][2] == "Inactive"
     metadata = dict(built.metadata)
@@ -151,7 +152,7 @@ def test_rows_word_money_status_shares_and_local_instants():
     )
     assert metadata["Source contributions through"] == date(2026, 6, 30)
     assert metadata["Matching Families"] == "3"
-    assert metadata["Total annual pledges"] == "$2,469.00"
+    assert metadata["Total annual pledges"] == MoneyAmount(246900)
     # Counts are wrapped values, never keys, so a long label cannot break a PDF.
     assert "Monthly: 1" in metadata["Pledges by frequency"].split("\n")
     assert metadata["Pledges by share method"] == "Online giving: 1\nAnother way: 1"
@@ -165,7 +166,7 @@ def test_an_unproven_capture_says_unavailable_never_zero():
     metadata = dict(built.metadata)
     assert metadata["Source contributions through"] == UNPROVEN
     assert metadata["Source giving read as of"] == "Unavailable"
-    assert built.rows[0][7] == "Unavailable"
+    assert built.rows[0][7] == MoneyAmount(None)
 
 
 def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
@@ -254,3 +255,132 @@ def test_every_format_renders_from_one_document(format):
         text = body.decode()
         assert "Example <Family>" in text and "$1,234.50" in text
         assert "Financial stewardship detail" in text and "$1,200.00" in text
+
+
+def money_document():
+    """Ordinary, zero, one-cent, negative, unavailable and oversized amounts."""
+    return document(
+        [
+            row(),
+            row(
+                family_duid=2,
+                annual=MoneyAmount(0),
+                installment=MoneyAmount(None),
+                source_pledge=MoneyAmount(-5000),
+                source_contributions=MoneyAmount(None),
+            ),
+            # Seventeen significant digits: more than Excel can hold exactly.
+            row(
+                family_duid=3,
+                annual=MoneyAmount(1),
+                installment=MoneyAmount(1),
+                source_pledge=MoneyAmount(12345678901234567),
+            ),
+        ]
+    )
+
+
+def test_xlsx_money_cells_are_exact_summable_numbers():
+    """Known money is a dollar-formatted number; absence is never a zero."""
+    from decimal import Decimal
+
+    from openpyxl import load_workbook
+
+    output = io.BytesIO()
+    render_information(money_document(), output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    sheet = book["Financial detail"]
+    # Columns D, F, H and I: annual, installment, source pledged, contributed.
+    for reference, expected in {
+        "D2": "1234.50",
+        "F2": "102.88",
+        "H2": "1200.00",
+        "I2": "100.00",
+        "D3": "0.00",
+        "H3": "-50.00",
+        "D4": "0.01",
+        "F4": "0.01",
+    }.items():
+        cell = sheet[reference]
+        assert cell.data_type == "n", reference
+        assert cell.number_format == '"$"#,##0.00', reference
+        assert Decimal(str(round(float(cell.value), 2))) == Decimal(expected), reference
+    # Unavailable stays the word; a missing installment stays blank, never 0;
+    # an amount beyond Excel's precision stays exact text.
+    assert sheet["I3"].value == "Unavailable" and sheet["I3"].data_type == "s"
+    assert sheet["F3"].value is None
+    assert sheet["H4"].value == "$123,456,789,012,345.67"
+    assert sheet["H4"].data_type == "s"
+    metadata = book["Report information"]
+    total = next(
+        cells[1]
+        for cells in metadata.iter_rows()
+        if cells[0].value == "Total annual pledges"
+    )
+    assert total.data_type == "n" and total.number_format == '"$"#,##0.00'
+    assert Decimal(str(round(float(total.value), 2))) == Decimal("1234.51")
+    book.close()
+
+
+def test_csv_and_pdf_money_keep_the_page_text():
+    """Only XLSX changed: CSV and PDF still write the page's money text."""
+    from parishkit.stewardship.reports.information_rendering import (
+        information_lines,
+    )
+
+    built = money_document()
+    output = io.BytesIO()
+    render_information(built, output, format="csv")
+    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    first, second, third = records[2:]
+    assert first[3:9] == [
+        "$1,234.50",
+        "Monthly",
+        "$102.88",
+        "Online giving; Another way: Stock gift",
+        "$1,200.00",
+        "$100.00",
+    ]
+    # A negative amount keeps its formula-neutralizing apostrophe (#388 L5).
+    assert (second[3], second[5], second[7], second[8]) == (
+        "$0.00",
+        "",
+        "'-$50.00",
+        "Unavailable",
+    )
+    assert third[7] == "$123,456,789,012,345.67"
+    assert records[0].index("Total annual pledges") == first.index("$1,234.51")
+    lines = list(information_lines(built))
+    assert "Annual pledge: $1,234.50" in lines
+    assert "Source pledged: -$50.00" in lines
+    assert "Total annual pledges: $1,234.51" in lines
+
+
+def test_xlsx_money_is_accurate_to_the_cent_despite_doubles():
+    """A spreadsheet number is a double: exact cents survive, not exact digits."""
+    from decimal import Decimal
+
+    from openpyxl import load_workbook
+
+    amounts = {"D2": 9757, "F2": 82381, "H2": 1, "I2": -9757}
+    built = document(
+        [
+            row(
+                annual=MoneyAmount(amounts["D2"]),
+                installment=MoneyAmount(amounts["F2"]),
+                source_pledge=MoneyAmount(amounts["H2"]),
+                source_contributions=MoneyAmount(amounts["I2"]),
+            )
+        ]
+    )
+    output = io.BytesIO()
+    render_information(built, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    sheet = book["Financial detail"]
+    for reference, cents in amounts.items():
+        cell = sheet[reference]
+        exact = MoneyAmount(cents).decimal
+        assert cell.data_type == "n", reference
+        # Read back, the stored double rounds to the exact cent.
+        assert Decimal(str(round(float(cell.value), 2))) == exact, reference
+    book.close()

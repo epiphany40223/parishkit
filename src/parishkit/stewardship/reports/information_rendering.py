@@ -3,6 +3,7 @@
 import csv
 import io
 from datetime import date, datetime
+from decimal import Decimal
 from functools import cache
 from itertools import chain, islice
 from pathlib import Path
@@ -12,7 +13,14 @@ from unicodedata import category
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
+from .money import MoneyAmount
+
 PAGE_LINES = 34
+# Excel's number format for exact USD: "-$50.00" for a negative amount, the
+# same text the reports display, while the cell stays a summable number.
+MONEY_FORMAT = '"$"#,##0.00'
+# Excel keeps only 15 significant digits; a longer amount would round silently.
+EXCEL_DIGITS = 15
 FORMAT_NOTE = (
     "Unsupported characters use Unicode escapes (\\uXXXX or \\UXXXXXXXX); "
     "literal backslashes are doubled. CSV retains the original Unicode text."
@@ -48,6 +56,21 @@ def visible_text(value, *, supported=None):
     return "".join(result)
 
 
+def plain(value):
+    """Money as its report text for CSV and PDF; every other value unchanged.
+
+    Only the XLSX writer keeps money numeric (see ``xlsx_cell``), so CSV and
+    PDF files say exactly what the page says.
+    """
+    return value.display if isinstance(value, MoneyAmount) else value
+
+
+def excel_amount(value):
+    """An exact Decimal Excel can hold, or None when it would lose a digit."""
+    amount = Decimal(value)
+    return amount if len(amount.as_tuple().digits) <= EXCEL_DIGITS else None
+
+
 @cache
 def pdf_font():
     """Use the same pinned bundled font for glyph validation and actual drawing."""
@@ -59,14 +82,30 @@ def pdf_font():
 
 
 def xlsx_cell(sheet, row, column, value):
-    """Write one cell: a native date/timestamp, or literal (never formula) text.
+    """Write one cell: a native date/timestamp or amount, or literal text.
 
     Timestamps arrive already converted to the export's stated display time
     zone; Excel datetimes are naive, so the zone is dropped only here. Excel's
     built-in formats 14 and 22 follow each viewer's own regional settings.
+
+    Known money is a number cell with a dollar format, so staff can sum it.
+    The value is built exactly from whole cents as a Decimal, but a
+    spreadsheet number is an IEEE double: openpyxl saves it with "%.16g", so
+    $97.57 may be stored as 97.56999999999999. Within 15 significant digits
+    that is still accurate to the cent when opened, displayed or summed.
+    Unavailable money stays the word, never zero, and an amount beyond
+    those 15 digits stays its exact text rather than rounding. Text is
+    never a formula.
     """
     from openpyxl.styles.numbers import BUILTIN_FORMATS
 
+    if isinstance(value, MoneyAmount):
+        amount = excel_amount(value.canonical) if value.available else None
+        if amount is not None:
+            cell = sheet.cell(row, column, amount)
+            cell.number_format = MONEY_FORMAT
+            return cell
+        value = value.display
     if isinstance(value, date):
         timestamp = isinstance(value, datetime)
         # Set the format before the value: openpyxl otherwise registers its own
@@ -88,12 +127,12 @@ def information_csv(document, output):
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
         writer.writerow((*document.headings, *(key for key, _ in document.metadata)))
-        trailer = tuple(csv_cell(value) for _, value in document.metadata)
+        trailer = tuple(csv_cell(plain(value)) for _, value in document.metadata)
         writer.writerow(
             ("Report metadata", *("" for _ in document.headings[1:]), *trailer)
         )
         for row in document.rows:
-            writer.writerow((*map(csv_cell, row), *trailer))
+            writer.writerow((*(csv_cell(plain(value)) for value in row), *trailer))
         wrapper.flush()
     finally:
         wrapper.detach()
@@ -153,7 +192,9 @@ def record_lines(records, *, width=108):
         for label, value in record:
             prefix = label + ": "
             for index, paragraph in enumerate(
-                visible_text(dates.display_text(value), supported=supported).split("\n")
+                visible_text(
+                    dates.display_text(plain(value)), supported=supported
+                ).split("\n")
             ):
                 lines = wrap(
                     paragraph,

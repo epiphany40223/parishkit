@@ -49,8 +49,11 @@ campaign, same parameters, and a publication row count equal to the capture.
 The read model's display shaping, previously inline in the page's read, is
 `shape_result`, and both the page and the export document pass through it.
 Money is canonical text in the capture and the same `$1,234.50` or
-`Unavailable` in a cell; share wording is versioned with the configuration each
-Family answered under, from the campaign's retained versions; the summary uses
+`Unavailable` in a CSV or PDF cell; XLSX writes known money as a summable
+dollar-formatted number (see
+[shared report behavior](../specs/stewardship/reports/spec.md#shared-report-behavior)).
+Share wording is versioned with the configuration each Family answered under,
+from the campaign's retained versions; the summary uses
 the campaign's current wording, as the page's does. The document builder
 refuses a capture whose row count is not its total, so a page can never
 masquerade as a complete export. The generic field/value renderer produces the

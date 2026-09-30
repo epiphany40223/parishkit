@@ -2,11 +2,13 @@
 
 from dataclasses import asdict
 from datetime import timedelta
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection
 from django.test.utils import CaptureQueriesContext
+from openpyxl import load_workbook
 
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
@@ -256,6 +258,13 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             if format == "csv":
                 assert name in body and b"$1,234.50" in body and b"$1,200.00" in body
                 assert b"Financial stewardship detail" in body
+            elif format == "xlsx":
+                # The real worker's file holds summable dollar-formatted numbers.
+                sheet = load_workbook(BytesIO(body))["Financial detail"]
+                for column, expected in ((4, 1234.5), (8, 1200)):
+                    cell = sheet.cell(2, column)
+                    assert (cell.data_type, cell.value) == ("n", expected)
+                    assert cell.number_format == '"$"#,##0.00'
     # Regeneration after expiry keeps the retained capture, never a fresh read.
     with work_transaction():
         now = export_services.database_now()
