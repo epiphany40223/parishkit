@@ -58,7 +58,8 @@
         <div class="session-dialog-actions"><a class="button" href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></div>
       </div>
     </form>
+    {% comment %}Inside the modal: a modal dialog makes the rest of the page inert, so a live region outside it would go unannounced.{% endcomment %}
+    <p class="visually-hidden" aria-live="polite" data-session-announce></p>
   </dialog>
-  <p class="visually-hidden" aria-live="polite" data-session-announce></p>
 </div>
 {% endif %}

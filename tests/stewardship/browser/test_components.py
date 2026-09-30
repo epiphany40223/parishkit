@@ -583,6 +583,11 @@ def test_admin_activity_never_uses_family_keepalive(page, component_origin):
         "signed out in 4 minutes because of inactivity"
     )
     expect(page.locator("[data-session-stay]")).to_be_focused()
+    # The spoken countdown lives inside the modal dialog, which makes the rest
+    # of the page inert, so screen readers can announce it (#391 L7).
+    announce = page.locator("dialog.session-dialog [data-session-announce]")
+    expect(announce).to_have_attribute("aria-live", "polite")
+    expect(announce).to_contain_text("signed out in 4 minutes")
     page.clock.fast_forward(5 * 60 * 1000)
     expect(page.locator("#session-expired")).to_be_visible()
     expect(page.locator("#session-warning")).to_be_hidden()
