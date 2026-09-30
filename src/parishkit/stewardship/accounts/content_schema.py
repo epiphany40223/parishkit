@@ -20,6 +20,7 @@ from parishkit.stewardship.web.content import (
 )
 
 from .content_trust import is_trusted
+from .receipt_note import RETIRED
 
 SCHEMA = "campaign-content-v5"
 REQUEST_SCHEMA = "campaign-content-patch-v5"
@@ -39,6 +40,7 @@ PAGE_SLOTS = frozenset(
         "review",
         "thank_you",
         "access_denied",
+        # Retired (#260): only already-applied records may carry it.
         "submission_confirmation",
     }
 )
@@ -78,7 +80,12 @@ def validate_content_records(document):
         if (kind == "page" or slot == "confirmation") and identity in selected:
             invalid()
         selected.add(identity)
-        if is_trusted(record):
+        trusted = is_trusted(record)
+        if (kind, slot) == RETIRED and not trusted:
+            # The closing note now lives in the confirmation email body
+            # (receipt_note); applied history may still carry one.
+            invalid()
+        if trusted:
             # Already-applied, digest-verified text: today's text rules only
             # govern authored or changed records (content_trust, #187).
             content[record["id"]] = value
@@ -99,10 +106,7 @@ def validate_content_records(document):
                     )
             elif value["subject"] is not None:
                 invalid()
-            if (kind, slot) in {
-                ("email", "confirmation"),
-                ("page", "submission_confirmation"),
-            }:
+            if (kind, slot) == ("email", "confirmation"):
                 validate_receipt_content(
                     value["subject"] or "", value["html"], value["text"]
                 )

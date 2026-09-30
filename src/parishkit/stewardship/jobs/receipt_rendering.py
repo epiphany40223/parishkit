@@ -35,6 +35,9 @@ def current_receipt_render(
         email = selected.get(kind="email", slot="confirmation")
     except ContentVersion.DoesNotExist:
         email = None
+    # A retired closing note (#260) that an older configuration still carries
+    # keeps rendering until its email is saved with it folded in
+    # (accounts.receipt_note); no new configuration can add one.
     try:
         block = selected.get(kind="page", slot="submission_confirmation")
     except ContentVersion.DoesNotExist:

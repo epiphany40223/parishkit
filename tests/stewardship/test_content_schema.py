@@ -149,19 +149,32 @@ def test_confirmation_selection_is_unique_but_scheduled_templates_are_not():
         ("email", "confirmation", "subject"),
         ("email", "confirmation", "html"),
         ("email", "confirmation", "text"),
-        ("page", "submission_confirmation", "html"),
-        ("page", "submission_confirmation", "text"),
     ],
 )
 @pytest.mark.parametrize("private", ["family_code", "family_url"])
 def test_receipt_privacy_is_enforced_at_configuration_apply(kind, slot, part, private):
-    """Raw configuration cannot bypass either receipt authoring surface."""
+    """Raw configuration cannot bypass the receipt authoring surface."""
     document = content_document()
     owner = document["sections"]["campaigns"][0]["id"]
     document["sections"]["content"].append(
         content(owner, kind=kind, slot=slot, **{part: "{{ " + private + " }}"})
     )
     with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
+def test_retired_closing_note_is_only_accepted_from_applied_history():
+    """No new receipt closing note (#260); an applied one still verifies."""
+    from parishkit.stewardship.accounts.content_trust import trusted_content
+
+    document = content_document()
+    owner = document["sections"]["campaigns"][0]["id"]
+    document["sections"]["content"].append(
+        content(owner, kind="page", slot="submission_confirmation")
+    )
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+    with trusted_content():
         configuration_version(document)
 
 

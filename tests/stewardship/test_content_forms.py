@@ -37,7 +37,9 @@ def test_slots_and_module_visibility():
     assert "census" in slots and "member_census" in slots
     assert not {"additional", "ministry", "financial"} & slots.keys()
     assert "census" not in page_slots(campaign(modules=["ministry"])["values"])
-    assert str(slots["submission_confirmation"]).startswith("Confirmation email")
+    # The retired receipt closing note (#260) only labels history.
+    assert "submission_confirmation" not in slots
+    assert "retired" in str(PAGE_LABELS["submission_confirmation"])
 
 
 @pytest.mark.parametrize("generate", [False, True])
@@ -46,16 +48,16 @@ def test_content_sanitized_and_plain_text_independent(generate):
     form = ContentForm(
         fields(
             generate_text="on" if generate else "",
+            subject="Received",
             html='<p onclick="alert(1)">Hi</p><script>steal()</script>',
             text="" if generate else "Edited plain text",
         ),
-        # The one page slot whose plain text is delivered (receipt email).
-        kind="page",
-        slot="submission_confirmation",
+        kind="email",
+        slot="confirmation",
     )
     assert form.is_valid(), form.errors
-    value = form.values(campaign_id="example", slot="welcome")
-    assert value["html"] == "<p>Hi</p>" and value["subject"] is None
+    value = form.values(campaign_id="example", slot="confirmation")
+    assert value["html"] == "<p>Hi</p>" and value["subject"] == "Received"
     assert value["text"] == ("Hi" if generate else "Edited plain text")
 
 
@@ -63,7 +65,7 @@ def test_content_sanitized_and_plain_text_independent(generate):
     "kind,changes",
     [
         ("page", {"html": "{{ unknown }}"}),
-        ("page", {"generate_text": "", "text": "{% unsafe %}"}),
+        ("email", {"subject": "Hi", "generate_text": "", "text": "{% unsafe %}"}),
         ("email", {"subject": "Bad\nsubject"}),
         ("email", {"subject": "{{ invalid }}"}),
         ("email", {"subject": ""}),
@@ -71,7 +73,7 @@ def test_content_sanitized_and_plain_text_independent(generate):
 )
 def test_invalid_template_form(kind, changes):
     """A safe typed field is not enough: placeholder/header rules still apply."""
-    slot = "submission_confirmation" if kind == "page" else None
+    slot = "welcome" if kind == "page" else "confirmation"
     form = ContentForm(fields(**changes), kind=kind, slot=slot)
     assert not form.is_valid()
     assert "both body versions" not in str(form.errors)
@@ -134,8 +136,8 @@ def test_generated_text_problem_names_the_generator_and_the_fix(slot):
 
 def test_checked_generation_refuses_typed_plain_text_instead_of_dropping_it():
     """Typed text that differs from the generated text is never silently lost."""
-    data = fields(html="<p>Hello</p>", generate_text="on")
-    receipt = {"kind": "page", "slot": "submission_confirmation"}
+    data = fields(subject="Received", html="<p>Hello</p>", generate_text="on")
+    receipt = {"kind": "email", "slot": "confirmation"}
     form = ContentForm(data | {"text": "My own words"}, **receipt)
     assert not form.is_valid()
     assert form.errors.as_data()["text"][0].code == "text_conflict"
@@ -190,16 +192,13 @@ def test_family_editor_accepts_explicit_text_with_anchor_link():
     assert form.is_valid(), form.errors
 
 
-@pytest.mark.parametrize(
-    "kind,slot", [("page", "submission_confirmation"), ("email", "confirmation")]
-)
 @pytest.mark.parametrize("private", ["family_code", "family_url"])
-def test_receipt_editor_rejects_credentials(kind, slot, private):
-    """Both the receipt template and separately selected block are credential-free."""
+def test_receipt_editor_rejects_credentials(private):
+    """The receipt email is credential-free."""
     form = ContentForm(
         fields(subject="Received", html="<p>{{ " + private + " }}</p>"),
-        kind=kind,
-        slot=slot,
+        kind="email",
+        slot="confirmation",
     )
     assert not form.is_valid()
 
@@ -366,15 +365,11 @@ def test_page_slots_never_sent_as_email_always_generate_plain_text(slot):
     assert form.values(campaign_id="example", slot=slot or "welcome")["text"] == "Hello"
 
 
-@pytest.mark.parametrize(
-    "kind,slot", [("page", "submission_confirmation"), ("email", "confirmation")]
-)
-def test_delivered_plain_text_keeps_its_controls(kind, slot):
-    """The receipt block and every email keep the plain-text editor."""
-    form = ContentForm(kind=kind, slot=slot)
+@pytest.mark.parametrize("slot", sorted(EMAIL_SLOTS))
+def test_delivered_plain_text_keeps_its_controls(slot):
+    """Every email keeps the plain-text editor."""
+    form = ContentForm(kind="email", slot=slot)
     assert "text" in form.fields and "generate_text" in form.fields
-    if slot == "submission_confirmation":
-        assert "confirmation email" in str(form.fields["text"].help_text)
 
 
 def test_editor_template_hides_plain_text_for_web_only_pages():
@@ -387,4 +382,4 @@ def test_editor_template_hides_plain_text_for_web_only_pages():
         )
 
     assert "data-plain-text" not in render(kind="page", slot="welcome")
-    assert "data-plain-text" in render(kind="page", slot="submission_confirmation")
+    assert "data-plain-text" in render(kind="email", slot="confirmation")

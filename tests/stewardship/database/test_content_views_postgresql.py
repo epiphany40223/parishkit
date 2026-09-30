@@ -446,16 +446,145 @@ def test_plain_text_preview_is_generated_by_the_server_for_admins(auth_service, 
     }
 
 
-def test_confirmation_closing_note_is_listed_with_the_confirmation_email(
-    auth_service, google
+def test_confirmation_editor_folds_a_retired_closing_note(
+    auth_service, google, monkeypatch
 ):
-    """The receipt's closing note sits under Email templates, after the receipt."""
-    _, catalog, _ = setup(auth_service.store)
+    """An applied closing note (#260) opens inside the email; saving keeps it."""
+    from parishkit.stewardship.accounts import content_schema
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    email = content(str(campaign.pk), kind="email", slot="confirmation")
+    note = content(
+        str(campaign.pk),
+        slot="submission_confirmation",
+        html="<p>Call the office.</p>",
+        text="Call the office.",
+    )
+    # Plant the note as a configuration applied before #260 carried it.
+    with monkeypatch.context() as patched:
+        patched.setattr(content_schema, "RETIRED", None)
+        assert (
+            change(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {"operation": "add", "section": "content", **email},
+                    {"operation": "add", "section": "content", **note},
+                ],
+            ).state
+            == "applied"
+        )
     browser, _ = signed_in()
     body = browser.get(catalog).content.decode()
-    pages, emails = body.split("Email templates", 1)
-    assert "Confirmation email: closing note" not in pages
-    assert emails.index(">Confirmation email<") < emails.index(
-        "Confirmation email: closing note"
+    assert "closing note" not in body and "submission_confirmation" not in body
+    assert browser.get(catalog + "/page/submission_confirmation").status_code != 200
+    path = catalog + "/email/confirmation"
+    assert "Call the office." in browser.get(path).content.decode()
+    # Saving the email exactly as shown folds the note into its body.
+    html = email["values"]["html"] + note["values"]["html"]
+    preview = post(
+        browser,
+        path,
+        values(store, subject=email["values"]["subject"], html=html),
     )
-    assert "/page/submission_confirmation" in emails
+    assert preview.status_code == 200
+    # "Before" (email plus note) and "after" (folded email) each say it once.
+    assert preview.content.decode().count("Call the office.") == 4
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    assert not rows.filter(slot="submission_confirmation").exists()
+    folded = rows.get(kind="email", slot="confirmation")
+    assert folded.html == html
+    assert folded.text == "Welcome to {{ parish_name }}.\n\nCall the office."
+
+
+def plant(store, monkeypatch, *records):
+    """Apply records as a configuration from before #260 could carry them."""
+    from parishkit.stewardship.accounts import content_schema
+
+    with monkeypatch.context() as patched:
+        patched.setattr(content_schema, "RETIRED", None)
+        patch = [{"operation": "add", "section": "content", **row} for row in records]
+        assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+
+def closing_note(campaign):
+    """One retired receipt closing note with distinctive text."""
+    return content(
+        str(campaign.pk),
+        slot="submission_confirmation",
+        html="<p>Call the office.</p>",
+        text="Call the office.",
+    )
+
+
+def test_confirmation_reset_to_default_removes_a_retired_closing_note(
+    auth_service, google, monkeypatch
+):
+    """Resetting shows the note only in "before" and removes it on apply."""
+    from parishkit.stewardship.accounts.content_defaults import default_data
+    from parishkit.stewardship.accounts.content_forms import matches_default
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    email = content(str(campaign.pk), kind="email", slot="confirmation")
+    plant(store, monkeypatch, email, closing_note(campaign))
+    browser, _ = signed_in()
+    path = catalog + "/email/confirmation"
+    editor = browser.get(path + "?start=default").content.decode()
+    assert "Call the office." not in editor
+    default = default_data("email", "confirmation")
+    preview = post(
+        browser,
+        path,
+        values(store, subject=default["subject"], html=default["html"]),
+    )
+    assert preview.status_code == 200
+    # Only "before" (today's receipt, HTML and text) still carries the note.
+    assert preview.content.decode().count("Call the office.") == 2
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    assert not rows.filter(slot="submission_confirmation").exists()
+    saved = rows.get(kind="email", slot="confirmation")
+    assert matches_default(
+        {
+            "campaign_id": str(campaign.pk),
+            "kind": "email",
+            "slot": "confirmation",
+            "subject": saved.subject,
+            "html": saved.html,
+            "text": saved.text,
+        }
+    )
+
+
+def test_closing_note_without_confirmation_email_is_listed_and_folded(
+    auth_service, google, monkeypatch
+):
+    """A note alone shows as the built-in email plus note, and folds on save."""
+    from parishkit.stewardship.jobs.receipt_content import ReceiptTemplate
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    plant(store, monkeypatch, closing_note(campaign))
+    browser, _ = signed_in()
+    body = browser.get(catalog).content.decode()
+    confirmation = body.split(">Confirmation email<", 1)[1].split("<h3>", 1)[0]
+    fallback = ReceiptTemplate()
+    assert fallback.subject in confirmation
+    assert "No template configured." not in confirmation
+    path = catalog + "/email/confirmation"
+    editor = browser.get(path)
+    assert "Call the office." in editor.content.decode()
+    # Saved text is offered a reset, not a fresh start from the default.
+    assert editor.context["saved"]
+    html = fallback.html + "<p>Call the office.</p>"
+    preview = post(browser, path, values(store, subject=fallback.subject, html=html))
+    assert preview.status_code == 200
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    assert not rows.filter(slot="submission_confirmation").exists()
+    saved = rows.get(kind="email", slot="confirmation")
+    assert (saved.subject, saved.html) == (fallback.subject, html)

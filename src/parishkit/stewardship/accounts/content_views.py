@@ -37,7 +37,6 @@ from .authentication import runtime
 from .campaign_views import _scope, _state
 from .content_defaults import default_initial
 from .content_forms import (
-    EMAIL_ADDITIONS,
     EMAIL_LABELS,
     ContentForm,
     matches_default,
@@ -49,6 +48,7 @@ from .content_forms import (
 )
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
+from .receipt_note import fold, legacy_note
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
 
@@ -92,8 +92,9 @@ def _content_state(record):
 def _catalog(request, configuration, campaign):
     """List named page slots and independent email revisions for per-mail selection."""
     records = _records(configuration, campaign.pk)
+    # A retired closing note counts as part of the confirmation email (#260).
+    note = legacy_note(records, campaign.pk)
     pages = []
-    additions = {}
     for slot, label in page_slots(campaign.active_configuration.values).items():
         record = next(
             (
@@ -103,39 +104,57 @@ def _catalog(request, configuration, campaign):
             ),
             None,
         )
-        entry = {
-            "label": label,
-            "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
-            "state": _content_state(record),
-        }
-        # Content only ever sent inside an email is listed with that email.
-        if slot in EMAIL_ADDITIONS:
-            additions[EMAIL_ADDITIONS[slot]] = entry
-        else:
-            pages.append(entry)
+        pages.append(
+            {
+                "label": label,
+                "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
+                "state": _content_state(record),
+            }
+        )
     emails = []
     for slot, label in EMAIL_LABELS.items():
+        revisions = [
+            {
+                "subject": row["values"]["subject"],
+                "state": _content_state(
+                    {
+                        "values": fold(
+                            row["values"], note["values"], campaign_id=campaign.pk
+                        )
+                    }
+                    if note and slot == "confirmation"
+                    else row
+                ),
+                "test_url": reverse(
+                    "admin:campaign_mail", args=[campaign.pk, row["id"]]
+                ),
+                "url": reverse(
+                    "admin:content_revision",
+                    args=[campaign.pk, "email", slot, row["id"]],
+                ),
+            }
+            for row in records
+            if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
+        ]
+        editor = reverse("admin:content_edit", args=[campaign.pk, "email", slot])
+        if note and slot == "confirmation" and not revisions:
+            # Receipts send the built-in email plus the note; list that pair
+            # as the confirmation email the editor opens (#260).
+            folded = fold(None, note["values"], campaign_id=campaign.pk)
+            revisions.append(
+                {
+                    "subject": folded["subject"],
+                    "state": _content_state({"values": folded}),
+                    "test_url": None,
+                    "url": editor,
+                }
+            )
         emails.append(
             {
                 "label": label,
                 "singleton": slot == "confirmation",
-                "addition": additions.get(slot),
-                "url": reverse("admin:content_edit", args=[campaign.pk, "email", slot]),
-                "revisions": [
-                    {
-                        "subject": row["values"]["subject"],
-                        "state": _content_state(row),
-                        "test_url": reverse(
-                            "admin:campaign_mail", args=[campaign.pk, row["id"]]
-                        ),
-                        "url": reverse(
-                            "admin:content_revision",
-                            args=[campaign.pk, "email", slot, row["id"]],
-                        ),
-                    }
-                    for row in records
-                    if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
-                ],
+                "url": editor,
+                "revisions": revisions,
             }
         )
     return render(
@@ -220,9 +239,14 @@ def _banner_patch(campaign, form, slot):
 
 
 def _preview(
-    request, service, actor, state, campaign, form, label, previous, slot, salt
+    request, service, actor, state, campaign, form, label, previous, slot, salt, note
 ):
-    """Sign sanitized canonical bytes and disclose every affected mail schedule."""
+    """Sign sanitized canonical bytes and disclose every affected mail schedule.
+
+    ``note`` is a retired receipt closing note that the confirmation email
+    editor showed folded into the body (receipt_note); the same request
+    removes it, so the saved email alone carries that text from then on.
+    """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
         return _page(request, form, campaign, label, status=400)
@@ -238,6 +262,10 @@ def _preview(
                 base.document(), campaign, previous, values
             )
             patch += _banner_patch(campaign, form, slot)
+            if note is not None:
+                patch.append(
+                    {"operation": "remove", "section": "content", "id": note["id"]}
+                )
         except UserFacingError as error:
             # A correctable refusal (removing a template that a schedule
             # still sends) is shown beside the form, which keeps its input.
@@ -252,17 +280,17 @@ def _preview(
         parish = document_parish(base.document())
         from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 
-        receipt = dict(
-            confirmation=form.kind == "email" and slot == "confirmation",
-            receipt_block=confirmation_block(base.document(), campaign.pk),
-        )
+        confirmation = form.kind == "email" and slot == "confirmation"
         campaign_values = campaign.active_configuration.values
+        # "Before" is today's receipt, including any retired closing note;
+        # "after" has none, because this request folds it into the email.
         before = sample_render(
             previous["values"] if previous else None,
             parish=parish,
             campaign=campaign_values,
             banner=sample_banner(campaign_values, slot) if form.kind == "email" else "",
-            **receipt,
+            confirmation=confirmation,
+            receipt_block=confirmation_block(base.document(), campaign.pk),
         )
         # The proposed sample follows the checkbox being previewed (#248).
         after = sample_render(
@@ -274,7 +302,7 @@ def _preview(
             )
             if form.kind == "email"
             else "",
-            **receipt,
+            confirmation=confirmation,
         )
         token = sign_preview(
             actor=actor,
@@ -375,18 +403,23 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 )
                 if revision_id and previous is None:
                     raise LookupError("Content revision is unavailable.")
+                # The confirmation email opens with any retired closing note
+                # already folded into its body, as receipts send it (#260).
+                note = (
+                    legacy_note(records, campaign.pk)
+                    if (kind, slot) == ("email", "confirmation")
+                    else None
+                )
+                shown = previous["values"] if previous else None
+                if note is not None:
+                    shown = fold(shown, note["values"], campaign_id=campaign.pk)
                 # "?start=default" only pre-fills the form: it starts an empty
                 # slot or resets a configured one, and nothing changes until
                 # the Admin previews and applies it like any other edit.
                 initial = (
                     default_initial(kind, slot)
                     if start
-                    else (previous["values"] if previous else {})
-                    | {
-                        "generate_text": text_is_generated(
-                            previous["values"] if previous else None
-                        )
-                    }
+                    else (shown or {}) | {"generate_text": text_is_generated(shown)}
                 ) | {"base_digest": configuration.active_configuration.digest}
                 form = ContentForm(
                     request.POST if request.method == "POST" else None,
@@ -407,6 +440,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         previous,
                         slot,
                         salt,
+                        note,
                     )
                     if request.method == "POST"
                     else _page(
@@ -415,7 +449,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         campaign,
                         labels[slot],
                         default_url=None if start else request.path + "?start=default",
-                        saved=previous is not None,
+                        # A folded closing note is saved text too, so the
+                        # default link offers a reset, not a start.
+                        saved=shown is not None,
                         started=start,
                     )
                 )

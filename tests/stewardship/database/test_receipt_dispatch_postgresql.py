@@ -492,3 +492,88 @@ def test_receipt_banner_resolves_under_the_exact_mail_role(response_service, hid
     image = f'<img src="https://parish.example.org/branding/{banner}.png"'
     assert (image in mail.html) is not hidden
     assert "branding" not in mail.text
+
+
+@pytest.mark.parametrize(
+    "email_html,note_html",
+    [
+        ("<p>Thank you.</p>", "<p>Call {{ parish_phone }}.</p>"),
+        ("Thank you, bare.", "<p>Call {{ parish_phone }}.</p>"),
+    ],
+)
+def test_folding_the_closing_note_leaves_the_receipt_worker_output_unchanged(
+    live_response_service, monkeypatch, email_html, note_html
+):
+    """Saving the folded confirmation email sends byte-identical receipts (#260)."""
+    from parishkit.stewardship.accounts import content_schema
+    from parishkit.stewardship.accounts.content_forms import text_is_generated
+    from parishkit.stewardship.accounts.receipt_note import fold
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.admission import _scope
+    from parishkit.stewardship.jobs.receipt_dispatch import current_receipt_content
+    from parishkit.stewardship.web.content import prepare_content
+
+    from ..content_factory import content
+    from .campaign_builders import change
+
+    harness = live_response_service
+    store = harness.service.store
+    owner = str(harness.campaign.pk)
+    email = content(
+        owner,
+        kind="email",
+        slot="confirmation",
+        html=email_html,
+        text=prepare_content(email_html).text,
+    )
+    note = content(
+        owner,
+        slot="submission_confirmation",
+        html=note_html,
+        text=prepare_content(note_html).text,
+    )
+
+    def apply(patch):
+        """Install one content change through the real configuration path."""
+        assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+    # Plant the pair as a configuration applied before #260 carried it.
+    with monkeypatch.context() as patched:
+        patched.setattr(content_schema, "RETIRED", None)
+        apply(
+            [
+                {"operation": "add", "section": "content", **email},
+                {"operation": "add", "section": "content", **note},
+            ]
+        )
+    message = receipt(harness, production=True)
+
+    def rendered():
+        """What the receipt worker would send for this message right now."""
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+            _, _, mail = current_receipt_content(
+                message,
+                _scope(message.campaign_id),
+                public_origin="https://parish.example.org",
+            )
+        return mail.subject, mail.html, mail.text
+
+    before = rendered()
+    assert "Call " in before[1] and "Call " in before[2]
+    # What the Admin saves from the editor: the folded email, generated text
+    # still checked even when a part's HTML is bare text.
+    folded = fold(email["values"], note["values"], campaign_id=owner)
+    assert text_is_generated(folded)
+    apply(
+        [
+            {"operation": "remove", "section": "content", "id": email["id"]},
+            {"operation": "remove", "section": "content", "id": note["id"]},
+            {
+                "operation": "add",
+                "section": "content",
+                "id": str(uuid4()),
+                "values": folded,
+            },
+        ]
+    )
+    assert rendered() == before

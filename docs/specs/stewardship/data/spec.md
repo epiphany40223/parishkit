@@ -780,10 +780,20 @@ between Financial stewardship and Additional information; a campaign without
 closing content, or whose closing content has no visible text, has no closing
 step.
 
-The `submission_confirmation` block supplies parish-authored receipt-email
-content through [submission confirmation](../background-processing/spec.md#submission-confirmation),
-not a second Thank You page. Its delivery consumer belongs to BG-07; the
-Family browser uses the separate `thank_you` slot.
+The receipt email is the confirmation email template alone (see
+[submission confirmation](../background-processing/spec.md#submission-confirmation)),
+not a second Thank You page; the Family browser uses the separate `thank_you`
+slot. The former `submission_confirmation` page slot, a closing note appended
+to the receipt, is retired (#260): no new revision may use it, but an applied
+configuration that already carries one stays valid and its receipts keep
+appending it. The confirmation email editor opens with that note folded into
+the email body, and saving the email (or cloning the campaign) stores the
+folded body and removes the note in the same request. Receipts render an
+email and note exactly as that folded body: the HTML joined, and the plain
+text generated from the joined HTML when both parts' plain text was generated,
+or otherwise joined after a blank line. The slot and its setup
+step name stay allowed in the database schema only so applied history keeps
+verifying.
 
 Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
 templates have separate subject, sanitized HTML, and generated/edited plain-text
@@ -824,10 +834,10 @@ the applied history fails with a visible reason instead of waiting forever.
 The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member
 of a template list. Without a selected template, use the built-in non-sensitive
-confirmation subject/body. The separately selected `submission_confirmation`
-block is appended when present, and required receipt facts always appear
-independently of either optional authored body. Neither receipt authoring surface
-accepts access-code or secure-link placeholders. Scheduled email templates retain
+confirmation subject/body. A retired closing note, when an applied
+configuration still carries one, is appended as described above, and required
+receipt facts always appear independently of the optional authored body. The
+receipt template accepts no access-code or secure-link placeholders. Scheduled email templates retain
 their explicit per-schedule revision selection.
 Family templates support only documented placeholders, including
 eligible names, code, secure link, generic URL, parish fields, dates, and
