@@ -362,6 +362,14 @@ def run_local(tmp_path, **env):
     for name, body in stubs.items():
         (bin_dir / name).write_text(f"#!/usr/bin/env bash\n{body}\n")
         (bin_dir / name).chmod(0o755)
+    # The Compose test container mounts /tmp noexec, so the stand-ins could
+    # not run there; the other CI jobs still run these tests.
+    try:
+        subprocess.run([str(bin_dir / "docker")], env={"FAKE_LOG": os.devnull})
+    except PermissionError:
+        import pytest
+
+        pytest.skip("the temporary directory cannot run the stand-in programs")
     base = {k: v for k, v in os.environ.items() if not k.startswith("STEWARDSHIP_")}
     result = subprocess.run(
         ["bash", str(SCRIPT)],
