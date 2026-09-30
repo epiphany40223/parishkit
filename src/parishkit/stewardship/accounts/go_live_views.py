@@ -7,7 +7,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.campaigns.cleanup_preview import cleanup_families
+from parishkit.stewardship.campaigns.cleanup_preview import (
+    TESTING_FAMILY_SORTING,
+    cleanup_families,
+)
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
@@ -195,7 +198,8 @@ def cleanup_status(request, campaign_id, request_id):
 def testing_families(request, campaign_id):
     """Admin-only current Testing Family identities, with bounded server pagination."""
     try:
-        parameters = filters(request.GET, allowed={"page", "size"})
+        parameters = filters(request.GET, allowed={"page", "size", "sort"})
+        sort = TESTING_FAMILY_SORTING.parse(parameters)
         window = PageWindow(
             expected_version(parameters.get("page", "1")),
             expected_version(parameters.get("size", "50")),
@@ -219,15 +223,22 @@ def testing_families(request, campaign_id):
                 if source.reason in {"ready", "full_refresh_stale"}
                 else None
             )
-            rows, has_next = cleanup_families(
-                campaign_id, source_id=source_id, window=window
+            rows, has_next, total = cleanup_families(
+                campaign_id, source_id=source_id, window=window, sort=sort
             )
         response = render(
             request,
             "stewardship/go-live-families.html",
             {
                 "campaign": scope.campaign,
-                "table": window_table(window, rows, has_next),
+                "table": window_table(
+                    window,
+                    rows,
+                    has_next,
+                    total=total,
+                    sorting=TESTING_FAMILY_SORTING,
+                    sort=sort,
+                ),
             },
         )
         return _checked(request, service, response)
