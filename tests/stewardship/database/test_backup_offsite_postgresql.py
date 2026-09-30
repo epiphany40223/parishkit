@@ -720,6 +720,20 @@ def test_a_check_may_only_name_the_applied_workspace_mailbox(workspace):
         )
 
 
+def test_a_check_queued_across_a_workspace_change_is_a_stale_page(workspace):
+    """The guard's refusal after a concurrent re-configuration says "reload".
+
+    The page named the mailbox user it had read; the applied one changed
+    before the insert, so the refusal is a stale page, not an outage.
+    """
+    from parishkit.stewardship.storage import StaleRecordError
+
+    with task_login(ServiceRole.WEB, exact=True):
+        with pytest.raises(StaleRecordError):
+            request_probe(uuid4(), FOLDER, "old.mailbox@example.org")
+        assert request_probe(uuid4(), FOLDER, "mail@example.org").state == "pending"
+
+
 def test_a_check_needs_an_applied_workspace_integration():
     """With no Workspace mail applied there is no user a check may name."""
     assert insert_probe("mail@example.org") == "23514"

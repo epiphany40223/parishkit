@@ -8,10 +8,12 @@ checks that the Google Workspace credential installer completes.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
 from parishkit.stewardship.jobs.backup_models import BackupDriveProbe, BackupUpload
+from parishkit.stewardship.storage import StaleRecordError
 
 # A finished check (passed, failed or unanswered) is shown on the page for at
 # most this long after it finished, and not at all once settings have been
@@ -240,7 +242,22 @@ def saved_folder_since(since):
 
 
 def request_probe(actor_id, folder_id, subject):
-    """Queue one access check; the Workspace installer completes it."""
-    return BackupDriveProbe.objects.create(
-        requested_by_id=actor_id, folder_id=folder_id, subject=subject
-    )
+    """Queue one access check; the Workspace installer completes it.
+
+    The SQL guard refuses (23514) a check whose subject is not the applied
+    delegated mailbox user. The page read that user from the configuration
+    a moment before, so a refusal means another Administrator applied new
+    Google Workspace settings in between: a stale page, reported as such
+    ("reload before trying again") rather than as a generic failure.
+    """
+    try:
+        with transaction.atomic():
+            return BackupDriveProbe.objects.create(
+                requested_by_id=actor_id, folder_id=folder_id, subject=subject
+            )
+    except IntegrityError as error:
+        if getattr(error.__cause__, "sqlstate", None) == "23514":
+            raise StaleRecordError(
+                "The Google Workspace settings changed; reload the page."
+            ) from None
+        raise
