@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Build the current checkout on a pre-production stewardship host and move
-# that host's deployment onto the new image, in a few minutes.
+# that host's deployment onto the new image, in a few minutes. With
+# STEWARDSHIP_IMAGE set, it deploys that already-published image instead.
 #
-# Pre-launch only. This skips CI and the release workflow, so an image it
-# deploys has not been validated: never use it on a deployment serving real
-# Families. Go-live must run a digest from a real release. The host-side
-# script refuses, before building or stopping anything, once the campaign
-# has been activated to Production.
+# Pre-launch only. A checkout build skips CI and the release workflow, so an
+# image it deploys has not been validated: never use it on a deployment
+# serving real Families. Go-live must run a digest from a real release, and
+# setting STEWARDSHIP_IMAGE to that release's digest is the right way to put
+# a release on a pre-launch host; debug logging then defaults to off. Either way, the host-side script refuses, before building,
+# pulling or stopping anything, once the campaign has been activated to
+# Production; from then on, follow the deployment runbook's Upgrade steps.
 #
 # What it does:
 #   1. Packs the checkout's tracked files, including uncommitted edits, and
@@ -15,6 +18,9 @@
 #      ghcr.io/...@sha256: digest and a digest exists only after a push.
 #      The host must be logged in: docker login ghcr.io (a token with
 #      write:packages).
+#      With STEWARDSHIP_IMAGE set, steps 1 and 2 are skipped: the host pulls
+#      that digest and checks that the pulled image carries exactly that
+#      reference.
 #   3. Follows the deployment runbook's upgrade steps, keeping web's
 #      downtime to the steps that need it (#162). While web still serves:
 #      render the new image's upgrade check, collect its static tree into
@@ -47,9 +53,15 @@
 #   STEWARDSHIP_UUID        deployment UUID (required, for database-grants)
 #   STEWARDSHIP_IMAGE_REPO  image repository
 #                           (default ghcr.io/epiphany40223/parishkit/stewardship)
-#   STEWARDSHIP_DEBUG_LOGGING  1 (default) starts services with debug logging:
+#   STEWARDSHIP_DEBUG_LOGGING  1 starts services with debug logging:
 #                           messages, tracebacks and DEBUG records that normal
 #                           logging drops. Pre-launch data only; 0 turns it off.
+#                           Defaults to 1 for a checkout build and to 0 when
+#                           STEWARDSHIP_IMAGE is set; setting it explicitly
+#                           overrides either default.
+#   STEWARDSHIP_IMAGE       optional published image to deploy instead of
+#                           building the checkout, as the full reference
+#                           ${STEWARDSHIP_IMAGE_REPO}@sha256:<64 lowercase hex>
 
 set -euo pipefail
 
@@ -59,29 +71,64 @@ root=${STEWARDSHIP_ROOT:-/opt/parishkit}
 project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
-debug=${STEWARDSHIP_DEBUG_LOGGING:-1}
-
-cd "$(git rev-parse --show-toplevel)"
-dirty=$(git diff --quiet HEAD -- && echo "" || echo "-dirty")
-tag="dev-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)${dirty}"
+release=${STEWARDSHIP_IMAGE:-}
+# A release should run as it will in production, so it defaults to normal
+# logging; a checkout build keeps the pre-launch debug default.
+if [ -n "$release" ]; then
+    debug=${STEWARDSHIP_DEBUG_LOGGING:-0}
+else
+    debug=${STEWARDSHIP_DEBUG_LOGGING:-1}
+fi
 build=/var/tmp/stewardship-build
 
-echo "==> Sending the checkout to ${host} (${tag})"
-# Tracked files only, as they are on disk now; a deleted tracked file is
-# simply absent from the build.
-git ls-files -z | while IFS= read -r -d '' path; do
-    [ -e "$path" ] && printf '%s\0' "$path"
-done | tar --null -T - -czf - |
-    ssh "$host" "rm -rf '$build' && mkdir -p '$build' && tar -xzf - -C '$build'"
+if [ -n "$release" ]; then
+    # Only a digest of this repository names one exact, published image; a
+    # tag could move, and another repository is not what production admits.
+    hex=${release#"${repo}@sha256:"}
+    if [ "$hex" = "$release" ] || ! [[ $hex =~ ^[0-9a-f]{64}$ ]]; then
+        echo "STEWARDSHIP_IMAGE must be ${repo}@sha256:<64 lowercase hex>; refusing." >&2
+        exit 1
+    fi
+    # Nothing is built, so there is no checkout to send.
+    tag=""
+    if [ -n "${STEWARDSHIP_DEBUG_LOGGING:-}" ]; then
+        echo "==> Debug logging: ${debug} (from STEWARDSHIP_DEBUG_LOGGING)"
+    else
+        echo "==> Debug logging: ${debug} (default for a released image)"
+    fi
+else
+    cd "$(git rev-parse --show-toplevel)"
+    dirty=$(git diff --quiet HEAD -- && echo "" || echo "-dirty")
+    tag="dev-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)${dirty}"
+
+    echo "==> Sending the checkout to ${host} (${tag})"
+    # Tracked files only, as they are on disk now; a deleted tracked file is
+    # simply absent from the build.
+    git ls-files -z | while IFS= read -r -d '' path; do
+        [ -e "$path" ] && printf '%s\0' "$path"
+    done | tar --null -T - -czf - |
+        ssh "$host" "rm -rf '$build' && mkdir -p '$build' && tar -xzf - -C '$build'"
+fi
 
 # Everything else runs on the host. The script is uploaded to a file and run
 # from there: fed through ssh's stdin, `docker compose run` would read the rest
 # of the script as its own input. ssh joins its command into one string, so
 # the positional values are shell-quoted into it.
 args=$(printf '%q ' "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid" "$debug")
+# The ninth argument, the released image, is passed only when set.
+[ -z "$release" ] || args+=$(printf '%q ' "$release")
 ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <<'REMOTE'
 set -euo pipefail
-build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7
+build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7 release=${9:-}
+if [ -n "$release" ]; then
+    # Checked again here, before any docker call, so the host never acts on
+    # a reference the local check would have refused.
+    hex=${release#"${repo}@sha256:"}
+    if [ "$hex" = "$release" ] || ! [[ $hex =~ ^[0-9a-f]{64}$ ]]; then
+        echo "The image must be ${repo}@sha256:<64 lowercase hex>; refusing." >&2
+        exit 1
+    fi
+fi
 # The generated Compose files pass this through to every application service.
 export PARISHKIT_DEBUG_LOGGING=$8
 services="$root/config/services"
@@ -89,7 +136,7 @@ isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
     --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777)
 
-# Refuse, before building, pushing or stopping anything, once the campaign
+# Refuse, before building, pulling or stopping anything, once the campaign
 # has been activated to Production (#326): this path skips CI, deploys an
 # untested image with debug logging on, and its best-effort backup would
 # leave the migration refusing only after the services had stopped. An
@@ -135,14 +182,27 @@ if [ "$family_login" != t ]; then
     exit 1
 fi
 
-echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
-docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \
-    --tag "${repo}:${tag}" "$build" >/dev/null
-echo "==> $(date -u +%H:%M:%S) Pushing"
-docker push --quiet "${repo}:${tag}" >/dev/null
-image=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${repo}:${tag}" |
-    grep -m1 "^${repo}@sha256:")
-echo "    ${image}"
+if [ -n "$release" ]; then
+    echo "==> $(date -u +%H:%M:%S) Deploying released image ${release}"
+    docker pull --quiet "$release" >/dev/null
+    # The pulled image must carry exactly the requested reference, so the
+    # digest deployed is the one that was named.
+    if ! docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$release" |
+        grep -xF "$release" >/dev/null; then
+        echo "The pulled image does not carry ${release}; refusing." >&2
+        exit 1
+    fi
+    image=$release
+else
+    echo "==> $(date -u +%H:%M:%S) Building ${repo}:${tag}"
+    docker build --quiet --file "$build/deploy/stewardship/Dockerfile" \
+        --tag "${repo}:${tag}" "$build" >/dev/null
+    echo "==> $(date -u +%H:%M:%S) Pushing"
+    docker push --quiet "${repo}:${tag}" >/dev/null
+    image=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${repo}:${tag}" |
+        grep -m1 "^${repo}@sha256:")
+    echo "    ${image}"
+fi
 
 step() {
     # Timestamped progress, so downtime can be measured from the log (#162).
