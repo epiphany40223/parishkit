@@ -49,6 +49,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.views import TASK_SORTING
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
@@ -82,6 +83,7 @@ BACKGROUND_TASK = {
     "name": "ParishSoft data refresh",
     "state": "running",
     "heartbeat_at": NOW.isoformat(),
+    "created_at": NOW.isoformat(),
     "progress": {
         "phase": "fetching",
         "current": 1000,
@@ -1363,7 +1365,14 @@ def component_origin():
                 },
                 "states": ("nonterminal", "all", "succeeded", "failed"),
                 "selected_state": "nonterminal",
-                "table": window_table(PageWindow(1, 50), [BACKGROUND_TASK], True),
+                "table": window_table(
+                    PageWindow(1, 50),
+                    [BACKGROUND_TASK],
+                    True,
+                    total=(51, False),
+                    sorting=TASK_SORTING,
+                    sort=TASK_SORTING.default,
+                ),
             },
         ),
     ):

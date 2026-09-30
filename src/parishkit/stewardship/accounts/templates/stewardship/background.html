@@ -9,20 +9,21 @@
   <select id="task-state" name="state">
     {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|capfirst }}</option>{% endfor %}
   </select>
-  <input type="hidden" name="size" value="{{ table.size_value }}">
+  {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show tasks" %}</button>
 </form>
 {% translate "Background task pages" as navigator_label %}
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="background-table-caption">
 <table class="data-table">
-  <caption id="background-table-caption">{% translate "Background tasks, newest first" %}</caption>
+  <caption id="background-table-caption">{% translate "Background tasks" %}</caption>
   <thead><tr>
-    <th scope="col">{% translate "Task" %}</th>
-    <th scope="col">{% translate "State" %}</th>
-    <th scope="col">{% translate "Phase" %}</th>
-    <th scope="col">{% translate "Progress" %}</th>
-    <th scope="col">{% translate "Last heartbeat" %}</th>
+    {% translate "Task" as heading %}{% sort_heading table "task" heading %}
+    {% translate "State" as heading %}{% sort_heading table "state" heading %}
+    {% translate "Phase" as heading %}{% sort_heading table "phase" heading %}
+    {% translate "Progress" as heading %}{% sort_heading table "progress" heading %}
+    {% translate "Last heartbeat" as heading %}{% sort_heading table "heartbeat" heading %}
+    {% translate "Created" as heading %}{% sort_heading table "created" heading %}
   </tr></thead>
   <tbody>
   {% for task in table.rows %}<tr>
@@ -31,7 +32,8 @@
     <td>{{ task.phase_text }}</td>
     <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td>{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
-  </tr>{% empty %}<tr><td colspan="5">{% translate "No tasks match this view." %}</td></tr>{% endfor %}
+    <td><time datetime="{{ task.created_at }}" data-local-instant data-compact>{{ task.created_at }}</time></td>
+  </tr>{% empty %}<tr><td colspan="6">{% translate "No tasks match this view." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

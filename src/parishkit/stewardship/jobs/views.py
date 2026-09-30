@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from django.db import DatabaseError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, FloatField, Q
+from django.db.models.functions import Cast, NullIf
 from django.http import JsonResponse, QueryDict
 from django.shortcuts import render
 from django.urls import reverse
@@ -31,7 +32,7 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.tables import window_table
+from parishkit.stewardship.web.tables import Sorting, bounded_count, window_table
 
 from .models import NONTERMINAL_STATES, TASK_STATES, TaskRun
 from .ownership import database_now
@@ -51,9 +52,36 @@ def _error(code, status):
     return validation_response([FieldError(code)], status=status)
 
 
+# Every Background work column sorts on the server. Task sorts by the stable
+# internal type (the name shown is a translation of it) and Progress by the
+# completed fraction; created_at is the default, newest first; id is the
+# unique tiebreak. No index orders any of these keys, so a page is a top-N
+# sort over the filtered set. The default view lists only nonterminal work,
+# which the task_due (state, not_before) index narrows to a few rows; the
+# task table itself is not purged, so "All" is a sequential scan plus that
+# top-N sort, the same cost the newest-first order always had there.
+TASK_SORTING = Sorting.by_column(
+    {
+        "task": ("task_type",),
+        "state": ("state",),
+        "phase": ("phase",),
+        "progress": (
+            Cast(F("progress_current"), FloatField()) / NullIf(F("progress_total"), 0),
+        ),
+        "heartbeat": ("heartbeat_at",),
+        "created": ("created_at",),
+    },
+    default="-created",
+    descending_first={"progress", "heartbeat", "created"},
+    tiebreak=("id",),
+)
+
+
 def _window(parameters, *, listing):
     """Reject repeated/unknown/oversized inputs before selecting any task rows."""
-    allowed = {"page", "size", "state", "task_type"} if listing else {"page", "size"}
+    allowed = (
+        {"page", "size", "sort", "state", "task_type"} if listing else {"page", "size"}
+    )
     selected = filters(parameters, allowed=allowed)
     window = PageWindow(
         expected_version(selected.get("page", "1")),
@@ -68,7 +96,10 @@ def _window(parameters, *, listing):
         and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", task_type) is None
     ):
         raise ValueError("Invalid task type filter.")
-    return window, state, task_type
+    if listing:
+        # The sort token is validated here with the filters; _listing reads it.
+        TASK_SORTING.parse(selected)
+    return window, state, task_type, selected.get("sort", TASK_SORTING.default)
 
 
 def _progress(row):
@@ -114,8 +145,12 @@ def _counts(instant):
     )
 
 
-def _listing(window, state, task_type, instant):
-    """Bound rows and count only indexed nonterminal work for the header indicator."""
+def _listing(window, state, task_type, sort, instant):
+    """Bound rows and count only indexed nonterminal work for the header indicator.
+
+    ``matching`` is a bounded count of the filtered rows (see
+    ``web.tables.bounded_count``), so the page can say "Page N of M".
+    """
     query = TaskRun.objects.all()
     if state != "all":
         query = query.filter(
@@ -123,13 +158,17 @@ def _listing(window, state, task_type, instant):
         )
     if task_type:
         query = query.filter(task_type=task_type)
-    rows, has_next = window.rows(query.order_by("-created_at", "-id"))
+    rows, has_next = window.rows(TASK_SORTING.order(query, sort))
+    matching, capped = bounded_count(query)
     return {
         "as_of": instant,
         "counts": _counts(instant),
         "page": window.page,
         "size": window.size,
+        "sort": sort,
         "has_next": has_next,
+        "matching": matching,
+        "matching_capped": capped,
         "tasks": [_task(row, instant) for row in rows],
     }, len(rows)
 
@@ -179,7 +218,7 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
             if counts_only:
                 filters(request.GET, allowed=set())
             else:
-                window, state, task_type = _window(
+                window, state, task_type, sort = _window(
                     request.GET, listing=identifier is None
                 )
         except ValueError:
@@ -196,7 +235,7 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
                 data["delivery_unknown"] = unknown_count()
             else:
                 data, count = (
-                    _listing(window, state, task_type, instant)
+                    _listing(window, state, task_type, sort, instant)
                     if identifier is None
                     else _detail(identifier, window, instant)
                 )
@@ -317,8 +356,11 @@ def background_page(request):
         carry=[
             (name, value)
             for name, value in request.GET.items()
-            if name not in {"page", "size"}
+            if name not in {"page", "size", "sort"}
         ],
+        total=(work["matching"], work["matching_capped"]),
+        sorting=TASK_SORTING,
+        sort=work["sort"],
     )
     response = render(
         request,

@@ -174,6 +174,31 @@ def test_task_and_history_pages_are_bounded_and_terminal_filter_is_explicit(
     assert len(history["events"]) == 1
 
 
+def test_task_listing_sorts_on_the_server_and_counts_its_pages(auth_service, google):
+    """Whitelisted sort tokens order the whole result before it is paged;
+    anything else, such as a raw column name, is refused."""
+    first, _second = new(), new()
+    browser, _ = signed_in()
+    oldest = browser.get(BASE, {"size": 1, "sort": "created"}).json()
+    assert oldest["tasks"][0]["id"] == str(first.run_id) and oldest["has_next"]
+    assert (oldest["matching"], oldest["matching_capped"]) == (2, False)
+    newest = browser.get(BASE, {"size": 1, "sort": "-created", "page": 2}).json()
+    assert newest["tasks"][0]["id"] == str(first.run_id)
+    # A queued task has no heartbeat; newest heartbeat first lists the
+    # claimed task first, never the tasks without one.
+    claimed = act(new(), "claim")
+    beating = browser.get(BASE, {"sort": "-heartbeat", "state": "all"}).json()
+    assert beating["tasks"][0]["id"] == str(claimed.run_id)
+    assert all(task["heartbeat_at"] is None for task in beating["tasks"][1:])
+    for token in ("created_at", "-id", "task_type"):
+        assert browser.get(BASE, {"sort": token}).status_code == 400
+    page = browser.get("/admin/background", {"sort": "state", "size": 25})
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert 'aria-sort="ascending"' in html and "Page 1 of 1" in html
+    assert "sort=-state" in html
+
+
 @pytest.mark.parametrize("counts_only", [False, True])
 def test_revocation_during_query_discards_prepared_metadata(
     auth_service, google, monkeypatch, counts_only
