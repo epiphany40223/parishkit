@@ -111,3 +111,27 @@ class AboutPageNode(template.Node):
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )
+
+
+@register.inclusion_tag("stewardship/table-sort-heading.html", takes_context=True)
+def sort_heading(context, table, column, label, css_class=""):
+    """A column heading that re-sorts a shared Admin table (web/tables.py).
+
+    Usage: ``{% sort_heading table "created" _("Created") "numeric" %}``.
+    ``column`` must be one of the table's sortable columns (a typo fails
+    loudly instead of silently rendering a dead heading). A GET table's
+    heading is a link; a POST table's is a small CSRF form whose button
+    carries the private filters as hidden fields. The sorted column carries
+    ``aria-sort``, and each control names the direction it will choose.
+    """
+    return {
+        "table": table,
+        "column": column,
+        "label": label,
+        "css_class": css_class,
+        "state": table.aria_sort(column),
+        "descends": table.sort_descends(column),
+        "fields": table.heading_fields(column),
+        "query": table.heading_query(column),
+        "csrf_token": context.get("csrf_token"),
+    }

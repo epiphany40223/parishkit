@@ -1,18 +1,26 @@
 {% load i18n stewardship %}{% comment %}
   Shared row navigator for a paged Admin table (web/tables.py). Include it
   above and below the table with `table` (a TablePage) and `label` (the
-  navigation landmark name). Windowed tables (no known total) omit the total
-  and the page count. A plain GET form, so it works without script;
-  ui-v1.js submits a new rows-per-page choice at once and resets to page 1.
-{% endcomment %}<nav class="table-nav" aria-label="{{ label }}">
-  <p class="table-count">{% if table.count %}{% blocktranslate with first=table.first_index|number last=table.last_index|number count=table.count|number %}Showing {{ first }}–{{ last }} of {{ count }}{% endblocktranslate %}{% elif table.rows %}{% blocktranslate with first=table.first_index|number last=table.last_index|number %}Showing {{ first }}–{{ last }}{% endblocktranslate %}{% elif table.number > 1 %}{% translate "No rows on this page" %}{% else %}{% translate "No rows" %}{% endif %}</p>
-  <form method="get" class="table-nav-form" data-submit-repeatable>
-    {% for name, value in table.carried %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  navigation landmark name). It shows the rows shown and "Page N of M";
+  a windowed table whose bounded count stopped short says "more than" and
+  leaves out the page count. Every control works without script: a GET
+  table uses links and a GET form, a POST table (private report filters)
+  uses small CSRF-protected POST forms carrying the filters as hidden
+  fields. ui-v1.js submits a new rows-per-page choice at once and resets to
+  page 1.
+{% endcomment %}{% with post=table.method|lower %}<nav class="table-nav" aria-label="{{ label }}">
+  <p class="table-count">{% if table.count and table.capped %}{% blocktranslate with first=table.first_index|number last=table.last_index|number count=table.count|number %}Showing {{ first }}–{{ last }} of more than {{ count }}{% endblocktranslate %}{% elif table.count %}{% blocktranslate with first=table.first_index|number last=table.last_index|number count=table.count|number %}Showing {{ first }}–{{ last }} of {{ count }}{% endblocktranslate %}{% elif table.rows %}{% blocktranslate with first=table.first_index|number last=table.last_index|number %}Showing {{ first }}–{{ last }}{% endblocktranslate %}{% elif table.number > 1 %}{% translate "No rows on this page" %}{% else %}{% translate "No rows" %}{% endif %}{% if table.pages and not table.capped %} · <span data-page-position>{% blocktranslate with page=table.number|number pages=table.pages|number %}Page {{ page }} of {{ pages }}{% endblocktranslate %}</span>{% else %} · <span data-page-position>{% blocktranslate with page=table.number|number %}Page {{ page }}{% endblocktranslate %}</span>{% endif %}</p>
+  <div class="table-nav-controls">
+  {% if post == "post" %}{% if table.previous_fields %}<form method="post" action="{{ table.action }}">{% csrf_token %}{% for name, value in table.previous_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}<button type="submit" class="button-secondary">{% translate "Previous" %}</button></form>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Previous" %}</span>{% endif %}
+  {% elif table.previous_query %}<a href="?{{ table.previous_query }}" rel="prev">{% translate "Previous" %}</a>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Previous" %}</span>{% endif %}
+  <form method="{{ post }}"{% if post == "post" %} action="{{ table.action }}"{% endif %} class="table-nav-form" data-submit-repeatable>{% if post == "post" %}{% csrf_token %}{% endif %}
+    {% for name, value in table.carried_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
     <label>{% translate "Rows per page" %} <select name="{{ table.size_name }}" data-page-size>{% for value, text, selected in table.size_choices %}<option value="{{ value }}"{% if selected %} selected{% endif %}>{% if value == "all" %}{% translate "All" %}{% else %}{{ text }}{% endif %}</option>{% endfor %}</select></label>
-    {% if table.previous_query %}<a href="?{{ table.previous_query }}" rel="prev">{% translate "Previous" %}</a>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Previous" %}</span>{% endif %}
-    <label>{% translate "Page" %} <input type="number" name="{{ table.page_name }}" value="{{ table.number }}" min="1"{% if table.pages %} max="{{ table.pages }}"{% endif %} inputmode="numeric" data-page-number></label>
-    {% if table.pages %}<span>{% blocktranslate with pages=table.pages|number %}of {{ pages }}{% endblocktranslate %}</span>{% endif %}
+    <label>{% translate "Page" %} <input type="number" name="{{ table.page_name }}" value="{{ table.number }}" min="1"{% if table.pages and not table.capped %} max="{{ table.pages }}"{% endif %} inputmode="numeric" data-page-number></label>
+    {% if table.pages and not table.capped %}<span>{% blocktranslate with pages=table.pages|number %}of {{ pages }}{% endblocktranslate %}</span>{% endif %}
     <button type="submit" class="button-secondary">{% translate "Go" %}</button>
-    {% if table.next_query %}<a href="?{{ table.next_query }}" rel="next">{% translate "Next" %}</a>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Next" %}</span>{% endif %}
   </form>
-</nav>
+  {% if post == "post" %}{% if table.next_fields %}<form method="post" action="{{ table.action }}">{% csrf_token %}{% for name, value in table.next_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}<button type="submit" class="button-secondary">{% translate "Next" %}</button></form>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Next" %}</span>{% endif %}
+  {% elif table.next_query %}<a href="?{{ table.next_query }}" rel="next">{% translate "Next" %}</a>{% else %}<span class="table-nav-disabled" aria-disabled="true">{% translate "Next" %}</span>{% endif %}
+  </div>
+</nav>{% endwith %}

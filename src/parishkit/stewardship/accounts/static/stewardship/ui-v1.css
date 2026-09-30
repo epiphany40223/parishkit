@@ -538,3 +538,15 @@ td.contact-details dd { margin: 0 0 .5rem; }
 .content-block img, .content-sample img { max-width: 100%; height: auto; }
 .hosted-file-thumbnail { width: 48px; height: auto; }
 .hosted-file-copy { width: 18rem; max-width: 100%; font-family: monospace; }
+
+/* Sortable column headings (the sort_heading template tag): the heading
+   text is the control, a link or a POST button styled as one. The arrow is
+   decoration; aria-sort and hidden text carry the meaning. */
+.table-nav-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.table-nav-controls form { margin: 0; }
+th .sort-form { display: inline; margin: 0; }
+th .sort-link, th button.sort-link { position: relative; display: inline-flex; align-items: center; gap: .3rem; min-height: 0; margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: none; cursor: pointer; }
+th .sort-link:hover, th .sort-link:focus-visible { color: var(--accent-strong); text-decoration: underline; }
+th[aria-sort] .sort-link { color: var(--ink); }
+.sort-indicator { font-size: .75em; }
+th:not([aria-sort]) .sort-indicator { opacity: .45; }
