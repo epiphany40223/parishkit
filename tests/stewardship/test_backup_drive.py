@@ -614,6 +614,31 @@ def test_an_upload_stops_sending_when_the_budget_runs_out(tmp_path, caplog):
     assert session.sent == b"x" * 40
 
 
+def test_an_access_check_waits_at_most_its_short_timeout_per_request():
+    """Every request of a "Test access" check, the upload too, uses the
+    client's short timeout, so a hung Drive cannot stall the installer."""
+    from parishkit.stewardship.backup_probes import PROBE_REQUEST_SECONDS
+
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    session = FakeSession(
+        FakeResponse(
+            200,
+            {
+                "id": FOLDER,
+                "mimeType": backup_drive.FOLDER_MIME,
+                "capabilities": {"canAddChildren": True},
+            },
+        ),
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "marker0123456", "size": "1", "md5Checksum": "m"}),
+        FakeResponse(200, {"id": "marker0123456"}),
+    )
+    probe(DriveClient(session, request_seconds=PROBE_REQUEST_SECONDS), FOLDER)
+    assert [request[2]["timeout"] for request in session.requests] == [
+        PROBE_REQUEST_SECONDS
+    ] * 4
+
+
 def test_timeout_and_drive_fields_are_closed_values():
     """Only reviewed words and whole seconds reach the process log."""
     from parishkit.stewardship.jobs.backup_models import FAILURE_KINDS

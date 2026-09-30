@@ -475,8 +475,9 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
     broken = request_probe(actor, FOLDER, "mail@example.org")
     calls = []
 
-    def client(session):
+    def client(session, request_seconds):
         """The third check's Drive reply is malformed."""
+        assert request_seconds == backup_probes.PROBE_REQUEST_SECONDS
         calls.append(session)
         if len(calls) == 3:
             raise ValueError("malformed provider reply")
@@ -486,11 +487,20 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
         assert latest_probe(actor, database_now()).kind == "pending"
     monkeypatch.setattr(backup_probes, "DriveClient", client)
     with target_login("google_workspace"):
+        # One check per installer pass, so a hung Drive cannot hold one pass
+        # past the installer's heartbeat limit.
+        for _ in range(3):
+            assert (
+                backup_probes.run_pending_probes(
+                    "unused", session_factory=lambda value, subject: None
+                )
+                == 1
+            )
         assert (
             backup_probes.run_pending_probes(
                 "unused", session_factory=lambda value, subject: None
             )
-            == 3
+            == 0
         )
     for row in (first, missing, broken):
         row.refresh_from_db()
@@ -675,7 +685,7 @@ def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch, 
             backup_probes.run_pending_probes("unused", check=lambda: checks.append(1))
             == 1
         )
-    assert checks == [1, 1]
+    assert checks == [1]
     row.refresh_from_db()
     assert (row.state, row.failure_kind) == ("failed", "unanswered")
     # Closing it at its limit is logged with the limit and how long it waited.
