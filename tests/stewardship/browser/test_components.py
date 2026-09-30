@@ -266,6 +266,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/parish-settings",
         "/parish-preview",
         "/configuration-request",
+        "/go-live-steps",
         "/background",
         "/deliveries",
         "/delivery",
@@ -979,6 +980,34 @@ def test_flow_steps_and_return_link_orient_a_configuration_change(
     assert trail.bounding_box()["y"] < steps.bounding_box()["y"] < top
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source, width):
+    """All five go-live steps fit a phone by wrapping, never scrolling (#196)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/go-live-steps")
+    steps = page.get_by_role("list", name="Steps")
+    visible(steps)
+    assert steps.locator("li").count() == 5
+    assert steps.get_by_role("link").count() == 0
+    current = steps.locator('[aria-current="step"]')
+    assert current.count() == 1 and "Activation" in current.inner_text()
+    for item in steps.locator("li").all():
+        visible(item)
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_key_status_returns_to_its_integration(page, component_origin, width):
+    """A key's status names its integration in the trail and leads back (#196)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/credential-status")
+    trail = page.get_by_role("navigation", name="Breadcrumb")
+    visible(trail.get_by_role("link", name="ParishSoft"))
+    visible(page.get_by_role("link", name="Return to ParishSoft"))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.parametrize("width", [390, 1280])

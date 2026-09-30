@@ -445,6 +445,18 @@ def component_origin():
             {
                 "receipt": {"request_id": uuid4(), "state": "awaiting_ack"},
                 "pending": True,
+                # A key's status sits under its integration (#196).
+                "admin_chrome": admin
+                | {
+                    "breadcrumbs": [
+                        {"label": "Home", "url": "/home"},
+                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "Integrations", "url": "/integrations"},
+                        {"label": "ParishSoft", "url": "/integration-settings"},
+                        {"label": "Key replacement status", "url": None},
+                    ],
+                    "back": {"label": "ParishSoft", "url": "/integration-settings"},
+                },
             },
         ),
         (
@@ -1391,6 +1403,36 @@ def component_origin():
                         {"label": "Apply", "state": "current"},
                     ],
                     "back": {"label": "Parish settings", "url": "/parish-settings"},
+                },
+            },
+        ),
+        (
+            "/go-live-steps",
+            "production-progress",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "scheduled",
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "receipt": {"created_at": NOW},
+                "demand": None,
+                # The last of the five go-live steps, the longest indicator.
+                "admin_chrome": admin
+                | {
+                    "breadcrumbs": [
+                        {"label": "Home", "url": "/home"},
+                        {"label": "Campaign", "url": "/campaign-settings"},
+                        {"label": "Campaign settings", "url": "/campaign-settings"},
+                        {"label": "Production activation", "url": None},
+                    ],
+                    "flow_steps": [
+                        {"label": "Check readiness", "state": "done"},
+                        {"label": "Testing cleanup", "state": "done"},
+                        {"label": "Family links", "state": "done"},
+                        {"label": "Confirm Production", "state": "done"},
+                        {"label": "Activation", "state": "current"},
+                    ],
                 },
             },
         ),
