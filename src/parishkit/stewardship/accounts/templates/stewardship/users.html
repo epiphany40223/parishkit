@@ -88,7 +88,7 @@
 <td>{{ row.ministry_name }} ({% translate "Ministry DUID" %} {{ row.ministry_duid }})</td>
 <td>{% if row.member_duid %}{% translate "DUID" %} {{ row.member_duid }}{% else %}{% translate "None retained" %}{% endif %}</td>
 <td>{{ row.reason }}</td>
-<td><time datetime="{{ row.opened_at|date:'c' }}" data-local-instant>{{ row.opened_at|date:'c' }}</time>{% if row.generation %} ({% blocktranslate with generation=row.generation %}source generation {{ generation }}{% endblocktranslate %}){% endif %}</td>
+<td><time datetime="{{ row.opened_at|date:'c' }}" data-local-instant>{{ row.opened_at|date:'c' }}</time>{% if row.generation %} ({% blocktranslate with generation=row.generation %}ParishSoft data load {{ generation }}{% endblocktranslate %}){% endif %}</td>
 <td>{% translate "Last checked" %} <time datetime="{{ row.latest_at|date:'c' }}" data-local-instant>{{ row.latest_at|date:'c' }}</time>. {% if row.elsewhere %}{% translate "The Member is a current Chairperson of another active Ministry." %}{% else %}{% translate "The Member is not a current Chairperson of any active Ministry." %}{% endif %}</td>
 <td>{% for role in row.granted %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None" %}{% endfor %}{% if row.leading %}; {% translate "leading through another assignment" %}{% endif %}</td>
 <td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
