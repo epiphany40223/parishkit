@@ -516,6 +516,48 @@ def _occurrence_change(row, claim, **values):
     row.refresh_from_db()
 
 
+# Planner settings for the submission's guarded writes; see
+# plan_submission_guards.
+SUBMISSION_PLANNER = (("join_collapse_limit", "1"), ("from_collapse_limit", "1"))
+
+
+def plan_submission_guards():
+    """Make planning the Family live-scope guard cheap for this transaction.
+
+    The render INSERT, the "prepared" UPDATE and the "submit" UPDATE each
+    fire stewardship_family_dispatch_write_v1, which calls
+    stewardship_family_dispatch_live_v1 (schema/family_dispatch.sql). That
+    guard joins nine tables and nine EXISTS/NOT EXISTS checks; PostgreSQL
+    spends almost all of its time choosing a join order: at launch scale
+    (1,100 Families) a call executes in about 0.3 ms but plans in 200-300
+    ms. A SQL function's plan is cached only per session, and the mail
+    worker opens a fresh connection for every message, so each message paid
+    that planning three times: about 0.7 s locally and most of the 2.4 s
+    request_ms seen on the validation host (#343 statistics).
+
+    The guard is written in its natural lookup order (the message by
+    primary key, then each row it references), so planning it in the
+    written order loses nothing: at launch scale the plan executes in the
+    same 0.3 ms with the same buffer reads, and the three calls drop to
+    about 25 ms. force_generic_plan would save about 10 ms more; it is
+    left out to keep this change to the join order alone.
+
+    The same settings also plan the receipt, digest and Family-test guards
+    that this transaction's writes fire; each starts from the message by
+    primary key too, so the written order costs them nothing.
+
+    The settings are transaction-local (set_config's third argument), so
+    they end at this submission's commit or rollback. Function plans built
+    under them stay cached for the rest of the database session; that is
+    harmless because the worker closes the connection right after the
+    message, and needs a second look if connections are ever reused. They
+    change how the guards are planned, never what they decide.
+    """
+    with connection.cursor() as cursor:
+        for name, value in SUBMISSION_PLANNER:
+            cursor.execute("SELECT set_config(%s, %s, true)", [name, value])
+
+
 def begin_submission(
     identifier,
     claim,
@@ -646,6 +688,8 @@ def begin_submission(
                 and disposition(message, check_recipient=True) is None
             )
 
+        # Only the guarded writes below need it; see plan_submission_guards.
+        plan_submission_guards()
         prepared = prepare_message(
             message_id=message.pk,
             expected_version=message.version,
