@@ -56,8 +56,6 @@ def task_runtime_grants(role):
         "stewardship_setup_completion",
         "stewardship_secret_request",
         "stewardship_credential_consumer_ack",
-        # Rendering Family mail expands {{ file.<slug> }} to its public link.
-        "stewardship_hosted_file",
     ):
         tables[table] = {"SELECT"}
     tables["stewardship_credential_consumer_ack"].add("INSERT")
@@ -96,6 +94,13 @@ def task_runtime_grants(role):
         }
     )
     if role is ServiceRole.WORKER:
+        from parishkit.stewardship.accounts.hosted_file_models import (
+            HOSTED_LINK_COLUMNS,
+        )
+
+        # Preparing Family mail and chosen-Family tests expands
+        # {{ file.<slug> }} to its public link: each file's slug and token.
+        columns["stewardship_hosted_file"] = {"SELECT": set(HOSTED_LINK_COLUMNS)}
         tables["stewardship_branding_bundle"].add("UPDATE")
         tables["stewardship_task_run"].add("UPDATE")
         # Operational observations are bounded, non-personal signals. SQL owns
