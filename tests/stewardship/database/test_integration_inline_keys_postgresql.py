@@ -511,10 +511,14 @@ def test_stale_key_save_page_says_nothing_was_done(working):
     The key is never kept for after the step-up (secrets are not stored), so
     the page says nothing was done and the key must be entered again.
     """
-    stale_sign_in()
     browser, store = working["browser"], working["service"].store
+    # The page warns before Save, even when rendered fresh (a sign-in can age
+    # while the page is open), that a step-up discards the pasted key.
+    hint = b"the pasted key is not kept: paste it again when you come back"
+    assert hint in browser.get(URL).content
+    stale_sign_in()
     page = browser.get(URL)
-    assert not page.context["fresh"]
+    assert hint in page.content
     fields = {
         "action": "preview",
         "base_digest": store.active().digest,

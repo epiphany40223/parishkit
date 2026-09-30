@@ -46,7 +46,7 @@ from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
-from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
+from .sessions import authenticated_admin, require_fresh
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -159,11 +159,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
             unavailable = True
-    try:
-        require_fresh(request)
-        fresh = True
-    except FreshAuthenticationRequired:
-        fresh = False
+    # The step-up hint is always shown (a sign-in can age while the page is
+    # open), so the page no longer needs to know whether this one is fresh.
     response = render(
         request,
         "stewardship/integration-settings.html",
@@ -171,7 +168,6 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "form": form,
             "credential": None if pending else credential,
             "credential_unavailable": unavailable,
-            "fresh": fresh,
             "target": target,
             "label": LABELS[target],
             # Names the integration in the Admin breadcrumb trail.
