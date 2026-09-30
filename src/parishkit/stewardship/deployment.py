@@ -139,6 +139,11 @@ class ValkeyConfiguration:
 # earlier one-helper-per-message transport, kept as an operator fallback.
 FAMILY_MAIL_TRANSPORTS = frozenset({"batched", "per_message"})
 FAMILY_MAIL_TRANSPORT_VARIABLE = "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT"
+# How many consumer processes the mail-dispatch container runs. Two
+# send the launch's Family mail in about half the time; one is the fallback.
+# More would need a larger mail login connection limit than role_limit gives.
+MAIL_CONSUMER_COUNTS = frozenset({1, 2})
+MAIL_CONSUMERS_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS"
 
 
 @dataclass(frozen=True)
@@ -162,6 +167,7 @@ class DeploymentConfiguration:
     runtime_network: RuntimeNetwork = field(default_factory=RuntimeNetwork)
     operational_alerts: IncidentPolicy = field(default_factory=IncidentPolicy)
     family_mail_transport: str = "batched"
+    mail_consumers: int = 2
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -330,6 +336,7 @@ def load_deployment(
             "runtime_network",
             "operational_alerts",
             "family_mail_transport",
+            "mail_consumers",
         },
         "deployment",
     )
@@ -581,6 +588,15 @@ def load_deployment(
         transport = deployment.get("family_mail_transport", "batched")
     if type(transport) is not str or transport not in FAMILY_MAIL_TRANSPORTS:
         raise ConfigError("family_mail_transport must be batched or per_message")
+    consumers = select("MAIL_CONSUMERS", None)
+    if consumers in (None, ""):
+        # Empty means unset here too, as for the transport switch above.
+        consumers = deployment.get("mail_consumers", 2)
+    elif consumers in {"1", "2"}:
+        # The environment carries text; the YAML carries an integer.
+        consumers = int(consumers)
+    if type(consumers) is not int or consumers not in MAIL_CONSUMER_COUNTS:
+        raise ConfigError("mail_consumers must be 1 or 2")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -604,4 +620,5 @@ def load_deployment(
         parse_network(deployment.get("runtime_network", {})),
         alert_policy,
         transport,
+        consumers,
     )

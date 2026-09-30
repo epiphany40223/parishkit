@@ -199,6 +199,108 @@ It is rendered into each service's document, so changing it there takes
 effect only with a reinstall, as the
 [runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
 
+## Two mail consumers
+
+One mail consumer prepares and sends one message at a time, so a large send
+takes the sum of every message's preparation and SMTP time. The
+`mail-dispatch` container therefore runs two mail consumer processes by
+default: the main process, and a second one it starts itself
+(`runtime ... --queue mail`). Both take hints from the same mail queues,
+each has its own batched helper, OAuth token and SMTP connection, and both
+use the one Workspace mailbox. `docker compose ... top mail-dispatch` lists
+both processes and, while Family mail is going out, up to two helpers.
+Everything else mail-dispatch sends also runs on both processes: Admin
+report digests, Administrator alert and security mail, campaign mail and
+setup mail tests. Each process has its own outage circuit for alert and
+security mail too.
+
+Two processes never send one message twice. Every message is one Task, and
+a consumer must claim the Task before it does anything: the claim locks the
+TaskRun row, requires it to be still queued and advances its fence. A hint
+taken by both processes therefore runs once, and the other process claims
+nothing (`tests/stewardship/database/test_mail_consumers_postgresql.py`
+races two real handlers to prove it).
+
+The processes share what must be shared and keep the rest per process:
+
+- **Daily limit.** The count of recipients sent in the last 24 hours is read
+  from PostgreSQL, so both processes see each other's sends. Far from the
+  bulk limit each process re-reads it at most every 15 seconds; once its
+  count is within 100 recipients of the limit, before every message. From
+  then on a process cannot see only the other's one message still in
+  flight. A message has at most 100 recipients, so the bulk limit (1,600)
+  can be passed by at most that, 1,700 of the 1,800, still inside the 200
+  held back for receipts and digests. Reaching the last 100 unseen would
+  need more than 100 recipients settled within one 15-second interval,
+  about three times the launch's rate; that is an expectation from the
+  sending rate, not a hard bound.
+- **Gmail sending limits.** A refusal at Gmail's limit holds only the
+  process that received it. The other process is held by its own next
+  refusal, so at most one more message is refused. That message is
+  definitely unsent and is retried after the limit, like the first.
+- **Outages.** Each process pauses after its own three outage results, so
+  an outage costs at most three attempts per process (six in all instead
+  of three), and each 10-minute cooldown ends with one probe per process.
+  A connection that never reached `DATA` is definitely unsent and retried.
+  One that failed after `DATA` is `delivery_unknown` and is never retried
+  automatically, as with one process; resolve it as described in the
+  launch runbooks. The CRITICAL pause and limit log lines may appear once
+  per process.
+- **A configuration or credential fault (SYSTEMIC).** This stops sending
+  until the mail worker restarts, in both processes: the process that sees
+  it tells the other through a marker file in the container, and the
+  container's next start clears it. The other process may already have one
+  message in flight, so such a fault can fail up to two messages (one per
+  process) instead of one. Both are refused, definitely unsent, so an Admin
+  retry after the fault is fixed is safe. A message one process has just
+  claimed when the other stops is held, not failed, and does not spend one
+  of its preparation attempts.
+
+The main process supervises the second as the worker supervises its source
+process ([worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes)).
+A stop request reaches both, and they drain together. If the second process
+exits, the main process stops and the container exits (production restarts
+it). A late heartbeat from the second process is logged as a
+`helper_timed_out` entry for `mail_helper`, with the limit and how late it
+was. Silence for more than twice the probe's limit stops the container and
+is logged at `ERROR`. Under `docker stop`, a second process still draining
+is killed 15 seconds before the container's stop grace period ends, after
+its `ERROR` entry is written, so Docker's own kill never comes first. That
+entry's limit is the deadline it was killed at (the grace less 15 seconds,
+345 by default) and its elapsed time is counted from the stop request.
+
+The same `mail_helper` kind also records the SMTP helper's deadline and
+retirement kills. Those entries name the helper (`helper` is
+`family_delivery_worker`, or another `*_worker` for digests and alerts);
+the second process's entries have no `helper`.
+
+Two processes need six connections for the mail login (three each: the
+task, lease renewal and timeout log). Each process writes one timeout entry
+at a time, so the three per process are a real bound. Every timeout entry's
+facts (what, limit, elapsed) go to the process log first; one that waits
+more than 5 seconds for its turn is not written durably, and the process
+log records that as `task_timed_out` for `timeout_log_slot`, with its own
+limit and wait. A deployment provisioned before this
+change needs the one-time step in the runbook's
+[mail dispatch connection limit](stewardship-deployment-runbook.md#mail-dispatch-connection-limit).
+A runtime budget whose mail limit is below six runs one process.
+
+### Falling back to one mail consumer
+
+The setting is `mail_consumers` (1 or 2, default 2). To run one process,
+recreate only the mail worker with the variable set for that one command,
+exactly like the transport fallback below:
+
+```text
+PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS=1 docker compose ... up --detach --force-recreate mail-dispatch
+```
+
+To return to two, recreate it again without the variable. The same rules
+apply as for the transport switch: use the prefix form, never `export`; any
+later recreation without the prefix returns to the deployment setting; and
+both prefixes can be used together. One process needs no change to the SQL
+connection limit.
+
 ## Send statistics and tuning the batch caps
 
 Every Family outcome (and every digest outcome this worker settles) records

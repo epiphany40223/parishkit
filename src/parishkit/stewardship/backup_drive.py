@@ -90,6 +90,9 @@ def log_timeout(what, *, limit_seconds, elapsed_seconds):
         level="WARNING",
         limit_seconds=limit_seconds,
         elapsed_seconds=elapsed_seconds,
+        # The task_failed line above is this timeout's documented process-log
+        # line (the backup runbook); one is enough.
+        process_log=False,
     )
 
 

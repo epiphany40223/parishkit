@@ -73,24 +73,37 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
         pass
 
 
-@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
-def test_runtime_queue_option_selects_only_the_worker_source_consumer(
-    tmp_path, monkeypatch, role
+@pytest.mark.parametrize(
+    "role,queue,selected",
+    [
+        (ServiceRole.WORKER, "source", "source"),
+        (ServiceRole.MAIL_DISPATCH, "mail", "mail"),
+        (ServiceRole.WORKER, "mail", None),
+        (ServiceRole.MAIL_DISPATCH, "source", None),
+        (ServiceRole.SCHEDULER, "source", None),
+        (ServiceRole.SCHEDULER, "mail", None),
+    ],
+)
+def test_runtime_queue_option_selects_only_its_own_sibling_consumer(
+    tmp_path, monkeypatch, role, queue, selected
 ):
-    """``--queue source`` starts the worker's source sibling and nothing else."""
+    """``--queue source`` is the worker's sibling, ``--queue mail`` mail's.
+
+    Any other pairing is refused before a process is assembled.
+    """
     configuration, _ = bootstrap_fixture(tmp_path)
     configuration = replace(configuration, service_role=role)
     monkeypatch.setattr(runtime_process, "load_deployment", lambda path: configuration)
     monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
     runner = Mock(return_value=0)
     monkeypatch.setattr(runtime_process, "serve_background", runner)
-    result = main(["runtime", "--config", "operator-input.yaml", "--queue", "source"])
-    if role is ServiceRole.WORKER:
-        assert result == 0
-        assert runner.call_args.kwargs["source"] is True
-    else:
+    result = main(["runtime", "--config", "operator-input.yaml", "--queue", queue])
+    if selected is None:
         assert result == 2
         runner.assert_not_called()
+    else:
+        assert result == 0
+        assert runner.call_args.kwargs == {selected: True}
 
 
 @pytest.mark.parametrize("configured", [False, True])
@@ -415,8 +428,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     broker, lease, closes, receipts, healthy = Mock(), Mock(), Mock(), Mock(), Mock()
     assembled = SimpleNamespace(broker=broker, store=object(), handlers={}, receipts={})
     stops, selected = [], []
-    sibling = Mock()
+    sibling, mail_sibling = Mock(), Mock()
     monkeypatch.setattr(runtime_process, "SourceConsumer", sibling)
+    monkeypatch.setattr(runtime_process, "MailConsumer", mail_sibling)
 
     def configure(config, *, stop, heartbeat, queues=None):
         """Retain the common stop event and exercise the actual health callback."""
@@ -476,9 +490,12 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         else:
             # Consumers acknowledge rotated credentials from their idle timer.
             kwargs["idle"]()
-            assert kwargs["companion"] is (
-                sibling.return_value if role is ServiceRole.WORKER else None
-            )
+            # Each consumer container runs its second process (#336 and the
+            # second mail consumer).
+            assert kwargs["companion"] is {
+                ServiceRole.WORKER: sibling.return_value,
+                ServiceRole.MAIL_DISPATCH: mail_sibling.return_value,
+            }.get(role)
             rotations.assert_called_once_with(configuration, assembled.receipts)
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
         assert stop.is_set()

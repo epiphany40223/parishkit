@@ -631,6 +631,13 @@ sequence with the commands that exist.
    `PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT=per_message` before this
    `up --detach` as well
    ([Falling back to one helper per message](stewardship-family-mail-dispatch.md#falling-back-to-one-helper-per-message)).
+   Likewise it returns to two mail consumer processes; if the one-process
+   fallback is in use, put `PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS=1` before it
+   too ([Falling back to one mail consumer](stewardship-family-mail-dispatch.md#falling-back-to-one-mail-consumer)).
+   `docker compose ... top mail-dispatch` lists two application processes
+   (`runtime ... --queue mail` is the second). The release that introduced
+   them raised the mail login's SQL connection limit, which needs the
+   one-time step in [mail dispatch connection limit](#mail-dispatch-connection-limit).
 
 Record the new release's complete `IMAGE@sha256:DIGEST` reference in the
 operators' notes, and keep the previous ones: a restore onto a new host
@@ -695,6 +702,54 @@ What to watch after deploying it:
   process by up to its own deadline after a forced stop.
 - The worker container uses roughly one more Python process's memory
   (about 150 to 250 MB); check `docker stats` on the 8 GB host.
+
+### Mail dispatch connection limit
+
+The release that runs two mail consumer processes in `mail-dispatch` raises
+the `pk_stewardship_mail_dispatch` login's connection limit from four to six
+(three per process), for the same reasons and with the same rules as the
+[worker connection limit](#worker-connection-limit-339). Run this as the
+operator superuser *before* the release's `database-grants` step, and as
+close as possible before `mail-dispatch` is recreated. The running mail
+worker is unaffected, but from this point until the recreate an old mail
+container that restarts for any reason refuses to start (its image expects
+four), so Family mail stops until the new one is up:
+
+```sh
+docker compose -f COMPOSE -p PROJECT exec -T postgres \
+  psql -U pk_stewardship_operator -d DATABASE -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+ALTER ROLE pk_stewardship_mail_dispatch CONNECTION LIMIT 6;
+DO $check$
+BEGIN
+    IF (SELECT rolconnlimit FROM pg_roles
+        WHERE rolname = 'pk_stewardship_mail_dispatch') IS DISTINCT FROM 6 THEN
+        RAISE EXCEPTION 'pk_stewardship_mail_dispatch connection limit is not 6';
+    END IF;
+END
+$check$;
+COMMIT;
+SQL
+```
+
+Rolling back to an earlier image needs the same command with `4`, or its mail
+worker refuses to start. A fresh installation needs neither. Falling back to
+one mail consumer ([one command](stewardship-family-mail-dispatch.md#falling-back-to-one-mail-consumer))
+needs no change to the limit.
+
+What to watch after deploying it:
+
+- `docker compose ... top mail-dispatch` lists two application processes
+  (`runtime ... --queue mail` is the second), and up to two Family mail
+  helpers while mail is going out.
+- `helper_timed_out` entries for `mail_helper` with no `helper` field
+  are the second process's: a `WARNING` is a late heartbeat, an `ERROR`
+  means it was stopped or killed. Entries naming a `helper` (such as
+  `family_delivery_worker`) are SMTP helper deadline kills, as before.
+- The daily sending limit is shared through the database; a Gmail limit or
+  outage pause may be logged once by each process.
+- The container uses roughly one more Python process's memory (about 150 to
+  250 MB), plus a second helper while sending.
 
 ## Rollback
 

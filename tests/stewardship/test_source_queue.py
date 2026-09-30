@@ -237,14 +237,16 @@ def test_source_consumer_reexecutes_the_workers_own_invocation(monkeypatch):
     process.poll.return_value = None
     popen = Mock(return_value=process)
     monkeypatch.setattr(runtime_process.subprocess, "Popen", popen)
-    consumer = runtime_process.SourceConsumer(drain_seconds=5, argv=WORKER_ARGV)
+    consumer = runtime_process.SourceConsumer(drain_seconds=60, argv=WORKER_ARGV)
     command = popen.call_args.args[0]
     assert command[0] == runtime_process.sys.executable
     assert command[1:] == [*WORKER_ARGV[1:], "--queue", "source"]
     consumer.check()  # Running and still inside its startup grace.
     consumer.close()
     process.send_signal.assert_called_once_with(signal.SIGTERM)
-    process.wait.assert_called_once_with(timeout=5)
+    # What is left of the grace, less the kill margin.
+    margin = runtime_process.SiblingConsumer.KILL_MARGIN
+    assert process.wait.call_args.kwargs["timeout"] == pytest.approx(60 - margin, abs=1)
     process.kill.assert_not_called()
 
 
@@ -361,7 +363,9 @@ def test_a_drain_past_the_grace_is_killed_and_logged(monkeypatch):
     consumer.close()
     process.kill.assert_called_once()
     assert recorded.call_args.kwargs["level"] == "ERROR"
-    assert recorded.call_args.kwargs["limit_seconds"] == 5
+    # The limit is the kill's own deadline: the grace less the kill margin
+    # (none left of a five-second grace).
+    assert recorded.call_args.kwargs["limit_seconds"] == 0
 
 
 @pytest.mark.parametrize("overlap,split", [(2, True), (1, False)])

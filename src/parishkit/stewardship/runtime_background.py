@@ -457,6 +457,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             ),
             pulse=heartbeat,
         )
+        from .installer_health import MAIL_SYSTEMIC_STOP
         from .jobs.family_mail_delivery_tasks import log_family_mail_transport
         from .jobs.family_mail_dispatch import TASK_TYPE as FAMILY_DISPATCH
         from .jobs.outbox_dispatch import delivery_handler
@@ -472,6 +473,10 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 private=rings.get("token_private"),
                 public_origin=configuration.public_origin,
                 batched=configuration.family_mail_transport == "batched",
+                # Both mail consumer processes share a SYSTEMIC stop.
+                shared_stop=None
+                if role is ServiceRole.SCHEDULER
+                else MAIL_SYSTEMIC_STOP,
             ),
             pulse=heartbeat,
         )

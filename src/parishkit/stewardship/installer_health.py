@@ -14,6 +14,22 @@ from .runtime_paths import private_directory
 # The worker container's source consumer (#336) publishes its own liveness
 # here; the worker process checks it and stops when it goes stale.
 SOURCE_HEARTBEAT = DIRECTORY / "source-heartbeat.json"
+# Likewise the mail-dispatch container's second mail consumer.
+MAIL_HEARTBEAT = DIRECTORY / "mail-heartbeat.json"
+# Present once either mail consumer has stopped Family mail after a SYSTEMIC
+# fault; both then stop until the container's main process starts again.
+MAIL_SYSTEMIC_STOP = DIRECTORY / "mail-systemic-stop"
+
+
+def mark_stopped(path):
+    """Create a private stop marker for the other processes in this container."""
+    private_directory(path.parent, create=True)
+    write_private(path, b"stopped")
+
+
+def clear_stopped(path):
+    """Remove a stop marker left by this container's previous run."""
+    path.unlink(missing_ok=True)
 
 
 def publish_heartbeat(path=None):

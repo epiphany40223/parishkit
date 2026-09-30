@@ -17,6 +17,7 @@ from parishkit.config import ConfigError
 
 from .deployment import (
     FAMILY_MAIL_TRANSPORT_VARIABLE,
+    MAIL_CONSUMERS_VARIABLE,
     SECRET_NAMES,
     DeploymentProfile,
     ServiceRole,
@@ -279,11 +280,12 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     targets = sorted(SECRET_NAMES - {"handoff_private"})
     # Configuration/target installers + worker/mail main/renewal + scheduler each
     # retain their own reserved SQL slots, independent of interactive headroom.
-    # The worker login's limit is rollout_overlap * 3 (two consumer processes,
-    # #336), one slot more per overlap than counted here. Compose never runs
-    # two generations of a background service at once, so in steady state
-    # these logins hold at most 13 installer + 6 worker + 3 mail + 1 scheduler
-    # = 23 connections, well inside the 36 this check reserves for them.
+    # The worker and mail-dispatch logins' limits are rollout_overlap * 3 (two
+    # consumer processes each, #336 and the mail consumers), one slot more per
+    # overlap than counted here. Compose never runs two generations of a
+    # background service at once, so in steady state these logins hold at
+    # most 13 installer + 6 worker + 6 mail + 1 scheduler = 26 connections,
+    # well inside the 36 this check reserves for them.
     budget.validate_topology(background_processes=1 + len(targets) + 5)
     image = _image(image, configuration.profile)
     if checkout is not None and (
@@ -327,6 +329,10 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             # (#284) on this service's next recreation.
             service["environment"][FAMILY_MAIL_TRANSPORT_VARIABLE] = (
                 "${" + FAMILY_MAIL_TRANSPORT_VARIABLE + ":-}"
+            )
+            # Likewise "1" falls back from two mail consumer processes to one.
+            service["environment"][MAIL_CONSUMERS_VARIABLE] = (
+                "${" + MAIL_CONSUMERS_VARIABLE + ":-}"
             )
         if role in {
             ServiceRole.BOOTSTRAP,
