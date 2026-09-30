@@ -60,9 +60,10 @@ def run_engine(root, engine):
             ],
             cwd=root,
             env=environment() | {"PARISHKIT_RUN_BROWSER_TESTS": "1"},
-            # About 21 minutes: WebKit's suite takes ~14; stay under the 25-minute
-            # job limit so this bounded timeout, not the job cancel, reports it.
-            timeout=1260,
+            # About 38 minutes: WebKit's suite takes ~15-20. Stay under the
+            # 60-minute job limit, even after a slow 17-minute install, so
+            # this bounded timeout, not the job cancel, reports a hang.
+            timeout=2280,
             check=True,
         )
         count = validate_receipt(receipt, engine)

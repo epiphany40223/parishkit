@@ -314,7 +314,7 @@ def test_browser_workflow_contract():
         "fail-fast": False,
         "matrix": {"engine": list(BROWSER_ENGINES)},
     }
-    assert job["timeout-minutes"] == 25
+    assert job["timeout-minutes"] == 60
     assert job["env"]["BROWSER_ENGINE"] == "${{ matrix.engine }}"
     install, run = job["steps"][-2:]
     assert 'playwright install --with-deps "$BROWSER_ENGINE"' in install["run"]
@@ -442,7 +442,7 @@ def test_real_early_exit_cannot_pass_external_runner(probe, option, capfd, monke
 def test_runner_environment_and_timeout(probe, monkeypatch):
     """Inherited pytest selectors are scrubbed and the child has a bounded runtime."""
     monkeypatch.setenv("PYTEST_ADDOPTS", "--version")
-    run = Mock(side_effect=subprocess.TimeoutExpired("pytest", 1260))
+    run = Mock(side_effect=subprocess.TimeoutExpired("pytest", 2280))
     monkeypatch.setattr(quality_browser.subprocess, "run", run)
     with pytest.raises(subprocess.TimeoutExpired):
         quality_browser.run_engine(probe, "firefox")
@@ -457,7 +457,7 @@ def test_runner_environment_and_timeout(probe, monkeypatch):
         )
     )
     assert not receipt.exists() and not receipt.parent.exists()
-    assert run.call_args.kwargs["timeout"] == 1260
+    assert run.call_args.kwargs["timeout"] == 2280
     assert "PYTEST_ADDOPTS" not in run.call_args.kwargs["env"]
     assert run.call_args.kwargs["env"]["PARISHKIT_RUN_BROWSER_TESTS"] == "1"
     with pytest.raises(ValueError, match="Unsupported browser engine"):
