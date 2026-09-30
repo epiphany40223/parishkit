@@ -125,16 +125,24 @@ def source_split():
 
 
 def waited_words(elapsed):
-    """How long ago, in the same words live-status-v1.js ticks forward."""
-    seconds = max(0, round(elapsed.total_seconds()))
-    if seconds < 90:
+    """How long ago, in the same words live-status-v1.js ticks forward.
+
+    Whole units only, rounded down: 90 seconds is "1 minute ago", not 2, and
+    ten hours is "10 hours ago", not "600 minutes ago".
+    """
+    seconds = max(0, int(elapsed.total_seconds()))
+    if seconds < 60:
         return ngettext("%(count)d second ago", "%(count)d seconds ago", seconds) % {
             "count": seconds
         }
-    # Half-minutes round up, as JavaScript's Math.round does (not round()).
-    minutes = (seconds + 30) // 60
-    return ngettext("%(count)d minute ago", "%(count)d minutes ago", minutes) % {
-        "count": minutes
+    if seconds < 3600:
+        minutes = seconds // 60
+        return ngettext("%(count)d minute ago", "%(count)d minutes ago", minutes) % {
+            "count": minutes
+        }
+    hours = seconds // 3600
+    return ngettext("%(count)d hour ago", "%(count)d hours ago", hours) % {
+        "count": hours
     }
 
 

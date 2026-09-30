@@ -54,15 +54,30 @@
     if (window.ParishDates) window.ParishDates.localize(scope);
   }
 
+  // Server clock minus this computer's clock. The times being counted from
+  // are server times, so a computer whose clock is off would otherwise show
+  // a wrong (even negative) elapsed time. The Admin session chrome renders
+  // the server's time into every Admin page; without it, trust this clock.
+  const serverNow = Date.parse(
+    document.querySelector("[data-admin-session]")?.getAttribute("data-server-now") || "");
+  const skew = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
+
+  function ago(seconds) {
+    // Whole units, rounded down, in the same words as the server's first
+    // rendering (jobs/queue_wait.py waited_words).
+    const [count, unit] = seconds < 60 ? [seconds, "second"]
+      : seconds < 3600 ? [Math.floor(seconds / 60), "minute"]
+        : [Math.floor(seconds / 3600), "hour"];
+    return `${count} ${unit}${count === 1 ? "" : "s"} ago`;
+  }
+
   function elapsed() {
     // "started 12 seconds ago" beside a running indicator, when one has a time.
     region.querySelectorAll("time[data-live-since]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (!Number.isFinite(date.getTime())) return;
-      const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
-      node.textContent = seconds < 90
-        ? `${seconds} second${seconds === 1 ? "" : "s"} ago`
-        : `${Math.round(seconds / 60)} minutes ago`;
+      const seconds = Math.max(0, Math.floor((Date.now() + skew - date.getTime()) / 1000));
+      node.textContent = ago(seconds);
     });
   }
 
