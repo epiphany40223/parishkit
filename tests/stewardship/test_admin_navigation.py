@@ -415,3 +415,19 @@ def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
     # A step still shows without a known integration.
     place_key_page(request, "nonsense", flow="change", step="review")
     assert navigation.placement(request).step == "review"
+
+
+def test_go_live_steps_run_from_readiness_to_activation():
+    """Going live shows its five steps; earlier ones are done, none are links."""
+    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
+    assert [item["state"] for item in shown] == [
+        "done",
+        "done",
+        "current",
+        "upcoming",
+        "upcoming",
+    ]
+    html = render_to_string(
+        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
+    )
+    assert "<a " not in html and html.count("<li") == 5

@@ -318,6 +318,15 @@ FLOWS = {
         ("review", _("Review")),
         ("send", _("Send and follow")),
     ),
+    # Going live: check readiness, clean up Testing data, prepare Family
+    # links, confirm Production, then follow its activation.
+    "go_live": (
+        ("readiness", _("Check readiness")),
+        ("cleanup", _("Testing cleanup")),
+        ("links", _("Family links")),
+        ("confirm", _("Confirm Production")),
+        ("activate", _("Activation")),
+    ),
     # A report export: request it from a report, wait for it, download it.
     "export": (
         ("request", _("Choose report")),
