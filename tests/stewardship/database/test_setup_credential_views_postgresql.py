@@ -163,6 +163,37 @@ def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
         assert b"Enter it again so it matches the current settings" in kept.content
 
 
+def test_a_saved_key_on_a_blocked_step_says_why_not_stale(setup_http, google):
+    """A saved Slack token after Slack is turned off names that reason.
+
+    The step is unavailable, not stale, so the page must not tell the
+    Administrator the token was entered for settings they have since changed.
+    """
+    publish("slack")
+    slack = "/admin/setup/credentials/slack"
+
+    def version():
+        """The attempt's current optimistic-lock version as a form value."""
+        return str(SetupAttempt.objects.get().version)
+
+    with web_login():
+        browser = started()
+        on = {"enabled": "on", "channel_id": "CEXAMPLE", "version": version()}
+        assert post(browser, "/admin/setup/slack", on).status_code == 302
+        token = {"candidate": "xoxb-synthetic-slack-token", "version": version()}
+        staged = post(browser, slack, token)
+        assert staged.status_code == 302, staged.content
+        off = {"channel_id": "", "version": version()}
+        assert post(browser, "/admin/setup/slack", off).status_code == 302
+        page = browser.get(slack)
+        assert page.status_code == 200
+        assert b"A Slack notifications credential is saved." in page.content
+        assert b"Turn on Slack notifications and save the Slack channel first." in (
+            page.content
+        )
+        assert b"settings you have changed since" not in page.content
+
+
 def test_credential_post_rejects_undeclared_duplicate_and_stale_fields(
     setup_http,
     google,
