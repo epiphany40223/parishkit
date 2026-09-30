@@ -457,8 +457,12 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             ),
             pulse=heartbeat,
         )
+        from .jobs.family_mail_delivery_tasks import log_family_mail_transport
         from .jobs.family_mail_dispatch import TASK_TYPE as FAMILY_DISPATCH
         from .jobs.outbox_dispatch import delivery_handler
+
+        if role is ServiceRole.MAIL_DISPATCH:
+            log_family_mail_transport(configuration.family_mail_transport)
 
         handlers[FAMILY_DISPATCH] = replace(
             delivery_handler(
@@ -467,6 +471,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 credential_path=configuration.secrets.get("google_workspace"),
                 private=rings.get("token_private"),
                 public_origin=configuration.public_origin,
+                batched=configuration.family_mail_transport == "batched",
             ),
             pulse=heartbeat,
         )

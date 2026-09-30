@@ -88,6 +88,7 @@ the CLI exposes the profile, role, origin, and root options initially.
 | `valkey.password_file` | `VALKEY_PASSWORD_FILE` | No fallback credential |
 | `valkey.password_files.<identity>` | `VALKEY_PASSWORD_FILE_<IDENTITY>` | Individual broker/limiter file override; hyphens become underscores in environment names |
 | `credential_target` | `CREDENTIAL_TARGET` | Required only for `credential-installer` |
+| `family_mail_transport` | `FAMILY_MAIL_TRANSPORT` | `batched` (default) or `per_message`; see [Family mail dispatch](../guides/stewardship-family-mail-dispatch.md#implementation-checkpoints) |
 
 Public origins cannot include user information, paths other than `/`, queries,
 fragments, whitespace, or invalid ports/hosts. Local profiles use loopback HTTP;

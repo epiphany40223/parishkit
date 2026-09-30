@@ -8,7 +8,10 @@ Message-ID is correlation, not a contractual idempotent-send facility.
 import re
 import smtplib
 import ssl
+import time
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from email import policy
 from enum import StrEnum
 from uuid import UUID
@@ -71,6 +74,12 @@ _DAILY_LIMIT = re.compile(rb"(?m)^[ \t]*5\.4\.5(?=\s|$)")
 _RATE_LIMIT = re.compile(rb"(?m)^[ \t]*4\.7\.[0-9]{1,3}(?=\s|$)")
 _PROVIDER_TROUBLE = re.compile(rb"(?m)^[ \t]*4\.[34]\.[0-9]{1,3}(?=\s|$)")
 SENDING_LIMITS = frozenset({"daily", "rate", "message"})
+# A batched helper (#284) replaces its SMTP connection after this long or this
+# many accepted messages, and refreshes its OAuth token (valid for an hour)
+# when a connection is opened within TOKEN_MARGIN of the token's expiry.
+CONNECTION_SECONDS = 300
+CONNECTION_MESSAGES = 50
+TOKEN_MARGIN = timedelta(minutes=5)
 
 
 def sending_limit(reply, *, stage=""):
@@ -482,78 +491,202 @@ def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
 
     Public entry points retain their distinct typed mail restrictions. This
     internal transport cannot decide Family/digest admission or authorize retry.
+    A one-message session never reuses a connection, so it never retries.
     """
+    session = SmtpSession(
+        value, settings, smtp_factory=smtp_factory, session_factory=session_factory
+    )
     try:
-        with session_factory() as session:
-            credentials = _credentials(value, settings, session)
-    except (ssl.SSLError, requests.exceptions.SSLError) as error:
-        return FamilyDeliveryResult(_tls_failure(error), len(mail.recipients))
-    except (
-        OSError,
-        requests.RequestException,
-        TransportError,
-        CredentialValidationUnavailable,
+        return session.deliver(mail)
+    finally:
+        session.close()
+
+
+class SmtpSession:
+    """One authenticated Gmail connection reused across messages (#284).
+
+    The batched Family helper keeps one of these for its whole life, so the
+    OAuth token and the TLS/SMTP connection are paid for once, not per
+    message. Each ``deliver`` is still exactly one submission with the same
+    outcome rules as a one-shot helper:
+
+    - The token is fetched when a connection is opened and refreshed there
+      when it is missing or within TOKEN_MARGIN of expiry. A connection is
+      replaced after CONNECTION_SECONDS (well inside a token's hour), so an
+      open connection never outlives the token that authenticated it.
+    - A kept connection may have been closed by Gmail while idle. Because an
+      UNAVAILABLE result is only ever reported before DATA (definitely
+      unsent), exactly one fresh connection is then tried for the same
+      message. An uncertain DATA outcome is never retried.
+    - Any result other than acceptance drops the connection, so the next
+      message starts on a clean connection and SMTP transaction (a refused
+      RCPT, a 421 or a broken DATA leave the old one in an unknown state).
+    """
+
+    def __init__(
+        self,
+        value,
+        settings,
+        *,
+        smtp_factory=smtplib.SMTP_SSL,
+        session_factory=CheckSession,
+        clock=time.monotonic,
     ):
-        return FamilyDeliveryResult(
-            FamilyDeliveryStatus.UNAVAILABLE, len(mail.recipients)
-        )
-    except RefreshError as error:
-        return FamilyDeliveryResult(
-            FamilyDeliveryStatus.UNAVAILABLE
-            if error.retryable
-            else FamilyDeliveryStatus.SYSTEMIC,
-            len(mail.recipients),
-        )
-    except Exception:
-        return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
-    result = None
-    try:
-        with smtp_factory(
-            "smtp.gmail.com", 465, timeout=10, context=ssl.create_default_context()
-        ) as smtp:
-            reply = smtp.ehlo()
-            # "421 4.7.0 Try again later, closing connection. (EHLO)" is Gmail's
-            # connection-rate limit, not an outage.
-            if kind := sending_limit(reply, stage="ehlo"):
-                result = _limited_result(kind, len(mail.recipients))
-                return result
-            code = _reply(reply)
-            if code != 250:
-                result = FamilyDeliveryResult(
-                    _handshake_failure(code), len(mail.recipients)
-                )
-                return result
-            reply = smtp.docmd(
-                "AUTH",
-                "XOAUTH2 "
-                + xoauth2_string(settings["delegated_email"], credentials.token),
+        """Hold the key in memory only; nothing is contacted until ``deliver``."""
+        self.value = value
+        self.settings = delivery_settings(settings)
+        self.smtp_factory = smtp_factory
+        self.session_factory = session_factory
+        self.clock = clock
+        self.credentials = None
+        self.connection = None
+        self.smtp = None
+        self.opened = 0.0
+        self.sent = 0
+
+    def deliver(self, mail):
+        """Submit one validated mail, reusing the open connection when it is fresh."""
+        if self.smtp is not None and (
+            self.sent >= CONNECTION_MESSAGES
+            or self.clock() - self.opened >= CONNECTION_SECONDS
+        ):
+            self.drop()
+        reused = self.smtp is not None
+        result = self._attempt(mail)
+        if reused and result.status is FamilyDeliveryStatus.UNAVAILABLE:
+            # Nothing was sent on the stale connection; try a fresh one once.
+            self.drop()
+            result = self._attempt(mail)
+        if result.status is FamilyDeliveryStatus.ACCEPTED:
+            self.sent += 1
+        else:
+            self.drop()
+        return result
+
+    def _attempt(self, mail):
+        """Open a connection when none is kept, then run one SMTP transaction."""
+        if self.smtp is None:
+            failure = self._connect(len(mail.recipients))
+            if failure is not None:
+                return failure
+        return _submit(self.smtp, mail, self.settings.get("sender_name", ""))
+
+    def _token(self, count):
+        """Keep a live token, or return the definitely-unsent result of failing.
+
+        Token failures map exactly as a one-shot helper's always have: an
+        interrupted or temporary exchange is UNAVAILABLE, a refused or
+        malformed credential is SYSTEMIC. No SMTP command has been sent yet.
+        """
+        if self.credentials is not None and not _expiring(self.credentials):
+            return None
+        self.credentials = None
+        try:
+            with self.session_factory() as session:
+                self.credentials = _credentials(self.value, self.settings, session)
+            return None
+        except (ssl.SSLError, requests.exceptions.SSLError) as error:
+            return FamilyDeliveryResult(_tls_failure(error), count)
+        except (
+            OSError,
+            requests.RequestException,
+            TransportError,
+            CredentialValidationUnavailable,
+        ):
+            return FamilyDeliveryResult(FamilyDeliveryStatus.UNAVAILABLE, count)
+        except RefreshError as error:
+            return FamilyDeliveryResult(
+                FamilyDeliveryStatus.UNAVAILABLE
+                if error.retryable
+                else FamilyDeliveryStatus.SYSTEMIC,
+                count,
             )
-            # "Too many login attempts" (454 4.7.0) is a rate limit, not an outage.
-            if kind := sending_limit(reply, stage="auth"):
-                result = _limited_result(kind, len(mail.recipients))
-                return result
-            code = _reply(reply)
-            if code != 235:
-                result = FamilyDeliveryResult(
-                    _handshake_failure(code), len(mail.recipients)
+        except Exception:
+            return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
+
+    def _connect(self, count):
+        """Open and authenticate one connection, or return why it failed.
+
+        A limit reply ("421 4.7.0 ... (EHLO)", "454 4.7.0" to AUTH, or a
+        rate-limited greeting raised by the factory) is a sending limit, not
+        an outage. The failed connection is closed; a failing QUIT is ignored.
+        """
+        failure = self._token(count)
+        if failure is not None:
+            return failure
+        stack = ExitStack()
+        try:
+            smtp = stack.enter_context(
+                self.smtp_factory(
+                    "smtp.gmail.com",
+                    465,
+                    timeout=10,
+                    context=ssl.create_default_context(),
                 )
-                return result
-            result = _submit(smtp, mail, settings.get("sender_name", ""))
-    except Exception as error:
-        # Once _submit has returned, even a QUIT failure cannot erase its
-        # definitive DATA/refusal evidence. Earlier failures are shared faults,
-        # unless the server's greeting (SMTPConnectError) or a raised reply
-        # was a sending limit.
-        if result is None:
+            )
+            failure = _handshake("ehlo", smtp.ehlo(), 250, count)
+            if failure is None:
+                reply = smtp.docmd(
+                    "AUTH",
+                    "XOAUTH2 "
+                    + xoauth2_string(
+                        self.settings["delegated_email"], self.credentials.token
+                    ),
+                )
+                failure = _handshake("auth", reply, 235, count)
+            if failure is None:
+                self.connection, self.smtp = stack, smtp
+                self.opened, self.sent = self.clock(), 0
+                return None
+        except Exception as error:
             kind = _limit_error(error)
-            result = (
-                _limited_result(kind, len(mail.recipients))
+            failure = (
+                _limited_result(kind, count)
                 if kind
-                else FamilyDeliveryResult(
-                    _connection_failure(error), len(mail.recipients)
-                )
+                else FamilyDeliveryResult(_connection_failure(error), count)
             )
-    return result
+        _close(stack)
+        return failure
+
+    def drop(self):
+        """Close the kept connection (QUIT when possible); keep the token."""
+        connection, self.connection, self.smtp = self.connection, None, None
+        if connection is not None:
+            _close(connection)
+
+    def close(self):
+        """End the session: close the connection and forget the key and token."""
+        self.drop()
+        self.credentials = None
+        self.value = None
+
+
+def _handshake(stage, reply, expected, count):
+    """None when an EHLO/AUTH reply is the expected code, else its failure."""
+    if kind := sending_limit(reply, stage=stage):
+        return _limited_result(kind, count)
+    code = _reply(reply)
+    if code != expected:
+        return FamilyDeliveryResult(_handshake_failure(code), count)
+    return None
+
+
+def _close(stack):
+    """Close one connection; once a result is known a QUIT failure cannot change it."""
+    with suppress(Exception):
+        stack.close()
+
+
+def _expiring(credentials):
+    """Whether a token is missing an expiry or within TOKEN_MARGIN of it."""
+    expiry = getattr(credentials, "expiry", None)
+    if not isinstance(expiry, datetime):
+        return True
+    now = datetime.now(UTC)
+    if expiry.tzinfo is None:
+        # google-auth keeps naive UTC expiries.
+        now = now.replace(tzinfo=None)
+    return expiry - now <= TOKEN_MARGIN
 
 
 def _limited_result(kind, count):

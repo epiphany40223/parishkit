@@ -14,15 +14,26 @@ from .storage import _status
 
 
 def delivery_handler(
-    store, *, private=None, public_origin=None, credential_path=None, scheduler=False
+    store,
+    *,
+    private=None,
+    public_origin=None,
+    credential_path=None,
+    scheduler=False,
+    batched=True,
 ):
-    """Stored purpose selects a verifier; it never replaces that verifier's proof."""
+    """Stored purpose selects a verifier; it never replaces that verifier's proof.
+
+    ``batched`` selects the Family mail transport (deployment setting
+    ``family_mail_transport``; see family_mail_delivery_tasks.delivery_handler).
+    """
     campaign = campaign_handler(
         store,
         private=private,
         public_origin=public_origin,
         credential_path=credential_path,
         scheduler=scheduler,
+        batched=batched,
     )
     # Each Administrator-routed owner keeps its own cohort, content and SQL
     # admission; the purpose only names which compiled owner must prove it.

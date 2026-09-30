@@ -10,6 +10,7 @@ from django.db import connection
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.family_delivery_process import FamilyMailSession
 from parishkit.stewardship.jobs.dispatch import recover_hint
 from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
@@ -49,9 +50,11 @@ def test_receipt_worker_commits_before_provider_without_opening_family_keys(
         """A receipt cannot depend on reading/decrypting the Family access token."""
         raise AssertionError("Receipt opened a Family key")
 
-    def provider(value, settings, mail, *, seconds, check):
+    def provider(value, settings, mail, *, seconds, check, session):
         """Observe committed submission intent before returning a fake result."""
         assert not connection.in_atomic_block and 0 < seconds <= 30
+        # Family mail always goes to the worker's batched helper (#284).
+        assert isinstance(session, FamilyMailSession)
         check()
         assert OutboxMessage.objects.get(pk=message.pk).state == "submitting"
         assert harness.code not in mail.text and "Submitted:" in mail.text

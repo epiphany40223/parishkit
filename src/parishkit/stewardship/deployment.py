@@ -134,6 +134,13 @@ class ValkeyConfiguration:
         )
 
 
+# How the mail worker submits Family mail (#284): "batched" reuses one private
+# helper, token and SMTP connection across messages; "per_message" is the
+# earlier one-helper-per-message transport, kept as an operator fallback.
+FAMILY_MAIL_TRANSPORTS = frozenset({"batched", "per_message"})
+FAMILY_MAIL_TRANSPORT_VARIABLE = "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT"
+
+
 @dataclass(frozen=True)
 class DeploymentConfiguration:
     """Resolved deployment input, not a readiness or authorization decision."""
@@ -154,6 +161,7 @@ class DeploymentConfiguration:
     runtime_budget: RuntimeBudget = field(default_factory=RuntimeBudget)
     runtime_network: RuntimeNetwork = field(default_factory=RuntimeNetwork)
     operational_alerts: IncidentPolicy = field(default_factory=IncidentPolicy)
+    family_mail_transport: str = "batched"
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -321,6 +329,7 @@ def load_deployment(
             "runtime_budget",
             "runtime_network",
             "operational_alerts",
+            "family_mail_transport",
         },
         "deployment",
     )
@@ -565,6 +574,13 @@ def load_deployment(
             for item in alert_fields
         }
     )
+    transport = select("FAMILY_MAIL_TRANSPORT", None)
+    if transport in (None, ""):
+        # The rendered Compose file passes the variable to the mail worker
+        # empty unless the operator's shell exports it, so empty means unset.
+        transport = deployment.get("family_mail_transport", "batched")
+    if type(transport) is not str or transport not in FAMILY_MAIL_TRANSPORTS:
+        raise ConfigError("family_mail_transport must be batched or per_message")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -587,4 +603,5 @@ def load_deployment(
         parse_budget(deployment.get("runtime_budget", {})),
         parse_network(deployment.get("runtime_network", {})),
         alert_policy,
+        transport,
     )
