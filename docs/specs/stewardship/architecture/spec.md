@@ -673,4 +673,7 @@ Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. If JavaScript is disabled, administration CRUD and reports retain core
 functionality; the Family multi-step flow may require JavaScript but must show a
-clear supported-browser message rather than silently fail.
+clear supported-browser message rather than silently fail. A browser too old
+for the Family flow's JavaScript likewise gets a plain notice asking the Family
+to update the device's software or use another device or browser; a small ES5
+feature check reveals it and never alters the form.

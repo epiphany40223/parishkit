@@ -1,12 +1,15 @@
 {% extends 'stewardship/base.html' %}{% load static i18n stewardship %}
 {% block title %}{{ portal_title|default:_("Stewardship") }}{% endblock %}
-{% block head %}<script src="{% static 'stewardship/phone-v1.js' %}" defer></script><script src="{% static 'stewardship/family-v1.js' %}" defer></script>{% endblock %}
+{% block head %}<script src="{% static 'stewardship/family-support-v1.js' %}" defer></script><script src="{% static 'stewardship/phone-v1.js' %}" defer></script><script src="{% static 'stewardship/family-v1.js' %}" defer></script>{% endblock %}
 {% block content %}<section class="flow" data-family-session data-presence-section="welcome" data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
   {% comment %}The Testing banner is always the top-most bar, above the page title and
   every notice, as in the rest of the Family and Admin portals.{% endcomment %}
   {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
   <h1>{{ portal_title|default:_("Stewardship") }}</h1>
   <noscript><p class="notice">{% translate "To complete the Family response flow, enable JavaScript in a current or previous major version of Chrome, Edge, Firefox or Safari." %}</p></noscript>
+  {% comment %}Revealed by family-support-v1.js only when this browser lacks what
+  family-v1.js needs (#384); the form itself is left as it is.{% endcomment %}
+  <p id="browser-unsupported" class="notice notice-error" role="alert" hidden>{% translate "This browser is too old to use this form. Please update your device’s software, or use another device or browser." %}</p>
   <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Changes that have not been submitted will be lost. The session cannot extend beyond its four-hour limit." %}</p>
   <p id="session-expired" class="notice notice-error" role="alert" hidden><span data-session-expired-text>{% translate "Your session has ended." %}</span> <a href="/">{% translate "Sign in again" %}</a></p>
   <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
