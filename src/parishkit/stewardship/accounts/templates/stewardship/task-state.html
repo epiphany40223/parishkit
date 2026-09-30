@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+  One background task state (jobs.models.TASK_STATES, plus the list page's
+  "nonterminal" and "all" views) in plain words. The stored state name stays
+  under Technical details on the task page. An unknown state falls back to
+  its stored name so a new state never renders blank.
+{% endcomment %}{% if state == 'nonterminal' %}{% translate "Not finished yet" %}{% elif state == 'all' %}{% translate "All" %}{% elif state == 'queued' %}{% translate "Waiting to start" %}{% elif state == 'running' %}{% translate "Running" %}{% elif state == 'retry_wait' %}{% translate "Waiting to try again" %}{% elif state == 'abandoned' %}{% translate "Stopped unexpectedly; recovering" %}{% elif state == 'succeeded' %}{% translate "Finished successfully" %}{% elif state == 'failed' %}{% translate "Failed" %}{% elif state == 'cancelled' %}{% translate "Cancelled" %}{% else %}{{ state|capfirst }}{% endif %}

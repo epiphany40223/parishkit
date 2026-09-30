@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
-from . import field_tips
+from . import field_tips, setup_help
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 
@@ -58,6 +58,11 @@ class IntegrationForm(forms.Form):
                     "ParishSoft data for this organization is already loaded, "
                     "so its ID can no longer change."
                 )
+            else:
+                # Before the first load, explain the value as setup does.
+                self.fields["organization_id"].help_text = setup_help.CREDENTIALS[
+                    "parishsoft"
+                ]["organization_id"]
             self.fields["full_refresh"] = forms.ChoiceField(
                 label=_("Full ParishSoft refresh"),
                 choices=REFRESH_CHOICES,
@@ -110,7 +115,13 @@ class IntegrationForm(forms.Form):
                 label=_("Slack channel ID"),
                 regex=r"^[CG][A-Z0-9]{1,63}$",
                 max_length=64,
-                help_text=_("Use the channel ID, not its name or a webhook URL."),
+                help_text=_(
+                    "The ID (not the name) of the Slack channel for alerts, for "
+                    "example C0123456789. In Slack, open the channel, click its "
+                    "name, and copy the Channel ID shown at the bottom of the "
+                    "About tab. Invite your Slack app's bot to that channel. A "
+                    "webhook URL does not work here."
+                ),
             )
         elif target == "backup":
             self.fields["target"] = forms.CharField(
@@ -125,11 +136,21 @@ class IntegrationForm(forms.Form):
             )
         else:
             raise ValueError("Unsupported integration form.")
+        # The mail fields reuse the setup wizard's plain-language help, so
+        # both pages explain them the same way; fields with their own help
+        # (the From name) keep it.
+        for name, text in setup_help.MAIL.items():
+            if name in self.fields and not self.fields[name].help_text:
+                self.fields[name].help_text = text
         field_tips.shorten(
             self,
             {
                 "full_refresh": _("Changes are also picked up every 15 minutes."),
                 "target": _("The folder link from the address bar; it has /folders/."),
+                "delegated_email": setup_help.HINTS["delegated_email"],
+                "sender": setup_help.HINTS["sender"],
+                "channel_id": setup_help.HINTS["channel_id"],
+                "organization_id": setup_help.HINTS["organization_id"],
             },
         )
 

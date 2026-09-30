@@ -248,6 +248,23 @@ CAMPAIGN = {
 for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
     CAMPAIGN[name] = format_lazy("{} {}", CAMPAIGN[name], MULTI_SELECT_HELP)
 
+# The Admin Campaign settings and clone pages reuse the setup text, except
+# where setup's wording only fits the first campaign: there the time zone is
+# fixed to the parish's, and share options are set on a later setup step.
+ADMIN_CAMPAIGN = {
+    **CAMPAIGN,
+    "timezone": _(
+        "The time zone for this campaign's dates and scheduled email times, for "
+        "example America/New_York. A new draft starts with the parish time "
+        "zone; change it only if this campaign runs on a different local time."
+    ),
+    "financial_enabled": _(
+        "Ask Families for a pledge for the upcoming financial period. After "
+        "saving, use Edit how Families will share to set the choices Families "
+        "see for how they will give."
+    ),
+}
+
 WINDOW = {
     "timezone": CAMPAIGN["timezone"],
     "start_date": CAMPAIGN["start_date"],

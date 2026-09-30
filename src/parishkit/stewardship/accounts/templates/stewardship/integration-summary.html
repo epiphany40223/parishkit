@@ -11,6 +11,6 @@
   {% if summary.kind != 'pending' %}<time datetime="{{ summary.at|date:'c' }}" data-local-instant>{{ summary.at|date:'c' }}</time>{% endif %}
   {% if summary.kind == 'failed' %}{% translate "The previous key is still in use." %}{% endif %}
   {% if summary.kind == 'unselected' %}<a class="button" href="{% url 'admin:select_credential' summary.request_id %}">{% translate "Finish switching to the new key" %}</a>{% endif %}
-  <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Details" %}</a>
+  <a href="{% url 'admin:credential_status' summary.request_id %}">{% translate "Key change details" %}</a>
 </p>{% if summary.kind == 'updated' or summary.kind == 'failed' %}<form method="post" action="{% url 'admin:dismiss_credential_result' target %}" class="inline-action">{% csrf_token %}<input type="hidden" name="request_id" value="{{ summary.request_id }}"><button type="submit">{% translate "Dismiss" %}</button></form>{% endif %}{% endif %}
 {% if not pending and follow_url %}<a hidden data-live-follow href="{{ follow_url }}">{% translate "Reload settings" %}</a>{% endif %}

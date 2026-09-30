@@ -3,51 +3,52 @@
 {% block content %}
 <h1>{% translate "Go-live readiness" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Check that the campaign is ready, see how much mail going live would send right away, and delete the Testing data before going live." %}</p>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.observed_at|instant }}">{{ preview.observed_at|instant }}</time></p>
 <p class="notice">{% translate "This preview has not changed the campaign or deleted any Testing data. Production activation requires completed cleanup and a separate final confirmation." %}</p>
-{% if cleanup_requests %}<section class="panel"><h2>{% translate "Recent cleanup requests" %}</h2><ul>{% for item in cleanup_requests %}<li><a href="{% url 'admin:go_live_cleanup' campaign.pk item.pk %}">{{ item.state }} — <time data-local-instant datetime="{{ item.created_at|instant }}">{{ item.created_at|instant }}</time></a></li>{% endfor %}</ul></section>{% endif %}
+{% if cleanup_requests %}<section class="panel"><h2>{% translate "Recent cleanup requests" %}</h2><ul>{% for item in cleanup_requests %}<li><a href="{% url 'admin:go_live_cleanup' campaign.pk item.pk %}">{% include "stewardship/cleanup-state.html" with state=item.state %} — <time data-local-instant datetime="{{ item.created_at|instant }}">{{ item.created_at|instant }}</time></a></li>{% endfor %}</ul></section>{% endif %}
 <p>{% if preview.target_state == 'scheduled' %}{% translate "If confirmed before the start, the campaign would be scheduled for Production." %}{% elif preview.target_state == 'active' %}{% translate "If confirmed now, the campaign would become active immediately." %}{% else %}{% translate "The campaign has closed and cannot go live with these dates." %}{% endif %}</p>
 <section class="panel"><h2>{% translate "Configuration and data checks" %}</h2>
-{% if problems %}<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% else %}<p>{% translate "Current database checks passed. Public-origin verification and irreversible cleanup acknowledgement are still required." %}</p>{% endif %}
+{% if problems %}<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% else %}<p>{% translate "The settings and data checks passed. You still need to check the public web address and start Testing cleanup below." %}</p>{% endif %}
 <p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a> · <a href="{% url 'admin:integrations' %}">{% translate "Review integrations" %}</a> · <a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Review content and mail templates" %}</a></p>
 {% if preview.configuration.family_templates %}<ul>{% for template in preview.configuration.family_templates %}<li><a href="{% url 'admin:campaign_mail' campaign.pk template %}">{% translate "Preview and send selected Family test email" %} {{ forloop.counter|number }}</a></li>{% endfor %}</ul>{% endif %}
-{% if preview.source.observed_at %}<p>{% translate "Full source observation started" %}: <time data-local-instant datetime="{{ preview.source.observed_at|instant }}">{{ preview.source.observed_at|instant }}</time></p>{% endif %}
+{% if preview.source.observed_at %}<p>{% translate "Last full ParishSoft refresh started" %}: <time data-local-instant datetime="{{ preview.source.observed_at|instant }}">{{ preview.source.observed_at|instant }}</time></p>{% endif %}
 </section>
 <section class="panel"><h2>{% translate "Family mail impact" %}</h2>
 <dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
 <dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
 <dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
 <dt>{% translate "Immediately due Family messages" %}</dt><dd>{{ counts.messages|number }}</dd>
-<dt>{% translate "Coalesced Family schedule slots (not additional messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
-<dt>{% translate "Skipped Family schedule slots" %}</dt><dd>{{ counts.skipped_slots|number }}</dd>
+<dt>{% translate "Family sends combined into one message (not extra messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
+<dt>{% translate "Family sends skipped" %}</dt><dd>{{ counts.skipped_slots|number }}</dd>
 <dt>{% translate "Families with blocked delivery work" %}</dt><dd>{{ counts.blocked_families|number }}</dd></dl>
-<p>{% translate "Testing responses and Testing deliveries do not satisfy live mail. Execution rechecks current eligibility; a later source change may alter these counts." %}</p>
+<p>{% translate "Responses and emails from Testing mode do not count once the campaign is live. Who gets mail is checked again when it is actually prepared, so a later ParishSoft change can alter these counts." %}</p>
 </section>
 <section class="panel"><h2>{% translate "Admin report mail impact" %}</h2>
 <dl><dt>{% translate "Immediately due daily report messages" %}</dt><dd>{{ preview.digests.daily_messages|number }}</dd>
 <dt>{% translate "Immediately due weekly report messages" %}</dt><dd>{{ preview.digests.weekly_messages|number }}</dd>
-<dt>{% translate "Coalesced Admin report slots (not additional messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd>
-<dt>{% translate "Weekly intervals needing no new message" %}</dt><dd>{{ preview.digests.empty_weekly_reports|number }}</dd>
-<dt>{% translate "Blocked Admin reporting groups" %}</dt><dd>{{ preview.digests.blocked_groups|number }}</dd></dl>
-<p>{% translate "Counts include one message per current Admin recipient when needed. Missed daily dates are combined; weekly reports include only new information or corrections not already delivered to that recipient." %}</p></section>
+<dt>{% translate "Report sends combined into one message (not extra messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd>
+<dt>{% translate "Weekly reports skipped (nothing new to report)" %}</dt><dd>{{ preview.digests.empty_weekly_reports|number }}</dd>
+<dt>{% translate "Admin report groups that are blocked" %}</dt><dd>{{ preview.digests.blocked_groups|number }}</dd></dl>
+<p>{% translate "Counts include one message for each current Admin recipient when needed. Missed daily reports are combined into one; weekly reports include only new information or corrections that recipient has not already received." %}</p></section>
 <section class="panel"><h2>{% translate "Testing cleanup inventory" %}</h2>
-<p>{% translate "Completed deletion cannot be undone, even if cleanup is cancelled later. Stable Production Family codes and operational notifications are excluded." %}</p>
+<p>{% translate "Deleted data cannot be restored, even if cleanup is cancelled later. The Family codes Families will use after go-live, and the system's own alert messages, are kept." %}</p>
 <dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ preview.cleanup.submissions|number }}</dd>
 <dt>{% translate "Distinct Families with Testing submissions" %}</dt><dd>{{ preview.cleanup.families|number }}</dd>
 <dt>{% translate "Testing messages" %}</dt><dd>{{ preview.cleanup.messages|number }}</dd>
 <dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
-<dt>{% translate "Total inventoried records" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
+<dt>{% translate "Total Testing records to delete" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
 <p><a href="{% url 'admin:go_live_families' campaign.pk %}">{% translate "View Families with Testing submissions" %}</a></p>
-<details><summary>{% translate "Inventory by record category" %}</summary>{% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% else %}<p>{% translate "No Testing records are currently inventoried." %}</p>{% endif %}</details>
+<details><summary>{% translate "Testing records by type" %}</summary>{% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% else %}<p>{% translate "There are no Testing records to delete." %}</p>{% endif %}</details>
 </section>
-<section class="panel"><h2>{% translate "Public-origin verification" %}</h2>
-<p>{% translate "Check the configured public URL and DNS without sending email or starting cleanup. No database transaction is held during this bounded check." %}</p>
-{% if origin_verified is True %}<p role="status">{% translate "The configured public origin passed URL and DNS checks. This does not replace the external TLS and deployment smoke tests." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "Public-origin verification failed or timed out. Check deployment URL and DNS settings, then retry." %}</p>{% endif %}
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Verify readiness and public origin" %}</button></form>
+<section class="panel"><h2>{% translate "Public web address check" %}</h2>
+<p>{% translate "Checks that the site's configured public web address (URL) and its DNS record are correct. It sends no email and does not start cleanup." %}</p>
+{% if origin_verified is True %}<p role="status">{% translate "The public web address passed the URL and DNS checks. Still check separately that the site's HTTPS certificate works and that the site opens in a browser." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "The public web address check failed or timed out. Check the site's configured URL and its DNS record, then try again." %}</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Check readiness and public web address" %}</button></form>
 </section>
 {% if cleanup_token %}
 <section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
-<p>{% translate "Starting cleanup invalidates rehearsal access and prevents new Testing work. Completed deletions cannot be undone. Cancelling later releases the hold but does not restore deleted data. This does not activate Production." %}</p>
+<p>{% translate "Starting cleanup ends Testing access to the Family form (test links and codes stop working) and blocks new Testing work. Deleted data cannot be restored; cancelling later lets Testing work start again but does not bring deleted data back. This does not take the campaign live." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
 <label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
 <button type="submit">{% translate "Start Testing cleanup" %}</button></form>

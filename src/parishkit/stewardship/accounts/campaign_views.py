@@ -36,6 +36,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
+from . import setup_help
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -408,6 +409,8 @@ def campaign_settings(request, campaign_id=None):
                 ministries=ministries,
                 funds=funds,
             )
+            # Same plain-language field help as the setup wizard (setup_help.py).
+            setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
             if request.method == "POST":
                 if not editable:
                     raise UserFacingStale(

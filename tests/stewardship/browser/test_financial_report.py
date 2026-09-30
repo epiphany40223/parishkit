@@ -81,7 +81,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_text("Status unavailable", exact=False).count() >= 1
     assert page.get_by_text("None chosen", exact=True).count() == 1
     page.goto(component_origin + "/financial-empty")
-    visible(page.get_by_text("No matching pledges.", exact=True))
+    visible(page.get_by_text("No matching pledges.", exact=False))
     # A refused filter explains the money format and offers a way back.
     page.goto(component_origin + "/financial-error-400")
     assert page.get_by_role("alert").get_by_text("without commas", exact=False).count()

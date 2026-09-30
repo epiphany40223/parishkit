@@ -68,7 +68,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         # Still queued, so the page says why it waits instead (#340); the
         # scenario's own running digest work holds the general process.
         assert b"Waiting for the daily report email to finish" in body
-        assert b"Calculating the exact figures" not in body
+        assert b"Calculating the figures" not in body
         assert b"America/New_York" in body
         assert b"Cancel export" in body
         assert (
@@ -205,7 +205,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert b"Campaign work is gated" in read(browser, status_path)[1]
+        assert b"Other campaign work" in read(browser, status_path)[1]
         for endpoint, payload in (
             (path, values | {"request_key": str(uuid4())}),
             (status_path + "cancel", {}),

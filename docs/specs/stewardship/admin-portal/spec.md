@@ -463,6 +463,14 @@ disclosure, closed by default, instead of in the page's main text. Nothing
 is removed, and exports keep every field. An empty list says what to do
 next rather than only that it is empty.
 
+Two template tests guard these rules: one fails when a paragraph shown
+without a click holds a message longer than about two sentences (50 words),
+and one fails when a label for an internal identifier or worker field (such
+as a heartbeat, lease, data-load number or request ID) appears outside a
+Technical details disclosure. Each keeps a short, reviewed list of
+exceptions, and the long-paragraph exceptions must shrink as their pages are
+converted.
+
 ## Background indicators
 
 Admins have two always-visible indicators:

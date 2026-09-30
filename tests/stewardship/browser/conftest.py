@@ -14,6 +14,7 @@ from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
 from PIL import Image
 
+from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
@@ -1276,17 +1277,22 @@ def component_origin():
             "campaign-settings",
             {
                 "editable": True,
-                "form": CampaignForm(
-                    initial={
-                        "name": "Sample campaign",
-                        "timezone": "America/New_York",
-                        "start_date": "2026-10-01",
-                        "end_date": "2026-10-31",
-                        "census": True,
-                        "base_digest": "a" * 64,
-                    },
-                    ministries=[("4", "Community outreach")],
-                    funds=[("9", "Offertory")],
+                # The Admin view adds the shared field help the same way.
+                "form": setup_help.apply(
+                    CampaignForm(
+                        initial={
+                            "name": "Sample campaign",
+                            "timezone": "America/New_York",
+                            "start_date": "2026-10-01",
+                            "end_date": "2026-10-31",
+                            "census": True,
+                            "base_digest": "a" * 64,
+                        },
+                        ministries=[("4", "Community outreach")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    setup_help.ADMIN_CAMPAIGN,
+                    replace=True,
                 ),
             },
         ),

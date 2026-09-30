@@ -2,12 +2,14 @@
 {% block title %}{% translate "Background work" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Background work" %}</h1>
-<p>{% translate "Opening or refreshing this status page does not extend your login session." %}</p>
-<p>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Queued:" %} {{ work.counts.queued|number }} · {% translate "Waiting to retry:" %} {{ work.counts.retry_wait|number }} · {% translate "Abandoned:" %} {{ work.counts.abandoned|number }}</p>
+<p>{% translate "Work the system does behind the scenes, such as ParishSoft refreshes, email preparation and report exports. Select a task to see what it is doing, or why it failed." %}</p>
+{% aboutpage "background-work" %}<p>{% translate "Most tasks start and finish on their own. A task waiting to try again hit a temporary problem, such as ParishSoft or the email provider not answering, and retries automatically. A task that stopped unexpectedly lost its background process, for example when the server restarted; the system recovers it on its own." %}</p>
+<p>{% translate "Last activity is the last time a running task reported that it was still working. Opening or refreshing this page does not extend your sign-in." %}</p>{% endaboutpage %}
+<p>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Waiting to start:" %} {{ work.counts.queued|number }} · {% translate "Waiting to try again:" %} {{ work.counts.retry_wait|number }} · {% translate "Stopped unexpectedly:" %} {{ work.counts.abandoned|number }}</p>
 <form method="get" class="panel">
   <label for="task-state">{% translate "Task state" %}</label>
   <select id="task-state" name="state">
-    {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|capfirst }}</option>{% endfor %}
+    {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{% include "stewardship/task-state.html" %}</option>{% endfor %}
   </select>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show tasks" %}</button>
@@ -22,18 +24,18 @@
     {% translate "State" as heading %}{% sort_heading table "state" heading %}
     {% translate "Phase" as heading %}{% sort_heading table "phase" heading %}
     {% translate "Progress" as heading %}{% sort_heading table "progress" heading %}
-    {% translate "Last heartbeat" as heading %}{% sort_heading table "heartbeat" heading %}
+    {% translate "Last activity" as heading %}{% sort_heading table "heartbeat" heading %}
     {% translate "Created" as heading %}{% sort_heading table "created" heading %}
   </tr></thead>
   <tbody>
   {% for task in table.rows %}<tr>
-    <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}{% if task.name != task.type %}<br><span class="help">{% translate "Task type:" %} <code>{{ task.type }}</code></span>{% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
-    <td>{{ task.state }}</td>
+    <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
+    <td>{% include "stewardship/task-state.html" with state=task.state %}{% if task.name != task.type %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd></dl></details>{% endif %}</td>
     <td>{{ task.phase_text }}</td>
     <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td>{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
     <td><time datetime="{{ task.created_at }}" data-local-instant data-compact>{{ task.created_at }}</time></td>
-  </tr>{% empty %}<tr><td colspan="6">{% translate "No tasks match this view." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="6">{% translate "No tasks match this view. Choose All in Task state to include finished tasks." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

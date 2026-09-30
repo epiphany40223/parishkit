@@ -37,7 +37,7 @@
 </section>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
 <p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
-{% if not mutable %}<p class="notice">{% translate "Other campaign work (such as a restore review, cleanup or go-live step) is running, so new exports, cancelling and retrying are unavailable for now. Files that are ready can still be downloaded." %}</p>{% endif %}
+{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Requested by (user reference)" %}</dt><dd>{{ job.requester_id }}</dd>

@@ -2,11 +2,11 @@
 {% block title %}{% translate "Families with Testing submissions" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Families with Testing submissions" %}</h1><p>{{ campaign.active_configuration.name }}</p>
-<p>{% translate "This is the current remaining Testing inventory. Completed cleanup removes entries; it does not remove stable Production Family identities or codes." %}</p>
+<p>{% translate "Families that still have Testing responses to delete. Cleanup deletes their Testing responses, not the Families themselves or the Family codes they will use after go-live." %}</p>
 {% translate "Testing Families pages" as navigator_label %}
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="testing-families-caption"><table class="data-table"><caption id="testing-families-caption">{% translate "Distinct Families with Testing submissions" %}</caption><thead><tr>{% translate "Family name" as heading %}{% sort_heading table "name" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}</tr></thead><tbody>
-{% for row in table.rows %}<tr><th scope="row">{{ row.name|default:_("Name unavailable in the current source") }}</th><td class="numeric">{{ row.duid|duid }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No Testing Families on this page." %}</td></tr>{% endfor %}
+{% for row in table.rows %}<tr><th scope="row">{{ row.name|default:_("Name not in the current ParishSoft data") }}</th><td class="numeric">{{ row.duid|duid }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No Families on this page have Testing responses left to delete." %}</td></tr>{% endfor %}
 </tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <p><a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to readiness preview" %}</a></p>

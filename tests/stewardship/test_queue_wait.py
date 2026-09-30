@@ -182,4 +182,4 @@ def test_background_task_and_exact_pages_share_the_reason():
         },
     )
     assert "Waiting for other background work to finish." in exact
-    assert "Calculating the exact figures" not in exact
+    assert "Calculating the figures" not in exact

@@ -109,13 +109,20 @@ def summary(actor, configuration, now):
         # in until an Administrator acknowledges it.
         result["security_events"] = open_events(actor)
     if allows(actor, Capability.BACKGROUND_WORK):
-        result["recent_failures"] = list(
-            TaskRun.objects.filter(
+        # Imported here like the other optional sections above: jobs.views
+        # loads the task API's view stack, which only this section needs.
+        from parishkit.stewardship.jobs.views import TASK_NAMES
+
+        result["recent_failures"] = [
+            # The plain task name leads; the internal type stays for display
+            # under Technical details.
+            {**task, "name": TASK_NAMES.get(task["task_type"], task["task_type"])}
+            for task in TaskRun.objects.filter(
                 state="failed", updated_at__gte=now - timedelta(hours=24)
             )
             .order_by("-updated_at", "-id")
             .values("id", "task_type", "updated_at")[:5]
-        )
+        ]
     return result
 
 

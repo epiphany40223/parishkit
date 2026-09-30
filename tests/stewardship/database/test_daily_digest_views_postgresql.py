@@ -57,7 +57,7 @@ def test_report_and_chart_remain_exact_after_source_changes(family_mail, google)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, before = read(browser, path)
             _, chart = read(browser, path + "chart.png")
-        assert b"Pinned report" in before
+        assert b"Saved report" in before
         assert b"statistics_inputs" not in before
         assert chart == bytes(ready.chart)
         newer = response_source()
@@ -170,7 +170,7 @@ def test_captured_but_unbuilt_report_is_temporarily_unavailable(
             )
         assert response.status_code == 503
         assert response["Cache-Control"] == "no-store"
-        assert b"Pinned report" not in response.content
+        assert b"Saved report" not in response.content
 
 
 def test_daily_delivery_pages_do_not_format_a_nonexistent_family_duid(

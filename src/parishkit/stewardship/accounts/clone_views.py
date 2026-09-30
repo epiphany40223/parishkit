@@ -17,6 +17,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import expired_preview, stale_page
 
+from . import setup_help
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
 from .campaign_cloning import clone_initial, clone_patch, clone_structures
@@ -194,6 +195,8 @@ def campaign_clone(request, campaign_id):
                 ministries=ministries,
                 funds=funds,
             )
+            # Same plain-language field help as the setup wizard (setup_help.py).
+            setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
             schedules = Schedules(
                 data,
                 prefix="schedules",
