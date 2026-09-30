@@ -14,6 +14,7 @@ from textwrap import wrap
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
+from .directory_documents import UNADDRESSED_DETAIL
 from .information_rendering import information_xlsx, pdf_font, visible_text
 
 PAGE_LINES = 32
@@ -70,8 +71,10 @@ def address_blocks(document):
     for row in document.rows:
         values = dict(zip(names, row, strict=True))
         city = ", ".join(filter(None, (values["City"], values["State"])))
+        # A blank Addressee means no usable mailing address (see
+        # directory_document); say so rather than print a bare Family line.
         lines = [
-            values["Addressee"],
+            values["Addressee"] or "No usable mailing address",
             *(values[f"Address line {index}"] for index in (1, 2, 3)),
             " ".join(filter(None, (city, values["ZIP"]))),
             f"Family: {values['Family']} · ParishSoft DUID {values['ParishSoft DUID']}"
@@ -135,8 +138,8 @@ def directory_pdf(document, output):
     counts = f"{details['Families in this file']} Families in this file"
     if document.postal:
         counts += (
-            f"; {details['Not in this file: no usable mailing address']} "
-            "without a usable mailing address are not included"
+            f"; {details[UNADDRESSED_DETAIL]} with no usable mailing address "
+            "(address left blank)"
         )
     font = FontProperties(fname=pdf_font()[0])
     with (

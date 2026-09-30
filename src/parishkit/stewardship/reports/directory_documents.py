@@ -10,8 +10,10 @@ and footer and in the XLSX "Report information" sheet.
   it is filtered to Families that no campaign mail can reach (reach
   "neither"), it adds their phone numbers for follow-up calls.
 - The postal export is a mail merge for envelope labels and cover letters. It
-  includes only Families with a usable mailing address; the rest are counted
-  so staff can follow up.
+  holds exactly the filtered Families, like the page. A Family without a
+  usable mailing address keeps its row with the Addressee and address
+  columns blank, and the report details count those rows so staff can follow
+  up. The columns never change, so existing mail-merge templates keep working.
 """
 
 from dataclasses import dataclass
@@ -27,6 +29,8 @@ from .directories import REACH, REASONS
 
 CODE_HEADINGS = ("Family", "ParishSoft DUID", "Family code")
 PHONE_HEADING = "Phone numbers"
+# The postal columns and their order are what parishes' mail-merge templates
+# name, so they never change (a Family without an address blanks, not drops).
 POSTAL_HEADINGS = (
     "ParishSoft DUID",
     "Family",
@@ -40,6 +44,7 @@ POSTAL_HEADINGS = (
     "ZIP",
     "Family code",
 )
+UNADDRESSED_DETAIL = "Rows with no usable mailing address (address columns blank)"
 PRIVACY = "Sensitive: Family codes. Authorized recipients only."
 # In Testing mode the Family sign-in accepts only rehearsal credentials from a
 # chosen-Family test send, so a file of live codes says so in its details.
@@ -61,10 +66,10 @@ class DirectoryDocument:
     """The renderer has no database handles, clocks, key material or live selectors.
 
     ``postal`` selects the PDF layout (address blocks rather than a table);
-    ``excluded`` counts Families left out of a postal file for want of a
-    usable mailing address. ``item_count`` is the captured matching count,
-    which the publication must record (the SQL publication guard binds it to
-    the snapshot), so for a postal file it includes the excluded Families.
+    ``unaddressed`` counts a postal file's rows whose Addressee and address
+    columns are blank for want of a usable mailing address. ``item_count`` is
+    the captured matching count, which the publication must record (the SQL
+    publication guard binds it to the snapshot); every file has that many rows.
     """
 
     metadata: tuple[tuple[str, str], ...]
@@ -74,7 +79,7 @@ class DirectoryDocument:
     requested_at: datetime
     title: str
     postal: bool
-    excluded: int = 0
+    unaddressed: int = 0
     sheet_name: str = "Families"
 
 
@@ -171,30 +176,39 @@ def directory_document(
 
     postal = parameters["postal"]
     title = "Postal mail merge" if postal else "Family-code directory"
-    rows, excluded = [], 0
+    rows, unaddressed = [], 0
     if postal:
         headings = POSTAL_HEADINGS
         for item in payload["rows"]:
             address = item["address"]
-            if not item.get("mailable", mailable(address)):
-                excluded += 1
-                continue
             heads = head_names(item["heads"])
-            lines = [
-                _clean(address.get(f"primaryAddress{index}")) for index in (1, 2, 3)
-            ]
-            lines = [line for line in lines if line]
-            lines += [""] * (3 - len(lines))
-            rows.append(
-                (
-                    str(item["family_duid"]),
-                    item["family_name"],
+            if item.get("mailable", mailable(address)):
+                lines = [
+                    _clean(address.get(f"primaryAddress{index}")) for index in (1, 2, 3)
+                ]
+                lines = [line for line in lines if line]
+                lines += [""] * (3 - len(lines))
+                # Addressee, Address line 1-3, City, State, ZIP.
+                mailing = (
                     heads or item["family_name"],
-                    heads,
                     *lines,
                     _clean(address.get("primaryCity")),
                     _clean(address.get("primaryState")),
                     _zip(address),
+                )
+            else:
+                # The row stays so the file matches the page, but a partial
+                # address would print an undeliverable envelope, so the
+                # Addressee and every address column are blank.
+                unaddressed += 1
+                mailing = ("",) * 7
+            rows.append(
+                (
+                    str(item["family_duid"]),
+                    item["family_name"],
+                    mailing[0],
+                    heads,
+                    *mailing[1:],
                     item["code"] or "",
                 )
             )
@@ -225,11 +239,7 @@ def directory_document(
         ("Campaign", source["name"]),
         ("Captured at", instant(captured_at)),
         ("Families in this file", f"{len(rows):,}"),
-        *(
-            (("Not in this file: no usable mailing address", f"{excluded:,}"),)
-            if postal
-            else ()
-        ),
+        *(((UNADDRESSED_DETAIL, f"{unaddressed:,}"),) if postal else ()),
         ("Filters applied", _filters(parameters)),
         ("Privacy", PRIVACY),
         *((("Testing mode", TESTING_NOTE),) if testing else ()),
@@ -242,5 +252,5 @@ def directory_document(
         requested_at=requested_at,
         title=title,
         postal=postal,
-        excluded=excluded,
+        unaddressed=unaddressed,
     )

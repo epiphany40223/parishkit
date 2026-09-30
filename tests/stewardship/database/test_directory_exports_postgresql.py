@@ -1,5 +1,7 @@
 """Actual-role complete directory capture and the shared private export lifecycle."""
 
+import csv
+import io
 import json
 from datetime import timedelta
 from uuid import uuid4
@@ -419,10 +421,15 @@ def test_directory_export_staff_gates_and_service_boundaries(
         )
 
 
-def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
+def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     live_response_service, google, tmp_path, settings
 ):
-    """The postal file has mailable Families only; the publication keeps the count."""
+    """The postal file holds every filtered Family, as the page lists them.
+
+    Two Families have a street line but no city, so no usable mailing address.
+    They stay in the file (#202) with blank Addressee and address columns, so
+    the file's rows are exactly the page's and a partial address never prints.
+    """
     harness = live_response_service
     data = response_source()
     data.members[3]["emailAddress"] = ""
@@ -461,12 +468,22 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
         )
         assert response.status_code == 200 and b"Unmailable" in neither
         assert b"data-unreachable-notice" not in neither
-        # The mailing columns show what the mail-merge file will hold, and
-        # say which Families it leaves out.
+        # The mailing columns show what the mail-merge file will hold,
+        # including which rows have their address columns blank.
+        assert b"Matching Families: 3." in body
+        assert b"left out" not in body
         for text in (
             b"Addressee",
             b"Mailing address",
-            b"No usable mailing address; left out of the mail-merge file",
+            b"No usable mailing address; address columns blank in the mail-merge",
+            b"Every listed Family is in the mail-merge file.",
+            # An unmailable Family's Addressee is a visible dash that screen
+            # readers announce, and its Mailing address cell says why; the
+            # street line its source does have is not shown there.
+            b'<td><span aria-hidden="true">\xe2\x80\x94</span>'
+            b'<span class="visually-hidden">No usable mailing address</span></td>\n'
+            b"<td>No usable mailing address; address columns blank in the "
+            b"mail-merge file</td>",
             b'name="mailing" value="yes" checked',
             b'<input type="hidden" name="mailing" value="yes">',
             b"ParishSoft DUID, Family, Addressee, Family heads,",
@@ -491,10 +508,18 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     with restricted_download_pool(settings):
         response, body = search(browser, response["Location"] + "download", {})
     assert response.status_code == 200
-    lines = body.decode().splitlines()
-    assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
-    assert len(lines) == 2 and lines[1].startswith("1,Example,")
-    assert "40000" in lines[1] and harness.code in lines[1]
+    rows = list(csv.reader(io.StringIO(body.decode())))
+    assert rows[0][:4] == ["ParishSoft DUID", "Family", "Addressee", "Family heads"]
+    assert [row[:2] for row in rows[1:]] == [
+        ["1", "Example"],
+        ["10", "Unmailable"],
+        ["11", "Unmailable"],
+    ]
+    assert "40000" in ",".join(rows[1]) and harness.code in rows[1]
+    # Addressee, Address line 1-3, City, State and ZIP are blank, although
+    # the source has a street line: a partial address is never printed.
+    for row in rows[2:]:
+        assert [row[2], *row[4:10]] == [""] * 7 and row[10]
     assert request.directory_snapshot.row_count == 3
     assert request.report == "postal_outreach"
     # A form rendered before the merge has no mailing field and posts to the

@@ -10,10 +10,12 @@ from openpyxl import load_workbook
 from parishkit.stewardship.reports.directory_documents import (
     CODE_HEADINGS,
     POSTAL_HEADINGS,
+    UNADDRESSED_DETAIL,
     directory_document,
     head_names,
 )
 from parishkit.stewardship.reports.directory_rendering import (
+    address_blocks,
     render_directory,
     table_lines,
 )
@@ -146,8 +148,8 @@ def test_unreachable_directory_adds_phone_numbers():
     assert rows[1][-1] == "Family (home): +1 (202) 555-0123"
 
 
-def test_postal_csv_is_a_mail_merge_without_unmailable_families():
-    """Addressee, compacted address lines and ZIP+4; unmailable Families counted."""
+def test_postal_csv_is_a_mail_merge_of_every_filtered_family():
+    """Addressee, compacted address lines and ZIP+4; unmailable rows blanked."""
     report = document(
         [
             item(),
@@ -161,7 +163,7 @@ def test_postal_csv_is_a_mail_merge_without_unmailable_families():
         ],
         postal=True,
     )
-    assert report.excluded == 1 and report.item_count == 3
+    assert report.unaddressed == 1 and report.item_count == 3
     rows = csv_rows(report)
     assert rows[0] == list(POSTAL_HEADINGS)
     assert rows[1] == [
@@ -177,14 +179,87 @@ def test_postal_csv_is_a_mail_merge_without_unmailable_families():
         "40223-1234",
         "ABCDEFGH",
     ]
+    # No usable address: the row stays, its Addressee and address are blank.
+    assert rows[2] == [
+        "2",
+        "No Street",
+        "",
+        "Aaron and Isabelle Williams",
+        *[""] * 6,
+        "ABCDEFGH",
+    ]
     # No heads: the Family name addresses the envelope.
     assert (
-        rows[2][2] == "'=Sample Family" and rows[2][3] == "" and rows[2][9] == "40223"
+        rows[3][2] == "'=Sample Family" and rows[3][3] == "" and rows[3][9] == "40223"
     )
-    assert len(rows) == 3
+    assert len(rows) == 4
     details = dict(report.metadata)
-    assert details["Not in this file: no usable mailing address"] == "1"
+    assert details["Families in this file"] == "3"
+    assert details[UNADDRESSED_DETAIL] == "1"
     assert details["Filters applied"] == "Phone available: Yes"
+
+
+# A filtered set mixing Families with and without a usable mailing address,
+# in the order the filters list them; "mailable" is the SQL's verdict.
+MIXED = (
+    (1, True, ADDRESS),
+    (2, False, {"primaryAddress1": "2 Street Only", "primaryState": "KY"}),
+    (3, True, ADDRESS | {"primaryAddress3": None, "primaryZipPlus": ""}),
+    (4, False, {}),
+    (5, True, ADDRESS),
+)
+
+
+@pytest.mark.parametrize("format", ["csv", "xlsx"])
+def test_mail_merge_holds_exactly_the_filtered_rows(format):
+    """Every filtered Family is a row, in order; no address means blank columns.
+
+    The file must match the page (#202): unaddressable Families are not
+    dropped, and none of their partial address leaks into the columns.
+    """
+    report = document(
+        [
+            item(family_duid=duid, mailable=usable, address=address)
+            for duid, usable, address in MIXED
+        ],
+        postal=True,
+    )
+    if format == "csv":
+        rows = csv_rows(report)
+    else:
+        output = io.BytesIO()
+        render_directory(report, output, format=format)
+        book = load_workbook(output)
+        rows = [
+            ["" if cell is None else str(cell) for cell in row]
+            for row in book["Families"].iter_rows(values_only=True)
+        ]
+        book.close()
+    assert rows[0] == list(POSTAL_HEADINGS)
+    assert [row[0] for row in rows[1:]] == [str(duid) for duid, _, _ in MIXED]
+    for row, (_, usable, _) in zip(rows[1:], MIXED, strict=True):
+        mailing = [row[2], *row[4:10]]
+        if usable:
+            assert row[2] == "Aaron and Isabelle Williams" and row[4] == "1 Sample St"
+        else:
+            assert mailing == [""] * 7
+        # Family, heads and code are always there for follow-up.
+        assert row[3] == "Aaron and Isabelle Williams" and row[10] == "ABCDEFGH"
+    assert report.unaddressed == 2
+    assert dict(report.metadata)["Families in this file"] == "5"
+    assert dict(report.metadata)[UNADDRESSED_DETAIL] == "2"
+
+
+def test_postal_pdf_blocks_name_a_missing_mailing_address():
+    """The PDF keeps an unaddressable Family's block and says why it is empty."""
+    report = document(
+        [item(), item(family_duid=2, mailable=False, address={})], postal=True
+    )
+    blocks = list(address_blocks(report))
+    assert len(blocks) == 2
+    assert blocks[0][0] == "Aaron and Isabelle Williams"
+    assert blocks[1][0] == "No usable mailing address"
+    assert "ParishSoft DUID 2" in " ".join(blocks[1])
 
 
 def test_xlsx_and_pdf_carry_the_same_columns_and_details():
@@ -232,7 +307,8 @@ def test_captures_without_the_mailable_flag_use_the_same_rule():
         },
     ]
     report = document(old, postal=True)
-    assert report.excluded == 1 and len(report.rows) == 1
+    assert report.unaddressed == 1 and len(report.rows) == 2
+    assert report.rows[1][2] == "" and report.rows[1][4:10] == ("",) * 6
 
 
 def test_testing_note_is_a_report_detail_never_a_csv_row():
