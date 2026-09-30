@@ -111,6 +111,36 @@ def admitted_configuration(tmp_path, monkeypatch):
     ), calls
 
 
+def sql_task_logins():
+    """Read the task type to login map from its fresh-install SQL function."""
+    import re
+    from pathlib import Path
+
+    source = (
+        Path(background.__file__).with_name("schema") / "functions.sql"
+    ).read_text()
+    body = re.search(
+        r"^CREATE FUNCTION public\.stewardship_task_type_login_v1\(.*?^    END \$\$;",
+        source,
+        re.DOTALL | re.MULTILINE,
+    ).group(0)
+    return {
+        name: login
+        for names, login in re.findall(
+            r"WHEN task_type IN \((.*?)\)\s*THEN '(\w+)'", body, re.DOTALL
+        )
+        for name in re.findall(r"'(\w+)'", names)
+    }
+
+
+def queue_login(queue):
+    """The one login whose consumer serves a queue (#306 M1)."""
+    from parishkit.stewardship.jobs.queues import ROLE_QUEUES
+
+    (role,) = (role for role, queues in ROLE_QUEUES.items() if queue in queues)
+    return "pk_stewardship_" + role.value.replace("-", "_")
+
+
 @pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
 def test_background_assembly_binds_exact_keys_role_and_closed_registry(
     admitted_configuration, role
@@ -162,6 +192,12 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
             expected.add("campaign_mail_test")
             expected.add("outbox_delivery")
         assert set(runtime.handlers) == expected
+        if role is ServiceRole.SCHEDULER:
+            # The scheduler registers every type with its executing queue.
+            assert sql_task_logins() == {
+                name: queue_login(handler.queue)
+                for name, handler in runtime.handlers.items()
+            }
         assert runtime.handlers["source_refresh"].pulse is pulse
         assert runtime.handlers["operational_collect"].pulse is pulse
         assert runtime.handlers["operational_prepare"].pulse is pulse

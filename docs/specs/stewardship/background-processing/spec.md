@@ -45,6 +45,13 @@ second transition. Each transition records actor/worker, time, reason, attempt,
 and expected row version/lease fencing. Domain-specific admission and safe-point
 rules can restrict a listed transition, never bypass them.
 
+SQL also binds every TaskRun write to the database login, because the worker
+identity in a transition is supplied by its caller. Only the login whose
+service executes a task type (the worker for the general queue, mail dispatch
+for the mail queue) may claim or transition it. Web only creates tasks and
+cancels an Admin's waiting cleanup task. The scheduler only cancels superseded
+waiting source work. Any login may create only a type that some service executes.
+
 | TaskRun state | Terminal? | Permitted next states and conditions |
 | --- | --- | --- |
 | `queued` | No | `running` on authorized claim; `cancelled` before execution |

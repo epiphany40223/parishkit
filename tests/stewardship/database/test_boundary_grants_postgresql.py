@@ -189,7 +189,9 @@ def test_worker_cannot_return_archived_campaign_to_testing(scheduled, exact):  #
         assert runtime.mode == "testing" and runtime.current_campaign_id is None
 
 
-@pytest.mark.parametrize("exact", [False, True])
+# A custom login name can no longer claim a task at all (the task login
+# guard; test_task_logins_postgresql.py), so only the exact name claims.
+@pytest.mark.parametrize("exact", [True])
 @pytest.mark.parametrize(
     "field", ["pending_reason", "reason", "token_generation_id", "prior_projection_id"]
 )
@@ -285,7 +287,9 @@ def test_live_worker_claim_does_not_allow_extra_boundary_metadata(
             )
 
 
-@pytest.mark.parametrize("exact", [False, True])
+# A custom login name can no longer claim a task at all (the task login
+# guard; test_task_logins_postgresql.py), so only the exact name claims.
+@pytest.mark.parametrize("exact", [True])
 @pytest.mark.parametrize("first", ["start", "close"])
 def test_real_statement_clock_skips_obsolete_start_and_closes(
     tmp_path, monkeypatch, exact, first
@@ -324,7 +328,9 @@ def test_real_statement_clock_skips_obsolete_start_and_closes(
     assert now < opening.completed_at <= closing.completed_at
 
 
-@pytest.mark.parametrize("exact", [False, True])
+# A custom login name can no longer claim a task at all (the task login
+# guard; test_task_logins_postgresql.py), so only the exact name claims.
+@pytest.mark.parametrize("exact", [True])
 @pytest.mark.parametrize("field", ["reason", "completed_at", "transition_id"])
 def test_worker_terminal_skip_rejects_malformed_values(tmp_path, exact, field):
     """Reject each malformed terminal delta before admitting an otherwise valid skip."""

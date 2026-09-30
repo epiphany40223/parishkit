@@ -3076,6 +3076,9 @@ CREATE TRIGGER stewardship_task_event_phase_v1 BEFORE INSERT ON public.stewardsh
 -- TRIGGER: stewardship_task_run stewardship_task_history_v1
 CREATE TRIGGER stewardship_task_history_v1 AFTER INSERT OR UPDATE ON public.stewardship_task_run FOR EACH ROW EXECUTE FUNCTION public.stewardship_task_history_v1();
 
+-- TRIGGER: stewardship_task_run stewardship_task_login_guard_v1
+CREATE TRIGGER stewardship_task_login_guard_v1 BEFORE INSERT OR UPDATE ON public.stewardship_task_run FOR EACH ROW EXECUTE FUNCTION public.stewardship_task_login_guard_v1();
+
 -- TRIGGER: stewardship_task_run stewardship_task_phase_v1
 CREATE TRIGGER stewardship_task_phase_v1 BEFORE INSERT OR UPDATE ON public.stewardship_task_run FOR EACH ROW EXECUTE FUNCTION public.stewardship_task_phase_v1();
 
@@ -3084,9 +3087,6 @@ CREATE TRIGGER stewardship_task_run_mutable_guard_v1 BEFORE UPDATE ON public.ste
 
 -- TRIGGER: stewardship_task_run stewardship_task_run_state_v1
 CREATE TRIGGER stewardship_task_run_state_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.stewardship_task_run FOR EACH ROW EXECUTE FUNCTION public.stewardship_task_state_v1();
-
--- TRIGGER: stewardship_task_run stewardship_task_scheduler_v1
-CREATE TRIGGER stewardship_task_scheduler_v1 BEFORE UPDATE ON public.stewardship_task_run FOR EACH ROW EXECUTE FUNCTION public.stewardship_task_scheduler_v1();
 
 -- TRIGGER: stewardship_campaign stewardship_token_activation_v1
 CREATE TRIGGER stewardship_token_activation_v1 BEFORE UPDATE ON public.stewardship_campaign FOR EACH ROW EXECUTE FUNCTION public.stewardship_token_activation_v1();
