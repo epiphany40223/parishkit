@@ -138,9 +138,15 @@ def _legacy_postal_redirect(request, campaign_id):
 
 
 def _mailing_rows(rows):
-    """Add each row's mail-merge addressee, as the postal export names it."""
+    """Add each row's mail-merge addressee, as the postal export names it.
+
+    Like the file, a Family without a usable mailing address has no addressee;
+    the page shows a dash (read aloud as "No usable mailing address") there.
+    """
     for row in rows:
-        row["addressee"] = head_names(row["heads"]) or row["family_name"]
+        row["addressee"] = (
+            head_names(row["heads"]) or row["family_name"] if row["mailable"] else ""
+        )
 
 
 @require_http_methods(["GET", "POST"])
