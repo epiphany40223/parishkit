@@ -32,6 +32,7 @@ from parishkit.stewardship.family_delivery_process import (
     submit_family,
     submit_weekly,
 )
+from parishkit.stewardship.observability import emit_failure
 from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
 from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.sender_name import configured_sender_name
@@ -103,30 +104,45 @@ class DeliveryCircuit:
     (jobs/mail_health.py).
 
     Each mail consumer process has its own circuit, and the mail-dispatch
-    container runs two. Sharing it was not needed, since every outcome it
-    reacts to is definitive and durable. What each process costs on its own:
+    container runs two (so do the Administrator alert and security mail
+    circuits, jobs/operational_mail_tasks.py). Every outcome a circuit
+    reacts to is durable, so sharing it is needed only for a stop:
+    - SYSTEMIC: the stop is container-wide through ``shared_stop``. The
+      other process may already have one message in flight, so a SYSTEMIC
+      fault can fail up to two messages (one per process) before both stop;
+      each is refused (definitely unsent), so an Administrator retry is safe.
     - Outage: a process pauses after its own three outage results, so an
-      outage costs at most three attempts per process instead of three in
-      all. They are ordinary outage results, settled like any other; a
+      outage costs at most three attempts per process (six instead of
+      three), and each cooldown ends with one probe per process. A
       connection that never reached DATA is definitely unsent and retried
-      without spending the message's budget. The CRITICAL pause log may
-      appear once per process.
+      without spending the message's budget; one lost after DATA is
+      delivery unknown and never retried, as with one process. The CRITICAL
+      pause log may appear once per process.
     - Mailbox limit: a refusal holds only the process that saw it. The other
       process is held by its own next refusal, so at most one more message
-      per process is refused. That message is also definitely unsent and
-      is retried after the limit without spending its budget.
+      is refused. That message is also definitely unsent and is retried
+      after the limit without spending its budget.
     - Daily count: the count behind the daily cap is shared through
       PostgreSQL; see daily_sends.
     """
 
-    def __init__(self, *, recovery_seconds=None, systemic_stops=False):
-        """Keep circuit state shared by all dispatches using this handler."""
+    def __init__(
+        self, *, recovery_seconds=None, systemic_stops=False, shared_stop=None
+    ):
+        """Keep circuit state shared by all dispatches using this handler.
+
+        ``shared_stop`` is a file that makes a SYSTEMIC stop container-wide:
+        the process that sees one creates it, and every mail consumer
+        process in the container stops sending new mail when it exists (the
+        main process removes it at startup, see runtime_process).
+        """
         if recovery_seconds is not None and (
             type(recovery_seconds) is not int or not 60 <= recovery_seconds <= 3600
         ):
             raise ValueError("Circuit recovery requires a bounded cooldown.")
         self.recovery_seconds = recovery_seconds
         self.systemic_stops = systemic_stops
+        self.shared_stop = shared_stop
         # A halt that no cooldown lifts (SYSTEMIC under systemic_stops).
         self.stopped = False
         # Whether a pause was already reported since the last healthy result.
@@ -153,14 +169,20 @@ class DeliveryCircuit:
 
         The count is shared state: every mail consumer process (the
         mail-dispatch container runs two) reads the same stored outcomes, so
-        the processes cannot each spend the whole limit. What one process
-        cannot see is only another's message still in flight (submitted, not
-        yet settled), so near the limit the deployment can pass it by at most
-        one in-flight message per other process: a few recipients, far inside
-        RESERVED_SENDS. Far from it, a count up to DAILY_COUNT_SECONDS old
-        misses at most that long of sending (about 30 recipients for two
-        consumers at launch speed), less than NEAR_DAILY_LIMIT, so it cannot
-        jump past the limit unseen.
+        the processes cannot each spend the whole limit. Once a process's
+        count is within NEAR_DAILY_LIMIT, what it cannot see is only the
+        other process's message still in flight (submitted, not yet
+        settled). The deployment can then pass the bulk limit by at most
+        that one message, and SQL caps a message at 100 recipients
+        (schema/delivery.sql), so at worst 1,700 of 1,800: still inside
+        RESERVED_SENDS.
+
+        Far from the limit, whether a process is "near" is judged from a
+        count up to DAILY_COUNT_SECONDS old. That is a rate assumption, not
+        a hard bound: it misses whatever both processes settled in that
+        time, about 35 recipients at launch speed, well under
+        NEAR_DAILY_LIMIT. Only sending more than 100 recipients in 15
+        seconds could cross into the last 100 unseen.
         """
         now = monotonic()
         near = self.counted >= (DAILY_SEND_LIMIT - RESERVED_SENDS - NEAR_DAILY_LIMIT)
@@ -187,6 +209,7 @@ class DeliveryCircuit:
 
     def blocks_new_send(self):
         """Admission alone observes the circuit; draining never consults it."""
+        self._follow_shared_stop()
         with self.lock:
             recovered = (
                 self.halted.is_set()
@@ -203,6 +226,39 @@ class DeliveryCircuit:
         if recovered:
             LOG.warning("The mail provider cooldown has ended; sending resumes.")
         return blocked
+
+    def _follow_shared_stop(self):
+        """Stop too when another mail consumer in this container has stopped."""
+        if self.shared_stop is None or self.stopped:
+            return
+        try:
+            stopped = self.shared_stop.exists()
+        except OSError:
+            stopped = False
+        if not stopped:
+            return
+        with self.lock:
+            newly = not self.stopped
+            self.stopped = True
+            self.halted.set()
+        if newly:
+            LOG.critical(
+                "Another mail consumer stopped Family mail after a configuration "
+                "or credential fault; this one stops too until the mail worker "
+                "restarts."
+            )
+
+    def _share_stop(self):
+        """Tell the container's other mail consumers about a SYSTEMIC stop."""
+        if self.shared_stop is None:
+            return
+        try:
+            from parishkit.stewardship.installer_health import mark_stopped
+
+            mark_stopped(self.shared_stop)
+        except Exception as error:
+            # The other consumer then stops on its own SYSTEMIC outcome.
+            emit_failure(error)
 
     def hold(self, seconds):
         """Hold new sends for ``seconds`` after a Gmail sending limit.
@@ -248,9 +304,15 @@ class DeliveryCircuit:
                 # in-flight result) still turns it into a stop; report that too.
                 if health is ProviderHealth.SYSTEMIC and self.systemic_stops:
                     newly_halted = newly_halted or not self.stopped
+                    shared = not self.stopped
                     self.stopped = True
-                return newly_halted
-        return False
+                else:
+                    shared = False
+            else:
+                return False
+        if shared:
+            self._share_stop()
+        return newly_halted
 
 
 def preparation_attempts(status):
@@ -372,6 +434,12 @@ def admit_task(action, status, *, store, circuit):
     if reason is not None:
         return True
     if circuit.blocks_new_send():
+        # A stop or pause that lands between the claim and its effect (the
+        # other mail consumer's SYSTEMIC stop, say) holds the claimed
+        # message like the configuration hold below, without spending one of
+        # its preparation attempts.
+        if action == "effect":
+            raise FamilyDeliveryHeld("Family mail sending is paused or stopped.")
         return False
     try:
         mail_authority(store)
@@ -390,17 +458,21 @@ def delivery_handler(
     credential_path=None,
     scheduler=False,
     batched=True,
+    shared_stop=None,
 ):
     """Schedulers own metadata only; mounted private keys stay in the mail worker.
 
     ``batched`` (the default) sends Family mail through one long-lived helper
     (#284). False is the operator fallback, deployment setting
     ``family_mail_transport: per_message``: one helper per message, as before.
+    ``shared_stop`` makes a SYSTEMIC stop container-wide (DeliveryCircuit).
     """
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Family dispatch requires an installed Workspace path.")
     circuit = DeliveryCircuit(
-        recovery_seconds=OUTAGE_RECOVERY_SECONDS, systemic_stops=True
+        recovery_seconds=OUTAGE_RECOVERY_SECONDS,
+        systemic_stops=True,
+        shared_stop=shared_stop,
     )
     # One batched private helper for this worker's Family messages (#284). It
     # spans Tasks but holds no lease or database state; see FamilyMailSession.
@@ -510,6 +582,10 @@ def _execute(
     message = None
     stats = {}
     try:
+        # Read before effect(): near the daily limit this runs for every
+        # message, and it needs no lock, so it stays outside the deployment-
+        # wide work-order lock both mail consumers wait on.
+        sent = circuit.daily_sends()
         with execution.effect():
             message = bound_dispatch(_status(lock_task_claim(execution.claim)))
             terminal = {
@@ -537,7 +613,6 @@ def _execute(
                 sender_name = configured_sender_name(configuration_id)
                 recipients = len(message.render.routed_recipients)
                 stats.update(_waited(execution))
-                sent = circuit.daily_sends()
                 capped = over_daily_limit(message.purpose, sent, recipients)
                 bulk_capped = over_daily_limit("initial", sent)
         if terminal is not None:

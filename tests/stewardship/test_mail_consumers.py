@@ -6,6 +6,7 @@ second process's supervision (the #336 worker pattern), the connection budget
 that admits it, the one-process fallback, and the shared daily count.
 """
 
+import logging
 import signal
 import subprocess
 from dataclasses import replace
@@ -85,14 +86,16 @@ def test_the_mail_consumer_reexecutes_the_mail_workers_own_invocation(monkeypatc
     process.poll.return_value = None
     popen = Mock(return_value=process)
     monkeypatch.setattr(runtime_process.subprocess, "Popen", popen)
-    consumer = runtime_process.MailConsumer(drain_seconds=5, argv=MAIL_ARGV)
+    consumer = runtime_process.MailConsumer(drain_seconds=60, argv=MAIL_ARGV)
     command = popen.call_args.args[0]
     assert command[0] == runtime_process.sys.executable
     assert command[1:] == [*MAIL_ARGV[1:], "--queue", "mail"]
     consumer.check()  # Running and still inside its startup grace.
     consumer.close()
     process.send_signal.assert_called_once_with(signal.SIGTERM)
-    process.wait.assert_called_once_with(timeout=5)
+    # What is left of the grace, less the kill margin.
+    margin = runtime_process.SiblingConsumer.KILL_MARGIN
+    assert process.wait.call_args.kwargs["timeout"] == pytest.approx(60 - margin, abs=1)
     process.kill.assert_not_called()
 
 
@@ -151,7 +154,9 @@ def test_a_mail_drain_past_the_grace_is_killed_and_logged(monkeypatch):
     process.kill.assert_called_once()
     assert recorded.call_args.kwargs["what"] == "mail_helper"
     assert recorded.call_args.kwargs["level"] == "ERROR"
-    assert recorded.call_args.kwargs["limit_seconds"] == 5
+    # The limit is the kill's own deadline: the grace less the kill margin
+    # (none left of a five-second grace).
+    assert recorded.call_args.kwargs["limit_seconds"] == 0
 
 
 def test_only_mail_dispatch_runs_a_second_mail_consumer(tmp_path):
@@ -231,3 +236,265 @@ def test_the_daily_count_is_reread_for_every_message_near_the_limit(monkeypatch)
     # 1500 is within NEAR_DAILY_LIMIT of the bulk limit (1600): from here on
     # each message re-reads the count, with no clock movement at all.
     assert [circuit.daily_sends() for _ in range(4)] == [1500, 1520, 1530, 1531]
+
+
+@pytest.mark.parametrize("kind", ["SourceConsumer", "MailConsumer"])
+def test_a_stopped_sibling_is_logged_and_killed_before_dockers_kill(monkeypatch, kind):
+    """#370 M1: the drain wait is what is left of the grace, less a margin.
+
+    Docker kills the container ``drain_seconds`` after its SIGTERM. The main
+    process closes its sibling only after its own drain, so a full grace
+    wait from then would always lose to Docker's kill and leave no entry.
+    """
+    from parishkit.stewardship.audit import timeouts
+
+    clock = [1000.0]
+    monkeypatch.setattr(runtime_process, "monotonic", lambda: clock[0])
+    process = Mock(returncode=None)
+    process.poll.return_value = None
+    process.wait.side_effect = [subprocess.TimeoutExpired("x", 1), 0]
+    monkeypatch.setattr(runtime_process.subprocess, "Popen", Mock(return_value=process))
+    order = Mock()
+    order.attach_mock(process.kill, "kill")
+    order.attach_mock(Mock(), "record")
+    monkeypatch.setattr(timeouts, "record_timeout", order.record)
+    consumer = getattr(runtime_process, kind)(drain_seconds=360, argv=MAIL_ARGV)
+    consumer.terminate()  # Docker's SIGTERM, forwarded by the signal handler.
+    clock[0] += 200  # The main process's own drain.
+    consumer.close()
+    margin = runtime_process.SiblingConsumer.KILL_MARGIN
+    assert process.wait.call_args_list[0].kwargs["timeout"] == 360 - margin - 200
+    # The durable entry comes first, then the kill.
+    assert [name for name, *_ in order.mock_calls] == ["record", "kill"]
+    entry = order.record.call_args.kwargs
+    assert entry["what"] == consumer.WHAT and entry["level"] == "ERROR"
+    # The limit is the deadline it was killed at (the grace less the margin).
+    assert entry["limit_seconds"] == 360 - margin
+    assert entry["elapsed_seconds"] == 200
+
+
+def test_a_main_drain_past_the_grace_leaves_no_wait_at_all(monkeypatch):
+    """With the grace already spent, the sibling is logged and killed at once."""
+    clock = [1000.0]
+    monkeypatch.setattr(runtime_process, "monotonic", lambda: clock[0])
+    consumer, process, recorded, _ = _consumer(monkeypatch, [])
+    consumer.terminate()
+    clock[0] += 400
+    process.wait.side_effect = [subprocess.TimeoutExpired("x", 0), 0]
+    consumer.close()
+    assert process.wait.call_args_list[0].kwargs["timeout"] == 0
+    process.kill.assert_called_once()
+    assert recorded.call_args.kwargs["elapsed_seconds"] == 400
+
+
+def test_a_systemic_stop_in_one_consumer_stops_the_other(tmp_path):
+    """#370 L1: a configuration or credential fault stops the whole container."""
+    from parishkit.stewardship.family_delivery import ProviderHealth
+    from parishkit.stewardship.installer_health import clear_stopped
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import DeliveryCircuit
+
+    marker = tmp_path / "private" / "mail-systemic-stop"
+    first, second = (
+        DeliveryCircuit(recovery_seconds=600, systemic_stops=True, shared_stop=marker)
+        for _ in range(2)
+    )
+    alone = DeliveryCircuit(recovery_seconds=600, systemic_stops=True)
+    assert not first.blocks_new_send() and not second.blocks_new_send()
+    assert first.observe(ProviderHealth.SYSTEMIC) is True
+    assert marker.exists() and first.stopped
+    assert second.blocks_new_send() is True and second.stopped
+    # A stop is not an outage: no cooldown lifts it before a restart.
+    second.recover_after = 0.0
+    assert second.blocks_new_send() is True
+    # A circuit with no shared marker (a test, the scheduler) is unaffected.
+    assert alone.blocks_new_send() is False
+    clear_stopped(marker)
+    assert not marker.exists()
+    clear_stopped(marker)  # Starting with no marker is the usual case.
+
+
+def test_only_the_main_mail_process_clears_the_stop_marker(tmp_path, monkeypatch):
+    """A restart lifts the stop; the sibling starts after the clearing."""
+    from parishkit.stewardship import installer_health, runtime_background
+    from parishkit.stewardship.jobs import processes
+
+    marker = tmp_path / "mail-systemic-stop"
+    monkeypatch.setattr(installer_health, "MAIL_SYSTEMIC_STOP", marker)
+    beats, receipts, companions = [], Mock(), []
+    monkeypatch.setattr(installer_health, "publish_heartbeat", beats.append)
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        receipts,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.credential_runtime.acknowledge_rotations", Mock()
+    )
+
+    class Unstarted(runtime_process.MailConsumer):
+        """The real class, minus the child process."""
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def close(self):
+            """Nothing to drain."""
+            self.closed = True
+
+    monkeypatch.setattr(runtime_process, "MailConsumer", Unstarted)
+    selected = []
+
+    def configure(config, *, stop, heartbeat, queues=None):
+        """Record the queue choice and exercise the heartbeat."""
+        selected.append(queues)
+        heartbeat()
+        return Mock(receipts={})
+
+    def serve(broker, *, lease, stop, heartbeat, **kwargs):
+        """Note the companion the process would supervise."""
+        companions.append(kwargs.get("companion"))
+        return 0
+
+    monkeypatch.setattr(runtime_background, "configure_background", configure)
+    monkeypatch.setattr(processes, "serve_consumer", serve)
+    for mail in (True, False):
+        marker.write_bytes(b"stopped")
+        assert runtime_process.serve_background(_at(tmp_path), Mock(), mail=mail) == 0
+        # The sibling leaves the marker; the main process removes it.
+        assert marker.exists() is mail
+    from parishkit.stewardship.installer_health import MAIL_HEARTBEAT
+
+    # The sibling serves every mail queue, publishes its own heartbeat, and
+    # neither publishes receipts nor starts a companion of its own.
+    assert selected == [None, None]
+    assert beats == [MAIL_HEARTBEAT, None]
+    receipts.assert_called_once()
+    assert companions[0] is None
+    assert isinstance(companions[1], Unstarted) and companions[1].closed
+
+
+def test_timeout_entries_are_written_one_at_a_time_per_process(monkeypatch):
+    """#370 L3: one private timeout-log connection per process at most."""
+    import threading
+    import time
+
+    from parishkit.stewardship.audit import timeouts
+    from parishkit.stewardship.observability import Event
+
+    active, peak, release = [0], [0], threading.Event()
+    lock = threading.Lock()
+
+    def slow_write(*args, **kwargs):
+        """Hold the private connection until released."""
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        release.wait(5)
+        with lock:
+            active[0] -= 1
+
+    monkeypatch.setattr(timeouts, "_write", slow_write)
+    emitted = Mock()
+    monkeypatch.setattr(timeouts, "emit", emitted)
+    failures = Mock()
+    monkeypatch.setattr(timeouts, "emit_failure", failures)
+    monkeypatch.setattr(timeouts, "WRITER_WAIT_SECONDS", 0.2)
+    writers = [
+        threading.Thread(
+            target=timeouts.record_timeout,
+            args=(Event.HELPER_TIMED_OUT,),
+            kwargs={"what": "mail_helper", "limit_seconds": 30, "elapsed_seconds": 31},
+        )
+        for _ in range(3)
+    ]
+    for writer in writers:
+        writer.start()
+    time.sleep(0.5)
+    release.set()
+    for writer in writers:
+        writer.join(5)
+    assert peak[0] == 1
+    # The two that could not get the slot in time gave up without raising,
+    # as a reviewed timeout of their own, not as an unexplained failure.
+    failures.assert_not_called()
+    entries = [c.kwargs for c in emitted.call_args_list]
+    # Every entry's facts reached the process log before any durable write.
+    facts = [e for e in entries if e.get("timeout") == "mail_helper"]
+    assert len(facts) == 3
+    assert all((e["limit_seconds"], e["elapsed_seconds"]) == (30, 31) for e in facts)
+    gave_up = [e for e in entries if e.get("timeout") == "timeout_log_slot"]
+    assert len(gave_up) == 2
+    assert all(e["level"] == logging.WARNING for e in gave_up)
+    assert all(e["limit_seconds"] == 0 for e in gave_up)  # 0.2 s, whole seconds.
+    assert all(e["elapsed_seconds"] == 0 for e in gave_up)
+    busy = [c.args[0] for c in emitted.call_args_list if c.kwargs in gave_up]
+    assert busy == [Event.TASK_TIMED_OUT] * 2
+
+
+def test_the_process_log_names_every_durable_timeout_kind():
+    """#370 re-review M1: each durable ``what`` is a process-log timeout name.
+
+    A timeout entry's facts go to the process log first, so they must be
+    names the log formatter keeps.
+    """
+    import json
+    import logging as logs
+
+    from parishkit.stewardship.audit.schemas import TIMEOUT_KINDS
+    from parishkit.stewardship.observability import (
+        TIMEOUT_LIMITS,
+        Event,
+        SafeJsonFormatter,
+        emit,
+    )
+
+    assert TIMEOUT_KINDS <= TIMEOUT_LIMITS
+    records = []
+
+    class Keep(logs.Handler):
+        """Collect records instead of writing them."""
+
+        def emit(self, record):
+            records.append(record)
+
+    keep = Keep()
+    logger = logs.getLogger("parishkit.stewardship")
+    logger.addHandler(keep)
+    try:
+        emit(
+            Event.HELPER_TIMED_OUT,
+            level=logs.ERROR,
+            timeout="mail_helper",
+            limit_seconds=345,
+            elapsed_seconds=346,
+        )
+    finally:
+        logger.removeHandler(keep)
+    line = json.loads(SafeJsonFormatter().format(records[-1]))
+    assert line["extra"] == {
+        "timeout": "mail_helper",
+        "limit_seconds": 345,
+        "elapsed_seconds": 346,
+    }
+
+
+def test_a_stop_between_claim_and_effect_holds_without_spending_an_attempt(
+    monkeypatch,
+):
+    """#370 re-review L2: a stop landing after the claim is a hold.
+
+    The claimed message's effect admission raises FamilyDeliveryHeld, which
+    the MAIL handler defers without charging its preparation budget; an
+    unclaimed hint is simply refused, as before.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as tasks
+
+    monkeypatch.setattr(
+        tasks, "bound_dispatch", lambda status: SimpleNamespace(state="pending")
+    )
+    monkeypatch.setattr(tasks, "disposition", lambda row: None)
+    stopped = SimpleNamespace(blocks_new_send=lambda: True)
+    with pytest.raises(tasks.FamilyDeliveryHeld):
+        tasks.admit_task("effect", Mock(), store=None, circuit=stopped)
+    assert tasks.admit_task("claim", Mock(), store=None, circuit=stopped) is False

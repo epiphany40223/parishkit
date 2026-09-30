@@ -647,7 +647,15 @@ budget and resumes on its next run is INFO for retention and WARNING for the
 off-site backup copy (`work_budget_reached`). Entries that precede a process
 exit or a rolled-back transaction are written on their own short-lived
 database connection; recording never raises, so a failure to record cannot
-replace the original outcome.
+replace the original outcome. The same facts (the limit's name, the limit
+and the elapsed seconds) go to the process log first, before the durable
+write. Each process writes one durable entry at a time, so a consumer
+process holds at most its task, lease-renewal and one timeout-log
+connection; an entry that waits more than five seconds for its turn is not
+written durably, and only the process log records it, with that first
+line and a WARNING `task_timed_out` for `timeout_log_slot` giving that
+limit and the wait (see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
 
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
 database, migrations, Valkey limiter store, and configuration needed for the

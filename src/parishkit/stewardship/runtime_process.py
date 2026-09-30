@@ -408,11 +408,18 @@ class SiblingConsumer:
     WHAT = None
     # Silence this long (twice the container probe's limit) stops the worker.
     STALE_LIMIT = 2 * PROBE_MAX_AGE
+    # Docker kills the whole container ``drain_seconds`` (its stop grace
+    # period) after its SIGTERM. The sibling is killed this long before that,
+    # so its durable timeout entry is written first (the entry's own
+    # connection and statement limits are two seconds each).
+    KILL_MARGIN = 15
 
     def __init__(self, *, drain_seconds, argv=None):
         self.drain_seconds = drain_seconds
         self.started = monotonic()
         self.stale = 0
+        # When the first stop request reached this sibling (see terminate).
+        self.stop_requested = None
         # Same interpreter, environment and entry point; output joins the
         # container's log.
         self.process = subprocess.Popen(sibling_command(self.QUEUE, argv))
@@ -466,21 +473,40 @@ class SiblingConsumer:
         )
 
     def terminate(self):
-        """Ask the sibling to drain; safe to repeat and to call from a signal."""
+        """Ask the sibling to drain; safe to repeat and to call from a signal.
+
+        The first call notes when the stop began: under ``docker stop`` that
+        is Docker's SIGTERM, forwarded here at once, and Docker's kill of the
+        whole container follows ``drain_seconds`` later.
+        """
+        if self.stop_requested is None:
+            self.stop_requested = monotonic()
         if self.process.returncode is None:
             with suppress(ProcessLookupError):
                 self.process.send_signal(signal.SIGTERM)
 
     def close(self):
-        """Stop the sibling and wait for its drain, killing it only past the grace."""
+        """Stop the sibling and wait for its drain, killing it only past the grace.
+
+        The main process calls this after its own drain, so the wait is only
+        what is left of the grace period since the first stop request, less
+        KILL_MARGIN. A sibling still running then is logged durably (that
+        deadline, the grace less KILL_MARGIN, as the limit, and the time
+        since the stop request as elapsed) and only then killed, all before
+        Docker's own kill could arrive.
+        """
         self.terminate()
-        draining = monotonic()
+        left = self.stop_requested + self.drain_seconds - self.KILL_MARGIN
         try:
-            self.process.wait(timeout=self.drain_seconds)
+            self.process.wait(timeout=max(0.0, left - monotonic()))
         except subprocess.TimeoutExpired:
+            self._record(
+                "ERROR",
+                max(0, self.drain_seconds - self.KILL_MARGIN),
+                monotonic() - self.stop_requested,
+            )
             self.process.kill()
             self.process.wait()
-            self._record("ERROR", self.drain_seconds, monotonic() - draining)
 
 
 class SourceConsumer(SiblingConsumer):
@@ -593,6 +619,13 @@ def serve_background(configuration, lease, *, source=False, mail=False):
     # Both mail processes consume all of mail dispatch's queues.
     this_sibling = SourceConsumer if source else MailConsumer if mail else None
     stop = StopEvent()
+    if role is ServiceRole.MAIL_DISPATCH and not mail:
+        from .installer_health import MAIL_SYSTEMIC_STOP, clear_stopped
+
+        # A restart is what lifts a SYSTEMIC stop; the second consumer starts
+        # after this, so it never sees the previous run's marker.
+        with suppress(OSError):
+            clear_stopped(MAIL_SYSTEMIC_STOP)
 
     def heartbeat():
         """Long task renewal and idle loop progress both retain lifecycle evidence."""

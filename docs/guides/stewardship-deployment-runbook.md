@@ -709,8 +709,11 @@ The release that runs two mail consumer processes in `mail-dispatch` raises
 the `pk_stewardship_mail_dispatch` login's connection limit from four to six
 (three per process), for the same reasons and with the same rules as the
 [worker connection limit](#worker-connection-limit-339). Run this as the
-operator superuser *before* the release's `database-grants` step; the
-running mail worker is unaffected:
+operator superuser *before* the release's `database-grants` step, and as
+close as possible before `mail-dispatch` is recreated. The running mail
+worker is unaffected, but from this point until the recreate an old mail
+container that restarts for any reason refuses to start (its image expects
+four), so Family mail stops until the new one is up:
 
 ```sh
 docker compose -f COMPOSE -p PROJECT exec -T postgres \
@@ -739,8 +742,10 @@ What to watch after deploying it:
 - `docker compose ... top mail-dispatch` lists two application processes
   (`runtime ... --queue mail` is the second), and up to two Family mail
   helpers while mail is going out.
-- `helper_timed_out` entries for `mail_helper`: a `WARNING` is a late
-  heartbeat from the second process, an `ERROR` means it was stopped.
+- `helper_timed_out` entries for `mail_helper` with no `helper` field
+  are the second process's: a `WARNING` is a late heartbeat, an `ERROR`
+  means it was stopped or killed. Entries naming a `helper` (such as
+  `family_delivery_worker`) are SMTP helper deadline kills, as before.
 - The daily sending limit is shared through the database; a Gmail limit or
   outage pause may be logged once by each process.
 - The container uses roughly one more Python process's memory (about 150 to

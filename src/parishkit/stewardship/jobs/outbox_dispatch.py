@@ -21,6 +21,7 @@ def delivery_handler(
     credential_path=None,
     scheduler=False,
     batched=True,
+    shared_stop=None,
 ):
     """Stored purpose selects a verifier; it never replaces that verifier's proof.
 
@@ -34,6 +35,7 @@ def delivery_handler(
         credential_path=credential_path,
         scheduler=scheduler,
         batched=batched,
+        shared_stop=shared_stop,
     )
     # Each Administrator-routed owner keeps its own cohort, content and SQL
     # admission; the purpose only names which compiled owner must prove it.

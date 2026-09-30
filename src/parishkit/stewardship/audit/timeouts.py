@@ -12,12 +12,14 @@ never replaces the original failure.
 import json
 import logging
 from copy import deepcopy
-from threading import Thread
+from threading import BoundedSemaphore, Thread
+from time import monotonic
 from uuid import UUID, uuid4
 
 from django.db import connections
 
 from parishkit.stewardship.observability import (
+    TIMEOUT_LIMITS,
     Event,
     current_correlation,
     current_task,
@@ -104,6 +106,22 @@ def insert_timeout(cursor, event, level, context):
     )
 
 
+# At most one private timeout-log connection per process at a time. Each
+# consumer process's SQL budget is a task connection, a lease-renewal
+# connection and this one (database_provisioning.role_limit); several threads
+# (the task's in-flight check, a helper reaper, the sibling supervisor) can
+# record at once, so without this they could open more and a refused
+# connection could stop a renewal. A writer that cannot get the slot within
+# WRITER_WAIT_SECONDS gives up; recording is best effort, and the entry is
+# still in the process log.
+_WRITER = BoundedSemaphore(1)
+WRITER_WAIT_SECONDS = 5
+
+
+class TimeoutLogBusy(Exception):
+    """A timeout entry gave up waiting for its process's timeout-log slot."""
+
+
 def _private_connection(settings_dict):
     """A fresh, short-lived connection that shares no transaction with the caller."""
     base = connections["default"]
@@ -131,6 +149,7 @@ def record_timeout(
     count=None,
     outcome=None,
     settings_dict=None,
+    process_log=True,
 ):
     """Persist one timeout entry on a private connection; never raise.
 
@@ -139,7 +158,9 @@ def record_timeout(
     ``helper`` names a killed helper process by its entry point, and
     ``count`` says how many occurrences one summary entry stands for.
     ``settings_dict`` lets a helper thread (a read guard's deadline timer) use
-    its owning thread's database login.
+    its owning thread's database login. ``process_log=False`` is for a
+    caller that has already logged this timeout's process-log line with
+    the same facts under its own documented event (backup_drive).
     """
     try:
         if event not in TIMEOUT_EVENTS or level not in LEVELS:
@@ -149,46 +170,82 @@ def record_timeout(
             task_id = current_task()
         if task_id is not None and not isinstance(task_id, UUID):
             raise ValueError("A timeout entry names a task by its UUID.")
-        emit(event, level=LEVELS[level], task_id=task_id)
-        db = _private_connection(settings_dict)
+        # The process log gets what stopped, its limit and the elapsed time
+        # first, so they survive even if the durable write below fails.
+        emit(
+            event,
+            level=LEVELS[level],
+            task_id=task_id,
+            timeout=what if process_log and what in TIMEOUT_LIMITS else None,
+            limit_seconds=_seconds(limit_seconds) if process_log else None,
+            elapsed_seconds=_seconds(elapsed_seconds) if process_log else None,
+        )
+        waiting = monotonic()
+        if not _WRITER.acquire(timeout=WRITER_WAIT_SECONDS):
+            raise TimeoutLogBusy(monotonic() - waiting)
         try:
-            with db.cursor() as cursor:
-                cursor.execute("SET statement_timeout = '2s'")
-                cursor.execute("SET lock_timeout = '1s'")
-                if task_id is not None and (task_type is None or attempt is None):
-                    try:
-                        cursor.execute(
-                            "SELECT task_type, attempt FROM stewardship_task_run "
-                            "WHERE id=%s",
-                            [task_id],
-                        )
-                        row = cursor.fetchone()
-                    except Exception:
-                        # A login without task read access still records the
-                        # entry; only the task's type and attempt are missing.
-                        row = None
-                    if row is not None:
-                        task_type = task_type or row[0]
-                        attempt = attempt if attempt is not None else row[1]
-                context = timeout_context(
-                    what=what,
-                    helper=helper,
-                    task_id=task_id,
-                    task_type=task_type,
-                    attempt=attempt,
-                    limit_seconds=limit_seconds,
-                    elapsed_seconds=elapsed_seconds,
-                    count=count,
-                    outcome=outcome,
-                )
-                insert_timeout(cursor, event, level, context)
+            _write(
+                event,
+                level,
+                settings_dict,
+                what=what,
+                helper=helper,
+                task_id=task_id,
+                task_type=task_type,
+                attempt=attempt,
+                limit_seconds=limit_seconds,
+                elapsed_seconds=elapsed_seconds,
+                count=count,
+                outcome=outcome,
+            )
         finally:
-            db.close()
+            _WRITER.release()
+    except TimeoutLogBusy as busy:
+        # The entry's facts are already in the process log above; this says
+        # the durable copy was given up, with its own limit and wait.
+        emit(
+            Event.TASK_TIMED_OUT,
+            level=logging.WARNING,
+            task_id=task_id if isinstance(task_id, UUID) else None,
+            timeout="timeout_log_slot",
+            limit_seconds=_seconds(WRITER_WAIT_SECONDS),
+            elapsed_seconds=_seconds(busy.args[0]),
+        )
     except Exception as error:
         # Recording is best effort; the stopped work already has its own outcome.
         emit_failure(
             error, event=event if event in TIMEOUT_EVENTS else Event.TASK_FAILED
         )
+
+
+def _write(event, level, settings_dict, *, task_id, task_type, attempt, **values):
+    """Insert one entry on a private connection, looking up the task if needed."""
+    db = _private_connection(settings_dict)
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '2s'")
+            cursor.execute("SET lock_timeout = '1s'")
+            if task_id is not None and (task_type is None or attempt is None):
+                try:
+                    cursor.execute(
+                        "SELECT task_type, attempt FROM stewardship_task_run "
+                        "WHERE id=%s",
+                        [task_id],
+                    )
+                    row = cursor.fetchone()
+                except Exception:
+                    # A login without task read access still records the
+                    # entry; only the task's type and attempt are missing.
+                    row = None
+                if row is not None:
+                    task_type = task_type or row[0]
+                    attempt = attempt if attempt is not None else row[1]
+            context = timeout_context(
+                task_id=task_id, task_type=task_type, attempt=attempt, **values
+            )
+            insert_timeout(cursor, event, level, context)
+    finally:
+        db.close()
 
 
 def record_timeout_within(seconds, event, **values):

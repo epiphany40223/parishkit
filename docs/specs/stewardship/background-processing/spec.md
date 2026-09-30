@@ -219,7 +219,12 @@ its claim locks the TaskRun row, checks that it is still queued and advances
 its fence, so a hint taken by both processes runs once and the other claims
 nothing. The main process supervises the second exactly as the worker
 supervises its source process, logging late heartbeats and a kill past the
-drain grace as `helper_timed_out` entries for `mail_helper`. The mail
+drain grace as `helper_timed_out` entries for `mail_helper` with no
+`helper` field (SMTP helper kills of the same kind name their helper). The
+sibling's drain is bounded by what is left of the container's stop grace
+period less a margin, measured from the first stop request, so the kill
+and its entry come before Docker's; the worker's source process follows
+the same rule. A SYSTEMIC mail fault stops both mail processes. The mail
 login's limit is three times the rollout overlap for the same reason as the
 worker's. The deployment setting `mail_consumers` (1 or 2, default 2) and
 its one-command override choose the count; a mail limit below six keeps

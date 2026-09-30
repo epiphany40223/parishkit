@@ -105,13 +105,34 @@ DRIVE_FAILURES = frozenset(
         "unanswered",
     }
 )
-# The time limits that can stop off-site backup work, named in the process
-# log with the limit and the elapsed seconds (the timeout-logging rule):
-# the whole copy's budget, a retry refused because it would pass that
-# budget, one Drive request's own timeout, and a "Test access" check closed
-# unanswered after waiting too long.
+# The time limits named in the process log with the limit and the elapsed
+# seconds (the timeout-logging rule). The off-site backup's own: the whole
+# copy's budget, a retry refused because it would pass that budget, one
+# Drive request's own timeout, and a "Test access" check closed unanswered
+# after waiting too long. Every durable timeout entry's ``what``
+# (audit.schemas.TIMEOUT_KINDS, pinned by a test), so its process-log line
+# carries the same facts when the durable write fails. And
+# ``timeout_log_slot``: a timeout entry that gave up waiting for its
+# process's one timeout-log connection (audit.timeouts).
 TIMEOUT_LIMITS = frozenset(
-    {"drive_copy_budget", "drive_retry_budget", "drive_request", "drive_probe_wait"}
+    {
+        "drive_copy_budget",
+        "drive_retry_budget",
+        "drive_request",
+        "drive_probe_wait",
+        "read_guard",
+        "lease",
+        "retention_budget",
+        "statement_timeout",
+        "lock_timeout",
+        "transaction_timeout",
+        "mail_helper",
+        "source_helper",
+        "provider_check",
+        "renewal_drain",
+        "control_lock",
+        "timeout_log_slot",
+    }
 )
 
 
