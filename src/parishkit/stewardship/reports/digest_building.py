@@ -84,7 +84,11 @@ def retained_daily_document(snapshot, facts):
         requested_at=snapshot.observed_at,
     )
     return DailyDigestDocument(
-        snapshot.pk, document, retained_statistics(snapshot), retained_dates(snapshot)
+        snapshot.pk,
+        document,
+        retained_statistics(snapshot),
+        retained_dates(snapshot),
+        snapshot.configuration.parish.date_format,
     )
 
 

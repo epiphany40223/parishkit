@@ -179,3 +179,114 @@ def test_background_roles_can_read_the_active_date_format(live_response_service,
     choose(live_response_service.service.store, "eu_dot")
     with task_login(role, exact=True, reconnect=True):
         assert active_date_format() == "eu_dot"
+
+
+# Background mail pins the date format of the configuration it captured (#280).
+# Each test changes the Parish format after capture and lends the worker the
+# new active style, as the broker does, so only a pinned render stays put.
+
+
+def test_daily_digest_keeps_its_snapshot_date_format(response_service):
+    """A daily digest compiled after a format change keeps the snapshot's style."""
+    from functools import partial
+
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.reports.daily_digest import render_daily_digest
+    from parishkit.stewardship.reports.digest_building import (
+        admit_daily_facts,
+        begin_daily_facts,
+        load_daily_document,
+    )
+    from parishkit.stewardship.reports.digest_capture import capture_daily_snapshot
+    from parishkit.stewardship.reports.materialization import materialize_fact_set
+
+    from .campaign_builders import campaign_clock
+    from .test_daily_digest_capture_postgresql import prepare
+    from .test_daily_digest_planning_postgresql import INSTANT
+
+    harness = response_service
+    with campaign_clock(INSTANT):
+        claim = prepare(harness)
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            capture_daily_snapshot(claim)
+        choose(harness.service.store, "eu_dot")
+        with task_login(ServiceRole.WORKER, exact=True):
+            with work_transaction():
+                facts = begin_daily_facts(claim)
+            materialize_fact_set(
+                facts.pk, claim, admit=partial(admit_daily_facts, claim)
+            )
+            with work_transaction():
+                document = load_daily_document(claim, facts.pk)
+            with dates.using(active_date_format()):
+                assert dates.current() == "eu_dot"
+                content = render_daily_digest(
+                    document, public_origin="https://parish.example"
+                )
+    last = document.covered_dates[-1]
+    assert document.date_format in (None, "us_long")
+    assert content.subject.endswith(" — " + dates.format_date(last, "us_long")) or (
+        content.subject.endswith(" through " + dates.format_date(last, "us_long"))
+    )
+    assert dates.format_date(last, "eu_dot") not in content.subject
+    row = dates.format_date(last, "us_long", compact=True)
+    assert row in content.text
+    assert dates.format_date(last, "eu_dot", compact=True) not in content.text
+
+
+def test_weekly_digest_keeps_its_snapshot_date_format(live_response_service):
+    """A weekly digest compiled after a format change keeps the snapshot's style."""
+    from .campaign_builders import campaign_clock
+    from .test_weekly_capture_postgresql import INSTANT
+    from .test_weekly_fanout_postgresql import captured, detached
+
+    harness = live_response_service
+    respond(harness, "Dated weekly request")
+    with campaign_clock(INSTANT):
+        claim, _ = captured(harness)
+        choose(harness.service.store, "eu_dot")
+        with dates.using("eu_dot"):
+            page, [content] = detached(claim)
+    [plan] = page.recipients
+    document = plan.document
+    zone = ZoneInfo(document.campaign_timezone)
+    observed = document.observed_at.astimezone(zone)
+    assert document.date_format in (None, "us_long")
+    assert content.subject.endswith(dates.format_date(observed.date(), "us_long"))
+    assert dates.format_local(observed, "us_long") in content.text
+    assert dates.format_local(observed, "eu_dot") not in content.text
+
+
+def test_receipt_uses_its_pinned_configuration_date_format(live_response_service):
+    """A receipt stamp follows its pinned configuration; a sent one never changes."""
+    from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+    from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+    from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
+    from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+    from .test_family_mail_dispatch_postgresql import claim
+    from .test_receipt_dispatch_postgresql import begin, receipt
+
+    harness = live_response_service
+    store = harness.service.store
+    message = receipt(harness, production=True)
+    submitted = Submission.objects.get()
+    timezone = harness.campaign.active_configuration.timezone
+    choose(store, "eu_dot")
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        # A stale worker style (the broker's per-message cache) cannot leak in.
+        with dates.using("us_long"):
+            mail, _, configuration, _ = begin(message, execution)
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    assert configuration == SystemConfiguration.objects.get().active_configuration_id
+    stamp = dates.format_instant(submitted.submitted_at, timezone, "eu_dot")
+    assert f"Submitted: {stamp}" in mail.text
+    sent = OutboxMessage.objects.select_related("render").get(pk=message.pk)
+    assert sent.state == "delivered" and f"Submitted: {stamp}" in sent.render.text
+    # A later change leaves the delivered receipt's retained render untouched.
+    choose(store, "iso")
+    again = OutboxMessage.objects.select_related("render").get(pk=message.pk)
+    assert again.render.text == sent.render.text

@@ -11,6 +11,7 @@ from html import escape
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.dates import format_date, format_local
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
@@ -78,7 +79,12 @@ class WeeklyCorrection:
 
 @dataclass(frozen=True, repr=False)
 class WeeklyDigestDocument:
-    """A coherent captured interval with canonical item order and campaign timezone."""
+    """A coherent captured interval with canonical item order and campaign timezone.
+
+    ``date_format`` is the parish date format of the configuration the
+    snapshot pinned (None means the default style), so a compile retried
+    after an Admin changes the format still renders as first captured.
+    """
 
     snapshot_id: UUID
     campaign_id: UUID
@@ -89,6 +95,7 @@ class WeeklyDigestDocument:
     information: tuple[WeeklyInformation, ...]
     corrections: tuple[WeeklyCorrection, ...]
     manual: bool = False
+    date_format: str | None = None
 
     def __post_init__(self):
         """Reject mixed/duplicate rows and future input before any email is compiled."""
@@ -96,6 +103,7 @@ class WeeklyDigestDocument:
             not isinstance(self.snapshot_id, UUID)
             or not isinstance(self.campaign_id, UUID)
             or type(self.manual) is not bool
+            or not isinstance(self.date_format, str | None)
         ):
             raise ValueError("Weekly digest requires typed report identity.")
         _instant(self.observed_at)
@@ -161,6 +169,13 @@ def render_weekly_digest(document, *, public_origin):
         raise TypeError("Weekly digest rendering requires an immutable document.")
     if document.empty:
         raise ValueError("An empty weekly interval must not create an email.")
+    # Pin the snapshot configuration's style, not the worker's active one.
+    with dates.using(document.date_format):
+        return _render_weekly_digest(document, public_origin=public_origin)
+
+
+def _render_weekly_digest(document, *, public_origin):
+    """Compile the email body; the caller has pinned the parish date format."""
     zone = ZoneInfo(document.campaign_timezone)
     observed = document.observed_at.astimezone(zone)
     title = (

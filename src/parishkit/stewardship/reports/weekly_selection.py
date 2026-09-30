@@ -133,6 +133,7 @@ class WeeklySelection:
         campaign_name,
         campaign_timezone,
         manual=False,
+        date_format=None,
     ):
         """Build the compiler input without querying mutable source or item rows."""
         return WeeklyDigestDocument(
@@ -145,6 +146,7 @@ class WeeklySelection:
             information=self.information,
             corrections=self.corrections,
             manual=manual,
+            date_format=date_format,
         )
 
 

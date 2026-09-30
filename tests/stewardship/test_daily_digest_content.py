@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
     PopulationStatistics,
 )
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.digest_content import validate_digest_body
 
 from .test_participation_rendering import document as participation
@@ -276,3 +277,21 @@ def test_branding_is_escaped_and_render_is_reproducible():
     assert "evil" not in repr(first)
     with pytest.raises(TypeError):
         render_daily_digest(None, public_origin="https://campaign.example.org")
+
+
+def test_pinned_date_format_overrides_the_ambient_style():
+    """The snapshot's style wins over a worker's active one; None means default."""
+    last = document().participation.last_date
+    with dates.using("iso"):
+        pinned = render(replace(document(), date_format="eu_dot"))
+        unset = render(document())
+    assert pinned.subject.endswith(dates.format_date(last, "eu_dot"))
+    assert dates.format_date(last, "eu_dot", compact=True) in pinned.text
+    assert unset.subject.endswith(dates.format_date(last, "us_long"))
+    assert dates.format_date(last, "iso") not in pinned.text + unset.text
+
+
+def test_date_format_must_be_text_or_unset():
+    """A non-string style is rejected before anything is rendered."""
+    with pytest.raises(ValueError, match="typed immutable"):
+        replace(document(), date_format=5)

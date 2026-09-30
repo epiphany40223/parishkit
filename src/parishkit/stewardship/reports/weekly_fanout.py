@@ -118,6 +118,7 @@ def load_weekly_page(claim):
                 campaign_name=snapshot.timezone_configuration.name,
                 campaign_timezone=snapshot.timezone_configuration.timezone,
                 manual=manual,
+                date_format=snapshot.configuration.parish.date_format,
             )
         )
         plans.append(

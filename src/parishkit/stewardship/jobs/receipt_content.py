@@ -64,12 +64,15 @@ def render_receipt(
     testing_recipient=None,
     reply_to=None,
     banner="",
+    date_format=None,
 ):
     """Append required fixed facts independently of optional parish-authored text.
 
     No answer dictionary or credential enters this API. The caller supplies the
     immutable submission instant and campaign timezone, not a browser's timezone.
     The owning transaction separately pins configuration, source and submission.
+    ``date_format`` is that pinned configuration's parish style; None (the
+    fictional Admin preview) uses the request's active style.
     """
     if (
         not isinstance(identity, DeliveryIdentity)
@@ -95,8 +98,7 @@ def render_receipt(
         or type(campaign_timezone) is not str
     ):
         raise ValueError("Receipt requires an aware submission instant and timezone.")
-    # The parish date format; a worker lends the active choice (see broker).
-    stamp = dates.format_instant(submitted_at, campaign_timezone)
+    stamp = dates.format_instant(submitted_at, campaign_timezone, date_format)
     if prepare_content(block.html, text=block.text) != block:
         raise ValueError("Receipt block requires canonical safe content.")
     validate_receipt_content("", block.html, block.text)
