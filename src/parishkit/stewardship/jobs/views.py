@@ -351,14 +351,37 @@ def task_detail(request, task_id):
     return _read(request, task_id)
 
 
-# Plain-language names for task types an Administrator meets first, notably
-# during initial setup; other types still show their stable internal name.
+# Plain-language names for every task type; the stable internal name stays
+# under Technical details. A type missing here still shows its internal name.
 TASK_NAMES = {
     "setup_source_load": _("Initial ParishSoft data load"),
     "setup_source_cleanup": _("Initial setup cleanup"),
     "setup_finalize": _("Finishing initial setup"),
     "setup_mail_test": _("Setup test email"),
     "source_refresh": _("ParishSoft data refresh"),
+    "activation_catchup": _("Initial campaign mail after go-live"),
+    "branding_cleanup": _("Removing old logo files"),
+    "campaign_boundary": _("Campaign start or end"),
+    "campaign_mail_test": _("Campaign test email"),
+    "daily_digest_prepare": _("Preparing the daily Admin report"),
+    "daily_digest_finalize": _("Finishing the daily Admin report"),
+    "weekly_digest_prepare": _("Preparing the weekly Admin report"),
+    "weekly_digest_finalize": _("Finishing the weekly Admin report"),
+    "family_mail_prepare": _("Preparing Family emails"),
+    "family_mail_test": _("Test email for chosen Families"),
+    "operational_collect": _("Collecting system alerts"),
+    "operational_prepare": _("Preparing system alert email"),
+    "operational_slack": _("Posting system alerts to Slack"),
+    "outbox_delivery": _("Sending email"),
+    "production_cleanup": _("Deleting Testing data before go-live"),
+    "production_tokens": _("Preparing Family links for go-live"),
+    "production_token_cleanup": _("Discarding unused Family links"),
+    "report_export": _("Report export file"),
+    "report_exact_export": _("Calculating a report export"),
+    "report_export_cleanup": _("Removing an expired export file"),
+    "report_facts": _("Updating report figures"),
+    "report_fact_verification": _("Checking report figures"),
+    "security_prepare": _("Preparing a security alert email"),
 }
 
 
