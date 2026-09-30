@@ -5,6 +5,7 @@ stand-in that streams known bytes; the sealing, the archive, the manifest, the
 record, the retention and every refusal are the real code.
 """
 
+import base64
 import io
 import json
 import shutil
@@ -607,3 +608,84 @@ def test_backups_include_hosted_files(deployment):
         member = archive.extractfile(f"media/hosted-files/{name}")
         assert member.read() == b"%PDF-hosted"
     assert backup.MAX_FILES_BYTES == 512 * 1024 * 1024
+
+
+def test_a_pasted_public_key_must_be_one_canonical_usable_key():
+    """Only a key some private key opens, in the form backup-keygen prints."""
+    private, public = backup_sealing.generate_keypair()
+    recipient = backup_sealing.parse_public_key(" " + public)
+    assert backup_sealing.public_text(recipient) == public.strip()
+    for text in (
+        "",
+        public.strip().rstrip("="),
+        json.dumps({"public_key": public.strip()}),
+        "A" * 43 + "=",  # the all-zero point
+        "AQ" + "A" * 41 + "=",  # a low-order point
+        "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=",  # top bit set
+        "9v///////////////////////////////////////38=",  # p + 9
+        None,
+    ):
+        with pytest.raises(backup_sealing.SealError):
+            backup_sealing.parse_public_key(text)
+
+
+def test_about_half_of_private_keys_are_recognized_and_no_public_key_is():
+    """A private key with the top bit set can never be a public key."""
+    pairs = [backup_sealing.generate_keypair() for _ in range(64)]
+    assert not any(backup_sealing.looks_private(public) for _, public in pairs)
+    flagged = [private for private, _ in pairs if backup_sealing.looks_private(private)]
+    assert 0 < len(flagged) < 64
+    for private in flagged:
+        with pytest.raises(backup_sealing.SealError):
+            backup_sealing.parse_public_key(private)
+
+
+def test_a_proof_opens_only_with_the_matching_private_key():
+    """The sealed code comes back only from the key's own private half."""
+    private, public = backup_sealing.generate_keypair()
+    recipient = backup_sealing.parse_public_key(public)
+    challenge, code = backup_sealing.seal_proof(recipient)
+    assert challenge.startswith(backup_sealing.PROOF_PREFIX) and code not in challenge
+    assert len(challenge) <= backup_sealing.MAX_PROOF_TEXT
+    key = backup_sealing.PrivateKey(base64.b64decode(private))
+    assert backup_sealing.open_proof(challenge + "\n", key) == code
+    other = backup_sealing.PrivateKey.generate()
+    for text, private_key in ((challenge, other), ("PKBKP1:AAAA", key), ("x", key)):
+        with pytest.raises(backup_sealing.SealError):
+            backup_sealing.open_proof(text, private_key)
+    shown = backup_sealing.display_code(code)
+    assert len(shown) == 14 and shown.replace("-", "") == code
+    typed = " " + shown.lower().replace("0", "o").replace("1", "l") + " "
+    assert backup_sealing.normalize_code(typed) == code
+
+
+def test_the_prove_command_prints_the_code_and_refuses_generically(
+    tmp_path, capsys, monkeypatch
+):
+    """backup-prove reads the challenge from a file or standard input."""
+    from parishkit.stewardship import backup_commands
+
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
+    key = tmp_path / "operator.key"
+    assert main(["backup-keygen", "--destination", str(key)]) == 0
+    public = json.loads(capsys.readouterr().out)["public_key"]
+    challenge, code = backup_sealing.seal_proof(backup_sealing.parse_public_key(public))
+    (tmp_path / "challenge").write_text(challenge + "\n")
+    assert (
+        main(
+            ["backup-prove", "--key", str(key), "--input", str(tmp_path / "challenge")]
+        )
+        == 0
+    )
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["code"] == backup_sealing.display_code(code)
+    monkeypatch.setattr("sys.stdin", io.StringIO(challenge + "\n"))
+    assert main(["backup-prove", "--key", str(key)]) == 0
+    assert json.loads(capsys.readouterr().out)["code"] == printed["code"]
+    other = tmp_path / "other.key"
+    other.write_text(backup_sealing.generate_keypair()[0])
+    monkeypatch.setattr("sys.stdin", io.StringIO(challenge + "\n"))
+    assert main(["backup-prove", "--key", str(other)]) == 2
+    captured = capsys.readouterr()
+    assert "could not be opened" in captured.err and challenge not in captured.err
+    assert code not in captured.out + captured.err

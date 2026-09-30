@@ -40,6 +40,7 @@ _COMMAND_OPTIONS = {
     "backup": {"config"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
+    "backup-prove": {"key", "input"},
     "smoke": {
         "config",
         "target",
@@ -196,7 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .source_form_check import execute_source_form_check
 
         return execute_source_form_check(args)
-    if args.command in {"backup", "backup-keygen", "backup-open"}:
+    if args.command in {"backup", "backup-keygen", "backup-open", "backup-prove"}:
         from .backup_commands import execute_backup_command
 
         return execute_backup_command(args)
