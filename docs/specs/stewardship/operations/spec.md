@@ -255,7 +255,7 @@ network identity of the service that uses it, so a stolen password is
 useless from anywhere else. The per-login passwords, `scram-sha-256`, the
 grants and every login's [grant admission](#installer-idle-polling) stay as
 they are; the source rules are a second, independent check in front of them.
-The [dedicated off-site uploader](https://github.com/epiphany40223/parishkit/issues/235)
+The [dedicated off-site uploader](#dedicated-off-site-uploader-planned-post-launch)
 builds on these rules and gets its own source when it lands.
 
 ### Logins and their sources
@@ -1820,6 +1820,387 @@ without creating a new backup or resetting retention, as defined by the
 [purge workflow](../admin-portal/spec.md#campaign-purge). Verification failures
 are recorded durably with sanitized diagnostics; no backup credentials or
 decrypted contents are returned to the web process.
+
+### Dedicated off-site uploader (planned, post-launch)
+
+Planned by [#235](https://github.com/epiphany40223/parishkit/issues/235);
+not yet implemented. It removes the v1 exception above: the backup profile,
+which reads all database data and the whole credentials tree, loses its
+network route out again, and a separate one-shot `backup-uploader` profile
+copies finished sets to Google Drive. The copy's behavior does not change:
+ciphertext and manifest only, the same catch-up window, budgets, retries,
+deadline and Drive retention, no work-order lock or long transaction during
+an upload, the same outcome rows, the same `backup_offsite_failed` alert and
+the same Admin status (see the
+[runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)).
+It builds on the [database connection sources](#database-connection-sources)
+(#2111), which are in force, and on the queued **Test access** re-check
+(#269), whose definer it reuses.
+
+What it does not change: the Google Workspace key, and with it the
+domain-wide delegation of the full `drive` scope, is also mounted by
+`mail-dispatch` and by the Google Workspace credential installer, which both
+have egress. Taking the key out of the backup profile therefore narrows who
+can *combine* it with the database and the plaintext credentials, not who
+holds it. Narrowing the key itself is the separate Drive-only identity under
+**Drive scope** below.
+
+What it stops, with the source rules: the backup worker still reads every
+login's password, the cluster superuser's included, because it archives the
+credentials tree, but PostgreSQL accepts each login only from its own
+service's source, so from the backup worker's own network those passwords
+are useless; it also cannot reach Valkey. What it keeps until this change is
+its own login's authority and its route out. The split removes the route
+out, and the contract release removes its own login's INSERT on the
+off-site outcome rows. After it, a compromised backup image can neither send
+anything out itself nor record a set as copied (and so silence the off-site
+alert). It can still act as its own login: it writes `backups/` and the
+backup run rows, so it can stage a directory the uploader then copies into
+the parish's own folder (**Handoff** below). The rest is listed under
+[what source rules cannot stop](#what-source-rules-cannot-stop).
+
+- **Networks and source.** `backup-uploader` is a one-shot profile, the
+  sixth entry of `runtime_network.OFFLINE_PROFILES`. Appending keeps every
+  earlier profile's slice, and a /25 `offline` block holds eight. It
+  therefore gets its own internal /28 slice of `runtime_network.offline` (by
+  default `172.29.242.80/28`), with PostgreSQL at offset 2 and its
+  containers in the upper /29 (by default `172.29.242.88/29`), and it also
+  joins `application-egress`, like every other provider caller
+  (`runtime_topology._join_egress`). It never joins `backend`: it needs no
+  Valkey and no other service. The source rules gain one line,
+  `host "<postgres.name>" pk_stewardship_backup_uploader <upper /29>
+  scram-sha-256`, rendered by `runtime_hba.source_rules` from the same
+  topology as every other line; the renderer refuses an inventory login
+  without a source, so the login cannot ship without its rule. The backup
+  worker keeps its own network and its rule unchanged; in the contract
+  release it leaves only `application-egress`. Restricting the uploader's
+  egress to Google's API hosts needs an egress proxy or host firewall rules
+  and stays later hardening, tracked on its own.
+- **Mounts.** The uploader has its own closed inventory, admitted from
+  kernel mount evidence at startup as `backup_boundaries` does for the
+  backup profile: a read-only root filesystem; its service configuration
+  document and its database password file (read-only); the startup
+  interlock (held shared only as **Scheduling** describes); the Google
+  Workspace credential's read-only rotating directory, as `mail-dispatch`
+  mounts it, so a key an Administrator replaces is read on the next run with
+  no recreation; and the backups directory, read-only. It mounts neither the
+  configuration, credentials, media or authority trees, nor `backup_data`,
+  the provisioning record or any Valkey secret. The backup worker keeps its
+  inventory (it archives those trees).
+- **Uploader password.** Its file is an ordinary runtime login password,
+  `runtime_paths.database_password("backup-uploader")` (by default under
+  `credentials/database/`), overridable through `postgres.password_files`
+  like every other. The backup worker can read it, as it reads every login's,
+  but the source rules refuse that login from the backup worker's network,
+  which is the protection every other login's password has relied on
+  since #2111. Restores, drills and replacement hosts therefore need nothing new:
+  the file travels and is checked like the others. (Before the source rules,
+  the design kept this one password outside the archived trees under its own
+  path with a regenerate option; the source rules made that unnecessary.)
+- **Handoff.** A set is finished when its `manifest.json` exists; the backup
+  writes it last, after `fsync`. The uploader considers only finished sets
+  whose manifest digest has a `stewardship_backup_run` row, and it still
+  checks each file against the manifest's SHA-256 before trusting the copy.
+  This guards against stray directories on the host (a hand copy, a
+  half-restored set), not against a compromised backup image: the backup
+  login writes both `backups/` and the run rows, so such an image can stage
+  any directory, plaintext included, and have it uploaded to the parish's
+  own folder.
+- **Locking.** The per-host copy lock becomes an exclusive `flock` on a
+  descriptor of the backups directory itself, opened
+  `O_RDONLY|O_DIRECTORY|O_NOFOLLOW` (today it is the `.offsite-copy.lock`
+  file, which a read-only mount cannot create), so the uploader writes
+  nothing on the host; `flock` works on a read-only bind mount and across
+  containers, since they share the host inode. The uploader takes it before
+  it connects to the database and before the startup interlock.
+  - *Expand transition.* An old-release copy can still be running after the
+    upgrade (a cron backup that was uploading at retarget, or one created on
+    the old image that waited out the offline interlock) and holds only the
+    file lock. So in the expand release both copiers take the legacy file
+    lock first, when the file exists (the uploader opens it read-only; the
+    backup profile creates it as today), and then the directory lock, always
+    in that order. The contract release drops the file lock; a leftover
+    `.offsite-copy.lock` file is harmless, since retention looks only at
+    directories.
+  - *Retention.* Local retention in the backup profile takes the directory
+    lock without waiting and, while a copy holds it, skips pruning for that
+    run, so it can never remove a set mid-upload. A skip is an INFO line,
+    `backup_retention_paused_copy`, since it is routine and the next backup
+    prunes. When four or more complete sets are already past the retention
+    rule's prune point (two days of skipped prunes at two backups a day),
+    the line is a WARNING instead, so a stuck lock shows in the cron output
+    before the disk fills; a Drive outage behind it already raises
+    `backup_offsite_failed`.
+  - *Offline work.* The scripted upgrade (after step 1), restore and drill
+    hold the copy lock from the host for their whole offline phase, and the
+    manual restore and drill procedures take it in their first step (or
+    confirm that no `backup-uploader` container is running). An upload
+    already running is therefore finished, or the procedure refuses, before
+    a restore starts, so a restored database never receives a later
+    upload's outcome rows, and a cron uploader exits at the lock without
+    reaching the interlock.
+- **Scheduling.** The uploader runs from the host's cron every five
+  minutes, beside request mode, and follows request mode's idle pattern
+  (see [Take a backup now](../admin-portal/spec.md#take-a-backup-now)):
+  1. It admits its mounts and takes the copy lock. A cron run that finds the
+     lock held exits `0` with no output; only a run with `--wait-lock
+     SECONDS` (the upgrade script, or an operator by hand) reports `busy`.
+  2. It reads the destination and the pending sets, without the startup
+     interlock. With nothing pending it exits `0` silently, never reads the
+     key and leaves no trace. A database it cannot reach, or one not on the
+     current schema, is a quiet exit too; one that refuses the login (a
+     missed `database-grants`, or a source rule not yet in force) logs one
+     WARNING, as request mode does.
+  3. Only with sets pending does it take the interlock shared, for its
+     identity admission and current-schema check; if offline work holds the
+     interlock it exits quietly. It releases the interlock before any
+     upload, as today's copy runs after the backup's lease, so a long upload
+     never holds offline work back.
+
+  One schedule therefore covers scheduled backups, **Take a backup now**,
+  manual runs and catch-up after an outage, and the existing
+  `OFFSITE_GRACE` check (six hours without an outcome for the newest set)
+  alerts if the cron line is missing. `smoke` (with and without `--send`)
+  moves to the uploader profile.
+- **Scripted upgrades.** Step 1 runs `backup-worker` as today. Whenever the
+  topology the host is running has `backup-uploader`, it then runs the
+  uploader with `--wait-lock 1800 --require-digest D`, where `D` is the
+  step-1 set's manifest digest (or the reused backup's, on a resumed users
+  upgrade), whatever the backup's own line said: on an expand topology the
+  backup's copy can report `busy` because the uploader holds the lock.
+  - *Success* is a `stewardship_backup_upload` row with state `uploaded`,
+    digest `D` and the currently applied folder, whichever run wrote it (a
+    cron uploader, or a copy already in flight, may have copied the set
+    first and leave this run nothing to do). The uploader looks the row up
+    after its own pass and reports that answer; the script reads that field,
+    not the pass's own counts. LOCAL also accepts `not_configured`, as
+    step 1 accepts it from the backup line today.
+  - *An expired wait* (30 minutes) abandons the upgrade, as `busy` does
+    today. The message says an off-site copy is still running and to try
+    again later; the wait cannot cover a whole catch-up, whose budget is
+    four hours. The expiry is a durable timeout entry with
+    `what='lock_timeout'`, the limit and the elapsed time, as the backup
+    lock's wait logs, so no allowlist changes.
+  - Without the uploader in the running topology, step 1 keeps today's rule
+    on the backup line's `offsite` field, so the same script upgrades from a
+    release before the split.
+  - *Full stop.* The host holds the copy lock from the end of step 1, so a
+    cron uploader that starts during a later full stop exits at the lock
+    within seconds. If the full stop's one-off check sees it running, the
+    run refuses with `One-off containers of stewardship are still running
+    (backup-uploader)` before it stops anything and is repeated, exactly as
+    for a cron backup today; the shared full-stop block does not change.
+  - The upgrade's source check (step 6) runs `database-sources` in every
+    one-shot profile, so it covers the uploader with no new step.
+- **Database login.** A new `pk_stewardship_backup_uploader` login, created
+  like every other runtime login (NOINHERIT, NOBYPASSRLS, no memberships, no
+  `pg_read_all_data`, the operator-connection limit the backup login has).
+  Its registry in `runtime_grants`:
+  - SELECT and INSERT on `stewardship_backup_upload` (its outcome rows; the
+    table's guard already admits INSERT only);
+  - SELECT on `stewardship_backup_run (manifest_digest)`;
+  - SELECT on `stewardship_system_configuration (id)`, the set tag's source
+    (`backup_offsite.set_tag`), and nothing else of that table;
+  - INSERT on `stewardship_operational_log`, for timeout events only (the
+    writer trigger's existing timeout clause gains this login);
+  - EXECUTE on `stewardship_backup_destination_v1()` and the debug-off read
+    every runtime login has.
+
+  Startup admits the login's exact attributes, grants and mounts before any
+  Drive call, as the backup command admits its own; the upgrade check
+  refuses the same drift. In the contract release the backup login loses
+  INSERT on `stewardship_backup_upload` (and SELECT, unless the contracted
+  backup code still reads it), and the `disabled` outcome moves to the
+  uploader with the rest of the copy.
+- **Destination function.** Today `destination()` and `set_tag()` read the
+  whole canonical configuration document and the runtime row through
+  `pg_read_all_data`. The re-check for
+  [#269](https://github.com/epiphany40223/parishkit/issues/269) already
+  added `stewardship_backup_destination_v1()` in its frozen migration 0176:
+  a stable SECURITY DEFINER with a fixed `search_path` and no PUBLIC
+  EXECUTE that returns the applied backup folder link (`backup_target`) and
+  delegated mailbox (`delegated_email`), each null when not configured. Its
+  body refuses every session login except the Google Workspace installer's
+  and members of the schema owner, so the uploader cannot call it yet. The
+  uploader's migration (0193, below) replaces it with the same signature
+  and output columns, so `CREATE OR REPLACE` is allowed, and a caller check
+  that also admits `pk_stewardship_backup_uploader`. The runtime ID is not
+  added as an output column, which would change the return type and so need
+  a drop or a new version; the column grant above gives the uploader that
+  one value. The uploader parses the link as today, so an unparsable link is
+  still a configuration failure, not "off".
+- **Schema.** Two forward migrations with frozen SQL files under the
+  [post-launch schema policy](#post-launch-schema-policy):
+  - *0193, in the preparation release*, inert until the login exists (a
+    function body may name a role that does not exist yet). It replaces
+    `stewardship_backup_destination_v1()` as above, states
+    `ALTER FUNCTION ... SECURITY DEFINER` and `REVOKE ALL ... FROM PUBLIC`
+    again (the repository's rule for every replaced definer), and replaces
+    `stewardship_operational_log_writer_v1()` with the uploader added to the
+    timeout clause (`CREATE OR REPLACE` with no `ALTER`: the writer is not
+    `SECURITY DEFINER`, and must not become one). Both get the same final
+    text in their baseline files. The closing `DO` block raises unless the
+    function is still `prosecdef`, `provolatile` `s`, with the pinned
+    `search_path` and no PUBLIC EXECUTE, and both bodies name the uploader;
+    it is tested against the 0176 definitions and the new ones.
+  - *The contract migration* (number assigned when it is scheduled), in the
+    contract release: the backup login's REVOKE. Until it applies, the
+    backup login's admission tolerates exactly that old grant through
+    `CLOSURE_REVOKES`.
+
+  The new login, its grants and its source rule need no migration: the
+  migration login cannot create roles, and grants come from the registry.
+- **Drive scope.** `drive.file` stays rejected. It grants access only to
+  files the app created or a user opened with it through the Google Picker,
+  and a server-side service account cannot use the Picker, so the uploader
+  could not write into the folder an Administrator chose, nor could **Test
+  access** check it. Making it work would mean the application creates and
+  owns its own backup folder, a different setup flow and a move of the
+  existing sets; it would also still be delegated, so a leaked key would
+  reach every user's app-created files. The narrower identity worth having
+  is a dedicated, Drive-only service account *without* domain-wide
+  delegation, made a member of the shared drive that holds the backup
+  folder: a leaked uploader key then reaches only that shared drive, and
+  the Workspace key drops the `drive` scope. That needs Google Admin work by
+  the Administrator, a new credential and installer target, and its own
+  review, so it is a separate follow-up, not part of this change.
+- **Deploying a new login on an existing host.** It follows the
+  [inspection login](#database-inspection-login)'s path (#2148), plus a
+  password file:
+  1. `retarget-image` today refuses a missing once-generated password. It
+     gains one exception: it creates the password file of an identity the
+     running release adds (`runtime_identities.database_identities`) when,
+     and only when, it is absent, generated as provisioning does, written
+     create-only and owner-only under the offline interlock, never replacing
+     a file, and named in its result. Every other refusal stays.
+  2. The upgrade check requires the login and exactly its grants, so the
+     first upgrade that carries it answers `f` (or fails with `role
+     "pk_stewardship_backup_uploader" does not exist`, which the script
+     treats the same way) and runs as a schema change
+     (`STEWARDSHIP_SCHEMA_CHANGE=1`).
+  3. Step 4's `database-grants` creates the login where it is missing, with
+     that password, and grants it, as it creates the inspection login.
+     `database-roles` creates it too, on a fresh install, a replacement host
+     or a drill host. An existing login that differs is refused, never
+     repaired, as for every login.
+  4. The same release adds a network PostgreSQL must join, so the upgrade's
+     existing comparison after step 3 finds PostgreSQL's networks changed
+     and runs the full stop (the deployment runbook's
+     [database connection sources](../../../guides/stewardship-deployment-runbook.md#database-connection-sources-2111)
+     says what it prints), then the reload, the hba check and, in step 6,
+     the source check. Later upgrades find nothing to change.
+
+  A same-host restore of a set from before the login leaves the login (a
+  cluster role, not in the dump) but without grants, as for the inspection
+  login, until `database-grants` runs; the expand release makes `pk-restore`
+  run it for such a set, and `pk-restore`'s step 7 already does the full
+  stop for a set rendered on the old networks.
+- **Delivery: preparation, then expand, then contract.**
+  1. The preparation release ships migration 0193 and retarget's
+     absent-password exception. Neither does anything on its own.
+  2. The expand release ships the login, its source and network, the
+     uploader profile (with its `upload` and `smoke` commands, `--wait-lock`
+     and `--require-digest`), the directory lock with the transition's
+     double lock, and upgrade step 1's uploader run, with no migration of
+     its own, while the backup profile keeps copying as today. Its upgrade
+     is a schema change with the one-time full stop, in a normal nightly
+     window. The operator then proves the new identity on Production by
+     hand (`smoke`, then one `upload`, which reports nothing pending or
+     copies the newest set), with the old path still in place, and then
+     installs the uploader's cron line (an Administrator decision; default:
+     during expand). Both copiers then run, serialized by the copy lock;
+     whichever copies a set first records it and the other finds nothing
+     pending, so the cron path is exercised on Production while the
+     backup's own copy is still the fallback, and copies never stop between
+     the contract deploy and a later cron change.
+  3. The contract release removes the copy and egress from the backup
+     profile, the legacy file lock and the backup line's `offsite` field,
+     adds retention's lock check, and carries the contract migration (the
+     backup login's REVOKE). It changes no network PostgreSQL is on, so it
+     needs no full stop. On Production its upgrade refuses to finish while
+     the host's crontab has no uploader line. It also updates, by link
+     rather than copy, every other place that describes the copy:
+     - the backup runbook's
+       [off-site section](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)
+       (the backup line's `offsite` field, the cron line) and the crontab
+       lists that a restore or drill disables and checks, in
+       [Restore drill](../../../guides/stewardship-backup-runbook.md#restore-drill),
+       [Restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real)
+       and the
+       [scripted restores](../../../guides/stewardship-backup-runbook.md#scripted-same-host-restore),
+       naming the uploader line: on a drill host it alone could upload into
+       the live folder and prune it;
+     - the deployment runbook's
+       [database connection sources](../../../guides/stewardship-deployment-runbook.md#database-connection-sources-2111)
+       check after a rollout, which proves the off-site copy through a
+       backup run, and this spec's
+       [one-shot profiles](#logins-and-their-sources) paragraph, which says
+       the backup worker keeps `application-egress` (the expand release adds
+       the uploader's row to the sources table);
+     - the service list in the architecture spec's
+       [component model](../architecture/spec.md#technology-and-component-model),
+       where `backup-worker` holds "backup-target credentials" and
+       `backup-uploader` is missing;
+     - the Admin portal spec's
+       [backup key pick-up](../admin-portal/spec.md#parish-and-integration-configuration)
+       ("as it already does for the off-site folder") and
+       [Take a backup now](../admin-portal/spec.md#take-a-backup-now)
+       ("the off-site upload that follows").
+- **Ordering with the credential redesign.**
+  [#144](https://github.com/epiphany40223/parishkit/issues/144) (after the
+  campaign) may later change how credentials are stored and mounted,
+  including the rotating Google Workspace directory the uploader reads. That
+  ordering is accepted: the uploader mounts the key exactly as
+  `mail-dispatch` does, so #144 rewires it with the other consumers and
+  nothing here needs to wait for it.
+- **Rollback.** The preparation and contract releases carry a migration, so
+  an application-only rollback of either is refused (the previous release
+  does not know the migration); under the fail-forward policy only a
+  catastrophic failure restores the pre-upgrade backup with the previous
+  release, per the
+  [deployment runbook](../../../guides/stewardship-deployment-runbook.md#rollback).
+  The expand release has no migration. Rolling it back renders the previous
+  networks, so the scripted rollback runs the same full stop in the other
+  direction (PostgreSQL leaves the uploader's network), from the expand
+  release's checkout as the runbook says for every network change. An
+  application-only rollback is allowed only once the *previous release's
+  own image* has been shown to run `upgrade-check` and `database-grants`
+  cleanly against an expanded database (a pk-local or CI step pinned to the
+  previous release's tag, part of the expand evidence; the expand release's
+  own tests run only its own code). The inspection login suggests it will
+  (the previous check ignored that login), but it must be shown; without
+  that evidence, rolling it back is a restore. The left-over login has no
+  rule in the previous rendering, so the final `reject` refuses it, and its
+  password file is unused. A failure of the uploader alone is not
+  catastrophic: in the expand release the backup profile still copies;
+  after the contract release, the local sets and their records are kept,
+  the alert fires and the copy catches up once the uploader is fixed
+  forward.
+- **Tests.** Topology, golden Compose and golden `pg_hba` files (the sixth
+  one-shot network and its slice, the uploader's one rule, PostgreSQL's
+  address on it, the backup worker's egress gone after contract); mount and
+  identity admission, positive and each refusal; the grants registry and its
+  PostgreSQL admission, including the backup login's INSERT gone and the
+  uploader holding no `pg_read_all_data` and only `id` of the runtime row;
+  the frozen file's digest, chain and `DO` block (against both the 0176 and
+  the new definitions), the log-writer allowlist and the upgrade-parity test;
+  the destination function answering the uploader and the installer and
+  refusing every other login and PUBLIC; the source check's uploader row,
+  and on real Docker (the operational Compose job) the negative cases: the
+  uploader's password refused with `28000` from `backup-worker`, and the
+  backup login's from `backup-uploader`; the off-site copy tests run as the
+  uploader (an unrecorded set directory is never uploaded; a held lock exits
+  silently from cron and reports `busy` with `--wait-lock`, with no
+  connection; an idle run never takes the interlock; the expand double lock
+  excludes an old-release copier; retention skips pruning while the lock is
+  held and warns past the threshold); `--require-digest` accepting another
+  run's row and refusing one for another folder; retarget creating only an
+  absent password file and never replacing one; the upgrade check's
+  missing-login answer and `database-grants` creating the login; the
+  upgrade script's step 1 (success by row, LOCAL `not_configured`, an
+  expired wait abandoning) against both a pre-split and a split topology;
+  and the expand rollout and rollback full stop on real Docker, as #2111's
+  were proved. No test needs real Google credentials.
 
 ## Restore
 
