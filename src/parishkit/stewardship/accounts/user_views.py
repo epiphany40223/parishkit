@@ -15,7 +15,7 @@ from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.tables import paginate, table_parameters
+from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
@@ -36,9 +36,113 @@ from .user_rows import (
 )
 from .user_rules import ROLE_ORDER
 
-# Query-string prefixes for the two tables that can grow long enough to page.
+# Query-string prefixes, one per table, so each pages and sorts on its own.
+DOMAINS = "domains_"
 ADDRESSES = "addresses_"
+ASSIGNMENTS = "assignments_"
+REVIEWS = "reviews_"
 SUGGESTIONS = "suggestions_"
+PREFIXES = (DOMAINS, ADDRESSES, ASSIGNMENTS, REVIEWS, SUGGESTIONS)
+
+
+def _text(values):
+    """A case-insensitive sort key for a list of display labels."""
+    return ", ".join(str(value) for value in values).casefold()
+
+
+def _ministries(assignments):
+    """Sort key for a Ministry assignments cell: its Ministry names, then DUIDs."""
+    return _text(
+        sorted(
+            str(item["ministry_name"] or item["ministry_duid"]) for item in assignments
+        )
+    )
+
+
+# Every data column of every table sorts on the server, over the whole
+# applied policy the page already holds in memory. A cell listing several
+# values sorts by its labels joined in order, a warnings cell by how many
+# warnings it has, and a sign-in by its time (never is last either way).
+# The Change and Decide columns and the selection column hold controls, not
+# data, so they are not sort keys. Each table's default is its former order.
+LAST_LOGIN = {"last_login": lambda row: row["last_login"]}
+DOMAIN_SORTING = Sorting.by_column(
+    {
+        "domain": lambda row: row["domain"].casefold(),
+        "roles": lambda row: _text(row["roles"]),
+        "authorized": lambda row: row["authorized"],
+        **LAST_LOGIN,
+        "warnings": lambda row: len(row["warnings"]),
+    },
+    default="domain",
+    descending_first={"authorized", "last_login", "warnings"},
+)
+ADDRESS_SORTING = Sorting.by_column(
+    {
+        "email": lambda row: row["email"].casefold(),
+        "origin": lambda row: str(row["origin"]).casefold(),
+        # An explicit deny configures no role, so it sorts first.
+        "configured": lambda row: (
+            _text(grant["role"] for grant in row["grants"]) if not row["deny"] else ""
+        ),
+        "granted": lambda row: _text(row["granted"]),
+        "assignments": lambda row: _ministries(row["assignments"]),
+        **LAST_LOGIN,
+        "warnings": lambda row: len(row["warnings"]),
+    },
+    default="email",
+    descending_first={"last_login", "warnings"},
+)
+ASSIGNMENT_SORTING = Sorting.by_column(
+    {
+        "email": lambda row: row["email"].casefold(),
+        "assignments": lambda row: _ministries(row["assignments"]),
+        "leading": lambda row: not row["leading"],
+        **LAST_LOGIN,
+        "warnings": lambda row: len(row["warnings"]),
+    },
+    default="email",
+    descending_first={"last_login", "warnings"},
+)
+REVIEW_SORTING = Sorting.by_column(
+    {
+        "email": lambda row: row["email"].casefold(),
+        "ministry": lambda row: (row["ministry_name"].casefold(), row["ministry_duid"]),
+        "member": lambda row: row["member_duid"],
+        "reason": lambda row: str(row["reason"]).casefold(),
+        "opened": lambda row: row["opened_at"],
+        "current": lambda row: row["latest_at"],
+        "granted": lambda row: _text(row["granted"]),
+        **LAST_LOGIN,
+    },
+    default="email",
+    descending_first={"opened", "current", "last_login"},
+)
+SUGGESTION_SORTING = Sorting.by_column(
+    {
+        "email": lambda row: row["email"].casefold(),
+        "ministry": lambda row: (row["ministry_name"].casefold(), row["ministry_duid"]),
+        "member": lambda row: _text(member["name"] for member in row["candidates"]),
+        "publishable": lambda row: (
+            not any(member["publishable"] for member in row["candidates"])
+        ),
+        "rule": lambda row: (
+            str(row["rule"]["kind"] or ""),
+            _text(row["rule"]["roles"]),
+        ),
+        "assignment": lambda row: _text(item["source"] for item in row["assignments"]),
+        "ambiguity": lambda row: row["owners"],
+    },
+    default="ministry",
+    descending_first={"ambiguity"},
+)
+TABLES = {
+    "domain_table": (DOMAINS, DOMAIN_SORTING),
+    "address_table": (ADDRESSES, ADDRESS_SORTING),
+    "assignment_table": (ASSIGNMENTS, ASSIGNMENT_SORTING),
+    "review_table": (REVIEWS, REVIEW_SORTING),
+    "suggestion_table": (SUGGESTIONS, SUGGESTION_SORTING),
+}
 
 
 def policy_identities(records):
@@ -123,12 +227,39 @@ def chair_relationships(document):
     return relationships, ministries
 
 
-def _carried(table):
-    """A table's own page and size, kept by the other table's navigator links."""
-    return (
-        (table.size_name, table.size_value),
-        (table.page_name, str(table.number)),
-    )
+def user_tables(paging, rows):
+    """Sort and page every table on the page, each keeping the others' place.
+
+    ``rows`` maps each ``TABLES`` name to its full row list; ``paging`` is
+    the validated query string. Every navigator link and sort heading of
+    one table carries the other tables' page, size and sort, so changing
+    one table never resets another.
+    """
+    tables = {
+        name: paginate(rows[name], paging, prefix=prefix, sorting=sorting)
+        for name, (prefix, sorting) in TABLES.items()
+    }
+
+    def state(table):
+        """One table's page, size and sort as (name, value) pairs."""
+        return (
+            (table.size_name, table.size_value),
+            (table.page_name, str(table.number)),
+            *table.sort_fields,
+        )
+
+    return {
+        name: replace(
+            table,
+            carried=tuple(
+                pair
+                for other, kept in tables.items()
+                if other != name
+                for pair in state(kept)
+            ),
+        )
+        for name, table in tables.items()
+    }
 
 
 @require_safe
@@ -153,11 +284,11 @@ def users(request):
     try:
         service = runtime()
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
-        # Only the long tables' page numbers and sizes are parameters, so an
-        # address never reaches a URL or log.
+        # Only the tables' page numbers, sizes and closed sort tokens are
+        # parameters, so an address never reaches a URL or log.
         paging = filters(
             request.GET,
-            allowed={*table_parameters(ADDRESSES), *table_parameters(SUGGESTIONS)},
+            allowed={name for prefix in PREFIXES for name in table_parameters(prefix)},
         )
         with read_transaction():
             configuration = editable_configuration(service)
@@ -194,22 +325,18 @@ def users(request):
             else (),
             key=lambda item: (item[1].casefold(), item[0]),
         )
-        address_table = paginate(address_rows(policy), paging, prefix=ADDRESSES)
-        suggestion_table = paginate(
-            suggestion_rows(policy, relationships, active=ministries),
+        tables = user_tables(
             paging,
-            prefix=SUGGESTIONS,
-            # Paging one table keeps the other table's place.
-            carry=_carried(address_table),
+            {
+                "domain_table": domain_rows(policy),
+                "address_table": address_rows(policy),
+                "assignment_table": domain_assignment_rows(policy),
+                "review_table": suspended_rows(policy, reviews),
+                "suggestion_table": suggestion_rows(
+                    policy, relationships, active=ministries
+                ),
+            },
         )
-        address_table = replace(address_table, carried=_carried(suggestion_table))
-        tables = {
-            "domains": domain_rows(policy),
-            "addresses": address_table.rows,
-            "domain_assignments": domain_assignment_rows(policy),
-            "reviews": suspended_rows(policy, reviews),
-            "suggestions": suggestion_table.rows,
-        }
         response = render(
             request,
             "stewardship/users.html",
@@ -220,8 +347,6 @@ def users(request):
                 "base_digest": configuration.active_configuration.digest,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
                 "assignable": assignable,
-                "address_table": address_table,
-                "suggestion_table": suggestion_table,
             },
         )
         with transaction.atomic():
@@ -237,7 +362,7 @@ def users(request):
                 # The rows actually rendered, counted; never an address or role.
                 context={
                     "outcome": Outcome.SUCCEEDED,
-                    "count": sum(len(rows) for rows in tables.values()),
+                    "count": sum(len(table.rows) for table in tables.values()),
                 },
             )
         response["Cache-Control"] = "no-store"

@@ -359,3 +359,24 @@ def test_long_tables_page_independently(auth_service, google):
     assert 'type="hidden" name="suggestions_page" value="1"' in body
     assert "person29@example.org" in body and "person00@example.org" not in body
     assert browser.get(URL + "?addresses_size=7").status_code == 400
+
+
+def test_every_table_sorts_on_the_server_and_keeps_the_others(auth_service, google):
+    """A heading sorts its whole table; the other tables keep their place,
+    and raw column names are refused before any read."""
+    add_rules(
+        auth_service.store,
+        *(address(f"person{index:02}@example.org") for index in range(30)),
+    )
+    browser, _ = signed_in()
+    body = browser.get(
+        URL + "?addresses_sort=-email&addresses_size=25&domains_sort=-domain"
+    ).content.decode()
+    assert body.index("person29@example.org") < body.index("person28@example.org")
+    assert "person00@example.org" not in body and "Page 1 of 2" in body
+    assert 'aria-sort="descending"' in body
+    # The address table's links keep the domain table's sort, and vice versa.
+    assert 'type="hidden" name="domains_sort" value="-domain"' in body
+    assert "addresses_sort=-email" in body
+    assert browser.get(URL + "?addresses_sort=email%20desc").status_code == 400
+    assert browser.get(URL + "?sort=email").status_code == 400
