@@ -10,6 +10,7 @@ from parishkit import parishsoft_transport
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.source import refreshing
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.credentials import SourceCredential
@@ -94,6 +95,105 @@ def test_full_pipeline_stages_one_bound_manifest_without_claiming_success(
     task = TaskRun.objects.get(pk=execution.claim.run_id)
     assert task.state == "running" and task.phase == "validating"
     assert task.progress_current == task.progress_total == sum(result.counts.values())
+
+
+def with_extra_funds(monkeypatch, extra):
+    """Pad the real full load with synthetic Funds so staging needs many batches."""
+    from dataclasses import replace
+
+    real = refreshing.load_full_source
+
+    def padded(client, **options):
+        """The real validated load, plus ``extra`` copies of its first Fund."""
+        loaded = real(client, **options)
+        funds = dict(loaded.corpus["fund"])
+        payload = next(iter(funds.values()))
+        funds.update({f"synthetic-{index}": payload for index in range(extra)})
+        corpus = loaded.corpus | {"fund": funds}
+        counts = loaded.counts | {"fund": len(funds)}
+        return replace(loaded, corpus=corpus, counts=counts)
+
+    monkeypatch.setattr(refreshing, "load_full_source", padded)
+
+
+def spy_staging(monkeypatch):
+    """Record each staged batch's size and every staging progress report."""
+    from parishkit.stewardship.jobs.dispatch import Execution
+
+    batches, reports = [], []
+    real_stage, real_progress = refreshing.stage_entities, Execution.progress
+
+    def stage(snapshot_id, claim, *, kind, entities, admit):
+        batches.append(len(entities))
+        return real_stage(snapshot_id, claim, kind=kind, entities=entities, admit=admit)
+
+    def progress(execution, current, total, *, phase=None):
+        reports.append((current, phase))
+        return real_progress(execution, current, total, phase=phase)
+
+    monkeypatch.setattr(refreshing, "stage_entities", stage)
+    monkeypatch.setattr(Execution, "progress", progress)
+    return batches, reports
+
+
+def test_staging_holds_the_work_lock_for_small_batches(tmp_path, monkeypatch):
+    """Each lock-holding staging effect writes at most STAGING_BATCH_ROWS (#394).
+
+    Progress is still reported about every PROGRESS_ROWS rows, not per batch,
+    and every row is staged exactly once.
+    """
+    assert refreshing.STAGING_BATCH_ROWS <= 125 and refreshing.PROGRESS_ROWS == 500
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with_extra_funds(monkeypatch, 1100)
+    batches, reports = spy_staging(monkeypatch)
+    result = run(credential, execution, lease)
+    total = sum(result.counts.values())
+    assert result.state == "ready" and result.counts["fund"] == 1101
+    assert max(batches) == refreshing.STAGING_BATCH_ROWS and sum(batches) == total
+    assert len(batches) > total // refreshing.STAGING_BATCH_ROWS
+    staging = [current for current, phase in reports if phase == "staging"]
+    # One report at the start, then one per 500 staged rows, then validating.
+    assert staging[0] == 0 and len(staging) == 1 + total // 500
+    assert all(b - a >= 500 for a, b in zip(staging, staging[1:], strict=False))
+    assert reports[-1] == (total, "validating")
+
+
+def test_interrupted_staging_keeps_only_whole_committed_batches(tmp_path, monkeypatch):
+    """A failure mid-staging leaves whole earlier batches, each row once (#394).
+
+    Each small batch still commits atomically with its own fence check. The
+    snapshot stays "staging": a retry is a new claim with a new attempt, and
+    the next successful owner retires this one without reusing it (see
+    test_successful_new_owner_retires_but_never_reuses_old_staging).
+    """
+    from parishkit.stewardship.source.snapshots import snapshot_manifest
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with_extra_funds(monkeypatch, 400)
+    batches, _ = spy_staging(monkeypatch)
+    real, funds = refreshing.stage_entities, []
+
+    def fail_second_fund_batch(snapshot_id, claim, *, kind, **options):
+        """Stage the first Fund batch, then fail inside the second one."""
+        if kind == "fund":
+            funds.append(1)
+            if len(funds) == 2:
+                real(snapshot_id, claim, kind=kind, **options)
+                raise RuntimeError("synthetic interruption")
+        return real(snapshot_id, claim, kind=kind, **options)
+
+    monkeypatch.setattr(refreshing, "stage_entities", fail_second_fund_batch)
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        run(credential, execution, lease)
+    snapshot = SourceSnapshot.objects.get()
+    staged = snapshot_manifest(snapshot.pk)
+    # The failed batch rolled back with its effect; the rows before it stayed.
+    assert len(staged["fund"]) == refreshing.STAGING_BATCH_ROWS
+    assert sum(len(rows) for rows in staged.values()) == sum(batches[:-1])
+    assert snapshot.state == "staging" and not snapshot.counts
+    assert TaskRun.objects.get(pk=execution.claim.run_id).state == "running"
 
 
 @pytest.mark.parametrize("value,logged", [(None, None), ("25", None), ("100", 100)])

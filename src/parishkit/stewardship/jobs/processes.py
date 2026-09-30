@@ -17,7 +17,7 @@ from parishkit.stewardship.observability import emit_failure
 from .broker import BrokerRuntime, publish_hint
 from .due_work_health import DueWorkScan
 from .queues import ROLE_QUEUES
-from .scheduler import scan_once, scheduler_session
+from .scheduler import SchedulerOwnershipLost, scan_once, scheduler_session
 
 
 def worker_options(runtime):
@@ -156,6 +156,13 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None, companion=None
         runtime.app.close()
 
 
+# The early scan before the producers (#394) looks at no more than this many
+# due rows. It only has to get the first few newly due rows (a handful of
+# Family messages, say) to the consumers ahead of slow producers; each row it
+# checks costs one global work-order lock transaction.
+EARLY_SCAN_ROWS = 20
+
+
 def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
     """Own one SQL session for the entire loop; failed hints remain durable work.
 
@@ -172,43 +179,96 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
         raise ConfigError("An isolated scheduler and compiled producer are required.")
     cursor, delay = None, 2
     health = DueWorkScan()
+
+    def publish(hint):
+        """Verify offline exclusion before each bounded publication."""
+        lease.check()
+        publish_hint(runtime, hint)
+
+    def scan(guard, **limit):
+        """Publish one fair page of due hints, advancing the shared cursor.
+
+        ``limit`` optionally bounds the page (the early scan); either way the
+        next scan continues from where this one stopped.
+        """
+        nonlocal cursor
+        cursor = scan_once(
+            guard,
+            handlers=handlers,
+            publish=publish,
+            cursor=cursor,
+            stop=stop,
+            health=health,
+            **limit,
+        ).cursor
+
+    def failed(guard, error):
+        """Report a failed step and discard this sweep's partial health proof."""
+        emit_failure(error)
+        # Preserve fair suffix progress, but never let an observed failure
+        # bridge two otherwise healthy sample windows.
+        try:
+            health.interrupted(guard)
+        except Exception as health_error:
+            emit_failure(health_error)
+        finally:
+            health.reset()
+
     try:
         with scheduler_session() as guard:
             while not stop.is_set():
                 lease.check()
                 guard.check()
+                # When no sweep is in progress, publish the first few due
+                # hints before the producers run, as well as a full page
+                # after them (#394). The producers take the global work-order
+                # lock one after another, and while a source refresh holds
+                # that lock they can take tens of seconds, which delayed the
+                # first hint for newly due work (a few Family messages, say)
+                # by that long.
+                #
+                # The early scan is not free: every production handler checks
+                # each due row inside work_transaction(), one global-lock
+                # transaction per row, whether or not the row is admitted (a
+                # paused send is checked and refused every loop). So it looks
+                # at no more than EARLY_SCAN_ROWS rows, and only when a sweep
+                # starts. It shares the fair cursor: the late scan continues
+                # after the rows it covered, so no row is checked twice unless
+                # all due work fit in the early page, and then at most
+                # EARLY_SCAN_ROWS rows are. Mid-sweep it is skipped, since the
+                # late scan is already partway through the due rows. A hint
+                # published twice is harmless anyway: claim_hint() claims a
+                # task only while it is queued or retry-waiting and due, under
+                # its row lock.
+                #
+                # Failures in either scan or the producers are counted
+                # together: the loop backs off (doubling up to 60 s) once per
+                # loop in which any step failed, as it did when there was one
+                # scan, and returns to 2 s after a clean loop.
+                failures = 0
+                if cursor is None:
+                    try:
+                        scan(guard, limit=EARLY_SCAN_ROWS)
+                    except SchedulerOwnershipLost:
+                        # Fatal, as below; running the producers first would
+                        # only repeat the failure.
+                        raise
+                    except Exception as error:
+                        # Reported like any other failure; the producers
+                        # still run.
+                        failed(guard, error)
+                        failures += 1
+                    if stop.is_set():
+                        break
                 try:
                     produce(guard)
                     if stop.is_set():
                         break
-
-                    def publish(hint):
-                        """Verify offline exclusion before each bounded publication."""
-                        lease.check()
-                        publish_hint(runtime, hint)
-
-                    result = scan_once(
-                        guard,
-                        handlers=handlers,
-                        publish=publish,
-                        cursor=cursor,
-                        stop=stop,
-                        health=health,
-                    )
-                    cursor = result.cursor
+                    scan(guard)
                 except Exception as error:
-                    emit_failure(error)
-                    # Preserve fair suffix progress, but never let an observed
-                    # failure bridge two otherwise healthy sample windows.
-                    try:
-                        health.interrupted(guard)
-                    except Exception as health_error:
-                        emit_failure(health_error)
-                    finally:
-                        health.reset()
-                    delay = min(60, delay * 2)
-                else:
-                    delay = 2
+                    failed(guard, error)
+                    failures += 1
+                delay = min(60, delay * 2) if failures else 2
                 # Verify outside the retry block: a lost session is fatal even
                 # if a producer or failed query happened to reconnect.
                 guard.check()
