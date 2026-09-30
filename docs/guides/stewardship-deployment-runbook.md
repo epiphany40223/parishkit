@@ -417,7 +417,12 @@ personal data and secrets (personal-link tokens and other secret URL values
 are still [redacted](../specs/stewardship/operations/spec.md#production-ingress-and-tls)),
 so use it only while the data is disposable;
 `STEWARDSHIP_DEBUG_LOGGING=0` turns it off. Running `docker compose up` by hand
-without the variable recreates services with debug logging off.
+without the variable recreates services with debug logging off. Should a web
+service still have debug logging on once the deployment is in Production,
+every Admin page shows a "Debug logging is on in Production" notice; step 1
+of the launch runbooks'
+[Production activation](stewardship-launch-runbooks.md#production-activation)
+checks every container before activation.
 
 ## Production activation
 
