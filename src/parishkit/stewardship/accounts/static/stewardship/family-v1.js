@@ -49,6 +49,20 @@
     // Only the owning server's render_template output is HTML. Every answer,
     // label and error elsewhere in this file is assigned through textContent.
     element.innerHTML = form.content[slot];
+    // A page link in parish text (online giving, a hosted file) opens in a
+    // new tab: iOS Safari has no beforeunload warning, so following it in
+    // this tab would silently discard the Family's unsubmitted answers
+    // (#300). Email and phone links (any letter case) open another app, and
+    // a link back to this form ({{ family_url }}) must not open a second
+    // copy of it, so those stay as they are.
+    const pages = "a[href]:not([href^='mailto:' i]):not([href^='tel:' i]):not([href^='#'])";
+    element.querySelectorAll(pages).forEach((link) => {
+      const target = new URL(link.href, window.location.href);
+      if (target.origin === window.location.origin &&
+          /^\/(family|access)(\/|$)/.test(target.pathname)) return;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    });
   }
   function calendarDate(value) {
     // A calendar date in the parish date format (date-format-v1.js), as
