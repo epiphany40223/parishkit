@@ -38,6 +38,10 @@ class IncidentKind(StrEnum):
     PRODUCTION_CLEANUP_FAILED = "production_cleanup_failed"
     BACKUP_RPO_BREACH = "backup_rpo_breach"
     BACKUP_OFFSITE_FAILED = "backup_offsite_failed"
+    # The newest backup sealed to a different public key than the one before.
+    BACKUP_KEY_CHANGED = "backup_key_changed"
+    # Source snapshot retention was skipped by several refreshes in a row.
+    SOURCE_RETENTION_FAILING = "source_retention_failing"
     PURGE_INCONSISTENCY = "purge_inconsistency"
     PURGE_CLEANUP_FAILED = "purge_cleanup_failed"
 
@@ -79,8 +83,48 @@ TITLES = MappingProxyType(
         IncidentKind.PRODUCTION_CLEANUP_FAILED: "Campaign preparation cleanup failed",
         IncidentKind.BACKUP_RPO_BREACH: "Required backup is overdue",
         IncidentKind.BACKUP_OFFSITE_FAILED: "Off-site backup copy failed",
+        IncidentKind.BACKUP_KEY_CHANGED: "Backup encryption key changed",
+        IncidentKind.SOURCE_RETENTION_FAILING: "Parish data cleanup keeps failing",
         IncidentKind.PURGE_INCONSISTENCY: "Campaign purge is inconsistent",
         IncidentKind.PURGE_CLEANUP_FAILED: "Campaign purge cleanup failed",
+    }
+)
+
+
+# What to do, for kinds where the operational log alone cannot say it (the
+# evidence is outside the log, or the fix is the operator's). Mirrored word for
+# word in stewardship_ops_content_v1; other kinds use the generic sentence.
+INSTRUCTIONS = MappingProxyType(
+    {
+        IncidentKind.BACKUP_KEY_CHANGED: (
+            "A backup in the last two days was sealed to a different "
+            "encryption key than the backup before it. Unless the server "
+            "operator installed a new key on purpose, new backups may not open "
+            "with the kept private key. Ask the operator to open the "
+            "newest backup with each kept copy of the private key, as the "
+            "backup runbook describes."
+        ),
+        IncidentKind.SOURCE_RETENTION_FAILING: (
+            "Removing old ParishSoft copies was skipped by the last three "
+            "refreshes, so the database keeps growing. Refreshes still "
+            "work. Ask the server operator to check the worker log for "
+            "the cause."
+        ),
+    }
+)
+
+
+# A resolved notice that must not read as "recovered": the key-change episode
+# ends when the change is no longer recent, not when anyone confirmed the key.
+# Mirrored word for word in stewardship_ops_content_v1.
+RESOLVED_INSTRUCTIONS = MappingProxyType(
+    {
+        IncidentKind.BACKUP_KEY_CHANGED: (
+            "The backup encryption key change is no longer recent. If you "
+            "have not already, ask the server operator to confirm that each "
+            "kept copy of the private key opens a new backup, as the backup "
+            "runbook describes."
+        ),
     }
 )
 
@@ -139,11 +183,17 @@ def render_alert(alert):
     status = "RESOLVED" if alert.phase is AlertPhase.RESOLVED else alert.level.value
     subject = f"[{alert.mode.value.upper()}] {status}: {title}"
     instruction = (
-        "This condition has recovered. "
-        "Review the operational log if follow-up is needed."
+        RESOLVED_INSTRUCTIONS.get(
+            alert.kind,
+            "This condition has recovered. "
+            "Review the operational log if follow-up is needed.",
+        )
         if alert.phase is AlertPhase.RESOLVED
-        else "Administrator attention is required. "
-        "Review the operational log for details."
+        else INSTRUCTIONS.get(
+            alert.kind,
+            "Administrator attention is required. "
+            "Review the operational log for details.",
+        )
     )
     rows = (
         ("Status", status),

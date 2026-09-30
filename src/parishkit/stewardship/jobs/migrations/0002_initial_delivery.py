@@ -301,6 +301,8 @@ class Migration(migrations.Migration):
                                         "production_cleanup_failed",
                                         "backup_rpo_breach",
                                         "backup_offsite_failed",
+                                        "backup_key_changed",
+                                        "source_retention_failing",
                                         "purge_inconsistency",
                                         "purge_cleanup_failed",
                                     )

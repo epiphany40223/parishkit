@@ -9,6 +9,8 @@ import pytest
 
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.jobs.operational_content import (
+    INSTRUCTIONS,
+    RESOLVED_INSTRUCTIONS,
     TITLES,
     AlertPhase,
     IncidentKind,
@@ -109,3 +111,18 @@ def test_database_utc_timezone_representation_has_identical_content(alert):
     )
     assert other.first_seen.tzinfo is UTC
     assert render_alert(other) == render_alert(alert)
+
+
+@pytest.mark.parametrize("kind", sorted(INSTRUCTIONS))
+def test_kinds_the_log_cannot_explain_carry_their_own_instruction(alert, kind):
+    """The backup key and retention alerts say what to do in the message itself."""
+    body = render_alert(replace(alert, kind=kind))
+    assert INSTRUCTIONS[kind] in body.text
+    assert "Review the operational log for details" not in body.text
+    resolved = render_alert(replace(alert, kind=kind, phase=AlertPhase.RESOLVED))
+    if kind in RESOLVED_INSTRUCTIONS:
+        # Two quiet days are not a recovery: nobody has confirmed the key.
+        assert RESOLVED_INSTRUCTIONS[kind] in resolved.text
+        assert "has recovered" not in resolved.text
+    else:
+        assert "has recovered" in resolved.text

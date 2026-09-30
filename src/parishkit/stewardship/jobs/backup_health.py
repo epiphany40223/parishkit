@@ -23,6 +23,11 @@ from .ownership import database_now
 
 # The specification's window: a successful backup is required every 24 hours.
 REQUIRED_WITHIN = timedelta(hours=24)
+# A backup whose key differs from the backup before it keeps the key-change
+# incident open this long, so a change is seen even if several backups ran
+# with the new key before the collector looked (for example while the
+# scheduler was stopped for a deploy).
+KEY_CHANGE_WINDOW = timedelta(days=2)
 # A completed backup's off-site copy must record an outcome within this long.
 # The whole copy stops within five minutes after four hours
 # (backup_offsite.COPY_SECONDS and backup_drive.UPLOAD_SECONDS), so a longer
@@ -42,11 +47,13 @@ def needs_backup_observation():
             kind__in=[
                 IncidentKind.BACKUP_RPO_BREACH,
                 IncidentKind.BACKUP_OFFSITE_FAILED,
+                IncidentKind.BACKUP_KEY_CHANGED,
             ],
             resolved_at__isnull=True,
         ).exists()
         or backup_overdue(database_now())
         or offsite_failing()
+        or key_changed()
     )
 
 
@@ -66,6 +73,42 @@ def backup_overdue(instant):
     if latest is None:
         return production_mode()
     return instant - latest > REQUIRED_WITHIN
+
+
+def key_changed(instant=None):
+    """True when a backup in the last ``KEY_CHANGE_WINDOW`` changed the key.
+
+    Every backup still succeeds and stays green with a replaced ``backup_data``
+    file, or a public key that is not the kept private key's pair; only a
+    restore would notice (#305 M4). A change is legitimate only when the
+    operator installed a new key on purpose, so it raises a CRITICAL incident
+    for them to confirm by opening a set with the kept key.
+
+    Each backup completed within the window is compared with the one before
+    it (the run just before the window included), in completion order with
+    the row ID as a tiebreaker. The incident therefore stays open for the
+    window after a change and is not missed when later backups used the new
+    key before this check ran. Resolving says only that no backup in the
+    window changed the key, not that anyone confirmed the kept key opens
+    them. A few small row reads.
+    """
+    instant = database_now() if instant is None else instant
+    since = instant - KEY_CHANGE_WINDOW
+    runs = BackupRun.objects.order_by("-completed_at", "-id")
+    recent = list(
+        runs.filter(completed_at__gte=since).values_list(
+            "recipient_fingerprint", flat=True
+        )
+    )
+    if not recent:
+        return False
+    before = (
+        runs.filter(completed_at__lt=since)
+        .values_list("recipient_fingerprint", flat=True)
+        .first()
+    )
+    keys = recent + ([before] if before is not None else [])
+    return any(newer != older for newer, older in zip(keys, keys[1:], strict=False))
 
 
 def destination_configured_since():
@@ -149,8 +192,31 @@ def offsite_failing(instant=None):
     return True
 
 
+def _log_key_change():
+    """Explain a newly opened key-change episode in the System log.
+
+    The alert tells Administrators to read the log, but the backup login may
+    only append timeout entries there, so the change itself (logged by the
+    backup run) never reaches it. One entry per episode, on the reviewed
+    ``configuration_digest_mismatch`` event with outcome ``changed``, which
+    the System logs page describes in plain words (``log_descriptions``).
+    The fingerprints are not in it: the log's context admits only full
+    SHA-256 fingerprints; each backup's own output and its row name its key.
+    """
+    from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+    from parishkit.stewardship.audit.services import operational
+    from parishkit.stewardship.observability import Event
+
+    operational(
+        Event.CONFIG_MISMATCH,
+        level="WARNING",
+        schema=ContextKind.EXCEPTION,
+        context={"outcome": Outcome.CHANGED},
+    )
+
+
 def observe_backup_health():
-    """Open or resolve the overdue-backup episode from the newest recorded run."""
+    """Open or resolve the backup episodes from the newest recorded runs."""
     require_work_order()
     if backup_overdue(database_now()):
         record_observation(
@@ -168,3 +234,13 @@ def observe_backup_health():
         )
     else:
         record_recovery(IncidentKind.BACKUP_OFFSITE_FAILED)
+    if key_changed():
+        episode = record_observation(
+            IncidentKind.BACKUP_KEY_CHANGED,
+            IncidentLevel.CRITICAL,
+            policy=configured_policy(),
+        )
+        if episode.occurrences == 1:
+            _log_key_change()
+    else:
+        record_recovery(IncidentKind.BACKUP_KEY_CHANGED)

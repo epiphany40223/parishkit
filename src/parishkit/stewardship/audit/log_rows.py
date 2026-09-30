@@ -214,7 +214,7 @@ def operational_row(record):
         "level_symbol": symbol,
         "level_label": label,
         "event": record["event"],
-        "description": describe(record["event"]),
+        "description": describe(record["event"], record["context"]),
         "actor_id": record["actor_id"],
         "correlation_id": record["correlation_id"],
         "campaign_id": None,

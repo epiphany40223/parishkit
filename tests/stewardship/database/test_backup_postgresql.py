@@ -38,12 +38,14 @@ def now():
         return database_now()
 
 
-def recorded(*, age=timedelta(0)):
+def recorded(*, age=timedelta(0), **facts):
     """One completed run, optionally aged by moving both times back."""
     instant = now() - age
     with transaction.atomic():
         return BackupRun.objects.create(
-            started_at=instant - timedelta(minutes=1), completed_at=instant, **FACTS
+            started_at=instant - timedelta(minutes=1),
+            completed_at=instant,
+            **{**FACTS, **facts},
         )
 
 
@@ -162,6 +164,85 @@ def test_a_changed_recipient_key_is_logged_as_a_warning(caplog):
         assert warnings() == []
         assert backup_commands.recipient_changed("c" * 16) is True
     assert len(warnings()) == 1
+
+
+def key_episode():
+    """The open key-change episode, if any."""
+    return OperationalIncident.objects.filter(
+        kind=IncidentKind.BACKUP_KEY_CHANGED, resolved_at__isnull=True
+    ).first()
+
+
+def key_logs():
+    """The System log entries explaining a key change."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    return OperationalLog.objects.filter(
+        event="configuration_digest_mismatch", context__outcome="changed"
+    )
+
+
+def test_a_changed_backup_key_opens_a_critical_incident_for_the_window():
+    """A run sealed to a new key alerts, explains itself once, and ages out."""
+    from parishkit.stewardship.audit.log_descriptions import describe
+
+    recorded(age=timedelta(days=3))
+    observe()
+    assert key_episode() is None
+    recorded(age=timedelta(hours=1), recipient_fingerprint="c" * 16)
+    with work_transaction():
+        assert backup_health.needs_backup_observation()
+    observe()
+    opened = key_episode()
+    assert opened is not None and opened.signal_level == "CRITICAL"
+    # The overdue alert is unaffected: the new run is recent.
+    assert episode() is None
+    # One plain-language System log entry for the episode, not per observation.
+    observe()
+    assert key_episode().pk == opened.pk
+    [entry] = key_logs()
+    assert entry.level == "WARNING"
+    assert "different encryption key" in str(describe(entry.event, entry.context))
+    assert "did not match what the database expects" in str(
+        describe(entry.event, {"outcome": "failed"})
+    )
+    # A later backup with the new key does not hide the change inside the
+    # window; the window ending resolves it.
+    recorded(recipient_fingerprint="c" * 16)
+    observe()
+    assert key_episode().pk == opened.pk
+    later = now() + backup_health.KEY_CHANGE_WINDOW + timedelta(hours=2)
+    with transaction.atomic():
+        assert not backup_health.key_changed(later)
+
+
+def test_a_key_change_is_seen_after_several_new_key_backups():
+    """Backups that ran with the new key before the check do not hide it.
+
+    For example the scheduler was stopped for a deploy while two backups ran
+    (#359 review L1).
+    """
+    recorded(age=timedelta(days=5))
+    for hours in (5, 3, 1):
+        recorded(age=timedelta(hours=hours), recipient_fingerprint="c" * 16)
+    observe()
+    assert key_episode() is not None
+
+
+def test_backups_that_completed_together_still_compare_in_a_fixed_order():
+    """An exact completion-time tie between keys is ordered by row ID."""
+    instant = now() - timedelta(hours=1)
+    with transaction.atomic():
+        for fingerprint in ("b" * 16, "c" * 16):
+            BackupRun.objects.create(
+                started_at=instant - timedelta(minutes=1),
+                completed_at=instant,
+                **{**FACTS, "recipient_fingerprint": fingerprint},
+            )
+    with transaction.atomic():
+        assert backup_health.key_changed() is True
+    observe()
+    assert key_episode() is not None
 
 
 def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
