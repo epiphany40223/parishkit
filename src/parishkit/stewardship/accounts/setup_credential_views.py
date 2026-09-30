@@ -153,7 +153,9 @@ def setup_credential(request, target):
         wizard = context["wizard"]
         blocked = prerequisite(wizard, STEP[target])
         saved = next((item for item in receipts if item.target == target), None)
-        # Never the secret: only whether one is saved and its public scope.
+        # Never the secret: only whether one is saved and its public scope. A
+        # saved key whose step is not done is stale, unless the step is blocked
+        # (``blocked``): the page then shows that reason instead.
         step = wizard.step(STEP[target])
         current = saved is not None and step is not None and step.state == "done"
         organization = saved.settings.get("organization_id") if saved else None

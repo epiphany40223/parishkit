@@ -94,7 +94,9 @@ def test_logs_mobile_keyboard_and_accessibility(
         departed.get_by_text("Service, or a former portal user", exact=False).count()
         == 1
     )
-    assert departed.get_by_text("An Administrator or Staff member signed in").count()
+    assert departed.get_by_text(
+        "A portal user (Administrator, Staff or Ministry leader) signed in"
+    ).count()
     assert departed.get_by_role("button", name="Show related entries").count() == 1
     page.goto(component_origin + "/logs-empty")
     visible(page.get_by_text("No matching entries."))

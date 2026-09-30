@@ -411,6 +411,10 @@ def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
     page = browser.get(URL)
     assert page.status_code == 200 and page.context["credential_unavailable"]
     assert b'name="candidate"' not in page.content
+    # Say what is missing and who can fix it, not "your system administrator".
+    assert b"stores new keys for this integration has not started" in page.content
+    assert b"ask whoever manages the parish" in page.content
+    assert b"system administrator" not in page.content
     assert browser.get(INDEX + "/unknown").status_code == 404
     # The unlinked stand-alone "replace credential" page is gone: it staged a
     # key with nothing to switch to it, which stopped mail (#307 M1).

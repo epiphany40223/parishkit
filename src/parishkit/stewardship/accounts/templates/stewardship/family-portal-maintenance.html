@@ -23,7 +23,7 @@
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="close">
     <label for="maintenance-message">{% translate "Message for Families (optional)" %}</label>
     <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" aria-describedby="maintenance-message-help"></textarea>
-    <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” Up to 500 characters; no email addresses." %}</p>
+    <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” It is also kept in the audit log, so leave out personal details such as names, phone numbers or addresses. Up to 500 characters; no email addresses." %}</p>
     <button type="submit">{% translate "Close the Family portal for maintenance" %}</button>
   </form>
 </section>

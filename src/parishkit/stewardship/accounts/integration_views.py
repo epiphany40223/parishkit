@@ -21,6 +21,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingError
 
 from .admin_editing import (
     confirm,
@@ -45,7 +46,7 @@ from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
-from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
+from .sessions import authenticated_admin, require_fresh
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -158,11 +159,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
             unavailable = True
-    try:
-        require_fresh(request)
-        fresh = True
-    except FreshAuthenticationRequired:
-        fresh = False
+    # The step-up hint is always shown (a sign-in can age while the page is
+    # open), so the page no longer needs to know whether this one is fresh.
     response = render(
         request,
         "stewardship/integration-settings.html",
@@ -170,7 +168,6 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "form": form,
             "credential": None if pending else credential,
             "credential_unavailable": unavailable,
-            "fresh": fresh,
             "target": target,
             "label": LABELS[target],
             # Names the integration in the Admin breadcrumb trail.
@@ -245,14 +242,42 @@ def _test_access(request, configuration, actor):
     } or any(len(values) != 1 for _, values in request.POST.lists()):
         raise ValueError("Invalid configuration action or fields.")
     records = _records(configuration)
+    # Each refusal below says what to do next; a plain ValueError would show
+    # only the generic "Check your entries" page.
     if "google_workspace" not in records:
-        raise ValueError("Set up Google Workspace mail first.")
+        raise UserFacingError(
+            _("Test access needs Google Workspace mail to be set up first."),
+            fix=_(
+                "Off-site copies are saved as the Google Workspace mailbox user, "
+                "so the check signs in as that user. Set up Google Workspace "
+                "mail, then come back and choose Test access."
+            ),
+            link=reverse("admin:integration_settings", args=["google_workspace"]),
+            link_label=LABELS["google_workspace"],
+        )
     entered = request.POST.get("target", "").strip()
     if not entered and "backup" not in records:
-        raise ValueError("Enter the Google Drive folder link first.")
-    folder = folder_id_from_url(
-        entered or records["backup"]["values"]["settings"]["target"]
-    )
+        raise UserFacingError(
+            _("Enter the Google Drive folder link first."),
+            fix=_(
+                "Paste the link of the Google Drive folder that should hold the "
+                "off-site copies into Google Drive folder link, then choose Test "
+                "access."
+            ),
+        )
+    try:
+        folder = folder_id_from_url(
+            entered or records["backup"]["values"]["settings"]["target"]
+        )
+    except ValueError:
+        raise UserFacingError(
+            _("That is not a link to a Google Drive folder."),
+            fix=_(
+                "Open the folder in Google Drive and copy its link from the "
+                "browser address bar or from Share, then Copy link. It starts "
+                "with https://drive.google.com/drive/folders/."
+            ),
+        ) from None
     request_probe(
         actor.identity,
         folder,
@@ -331,7 +356,17 @@ def _save(request, service, configuration, actor, target):
             if name in before:
                 continue
             if settings.get(name) != default:
-                raise ValueError("Save the refresh schedule separately from a new key.")
+                raise UserFacingError(
+                    _(
+                        "Nothing was saved: a new key and a refresh schedule "
+                        "change cannot be saved together here."
+                    ),
+                    fix=_(
+                        "Leave the key field empty and save the refresh "
+                        "schedule change first. Then paste the new key and save "
+                        "again."
+                    ),
+                )
             settings.pop(name)
     from .key_files import MAX_FILE_BYTES
 
