@@ -56,6 +56,8 @@ def task_runtime_grants(role):
         "stewardship_setup_completion",
         "stewardship_secret_request",
         "stewardship_credential_consumer_ack",
+        # Rendering Family mail expands {{ file.<slug> }} to its public link.
+        "stewardship_hosted_file",
     ):
         tables[table] = {"SELECT"}
     tables["stewardship_credential_consumer_ack"].add("INSERT")

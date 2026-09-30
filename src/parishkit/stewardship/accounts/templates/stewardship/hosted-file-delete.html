@@ -1,0 +1,16 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Delete hosted files" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Delete hosted files" %}</h1>
+{% if confirming %}
+<p>{% translate "Deleting a file breaks its link everywhere, including in emails already sent, which then show a “no longer available” page. This cannot be undone." %}</p>
+<form method="post" action="{% url 'admin:hosted_file_delete' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm">
+<ul class="hosted-file-results">{% for row in rows %}<li><input type="hidden" name="file_id" value="{{ row.id }}">
+{% if not row.file %}{% translate "A file that was already deleted" %}{% else %}<code>{{ row.file.slug }}</code> ({{ row.file.original_name }}){% if row.uses %} — <strong>{% translate "In use; it will not be deleted:" %}</strong><ul>{% for use in row.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% endif %}{% endif %}</li>{% endfor %}</ul>
+<button type="submit">{% translate "Delete" %}</button> <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a>
+</form>
+{% else %}
+<ul class="hosted-file-results">{% for result in results %}<li>{% if result.slug %}<code>{{ result.slug }}</code>: {% endif %}{% if result.outcome == "deleted" %}{% translate "Deleted" %}{% elif result.outcome == "already_deleted" %}{% translate "Already deleted" %}{% elif result.outcome == "retry" %}<strong>{% translate "Not deleted — the library was busy; try again." %}</strong>{% else %}<strong>{% translate "Not deleted — in use:" %}</strong><ul>{% for use in result.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
+<p><a href="{% url 'admin:hosted_files' %}">{% translate "Back to Hosted files" %}</a></p>
+{% endif %}
+{% endblock %}

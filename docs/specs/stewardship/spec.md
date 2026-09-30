@@ -58,6 +58,8 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   access, visualizations, and output formats.
 - [Operations and quality](operations/spec.md): Compose environments, release
   images, backup/restore, observability, CI, and test expectations.
+- [Hosted files](hosted-files/spec.md): the Admin-managed library of PDF,
+  Office and image files that content links with `{{ file.<slug> }}`.
 
 ## Terminology
 
@@ -332,6 +334,7 @@ Every source requirement maps to one normative section:
 | Review and ParishSoft publication | [Data](data/spec.md) and [admin portal](admin-portal/spec.md) |
 | Logs and campaign replay | [Admin portal](admin-portal/spec.md) and [data](data/spec.md) |
 | Compose, TLS, persistence, release, backups, tests | [Operations](operations/spec.md) |
+| Hosted parishioner files and file placeholders | [Hosted files](hosted-files/spec.md) |
 
 When requirements conflict, the explicit decisions and definitions in this
 specification set take precedence over the

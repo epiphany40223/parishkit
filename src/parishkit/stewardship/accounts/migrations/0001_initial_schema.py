@@ -71,6 +71,7 @@ def schema_sql():
                 "ministry_followup",
                 "ministry_packets",
                 "financial_reports",
+                "hosted_files",
             )
         ]
     )

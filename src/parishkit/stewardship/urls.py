@@ -25,6 +25,8 @@ from .accounts import (
     family_authentication,
     family_maintenance_views,
     go_live_views,
+    hosted_file_serving,
+    hosted_file_views,
     integration_selection_views,
     integration_views,
     ministry_views,
@@ -90,6 +92,8 @@ public_patterns = [
     ),
     path("", family_authentication.entry, name="entry"),
     path("access/<str:token>", family_authentication.access, name="access"),
+    # Hosted files (#346): public, by unguessable token.
+    path("files/<str:token>", hosted_file_serving.public_file, name="hosted_file"),
 ]
 family_patterns = [
     path("form", response_views.start, name="form"),
@@ -329,6 +333,14 @@ admin_patterns = [
         "configuration/branding",
         branding_views.branding_settings,
         name="branding_settings",
+    ),
+    path("files/", hosted_file_views.library, name="hosted_files"),
+    path("files/upload", hosted_file_views.upload, name="hosted_file_upload"),
+    path("files/delete", hosted_file_views.delete, name="hosted_file_delete"),
+    path(
+        "files/<uuid:file_id>/name",
+        hosted_file_views.rename,
+        name="hosted_file_rename",
     ),
     path(
         "configuration/branding/<uuid:bundle_id>",

@@ -81,7 +81,7 @@ def _family_identity(identity):
         raise ValueError("Family mail requires its own credential namespace.")
 
 
-def _render_part(value, values, *, html=False):
+def _render_part(value, values, *, html=False, files=None):
     """Distinguish intentional private slots from markers assembled by public text.
 
     A per-render temporary pair survives URL sanitization but is replaced before
@@ -93,7 +93,10 @@ def _render_part(value, values, *, html=False):
     if any(code in item or link in item for item in (value, *values.values())):
         raise ValueError("Family email contains a reserved placeholder.")
     rendered = render_template(
-        value, values | {"family_code": code, "family_url": link}, html=html
+        value,
+        values | {"family_code": code, "family_url": link},
+        html=html,
+        files=files,
     )
     _no_reserved_markers(rendered)
     return rendered.replace(code, CODE_PLACEHOLDER).replace(link, LINK_PLACEHOLDER)
@@ -111,8 +114,11 @@ def render_family_mail(
     testing_recipient=None,
     reply_to=None,
     banner="",
+    files=None,
 ):
     """Pin non-secret content and routing; never receive a plaintext link or code.
+
+    ``files`` (``HostedLinks``) expands hosted-file placeholders (#346).
 
     Reserved markers occupy credential positions in both retained parts. A
     later admitted dispatcher resolves them only after namespace/generation
@@ -127,9 +133,9 @@ def render_family_mail(
         _no_reserved_markers(value)
     subject = _render_part(template.subject, values)
     # The optional campaign banner (#248) is server-built markup, added after
-    # the parish template is rendered so content rules never admit images.
-    html = banner + _render_part(template.html, values, html=True)
-    text = _render_part(template.text, values)
+    # the parish template is rendered; parish content admits hosted images only.
+    html = banner + _render_part(template.html, values, html=True, files=files)
+    text = _render_part(template.text, values, files=files)
     return route_family_mail(
         identity=identity,
         configuration_id=configuration_id,

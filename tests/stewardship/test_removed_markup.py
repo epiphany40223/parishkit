@@ -19,10 +19,10 @@ def test_removed_elements_attributes_links_and_comments_are_reported():
         '<!-- note --><div style="color: red">line</div><img src="x.png">'
     )
     assert removed_markup(raw) == [
-        "<img> element",
         "<script> element and its content",
         "HTML comments",
         "class attribute",
+        "image not from the hosted file library",
         "javascript: link target",
         "onclick attribute",
         "style attribute",

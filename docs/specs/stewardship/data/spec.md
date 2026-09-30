@@ -835,6 +835,11 @@ campaign fields. `parish_email` is the configured outgoing-mail Reply-to
 address, and `online_giving_url` is the Parish profile's optional HTTPS online
 giving page, falling back to the parish website when none is configured.
 Unknown placeholders are validation failures, not empty text.
+Page and email bodies may also link to files in the deployment's hosted
+file library (`stewardship_hosted_file`) with `{{ file.<slug> }}` and show
+hosted images inline; that placeholder family, its sanitizer and delivery-
+check rules, and the record itself are defined by
+[hosted files](../hosted-files/spec.md).
 Initial invitations and reminders require the code and secure-link placeholders
 in each body alternative, including generated plaintext. Those credential
 placeholders are not allowed in subjects. Authoring, configuration validation

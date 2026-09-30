@@ -352,16 +352,20 @@ explain them, its own instruction in the alert, and for the key change its
 own resolved wording, since that episode ends when the change is no longer
 recent rather than when anyone confirmed the key (the kind constraint and
 the incident render function; Constraints and Functions digests).
+Hosted files (#346) then added the `stewardship_hosted_file` table, the
+`stewardship_hosted_file_use` view of where each file is used, its mutable
+and in-use guard triggers, and the hosted-file audit context fields in
+`stewardship_safe_context_v1` (every category but Policies).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
 | --- | --- | --- |
-| Relations | 223 | `5493b41e` |
-| Columns | 2461 | `2c20283d` |
-| Constraints | 3398 | `972d346c` |
-| Indexes | 1008 | `fa41fc80` |
-| Functions | 608 | `68f2ff3c` |
-| Triggers | 557 | `c9546d79` |
+| Relations | 225 | `8c9d2c89` |
+| Columns | 2482 | `2dde0916` |
+| Constraints | 3425 | `3259f4cb` |
+| Indexes | 1012 | `8caf56fe` |
+| Functions | 610 | `e2ddfe8e` |
+| Triggers | 559 | `b255c7ec` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

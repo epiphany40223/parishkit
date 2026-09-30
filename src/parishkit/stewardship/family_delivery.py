@@ -348,9 +348,12 @@ class FamilyDeliveryMail:
             or any(char in self.subject for char in "\r\n\x00")
         ):
             raise ValueError("Invalid Family delivery subject.")
-        # The campaign banner (#248) is the one server-built image allowed.
+        # The campaign banner (#248) is the one server-built image allowed;
+        # parish content may show hosted images (#346) from the same origin.
         html = without_email_banner(self.html, self.banner_origin)
-        content = prepare_content(html, text=self.text)
+        content = prepare_content(
+            html, text=self.text, origin=self.banner_origin or None
+        )
         if content.html != html or content.text != self.text:
             raise ValueError("Invalid Family delivery content.")
 

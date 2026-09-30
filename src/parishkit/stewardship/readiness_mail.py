@@ -50,7 +50,10 @@ class ReadinessMail:
         validate_template(self.subject, subject=True)
         # A campaign email sample may start with the one server-built banner.
         html = without_email_banner(self.html, self.banner_origin)
-        prepared = prepare_content(html, text=self.text)
+        # Hosted images (#346) come only from the same public origin.
+        prepared = prepare_content(
+            html, text=self.text, origin=self.banner_origin or None
+        )
         if prepared.html != html or prepared.text != self.text:
             raise ValueError("Readiness mail must contain canonical safe content.")
 

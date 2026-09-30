@@ -226,6 +226,10 @@ def record_request(
                 raise ConfigError("Request key is already bound to another intent.")
             return _status(existing)
         check_historical_additions(base.pk, intent.patch())
+        # Content naming hosted files (#346) holds them until this commits.
+        from .hosted_file_content import pin_references
+
+        pin_references(intent.patch())
         request = ConfigurationChangeRequest.objects.create(
             id=identifier,
             base=base,

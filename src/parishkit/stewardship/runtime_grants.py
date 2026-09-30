@@ -119,11 +119,15 @@ WEB_READ_TABLES = frozenset(
         # Off-site backup status and Drive access checks (Integrations page).
         "stewardship_backup_upload",
         "stewardship_backup_drive_probe",
+        # Hosted files (#346): the library and where each file is used.
+        "stewardship_hosted_file",
+        "stewardship_hosted_file_use",
     ]
 )
 
 WEB_INSERT_TABLES = frozenset(
     [
+        "stewardship_hosted_file",
         "stewardship_backup_drive_probe",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
@@ -164,6 +168,9 @@ WEB_INSERT_TABLES = frozenset(
 
 WEB_UPDATE_TABLES = frozenset(
     [
+        # Slug changes, and the FOR KEY SHARE pin a configuration request
+        # takes on each file its content names (PostgreSQL needs UPDATE).
+        "stewardship_hosted_file",
         "stewardship_setup_attempt",
         "stewardship_setup_draft_section",
         "stewardship_branding_bundle",
@@ -398,6 +405,8 @@ def runtime_grants(role, *, target=None):
         from .source.grants import SCHEDULER_CANCEL_COLUMNS
 
         columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
+        # Deleting a hosted file; its guard refuses one still in use.
+        tables["stewardship_hosted_file"].add("DELETE")
         tables["stewardship_sealed_credential_staging"] = {"INSERT"}
         columns["stewardship_sealed_credential_staging"] = {
             "SELECT": {"reference", "request_id", "target", "fingerprint"}

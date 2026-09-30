@@ -42,6 +42,12 @@ NOTICE_STYLE = (
 )
 _BARE_TAG = re.compile("<(" + "|".join(TAG_STYLES) + ")>")
 _UNSTYLED_LINK = re.compile(r"<a (?![^>]*\bstyle=)")
+# Hosted images (#346) fit narrow phone mail clients; the campaign banner
+# already carries its own style.
+_UNSTYLED_IMAGE = re.compile(
+    r'<img (?=[^>]*\bsrc="[^"]*/files/[A-Za-z0-9_-]{43}")(?![^>]*\bstyle=)'
+)
+IMAGE_STYLE = "max-width:100%;height:auto;border:0;"
 # The mandatory Testing banner that routing prepends to retained Family,
 # receipt and digest mail (and that the database checks), shown as a notice.
 _TEST_BANNER = re.compile(r"\A<h2>TEST</h2><p>([^<]*)</p>")
@@ -55,16 +61,18 @@ _STYLE_BLOCK = (
     ".pk-body ul,.pk-body ol{margin:0 0 16px;padding:0 0 0 24px;}"
     ".pk-body li{margin:0 0 6px;}"
     f".pk-body a{{color:{LINK};text-decoration:underline;}}"
+    ".pk-body img{max-width:100%;height:auto;border:0;}"
     "@media only screen and (max-width:620px){"
     ".pk-card{padding:20px 16px !important;}}"
 )
 
 
 def _styled(html):
-    """Add the inline style of each bare sanitized tag and each unstyled link."""
+    """Add the inline style of each bare sanitized tag, unstyled link and image."""
     html = _BARE_TAG.sub(
         lambda match: f'<{match[1]} style="{TAG_STYLES[match[1]]}">', html
     )
+    html = _UNSTYLED_IMAGE.sub(f'<img style="{IMAGE_STYLE}" ', html)
     return _UNSTYLED_LINK.sub(f'<a style="{LINK_STYLE}" ', html)
 
 

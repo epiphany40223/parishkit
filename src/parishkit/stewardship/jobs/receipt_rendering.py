@@ -3,6 +3,7 @@
 from parishkit.stewardship.accounts.branding_context import banner_for_email
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_models import ContentVersion
+from parishkit.stewardship.accounts.hosted_file_content import links_for
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import SafeContent, email_banner
@@ -69,5 +70,9 @@ def current_receipt_render(
                 origin=public_origin,
             ),
             campaign.active_configuration.values["name"],
+        ),
+        files=links_for(
+            public_origin,
+            *(part for row in (email, block) if row for part in (row.html, row.text)),
         ),
     )

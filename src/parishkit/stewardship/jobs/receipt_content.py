@@ -65,8 +65,11 @@ def render_receipt(
     reply_to=None,
     banner="",
     date_format=None,
+    files=None,
 ):
     """Append required fixed facts independently of optional parish-authored text.
+
+    ``files`` (``HostedLinks``) expands hosted-file placeholders (#346).
 
     No answer dictionary or credential enters this API. The caller supplies the
     immutable submission instant and campaign timezone, not a browser's timezone.
@@ -103,11 +106,11 @@ def render_receipt(
         raise ValueError("Receipt block requires canonical safe content.")
     validate_receipt_content("", block.html, block.text)
     subject = render_template(template.subject, values, subject=True)
-    html = render_template(template.html, values, html=True)
-    text = render_template(template.text, values)
-    html += render_template(block.html, values, html=True)
+    html = render_template(template.html, values, html=True, files=files)
+    text = render_template(template.text, values, files=files)
+    html += render_template(block.html, values, html=True, files=files)
     if block.text:
-        text += "\n\n" + render_template(block.text, values)
+        text += "\n\n" + render_template(block.text, values, files=files)
     facts = (
         f"Parish: {values['parish_name']}",
         f"Campaign: {values['campaign_name']}",

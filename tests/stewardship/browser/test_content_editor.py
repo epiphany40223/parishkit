@@ -308,7 +308,7 @@ def test_source_edits_redraw_the_visual_pane_from_the_sanitizer(page, component_
     notice = page.locator("[data-visual-removed]")
     visible(notice)
     for removed in (
-        "<img> element",
+        "image not from the hosted file library",
         "<script> element and its content",
         "onclick attribute",
     ):

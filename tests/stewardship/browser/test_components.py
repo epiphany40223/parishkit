@@ -299,6 +299,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/credential-selection",
         "/branding-settings",
         "/branding-preview",
+        "/hosted-files",
+        "/hosted-file-unavailable",
         "/setup",
         "/setup-parish",
         "/setup-branding",

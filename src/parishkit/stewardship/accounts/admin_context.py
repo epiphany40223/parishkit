@@ -194,6 +194,7 @@ def _navigation_items(actor, admin, campaign, configuration):
     if admin:
         add("parish", "parish_settings", _("Parish settings"))
         add("parish", "branding_settings", _("Parish logos"))
+        add("parish", "hosted_files", _("Hosted files"))
         add("parish", "integrations", _("Integrations"))
         add("parish", "ministries", _("Ministry activity"))
     if allows(actor, Capability.MANAGE_USERS):

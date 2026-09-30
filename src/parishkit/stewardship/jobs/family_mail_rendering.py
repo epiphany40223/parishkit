@@ -5,6 +5,7 @@ from uuid import UUID
 from parishkit.stewardship.accounts.branding_context import banner_for_email
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.content_models import ContentVersion
+from parishkit.stewardship.accounts.hosted_file_content import links_for
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web.content import email_banner
 
@@ -58,4 +59,5 @@ def current_render(identity, template_record_id, scope, source, *, public_origin
             ),
             scope.campaign.active_configuration.values["name"],
         ),
+        files=links_for(public_origin, template.html, template.text),
     )

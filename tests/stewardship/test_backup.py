@@ -593,3 +593,17 @@ def test_keygen_and_open_commands_roundtrip_and_refuse_generically(
     assert not bad.exists()
     assert main(["backup", "--config", str(tmp_path / "private-config")]) == 2
     assert "private-config" not in capsys.readouterr().err
+
+
+def test_backups_include_hosted_files(deployment):
+    """Hosted files (#346) live in the media tree, which every backup archives."""
+    directory = deployment.paths["media"] / "hosted-files"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    name = "0123456789abcdef0123456789abcdef"
+    (directory / name).write_bytes(b"%PDF-hosted")
+    sink = io.BytesIO()
+    backup.archive_files(deployment, sink)
+    with tarfile.open(fileobj=io.BytesIO(sink.getvalue())) as archive:
+        member = archive.extractfile(f"media/hosted-files/{name}")
+        assert member.read() == b"%PDF-hosted"
+    assert backup.MAX_FILES_BYTES == 512 * 1024 * 1024

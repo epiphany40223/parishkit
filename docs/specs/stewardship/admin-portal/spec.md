@@ -314,8 +314,8 @@ viewer may open:
   outreach and the Manual information report. The campaign reports page also
   links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
   report.
-- **Parish and integrations**: Parish settings, Parish logos, Integrations and
-  Ministry activity.
+- **Parish and integrations**: Parish settings, Parish logos, Hosted files,
+  Integrations and Ministry activity.
 - **Users**: Portal users.
 - **System**: Background work, Outgoing mail, Families on the form now and
   System logs.
@@ -496,6 +496,13 @@ slot's image is its own reviewed change; a slot without an image shows nothing.
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
+
+Hosted files (Parish and integrations) is the Administrator-only library of
+PDF, Office and image files that page and email content links or shows
+with `{{ file.<slug> }}`: upload, placeholder copy, where each file is used,
+and single or multi-select deletion that is refused while a file is in use.
+The page and its rules are defined by the
+[hosted files specification](../hosted-files/spec.md#admin-page).
 
 Integration pages expose connection status, last check, safe fingerprint, and
 Replace/Test actions. Secret replacement requires fresh Google authentication.

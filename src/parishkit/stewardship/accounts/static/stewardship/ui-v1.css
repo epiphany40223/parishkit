@@ -532,3 +532,9 @@ td.family-code, td.family-code code { white-space: nowrap; }
 td.contact-details { min-width: 16rem; }
 td.contact-details dl { display: block; }
 td.contact-details dd { margin: 0 0 .5rem; }
+
+/* Hosted files (#346): images in parish content fit their column, and the
+   library's placeholder fields are wide enough to read. */
+.content-block img, .content-sample img { max-width: 100%; height: auto; }
+.hosted-file-thumbnail { width: 48px; height: auto; }
+.hosted-file-copy { width: 18rem; max-width: 100%; font-family: monospace; }
