@@ -34,7 +34,7 @@ from parishkit.stewardship.jobs.operational_content import IncidentKind
 from parishkit.stewardship.jobs.operational_models import OperationalIncident
 from parishkit.stewardship.jobs.ownership import database_now
 
-from ..drive_fakes import FakeDrive
+from ..drive_fakes import FakeDrive, write_sealed_set
 from . import campaign_builders
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
@@ -54,8 +54,7 @@ def offsite(tmp_path, monkeypatch):
     backups.mkdir(mode=0o700)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
-    for name in SEALED_FILES:
-        (directory / name).write_bytes(b"sealed " + name.encode())
+    write_sealed_set(directory)
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
     monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
@@ -243,9 +242,7 @@ def new_set(offsite, name):
     """Add one more complete local set and return its directory."""
     directory = offsite.directory.with_name(name)
     directory.mkdir(mode=0o700)
-    for file in SEALED_FILES:
-        (directory / file).write_bytes(name.encode() + b" " + file.encode())
-    return directory
+    return write_sealed_set(directory, name.encode())
 
 
 def record_run(directory):
@@ -803,8 +800,7 @@ def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypat
         result = upload(client, folder_id, directory, names)
         if not later.exists():
             later.mkdir(mode=0o700)
-            for name in SEALED_FILES:
-                (later / name).write_bytes(b"later " + name.encode())
+            write_sealed_set(later, b"later")
         return result
 
     monkeypatch.setattr(backup_offsite, "upload_set", upload_then_back_up)

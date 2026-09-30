@@ -36,7 +36,7 @@ from .backup import (
     retention_paused,
     set_started,
 )
-from .observability import Event, emit
+from .observability import Event, FailureKind, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 API = "https://www.googleapis.com/drive/v3/files"
@@ -133,9 +133,12 @@ class DriveFailure(Exception):
         ),
     }
 
-    def __init__(self, kind):
+    def __init__(self, kind, *, retryable=None):
         super().__init__(kind)
         self.kind = kind
+        # A failure that trying again cannot fix (a local set that no longer
+        # matches its manifest) overrides the category's usual answer.
+        self._retryable = retryable
 
     def __str__(self):
         """Only the fixed category is ever shown or logged."""
@@ -149,6 +152,8 @@ class DriveFailure(Exception):
     @property
     def retryable(self):
         """Transient failures are retried; configuration problems are not."""
+        if self._retryable is not None:
+            return self._retryable
         return self.kind in {"unavailable", "verification"}
 
 
@@ -372,27 +377,55 @@ def _classify(response):
     return "unavailable"
 
 
-def _md5(path):
-    """Digest one local file the way Drive reports md5Checksum."""
-    digest = hashlib.md5(usedforsecurity=False)
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _local_files(directory, names):
+    """Each file's size and MD5 (as Drive reports them), checked against the manifest.
+
+    The manifest records each sealed file's SHA-256 when the set was written.
+    A sealed file changed on disk since then (a failing disk, a stray edit)
+    would otherwise be uploaded, "verified" against itself and recorded as a
+    good copy (#305 L1). Such a set is refused as ``verification`` without a
+    retry, since trying again uploads the same bytes, and logged as an ERROR
+    so the operator can find the damaged set; the copy moves on to the next.
+    """
+    try:
+        manifest = json.loads((directory / MANIFEST).read_bytes())
+        expected = {
+            manifest[kind]["file"]: manifest[kind]["sealed_sha256"]
+            for kind in ("database", "files")
+        }
+    except (ValueError, KeyError, TypeError):
+        expected = None
+    local, sealed = {}, {}
+    for name in names:
+        md5 = hashlib.md5(usedforsecurity=False)
+        sha256 = hashlib.sha256()
+        with (directory / name).open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                md5.update(chunk)
+                sha256.update(chunk)
+        local[name] = (str((directory / name).stat().st_size), md5.hexdigest())
+        if name != MANIFEST:
+            sealed[name] = sha256.hexdigest()
+    if expected != sealed:
+        emit(
+            Event.TASK_FAILED,
+            level=logging.ERROR,
+            failure_kind=FailureKind.BACKUP_SET_MISMATCH,
+        )
+        raise DriveFailure("verification", retryable=False)
+    return local
 
 
 def upload_set(client, folder_id, directory, names):
     """Copy one complete sealed set into a tagged subfolder named like it.
 
+    The local files must still match the set's manifest (``_local_files``).
     An existing subfolder that already holds every file with the local size
     and MD5 is reused unchanged; an incomplete or mismatched one is trashed
     and written again, so a partial earlier attempt never counts as a copy.
     Returns the subfolder ID.
     """
-    local = {
-        name: (str((directory / name).stat().st_size), _md5(directory / name))
-        for name in names
-    }
+    local = _local_files(directory, names)
     for existing in client.children(folder_id, tagged=True, folders=True):
         if existing.get("name") != directory.name:
             continue

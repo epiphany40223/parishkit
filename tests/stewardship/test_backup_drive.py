@@ -20,7 +20,7 @@ from parishkit.stewardship.backup_drive import (
 )
 from parishkit.stewardship.backup_offsite import SEALED_FILES, destination_from
 
-from .drive_fakes import FakeDrive
+from .drive_fakes import FakeDrive, write_sealed_set
 
 FOLDER = "1AbCdEfGhIjKlMnOpQrStUv"
 
@@ -42,9 +42,7 @@ def make_set(root, name="20260927T020000Z", content=b"sealed"):
     """Write one complete local sealed set and return its directory."""
     directory = root / name
     directory.mkdir()
-    for file_name in SEALED_FILES:
-        (directory / file_name).write_bytes(content + file_name.encode())
-    return directory
+    return write_sealed_set(directory, content)
 
 
 @pytest.mark.parametrize(
@@ -124,6 +122,52 @@ def test_mismatched_upload_fails_verification(tmp_path):
     with pytest.raises(DriveFailure) as caught:
         upload_set(drive, FOLDER, make_set(tmp_path), SEALED_FILES)
     assert caught.value.kind == "verification"
+
+
+def logged_kinds(caplog):
+    """The failure_kind of each formatted process-log line so far, with its level."""
+    lines = [
+        json.loads(observability.SafeJsonFormatter().format(record))
+        for record in caplog.records
+    ]
+    return [
+        (line["level"], line["extra"]["failure_kind"])
+        for line in lines
+        if "failure_kind" in line.get("extra", {})
+    ]
+
+
+@pytest.mark.parametrize("damage", ["sealed_file", "manifest"])
+def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
+    tmp_path, caplog, damage
+):
+    """A damaged local set is refused before any upload, and never retried.
+
+    Uploading it would verify the damaged bytes against themselves and record
+    a good copy (#305 L1).
+    """
+    drive = FakeDrive(FOLDER)
+    directory = make_set(tmp_path)
+    if damage == "sealed_file":
+        (directory / backup.DUMP).write_bytes(b"flipped bits")
+    else:
+        (directory / backup.MANIFEST).write_text("not json", encoding="utf-8")
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    with pytest.raises(DriveFailure) as caught:
+        upload_set(drive, FOLDER, directory, SEALED_FILES)
+    assert caught.value.kind == "verification"
+    assert not caught.value.retryable
+    assert drive.calls.count("upload") == 0 and not drive.sets()
+    assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
+    attempts = []
+
+    def attempt():
+        attempts.append(1)
+        return upload_set(drive, FOLDER, directory, SEALED_FILES)
+
+    with pytest.raises(DriveFailure):
+        with_retries(attempt, sleep=lambda seconds: None)
+    assert len(attempts) == 1
 
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)

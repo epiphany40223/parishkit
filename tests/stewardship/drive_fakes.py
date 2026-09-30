@@ -1,9 +1,29 @@
 """An in-memory Google Drive for off-site backup tests; no network, no Google."""
 
 import hashlib
+import json
 from itertools import count
 
+from parishkit.stewardship.backup import DUMP, FILES, MANIFEST
 from parishkit.stewardship.backup_drive import FOLDER_MIME, TAG_VALUE, DriveFailure
+
+
+def write_sealed_set(directory, content=b"sealed"):
+    """Fill one local set directory with two sealed files and a matching manifest.
+
+    The off-site copy checks each sealed file against the SHA-256 the
+    manifest recorded, so a fake set needs a manifest that names them.
+    """
+    manifest = {"version": 1}
+    for kind, name in (("database", DUMP), ("files", FILES)):
+        data = content + b" " + name.encode()
+        (directory / name).write_bytes(data)
+        manifest[kind] = {
+            "file": name,
+            "sealed_sha256": hashlib.sha256(data).hexdigest(),
+        }
+    (directory / MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    return directory
 
 
 class FakeDrive:

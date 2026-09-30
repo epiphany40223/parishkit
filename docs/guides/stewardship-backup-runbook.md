@@ -237,6 +237,14 @@ carries only the category, as `drive_failure` (`authorization` for a
 missing Drive scope, `api_disabled`, `not_found`, `permission`,
 `credential`, `verification`, `unavailable` or `unexpected`).
 
+Before uploading a set, the copy checks each sealed file against the
+SHA-256 the set's manifest recorded when it was written. A set that no
+longer matches (a failing disk, or a file changed by hand) is never
+uploaded: its copy is recorded as `verification`, an ERROR `task_failed`
+line names `failure_kind` `backup_set_mismatch`, and the copy moves on to
+the next set. That set on the host is damaged and cannot be restored;
+check the host's disk, and do not rely on it.
+
 A copy stopped by a time limit is recorded, and shown on the page, as
 `unavailable`, like a Drive outage. What tells the two apart is a WARNING
 `task_failed` line logged when the limit stops the work, whose `timeout`
