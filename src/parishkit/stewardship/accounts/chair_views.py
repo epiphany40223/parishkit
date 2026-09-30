@@ -24,6 +24,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -187,6 +188,8 @@ def _preview(request, service, actor):
         )
     }
     request._stewardship_display_configuration = configuration
+    # The review step of a chair suggestion started on Portal users (#196).
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/chair-confirmation-preview.html",

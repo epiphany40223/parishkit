@@ -21,6 +21,7 @@ from parishkit.stewardship.source.readiness import source_readiness
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import window_table
 
+from . import admin_navigation
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
 from .go_live_commands import start_cleanup, verify_preview
@@ -126,6 +127,8 @@ def readiness(request, campaign_id):
             _closed(request, set())
             preview = collect_inputs(request, service, campaign_id)
         counts = preview.families.counts
+        # The first step of going live (#196).
+        admin_navigation.place(request, flow="go_live", step="readiness")
         response = render(
             request,
             "stewardship/go-live-readiness.html",
@@ -186,6 +189,8 @@ def cleanup_status(request, campaign_id, request_id):
             "cleanup_running",
             "cleanup_retry_wait",
         } or (context["cancelling"] and status.state != "cancelled")
+        # The second step of going live (#196).
+        admin_navigation.place(request, flow="go_live", step="cleanup")
         response = render(request, "stewardship/go-live-cleanup.html", context)
         return _checked(request, service, response)
     except ObjectDoesNotExist:
@@ -226,6 +231,8 @@ def testing_families(request, campaign_id):
             window, rows, has_next, total = cleanup_families(
                 campaign_id, source_id=source_id, window=window, sort=sort
             )
+        # The Testing Families list is part of checking readiness (#196).
+        admin_navigation.place(request, flow="go_live", step="readiness")
         response = render(
             request,
             "stewardship/go-live-families.html",

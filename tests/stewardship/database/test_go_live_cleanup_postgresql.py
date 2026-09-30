@@ -34,6 +34,7 @@ from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.source.setup_completion import complete_setup
 
 from .credential_builders import keys
+from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_campaign_mail_postgresql import deliver
 from .test_configuration_service_postgresql import config_role  # noqa: F401
@@ -275,6 +276,7 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         assert progress.status_code == 200, progress.content
         assert progress["Cache-Control"] == "no-store"
         assert b"Testing cleanup progress" in progress.content
+        assert flow_steps(progress.content) == (GO_LIVE, "Testing cleanup")
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == activity

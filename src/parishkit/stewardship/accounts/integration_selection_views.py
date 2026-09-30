@@ -29,7 +29,7 @@ from .integration_selection import (
     integration_records,
     refuse_organization_change,
 )
-from .integration_views import ERRORS, _checked
+from .integration_views import ERRORS, _checked, place_key_page
 from .request_admission import intake_base
 from .request_patch import build_candidate, credential_request_schema
 from .secret_models import SecretReplacementRequest
@@ -136,6 +136,7 @@ def _locked_page(request, request_id):
         .values_list("target", flat=True)
         .first()
     )
+    place_key_page(request, target)
     response = render(
         request,
         "stewardship/credential-selection.html",
@@ -207,6 +208,13 @@ def select_credential(request, request_id):
                     patch=patch,
                     salt=SALT + str(request_id),
                 )
+            # Finish switching reviews one more settings change; a key
+            # already in use has nothing left to review.
+            place_key_page(
+                request,
+                receipt.target,
+                **({} if selected else {"flow": "change", "step": "review"}),
+            )
             response = render(
                 request,
                 "stewardship/credential-selection.html",

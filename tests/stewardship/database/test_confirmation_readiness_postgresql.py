@@ -44,6 +44,7 @@ from .test_activation_views_postgresql import (  # noqa: F401
     ready_links,
     setup_service,
 )
+from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -178,6 +179,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert page["Cache-Control"] == "no-store"
         assert not page.context["fresh"]
         assert page.context["preview"] is None
+        assert flow_steps(page.content) == (GO_LIVE, "Confirm Production")
         assert browser.head(path).status_code == 200
         assert (
             PortalSession.objects.get(pk=login.portal_session.pk).last_activity_at
@@ -225,6 +227,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
         assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
+        assert flow_steps(page.content) == (GO_LIVE, "Activation")
         assert browser.get(settings_path).context["production_progress_available"]
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()

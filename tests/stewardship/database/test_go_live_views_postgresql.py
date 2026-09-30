@@ -21,6 +21,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
+from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_campaign_mail_postgresql import campaign_test  # noqa: F401
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -38,6 +39,7 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         response = browser.get(path)
         assert response.status_code == 200, response.content
         assert response["Cache-Control"] == "no-store"
+        assert flow_steps(response.content) == (GO_LIVE, "Check readiness")
         preview = response.context["preview"]
         assert "full_refresh_required" in preview.problems
         assert "mail_template_unavailable" in preview.problems
@@ -51,6 +53,7 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert TaskRun.objects.count() == tasks
         families = browser.get(path + "/families")
         assert families.status_code == 200
+        assert flow_steps(families.content) == (GO_LIVE, "Check readiness")
         assert b'class="table-nav"' in families.content
         assert browser.get(path + "/families?size=25").status_code == 200
         assert browser.get(path + "/families?page=0").status_code == 400

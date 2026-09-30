@@ -23,6 +23,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -153,6 +154,8 @@ def _page(request, service, configuration, campaign, forms_by_slot, *, status=20
         }
         for slot in ARTWORK_SLOTS
     ]
+    # Choosing an image is the first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/artwork-settings.html",
@@ -261,6 +264,7 @@ def artwork_preview(request, campaign_id, slot, bundle_id):
             read_variant(media_root(), row.pk, file_receipt(assets[0]))
             patch = _image_patch(campaign, slot, str(assets[0].pk))
             _check_candidate(service, configuration, patch, actor)
+            admin_navigation.place(request, flow="change", step="review")
             response = render(
                 request,
                 "stewardship/artwork-preview.html",
@@ -310,6 +314,7 @@ def artwork_remove(request, campaign_id, slot):
                 raise LookupError("That slot has no image to remove.")
             patch = _image_patch(campaign, slot, None)
             _check_candidate(service, configuration, patch, actor)
+            admin_navigation.place(request, flow="change", step="review")
             response = render(
                 request,
                 "stewardship/artwork-remove.html",

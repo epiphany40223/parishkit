@@ -18,6 +18,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address, assignment, domain
 from ..test_source_corpus import source
 from .auth_builders import signed_in
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_chair_suggestions_postgresql import publish
 from .test_configuration_service_postgresql import (
@@ -68,7 +69,10 @@ def proposal(store, **values):
 def applied(store, browser, values, url=URL):
     """Preview and confirm as the web role; install under the restricted installer."""
     with web():
-        signed = token(post(browser, values, url))
+        review = post(browser, values, url)
+        # The review step of a change started on Portal users (#196).
+        assert flow_steps(review.content) == (STEPS, "Review")
+        signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed}, url)
     assert response.status_code == 302, response.content
     request = ConfigurationChangeRequest.objects.get(
@@ -116,6 +120,11 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         unruled = post(browser, proposal(store, identity="nobody@elsewhere.example"))
         assert "No login rule names this address" in unruled.content.decode()
     request = applied(store, browser, proposal(store))
+    # The POST-only review is named, never linked; Return goes to users.
+    with web():
+        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+    assert b"<li><span>Assignments</span></li>" in status
+    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assignment = MinistryAssignment.objects.get(
         configuration_id=store.active().version_id, email="leader@example.org"
     )

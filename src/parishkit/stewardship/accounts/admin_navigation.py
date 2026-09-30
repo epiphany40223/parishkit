@@ -18,6 +18,8 @@ from functools import cache
 from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
+
 NAMESPACE = "admin"
 
 
@@ -33,9 +35,11 @@ class Section:
 class Page:
     """One Admin page: its section, its parent page (URL name) and its label.
 
-    ``linkable`` is False for a page that only answers a POST (a review
-    step): its crumb is shown for orientation but never linked, because a
-    GET would fail.
+    ``linkable`` is False for a page a link cannot reliably reopen: one that
+    only answers a POST (a review step), or one that reviews a single
+    pending change and refuses once that change is confirmed (a staged
+    image, a new campaign). Its crumb is shown for orientation but never
+    linked, and "Return to" skips it, because a GET would fail.
     """
 
     section: str | None
@@ -81,8 +85,12 @@ PAGES = {
     "index": Page(None, _("Home")),
     # Campaign
     "campaign_settings": Page("campaign", _("Campaign settings")),
-    "campaign_new": Page("campaign", _("New campaign")),
-    "campaign_clone": Page("campaign", _("Copy campaign"), "campaign_settings"),
+    # Creating or copying a campaign is refused once a campaign is current,
+    # so a change's status page names these editors but never links them.
+    "campaign_new": Page("campaign", _("New campaign"), linkable=False),
+    "campaign_clone": Page(
+        "campaign", _("Copy campaign"), "campaign_settings", linkable=False
+    ),
     "content_catalog": Page("campaign", _("Pages and emails")),
     "content_edit": Page("campaign", _("Edit page or email"), "content_catalog"),
     "content_revision": Page("campaign", _("Content revision"), "content_catalog"),
@@ -100,8 +108,13 @@ PAGES = {
     "share_settings": Page("campaign", _("Share options")),
     "artwork_settings": Page("campaign", _("Campaign images")),
     "artwork_upload": Page("campaign", _("Campaign image upload"), "artwork_settings"),
-    "artwork_preview": Page("campaign", _("Review campaign image"), "artwork_settings"),
-    "artwork_remove": Page("campaign", _("Remove campaign image"), "artwork_settings"),
+    # Each reviews one staged or current image and refuses once confirmed.
+    "artwork_preview": Page(
+        "campaign", _("Review campaign image"), "artwork_settings", linkable=False
+    ),
+    "artwork_remove": Page(
+        "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
+    ),
     "talent_settings": Page("campaign", _("Member talents")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing Families"), "go_live"),
@@ -149,28 +162,49 @@ PAGES = {
     # Parish and integrations
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
-    "branding_preview": Page("parish", _("Logo preview"), "branding_settings"),
+    # Reviews one staged logo and refuses once it is chosen.
+    "branding_preview": Page(
+        "parish", _("Logo preview"), "branding_settings", linkable=False
+    ),
     "hosted_files": Page("parish", _("Hosted files")),
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
     "integrations": Page("parish", _("Integrations")),
     "integration_settings": Page("parish", _("Integration"), "integrations"),
-    "credential_status": Page("parish", _("Credential change"), "integrations"),
-    "select_credential": Page("parish", _("Choose credential"), "integrations"),
+    # A key's status and its Finish switching page sit under the integration
+    # the key belongs to; their views supply the target the routes lack. The
+    # status is readable only by the Administrator who saved the key, so
+    # Finish switching (open to every Administrator) never runs through it.
+    # Finish switching is a one-time review that needs a fresh Google
+    # sign-in, so a switch's status page names it but returns to the
+    # integration.
+    "credential_status": Page(
+        "parish", _("Key replacement status"), "integration_settings"
+    ),
+    "select_credential": Page(
+        "parish",
+        _("Finish switching to the new key"),
+        "integration_settings",
+        linkable=False,
+    ),
     "ministries": Page("parish", _("Ministry activity")),
-    "source_refresh": Page("parish", _("ParishSoft refresh"), "integrations"),
+    # A sidebar entry of its own, so a manual refresh is found without Home.
+    "source_refresh": Page("parish", _("ParishSoft refresh")),
     # A configuration change can come from any settings page, so its status
     # page is registered under Home; the view places it under the page the
     # change was confirmed on when this sign-in remembers it.
     "configuration_request": Page(None, _("Configuration change")),
     # Users
     "users": Page("users", _("Portal users")),
-    # Only the review of a rule change (a POST from Portal users) renders here.
+    # Only the review of a change started on Portal users (a POST from that
+    # page) renders at these routes, so trails name them but never link them.
     "user_rules": Page("users", _("Sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
-    "chair_confirmations": Page("users", _("Chair suggestions"), "users"),
-    "chair_reviews": Page("users", _("Chair reviews"), "users"),
-    "assignments": Page("users", _("Assignments"), "users"),
+    "chair_confirmations": Page(
+        "users", _("Chair suggestions"), "users", linkable=False
+    ),
+    "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
+    "assignments": Page("users", _("Assignments"), "users", linkable=False),
     # System
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
@@ -287,6 +321,15 @@ FLOWS = {
         ("review", _("Review")),
         ("send", _("Send and follow")),
     ),
+    # Going live: check readiness, clean up Testing data, prepare Family
+    # links, confirm Production, then follow its activation.
+    "go_live": (
+        ("readiness", _("Check readiness")),
+        ("cleanup", _("Testing cleanup")),
+        ("links", _("Family links")),
+        ("confirm", _("Confirm Production")),
+        ("activate", _("Activation")),
+    ),
     # A report export: request it from a report, wait for it, download it.
     "export": (
         ("request", _("Choose report")),
@@ -309,7 +352,13 @@ def place(request, **values):
 
 
 def placement(request):
-    """The placement a view recorded for this request, or None."""
+    """The placement a view recorded for this request, or None.
+
+    An error page ignores it: a view may record its step and then fail a
+    later access recheck, and the refusal must not show that step.
+    """
+    if getattr(request, ERROR_PAGE_ATTRIBUTE, False):
+        return None
     return getattr(request, PLACEMENT_ATTRIBUTE, None)
 
 
@@ -375,20 +424,36 @@ def route_parameters():
     }
 
 
-def _link(name, arguments):
-    """Reverse an Admin page with the arguments it needs, or None if unavailable."""
+def _sidebar_page(name):
+    """Whether a page is a sidebar entry: a sectioned page with no parent."""
+    return PAGES[name].section is not None and PAGES[name].parent is None
+
+
+def _link(name, arguments, offered=None):
+    """Reverse an Admin page with the arguments it needs, or None if unavailable.
+
+    ``offered`` is the set of URLs the viewer's sidebar offers now. A sidebar
+    page is linked only when the sidebar offers that exact URL: the sidebar
+    already hides entries its page would refuse (Share options once the
+    campaign is locked, Campaign images for a campaign no longer current,
+    Go-live readiness after the draft), so a trail or "Return to" link
+    reuses that decision instead of repeating it (#196). None skips the check.
+    """
     if not PAGES[name].linkable:
         return None
     needed = route_parameters().get(name, ())
     if any(parameter not in arguments for parameter in needed):
         return None
     try:
-        return reverse(
+        url = reverse(
             f"{NAMESPACE}:{name}",
             kwargs={parameter: arguments[parameter] for parameter in needed},
         )
     except NoReverseMatch:
         return None
+    if offered is not None and _sidebar_page(name) and url not in offered:
+        return None
+    return url
 
 
 def _chain(name, parent=None):
@@ -451,16 +516,18 @@ def steps(placed):
     ]
 
 
-def back(match, placed=None):
+def back(match, placed=None, items=None):
     """``{"label", "url"}`` of the nearest linked ancestor, falling back to Home.
 
     Multi-step pages use it for their "Return to …" link, so the link and
-    the trail always agree about where the flow started.
+    the trail always agree about where the flow started. ``items`` are the
+    sidebar entries, as for ``build``.
     """
     _name, chain, arguments = _resolved(match, placed)
     labels = placed.labels if placed else {}
+    offered = _offered(items)
     for ancestor in reversed(chain[:-1]):
-        url = _link(ancestor, arguments)
+        url = _link(ancestor, arguments, offered)
         if url:
             return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
     return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
@@ -513,10 +580,17 @@ def build(match, items, placed=None):
                 }
             )
     labels = placed.labels if placed else {}
-    return sections, _breadcrumbs(name, chain, arguments, sections, labels)
+    return sections, _breadcrumbs(
+        name, chain, arguments, sections, labels, _offered(items)
+    )
 
 
-def _breadcrumbs(name, chain, arguments, sections, labels):
+def _offered(items):
+    """The URLs of the sidebar entries, or None when none were given."""
+    return None if items is None else {entry[3] for entry in items}
+
+
+def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
     """Home, the section, then each ancestor page, ending at the current page."""
     if name is None or name not in PAGES:
         return []
@@ -536,7 +610,7 @@ def _breadcrumbs(name, chain, arguments, sections, labels):
         trail.append(
             {
                 "label": labels.get(ancestor, PAGES[ancestor].label),
-                "url": _link(ancestor, arguments),
+                "url": _link(ancestor, arguments, offered),
             }
         )
     trail.append({"label": PAGES[name].label, "url": None})

@@ -10,6 +10,7 @@ from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import window_table
 
+from . import admin_navigation
 from .activation_progress import control, progress
 from .authentication import runtime
 from .integration_views import ERRORS, _checked
@@ -58,6 +59,8 @@ def links(request, campaign_id, request_id):
                 context["has_next"],
                 total=context["total"],
             )
+            # The third step of going live (#196).
+            admin_navigation.place(request, flow="go_live", step="links")
             response = render(request, "stewardship/go-live-links.html", context)
         return _checked(request, service, response)
     except ObjectDoesNotExist:

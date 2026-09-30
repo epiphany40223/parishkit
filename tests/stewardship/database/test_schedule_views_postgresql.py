@@ -24,6 +24,7 @@ from .campaign_builders import (
     claimed_task,
     occurrence,
 )
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
 from .test_digest_schedule_planning_postgresql import add_digest
@@ -83,14 +84,21 @@ def test_shortened_draft_requires_every_stranded_mailing_to_be_reconciled(
     store = auth_service.store
     campaign, path = setup(store)
     browser, _ = signed_in()
-    assert browser.get(path).status_code == 200
+    page = browser.get(path)
+    assert page.status_code == 200
+    assert flow_steps(page.content) == (STEPS, "Make changes")
     data, indexes = fields(store, campaign)
     data["window-end_date"] = "2026-10-20"
     before = ConfigurationChangeRequest.objects.count()
-    assert post(browser, path, data).status_code == 400
+    refused = post(browser, path, data)
+    assert refused.status_code == 400
+    # A refused review returns to the first step (#196).
+    assert flow_steps(refused.content) == (STEPS, "Make changes")
     assert ConfigurationChangeRequest.objects.count() == before
     data[f"schedules-{indexes['reminder']}-DELETE"] = "on"
-    proposal = token(post(browser, path, data))
+    preview = post(browser, path, data)
+    assert flow_steps(preview.content) == (STEPS, "Review")
+    proposal = token(preview)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)
     campaign.refresh_from_db()

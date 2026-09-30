@@ -19,6 +19,7 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from ..test_source_corpus import source
 from .auth_builders import signed_in
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_chair_reconciliation_postgresql import configured
 from .test_configuration_service_postgresql import (
@@ -67,7 +68,10 @@ def decision(store, **values):
 def decided(store, browser, values):
     """Preview and confirm as the web role; install under the restricted installer."""
     with web():
-        signed = token(post(browser, values))
+        review = post(browser, values)
+        # The review step of a change started on Portal users (#196).
+        assert flow_steps(review.content) == (STEPS, "Review")
+        signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
     request = ConfigurationChangeRequest.objects.get(
@@ -331,7 +335,12 @@ def test_keeping_the_role_independently_survives_the_source(
     with web():
         body = browser.get(PAGE).content.decode()
     assert 'name="decision" value="keep_role"' in address_row(body)
-    decided(store, browser, decision(store, decision="keep_role"))
+    request = decided(store, browser, decision(store, decision="keep_role"))
+    # The POST-only review is named, never linked; Return goes to users (#196).
+    with web():
+        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+    assert b"<li><span>Chair reviews</span></li>" in status
+    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     principal = current_principal(store, account.pk)
     assert "ministry_leader" in principal.roles and principal.ministries == frozenset()
     with web():

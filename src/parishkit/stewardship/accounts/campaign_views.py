@@ -36,7 +36,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
-from . import setup_help
+from . import admin_navigation, setup_help
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -218,6 +218,10 @@ def _target(configuration, campaigns, held, campaign_id):
 
 def _page(request, configuration, campaign, form, *, editable, status=200):
     """Keep locked structural values visible without rendering mutation controls."""
+    if editable:
+        # The first step of edit, review, apply (#196); a locked campaign's
+        # read-only page is not part of any flow.
+        admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/campaign-settings.html",
@@ -335,6 +339,7 @@ def _preview(request, service, actor, state, campaign, form):
             ),
         )
         return _page(request, configuration, campaign, form, editable=True, status=400)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/campaign-preview.html",

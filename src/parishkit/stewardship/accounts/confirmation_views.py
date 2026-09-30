@@ -11,7 +11,7 @@ from parishkit.stewardship.campaigns.production_models import ProductionTransiti
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
-from . import confirmation_commands, confirmation_progress
+from . import admin_navigation, confirmation_commands, confirmation_progress
 from .authentication import runtime
 from .confirmation_readiness import collect_readiness
 from .go_live_views import PROBLEMS
@@ -92,6 +92,8 @@ def confirmation(request, campaign_id, request_id, preparation_id):
                 email_eligibility=Percentage(counts.email_eligible, counts.active),
                 no_email=Percentage(counts.no_eligible_email, counts.active),
             )
+        # The fourth step of going live (#196).
+        admin_navigation.place(request, flow="go_live", step="confirm")
         return _checked(
             request,
             service,
@@ -123,6 +125,8 @@ def progress(request, campaign_id):
                 reverse("admin:production_progress", args=[campaign_id])
             )
         else:
+            # The last step of going live: following activation (#196).
+            admin_navigation.place(request, flow="go_live", step="activate")
             response = render(
                 request,
                 "stewardship/production-progress.html",

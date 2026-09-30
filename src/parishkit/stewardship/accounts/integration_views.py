@@ -23,6 +23,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingError
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -161,6 +162,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             unavailable = True
     # The step-up hint is always shown (a sign-in can age while the page is
     # open), so the page no longer needs to know whether this one is fresh.
+    # The settings form is the first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/integration-settings.html",
@@ -432,6 +435,7 @@ def _preview(request, service, actor, target):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     build_candidate(base, patch, candidate_id=uuid4())
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/integration-preview.html",
@@ -485,6 +489,7 @@ def _remove(request, service, configuration, actor, target):
         raise StaleRecordError("The applied configuration changed.")
     # Refuse now, not at confirmation, if the schema would reject the removal.
     build_candidate(base, patch, candidate_id=uuid4())
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/integration-preview.html",
@@ -672,7 +677,48 @@ def dismiss_credential_result(request, target):
         return error_response(error)
 
 
-def _selectable(configuration, receipt):
+def place_key_page(request, target, **flow):
+    """Place a key's status or switch page under its integration (#196).
+
+    The routes name only the key's request, so the view supplies the
+    integration's route argument and name for the trail and Return link;
+    ``flow`` optionally names a step indicator. An unknown target leaves
+    the trail at Integrations.
+    """
+    if target in LABELS:
+        admin_navigation.place(
+            request,
+            arguments={"target": target},
+            labels={"integration_settings": LABELS[target]},
+            **flow,
+        )
+    elif flow:
+        admin_navigation.place(request, **flow)
+
+
+def integration_origin(name, arguments):
+    """``(arguments, labels)`` naming the integration a change came from (#196).
+
+    A change confirmed on an integration's settings page, or on Finish
+    switching for one of its keys, stands under that integration on its
+    status page. Finish switching's route names only the key's request, so
+    its integration is read from the request. Anything else adds nothing.
+    """
+    target = arguments.get("target")
+    if name == "select_credential":
+        from .secret_models import SecretReplacementRequest
+
+        target = (
+            SecretReplacementRequest.objects.filter(pk=arguments.get("request_id"))
+            .values_list("target", flat=True)
+            .first()
+        )
+    if target not in LABELS:
+        return {}, {}
+    return {"target": target}, {"integration_settings": LABELS[target]}
+
+
+def _selectable(configuration, receipt, target):
     """Offer Finish switching only for the key the settings page says needs it.
 
     An older key, or one whose integration was removed after it was in use,
@@ -681,13 +727,6 @@ def _selectable(configuration, receipt):
     """
     if receipt.state != "applied":
         return False
-    from .secret_models import SecretReplacementRequest
-
-    target = (
-        SecretReplacementRequest.objects.filter(pk=receipt.request_id)
-        .values_list("target", flat=True)
-        .first()
-    )
     if target not in ROTATING_TARGETS:
         return False
     latest = summary(target, _optional(configuration, target) or _unset(target))
@@ -707,13 +746,21 @@ def credential_status(request, request_id):
         actor = principal(request, service, passive=True)
         configuration = editable_configuration(service)
         receipt = secret_request_status(request_id=request_id, actor_id=actor.identity)
+        from .secret_models import SecretReplacementRequest
+
+        target = (
+            SecretReplacementRequest.objects.filter(pk=receipt.request_id)
+            .values_list("target", flat=True)
+            .first()
+        )
+        place_key_page(request, target)
         response = render(
             request,
             "stewardship/credential-status.html",
             {
                 "receipt": receipt,
                 "pending": receipt.state in SECRET_PENDING,
-                "selectable": _selectable(configuration, receipt),
+                "selectable": _selectable(configuration, receipt, target),
             },
         )
         return _checked(request, service, response)

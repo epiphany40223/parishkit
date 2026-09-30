@@ -20,6 +20,7 @@ from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_current_chair_postgresql import publish
 from .test_source_families_postgresql import source_singletons  # noqa: F401
@@ -52,7 +53,11 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     """Only a real installer activation changes applied Ministry policy."""
     publish(source())
     browser, _ = signed_in()
-    assert browser.get(URL).status_code == 200
+    listing = browser.get(URL)
+    assert listing.status_code == 200
+    assert flow_steps(listing.content) == (STEPS, "Make changes")
+    review = post(browser, {"action": "preview", "ministry_duid": "4", "active": "no"})
+    assert flow_steps(review.content) == (STEPS, "Review")
     token = preview(browser)
     assert not ConfigurationChangeRequest.objects.exists()
     response = post(browser, {"action": "confirm", "preview": token})
@@ -69,6 +74,7 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     assert receipt.state == "applied"
     applied = browser.get(response["Location"]).content
     assert b"Applied" in applied
+    assert f'<a href="{URL}">Return to Ministry activity</a>'.encode() in applied
     assert b"data-live-pending" not in applied
     runtime = SystemConfiguration.objects.get()
     policy = MinistryActivity.objects.get(

@@ -105,7 +105,7 @@ def portal_chrome(request):
             "breadcrumbs": breadcrumbs,
             # A multi-step flow's step indicator, and where "Return to" goes.
             "flow_steps": admin_navigation.steps(placed),
-            "back": admin_navigation.back(match, placed),
+            "back": admin_navigation.back(match, placed, items),
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "debug_in_production": _debug_in_production(configuration),
@@ -209,6 +209,7 @@ def _navigation_items(actor, admin, campaign, configuration):
         add("parish", "branding_settings", _("Parish logos"))
         add("parish", "hosted_files", _("Hosted files"))
         add("parish", "integrations", _("Integrations"))
+        add("parish", "source_refresh", _("ParishSoft refresh"))
         add("parish", "ministries", _("Ministry activity"))
     if allows(actor, Capability.MANAGE_USERS):
         add("users", "users", _("Portal users"))

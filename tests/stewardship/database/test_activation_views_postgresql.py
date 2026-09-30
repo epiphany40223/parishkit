@@ -35,6 +35,7 @@ from parishkit.stewardship.jobs.storage import _status
 
 from . import test_go_live_cleanup_postgresql as cleanup_tests
 from .credential_builders import keys
+from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_tasks_postgresql import run
 from .test_go_live_cleanup_postgresql import (  # noqa: F401
@@ -90,6 +91,7 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
         assert b"Preparation history pages" in page.content
+        assert flow_steps(page.content) == (GO_LIVE, "Family links")
         assert page.context["table"].size == 25
         assert page.context["prepare"]
         assert not ProductionTokenPreparation.objects.exists()

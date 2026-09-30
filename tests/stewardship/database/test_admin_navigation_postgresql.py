@@ -25,6 +25,13 @@ from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 STEPS = ["Make changes", "Review", "Apply"]
+GO_LIVE = [
+    "Check readiness",
+    "Testing cleanup",
+    "Family links",
+    "Confirm Production",
+    "Activation",
+]
 
 
 @pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
@@ -70,6 +77,10 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     # Campaign pages and emails, and Mail schedules, are first-class entries.
     assert (b"Pages and emails" in body) == (role == "administrator")
     assert (b"Mail schedules" in body) == (role == "administrator")
+    # The manual ParishSoft refresh has its own sidebar entry (#196).
+    menu = body[body.index(b'aria-label="Administration"') :]
+    menu = menu[: menu.index(b"</nav>")]
+    assert (b'href="/admin/source/refresh"' in menu) == (role == "administrator")
     assert body.count(b'aria-label="Administration"') == 1
     # Home is the current page; the home trail is just "Home", so no trail.
     assert b'aria-label="Breadcrumb"' not in body
@@ -122,7 +133,7 @@ def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     assert f'<a href="{catalog}" aria-current="true">'.encode() in edit.content
 
 
-def _steps(body):
+def flow_steps(body):
     """The step indicator's labels and the current step, from a rendered page."""
     body = body.decode()
     if 'class="flow-steps"' not in body:
@@ -149,10 +160,16 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     content = f"/admin/campaign/{Campaign.objects.get().pk}/content/email/initial"
-    assert _steps(browser.get(content).content) == (STEPS, "Make changes")
-    # The settings pages without a placed flow show no indicator.
-    assert _steps(browser.get(parish.URL).content) is None
+    assert flow_steps(browser.get(content).content) == (STEPS, "Make changes")
+    assert flow_steps(browser.get(parish.URL).content) == (STEPS, "Make changes")
+    # Pages outside a flow show no indicator.
+    assert flow_steps(browser.get("/admin/background").content) is None
+    # A review with nothing changed is refused back to the form, step 1.
+    unchanged = parish.post(browser, parish.fields(store))
+    assert unchanged.status_code == 400
+    assert flow_steps(unchanged.content) == (STEPS, "Make changes")
     review = parish.post(browser, parish.fields(store, name="Renamed Parish"))
+    assert flow_steps(review.content) == (STEPS, "Review")
     confirmed = parish.post(
         browser, {"action": "confirm", "preview": parish.token(review)}
     )
@@ -160,7 +177,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     status = browser.get(confirmed["Location"])
     assert status.status_code == 200
     body = status.content
-    assert _steps(body) == (STEPS, "Apply")
+    assert flow_steps(body) == (STEPS, "Apply")
     assert f'<li><a href="{parish.URL}">Parish settings</a></li>'.encode() in body
     assert b'<span aria-current="page">Configuration change</span>' in body
     assert f'<a href="{parish.URL}">Return to Parish settings</a>'.encode() in body
