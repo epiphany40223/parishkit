@@ -8,12 +8,14 @@ provider call or mutable cache is part of publication.
 
 import hashlib
 import json
+import logging
 from contextlib import contextmanager
 
 from django.db import connection, transaction
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .canonical import InvalidSourcePayload, canonical_payload
@@ -183,6 +185,47 @@ def snapshot_manifest(snapshot_id):
     }
 
 
+def manifest_changes(before, after):
+    """Count, per kind, the identities added, changed or removed since ``before``.
+
+    Both arguments are ``snapshot_manifest`` results (identity -> digest).
+    Payload versions are deduplicated by digest, so an identity whose digest
+    is the same in both manifests carries exactly the same record; anything
+    else is a record ParishSoft changed since the previous promoted snapshot.
+    """
+    return {
+        kind: sum(
+            1
+            for key in before.get(kind, {}).keys() | items.keys()
+            if before.get(kind, {}).get(key) != items.get(key)
+        )
+        for kind, items in after.items()
+    }
+
+
+def _changes(snapshot, manifest):
+    """Changed-record counts against the base snapshot, or None on any failure.
+
+    The counts are display-only (#242), so they must never fail a refresh:
+    any error, including a database error (confined to a savepoint so the
+    caller's transaction stays usable), omits them and logs a classified
+    WARNING with no exception text. The task page then says only how many
+    records were checked.
+    """
+    try:
+        with transaction.atomic():
+            base = snapshot_manifest(snapshot.base_id) if snapshot.base_id else {}
+            return manifest_changes(base, manifest)
+    except Exception as error:
+        emit_failure(
+            error,
+            event=Event.REPORT_SHAPING_FAILED,
+            level=logging.WARNING,
+            task_id=snapshot.task_id,
+        )
+        return None
+
+
 def _validate_relationships(snapshot_id, manifest):
     """Resolve every edge inside this snapshot, not mutable current data."""
     for kind, relations in RELATIONSHIPS.items():
@@ -236,7 +279,17 @@ def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
         snapshot.content_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         snapshot.counts = counts
         snapshot.validation = {"schema": "source-corpus-v1", "complete": True}
+        # Every refresh stages a complete corpus, so its counts are records
+        # checked. The Admin task page also says how many changed (#242):
+        # compare with the base, which promotion requires to still be the
+        # current snapshot. The cursor carries it because the web role can
+        # already read that column (and not validation), so no grant or
+        # schema change is needed. A first load compares with nothing and
+        # counts every record as changed.
         snapshot.cursor = json.loads(cursor_text)
+        changes = _changes(snapshot, manifest)
+        if changes is not None:
+            snapshot.cursor["changes"] = changes
         snapshot.completed_at = _now()
         snapshot.state = "ready"
         snapshot.version += 1

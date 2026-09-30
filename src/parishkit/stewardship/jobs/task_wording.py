@@ -4,12 +4,16 @@ Task rows carry developer phase names (``fetching``, ``staging`` ...), an
 attempt counter and, for ParishSoft refreshes, a request kind. Staff reading
 the task page need what those mean: which kind of refresh this is, what it is
 doing now, that its counts are records *checked* (every refresh places every
-record into a complete new copy), and why a run started over. This module
-turns the bounded metadata the page already reads into that wording; it
-never reads worker payloads or exceptions.
+record into a complete new copy), how many of those records actually
+changed once a refresh finishes, and why a run started over. This module
+turns bounded metadata into that wording; it never reads worker payloads,
+source records or exceptions.
 """
 
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
+
+from parishkit.stewardship.web.presentation import number
 
 from .models import NONTERMINAL_STATES, TaskRunEvent
 
@@ -61,6 +65,83 @@ RETRY_REASONS = {
         "trying again automatically."
     ),
 }
+
+
+# Each source collection in a changed-records summary, singular and plural,
+# in the order the summary lists them.
+CHANGE_NAMES = {
+    "family": ("%(count)s Family", "%(count)s Families"),
+    "member": ("%(count)s Member", "%(count)s Members"),
+    "contact": ("%(count)s contact", "%(count)s contacts"),
+    "address": ("%(count)s address", "%(count)s addresses"),
+    "ministry": ("%(count)s Ministry", "%(count)s Ministries"),
+    "roster": ("%(count)s Ministry roster entry", "%(count)s Ministry roster entries"),
+    "fund": ("%(count)s fund", "%(count)s funds"),
+    "pledge": ("%(count)s pledge", "%(count)s pledges"),
+    "contribution": ("%(count)s contribution", "%(count)s contributions"),
+}
+
+
+def _counts(value):
+    """Whether ``value`` maps collection names to nonnegative integers."""
+    return type(value) is dict and all(
+        type(count) is int and count >= 0 for count in value.values()
+    )
+
+
+def refresh_result(task_id):
+    """How many records a finished refresh checked and changed, in words.
+
+    Reads the counts and the changed-record counts (#242) that the run's
+    promoted snapshot recorded (one indexed query, columns the web role may
+    read). Returns None when this run promoted nothing. A snapshot promoted
+    before changes were recorded still says how many records were checked.
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    row = (
+        SourceSnapshot.objects.filter(task_id=task_id, state="promoted")
+        .values_list("counts", "cursor")
+        .first()
+    )
+    return None if row is None else result_text(*row)
+
+
+def result_text(counts, cursor):
+    """Word a promoted snapshot's recorded counts, or None if they are unusable.
+
+    Changes that name a collection this wording does not know (a collection
+    added later without a name here) fall back to the checked count alone
+    rather than hiding the result.
+    """
+    if not _counts(counts):
+        return None
+    changes = cursor.get("changes") if type(cursor) is dict else None
+    if not _counts(changes) or not set(changes) <= set(CHANGE_NAMES):
+        changes = None
+    return refresh_summary(sum(counts.values()), changes)
+
+
+def refresh_summary(checked, changes):
+    """Say how many records a refresh checked and, when known, changed."""
+    if changes is None:
+        return ngettext(
+            "Checked %(checked)s record from ParishSoft.",
+            "Checked %(checked)s records from ParishSoft.",
+            checked,
+        ) % {"checked": number(checked)}
+    changed = sum(changes.values())
+    parts = [
+        ngettext(*CHANGE_NAMES[kind], changes[kind]) % {"count": number(changes[kind])}
+        for kind in CHANGE_NAMES
+        if changes.get(kind)
+    ]
+    text = ngettext(
+        "Checked %(checked)s record from ParishSoft; %(changed)s changed",
+        "Checked %(checked)s records from ParishSoft; %(changed)s changed",
+        checked,
+    ) % {"checked": number(checked), "changed": number(changed)}
+    return f"{text} ({', '.join(parts)})." if parts else f"{text}."
 
 
 def refresh_kinds(root_ids):

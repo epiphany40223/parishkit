@@ -7,6 +7,7 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.source import snapshots
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.leases import _now, acquire_source, release_source
 from parishkit.stewardship.source.models import SourceMutationLease
@@ -103,6 +104,12 @@ def test_repeated_identical_refresh_reuses_all_payload_versions():
         assert membership.objects.count() == 2
     assert reconstruct_snapshot(first.pk) == reconstruct_snapshot(second.pk)
     assert SourceSnapshot.objects.get(pk=second.pk).generation == 2
+    # A first load counts every record as changed; an identical one, none (#242).
+    assert first.cursor["changes"] == dict.fromkeys(ENTITY_MODELS, 1)
+    assert second.cursor == {
+        "watermark": "synthetic-1",
+        "changes": dict.fromkeys(ENTITY_MODELS, 0),
+    }
 
 
 def test_changed_family_does_not_copy_unchanged_members_or_giving():
@@ -117,6 +124,37 @@ def test_changed_family_does_not_copy_unchanged_members_or_giving():
         assert payload.objects.count() == (2 if kind == "family" else 1)
     assert reconstruct_snapshot(first.pk)["family"]["1"]["name"] == "Synthetic"
     assert reconstruct_snapshot()["family"]["1"]["name"] == "Changed"
+    assert second.cursor["changes"] == dict.fromkeys(ENTITY_MODELS, 0) | {"family": 1}
+
+
+def test_a_failed_change_count_never_fails_the_refresh(monkeypatch, caplog):
+    """The display-only changed counts are omitted, with a WARNING, on failure.
+
+    The failure is a real database error, so this also proves the savepoint
+    keeps the refresh's own transaction usable for the ready transition.
+    """
+    first, claim = prepared()
+    publish(first, claim)
+    release_source(claim)
+    manifest = snapshots.snapshot_manifest
+
+    def broken(snapshot_id):
+        """Fail only the base comparison, with a genuine SQL error."""
+        if snapshot_id == first.pk:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1/0")
+        return manifest(snapshot_id)
+
+    monkeypatch.setattr(snapshots, "snapshot_manifest", broken)
+    with caplog.at_level("WARNING", logger="parishkit.stewardship"):
+        second, claim = prepared(source_corpus(name="Changed"))
+    assert "changes" not in second.cursor
+    assert publish(second, claim).state == "promoted"
+    (warning,) = [
+        r for r in caplog.records if r.getMessage() == "report_shaping_failed"
+    ]
+    # A classified category only; no exception text reaches the log line.
+    assert warning.levelname == "WARNING" and not warning.exc_info
 
 
 def test_failed_reconciliation_rolls_back_pointer_manifest_and_derived_records():

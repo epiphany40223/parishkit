@@ -41,6 +41,7 @@ from .task_wording import (
     phase_words,
     refresh_kinds,
     refresh_label,
+    refresh_result,
     retry_reason,
 )
 
@@ -352,6 +353,10 @@ def _task_read(request, task_id):
         "is_refresh": task["type"] == REFRESH,
         "phase_text": phase_words(task["type"], task["progress"]["phase"]),
         "retry_text": retry_reason(task),
+        # Records checked and changed (#242), once a refresh has finished.
+        "refresh_result": refresh_result(task["id"])
+        if task["type"] == REFRESH and task["state"] == "succeeded"
+        else None,
         # Why a still-queued task has not started (#340), from the metadata
         # already read above rather than a second read of the same row.
         "wait": explain(

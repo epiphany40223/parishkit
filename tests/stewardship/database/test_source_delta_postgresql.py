@@ -43,6 +43,12 @@ def stage(snapshot, claim, corpus, cursor):
     )
 
 
+def current_cursor():
+    """The current snapshot's cursor, without the changed counts staging adds."""
+    cursor = SourceCurrent.objects.select_related("snapshot").get().snapshot.cursor
+    return {key: value for key, value in cursor.items() if key != "changes"}
+
+
 @pytest.mark.parametrize("publish", [False, True])
 def test_delta_cursor_and_contacts_follow_only_atomic_current_pointer(
     tmp_path, publish
@@ -105,23 +111,19 @@ def test_delta_cursor_and_contacts_follow_only_atomic_current_pointer(
         base_cursor=first_cursor,
     )
     stage(second, claim, loaded.corpus, second_cursor)
-    assert (
-        SourceCurrent.objects.select_related("snapshot").get().snapshot.cursor
-        == first_cursor
-    )
+    assert current_cursor() == first_cursor
+    # A first load counts every record as changed (#242).
+    assert first.cursor["changes"] == first.counts
     assert reconstruct_snapshot() == original
     if publish:
         promote_snapshot(second.pk, claim, admit=permit, reconcile=permit)
         assert reconstruct_snapshot() == loaded.corpus
-        assert (
-            SourceCurrent.objects.select_related("snapshot").get().snapshot.cursor
-            == second_cursor
-        )
+        assert current_cursor() == second_cursor
+        # The delta changed a Member's email and nothing else in the corpus.
+        changes = SourceCurrent.objects.get().snapshot.cursor["changes"]
+        assert 0 < sum(changes.values()) < sum(first.counts.values())
         assert second_cursor["full_snapshot_id"] == str(first.pk)
     else:
         reject_snapshot(second.pk, claim, admit=permit)
         assert reconstruct_snapshot() == original
-        assert (
-            SourceCurrent.objects.select_related("snapshot").get().snapshot.cursor
-            == first_cursor
-        )
+        assert current_cursor() == first_cursor

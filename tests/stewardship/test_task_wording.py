@@ -6,11 +6,16 @@ import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.jobs.task_wording import (
+    CHANGE_NAMES,
     REFRESH_LABELS,
     RETRY_REASONS,
     phase_words,
     refresh_label,
+    refresh_summary,
+    result_text,
 )
+from parishkit.stewardship.source.snapshots import manifest_changes
+from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
 
 def test_refresh_phases_read_as_steps_and_others_fall_back():
@@ -116,3 +121,58 @@ def test_only_the_download_step_claims_to_be_downloading(phase, current, total):
     html = render(refresh_task("running", phase=phase, current=current, total=total))
     assert "This step shows no count yet" not in html
     assert "Waiting for progress details" in html
+
+
+def test_changes_count_added_changed_and_removed_identities():
+    """A record changed when it is new, gone or has a different digest (#242)."""
+    before = {"family": {"1": "a", "2": "b", "3": "c"}, "fund": {"9": "f"}}
+    after = {"family": {"1": "a", "2": "B", "4": "d"}, "fund": {"9": "f"}}
+    assert manifest_changes(before, after) == {"family": 3, "fund": 0}
+    # A first load compares with nothing, so every record is new.
+    assert manifest_changes({}, after) == {"family": 3, "fund": 1}
+
+
+def test_summary_says_checked_and_changed_by_collection():
+    """Changed records are totalled and named per collection, in a fixed order."""
+    changes = {"contact": 9, "family": 3, "member": 0, "roster": 1}
+    assert refresh_summary(30639, changes) == (
+        "Checked 30,639 records from ParishSoft; 13 changed "
+        "(3 Families, 9 contacts, 1 Ministry roster entry)."
+    )
+
+
+def test_summary_says_zero_changed_when_nothing_changed():
+    """The acceptance case: a refresh with no ParishSoft changes says 0 changed."""
+    assert refresh_summary(1, {"family": 0}) == (
+        "Checked 1 record from ParishSoft; 0 changed."
+    )
+    # Before changes were recorded, only the checked count is known.
+    assert refresh_summary(2, None) == "Checked 2 records from ParishSoft."
+
+
+def test_a_finished_refresh_shows_its_result():
+    """The succeeded page carries the checked/changed sentence."""
+    html = render(
+        refresh_task("succeeded", phase="promoting", current=9, total=9),
+        refresh_result=refresh_summary(9, {"family": 1}),
+    )
+    assert "Finished successfully." in html
+    assert "Checked 9 records from ParishSoft; 1 changed (1 Family)." in html
+
+
+def test_every_source_collection_has_a_changed_name():
+    """A new source collection must be named here, or its changes go unshown."""
+    assert set(CHANGE_NAMES) == set(ENTITY_MODELS)
+
+
+def test_an_unknown_collection_still_says_how_many_were_checked():
+    """Changes naming an unknown collection fall back to the checked count."""
+    counts = {"family": 2, "newthing": 3}
+    assert result_text(counts, {"changes": {"family": 1}}) == (
+        "Checked 5 records from ParishSoft; 1 changed (1 Family)."
+    )
+    assert result_text(counts, {"changes": {"family": 1, "newthing": 1}}) == (
+        "Checked 5 records from ParishSoft."
+    )
+    assert result_text(counts, {}) == "Checked 5 records from ParishSoft."
+    assert result_text({"family": -1}, {}) is None
