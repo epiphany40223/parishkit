@@ -1,20 +1,24 @@
 """Installed MAIL consumer, finite-provider boundary and maintained Task lifetime."""
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import timedelta
+from queue import Queue
 from threading import Event
 from time import monotonic
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, connections
 
 from parishkit.stewardship.accounts.key_files import file_fingerprint, write_private
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.family_delivery_process import FamilyMailSession
+from parishkit.stewardship.jobs import family_mail_delivery_tasks
 from parishkit.stewardship.jobs.dispatch import claim_hint
 from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
@@ -107,6 +111,69 @@ def deliver(harness, path, message, owner=None):
         with maintain_execution(execution):
             owner.execute(execution)
     return owner
+
+
+def hold_work_lock(ready, release, seconds):
+    """Hold the global work-order lock on this thread's own connection.
+
+    The hold ends when ``release`` is set, or after ``seconds`` at most, so
+    a worker still waiting for the lock is released rather than deadlocked.
+    """
+    try:
+        with work_transaction():
+            ready.put(True)
+            release.wait(seconds)
+    finally:
+        connections.close_all()
+
+
+def test_launch_budget_read_does_not_wait_for_the_global_work_lock(
+    dispatch_worker, monkeypatch
+):
+    """A send proceeds while another session holds 736220,1 (#394).
+
+    A source refresh holds that lock for a second or more per staging batch,
+    and every message used to wait for it just to read the clock before its
+    send. Here another session takes the lock right after the message
+    commits "submitting" and keeps it until the provider is called (or 4 s
+    at most). The worker runs under a 2 s lock_timeout, so a lock wait
+    before the send fails the message instead of hanging the test.
+    """
+    harness, path = dispatch_worker
+    real = family_mail_delivery_tasks.begin_submission
+    ready, release, calls = Queue(), Event(), []
+    pool = ThreadPoolExecutor(max_workers=1)
+    holders = []
+
+    def contended(*args, **kwargs):
+        """Commit "submitting", then let another session take the lock."""
+        prepared = real(*args, **kwargs)
+        if prepared is not None and not kwargs.get("metadata_only"):
+            holders.append(pool.submit(hold_work_lock, ready, release, 4))
+            ready.get(timeout=5)
+            with connection.cursor() as cursor:
+                # Session level: it ends with this connection, which the
+                # worker closes before the send.
+                cursor.execute("SET lock_timeout = '2s'")
+        return prepared
+
+    def provider(value, settings, mail, *, seconds, check, session):
+        calls.append(seconds)
+        release.set()
+        holders[0].result(timeout=10)
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "begin_submission", contended)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    try:
+        with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+            message = prepare(harness)
+            deliver(harness, path, message)
+    finally:
+        release.set()
+        pool.shutdown(wait=True)
+    assert len(holders) == 1 and len(calls) == 1 and 0 < calls[0] <= 30
+    assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
 
 
 @pytest.mark.parametrize("production", [False, True])

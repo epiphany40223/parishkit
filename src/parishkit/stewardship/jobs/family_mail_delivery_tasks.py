@@ -563,6 +563,19 @@ def _check(execution):
         connections.close_all()
 
 
+def _launch_budget(deadline):
+    """Seconds left before this message's committed provider deadline.
+
+    Only a clock read: the deadline was committed by begin_submission(), and
+    nothing here writes or needs the writers' order. So it runs in a plain
+    transaction (database_now() needs one), not under the deployment-wide
+    work-order lock, which a source refresh can hold for a second or more at
+    a time (#394). Every message used to queue behind that lock here.
+    """
+    with transaction.atomic():
+        return (deadline - database_now()).total_seconds()
+
+
 def _execute(
     execution, *, private, public_origin, credential_path, circuit, session=None
 ):
@@ -675,8 +688,7 @@ def _execute(
             "reply_to": mail.reply_to,
             "sender_name": sender_name,
         }
-        with work_transaction():
-            remaining = (deadline - database_now()).total_seconds()
+        remaining = _launch_budget(deadline)
         connections.close_all()
         # No helper has started yet, so an already elapsed launch budget is
         # definitive non-acceptance, unlike a lost acknowledgement after IO.
