@@ -32,6 +32,43 @@ _ALTERNATE_ACCESS = (
 )
 _SIGNATURE = "<p>In gratitude,<br>The Stewardship Team</p>"
 
+# The confirmation email's online-giving sentence. Placeholders have no
+# conditionals, and a campaign without the Financial module has no pledge, so
+# the default invites online giving without assuming one (#385).
+_GIVE_ONLINE = (
+    "If you would like to give online through {{ parish_name }}’s online "
+    'giving service, <a href="{{ online_giving_url }}">please click here</a>.'
+)
+# The earlier sentence, which always mentioned a pledge. See RETIRED_EMAILS.
+_GIVE_ONLINE_PLEDGE = (
+    "If you chose to use {{ parish_name }}’s online service to fulfill your "
+    '{{ campaign_year }} pledge, <a href="{{ online_giving_url }}">please click '
+    "here</a>."
+)
+
+
+def _confirmation(give_online):
+    """The submission confirmation email with one online-giving sentence.
+
+    ``{{ online_giving_url }}`` falls back to the parish website when no giving
+    page is configured, so the link always has a real target.
+    """
+    return DefaultEmail(
+        "Thank you: your {{ parish_name }} stewardship renewal was received",
+        "<p>Thank you for completing {{ parish_name }}’s {{ campaign_name }} for "
+        "the {{ family_name }} household. This email confirms that we received "
+        "your submission.</p>"
+        "<p>On behalf of the Stewardship Team, we appreciate your commitment to "
+        "<strong>devote time</strong> to worship and prayer, <strong>share your "
+        "talents</strong>, <strong>give your treasure</strong>, and <strong>protect "
+        f"the earth</strong>. {give_online}</p>"
+        "<p>Thank you for your continued support of our community!</p>"
+        "<p>Peace in Christ,<br>The Stewardship Team</p>"
+        # Formerly the separate receipt closing note (#260), still last.
+        f"<p>If anything needs to change, please contact {_CONTACT}.</p>",
+    )
+
+
 PAGES = {
     "welcome": (
         "<h2>Welcome to {{ parish_name }}'s {{ campaign_year }} stewardship "
@@ -233,24 +270,7 @@ EMAILS = {
         + _SIGNATURE
         + _HELP,
     ),
-    # {{ online_giving_url }} falls back to the parish website when no giving
-    # page is configured, so this link always has a real target.
-    "confirmation": DefaultEmail(
-        "Thank you: your {{ parish_name }} stewardship renewal was received",
-        "<p>Thank you for completing {{ parish_name }}’s {{ campaign_name }} for "
-        "the {{ family_name }} household. This email confirms that we received "
-        "your submission.</p>"
-        "<p>On behalf of the Stewardship Team, we appreciate your commitment to "
-        "<strong>devote time</strong> to worship and prayer, <strong>share your "
-        "talents</strong>, <strong>give your treasure</strong>, and <strong>protect "
-        "the earth</strong>. If you chose to use "
-        "{{ parish_name }}’s online service to fulfill your {{ campaign_year }} "
-        'pledge, <a href="{{ online_giving_url }}">please click here</a>.</p>'
-        "<p>Thank you for your continued support of our community!</p>"
-        "<p>Peace in Christ,<br>The Stewardship Team</p>"
-        # Formerly the separate receipt closing note (#260), still last.
-        f"<p>If anything needs to change, please contact {_CONTACT}.</p>",
-    ),
+    "confirmation": _confirmation(_GIVE_ONLINE),
     "daily_digest": DefaultEmail(
         "{{ campaign_name }}: daily progress report",
         "<p>Here is today’s progress report for {{ parish_name }}’s "
@@ -275,6 +295,15 @@ EMAILS = {
 }
 
 
+# Earlier defaults that content may still hold unmodified. Changing a default
+# only changes content created or reset afterwards; a parish's saved content
+# keeps its text. matches_default() accepts these too, so a slot saved from an
+# earlier default still shows as the default rather than as customized.
+RETIRED_EMAILS = {
+    "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
+}
+
+
 def email_text(html):
     """Plain-text alternative that keeps each link's target visible.
 
@@ -292,14 +321,25 @@ def default_data(kind, slot):
     if kind == "page":
         return {"html": PAGES[slot], "generate_text": "on", "text": ""}
     if kind == "email":
-        email = EMAILS[slot]
-        return {
-            "subject": email.subject,
-            "html": email.html,
-            "generate_text": "on",
-            "text": "",
-        }
+        return _email_data(EMAILS[slot])
     raise LookupError("Unknown content kind.")
+
+
+def _email_data(email):
+    """Editor form data for one default email, with generated plain text."""
+    return {
+        "subject": email.subject,
+        "html": email.html,
+        "generate_text": "on",
+        "text": "",
+    }
+
+
+def retired_data(kind, slot):
+    """Editor form data for each earlier default of one slot (RETIRED_EMAILS)."""
+    if kind != "email":
+        return []
+    return [_email_data(email) for email in RETIRED_EMAILS.get(slot, ())]
 
 
 def default_initial(kind, slot):

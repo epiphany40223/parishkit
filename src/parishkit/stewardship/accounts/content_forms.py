@@ -21,7 +21,7 @@ from parishkit.stewardship.web.presentation import campaign_year, parish_date
 from parishkit.stewardship.web.presentation import phone as format_phone
 from parishkit.stewardship.web.refusals import UserFacingError
 
-from .content_defaults import default_data
+from .content_defaults import default_data, retired_data
 
 PAGE_LABELS = {
     "welcome": _("Family welcome"),
@@ -294,7 +294,12 @@ def default_values(kind, slot, *, campaign_id):
     ``values()`` path as text an Admin types, so it is sanitized and validated
     identically and can never bypass a content rule.
     """
-    form = _DefaultForm(default_data(kind, slot), kind=kind, slot=slot)
+    return _canonical(default_data(kind, slot), kind, slot, campaign_id)
+
+
+def _canonical(data, kind, slot, campaign_id):
+    """Built-in editor data as the canonical revision an editor save produces."""
+    form = _DefaultForm(data, kind=kind, slot=slot)
     if not form.is_valid():
         # Unit tests validate every default; this is defensive only.
         raise ValueError("Default content failed validation.")
@@ -306,10 +311,14 @@ def matches_default(values):
 
     Stored content is already sanitized canonical output, so comparing it to
     the default's canonical revision (same campaign owner) is exact; any
-    edit, however small, counts as customized.
+    edit, however small, counts as customized. Content saved from an earlier
+    default of the slot (``retired_data``) still counts as the default, so
+    improving a default does not make untouched content look customized.
     """
-    return values == default_values(
-        values["kind"], values["slot"], campaign_id=values["campaign_id"]
+    kind, slot = values["kind"], values["slot"]
+    return any(
+        values == _canonical(data, kind, slot, values["campaign_id"])
+        for data in (default_data(kind, slot), *retired_data(kind, slot))
     )
 
 

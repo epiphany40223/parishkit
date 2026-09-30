@@ -795,6 +795,13 @@ or otherwise joined after a blank line. The slot and its setup
 step name stay allowed in the database schema only so applied history keeps
 verifying.
 
+Built-in default text can improve between releases. A change affects only
+slots filled or reset afterwards; saved content keeps its text. Content saved
+unmodified from an earlier default still counts as default rather than
+customized. For example, the confirmation email's online-giving sentence no
+longer mentions a pledge (a campaign without the Financial module has none),
+and a slot that still holds the earlier sentence still reads as default (#385).
+
 Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
 templates have separate subject, sanitized HTML, and generated/edited plain-text
 versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
