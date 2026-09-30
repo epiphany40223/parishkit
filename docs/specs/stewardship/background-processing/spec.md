@@ -706,7 +706,7 @@ A permanent address refusal records that recipient/family, suppresses that
 normalized address until its source value changes or an Admin clears the
 refusal after verification, and continues. A Family whose every otherwise
 eligible address is suppressed is included in the
-[no-deliverable-email report](../reports/spec.md#families-without-deliverable-email).
+[Family directory's mailing columns](../reports/spec.md#mailing-columns).
 A systemic provider/authentication failure stops further sending for that run
 and becomes CRITICAL to avoid a flood of identical failures.
 

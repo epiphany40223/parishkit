@@ -182,8 +182,7 @@ def _navigation_items(actor, admin, campaign, configuration):
     ):
         add("reports", "ministry_reports", _("Ministry reports"))
     if campaign and allows(actor, Capability.FAMILY_CODES):
-        add("reports", "family_directory", _("Family codes"), campaign.pk)
-        add("reports", "postal_directory", _("Postal outreach"), campaign.pk)
+        add("reports", "family_directory", _("Family directory"), campaign.pk)
     if admin and campaign:
         add(
             "reports",

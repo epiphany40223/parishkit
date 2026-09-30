@@ -152,7 +152,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Food pantry" in body
             and b"Choir" not in body
         )
-        assert b"Ministry reports" in body and b"Family codes" not in body
+        assert b"Ministry reports" in body and b"Family directory" not in body
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         response, body = search(browser, route, {"ministry": "9"})

@@ -118,6 +118,16 @@ def _zip(address):
     )
 
 
+def export_headings(*, postal, reach):
+    """The export's columns: the mail merge, or codes (plus phones for "neither").
+
+    The directory page lists them so the Admin knows what the file contains.
+    """
+    if postal:
+        return POSTAL_HEADINGS
+    return CODE_HEADINGS + ((PHONE_HEADING,) if reach == "neither" else ())
+
+
 def _filters(parameters):
     """The applied filters in words, for the report details."""
     applied = []
@@ -189,8 +199,11 @@ def directory_document(
                 )
             )
     else:
-        phones = parameters["filters"].get("reach") == "neither"
-        headings = CODE_HEADINGS + ((PHONE_HEADING,) if phones else ())
+        headings = export_headings(
+            postal=False, reach=parameters["filters"].get("reach")
+        )
+        # Only the "neither" list adds the phone column; see export_headings.
+        phones = PHONE_HEADING in headings
         for item in payload["rows"]:
             row = (
                 family_heads_name(item["family_name"], item["heads"]),

@@ -14,19 +14,25 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .directories import DirectoryQuery
 from .directory_exports import ExportRequestBound, create_directory_export
-from .directory_views import _error, _principal
+from .directory_views import _error, _principal, mailing_option
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
 
 
 @require_POST
 def create(request, campaign_id, *, postal=False):
-    """Forms supply filters, never a result document, Family ID or retained input."""
+    """Forms supply filters, never a result document, Family ID or retained input.
+
+    The page's hidden ``mailing`` field chooses the mail-merge export. The old
+    postal export route (``postal``) serves forms rendered before the pages
+    merged, which carry no ``mailing`` field and meant the mail merge.
+    """
     try:
         service = runtime()
         principal = _principal(request, service.store)
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
+        postal = mailing_option(parameters, default=postal)
         fields = {"format", "browser_timezone", "request_key"}
         query_fields = set(DirectoryQuery.__dataclass_fields__) - {"page"}
         if (
@@ -51,8 +57,8 @@ def create(request, campaign_id, *, postal=False):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError):
-        return _error(campaign_id, postal=postal, status=503)
+        return _error(campaign_id, status=503)
     except ExportRequestBound:
-        return _error(campaign_id, postal=postal, status=409)
+        return _error(campaign_id, status=409)
     except ValueError:
-        return _error(campaign_id, postal=postal, status=400)
+        return _error(campaign_id, status=400)

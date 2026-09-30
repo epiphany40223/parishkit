@@ -254,11 +254,14 @@ and workflow state. Exports include complete text and workflow history option.
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 
-## Family code lookup
+## Family directory
 
 **Access:** Admin and Staff.
 
-List active Families with name, Family DUID, manual code, current email
+One **Family directory** page serves both Family-code lookup and postal
+outreach; they were separate pages until
+[#202](https://github.com/epiphany40223/parishkit/issues/202). The page lists
+active Families with name, Family DUID, manual code, current email
 eligibility/deliverability, and response status. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
 told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
@@ -286,18 +289,26 @@ Filters include how campaign mail can reach a Family: by deliverable email, by
 postal mail only (no deliverable email but a usable mailing address: a street
 line and a city, plus a state or postal code), or neither. A one-click
 "Can't be reached by email or mail" preset opens the page filtered to
-neither; it is the only filter accepted in a link (`?reach=neither`), since it
-carries no private value. The page, the postal page and the Admin home page
-show how many Families no campaign mail can reach, linking to that list.
+neither. It and the mailing-columns preset (`?mailing=yes`) are the only
+values accepted in a link, since neither carries a private value. The page
+with mailing columns (unless it already lists them) and the Admin home page
+show how many active Families across the campaign no campaign mail can reach,
+linking to that list.
 
-CSV, XLSX, and PDF exports are one header row plus one row per Family, with
-exactly the columns Family (the same surname-and-heads name as the page),
-ParishSoft DUID and Family code. The
+The old postal-outreach address (`reports/<campaign>/postal/`) redirects to
+the page with mailing columns on and reach "By postal mail only" (or the known
+reach its link named), so bookmarks keep working. Forms rendered before the merge still submit to the
+old page and export addresses, which serve them with mailing columns on.
+
+Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
+one header row plus one row per Family, with exactly the columns Family (the
+same surname-and-heads name as the page), ParishSoft DUID and Family code. The
 list filtered to Families no campaign mail can reach adds Phone numbers for
 follow-up calls. Report details (parish, campaign, capture time, Families in
 the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
-"Report information" sheet, never in columns. Exports use the standard asynchronous, short-lived, requester-authorized export
+"Report information" sheet, never in columns. The page's export panel names
+the file's columns for the current filters and mailing-columns choice. Exports use the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
@@ -306,18 +317,25 @@ campaign, actor, filter, and row-count granularity without copying codes into
 the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.
 
-## Families without deliverable email
+### Mailing columns
 
-**Access:** Admin and Staff.
-
-The UI labels this report **Families without deliverable email**. It lists every
-current active registered Family lacking a deliverable eligible-head email,
-sorted as the [Family code lookup](#family-code-lookup) is. This population is
-the complement of the
-deliverable-email statistics card, not of the syntactic eligible-email card.
-Filters/search include name, DUID, address, phone presence, and reason (no head,
-no address, invalid address, or all otherwise eligible addresses permanently
-refused by the provider).
+An **Include mailing columns** checkbox, off by default, adds Addressee and
+Mailing address columns to the table and makes the export a postal mail
+merge. It is independent of every filter: it never changes which Families
+are listed, so any listed Family, including one that email reaches, shows its
+addressee and mailing address, and the mail merge covers exactly the listed
+Families (less those without a usable mailing address, which cannot be
+mailed and are counted instead, as below). To list the Families postal mail
+is for, filter reach to "By postal mail only" (or email availability to a
+reason). Families without deliverable email, counted on the page, are the
+complement of the deliverable-email
+statistics card, not of the syntactic eligible-email card. The Addressee
+column names the Family as the mail-merge file does; a Family without a
+usable mailing address says it is left out of the file. Mailing columns show
+nothing the Family directory's contact details do not already show Admin and
+Staff, and Ministry leaders are denied either way. Viewing with mailing
+columns is audited as postal outreach, and its export is a `postal_outreach`
+export request.
 
 Detail contains Family DUID, envelope number where present, Family/head names,
 family/member phone numbers, complete primary address, reason, and campaign
@@ -330,8 +348,9 @@ State, ZIP (with its +4 extension when present) and Family code. Addressee and
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. Families without a usable
-mailing address cannot be mailed, so they are left out of the file and counted
-on the page and in the file's report details. The PDF lays the same content
+mailing address cannot be mailed, so they are left out of the file, marked
+in the page's Mailing address column, and counted in the file's report
+details. The PDF lays the same content
 out as address blocks, with the report details in its header and footer. It
 never includes the opaque email-link token.
 

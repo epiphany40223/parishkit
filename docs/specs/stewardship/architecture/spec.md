@@ -520,7 +520,7 @@ body, never a URL/query string, and are omitted from application/proxy request
 logs. Code-bearing exports use the ordinary authenticated temporary-export
 controls
 and complete report/export audit defined by the
-[Family-code report](../reports/spec.md#family-code-lookup). Codes remain absent
+[Family directory](../reports/spec.md#family-directory). Codes remain absent
 from application logs, operational notifications, and unprivileged reports.
 
 Failed Family-code attempts use Valkey sliding-window limits keyed by source IP

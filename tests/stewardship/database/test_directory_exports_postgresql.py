@@ -6,9 +6,11 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -227,6 +229,9 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 for item in queries.captured_queries
             )
             assert response.status_code == 200 and b"Family-directory export" in body
+            # A code-list export with no reach filter returns to the plain page.
+            assert f'href="{route}">'.encode() in body
+            assert b"mail-merge export" not in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(
                 request.task_id,
@@ -354,11 +359,11 @@ def test_directory_export_staff_gates_and_service_boundaries(
         )
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
-    route = f"/admin/reports/{harness.campaign.pk}/postal/"
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         with pytest.raises(PermissionError):
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
-        response, body = read(browser, route)
+        response, body = read(browser, route + "?mailing=yes")
         assert response.status_code == 200 and b"<fieldset disabled>" in body
         assert b"Campaign work is gated" in body
         assert (
@@ -383,12 +388,32 @@ def test_directory_export_staff_gates_and_service_boundaries(
         ],
     )
     fields = DirectoryQuery().form_values() | {
+        "mailing": "yes",
         "format": "csv",
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert post(browser, route + "export", fields).status_code == 403
+        # Mailing columns (addresses) stay with the roles that could open the
+        # old postal page; the old postal routes keep their checks too.
+        assert read(browser, route + "?mailing=yes")[0].status_code == 403
+        denied = post(browser, route, {"mailing": "yes", "reach": "email"})
+        assert denied.status_code == 403 and b"Example Street" not in denied.content
+        legacy = f"/admin/reports/{harness.campaign.pk}/postal/"
+        # A bookmarked old postal URL redirects without reading anything,
+        # then the merged page denies a Ministry leader or a signed-out
+        # visitor exactly as the old page did.
+        target = route + "?reach=mail&mailing=yes"
+        for visitor in (browser, Client()):
+            redirected = visitor.get(legacy)
+            assert redirected.status_code == 302
+            assert redirected["Location"] == target
+            response, body = read(visitor, target)
+            assert response.status_code == 403 and harness.code.encode() not in body
+            assert b"Example Street" not in body
+        assert post(browser, legacy, {}).status_code == 403
+        assert post(browser, legacy + "export", fields).status_code == 403
         assert (
             read(browser, f"/admin/reports/exports/{request.pk}/")[0].status_code == 403
         )
@@ -420,13 +445,33 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/postal/"
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
     fields = DirectoryQuery().form_values() | dict(
-        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+        mailing="yes", format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = read(browser, route)
-        assert b"not in the mail-merge file." in body
+        response, body = read(browser, route + "?mailing=yes")
+        # A campaign-wide fact, not a claim about this file's contents.
+        assert (
+            b"Across all active Families, 2 Families have neither a deliverable" in body
+        )
+        # The "neither" list itself needs no notice about those Families.
+        response, neither = search(
+            browser, route, {"mailing": "yes", "reach": "neither"}
+        )
+        assert response.status_code == 200 and b"Unmailable" in neither
+        assert b"data-unreachable-notice" not in neither
+        # The mailing columns show what the mail-merge file will hold, and
+        # say which Families it leaves out.
+        for text in (
+            b"Addressee",
+            b"Mailing address",
+            b"No usable mailing address; left out of the mail-merge file",
+            b'name="mailing" value="yes" checked',
+            b'<input type="hidden" name="mailing" value="yes">',
+            b"ParishSoft DUID, Family, Addressee, Family heads,",
+        ):
+            assert text in body
         response = post(browser, route + "export", fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -451,3 +496,77 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     assert len(lines) == 2 and lines[1].startswith("1,Example,")
     assert "40000" in lines[1] and harness.code in lines[1]
     assert request.directory_snapshot.row_count == 3
+    assert request.report == "postal_outreach"
+    # A form rendered before the merge has no mailing field and posts to the
+    # old postal export route; it still queues the postal mail merge.
+    legacy = DirectoryQuery().form_values() | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    old_route = f"/admin/reports/{harness.campaign.pk}/postal/export"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert post(browser, old_route, legacy).status_code == 302
+    old = ExportRequest.objects.get(request_key=legacy["request_key"])
+    assert old.report == "postal_outreach" and old.parameters["postal"] is True
+    assert old.directory_snapshot.row_count == 3
+
+
+def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
+    live_response_service, google, tmp_path, settings
+):
+    """Mailing columns do not narrow the rows: the file holds the filtered rows.
+
+    The one Family has deliverable email and a mailing address. Filtered to
+    "By email" with mailing columns on (#202), the page and the mail merge
+    both hold it, with its addressee and address.
+    """
+    harness = live_response_service
+    browser, _ = signed_in()
+    root = tmp_path / "mailing-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    filters = DirectoryQuery(reach="email").form_values() | {"mailing": "yes"}
+    fields = filters | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, route, filters)
+        assert response.status_code == 200 and b"Matching Families: 1." in body
+        assert b"<td>1 Example Street<br>" in body
+        response = post(browser, route + "export", fields)
+        assert response.status_code == 302
+    request = ExportRequest.objects.get(request_key=fields["request_key"])
+    assert request.report == "postal_outreach"
+    assert request.parameters["postal"] is True
+    assert request.parameters["filters"]["reach"] == "email"
+    assert request.directory_snapshot.row_count == 1
+    # The status page names the mail merge and returns to the same filter
+    # with mailing columns on (closed presets only).
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        status, body = read(browser, response["Location"])
+    assert status.status_code == 200
+    assert b"Family-directory mail-merge export" in body
+    assert f'href="{route}?reach=email&amp;mailing=yes"'.encode() in body
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            request.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                TASK_TYPE: export_handler(
+                    store=harness.service.store,
+                    root=root,
+                    general=harness.rings.general,
+                )
+            },
+        )
+    with restricted_download_pool(settings):
+        response, body = search(browser, response["Location"] + "download", {})
+    assert response.status_code == 200
+    lines = body.decode().splitlines()
+    assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
+    assert len(lines) == 2 and lines[1].startswith("1,Example,Member Example,")
+    assert "1 Example Street" in lines[1] and harness.code in lines[1]
+    events = AuditEvent.objects.filter(event_type="postal_outreach_viewed")
+    assert events.exists()
