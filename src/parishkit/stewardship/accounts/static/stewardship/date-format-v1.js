@@ -44,19 +44,33 @@
   }
 
   // The style's paired clock alone: 12-hour for US styles, 24-hour otherwise.
-  function clock(date) {
-    const hours = date.getHours(), minutes = two(date.getMinutes());
+  // Seconds are added only where exact order matters (System logs).
+  function clock(date, seconds) {
+    const hours = date.getHours();
+    const minutes = two(date.getMinutes()) + (seconds ? `:${two(date.getSeconds())}` : "");
     return style().startsWith("us_")
       ? `${hours % 12 || 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`
       : `${two(hours)}:${minutes}`;
   }
 
+  // This browser's UTC offset at that instant, e.g. "UTC-07:00", so a time
+  // can be matched against UTC days and other people's clocks.
+  function offset(date) {
+    const total = -date.getTimezoneOffset(), size = Math.abs(total);
+    return `UTC${total < 0 ? "-" : "+"}${two(Math.floor(size / 60))}:${two(size % 60)}`;
+  }
+
   // A Date shown in this browser's time zone with the style's paired clock.
-  // Compact drops the zone name.
+  // Compact drops the zone name. Precise (System logs) adds seconds, the
+  // zone name and the UTC offset, since log times are compared exactly.
   function instant(date, options) {
     const compact = Boolean(options && options.compact);
     const code = style();
     const text = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), compact);
+    if (options && options.precise) {
+      const zone = zoneName(date);
+      return `${text} ${clock(date, true)}${zone ? " " + zone : ""} (${offset(date)})`;
+    }
     const time = clock(date);
     if (compact) return `${text} ${time}`;
     const worded = code.endsWith("_long") || code.endsWith("_medium");
@@ -74,15 +88,19 @@
   }
 
   // Rewrite every <time data-local-instant> in scope; data-compact marks the
-  // dense-table cells (logs, background work, deliveries) and data-time-only
-  // a recent instant shown as its clock time ("started 10:00 PM").
+  // dense-table cells (logs, background work, deliveries), data-precise adds
+  // seconds, zone and offset (System logs), and data-time-only a recent
+  // instant shown as its clock time ("started 10:00 PM").
   function localize(scope) {
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (Number.isFinite(date.getTime())) {
         node.textContent = node.hasAttribute("data-time-only")
           ? clock(date)
-          : instant(date, {compact: node.hasAttribute("data-compact")});
+          : instant(date, {
+            compact: node.hasAttribute("data-compact"),
+            precise: node.hasAttribute("data-precise")
+          });
       }
     });
   }

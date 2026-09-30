@@ -1614,7 +1614,9 @@ authorization after the file is built and records a count-only audit event. An
 unbounded export is never assembled in a web request; moving log exports onto
 the asynchronous export-job pipeline used by large report exports is deferred.
 
-Stored timestamps are UTC. The screen renders browser-local timestamps. Export
+Stored timestamps are UTC. The screen renders browser-local timestamps to the
+second, with the zone name and UTC offset, since the date filters are whole
+UTC days. Export
 requires choosing UTC or the browser's timezone (offered by the page); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
