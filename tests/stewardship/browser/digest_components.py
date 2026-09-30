@@ -4,6 +4,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.daily_digest import render_daily_digest
 from parishkit.stewardship.reports.digest_presentation import snapshot_context
+from parishkit.stewardship.reports.digest_views import daily_rows
 
 from ..test_daily_digest_content import document
 
@@ -18,6 +19,7 @@ def components(context, admin):
         chart_url="/digest-chart.png",
         download_url="/digest-chart-download.png",
     )
+    page |= daily_rows(page, {})
     return {
         "/daily-digest": (
             "text/html",
