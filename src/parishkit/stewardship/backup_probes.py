@@ -22,11 +22,13 @@ from .observability import Event, emit_failure
 
 # Checks answered per installer pass. The installer publishes its health
 # heartbeat only between passes, and the container is unhealthy once it is
-# 90 seconds old (probe.MAX_AGE_SECONDS). A check makes four Drive requests
-# (folder, upload start, upload, trash), so one check per pass, each request
-# waiting at most PROBE_REQUEST_SECONDS, keeps a pass to about a minute even
-# when Drive hangs. Passes follow every couple of seconds, so a queue of
-# checks still drains well within PROBE_WAIT.
+# 90 seconds old (probe.MAX_AGE_SECONDS). A check fetches an access token and
+# makes four Drive requests (folder, upload start, upload, trash), each
+# waiting at most PROBE_REQUEST_SECONDS with no connection retries
+# (``workspace_session``), so one check per pass stays around 75 seconds even
+# when Google hangs; only name resolution is outside those timeouts. Passes
+# follow every couple of seconds, so a queue of checks still drains well
+# within PROBE_WAIT.
 PER_PASS = 1
 PROBE_REQUEST_SECONDS = 15
 

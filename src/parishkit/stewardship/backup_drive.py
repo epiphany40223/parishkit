@@ -195,8 +195,17 @@ def folder_id_from_url(value):
 
 
 def workspace_session(credential_value, *, subject):
-    """Build an authorized HTTP session for the delegated user, Drive scope only."""
-    from google.auth.transport.requests import AuthorizedSession
+    """Build an authorized HTTP session for the delegated user, Drive scope only.
+
+    The access token is fetched inside the first Drive request, with that
+    request's timeout. Google's default token session retries a failed
+    connection three more times, which could hold a short "Test access"
+    check four times as long; this one tries once, so a token fetch waits
+    at most one request timeout (name resolution aside) and its timeout is
+    logged like any other request's (#357 review L3).
+    """
+    import requests
+    from google.auth.transport.requests import AuthorizedSession, Request
 
     from parishkit.google.auth import load_service_account_info
 
@@ -210,7 +219,7 @@ def workspace_session(credential_value, *, subject):
         )
     except ConfigError:
         raise DriveFailure("credential") from None
-    return AuthorizedSession(credentials)
+    return AuthorizedSession(credentials, auth_request=Request(requests.Session()))
 
 
 class _BudgetSpent(Exception):
@@ -294,6 +303,23 @@ class DriveClient:
         )
         return DriveFailure("unavailable", retryable=False, budget_stop=True)
 
+    def _timed_out(self, limit, timeout, started):
+        """Log a request stopped by a timeout; return its failure.
+
+        If the time left in the budget, not the request's own timeout, was
+        the limit that fired, or the budget ran out while the request
+        stalled, the budget stopped it. Otherwise it is one request that
+        passed its own timeout and may be retried.
+        """
+        if limit < timeout or self._remaining() <= 0:
+            return self._budget_spent()
+        log_timeout(
+            "drive_request",
+            limit_seconds=timeout,
+            elapsed_seconds=time.monotonic() - started,
+        )
+        return DriveFailure("unavailable")
+
     def _call(self, method, url, *, params=None, timeout=None, **kwargs):
         """Send one request and map every failure to a fixed category.
 
@@ -321,18 +347,13 @@ class DriveClient:
         except _BudgetSpent:
             raise self._budget_spent() from None
         except (Timeout, TimeoutError):
-            if limit < timeout or self._remaining() <= 0:
-                # The time left in the budget, not the request's own
-                # timeout, was the limit that fired, or the budget ran out
-                # while this request stalled: either way the budget stops it.
-                raise self._budget_spent() from None
-            log_timeout(
-                "drive_request",
-                limit_seconds=timeout,
-                elapsed_seconds=time.monotonic() - started,
-            )
+            raise self._timed_out(limit, timeout, started) from None
+        except TransportError as error:
+            # The token fetch reports its own timeout wrapped this way.
+            if isinstance(error.__cause__, Timeout):
+                raise self._timed_out(limit, timeout, started) from None
             raise DriveFailure("unavailable") from None
-        except (TransportError, RequestException, OSError):
+        except (RequestException, OSError):
             raise DriveFailure("unavailable") from None
         if response.status_code < 300:
             return response

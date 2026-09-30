@@ -685,6 +685,54 @@ def test_an_access_check_waits_at_most_its_short_timeout_per_request():
     ] * 4
 
 
+def test_a_token_fetch_timeout_is_logged_like_a_request_timeout(caplog):
+    """The access token fetch reports its timeout wrapped as a TransportError.
+
+    It is the same kind of stop as a Drive request's own timeout, so it is
+    logged with its limit and may be retried (#357 review L3).
+    """
+    from google.auth.exceptions import TransportError
+    from requests import ConnectTimeout
+
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    try:
+        raise TransportError("token") from ConnectTimeout("slow")
+    except TransportError as wrapped:
+        failure = wrapped
+    with pytest.raises(DriveFailure) as caught:
+        DriveClient(FakeSession(failure), request_seconds=15).folder(FOLDER)
+    assert caught.value.kind == "unavailable" and caught.value.retryable
+    [line] = timeouts(caplog)
+    assert (line["timeout"], line["limit_seconds"]) == ("drive_request", 15)
+    # Any other transport failure is an outage, not a timeout.
+    caplog.clear()
+    with pytest.raises(DriveFailure):
+        DriveClient(FakeSession(TransportError("refused"))).folder(FOLDER)
+    assert timeouts(caplog) == []
+
+
+def test_the_token_fetch_tries_its_connection_once(monkeypatch):
+    """Google's default token session retries a connection three more times.
+
+    A "Test access" check must fit the installer's heartbeat limit, so the
+    token fetch gets a plain session: one attempt per request timeout.
+    """
+    from google.oauth2 import credentials as oauth_credentials
+
+    from parishkit.google import auth
+    from parishkit.stewardship.accounts import integration_candidates
+
+    monkeypatch.setattr(integration_candidates, "workspace_info", lambda value: {})
+    monkeypatch.setattr(
+        auth,
+        "load_service_account_info",
+        lambda info, **kwargs: oauth_credentials.Credentials(token="t"),
+    )
+    session = backup_drive.workspace_session(b"key", subject="mail@example.org")
+    adapter = session._auth_request.session.get_adapter("https://oauth2.example")
+    assert adapter.max_retries.total == 0
+
+
 def test_timeout_and_drive_fields_are_closed_values():
     """Only reviewed words and whole seconds reach the process log."""
     from parishkit.stewardship.jobs.backup_models import FAILURE_KINDS
