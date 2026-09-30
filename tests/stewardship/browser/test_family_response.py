@@ -246,6 +246,9 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
     )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     review(page)
+    # Review shows the birth date in the parish format, not raw ISO.
+    main = page.locator("main").inner_text()
+    assert "January 1, 1960" in main and "1960-01-01" not in main
     page.get_by_role("button", name="Back to edit").click()
     assert len(attempts) == 1 and not submissions
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0

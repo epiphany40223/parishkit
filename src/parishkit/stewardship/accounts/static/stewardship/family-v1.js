@@ -49,6 +49,25 @@
     // Only the owning server's render_template output is HTML. Every answer,
     // label and error elsewhere in this file is assigned through textContent.
     element.innerHTML = form.content[slot];
+    // A page link in parish text (online giving, a hosted file) opens in a
+    // new tab: iOS Safari has no beforeunload warning, so following it in
+    // this tab would silently discard the Family's unsubmitted answers
+    // (#300). Email and phone links (any letter case) open another app, and
+    // a link back to this form ({{ family_url }}) must not open a second
+    // copy of it, so those stay as they are.
+    const pages = "a[href]:not([href^='mailto:' i]):not([href^='tel:' i]):not([href^='#'])";
+    element.querySelectorAll(pages).forEach((link) => {
+      const target = new URL(link.href, window.location.href);
+      if (target.origin === window.location.origin &&
+          /^\/(family|access)(\/|$)/.test(target.pathname)) return;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    });
+  }
+  function calendarDate(value) {
+    // A calendar date in the parish date format (date-format-v1.js), as
+    // everywhere else on these pages; the raw ISO value only as a fallback.
+    return window.ParishDates ? window.ParishDates.date(value) : value;
   }
   function tipLabel(text, id, tip, parent) {
     // A label with an "i" help button beside it (ui-v1.js toggletips). The
@@ -378,7 +397,8 @@
     if (!form.household) return;
     const panel = node("div", null, parent, {class: "panel family-summary"});
     node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
-    node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
+    node("p", "Registration date: " + (form.family.registration_date ?
+      calendarDate(form.family.registration_date) : "Not available"), panel);
   }
   function submittedBanner(parent) {
     // A returning Family learns when they last submitted and that submitting
@@ -555,7 +575,7 @@
       [["Keep my household request", conflict.edited], ["Use the updated response", conflict.refreshed]].forEach(([label, value], index) => {
         let summary;
         if (terminal) summary = value?.moved_household ? "No longer in household" : value?.deceased_status ?
-          "Deceased, date: " + (value.death_date || "not provided") : "Still in household";
+          "Deceased, date: " + (value.death_date ? calendarDate(value.death_date) : "not provided") : "Still in household";
         else summary = value ? [value.first_name, value.last_name].filter(Boolean).join(" ") || "Proposed member" : "Remove proposed member";
         const choose = node("button", label + ": " + summary, group, {type: "button"});
         choose.addEventListener("click", () => {
@@ -2061,7 +2081,8 @@
       if (!member.proposed && requests[member.id]) {
         const request = requests[member.id];
         node("p", request.moved_household ? "Requested change: no longer a member of this household." :
-          "Requested change: deceased. Death date: " + (request.death_date || "Not provided"), panel, {class: "changed"});
+          "Requested change: deceased. Death date: " +
+          (request.death_date ? calendarDate(request.death_date) : "Not provided"), panel, {class: "changed"});
         node("p", "Parish staff will review this request. Other edits for this person are not included.", panel);
         return;
       }
@@ -2074,7 +2095,8 @@
           canonical(initialMember(member)[definition.name], definition.name);
         const display = node("dd", definition.name === "birth_date" && value === "unknown" ?
           "Unknown — request parish review of removing any recorded birth date" :
-          (definition.kind === "phone" ? Phone.format(value) : value) || "Not provided", list);
+          (definition.kind === "phone" ? Phone.format(value) :
+            definition.kind === "date" && value ? calendarDate(value) : value) || "Not provided", list);
         if (changed) {
           display.classList.add("changed");
           node("span", " — Changed from parish records", display);

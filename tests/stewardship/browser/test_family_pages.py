@@ -854,3 +854,30 @@ def test_welcome_order_banner_notice_family_icon(
     page.locator('[data-step-link="intro"]').click()
     if submitted:
         expect(page.locator(".family-submitted")).to_be_visible()
+
+
+def test_parish_text_page_links_open_in_a_new_tab(page, component_origin):
+    """Following a link in parish text never discards the tab's answers (#300)."""
+    form = paged_form()
+    form["content"]["welcome"] = (
+        '<p><a href="https://example.org/give">Give online</a>, '
+        '<a href="/files/guide">the guide</a>, '
+        '<a href="mailto:office@example.org">office@example.org</a>, '
+        '<a href="MAILTO:desk@example.org">desk@example.org</a>, '
+        '<a href="Tel:+15555550100">call</a> or '
+        '<a href="/family/">return to your form</a>.</p>'
+    )
+    begin(page, component_origin, form, None)
+    block = page.locator('[data-page="intro"] .content-block')
+    for name in ("Give online", "the guide"):
+        link = block.get_by_role("link", name=name)
+        expect(link).to_have_attribute("target", "_blank")
+        assert set(link.get_attribute("rel").split()) >= {"noopener", "noreferrer"}
+    # Email and phone links (any case) and a link back to this form stay.
+    for name in (
+        "office@example.org",
+        "desk@example.org",
+        "call",
+        "return to your form",
+    ):
+        assert block.get_by_role("link", name=name).get_attribute("target") is None
