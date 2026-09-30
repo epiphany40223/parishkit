@@ -77,6 +77,10 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     # Campaign pages and emails, and Mail schedules, are first-class entries.
     assert (b"Pages and emails" in body) == (role == "administrator")
     assert (b"Mail schedules" in body) == (role == "administrator")
+    # The manual ParishSoft refresh has its own sidebar entry (#196).
+    menu = body[body.index(b'aria-label="Administration"') :]
+    menu = menu[: menu.index(b"</nav>")]
+    assert (b'href="/admin/source/refresh"' in menu) == (role == "administrator")
     assert body.count(b'aria-label="Administration"') == 1
     # Home is the current page; the home trail is just "Home", so no trail.
     assert b'aria-label="Breadcrumb"' not in body

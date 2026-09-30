@@ -186,7 +186,8 @@ PAGES = {
         linkable=False,
     ),
     "ministries": Page("parish", _("Ministry activity")),
-    "source_refresh": Page("parish", _("ParishSoft refresh"), "integrations"),
+    # A sidebar entry of its own, so a manual refresh is found without Home.
+    "source_refresh": Page("parish", _("ParishSoft refresh")),
     # A configuration change can come from any settings page, so its status
     # page is registered under Home; the view places it under the page the
     # change was confirmed on when this sign-in remembers it.
