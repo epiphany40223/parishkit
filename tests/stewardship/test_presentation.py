@@ -120,6 +120,11 @@ def test_family_shell_has_no_inline_assets_and_keeps_noscript_fallback():
     # The session deadline drives the expiry warning but is not shown (#207).
     assert "data-idle-deadline" in html and "Session deadline" not in html
     assert 'src="/static/stewardship/ui-v1.js"' in html
+    # The old-browser check (#384) is a static script and its notice starts
+    # hidden, so a capable browser never shows it.
+    assert 'src="/static/stewardship/family-support-v1.js"' in html
+    notice = 'id="browser-unsupported" class="notice notice-error" role="alert" hidden'
+    assert notice in html
     assert "<script>" not in html and "<style>" not in html
     assert 'href="#main"' in html
 
