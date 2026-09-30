@@ -18,6 +18,36 @@ def visible(locator):
     expect(locator).to_be_visible()
 
 
+def hidden(locator):
+    """Assert that ``locator`` becomes hidden, waiting like Playwright's expect.
+
+    An immediate ``assert locator.is_hidden()`` (or ``not is_visible()``) right
+    after an action races the script that hides the element, and fails
+    intermittently on slower engines. ``expect(...).to_be_hidden()`` retries
+    until its timeout.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_be_hidden()
+
+
+def recorded(page, requests, count, *, timeout=10000):
+    """Wait until a route handler has appended ``count`` requests to ``requests``.
+
+    A request the page sends from a timer fired by ``page.clock`` reaches the
+    Python route handler only while Playwright is processing events, so an
+    immediate ``assert len(requests) == count`` after ``fast_forward`` races
+    it, and loses on slower engines. Waiting in short steps lets Playwright
+    dispatch the route. More than ``count`` requests fails at once.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout / 1000
+    while len(requests) < count and time.monotonic() < deadline:
+        page.wait_for_timeout(50)
+    assert len(requests) == count, f"{len(requests)} requests, not {count}"
+
+
 def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
     """Poll ``page.evaluate(expression, arg)`` until it returns ``expected``.
 

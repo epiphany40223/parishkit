@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -118,7 +118,7 @@ def test_a_reported_field_stays_visible_until_the_type_changes(
     assert axe_violations(page, axe_source) == []
     page.locator(f'[name="{prefix}kind"]').select_option("daily_digest")
     page.locator(f'[name="{prefix}kind"]').select_option("initial")
-    assert weekday.is_hidden()
+    hidden(weekday)
     assert page.locator(f'[name="{prefix}weekday"]').input_value() == ""
     assert shown(page, prefix) == SHOWN["initial"]
 

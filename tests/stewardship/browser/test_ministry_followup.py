@@ -57,7 +57,8 @@ def test_followup_mobile_keyboard_and_accessibility(
     # A revoked assignee is named, never silently dropped to "Unassigned".
     page.goto(component_origin + "/followup-item-stale")
     notice = page.get_by_text("can no longer follow up this Ministry", exact=False)
-    assert notice.is_visible() and "leader@example.org" in notice.inner_text()
+    visible(notice)
+    assert "leader@example.org" in notice.inner_text()
     assert page.get_by_text("New and Assigned follow the assignee", exact=False).count()
     # Closed outcomes are permanent: history remains, the form does not.
     page.goto(component_origin + "/followup-closed")

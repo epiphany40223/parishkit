@@ -3,7 +3,7 @@
 import pytest
 
 from .conftest import NOW
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -130,7 +130,7 @@ def test_email_test_is_an_ordinary_step_that_continues_once_accepted(
     )
     page.clock.fast_forward(5000)
     onward.wait_for(state="visible")
-    assert send.is_hidden()
+    hidden(send)
     assert onward.get_attribute("href") == "/admin/setup/confirm"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
