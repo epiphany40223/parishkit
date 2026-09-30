@@ -101,13 +101,15 @@ activated=$(docker compose -f "$services/compose-initial.json" -p "$project" \
 if [ "$activated" != f ]; then
     if [ "$activated" = t ]; then
         echo "This deployment's campaign is in Production; refusing a dev deploy." >&2
+        echo "Deploy a release digest with the deployment runbook's Upgrade steps:" >&2
+        echo "  docs/guides/stewardship-deployment-runbook.md#upgrade" >&2
     else
+        # Most likely the database is simply down; that is no reason to
+        # switch to the release procedure.
         echo "Cannot tell whether this deployment is in Production; refusing." >&2
         echo "Start the database first:" >&2
         echo "  docker compose -f $services/compose-initial.json -p $project up --detach --wait postgres" >&2
     fi
-    echo "Deploy a release digest with the deployment runbook's Upgrade steps:" >&2
-    echo "  docs/guides/stewardship-deployment-runbook.md#upgrade" >&2
     exit 1
 fi
 
@@ -148,7 +150,7 @@ step() {
 }
 quiet() {
     # Compose progress lines add nothing to a deploy log.
-    grep -vE ' (Creat|Start|Wait|Running|Healthy|Recreat)' || true
+    grep -vE ' (Creat|Start|Stop|Wait|Running|Healthy|Recreat)' || true
 }
 
 # The postgres service is identical in every topology, so any rendered file
@@ -234,8 +236,9 @@ background=$(printf '%s\n' $online | grep -vxE 'web|caddy' || true)
 # shellcheck disable=SC2086
 front=$(printf '%s\n' $online | grep -xE 'web|caddy' || true)
 step "Stopping the background services (web keeps serving)"
+# A failed stop ends the deploy here (set -e); its error stays visible.
 # shellcheck disable=SC2086 # one service name per word
-[ -z "$background" ] || "${dc[@]}" stop $background >/dev/null 2>&1
+[ -z "$background" ] || "${dc[@]}" stop $background 2>&1 | quiet
 
 # The backup comes after the drain and just before web stops, so the only
 # writes a database-restore rollback could lose are those web accepts while
@@ -250,9 +253,13 @@ stopped_at=$(date -u +%s)
 # Stop whatever runs now, under whichever file started it; the start below
 # brings up the full target topology regardless.
 # shellcheck disable=SC2086 # one service name per word
-[ -z "$front" ] || "${dc[@]}" stop $front >/dev/null 2>&1
+[ -z "$front" ] || "${dc[@]}" stop $front 2>&1 | quiet
 
 step "Retargeting"
+# Name the image being replaced, so a failed deploy can be rolled back to it
+# without digging the digest out of the operators' notes.
+previous=$(jq -r '.services.web.image // empty' "$compose" 2>/dev/null || true)
+echo "    replacing ${previous:-an image this Compose file does not name}"
 "${isolated[@]}" \
     --mount "type=bind,source=$root,target=$root" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
