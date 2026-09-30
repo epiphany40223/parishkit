@@ -75,8 +75,9 @@ def test_source_work_shares_the_export_process_only_without_the_split():
 
 @pytest.mark.parametrize(
     ("seconds", "words"),
-    [(0, "0 seconds ago"), (1, "1 second ago"), (89, "89 seconds ago"),
-     (90, "2 minutes ago"), (150, "3 minutes ago"), (300, "5 minutes ago")],
+    [(0, "0 seconds ago"), (1, "1 second ago"), (59, "59 seconds ago"),
+     (60, "1 minute ago"), (90, "1 minute ago"), (150, "2 minutes ago"),
+     (3599, "59 minutes ago"), (3600, "1 hour ago"), (36000, "10 hours ago")],
 )  # fmt: skip
 def test_waited_words_match_the_live_status_ticker(seconds, words):
     """The server text is what live-status-v1.js would show at that moment."""

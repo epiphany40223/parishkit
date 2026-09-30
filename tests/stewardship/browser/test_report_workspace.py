@@ -135,7 +135,7 @@ def test_queued_export_shows_what_it_waits_for(page, component_origin):
         re.compile(r"^\d{1,2}:\d{2} (AM|PM)$")
     )
     expect(page.locator("time[data-live-since]")).to_have_text(
-        re.compile(r"^\d+ (seconds?|minutes) ago$")
+        re.compile(r"^\d+ (seconds?|minutes?|hours?) ago$")
     )
 
 

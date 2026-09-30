@@ -226,3 +226,14 @@ def test_running_indicator_hides_the_ticking_elapsed_time_from_screen_readers():
     )
     assert '<span class="live-since" aria-hidden="true">' in html
     assert "Working" in html
+
+
+def test_elapsed_time_uses_the_server_clock_and_whole_units():
+    """The ticker corrects for the computer's clock and matches waited_words."""
+    source = SCRIPT.read_text()
+    assert 'getAttribute("data-server-now")' in source
+    assert "Date.now() + skew" in source
+    # Whole units rounded down, with hours: never "2 minutes" at 90 seconds
+    # or "600 minutes ago".
+    assert 'seconds < 3600 ? [Math.floor(seconds / 60), "minute"]' in source
+    assert '[Math.floor(seconds / 3600), "hour"]' in source
