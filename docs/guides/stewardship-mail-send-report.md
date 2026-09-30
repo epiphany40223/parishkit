@@ -5,7 +5,10 @@ shows how long the send took and where the time went. Use it to decide
 whether the batched mail helper's caps should change. It reads the send
 statistics that every Family outcome records (#284); see
 [Family mail dispatch](stewardship-family-mail-dispatch.md#falling-back-to-one-helper-per-message)
-for the transports. Statistics are observations only: they never affect an
+for the transports, and the launch runbooks'
+[measuring the launch send](stewardship-launch-runbooks.md#measuring-the-launch-send)
+for when to run it at launch and what to record. Statistics are
+observations only: they never affect an
 outcome, and they hold no addresses, names or provider text. The database
 admits only whole numbers, yes/no values, a random helper id and a closed
 list of fixed words (such as `batched` or `cap_age`) there, at most 48 of
