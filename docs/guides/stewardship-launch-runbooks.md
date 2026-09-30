@@ -6,7 +6,8 @@ The operator's procedures for the situations the
 [OPS-08.05](../tasks/stewardship/operations.md#ops-08-observability-health-and-operational-runbooks))
 expects during the first live campaign: Production activation and
 withdrawal, a mail-provider outage, a ParishSoft outage, pausing and resuming
-delivery, and messages whose delivery is unknown.
+delivery, and messages whose delivery is unknown. It also covers watching the
+HTTPS certificate and withdrawing published campaign artwork.
 Deployment, upgrade and rollback are the
 [deployment runbook](stewardship-deployment-runbook.md); backup and restore are
 the [backup runbook](stewardship-backup-runbook.md); checking a credential
@@ -38,6 +39,10 @@ that links to unresolved `delivery_unknown` messages. Notices are sent only
 when an incident opens, escalates or resolves, so a quiet day is normal and
 proves nothing; for a heartbeat, watch for the daily Admin report arriving on
 schedule.
+
+Nothing inside the application watches its own HTTPS certificate: if renewal
+fails, the first sign is browsers refusing the site. Set up the outside
+monitor described in [certificate expiry](#certificate-expiry).
 
 ## Production activation
 
@@ -623,6 +628,90 @@ was *not* sent, even to unblock a resume: record it as not sent instead. The
 note and the resolution are the only record of why a Family got one message,
 two or none.
 
+## Certificate expiry
+
+**What you see.** Normally nothing. `caddy` obtains the site's certificate from
+Let's Encrypt and renews it automatically, well before it expires (about a
+third of its lifetime ahead). The generated Caddyfile names Let's Encrypt as
+the site's one ACME issuer (`issuer acme` with the Let's Encrypt directory), so
+Caddy's default issuers, which could fall back to ZeroSSL, are not used; the
+deployment sets no ACME email either, and Caddy adds its ZeroSSL fallback
+only when one is set. There is no second issuer, so if renewal keeps failing
+(DNS no longer points at the host, port 80 or 443 blocked, a Let's Encrypt
+outage or rate limit), the certificate eventually expires and every browser
+refuses the site: Families cannot open their links and Administrators cannot
+sign in. The application raises no alert for this,
+because the failure is in front of it.
+
+**What you do, once, before launch.** Watch the certificate from outside the
+host:
+
+1. Add the public origin (for example `https://stewardship.example.org/`) to an
+   external monitoring service that checks certificate expiry, and have it
+   alert the operator and a second person when fewer than 14 days remain. A
+   healthy renewal never lets it get that close, so the alert means renewal is
+   failing, with two weeks to fix it. Most uptime services include this check;
+   the same monitor can also alert when the site stops answering. The
+   `/health/` paths are not served publicly, so point it at the origin itself.
+2. To check by hand from any computer:
+   `echo | openssl s_client -connect HOST:443 -servername HOST 2>/dev/null | openssl x509 -noout -enddate`
+   prints the expiry (`notAfter=`).
+
+**When the alert fires.**
+
+1. Read the proxy's log:
+   `docker compose -f COMPOSE_FILE -p PROJECT logs --since 48h caddy`. Caddy
+   logs each failed renewal with the reason.
+2. Check the usual causes: the DNS `A` record still names this host (and no
+   `AAAA` record exists; see the
+   [deployment runbook](stewardship-deployment-runbook.md#before-you-start)),
+   TCP 80 and 443 still reach the host from the Internet, and the
+   [Let's Encrypt status page](https://letsencrypt.status.io/) shows no
+   outage. Fix what is wrong; Caddy retries by itself, so there is nothing to
+   restart once the cause is gone.
+3. Confirm with the hand check above that `notAfter=` now shows a later date
+   than before: the renewed certificate's own expiry date.
+
+**What not to do.** Do not delete or empty Caddy's data directory
+(`RUNTIME_ROOT/run/persistent/caddy/data` by default) to force a new
+certificate: it holds the ACME account and current certificate, and Let's
+Encrypt allows only a few new certificates for one name per week (the
+[runtime guide](stewardship-runtime.md) explains why that state is kept).
+
+## Withdrawing published campaign artwork
+
+Use this when an image selected as campaign artwork (a banner or section icon)
+must stop being shown, for example a photo used without permission.
+
+**What the system does by itself.** Once an activated campaign configuration
+names an image, its public address (`/branding/ASSET.png`) serves it to anyone
+with the address, and browsers and email providers may keep a copy for up to
+a year. Replacing the image in the campaign only changes pages and emails
+from then on: every configuration that ever named the image keeps it on the
+server, so earlier emails still show it. There is no withdraw button.
+
+**What you do.**
+
+1. In the Admin portal, replace or remove the image in the campaign's artwork
+   and apply the change, so new pages and emails stop naming it.
+2. Find the image's storage folder. Its address ends in the asset ID; look up
+   its bundle as the database superuser, in a read-only session:
+   `docker compose -f COMPOSE_FILE -p PROJECT exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres psql -U pk_stewardship_operator -d DATABASE -At -c "SELECT bundle_id, label FROM stewardship_branding_asset WHERE id = 'ASSET'"`.
+3. On the host, move the file out of the served tree into a private folder
+   outside the runtime root (do not only rename it inside the folder):
+   `RUNTIME_ROOT/run/persistent/media/branding/BUNDLE/LABEL.png`, where
+   `BUNDLE` is the bundle ID without dashes. Keep it private (owner-only).
+
+**How you know it is over.** The image's address no longer returns the
+picture: the server answers that it is temporarily unavailable, as it does for
+any image it cannot verify, and pages and emails that still name it show no
+image.
+
+**What not to do.** Do not edit or delete database rows: configuration history
+is append-only. A copy already fetched by a browser or an email provider
+cannot be recalled. Backups still hold the file, so a restore brings it back:
+repeat step 3 after any restore.
+
 ## Index
 
 | Situation | Where |
@@ -634,3 +723,5 @@ two or none.
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
 | Measure the launch send | [Above](#measuring-the-launch-send), with the [mail send report](stewardship-mail-send-report.md) |
 | Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
+| HTTPS certificate expiry monitoring and renewal failures | [Above](#certificate-expiry) |
+| Withdraw published campaign artwork | [Above](#withdrawing-published-campaign-artwork) |
