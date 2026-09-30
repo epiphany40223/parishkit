@@ -146,13 +146,17 @@ def test_no_default_text_or_template_advises_turning_a_phone_sideways():
         assert "landscape" not in text.lower() and "sideways" not in text.lower()
 
 
-def test_receipt_links_to_online_giving_and_names_the_pledge_year():
-    """The real receipt renderer fills the giving link and upcoming pledge year."""
+def test_receipt_links_to_online_giving_without_assuming_a_pledge():
+    """The real receipt renderer fills the giving link; no pledge is assumed.
+
+    A campaign without the Financial module has no pledge, and placeholders
+    have no conditionals, so the default only invites online giving (#385).
+    """
     rendered = sample_render(
         saved("email", "confirmation"), parish=PARISH, campaign=CAMPAIGN
     )
     assert 'href="https://give.example.org/parish"' in rendered["html"]
-    assert "your 2027 pledge" in rendered["html"]
+    assert "pledge" not in rendered["html"] and "pledge" not in rendered["text"]
     assert "please click here: https://give.example.org/parish" in rendered["text"]
     fallback = sample_render(
         saved("email", "confirmation"),
@@ -280,3 +284,28 @@ def test_invitation_reads_correctly_with_or_without_a_financial_period(
     rendered = sample_render(saved("email", "initial"), parish=PARISH, campaign=values)
     year = campaign_year(values)
     assert f"The commitment you make is for {year}." in rendered["text"]
+
+
+def test_content_saved_from_a_retired_default_still_matches_the_default():
+    """Improving a default must not make a parish's untouched content "Custom"."""
+    from parishkit.stewardship.accounts.content_defaults import (
+        RETIRED_EMAILS,
+        retired_data,
+    )
+    from parishkit.stewardship.accounts.content_forms import (
+        _DefaultForm,
+        default_values,
+        matches_default,
+    )
+
+    owner = str(uuid4())
+    assert "pledge" in RETIRED_EMAILS["confirmation"][0].html
+    (data,) = retired_data("email", "confirmation")
+    form = _DefaultForm(data, kind="email", slot="confirmation")
+    assert form.is_valid()
+    retired = form.values(campaign_id=owner, slot="confirmation")
+    current = default_values("email", "confirmation", campaign_id=owner)
+    assert retired != current
+    assert matches_default(retired) and matches_default(current)
+    assert not matches_default(retired | {"subject": "Edited"})
+    assert retired_data("page", "welcome") == []
