@@ -37,17 +37,23 @@ def test_every_defined_type_has_a_sentence():
 def _direct_types_in_source():
     """Audit types written as literals by Python owners and SQL triggers.
 
-    Python owners pass ``event_type="..."``. SQL triggers insert literals into
-    ``stewardship_audit_event``; there, only snake_case words with at least one
-    underscore are type-shaped, which skips column values such as 'parish'.
-    Prefix-built types (a literal ending in "_") are covered by ``PREFIXES``.
+    Python owners pass ``event_type="..."``; the Admin session owner passes
+    its ending ``reason`` through as the type (``reason="..."`` or
+    ``_revoke(row, now, "...")``). SQL triggers insert literals into
+    ``stewardship_audit_event``, sometimes schema-qualified as ``public.``;
+    there, only snake_case words with at least one underscore are type-shaped,
+    which skips column values such as 'parish'. Prefix-built types (a literal
+    ending in "_") are covered by ``PREFIXES``.
     """
     found = set()
     for path in PACKAGE.rglob("*.py"):
         found |= set(re.findall(r'event_type="([a-z][a-z0-9_]*)"', path.read_text()))
+    sessions = (PACKAGE / "accounts" / "sessions.py").read_text()
+    found |= set(re.findall(r'\breason\s*=\s*"([a-z][a-z0-9_]*)"', sessions))
+    found |= set(re.findall(r'_revoke\([^)]*"([a-z][a-z0-9_]*)"\)', sessions))
     for path in (PACKAGE / "schema").glob("*.sql"):
         for insert in re.findall(
-            r"INSERT INTO stewardship_audit_event\b(.{0,700}?);",
+            r"INSERT INTO (?:public\.)?stewardship_audit_event\b(.{0,700}?);",
             path.read_text(),
             re.S,
         ):
@@ -62,7 +68,14 @@ def _direct_types_in_source():
 def test_directly_written_audit_types_are_registered():
     """A new direct audit type in the source needs a sentence and a registry entry."""
     found = _direct_types_in_source()
-    assert {"admin_login", "configuration_activated"} <= found
+    # One of each source shape, so a broken pattern cannot pass vacuously.
+    assert {
+        "admin_login",
+        "configuration_activated",
+        "admin_logout",
+        "admin_privileges_changed",
+        "operator_admin_recovered",
+    } <= found
     assert not found - DIRECT_AUDIT_TYPES - set(DESCRIPTIONS)
     assert not found - DIRECT_AUDIT_TYPES - {item.value for item in Action}
 

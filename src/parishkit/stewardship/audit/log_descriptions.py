@@ -62,6 +62,35 @@ DESCRIPTIONS = {
         "An Administrator confirmed their sign-in again for a protected action."
     ),
     "family_login": _("A Family signed in to the Family form."),
+    # Session endings the sign-in code records under its ending reason.
+    "admin_logout": _(
+        "A portal user (Administrator, Staff or Ministry leader) signed out."
+    ),
+    "admin_reauthenticated": _(
+        "A portal user signed in again, which ended their previous session."
+    ),
+    "admin_revoked": _(
+        "A portal user's session was ended because their access was removed "
+        "or all sessions were signed out."
+    ),
+    "admin_privileges_changed": _(
+        "A portal user's roles changed, so their session was replaced with one "
+        "carrying the new roles."
+    ),
+    "operator_admin_recovered": _(
+        "The server operator restored Administrator access from the command "
+        "line, which signed out every portal user."
+    ),
+    # Access-policy changes the settings activation records.
+    "policy_security_event": _(
+        "A settings change widened access (for example, a new Administrator or "
+        "Staff domain) or replaced the backup encryption key; Administrators "
+        "were notified."
+    ),
+    "policy_denial_namespace_reset": _(
+        "A settings change gave someone more access, so earlier sign-in "
+        "refusals no longer apply."
+    ),
     # Mail.
     "outbox_created": _("An email was prepared for sending."),
     "outbox_prepared": _("An email's content and recipients were finalized."),
@@ -124,6 +153,12 @@ DESCRIPTIONS = {
         "A scheduled campaign date change ran later than planned."
     ),
     "due_work_lag": _("Scheduled background work started later than planned."),
+    "production_cancel_requested": _(
+        "An Administrator asked to stop clearing test data for the campaign going live."
+    ),
+    "recipient_refusal_cleared": _(
+        "An Administrator cleared a refused email address so email to it can resume."
+    ),
     "production_cleanup_failed": _(
         "Clearing test data when the campaign went live did not finish."
     ),
@@ -290,11 +325,16 @@ DESCRIPTIONS = {
 }
 
 # Audit types some owners write directly rather than through ``Action``: Python
-# code passing ``event_type=`` and SQL triggers. The guard test compares this
+# code passing ``event_type=`` (the Admin session owner passes its ending
+# reason) and SQL triggers. The guard test compares this
 # with the source so a new direct type cannot appear without a sentence.
 DIRECT_AUDIT_TYPES = frozenset(
     {
         "admin_login",
+        "admin_logout",
+        "admin_privileges_changed",
+        "admin_reauthenticated",
+        "admin_revoked",
         "admin_step_up",
         "admin_timeout",
         "catchup_failed",
@@ -317,6 +357,11 @@ DIRECT_AUDIT_TYPES = frozenset(
         "family_tokens_preparing",
         "family_tokens_ready",
         "limiter_recovered",
+        "operator_admin_recovered",
+        "policy_denial_namespace_reset",
+        "policy_security_event",
+        "production_cancel_requested",
+        "recipient_refusal_cleared",
         "rehearsal_gate_released",
         "rehearsal_invalidated",
         "restore_hold_resolved",
