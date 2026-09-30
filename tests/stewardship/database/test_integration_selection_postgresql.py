@@ -29,6 +29,7 @@ from parishkit.stewardship.accounts.secret_models import SecretReplacementReques
 from . import campaign_builders
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -44,6 +45,7 @@ from .test_integration_views_postgresql import (  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 PRIOR = b"synthetic-working-parishsoft-key"
 CANDIDATE = b"synthetic-next-parishsoft-key"
+SETTINGS = "/admin/configuration/integrations/parishsoft"
 
 
 @pytest.fixture
@@ -164,7 +166,11 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
     complete(value)
     old = value.service.store.active()
     with identity("pk_stewardship_web"):
-        preview = hidden(value.browser.get(value.url), "preview")
+        page = value.browser.get(value.url)
+        # Finish switching reviews a change under its integration (#196).
+        assert flow_steps(page.content) == (STEPS, "Review")
+        assert f'<li><a href="{SETTINGS}">ParishSoft</a></li>'.encode() in page.content
+        preview = hidden(page, "preview")
         response = post(
             value.browser, value.url, {"action": "confirm", "preview": preview}
         )
@@ -194,6 +200,10 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
     ]
     assert record["credential_fingerprint"] == file_fingerprint(CANDIDATE)
     assert b"already in use" in value.browser.get(value.url).content
+    # The switch's status names Finish switching but returns to ParishSoft.
+    status = value.browser.get(response["Location"]).content
+    assert b"<li><span>Finish switching to the new key</span></li>" in status
+    assert f'<a href="{SETTINGS}">Return to ParishSoft</a>'.encode() in status
     assert (
         post(value.browser, value.url, {"action": "confirm", "preview": preview})[
             "Location"

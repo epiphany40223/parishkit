@@ -160,14 +160,31 @@ PAGES = {
     # Parish and integrations
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
-    "branding_preview": Page("parish", _("Logo preview"), "branding_settings"),
+    # Reviews one staged logo and refuses once it is chosen.
+    "branding_preview": Page(
+        "parish", _("Logo preview"), "branding_settings", linkable=False
+    ),
     "hosted_files": Page("parish", _("Hosted files")),
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
     "integrations": Page("parish", _("Integrations")),
     "integration_settings": Page("parish", _("Integration"), "integrations"),
-    "credential_status": Page("parish", _("Credential change"), "integrations"),
-    "select_credential": Page("parish", _("Choose credential"), "integrations"),
+    # A key's status and its Finish switching page sit under the integration
+    # the key belongs to; their views supply the target the routes lack. The
+    # status is readable only by the Administrator who saved the key, so
+    # Finish switching (open to every Administrator) never runs through it.
+    # Finish switching is a one-time review that needs a fresh Google
+    # sign-in, so a switch's status page names it but returns to the
+    # integration.
+    "credential_status": Page(
+        "parish", _("Key replacement status"), "integration_settings"
+    ),
+    "select_credential": Page(
+        "parish",
+        _("Finish switching to the new key"),
+        "integration_settings",
+        linkable=False,
+    ),
     "ministries": Page("parish", _("Ministry activity")),
     "source_refresh": Page("parish", _("ParishSoft refresh"), "integrations"),
     # A configuration change can come from any settings page, so its status

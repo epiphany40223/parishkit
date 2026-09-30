@@ -16,6 +16,7 @@ from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -155,6 +156,8 @@ def _profile(configuration):
 
 def _form_page(request, configuration, form, *, status=200):
     """Render accessible field errors and the prospective timezone warning."""
+    # The first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/parish-settings.html",
@@ -219,6 +222,7 @@ def _preview(request, service, actor):
             ),
         )
         return _form_page(request, configuration, form, status=400)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/parish-preview.html",

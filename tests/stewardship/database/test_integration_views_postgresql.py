@@ -27,6 +27,7 @@ from parishkit.stewardship.runtime_grants import runtime_grants
 from ..policy_factory import address
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -118,11 +119,19 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     browser, _ = signed_in()
     assert browser.get(INDEX).status_code == browser.get(URL).status_code == 200
     # The ParishSoft page reports when data was last fully reloaded.
-    assert b"Last full ParishSoft refresh:" in browser.get(URL).content
+    page = browser.get(URL).content
+    assert b"Last full ParishSoft refresh:" in page
+    assert flow_steps(page) == (STEPS, "Make changes")
     old = auth_service.store.active()
-    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
+    review = post(browser, URL, edit(auth_service.store))
+    assert flow_steps(review.content) == (STEPS, "Review")
+    preview = hidden(review, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
+    # The change's status sits under the integration, by name (#196).
+    status = browser.get(response["Location"]).content
+    assert f'<li><a href="{URL}">ParishSoft</a></li>'.encode() in status
+    assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in status
     assert auth_service.store.active() == old
     row = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rsplit("/", 1)[-1]
@@ -442,5 +451,8 @@ def test_credential_status_follows_live_and_never_renews_idle(
         assert b'data-live-status="credential"' in progress.content
         assert b"data-live-pending" in progress.content
         assert b"live-status-v1.js" in progress.content
+    # The key's status sits under its integration and leads back there (#196).
+    assert f'<li><a href="{URL}">ParishSoft</a></li>'.encode() in progress.content
+    assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in progress.content
     session.refresh_from_db()
     assert session.last_activity_at == activity

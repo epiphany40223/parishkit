@@ -19,6 +19,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -72,9 +73,12 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     browser, _ = signed_in()
     old = auth_service.store.active()
     with task_login(ServiceRole.WEB):
-        assert browser.get(URL).status_code == 200
+        listing = browser.get(URL)
+        assert listing.status_code == 200
+        assert flow_steps(listing.content) == (STEPS, "Make changes")
         preview = stage(browser, auth_service)
         page = browser.get(preview)
+        assert flow_steps(page.content) == (STEPS, "Review")
         token = preview_token(page)
         assert b"private-original" not in page.content
         assets = list(BrandingAsset.objects.order_by("label"))
@@ -97,6 +101,12 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
             ).state
             == "applied"
         )
+    # The one-time logo review is named but not linked; Return goes to the
+    # logos page (#196).
+    status = browser.get(result["Location"]).content
+    assert b"<li><span>Logo preview</span></li>" in status
+    assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
+    assert browser.get(preview).status_code != 200
     for asset in assets:
         response = browser.get(f"/branding/{asset.pk}.png")
         assert response.status_code == 200

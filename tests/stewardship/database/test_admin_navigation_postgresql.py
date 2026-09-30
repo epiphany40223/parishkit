@@ -150,9 +150,15 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     browser, _ = signed_in()
     content = f"/admin/campaign/{Campaign.objects.get().pk}/content/email/initial"
     assert flow_steps(browser.get(content).content) == (STEPS, "Make changes")
-    # The settings pages without a placed flow show no indicator.
-    assert flow_steps(browser.get(parish.URL).content) is None
+    assert flow_steps(browser.get(parish.URL).content) == (STEPS, "Make changes")
+    # Pages outside a flow show no indicator.
+    assert flow_steps(browser.get("/admin/background").content) is None
+    # A review with nothing changed is refused back to the form, step 1.
+    unchanged = parish.post(browser, parish.fields(store))
+    assert unchanged.status_code == 400
+    assert flow_steps(unchanged.content) == (STEPS, "Make changes")
     review = parish.post(browser, parish.fields(store, name="Renamed Parish"))
+    assert flow_steps(review.content) == (STEPS, "Review")
     confirmed = parish.post(
         browser, {"action": "confirm", "preview": parish.token(review)}
     )

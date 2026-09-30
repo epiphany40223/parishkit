@@ -231,6 +231,7 @@ def _preview(request, service, principal):
         else None
     )
     campaign_url = campaign_ministries_url(configuration)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/ministry-preview.html",
@@ -281,6 +282,8 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
         carry=(("q", query), ("state", state)),
         sorting=CATALOG_SORTING,
     )
+    # Choosing Ministries is the first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/ministries.html",
@@ -363,10 +366,18 @@ def configuration_request(request, request_id):
             # Place the status under the page the change came from, when this
             # sign-in remembers it, as the last step of the edit flow (#196).
             origin = admin_navigation.change_origin(request, request_id)
+            arguments, labels = dict(origin[1]) if origin else {}, {}
+            if origin:
+                # Name the integration a key or settings change came from.
+                from .integration_views import integration_origin
+
+                extra, labels = integration_origin(*origin)
+                arguments |= extra
             admin_navigation.place(
                 request,
                 parent=origin[0] if origin else None,
-                arguments=origin[1] if origin else {},
+                arguments=arguments,
+                labels=labels,
                 flow="change",
                 step="apply",
             )

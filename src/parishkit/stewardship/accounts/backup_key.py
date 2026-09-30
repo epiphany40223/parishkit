@@ -49,6 +49,7 @@ from parishkit.stewardship.backup_sealing import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 
+from . import admin_navigation
 from .admin_editing import confirm, editable_configuration, form_action, sign_preview
 from .request_admission import historical_record_id
 from .sessions import FreshAuthenticationRequired, require_fresh
@@ -264,6 +265,8 @@ def _render(request, configuration, *, status=200, **context):
         fresh = True
     except FreshAuthenticationRequired:
         fresh = False
+    # Pasting and proving a new key are the first step of the change (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/backup-key.html",
@@ -300,6 +303,7 @@ def _review(request, service, configuration, actor, text):
 
     build_candidate(base, patch, candidate_id=uuid4())
     current = key_status(configuration)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/integration-preview.html",

@@ -19,6 +19,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_backup_offsite_postgresql import apply
 from .test_backup_postgresql import (
@@ -82,6 +83,8 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
     page = browser.get(URL)
     assert page.status_code == 200
     assert b"No backup has run yet" in page.content
+    # Pasting and proving the key is the first step of the change (#196).
+    assert flow_steps(page.content) == (STEPS, "Make changes")
     assert b"Keep the old private key" in page.content
     # Once a backup has run, the page names the key it used.
     recorded(recipient_fingerprint="d" * 16)
@@ -102,6 +105,7 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
         backup_sealing.open_proof(challenge_of(page), other)
     review = replace_key(browser, private, public)
     assert review.status_code == 200, review.content
+    assert flow_steps(review.content) == (STEPS, "Review")
     fingerprint = backup_sealing.parse_public_key(public).fingerprint
     assert fingerprint.encode() in review.content
     assert b"keep it until they have all been deleted" in review.content
@@ -118,6 +122,10 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
     assert AuditEvent.objects.filter(
         event_type="config_request_applied", subject_id=request.pk
     ).exists()
+    # The status sits under the key's own page, by name.
+    status = browser.get(response["Location"]).content
+    assert f'<li><a href="{URL}">Backup encryption key</a></li>'.encode() in status
+    assert f'<a href="{URL}">Return to Backup encryption key</a>'.encode() in status
     assert configured(store) == [{"public_key": public}]
     shown = browser.get(URL).content
     assert fingerprint.encode() in shown and b"Set on this page" in shown

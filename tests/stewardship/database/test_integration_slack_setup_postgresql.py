@@ -23,6 +23,7 @@ from parishkit.stewardship.runtime_grants import runtime_grants
 
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -141,10 +142,15 @@ def remove_slack(slack):
     browser = slack["browser"]
     preview_page = post(browser, URL, {"action": "remove"})
     assert b"To set Slack up again later" in preview_page.content
+    # Removal is reviewed like any other change (#196).
+    assert flow_steps(preview_page.content) == (STEPS, "Review")
     preview = hidden(preview_page, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
     assert apply(slack, response["Location"].rsplit("/", 1)[-1]).state == "applied"
+    # The status names Slack and leads back to its page, which still opens.
+    status = browser.get(response["Location"]).content
+    assert f'<a href="{URL}">Return to Slack notifications</a>'.encode() in status
     assert "slack" not in records(slack)
 
 

@@ -23,6 +23,7 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -170,6 +171,8 @@ def branding_settings(request):
                 current.favicon_id,
             ]
         ).order_by("label")
+        # Uploading a logo is the first step of edit, review, apply (#196).
+        admin_navigation.place(request, flow="change", step="edit")
         response = render(
             request,
             "stewardship/branding-settings.html",
@@ -231,6 +234,7 @@ def branding_preview(request, bundle_id):
             validate_installation(
                 candidate.candidate.document(), actor_id=actor.identity
             )
+            admin_navigation.place(request, flow="change", step="review")
             response = render(
                 request,
                 "stewardship/branding-preview.html",
