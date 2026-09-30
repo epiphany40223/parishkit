@@ -490,6 +490,21 @@ def test_blank_key_keeps_the_settings_preview(working):
     assert not SecretReplacementRequest.objects.exists()
 
 
+def test_key_with_a_first_schedule_change_says_to_save_them_apart(working):
+    """Older settings with no stored schedule refuse a key plus a schedule change.
+
+    The refusal names the reason and the order to save in, rather than the
+    generic "Check your entries" page, and nothing is staged.
+    """
+    response = save(working, full_refresh="hourly")
+    assert response.status_code == 400
+    refusal = response.json()["refusal"]
+    assert refusal["message"].startswith("Nothing was saved: a new key and a")
+    assert "save the refresh schedule change first" in refusal["fix"]
+    assert CANDIDATE not in response.content
+    assert not SecretReplacementRequest.objects.exists()
+
+
 def test_stale_key_save_page_says_nothing_was_done(working):
     """A browser save refused for a stale sign-in explains itself plainly.
 

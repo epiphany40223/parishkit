@@ -790,7 +790,11 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     failed = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
     assert b"Test access:" in failed
-    assert post(browser, URL, {"action": "test", "target": "x"}).status_code == 400
+    invalid = post(browser, URL, {"action": "test", "target": "x"})
+    assert invalid.status_code == 400
+    assert invalid.json()["refusal"]["message"] == (
+        "That is not a link to a Google Drive folder."
+    )
     preview = hidden(
         post(
             browser,
@@ -947,6 +951,48 @@ def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     expected = deployment_tag(SystemConfiguration.objects.get().pk)
     assert smoke._deployment_tag("configuration") == expected
     assert admitted == ["configuration", "login"]
+
+
+def page_post(browser, values):
+    """Submit the Backups page as a browser navigation, to see the error page."""
+    return browser.post(
+        URL,
+        values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        HTTP_ACCEPT="text/html,*/*;q=0.8",
+        HTTP_SEC_FETCH_MODE="navigate",
+    )
+
+
+def test_test_access_refusals_say_what_to_fix(workspace):
+    """A missing or wrong folder link names the problem, not "Check your entries"."""
+    browser, _ = signed_in()
+    empty = page_post(browser, {"action": "test", "target": ""})
+    assert empty.status_code == 400
+    assert b"Enter the Google Drive folder link first." in empty.content
+    assert b"then choose Test access." in empty.content
+    document = "https://docs.google.com/document/d/x"
+    wrong = page_post(browser, {"action": "test", "target": document})
+    assert wrong.status_code == 400
+    assert b"That is not a link to a Google Drive folder." in wrong.content
+    assert b"https://drive.google.com/drive/folders/" in wrong.content
+    # The error page never repeats what was submitted.
+    assert b"docs.google.com" not in wrong.content
+    assert not BackupDriveProbe.objects.exists()
+
+
+def test_test_access_without_workspace_links_to_its_setup(auth_service, google):
+    """Test access before Workspace mail says why and links to that page."""
+    browser, _ = signed_in()
+    response = page_post(browser, {"action": "test", "target": LINK})
+    assert response.status_code == 400
+    assert (
+        b"Test access needs Google Workspace mail to be set up first."
+        in response.content
+    )
+    assert b'href="/admin/configuration/integrations/google_workspace"' in (
+        response.content
+    )
+    assert not BackupDriveProbe.objects.exists()
 
 
 def test_a_check_needs_an_applied_workspace_integration():
