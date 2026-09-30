@@ -435,11 +435,92 @@ def test_a_failure_of_one_set_does_not_hold_back_the_newer_ones(offsite, caplog)
         ("failed", offsite.directory.name, "verification"),
         ("uploaded", newest.name, None),
     ]
-    # The newest outcome is the newest set's own, so the page says so.
-    assert offsite_status().kind == "uploaded"
     assert ("backup_set_mismatch", None) in {
         (line.get("failure_kind"), line.get("drive_failure")) for line in logged(caplog)
     }
+    # The newest set's success does not hide the older one (#357 review M1):
+    # the page names it and the off-site alert opens.
+    status = offsite_status()
+    assert status.kind == "failed" and offsite.directory.name in str(status.message)
+    assert status.set_name == newest.name
+    observe()
+    assert episode() is not None
+
+
+def test_a_damaged_set_keeps_alerting_across_runs_until_it_copies(offsite):
+    """Each run copies its own new set; the damaged one keeps the alert open.
+
+    A backup makes a new set and then copies, so every run sees the damaged
+    older set fail and its own new set succeed. Only a good copy of the
+    damaged set (or its leaving the catch-up window) resolves the alert.
+    """
+    damaged = offsite.directory / SEALED_FILES[0]
+    original = damaged.read_bytes()
+    damaged.write_bytes(b"damaged on disk")
+    new_set(offsite, "20260928T020000Z")
+    assert copy(offsite)["state"] == "failed"
+    observe()
+    opened = episode()
+    assert opened is not None
+    later = new_set(offsite, "20260928T140000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert BackupUpload.objects.order_by("-created_at").first().set_name == later.name
+    observe()
+    assert episode().pk == opened.pk
+    assert offsite_status().kind == "failed"
+    # The disk is repaired: the next run copies the set and the alert resolves.
+    damaged.write_bytes(original)
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    observe()
+    assert episode() is None
+    assert offsite_status().kind == "uploaded"
+
+
+def test_a_damaged_set_ages_out_of_the_alert_after_three_newer_sets(offsite):
+    """A never-repaired set stops alerting once three newer sets have outcomes.
+
+    The copy stops retrying it when it leaves the three newest local sets,
+    and the alert's window (``failed_recent_set``) matches that.
+    """
+    from parishkit.stewardship.jobs.backup_models import failed_recent_set
+
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    for name in ("20260928T020000Z", "20260928T140000Z"):
+        new_set(offsite, name)
+        assert copy(offsite)["failure_kind"] == "verification"
+        assert failed_recent_set().set_name == offsite.directory.name
+        observe()
+        assert episode() is not None
+    new_set(offsite, "20260929T020000Z")
+    assert copy(offsite) == {"state": "uploaded", "sets": 1}
+    assert failed_recent_set() is None
+    assert offsite_status().kind == "uploaded"
+    observe()
+    assert episode() is None
+
+
+def test_two_failing_sets_in_the_window_name_the_newer_one(offsite):
+    """With two damaged sets, the page names the newer of them."""
+    from parishkit.stewardship.jobs.backup_models import failed_recent_set
+
+    (offsite.directory / SEALED_FILES[0]).write_bytes(b"damaged on disk")
+    newer = new_set(offsite, "20260928T020000Z")
+    (newer / SEALED_FILES[0]).write_bytes(b"damaged too")
+    newest = new_set(offsite, "20260928T140000Z")
+    assert copy(offsite) == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 1,
+    }
+    assert offsite.drive.sets() == [newest.name]
+    assert failed_recent_set().set_name == newer.name
+    status = offsite_status()
+    assert status.kind == "failed" and newer.name in str(status.message)
+    assert offsite.directory.name not in str(status.message)
 
 
 def test_a_configuration_failure_stops_the_whole_copy(offsite):

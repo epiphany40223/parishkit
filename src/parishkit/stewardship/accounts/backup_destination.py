@@ -12,7 +12,11 @@ from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
-from parishkit.stewardship.jobs.backup_models import BackupDriveProbe, BackupUpload
+from parishkit.stewardship.jobs.backup_models import (
+    BackupDriveProbe,
+    BackupUpload,
+    failed_recent_set,
+)
 from parishkit.stewardship.storage import StaleRecordError
 
 # A finished check (passed, failed or unanswered) is shown on the page for at
@@ -52,6 +56,23 @@ def offsite_status():
             None,
             None,
             None,
+        )
+    if newest.state == "uploaded" and (older := failed_recent_set()) is not None:
+        # The newest set is off-site but an older one in the copy's window
+        # is not; the page must not read as all clear.
+        return OffsiteStatus(
+            "failed",
+            _(
+                "The newest backup was copied, but the earlier backup "
+                "%(set)s was not. %(reason)s"
+            )
+            % {
+                "set": older.set_name,
+                "reason": DriveFailure(older.failure_kind).message,
+            },
+            older.created_at,
+            last_copy_at,
+            set_name,
         )
     if newest.state == "uploaded":
         return OffsiteStatus(

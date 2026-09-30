@@ -228,7 +228,9 @@ by a Workspace administrator:
 
 The Backups page and the administration home show when a set was last
 copied. The scheduler raises the `backup_offsite_failed` operational incident
-(CRITICAL) when the newest copy attempt failed, or when a backup finished
+(CRITICAL) when the newest copy attempt failed, when one of the three newest
+sets tried still has a failed copy of its own (the Backups page then names
+it, even though newer sets were copied), or when a backup finished
 more than six hours ago and its copy recorded nothing (the copy was killed,
 lost its database connection or could not read the saved folder link before
 it could record an outcome). That holds from the first backup after the

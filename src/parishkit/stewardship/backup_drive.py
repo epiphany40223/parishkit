@@ -122,8 +122,9 @@ class DriveFailure(Exception):
             "Google Workspace integration."
         ),
         "verification": (
-            "Google Drive stored a file that does not match the backup on the "
-            "server. The copy will be tried again with the next backup."
+            "A backup file did not match its recorded checksum, either as "
+            "stored in Google Drive or on the server itself. The copy will be "
+            "tried again with the next backup."
         ),
         "unavailable": "Google Drive could not be reached. Try again later.",
         "unexpected": (
