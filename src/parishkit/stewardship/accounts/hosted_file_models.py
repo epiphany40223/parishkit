@@ -20,6 +20,10 @@ MAX_SLUG = 64
 MAX_NAME = 200
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_SIDE = 2048
+# The only columns rendering reads to expand {{ file.<slug> }}
+# (hosted_file_content.hosted_links); the background roles that render mail
+# are granted exactly these.
+HOSTED_LINK_COLUMNS = frozenset({"slug", "token"})
 # Library caps, also enforced by the insert trigger.
 MAX_FILES = 100
 MAX_LIBRARY_BYTES = 200 * 1024 * 1024

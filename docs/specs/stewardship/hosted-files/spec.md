@@ -506,6 +506,13 @@ reference mentions `{{ file.<slug> }}` and links to this page.
 - Only Administrators may open the page and use its actions. Staff and
   Ministry leaders get the ordinary denial. The public `/files/<token>` route
   is the only unauthenticated surface.
+- Database reads follow who renders content. The web login reads the library
+  and the use view (the Admin page, Family pages and previews). The general
+  worker (Family mail preparation and chosen-Family tests) and mail dispatch
+  (Family mail and receipts re-rendered at send) read only each file's `slug`
+  and `token`, which is all that expanding a placeholder needs. The scheduler
+  and every other login read nothing. A test renders a file link and an inline
+  hosted image under each of these real logins.
 - Every action is a CSRF-protected POST. Fresh Google authentication is not
   required, matching content and artwork edits, which also do not require it.
 - Audit events (new `Action` values in `audit/schemas.py`, with the `ACTION`

@@ -49,6 +49,16 @@ def add_dispatch_grants(tables, columns):
     columns.setdefault("stewardship_branding_bundle", {}).setdefault(
         "SELECT", set()
     ).update(ARTWORK_BUNDLE_COLUMNS)
+    # Re-rendering Family mail and receipts at dispatch expands
+    # {{ file.<slug> }} (#346) to its public link: only each hosted file's
+    # slug and token, never its name, uploader or digest.
+    from parishkit.stewardship.accounts.hosted_file_models import (
+        HOSTED_LINK_COLUMNS,
+    )
+
+    columns.setdefault("stewardship_hosted_file", {}).setdefault(
+        "SELECT", set()
+    ).update(HOSTED_LINK_COLUMNS)
     for table in (
         "stewardship_ops_incident",
         "stewardship_ops_notice",
