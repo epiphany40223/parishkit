@@ -41,6 +41,12 @@ ROLE_QUEUES = MappingProxyType(
 # first takes the rest of the worker's queues (see runtime_process).
 SOURCE_QUEUES = frozenset({WorkQueue.SOURCE})
 
+# The worker login's connection limit at which the worker container runs the
+# source queue on its own process: three connections for each of two
+# processes (runtime_process.split_source). Status pages apply the same rule
+# to the login's actual limit (jobs/queue_wait.py).
+SOURCE_SPLIT_CONNECTIONS = 6
+
 
 def exchange(queue):
     """The broker exchange a queue is bound to.

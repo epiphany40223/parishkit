@@ -123,6 +123,22 @@ def test_export_status_updates_itself_and_downloads_once(page, component_origin)
     assert set(reads) == {"GET"}
 
 
+def test_queued_export_shows_what_it_waits_for(page, component_origin):
+    """The task ahead's start is a local clock time; the wait keeps ticking."""
+    import re
+
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/report-export-waiting")
+    visible(page.get_by_text("Waiting for the ParishSoft update to finish"))
+    expect(page.locator("time[data-time-only]")).to_have_text(
+        re.compile(r"^\d{1,2}:\d{2} (AM|PM)$")
+    )
+    expect(page.locator("time[data-live-since]")).to_have_text(
+        re.compile(r"^\d+ (seconds?|minutes) ago$")
+    )
+
+
 def test_failed_export_explains_itself_with_retry(page, component_origin):
     """A failed export says so in plain words and offers Retry, without polling."""
     page.goto(component_origin + "/report-export-failed")
