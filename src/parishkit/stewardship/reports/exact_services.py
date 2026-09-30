@@ -17,6 +17,7 @@ from .exact_models import (
     ExactExportResolution,
 )
 from .export_services import (
+    ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
@@ -75,7 +76,7 @@ def create_exact_export(
                 previous.format,
                 previous.browser_timezone,
             ) != (campaign_id, population_scope, format, browser_timezone):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         inputs, _ = current_inputs(campaign_id, population_scope)
         if inputs is None:

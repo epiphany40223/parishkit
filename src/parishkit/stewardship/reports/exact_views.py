@@ -13,8 +13,8 @@ from .exact_services import (
     exact_export_status,
     retry_exact_export,
 )
-from .export_services import ExportConflict
-from .export_views import SAFE_FAILURES, _body, _json, _principal
+from .export_services import ExportConflict, ExportRequestBound
+from .export_views import BOUND, SAFE_FAILURES, _body, _json, _principal
 
 
 @require_POST
@@ -36,6 +36,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _json({"id": str(result.pk)}, status=202)
+    except ExportRequestBound:
+        return _json({"error": BOUND}, status=409)
     except SAFE_FAILURES:
         return denial()
     except ValueError:

@@ -32,6 +32,7 @@ from .export_cleanup import retry_cleanup
 from .export_models import ExportPublication
 from .export_services import (
     ExportConflict,
+    ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
@@ -58,6 +59,9 @@ SAFE_FAILURES = (
     ReadUnavailable,
     FactUnavailable,
 )
+
+
+BOUND = "This request key was already used for a different export."
 
 
 def _json(value, *, status=200):
@@ -110,6 +114,8 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _json({"id": str(result.pk)}, status=202)
+    except ExportRequestBound:
+        return _json({"error": BOUND}, status=409)
     except SAFE_FAILURES:
         return denial()
     except ValueError:

@@ -16,7 +16,11 @@ from parishkit.stewardship.reports.export_models import (
     ExportRequest,
     InformationExportSnapshot,
 )
-from parishkit.stewardship.reports.export_services import TASK_TYPE, export_status
+from parishkit.stewardship.reports.export_services import (
+    TASK_TYPE,
+    ExportRequestBound,
+    export_status,
+)
 from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.information import InformationQuery, information_page
 from parishkit.stewardship.reports.information_exports import create_information_export
@@ -113,7 +117,7 @@ def test_information_capture_freezes_full_text_and_history(live_response_service
             create_information_export(harness.service.store, actor, **values).pk
             == request.pk
         )
-        with pytest.raises(ValueError, match="already bound"):
+        with pytest.raises(ExportRequestBound):
             create_information_export(
                 harness.service.store, actor, **(values | {"history": False})
             )

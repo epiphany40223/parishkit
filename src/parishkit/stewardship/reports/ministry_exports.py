@@ -11,7 +11,13 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .export_models import ExportRequest, MinistryExportSnapshot
-from .export_services import TASK_TYPE, admit_campaign, audit, authorize
+from .export_services import (
+    TASK_TYPE,
+    ExportRequestBound,
+    admit_campaign,
+    audit,
+    authorize,
+)
 from .ministries import MinistryQuery, can_report
 
 MAX_PACKET_MINISTRIES = 200
@@ -167,7 +173,7 @@ def create_ministry_export(
             ) != ("ministry", campaign_id, parameters, format, browser_timezone) or (
                 snapshot is not None and previous.ministry_snapshot_id != snapshot.pk
             ):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()

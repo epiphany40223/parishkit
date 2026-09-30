@@ -25,7 +25,11 @@ from parishkit.stewardship.reports.export_models import (
     DirectoryExportSnapshot,
     ExportRequest,
 )
-from parishkit.stewardship.reports.export_services import TASK_TYPE, export_status
+from parishkit.stewardship.reports.export_services import (
+    TASK_TYPE,
+    ExportRequestBound,
+    export_status,
+)
 from parishkit.stewardship.reports.export_tasks import export_handler
 
 from ..policy_factory import address
@@ -89,7 +93,7 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
             create_directory_export(harness.service.store, actor, **values).pk
             == request.pk
         )
-        with pytest.raises(ValueError, match="already bound"):
+        with pytest.raises(ExportRequestBound):
             create_directory_export(
                 harness.service.store, actor, **(values | {"postal": True})
             )

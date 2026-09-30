@@ -18,7 +18,13 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .export_models import ExportRequest, FinancialExportSnapshot
-from .export_services import TASK_TYPE, admit_campaign, audit, authorize
+from .export_services import (
+    TASK_TYPE,
+    ExportRequestBound,
+    admit_campaign,
+    audit,
+    authorize,
+)
 from .financial import FinancialQuery, giving_proof, shape_result
 from .financial_documents import financial_document
 
@@ -115,7 +121,7 @@ def create_financial_export(
                 browser_timezone,
                 None if snapshot is None else snapshot.pk,
             ):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()

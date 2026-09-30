@@ -38,6 +38,16 @@ class ExportConflict(ValueError):
     """A valid command conflicts with an already completed export."""
 
 
+class ExportRequestBound(ValueError):
+    """A form's one-time request key was already used for a different export.
+
+    Typically the page came back from the browser cache and was submitted again
+    with another format. It is refused (never rebound) but, unlike malformed
+    filters, the Admin can simply reload the page and submit again, so every
+    export view answers it with 409 rather than the invalid-filters page.
+    """
+
+
 def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
@@ -138,7 +148,7 @@ def create_export(
                 previous.format,
                 previous.browser_timezone,
             ) != ("participation", campaign_id, fact_set_id, format, browser_timezone):
-                raise ValueError("Export request identity is already bound.")
+                raise ExportRequestBound("Export request identity is already bound.")
             return previous
         facts = (
             CampaignDailyFactSet.objects.select_for_update()

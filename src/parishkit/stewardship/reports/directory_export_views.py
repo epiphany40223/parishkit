@@ -13,8 +13,9 @@ from parishkit.stewardship.accounts.family_authentication import (
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .directories import DirectoryQuery
-from .directory_exports import ExportRequestBound, create_directory_export
+from .directory_exports import create_directory_export
 from .directory_views import _error, _principal, mailing_option
+from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
 

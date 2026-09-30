@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Family directory unavailable" %}</h1>
 {% if status == 503 %}<p role="alert">{% translate "The report is temporarily unavailable. Your saved data has not changed; please try again shortly." %}</p>
-{% elif status == 409 %}<p role="alert">{% translate "This export form was already used for a different export. Nothing new was queued. Return to the directory, which gives the form a fresh start, and queue the export again." %}</p>
+{% elif status == 409 %}{% include 'stewardship/export-request-bound.html' %}
 {% else %}<p role="alert">{% translate "Invalid report filters. Return to the directory and check the values." %}</p>{% endif %}
 {% if status == 503 %}<p><a href="{% url 'admin:family_codes' campaign_id %}">{% translate "Try the code-only recovery listing" %}</a> — {% translate "Retained campaign DUIDs and manual codes only; names and contact details require an available source. Normal access checks still apply." %}</p>{% endif %}
 <p><a href="{% url 'admin:family_directory' campaign_id %}">{% translate "Return to this campaign directory" %}</a></p>

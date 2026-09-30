@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.artifacts import ArtifactReceipt, open_artifa
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 from parishkit.stewardship.reports.export_services import (
     TASK_TYPE,
+    ExportRequestBound,
     cancel_export,
     consume_download,
     create_export,
@@ -88,7 +89,7 @@ def test_request_pins_inputs_and_replay_cannot_change_them(scenario):
         == request.fact_set_id
     )
     assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 1
-    with pytest.raises(ValueError, match="already bound"):
+    with pytest.raises(ExportRequestBound):
         request_export(scenario, request_key=request.request_key, format="pdf")
     with pytest.raises(FactUnavailable):
         request_export(scenario, fact_set_id=uuid4())
