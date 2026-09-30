@@ -127,7 +127,10 @@ class IntegrationForm(forms.Form):
             raise ValueError("Unsupported integration form.")
         field_tips.shorten(
             self,
-            {"full_refresh": _("Changes are also picked up every 15 minutes.")},
+            {
+                "full_refresh": _("Changes are also picked up every 15 minutes."),
+                "target": _("The folder link from the address bar; it has /folders/."),
+            },
         )
 
     def clean_target(self):

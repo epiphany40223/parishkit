@@ -16,7 +16,7 @@
 <h2 id="current-key">{% translate "Key in use" %}</h2>
 {% if current.source == 'configured' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Set on this page. The next backup uses it." %}</p>
 {% elif current.source == 'installed' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Installed on the server with the deployment; this is the key the newest backup used, on" %} <time datetime="{{ current.backup_at|instant }}" data-local-instant>{{ current.backup_at|instant }}</time>.</p>
-{% else %}<p>{% translate "The key installed on the server with the deployment. No backup has run yet, so its fingerprint is not known here; each backup prints it as recipient_fingerprint." %}</p>{% endif %}
+{% else %}<p>{% translate "The key installed on the server with the deployment. No backup has run yet, so its fingerprint is not known here; it appears here after the first backup runs." %}</p>{% endif %}
 <p>{% translate "Compare the fingerprint with the one recorded next to your private key. If they differ, the backups cannot be opened with the key you kept." %}</p>
 </section>
 <details class="panel"><summary>{% translate "Before you replace the key" %}</summary>
