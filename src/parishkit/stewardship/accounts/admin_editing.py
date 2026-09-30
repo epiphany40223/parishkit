@@ -32,6 +32,7 @@ from parishkit.stewardship.web.refusals import (
     load_preview,
 )
 
+from . import admin_navigation
 from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
 from .policy import Capability, allows
@@ -195,6 +196,8 @@ def confirm(
             else lambda created: attach(created, intent.get("extra"))
         ),
     )
+    # The status page leads back to this editor (#196).
+    admin_navigation.remember_origin(request, receipt.request_id)
     return HttpResponseRedirect(f"/admin/configuration/requests/{receipt.request_id}")
 
 

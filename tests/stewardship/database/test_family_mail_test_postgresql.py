@@ -317,6 +317,38 @@ def test_chosen_family_gets_its_own_code_and_only_the_testing_recipient(family_t
     ).exists()
 
 
+def test_family_test_pages_show_their_email_trail_and_steps(family_test):
+    """The sample and Family pages sit under the email's editor (#196).
+
+    The Family page shows choose, review, then send and follow as the Admin
+    moves through it.
+    """
+    harness, browser, path, sample = family_test
+    template = sample.rsplit("/", 1)[-1]
+    editor = f"/admin/campaign/{harness.campaign.pk}/content/email/initial/{template}"
+    with web_login():
+        page = browser.get(sample)
+    body = page.content.decode()
+    assert f'<li><a href="{editor}">Initial invitation</a></li>' in body
+    assert '<span aria-current="page">Preview and test email</span>' in body
+
+    def current(page):
+        """The label of the step the page marks current."""
+        steps = page.context["admin_chrome"]["flow_steps"]
+        return [step["label"] for step in steps if step["state"] == "current"]
+
+    with web_login():
+        page = browser.get(path)
+    body = page.content.decode()
+    assert f'<li><a href="{sample}">Preview and test email</a></li>' in body
+    assert f'<li><a href="{editor}">Initial invitation</a></li>' in body
+    assert current(page) == ["Choose Families"]
+    assert current(review(browser, path, [1])) == ["Review"]
+    request_tickets(browser, path, [1])
+    with web_login():
+        assert current(browser.get(path)) == ["Send and follow"]
+
+
 def test_worker_issues_a_missing_credential_that_signs_in_only_within_dates(
     family_test,
 ):

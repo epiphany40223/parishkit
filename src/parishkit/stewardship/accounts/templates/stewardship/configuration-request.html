@@ -18,5 +18,8 @@
 {% endif %}
   <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
 </section>
-<p><a href="{% url 'admin:configuration_request' receipt.request_id %}">{% translate "Refresh status" %}</a> · <a href="{% url 'admin:ministries' %}">{% translate "Ministry activity" %}</a> · <a href="/admin/">{% translate "Administration" %}</a></p>
+{% comment %}
+  "Return to" leads to the page the change was confirmed on (the same page
+  the breadcrumb trail names), or Home when this sign-in does not know it.
+{% endcomment %}<p><a href="{% url 'admin:configuration_request' receipt.request_id %}">{% translate "Refresh status" %}</a>{% if admin_chrome.back %} · <a href="{{ admin_chrome.back.url }}">{% blocktranslate with page=admin_chrome.back.label %}Return to {{ page }}{% endblocktranslate %}</a>{% else %} · <a href="/admin/">{% translate "Administration" %}</a>{% endif %}</p>
 {% endblock %}

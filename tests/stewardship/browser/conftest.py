@@ -1370,6 +1370,22 @@ def component_origin():
             "configuration-request",
             {
                 "receipt": {"state": "staged", "request_id": uuid4()},
+                # The last step of a change confirmed on Parish settings.
+                "admin_chrome": admin
+                | {
+                    "breadcrumbs": [
+                        {"label": "Home", "url": "/home"},
+                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "Parish settings", "url": "/parish-settings"},
+                        {"label": "Configuration change", "url": None},
+                    ],
+                    "flow_steps": [
+                        {"label": "Make changes", "state": "done"},
+                        {"label": "Review", "state": "done"},
+                        {"label": "Apply", "state": "current"},
+                    ],
+                    "back": {"label": "Parish settings", "url": "/parish-settings"},
+                },
             },
         ),
         (

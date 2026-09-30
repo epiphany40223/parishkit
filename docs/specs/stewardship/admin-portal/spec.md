@@ -343,6 +343,28 @@ has its own stepper. Every Admin route is either a registered page or listed
 as a non-page (form actions, downloads, images, status fragments, sign-in and
 the setup wizard), and a test requires every new route to be classified.
 
+A view may place its page more precisely than its route can, so deep steps of
+multi-step flows keep their context: it may name a different parent, supply
+route arguments an ancestor link needs, and name an ancestor specifically.
+Preview and test email sits under the email revision it sends (Home › Campaign
+› Pages and emails › Initial invitation › Preview and test email), with Send to
+chosen Families below it. An export's status page sits under the report it
+came from. A configuration change's status page sits under the settings page
+the change was confirmed on: confirming remembers that page in the signed-in
+session (never in the URL), and the status page shows its trail and a "Return
+to" link to it. Without that memory, as in another sign-in, the page stands
+under Home. A page that only answers a POST, such as the login rule review, is
+named in trails but never linked.
+
+Multi-step flows also show a step indicator under the trail: a numbered list
+with the current step marked `aria-current="step"` and each step's state in
+text. It is orientation only and links nothing, so it cannot skip a review or
+confirmation. The flows are: making a settings change (Make changes, Review,
+Apply) for campaign pages and emails, login rule reviews and every change's
+status page; sending to chosen Families (Choose Families, Review, Send and
+follow); and report exports (Choose report, Prepare file, Download). Placement
+and steps are presentation only and grant nothing.
+
 ### Admin tables
 
 Admin tables share one component, so paging, sorting, selection and styling

@@ -12,10 +12,10 @@ database, so it adds nothing to the Admin chrome's query budget.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 
-from django.urls import NoReverseMatch, get_resolver, reverse
+from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
 NAMESPACE = "admin"
@@ -31,11 +31,37 @@ class Section:
 
 @dataclass(frozen=True)
 class Page:
-    """One Admin page: its section, its parent page (URL name) and its label."""
+    """One Admin page: its section, its parent page (URL name) and its label.
+
+    ``linkable`` is False for a page that only answers a POST (a review
+    step): its crumb is shown for orientation but never linked, because a
+    GET would fail.
+    """
 
     section: str | None
     label: str
     parent: str | None = None
+    linkable: bool = True
+
+
+@dataclass(frozen=True)
+class Placement:
+    """Where a view says the current request sits, beyond its static route.
+
+    A view knows things its route does not: which email a test page sends,
+    which report an export came from, which settings page a configuration
+    change was confirmed on. ``parent`` replaces the registered parent,
+    ``arguments`` supplies route arguments that ancestor links need,
+    ``labels`` names ancestor pages more specifically (by URL name), and
+    ``flow``/``step`` select a step indicator from ``FLOWS``. Presentation
+    only: it grants nothing, and every linked page rechecks its own access.
+    """
+
+    parent: str | None = None
+    arguments: dict = field(default_factory=dict)
+    labels: dict = field(default_factory=dict)
+    flow: str | None = None
+    step: str | None = None
 
 
 SECTIONS = (
@@ -64,7 +90,9 @@ PAGES = {
     # catalog refuses, so its trail runs through Campaign settings instead.
     "content_history": Page("campaign", _("Content history"), "campaign_settings"),
     "content_history_revision": Page("campaign", _("Revision"), "content_history"),
-    "campaign_mail": Page("campaign", _("Preview and test email"), "content_catalog"),
+    # A test page sends one email revision, so its trail runs through that
+    # revision's editor; the view supplies the kind and slot the route lacks.
+    "campaign_mail": Page("campaign", _("Preview and test email"), "content_revision"),
     "campaign_mail_families": Page(
         "campaign", _("Send to chosen Families"), "campaign_mail"
     ),
@@ -132,11 +160,13 @@ PAGES = {
     "ministries": Page("parish", _("Ministry activity")),
     "source_refresh": Page("parish", _("ParishSoft refresh"), "integrations"),
     # A configuration change can come from any settings page, so its status
-    # page stands alone under Home.
+    # page is registered under Home; the view places it under the page the
+    # change was confirmed on when this sign-in remembers it.
     "configuration_request": Page(None, _("Configuration change")),
     # Users
     "users": Page("users", _("Portal users")),
-    "user_rules": Page("users", _("Sign-in rules"), "users"),
+    # Only the review of a rule change (a POST from Portal users) renders here.
+    "user_rules": Page("users", _("Sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
     "chair_confirmations": Page("users", _("Chair suggestions"), "users"),
     "chair_reviews": Page("users", _("Chair reviews"), "users"),
@@ -240,6 +270,92 @@ NON_PAGES = frozenset(
 )
 
 
+# Multi-step flows: each is an ordered tuple of (step key, label). A view
+# names its flow and current step with ``place``; the Admin layout shows the
+# steps under the breadcrumb trail. The indicator is orientation only: it
+# links nothing, so it can never skip a review or confirmation.
+FLOWS = {
+    # Every settings editor: edit a form, review the exact change, apply it.
+    "change": (
+        ("edit", _("Make changes")),
+        ("review", _("Review")),
+        ("apply", _("Apply")),
+    ),
+    # Sending one email to chosen real Families (Testing recipient only).
+    "family_test": (
+        ("choose", _("Choose Families")),
+        ("review", _("Review")),
+        ("send", _("Send and follow")),
+    ),
+    # A report export: request it from a report, wait for it, download it.
+    "export": (
+        ("request", _("Choose report")),
+        ("prepare", _("Prepare file")),
+        ("download", _("Download")),
+    ),
+}
+
+# The session remembers, per sign-in, which page each recent configuration
+# change was confirmed on, so its status page can lead back there. Session
+# data, never a query parameter: nothing a link carries can steer the trail.
+ORIGINS_KEY = "pk_admin_change_origins"
+ORIGINS_KEPT = 20
+PLACEMENT_ATTRIBUTE = "_stewardship_admin_placement"
+
+
+def place(request, **values):
+    """Record the view's ``Placement`` for the Admin layout to render."""
+    setattr(request, PLACEMENT_ATTRIBUTE, Placement(**values))
+
+
+def placement(request):
+    """The placement a view recorded for this request, or None."""
+    return getattr(request, PLACEMENT_ATTRIBUTE, None)
+
+
+def remember_origin(request, request_id):
+    """Remember the page a configuration change was confirmed on.
+
+    ``request.path`` is the editor's own URL (every editor confirms by
+    posting to itself). Only the most recent changes are kept, so the
+    session stays small.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    key = str(request_id)
+    origins = {
+        name: path for name, path in session.get(ORIGINS_KEY, {}).items() if name != key
+    }
+    origins[key] = request.path
+    session[ORIGINS_KEY] = dict(list(origins.items())[-ORIGINS_KEPT:])
+
+
+def change_origin(request, request_id):
+    """``(url name, route arguments)`` of a change's remembered origin, or None.
+
+    The stored path is resolved again and must still name a registered
+    Admin page, so a stale or unexpected value only loses the trail.
+    """
+    session = getattr(request, "session", None)
+    path = session.get(ORIGINS_KEY, {}).get(str(request_id)) if session else None
+    if not isinstance(path, str):
+        return None
+    try:
+        match = resolve(path)
+    except Resolver404:
+        return None
+    name = match.url_name
+    if (
+        match.namespace != NAMESPACE
+        or name not in PAGES
+        or name == "configuration_request"
+    ):
+        return None
+    needed = route_parameters().get(name, ())
+    return name, {key: match.kwargs[key] for key in needed if key in match.kwargs}
+
+
 @cache
 def route_parameters():
     """Map each Admin URL name to the argument names its route needs.
@@ -261,6 +377,8 @@ def route_parameters():
 
 def _link(name, arguments):
     """Reverse an Admin page with the arguments it needs, or None if unavailable."""
+    if not PAGES[name].linkable:
+        return None
     needed = route_parameters().get(name, ())
     if any(parameter not in arguments for parameter in needed):
         return None
@@ -273,29 +391,92 @@ def _link(name, arguments):
         return None
 
 
-def _chain(name):
-    """The page and its ancestors, root first."""
+def _chain(name, parent=None):
+    """The page and its ancestors, root first; ``parent`` overrides the first."""
     chain = []
     seen = set()
     while name in PAGES and name not in seen:
         seen.add(name)
         chain.append(name)
-        name = PAGES[name].parent
+        name = parent if parent and len(chain) == 1 else PAGES[name].parent
     return list(reversed(chain))
 
 
-def build(match, items):
+def _section(chain):
+    """The section of a page chain: that of its first sectioned page.
+
+    Registered chains share one section. A page registered under Home but
+    placed below a sectioned page (a configuration change's status) joins
+    that page's section.
+    """
+    return next((PAGES[name].section for name in chain if PAGES[name].section), None)
+
+
+def _resolved(match, placed):
+    """``(url name, page chain, route arguments)`` for the current request.
+
+    Placement arguments win over the request's own: they name the
+    ancestors' identifiers (an origin page's request, say), and the current
+    page's crumb is never linked.
+    """
+    name = match.url_name if match and match.namespace == NAMESPACE else None
+    arguments = dict(match.kwargs) if match else {}
+    if placed:
+        arguments |= placed.arguments
+    parent = placed.parent if placed and placed.parent in PAGES else None
+    chain = _chain(name, parent) if name in PAGES else []
+    return name, chain, arguments
+
+
+def steps(placed):
+    """The step indicator for a placed flow: label and done/current/upcoming.
+
+    Returns an empty list when the request names no known flow and step.
+    """
+    flow = FLOWS.get(placed.flow) if placed else None
+    keys = [key for key, _label in flow or ()]
+    if placed is None or placed.step not in keys:
+        return []
+    index = keys.index(placed.step)
+    return [
+        {
+            "label": label,
+            "state": "done"
+            if position < index
+            else "current"
+            if position == index
+            else "upcoming",
+        }
+        for position, (_key, label) in enumerate(flow)
+    ]
+
+
+def back(match, placed=None):
+    """``{"label", "url"}`` of the nearest linked ancestor, falling back to Home.
+
+    Multi-step pages use it for their "Return to …" link, so the link and
+    the trail always agree about where the flow started.
+    """
+    _name, chain, arguments = _resolved(match, placed)
+    labels = placed.labels if placed else {}
+    for ancestor in reversed(chain[:-1]):
+        url = _link(ancestor, arguments)
+        if url:
+            return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
+    return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
+
+
+def build(match, items, placed=None):
     """Return ``(sections, breadcrumbs)`` for the current request.
 
     ``match`` is the request's resolver match (or None), and ``items`` is the
     ordered list of ``(section, url_name, label, url)`` entries the actor may
     see, already filtered by the caller's capability checks. Sections with no
     visible entry are omitted. The entry whose page chain contains the current
-    page is marked current, and so is its section.
+    page is marked current, and so is its section. ``placed`` is the view's
+    optional ``Placement``.
     """
-    name = match.url_name if match and match.namespace == NAMESPACE else None
-    arguments = dict(match.kwargs) if match else {}
-    chain = _chain(name) if name in PAGES else []
+    name, chain, arguments = _resolved(match, placed)
     current_item = next(
         (
             entry_name
@@ -304,7 +485,7 @@ def build(match, items):
         ),
         None,
     )
-    current_section = PAGES[name].section if name in PAGES else None
+    current_section = _section(chain)
     sections = []
     for section in SECTIONS:
         entries = [
@@ -331,10 +512,11 @@ def build(match, items):
                     "items": entries,
                 }
             )
-    return sections, _breadcrumbs(name, chain, arguments, sections)
+    labels = placed.labels if placed else {}
+    return sections, _breadcrumbs(name, chain, arguments, sections, labels)
 
 
-def _breadcrumbs(name, chain, arguments, sections):
+def _breadcrumbs(name, chain, arguments, sections, labels):
     """Home, the section, then each ancestor page, ending at the current page."""
     if name is None or name not in PAGES:
         return []
@@ -342,7 +524,7 @@ def _breadcrumbs(name, chain, arguments, sections):
     if name == "index":
         trail[0]["url"] = None
         return trail
-    section = PAGES[name].section
+    section = _section(chain)
     if section:
         # Link the section to its first entry the actor can see, if any.
         first = next(
@@ -352,7 +534,10 @@ def _breadcrumbs(name, chain, arguments, sections):
         trail.append({"label": SECTION_LABELS[section], "url": first})
     for ancestor in chain[:-1]:
         trail.append(
-            {"label": PAGES[ancestor].label, "url": _link(ancestor, arguments)}
+            {
+                "label": labels.get(ancestor, PAGES[ancestor].label),
+                "url": _link(ancestor, arguments),
+            }
         )
     trail.append({"label": PAGES[name].label, "url": None})
     return trail

@@ -1,5 +1,6 @@
 """Capability-filtered Admin navigation, operational banners and passive work views."""
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -10,17 +11,20 @@ from django.test import Client
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.services import operational
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import Event
 
 from ..policy_factory import address
+from . import test_parish_views_postgresql as parish
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
 from .test_background_grants_postgresql import task_login
 from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
+STEPS = ["Make changes", "Review", "Apply"]
 
 
 @pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
@@ -116,6 +120,58 @@ def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     assert b'<span aria-current="page">Initial invitation</span>' in edit.content
     # On the child page the catalog entry marks the location, not the page.
     assert f'<a href="{catalog}" aria-current="true">'.encode() in edit.content
+
+
+def _steps(body):
+    """The step indicator's labels and the current step, from a rendered page."""
+    body = body.decode()
+    if 'class="flow-steps"' not in body:
+        return None
+    block = body[body.index('class="flow-steps"') :]
+    block = block[: block.index("</ol>")]
+    labels = re.findall(r'class="flow-step-label">([^<]+)<', block)
+    current = re.search(
+        r'aria-current="step">.*?class="flow-step-label">([^<]+)<', block
+    )
+    return labels, current.group(1)
+
+
+def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
+    auth_service, google
+):
+    """Edit, review and apply are shown, and the status page returns to Parish settings.
+
+    The status page learns its origin from this sign-in's session, so another
+    sign-in (or a bookmark after sign-out) still gets a trail, just not the
+    editor's.
+    """
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    browser, _ = signed_in()
+    content = f"/admin/campaign/{Campaign.objects.get().pk}/content/email/initial"
+    assert _steps(browser.get(content).content) == (STEPS, "Make changes")
+    # The settings pages without a placed flow show no indicator.
+    assert _steps(browser.get(parish.URL).content) is None
+    review = parish.post(browser, parish.fields(store, name="Renamed Parish"))
+    confirmed = parish.post(
+        browser, {"action": "confirm", "preview": parish.token(review)}
+    )
+    assert confirmed.status_code == 302
+    status = browser.get(confirmed["Location"])
+    assert status.status_code == 200
+    body = status.content
+    assert _steps(body) == (STEPS, "Apply")
+    assert f'<li><a href="{parish.URL}">Parish settings</a></li>'.encode() in body
+    assert b'<span aria-current="page">Configuration change</span>' in body
+    assert f'<a href="{parish.URL}">Return to Parish settings</a>'.encode() in body
+    # The sidebar marks the editor the change came from.
+    assert f'<a href="{parish.URL}" aria-current="true">'.encode() in body
+    # A different sign-in does not know the origin: the trail is just Home.
+    other, _ = signed_in()
+    body = other.get(confirmed["Location"]).content
+    assert b'<a href="/admin/">Return to Home</a>' in body
+    trail = body[body.index(b'aria-label="Breadcrumb"') :]
+    assert b"Parish settings" not in trail[: trail.index(b"</nav>")]
 
 
 def test_anonymous_and_family_pages_do_not_gain_admin_chrome(auth_service, google):

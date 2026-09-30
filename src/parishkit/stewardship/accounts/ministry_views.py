@@ -19,6 +19,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -359,6 +360,16 @@ def configuration_request(request, request_id):
                 Capability.CONFIGURE,
             ):
                 raise PermissionError("Configuration access was revoked.")
+            # Place the status under the page the change came from, when this
+            # sign-in remembers it, as the last step of the edit flow (#196).
+            origin = admin_navigation.change_origin(request, request_id)
+            admin_navigation.place(
+                request,
+                parent=origin[0] if origin else None,
+                arguments=origin[1] if origin else {},
+                flow="change",
+                step="apply",
+            )
             response = render(
                 request, "stewardship/configuration-request.html", {"receipt": receipt}
             )

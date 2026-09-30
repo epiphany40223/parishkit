@@ -952,6 +952,31 @@ def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_ori
 
 
 @pytest.mark.parametrize("width", [390, 1280])
+def test_flow_steps_and_return_link_orient_a_configuration_change(
+    page, component_origin, axe_source, width
+):
+    """The change status shows its steps and leads back to its editor (#196)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/configuration-request")
+    steps = page.get_by_role("list", name="Steps")
+    visible(steps)
+    assert steps.locator("li").count() == 3
+    current = steps.locator('[aria-current="step"]')
+    assert current.count() == 1
+    assert "Apply" in current.inner_text()
+    # Completed steps say so in text, not only by color.
+    assert steps.locator("li").first.text_content().endswith("(done)")
+    trail = page.get_by_role("navigation", name="Breadcrumb")
+    visible(trail.get_by_role("link", name="Parish settings"))
+    visible(page.get_by_role("link", name="Return to Parish settings"))
+    # The steps sit between the trail and the heading and never overflow.
+    top = page.get_by_role("heading", level=1).bounding_box()["y"]
+    assert trail.bounding_box()["y"] < steps.bounding_box()["y"] < top
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("width", [390, 1280])
 def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin, width):
     """Sign out ends the menu; on phones it sits behind the Menu disclosure."""
     from playwright.sync_api import expect

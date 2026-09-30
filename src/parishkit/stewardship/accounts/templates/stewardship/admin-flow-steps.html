@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+  Step indicator for a multi-step Admin flow, from admin_navigation.FLOWS via
+  the view's placement. Orientation only: steps are never links, so the
+  indicator cannot skip a review or confirmation. Text carries every state;
+  color and the check mark only repeat it.
+{% endcomment %}{% if admin_chrome.flow_steps %}<ol class="flow-steps" aria-label="{% translate 'Steps' %}">{% for step in admin_chrome.flow_steps %}<li class="flow-step flow-step-{{ step.state }}"{% if step.state == 'current' %} aria-current="step"{% endif %}><span class="flow-step-number" aria-hidden="true">{{ forloop.counter }}</span> <span class="flow-step-label">{{ step.label }}</span>{% if step.state == 'done' %}<span class="visually-hidden"> ({% translate "done" %})</span>{% elif step.state == 'current' %}<span class="visually-hidden"> ({% translate "current step" %})</span>{% endif %}</li>{% endfor %}</ol>{% endif %}

@@ -86,9 +86,10 @@ def portal_chrome(request):
                 .first(),
                 "url": reverse("admin:delivery_control", args=[campaign.pk]),
             }
-    sections, breadcrumbs = admin_navigation.build(
-        getattr(request, "resolver_match", None), items
-    )
+    # A view may place the page more precisely than its route can (#196).
+    match = getattr(request, "resolver_match", None)
+    placed = admin_navigation.placement(request)
+    sections, breadcrumbs = admin_navigation.build(match, items, placed)
     return {
         "admin_chrome": {
             "admin": admin,
@@ -97,6 +98,9 @@ def portal_chrome(request):
             "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
+            # A multi-step flow's step indicator, and where "Return to" goes.
+            "flow_steps": admin_navigation.steps(placed),
+            "back": admin_navigation.back(match, placed),
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "restored": configuration.restore_review_required,
@@ -249,6 +253,8 @@ def _setup_chrome(actor, configuration, session):
         "setup_url": reverse("admin:setup"),
         "sections": [],
         "breadcrumbs": [],
+        "flow_steps": [],
+        "back": None,
         "testing": configuration.mode == "testing",
         "testing_recipient": None,
         "restored": configuration.restore_review_required,
