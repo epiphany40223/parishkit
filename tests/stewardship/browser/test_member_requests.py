@@ -86,6 +86,8 @@ def test_terminal_confirmation_skips_ordinary_fields_review_back_and_submit(
     expect(
         show(page, page.get_by_text("Requested change: deceased.", exact=False))
     ).to_be_visible()
+    # Review shows the date in the parish format, like every other date.
+    assert "Death date: January 1, 2026" in page.locator("main").inner_text()
     assert submitted == []
     page.get_by_role("button", name="Back to edit").click()
     expect(page.get_by_label("Death date (optional)")).to_have_value("2026-01-01")
@@ -143,7 +145,7 @@ def test_terminal_request_stale_competition_requires_choice(page, component_orig
     fresh["members"][0]["request"] = {
         "deceased_status": True,
         "confirmed": True,
-        "death_date": "",
+        "death_date": "2026-01-01",
     }
 
     def submit(route):
@@ -160,6 +162,8 @@ def test_terminal_request_stale_competition_requires_choice(page, component_orig
     page.get_by_role("button", name="Submit to Sample Parish").click()
     group = page.locator('[data-conflict="members.3.request"]')
     expect(group).to_be_visible()
+    # The chooser shows the date in the parish format, too.
+    assert "Deceased, date: January 1, 2026" in group.inner_text()
     review(page)
     assert len(submitted) == 1
     group.get_by_role("button", name="Use the updated response", exact=False).click()

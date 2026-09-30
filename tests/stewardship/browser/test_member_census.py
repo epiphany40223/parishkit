@@ -69,7 +69,10 @@ def test_complete_member_controls_review_and_atomic_payload(
     review(page)
     # Review focuses its page heading, the Family name.
     expect(page.locator("#family-flow > h2")).to_be_focused()
-    expect(show(page, page.get_by_text("1980-02-29", exact=False))).to_be_visible()
+    # Review shows the birth date in the parish date format (#300), not ISO.
+    expect(
+        show(page, page.get_by_text("February 29, 1980", exact=False))
+    ).to_be_visible()
     assert submitted == []
     page.get_by_role("button", name="Back to edit").click()
     expect(page.locator("#member-3-language-choice")).to_have_value("other")
