@@ -193,12 +193,15 @@ PAGES = {
     "configuration_request": Page(None, _("Configuration change")),
     # Users
     "users": Page("users", _("Portal users")),
-    # Only the review of a rule change (a POST from Portal users) renders here.
+    # Only the review of a change started on Portal users (a POST from that
+    # page) renders at these routes, so trails name them but never link them.
     "user_rules": Page("users", _("Sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
-    "chair_confirmations": Page("users", _("Chair suggestions"), "users"),
-    "chair_reviews": Page("users", _("Chair reviews"), "users"),
-    "assignments": Page("users", _("Assignments"), "users"),
+    "chair_confirmations": Page(
+        "users", _("Chair suggestions"), "users", linkable=False
+    ),
+    "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
+    "assignments": Page("users", _("Assignments"), "users", linkable=False),
     # System
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),

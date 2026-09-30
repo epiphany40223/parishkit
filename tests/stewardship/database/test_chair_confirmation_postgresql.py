@@ -28,6 +28,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import domain
 from ..test_source_corpus import source
 from .auth_builders import auth_runtime, signed_in
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_chair_suggestions_postgresql import publish, shared, suggestion_row
 from .test_configuration_service_postgresql import (
@@ -73,7 +74,10 @@ def proposal(store, **values):
 def recorded(browser, values):
     """Preview and confirm as the web role; the request is recorded, not applied."""
     with web():
-        signed = token(post(browser, values))
+        review = post(browser, values)
+        # The review step of a change started on Portal users (#196).
+        assert flow_steps(review.content) == (STEPS, "Review")
+        signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
     return ConfigurationChangeRequest.objects.get(
@@ -122,6 +126,11 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
         assert empty.status_code == 400
         assert "No suggestion was selected." in empty.content.decode()
     request = confirmed(store, browser, proposal(store))
+    # The POST-only review is named, never linked; Return goes to users (#196).
+    with web():
+        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+    assert b"<li><span>Chair suggestions</span></li>" in status
+    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assert request.request_schema == "chair-seed-patch-v9"
     rule = AddressRule.objects.filter(email="valid@example.org").latest("created_at")
     assert rule.creation_origin == "chair-seed"
