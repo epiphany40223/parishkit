@@ -318,6 +318,22 @@ Drive, the Backups page shows the newest copied set). The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this checklist was checked against the code.
 
+### Checking the kept keys
+
+Every backup succeeds, is copied and stays green whether or not a kept
+private key can open it: only opening a set proves that. After the
+pre-activation drills, check the kept keys every three months, and again
+whenever the `backup_recipient_changed` warning appears or a key copy moves
+to new storage. Download the newest set's folder from the Google Drive
+folder (or copy it from the host) to the machine that holds the keys, and
+run [Restore for real](#restore-for-real) step 2's `backup-open` on
+`database.pgdump.sealed` once per kept copy of the private key, each time
+into a new, empty output directory. Each copy must open the file and print
+the `recipient_fingerprint` recorded with the key. Record the date, the set
+name and which copies opened it in the parish's operations notes, then
+delete the decrypted files. A copy that is refused is not the installed
+public key's pair: find out why before relying on any backup.
+
 ## Restore drill
 
 **Never back up from a disposable drill host.** A set restored onto a second
