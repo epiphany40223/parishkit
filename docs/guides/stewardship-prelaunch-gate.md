@@ -356,6 +356,11 @@ Hosted files (#346) then added the `stewardship_hosted_file` table, the
 `stewardship_hosted_file_use` view of where each file is used, its mutable
 and in-use guard triggers, and the hosted-file audit context fields in
 `stewardship_safe_context_v1` (every category but Policies).
+Merging the Family codes and Postal outreach pages (#202) made the directory
+selection's `postal` flag choose only the mail-merge columns and export kind,
+no longer narrowing the rows to Families without deliverable email, so
+mailing details cover exactly the filtered Families (one function body,
+`stewardship_directory_report_v1`; Functions digest only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -364,7 +369,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2482 | `2dde0916` |
 | Constraints | 3425 | `3259f4cb` |
 | Indexes | 1012 | `8caf56fe` |
-| Functions | 610 | `e2ddfe8e` |
+| Functions | 610 | `7b895cb4` |
 | Triggers | 559 | `b255c7ec` |
 | Policies | 28 | `1c9c3b2d` |
 

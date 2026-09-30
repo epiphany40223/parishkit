@@ -58,7 +58,13 @@ def test_native_directory_code_filters_contacts_and_response(
     assert (
         item["email_deliverable"] and item["email_eligible"] and not item["responded"]
     )
-    assert page(harness, postal=True)["total"] == 0
+    # Mailing columns ('postal') no longer narrow the rows (#202): the one
+    # Family, reachable by email, is listed with its mailing details.
+    mailing = page(harness, postal=True)
+    assert mailing["total"] == 1 and mailing["rows"][0]["email_deliverable"]
+    assert mailing["rows"][0]["mailable"] and mailing["postal_total"] == 0
+    assert page(harness, postal=True, reach="email")["total"] == 1
+    assert page(harness, postal=True, reach="mail")["total"] == 0
     for filters in (
         {"search": "EXAMP"},
         {"search": "1"},
@@ -159,7 +165,8 @@ def test_postal_reasons_and_exact_statistics_complement(live_response_service):
         assert report["rows"][0]["code"] == harness.code
         postal = page(harness, postal=True)
         stats = calculate_statistics(capture_statistics(harness.campaign.pk))
-        assert postal["total"] == stats.active.no_deliverable_email
+        assert postal["postal_total"] == stats.active.no_deliverable_email
+        assert postal["total"] == report["total"]
         assert report["active_total"] == stats.active.families == 1
         assert page(harness, reason=reason)["total"] == 1
     # No synthetic denial flags: write immutable provider refusal evidence using
@@ -167,7 +174,8 @@ def test_postal_reasons_and_exact_statistics_complement(live_response_service):
     remember(refused(harness))
     postal = page(harness, postal=True)
     stats = calculate_statistics(capture_statistics(harness.campaign.pk))
-    assert postal["total"] == stats.active.no_deliverable_email == 1
+    assert postal["postal_total"] == stats.active.no_deliverable_email == 1
+    assert postal["total"] == 1
     assert postal["rows"][0]["reason"] == "provider_refused"
     assert postal["rows"][0]["email_eligible"]
     assert not postal["rows"][0]["email_deliverable"]
@@ -205,7 +213,8 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
         1,
         *range(10, 61),
     ]
-    postal = page(harness, postal=True)
+    assert page(harness, postal=True)["total"] == 52
+    postal = page(harness, postal=True, reach="mail")
     assert postal["total"] == 51 and len(postal["rows"]) == 50
     assert all(row["reason"] == "no_head" and row["code"] for row in postal["rows"])
     assert page(harness, search="Repeated")["total"] == 51

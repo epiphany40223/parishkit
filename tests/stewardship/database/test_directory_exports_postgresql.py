@@ -94,7 +94,23 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
             actor,
             **(values | {"postal": True, "request_key": uuid4()}),
         ).directory_snapshot
-        assert postal.row_count == 51
+        # Mailing columns do not narrow the capture (#202); reach does.
+        assert postal.row_count == 52
+        assert (
+            create_directory_export(
+                harness.service.store,
+                actor,
+                **(
+                    values
+                    | {
+                        "postal": True,
+                        "query": DirectoryQuery(sort="duid", reach="mail"),
+                        "request_key": uuid4(),
+                    }
+                ),
+            ).directory_snapshot.row_count
+            == 51
+        )
         selected = create_directory_export(
             harness.service.store,
             actor,
@@ -297,16 +313,18 @@ def test_directory_export_staff_gates_and_service_boundaries(
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         request = create_directory_export(store, actor, **values)
+        # The mail merge covers the filtered rows, here the one Family that
+        # email reaches (#202).
         assert (
             request.report == "postal_outreach"
-            and request.directory_snapshot.row_count == 0
+            and request.directory_snapshot.row_count == 1
         )
     with (
         task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
         connection.cursor() as cursor,
     ):
         cursor.execute("SELECT id,row_count FROM stewardship_directory_export_snapshot")
-        assert cursor.fetchone() == (request.directory_snapshot_id, 0)
+        assert cursor.fetchone() == (request.directory_snapshot_id, 1)
         with pytest.raises(DatabaseError):
             cursor.execute("SELECT document FROM stewardship_directory_export_snapshot")
     for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER):
