@@ -28,6 +28,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
+from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
 from parishkit.stewardship.accounts.parish_views import ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
@@ -1299,6 +1300,7 @@ def component_origin():
                     [ministry, ministry | {"duid": 12346, "name": "Lectors"}],
                     {},
                     carry=(("state", "all"),),
+                    sorting=CATALOG_SORTING,
                 ),
                 "query": "",
                 "state": "all",

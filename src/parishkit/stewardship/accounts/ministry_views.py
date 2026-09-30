@@ -17,7 +17,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.tables import paginate, table_parameters
+from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .admin_editing import (
     confirm,
@@ -246,6 +246,20 @@ def _preview(request, service, principal):
     )
 
 
+# Every data column sorts on the server over the whole catalog (read in
+# name order, so equal values keep that order); the selection column holds
+# controls, not data. Activity and inclusion sort "on" before "off".
+CATALOG_SORTING = Sorting.by_column(
+    {
+        "name": lambda row: row["name"].casefold(),
+        "duid": lambda row: row["duid"],
+        "active": lambda row: not row["active"],
+        "included": lambda row: not row["included"],
+    },
+    default="name",
+)
+
+
 def _listing(request, configuration, catalog, selected, *, notice=None, status=200):
     """Render the filtered, paged Ministry table (the shared Admin table)."""
     query, state = selected.get("q", ""), selected.get("state", "all")
@@ -260,7 +274,12 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
         )
         and (state == "all" or row["active"] == (state == "active"))
     ]
-    table = paginate(rows, selected, carry=(("q", query), ("state", state)))
+    table = paginate(
+        rows,
+        selected,
+        carry=(("q", query), ("state", state)),
+        sorting=CATALOG_SORTING,
+    )
     response = render(
         request,
         "stewardship/ministries.html",

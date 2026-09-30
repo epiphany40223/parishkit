@@ -14,7 +14,7 @@
     <option value="active" {% if state == 'active' %}selected{% endif %}>{% translate "Active" %}</option>
     <option value="inactive" {% if state == 'inactive' %}selected{% endif %}>{% translate "Inactive" %}</option>
   </select></div>
-  <input type="hidden" name="size" value="{{ table.size_value }}">
+  {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Filter" %}</button>
 </form>
 {% translate "Ministry pages" as navigator_label %}
@@ -31,10 +31,10 @@
     <caption id="ministry-table-caption">{% translate "Ministries from the parish source" %}</caption>
     <thead><tr>
       <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every Ministry on this page' %}"></th>
-      <th scope="col">{% translate "Ministry" %}</th>
-      <th scope="col" class="numeric">{% translate "DUID" %}</th>
-      <th scope="col">{% translate "Activity" %}</th>
-      <th scope="col">{% translate "In current campaign" %}</th>
+      {% translate "Ministry" as heading %}{% sort_heading table "name" heading %}
+      {% translate "DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
+      {% translate "Activity" as heading %}{% sort_heading table "active" heading %}
+      {% translate "In current campaign" as heading %}{% sort_heading table "included" heading %}
     </tr></thead>
     <tbody>
     {% for ministry in table.rows %}<tr>

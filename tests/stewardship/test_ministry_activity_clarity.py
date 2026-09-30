@@ -65,7 +65,12 @@ def test_listing_links_campaign_column_and_intro():
     html = render_to_string(
         "stewardship/ministries.html",
         {
-            "table": paginate(rows, {}, carry=(("state", "all"),)),
+            "table": paginate(
+                rows,
+                {},
+                carry=(("state", "all"),),
+                sorting=ministry_views.CATALOG_SORTING,
+            ),
             "query": "",
             "state": "all",
             "campaign_url": URL,
@@ -83,3 +88,32 @@ def test_only_activation_of_excluded_ministries_needs_the_note():
     assert ministry_views.not_included(rows, True, url) == [rows[1]]
     assert ministry_views.not_included(rows, False, url) == []
     assert ministry_views.not_included(rows, True, None) == []
+
+
+def test_listing_sorts_every_column_on_the_server():
+    """Headings sort the whole catalog; raw field names are refused."""
+    import pytest
+
+    rows = [
+        ministry("choir", 9, included=False),
+        ministry("Ushers", 2, included=True),
+        ministry("Altar", 5, included=False),
+    ]
+    sorting = ministry_views.CATALOG_SORTING
+
+    def names(token):
+        """Ministry names in the order one sort token shows them."""
+        table = paginate(rows, {"sort": token}, sorting=sorting)
+        return [row["name"] for row in table.rows]
+
+    assert names("name") == ["Altar", "choir", "Ushers"]
+    assert names("-duid") == ["choir", "Altar", "Ushers"]
+    assert names("included") == ["Ushers", "choir", "Altar"]
+    with pytest.raises(ValueError):
+        paginate(rows, {"sort": "payload__name"}, sorting=sorting)
+    html = render_to_string(
+        "stewardship/ministries.html",
+        {"table": paginate(rows, {"sort": "-name", "size": "25"}, sorting=sorting)},
+    )
+    assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
+    assert '<input type="hidden" name="sort" value="-name">' in html
