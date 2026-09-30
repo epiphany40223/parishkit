@@ -326,3 +326,37 @@ def test_cross_thread_close_is_rejected_without_touching_owner_transaction(tmp_p
         assert not reader.closed.is_set()
         reader.check()
     assert reader.closed.is_set()
+
+
+def test_deadline_entry_keeps_the_readers_correlation(tmp_path, monkeypatch):
+    """The real Timer's timeout entry carries the reader's correlation id (#302)."""
+    from parishkit.stewardship.audit import timeouts
+    from parishkit.stewardship.observability import correlation, current_correlation
+
+    identifier = family_campaign(tmp_path)
+    recorded, aborted = [], Event()
+    monkeypatch.setattr(
+        timeouts,
+        "record_timeout",
+        lambda event, **values: recorded.append(current_correlation()),
+    )
+    limits = ReadLimits(
+        interactive_seconds=2,
+        download_seconds=2,
+        lock_seconds=1,
+        download_idle_seconds=3,
+        drain_seconds=4,
+        process_pool_size=1,
+    )
+    with correlation() as reader_correlation:
+        reader = CampaignReadGuard(
+            [identifier],
+            authorize=lambda _: None,
+            abort=aborted.set,
+            pool=DownloadPool(limits),
+        )
+        response = GuardedResponse(reader, lambda: iter([b"not emitted"]))
+    assert aborted.wait(timeout=5)
+    with pytest.raises(ReadUnavailable):
+        next(response)
+    assert recorded == [reader_correlation]

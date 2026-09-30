@@ -166,6 +166,28 @@ def test_a_helper_inside_a_task_names_the_task(monkeypatch):
     assert written == [task, None]
 
 
+def test_a_bounded_write_keeps_the_callers_correlation_and_task(monkeypatch):
+    """The writer thread sees the caller's context, not a fresh one (#302)."""
+    from parishkit.stewardship.observability import (
+        correlation,
+        current_correlation,
+        current_task,
+        task_scope,
+    )
+
+    seen = []
+
+    def record(event, **values):
+        """Capture what the writer thread's context says."""
+        seen.append((event, values, current_correlation(), current_task()))
+
+    monkeypatch.setattr(timeouts, "record_timeout", record)
+    task = uuid4()
+    with correlation() as identifier, task_scope(task):
+        timeouts.record_timeout_within(5, Event.TASK_TIMED_OUT, what="read_guard")
+    assert seen == [(Event.TASK_TIMED_OUT, {"what": "read_guard"}, identifier, task)]
+
+
 def test_a_summary_entry_counts_its_occurrences():
     """One entry can stand for several skips of a process-local lock wait."""
     assert timeouts.timeout_context(what="control_lock", count=7) == {
