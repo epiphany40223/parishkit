@@ -689,3 +689,35 @@ def test_the_prove_command_prints_the_code_and_refuses_generically(
     captured = capsys.readouterr()
     assert "could not be opened" in captured.err and challenge not in captured.err
     assert code not in captured.out + captured.err
+
+
+def test_a_configured_key_replaces_the_installed_file(deployment, tmp_path):
+    """A set is sealed to the key an Administrator configured, when there is one."""
+    private, public = backup_sealing.generate_keypair()
+    (tmp_path / "configured").write_text(private)
+    document = {
+        "sections": {
+            "integrations": [
+                {
+                    "values": {
+                        "kind": "backup_key",
+                        "settings": {"public_key": public.strip()},
+                        "credential_fingerprint": None,
+                    }
+                }
+            ]
+        }
+    }
+    recipient = backup.recipient_from(document)
+    assert backup.recipient_from({"sections": {}}) is None
+    manifest = backup.run_backup(
+        deployment, record=lambda **facts: None, recipient=recipient
+    )
+    assert manifest["recipient_fingerprint"] == recipient.fingerprint
+    (directory,) = deployment.paths["backups"].iterdir()
+    assert opened(directory / backup.DUMP, tmp_path / "configured")[3] == DUMP
+    with pytest.raises(backup_sealing.SealError):
+        opened(directory / backup.DUMP, tmp_path / "private")
+    document["sections"]["integrations"][0]["values"]["settings"]["public_key"] = "x"
+    with pytest.raises(ConfigError):
+        backup.recipient_from(document)

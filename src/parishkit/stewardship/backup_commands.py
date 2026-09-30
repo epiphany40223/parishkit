@@ -155,7 +155,7 @@ def recipient_changed(current):
 
 def _backup(config):
     """Run one backup set in the admitted backup profile and record it."""
-    from .backup import run_backup
+    from .backup import configured_recipient, run_backup
     from .backup_boundaries import admit_backup_service
     from .operator_commands import configure_operator_database
     from .runtime_paths import RuntimeLayout
@@ -184,7 +184,10 @@ def _backup(config):
             )
             BackupRun.objects.create(**facts)
 
-        manifest = run_backup(configuration, record=record)
+        # Read before the run starts, so the recorded start time follows the
+        # configuration the key came from (see backup_health.key_changed).
+        configured = configured_recipient()
+        manifest = run_backup(configuration, record=record, recipient=configured)
     # The off-site copy runs after the lease: it reads only the finished set
     # and appends its outcome, so a slow upload never holds offline work back.
     offsite = _copy_offsite(configuration)
@@ -196,6 +199,9 @@ def _backup(config):
         "files_bytes": manifest["files"]["plaintext_bytes"],
         "recipient_fingerprint": manifest["recipient_fingerprint"],
         "recipient_changed": recorded["recipient_changed"],
+        # "configured" when an Administrator set the key in the portal,
+        # "file" when the installed backup_data key was used.
+        "recipient_source": "file" if configured is None else "configured",
         "manifest_digest": recorded["manifest_digest"],
         "offsite": offsite,
     }
