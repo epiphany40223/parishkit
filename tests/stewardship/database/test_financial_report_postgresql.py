@@ -645,11 +645,20 @@ def test_native_page_filters_privately_and_denies_leaders(
             # An ordinary typo gets an explanation and a way back, never an echo.
             assert b"without commas" in body and route.encode() in body
             assert b"1,234" not in body and response["Cache-Control"] == "no-store"
-        # A stale Next click past the end keeps the count and says what happened.
+        # A stale Next click past the end shows the last page (#203).
         _, body = search(browser, route, {"page": "9"})
-        assert b"past the last matching pledge" in body
-        assert b"No matching pledges." not in body
-        assert b'<button name="page" value="1">' in body
+        assert name in body and b"No matching pledges." not in body
+        assert b"Page 1 of 1" in body
+        # Headings sort through the selection's closed vocabulary, as POST
+        # forms carrying the private filters; unknown tokens and sizes the
+        # selection does not accept are refused.
+        _, body = search(browser, route, {"search": "Private", "sort": "pledge_desc"})
+        assert b'aria-sort="descending"' in body and b'value="pledge"' in body
+        assert b'value="Private"' in body and b"search=" not in body
+        response, body = search(browser, route, {"sort": "pledge", "size": "100"})
+        assert response.status_code == 200 and b'<option value="100" selected>' in body
+        for invalid in ({"sort": "annual_pledge"}, {"size": "250"}, {"size": "all"}):
+            assert search(browser, route, invalid)[0].status_code == 400
         # Another campaign is indistinguishable from none.
         wrong = f"/admin/reports/{uuid4()}/financial/"
         assert get(browser, wrong)[0].status_code == 403

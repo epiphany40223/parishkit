@@ -22,11 +22,32 @@ from parishkit.stewardship.responses.financial_presentation import option_labels
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import Sorting
 
 from .information import parse_page
 from .money import MoneyAmount, source_cents
 
 PAGE_SIZE = 50
+# Rows per page the page offers; the selection accepts 1-200.
+PAGE_SIZES = (25, 50, 100)
+# The installed selection (stewardship_financial_report_v1) orders and pages
+# the pledges itself, so its closed ``sort`` vocabulary is the whole list of
+# column sorts: Family by name, Annual pledge and Responses (by the latest
+# response time), each either way, largest and newest first on a first
+# click. Frequency, share methods and the source pledge and contribution
+# totals cannot be sorted without changing that frozen SQL (schema freeze,
+# #203); share methods are also a list with no single value to order by.
+FINANCIAL_SORTING = Sorting(
+    {
+        "name": ("family", False),
+        "name_desc": ("family", True),
+        "pledge_desc": ("pledge", True),
+        "pledge": ("pledge", False),
+        "newest": ("responses", True),
+        "oldest": ("responses", False),
+    },
+    "name",
+)
 MONEY = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{2})?")
 # A share method is a stable option identity in canonical lowercase form.
 SHARE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -75,8 +96,7 @@ class FinancialQuery:
             query.active not in {"any", "active", "inactive", "unavailable"}
             or query.amount not in {"any", "zero", "nonzero", "cannot_give"}
             or query.frequency not in {"any", "none", *FREQUENCIES}
-            or query.sort
-            not in {"name", "name_desc", "newest", "oldest", "pledge", "pledge_desc"}
+            or query.sort not in FINANCIAL_SORTING.tokens
             or (query.share not in {"any", "none"} and not SHARE.fullmatch(query.share))
             or any(
                 value and MONEY.fullmatch(value) is None
