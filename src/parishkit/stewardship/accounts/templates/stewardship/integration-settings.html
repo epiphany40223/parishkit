@@ -22,7 +22,7 @@
 {% if credential %}
 <p class="help">{% translate "For security, saving a new key needs a Google sign-in from the last five minutes. If yours is older when you choose Save, you are asked to confirm it's you with Google first, and the pasted key is not kept: paste it again when you come back to this page." %}</p>
 {{ credential.as_div }}
-{% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable because the part of Stewardship that stores new keys for this integration has not started yet. You can still change the other settings. If this lasts more than a few minutes, ask whoever manages the parish's Stewardship server to check that all of Stewardship is running." %}</p>{% endif %}
+{% elif credential_unavailable %}<p class="notice">{% translate "Replacing the key is temporarily unavailable: the part of Stewardship that stores new keys for this integration has not started yet. You can still change the other settings. If this lasts more than a few minutes, ask whoever manages the parish's Stewardship server to check that it is running." %}</p>{% endif %}
 {% if target == 'backup' %}<div class="actions"><button type="submit" name="action" value="preview">{% translate "Save" %}</button>{% if workspace_configured %}<button type="submit" name="action" value="test" class="button-secondary">{% translate "Test access" %}</button>{% endif %}</div>
 {% else %}<button type="submit">{% translate "Save" %}</button>{% endif %}
 </form>

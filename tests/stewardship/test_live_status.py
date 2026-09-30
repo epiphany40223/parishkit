@@ -62,8 +62,8 @@ def test_configuration_request_follows_until_applied_or_refused(state, live, tex
 @pytest.mark.parametrize(
     ("state", "is_pending", "live", "text"),
     [
-        ("installing", True, True, "Checking and installing the new credential"),
-        ("awaiting_ack", True, True, "waiting for the services that use it"),
+        ("installing", True, True, "Checking and installing the new key"),
+        ("awaiting_ack", True, True, "waiting for the parts of the system that use it"),
         ("applied", False, False, "Installed and confirmed"),
         ("failed", False, False, "Not applied"),
     ],
