@@ -149,6 +149,27 @@ def _reclaim_memberships(limit=MEMBERSHIP_CHUNK):
     membership guard admits the worker only under the live compaction lease
     and only for a compacted manifest or rejected staging. Picks up rows a
     previous run left behind, so an interrupted run loses nothing.
+
+    A rejected snapshot's memberships are deleted without the pin, live
+    reference and anchor checks that ``_select_compaction`` applies before
+    marking a promoted snapshot compacted (#269). That is safe because no
+    reader can ever need a rejected corpus, and the schema enforces each
+    reason:
+
+    - ``rejected`` is terminal: the snapshot guard admits only
+      staging/ready -> rejected, and nothing leaves ``rejected``, so the
+      corpus can never become promoted or current later;
+    - the pin guard admits a pin only on a promoted, uncompacted snapshot,
+      so no pin, however long-lived, can name a rejected one;
+    - ``read_snapshot`` (every corpus read) takes its shared lock only on a
+      promoted, uncompacted snapshot and refuses anything else;
+    - the few places that name a rejected snapshot (a delta fallback's
+      attempt, a failed refresh's classification) read only its manifest
+      row, which is permanent, never its memberships; setup cleanup only
+      checks whether its memberships are gone, since it deletes them too.
+
+    Payload versions a rejected corpus shared with a live one survive: the
+    payload reclaimer deletes only versions no membership references.
     """
     deleted = 0
     with transaction.atomic(), connection.cursor() as cursor:
