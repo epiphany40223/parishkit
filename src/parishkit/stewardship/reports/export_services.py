@@ -29,6 +29,9 @@ from .models import CampaignDailyFactSet
 from .retention import pin_facts
 
 TASK_TYPE = "report_export"
+# Directory exports carry every matching Family's code (and postal details),
+# so they need the Family codes capability on top of campaign reporting.
+FAMILY_CODE_REPORTS = frozenset({"family_directory", "postal_outreach"})
 
 
 class ExportConflict(ValueError):
@@ -48,6 +51,10 @@ def authorize(store, user_id, *, request=None):
     elif isinstance(request, ExportRequest) and request.report == "financial":
         # Money needs the page's own capability, not campaign reporting alone.
         permitted = permitted and allows(principal, Capability.FINANCIAL_DETAIL)
+    elif isinstance(request, ExportRequest) and request.report in FAMILY_CODE_REPORTS:
+        # Codes need the directory page's own capability too, so a requester
+        # who loses it can no longer download or regenerate an earlier export.
+        permitted = permitted and allows(principal, Capability.FAMILY_CODES)
     if not permitted or (
         request is not None
         and principal.identity != request.requester_id

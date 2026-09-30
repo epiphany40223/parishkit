@@ -130,6 +130,32 @@ def test_shared_authorization_keeps_request_model_boundaries(
             export_services.authorize(None, actor.identity, request=request)
 
 
+@pytest.mark.parametrize("report", ["family_directory", "postal_outreach"])
+@pytest.mark.parametrize("codes", [True, False], ids=["codes", "no-codes"])
+def test_directory_exports_recheck_family_codes(monkeypatch, report, codes):
+    """A requester who loses Family codes can't reuse an earlier code export."""
+    actor = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    request = ExportRequest(requester_id=actor.identity, report=report)
+    real = export_services.allows
+
+    def allows(principal, capability, *args):
+        """Staff policy, with Family codes narrowed away when ``codes`` is off."""
+        if capability == export_services.Capability.FAMILY_CODES and not codes:
+            return False
+        return real(principal, capability, *args)
+
+    monkeypatch.setattr(export_services, "current_principal", lambda *_: actor)
+    monkeypatch.setattr(export_services, "allows", allows)
+    if codes:
+        assert export_services.authorize(None, actor.identity, request=request) == actor
+    else:
+        with pytest.raises(PermissionError):
+            export_services.authorize(None, actor.identity, request=request)
+    # Other reports keep campaign reporting alone.
+    other = ExportRequest(requester_id=actor.identity, report="participation")
+    assert export_services.authorize(None, actor.identity, request=other) == actor
+
+
 @pytest.mark.parametrize("context,valid", AUDIT_SCOPE_CASES)
 def test_retained_audit_scope_has_no_private_values(context, valid):
     """Audit scope permits only sorted unique DUIDs and a real privacy boolean."""

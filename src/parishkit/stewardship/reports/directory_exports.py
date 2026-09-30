@@ -3,7 +3,7 @@
 from uuid import UUID, uuid4
 
 from parishkit.stewardship.accounts.cryptography import CodeMacKeyring
-from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
@@ -13,9 +13,15 @@ from parishkit.stewardship.schema_primitives import timezone_names
 
 from .directories import DirectoryQuery, selection_parameters
 from .export_models import DirectoryExportSnapshot, ExportRequest
-from .export_services import TASK_TYPE, admit_campaign, audit, authorize
+from .export_services import (
+    FAMILY_CODE_REPORTS,
+    TASK_TYPE,
+    admit_campaign,
+    audit,
+    authorize,
+)
 
-REPORTS = frozenset({"family_directory", "postal_outreach"})
+REPORTS = FAMILY_CODE_REPORTS
 
 
 class ExportRequestBound(ValueError):
@@ -73,7 +79,8 @@ def create_directory_export(
 
     def admit(*args):
         """Owning work and enqueue both check current requester and campaign gates."""
-        authorize(store, user_id)
+        if not allows(authorize(store, user_id), Capability.FAMILY_CODES):
+            raise PermissionError("This export is unavailable.")
         admit_campaign(campaign_id, mutating=True)
         return True
 
