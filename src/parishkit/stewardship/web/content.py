@@ -406,7 +406,14 @@ def sanitize_html(value, *, origin=None):
     staged = _clean(value, TAGS | _WRAPPERS | _RENAMES.keys(), origin)
     if _REWRITTEN.search(staged):
         value = _normalize(staged)
-    return bounded_text(_clean(value, TAGS, origin))
+    clean = bounded_text(_clean(value, TAGS, origin))
+    # Stripping every tag (a lone <span>, a comment, "<family name>") can
+    # leave markup-free text with line breaks. Give it paragraphs now, as the
+    # next pass would, so the result is a fixed point: the preview step and
+    # the render-time canonical checks both require one (#301).
+    if "\n" in clean and not _MARKUP.search(clean):
+        clean = bounded_text(_clean(_plain_paragraphs(clean), TAGS, origin))
+    return clean
 
 
 class _PlainText(HTMLParser):

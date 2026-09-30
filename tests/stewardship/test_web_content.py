@@ -110,6 +110,47 @@ def test_canonical_content_is_left_unchanged(value):
     assert sanitize_html(value) == value
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("<span>Thanks\n\nPeace</span>", "<p>Thanks</p><p>Peace</p>"),
+        ("Hello\n\nWorld <!-- note -->", "<p>Hello</p><p>World</p>"),
+        ("Dear <family name>,\n\nThanks", "<p>Dear ,</p><p>Thanks</p>"),
+        ("<script>x</script>a\nb", "<p>a<br>b</p>"),
+        ("<span>a &amp; b\n\nc &lt; d</span>", "<p>a &amp; b</p><p>c &lt; d</p>"),
+        ("<span>\n</span>", ""),
+    ],
+    ids=["span", "comment", "unknown-tag", "dropped-content", "entities", "blank"],
+)
+def test_sanitizing_is_idempotent_when_every_tag_is_stripped(value, expected):
+    """Stripped markup that leaves line breaks still yields a fixed point (#301)."""
+    assert sanitize_html(value) == expected
+    assert sanitize_html(expected) == expected
+
+
+@pytest.mark.parametrize(
+    "image,expected",
+    [
+        ("/files/" + "A" * 43, None),
+        ("/files/short", "<p>Thanks</p><p>Peace</p>"),
+        ("https://elsewhere.example/x.png", "<p>Thanks</p><p>Peace</p>"),
+    ],
+    ids=["hosted-image-kept", "malformed-file-link", "foreign-image"],
+)
+def test_rendered_sanitizing_is_idempotent_with_an_origin(image, expected):
+    """A render (with a hosted-file origin) is a fixed point too (#301).
+
+    A kept hosted image is markup, so the text around it is left alone; a
+    dropped image leaves only line-broken text, which becomes paragraphs.
+    """
+    origin = "https://stewardship.example.org"
+    source = image if image.startswith("https:") else origin + image
+    value = f'<img src="{source}" alt="x">Thanks\n\nPeace'
+    once = sanitize_html(value, origin=origin)
+    assert once == (expected or value)
+    assert sanitize_html(once, origin=origin) == once
+
+
 def test_plain_text_keeps_paragraphs_lists_and_link_targets():
     """Blank lines between blocks, bullets and numbers, and "label: URL" links."""
     result = prepare_content(
