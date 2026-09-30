@@ -132,6 +132,9 @@ def test_a_suspended_seed_is_listed_and_restored_as_an_administrator_entry(
     assert "no longer shows this Member" in listed
     assert "not a current Chairperson of any active Ministry" in listed
     assert 'name="decision" value="restore"' in listed
+    # The reason goes into the audit log, so its help asks for no personal data.
+    assert 'aria-describedby="chair-reason-help-1"' in listed
+    assert "leave out personal details" in listed
     with web():
         # A restore or removal without a reason is not understood, and a
         # reason carrying an address is refused before anything is signed.

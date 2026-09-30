@@ -78,6 +78,8 @@ def test_close_shows_maintenance_to_families_and_reopen_restores(auth_service, g
     with web():
         page = browser.get(ROUTE)
     assert page.status_code == 200 and b"The Family portal is open" in page.content
+    # The message is kept in the audit log too, so ask for no personal data.
+    assert b"leave out personal details" in page.content
     assert not maintenance(family("get", "/"))
 
     response = change(browser, "close", "  We expect to be back by 3 PM.  ")
