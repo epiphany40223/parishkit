@@ -863,6 +863,41 @@ BEGIN
        THEN RETURN NULL; END IF;
     BEGIN result:=e.evidence_note::jsonb;
     EXCEPTION WHEN invalid_text_representation THEN RETURN NULL; END;
+    -- Optional send statistics (#284). They are observations, not provider
+    -- evidence, and can hold nothing personal: at most 48 keys, each a
+    -- lowercase identifier, whose values are booleans, non-negative integers
+    -- of at most 12 digits, a helper id, or one of the few closed words for
+    -- their key below (family_delivery.STAT_WORDS mirrors this list; a unit
+    -- test compares them). Strip them before validating the result.
+    IF jsonb_typeof(result)='object' AND result ? 'stats' THEN
+        IF jsonb_typeof(result->'stats')<>'object'
+           OR (SELECT count(*) FROM jsonb_object_keys(result->'stats'))>48
+           OR EXISTS (
+            SELECT 1 FROM jsonb_each(result->'stats') stat
+            WHERE stat.key!~'^[a-z][a-z0-9_]{0,39}$'
+               OR NOT (jsonb_typeof(stat.value)='boolean'
+                   OR (jsonb_typeof(stat.value)='number'
+                       AND stat.value::text~'^[0-9]{1,12}$')
+                   OR (jsonb_typeof(stat.value)='string' AND (
+                       (stat.key='helper_id'
+                        AND stat.value#>>'{}'~'^h[0-9a-f]{12}$')
+                       OR (stat.key,stat.value#>>'{}') IN (VALUES
+                           ('transport','batched'),('transport','per_message'),
+                           ('limit','daily'),('limit','rate'),('limit','message'),
+                           ('conn_replaced','cap_messages'),('conn_replaced','cap_age'),
+                           ('conn_replaced','stale'),
+                           ('conn_end','non_accepted'),('conn_end','connect_failed'),
+                           ('conn_end','token_failed'),
+                           ('helper_end','limit'),('helper_end','outage'),
+                           ('helper_end','systemic'),('helper_end','unknown'),
+                           ('helper_end','kill'),
+                           ('prev_helper_end','cap_messages'),
+                           ('prev_helper_end','cap_age'),('prev_helper_end','idle'),
+                           ('prev_helper_end','key_change'),
+                           ('prev_helper_end','exited'),('prev_helper_end','close'))))))
+           THEN RETURN NULL; END IF;
+        result:=result-'stats';
+    END IF;
     IF jsonb_typeof(result)<>'object' OR NOT result ?& ARRAY[
         'protocol','status','recipient_count','permanent','transient','health']
        OR result-ARRAY['protocol','status','recipient_count','permanent','transient','health']<>'{}'::jsonb

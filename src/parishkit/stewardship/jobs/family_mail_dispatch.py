@@ -38,7 +38,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .admission import _scope
 from .delivery_states import DeliveryAction
 from .family_dispatch_grants import METADATA_FIELDS
-from .family_mail_results import result_evidence
+from .family_mail_results import settle_with_stats
 from .models import TaskRun, TaskRunEvent
 from .outbox_models import OutboxEvent, OutboxMessage
 from .outbox_storage import (
@@ -161,9 +161,11 @@ def limit_history(message):
 
     Two provider outcomes are not the message's fault and are spared from its
     attempt budget: a shared outage (stored with unavailable health) and a
-    sending-limit refusal. Stored evidence deliberately never names a limit,
-    so a limit refusal is recognized instead as a healthy submission outcome
-    whose Task then deferred in the RECONCILING phase (see
+    sending-limit refusal. The stored evidence itself never names a limit
+    (only the optional send statistics may, for the send report, and they
+    are never trusted for a decision), so a limit refusal is recognized
+    instead as a healthy submission outcome whose Task then deferred in the
+    RECONCILING phase (see
     family_mail_delivery_tasks._execute), matched by the attempt's (run,
     fence). Return ``(spared, started, first)``: every spared outcome so far,
     the time of the first limit refusal in the current unbroken run of them,
@@ -741,20 +743,25 @@ def finish_submission(identifier, claim, result):
             lock_task_claim(claim)
             return candidate is action and status.message_id == message.pk
 
-        result_status = change_message(
-            message_id=message.pk,
-            action=action,
-            command_id=uuid4(),
-            expected_version=message.version,
-            actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
-            evidence=result_evidence(result, semantic_key=message.semantic_key),
-            admit=admit,
-            **(
-                {"retry_seconds": result_retry_seconds(result, message.attempt)}
-                if action is DeliveryAction.RETRY_UNACCEPTED
-                else {}
+        # Statistics a database refuses are dropped, never the outcome.
+        result_status = settle_with_stats(
+            lambda evidence: change_message(
+                message_id=message.pk,
+                action=action,
+                command_id=uuid4(),
+                expected_version=message.version,
+                actor_id=claim.worker_id,
+                correlation_id=claim.run_id,
+                evidence=evidence,
+                admit=admit,
+                **(
+                    {"retry_seconds": result_retry_seconds(result, message.attempt)}
+                    if action is DeliveryAction.RETRY_UNACCEPTED
+                    else {}
+                ),
             ),
+            result,
+            semantic_key=message.semantic_key,
         )
         target = {
             DeliveryAction.ACCEPT: "succeeded",

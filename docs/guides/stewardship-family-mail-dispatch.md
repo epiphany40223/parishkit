@@ -199,6 +199,27 @@ It is rendered into each service's document, so changing it there takes
 effect only with a reinstall, as the
 [runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
 
+## Send statistics and tuning the batch caps
+
+Every Family outcome (and every digest outcome this worker settles) records
+send statistics beside its evidence (#284). These are per-phase timings,
+how the helper and its connection were used, why a connection or helper
+ended, the transport and the caps in effect. The database admits only
+whole numbers of at most 12 digits, yes/no values, a random helper id and a
+closed list of fixed words for the keys that take words, at most 48 values
+per outcome, so nothing personal can be stored there. Numeric keys stay
+open, so a new timing needs no schema change; a new word needs one. They
+never affect an outcome: invalid ones are dropped with a warning. A database whose result validator predates
+them simply gets none, with one WARNING from the mail worker, until the
+release's in-place SQL is applied.
+
+After a large send, run the
+[mail send report](stewardship-mail-send-report.md). It shows the wall
+clock, throughput, phase percentiles, connection reuse, retire reasons,
+limit holds and what batching saved. Its
+[tuning section](stewardship-mail-send-report.md#tuning-the-caps) explains
+which numbers argue for larger or smaller batch caps.
+
 ## Fresh-install schema evidence
 
 Independent empty PostgreSQL 18.6 databases installed the exact PR #38 baseline

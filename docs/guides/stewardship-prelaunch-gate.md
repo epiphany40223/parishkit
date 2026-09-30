@@ -340,6 +340,11 @@ rules and creates the session itself, and web lost INSERT on
 `stewardship_family_session` for EXECUTE on that one function, and Family
 session activity can no longer be recorded in the future (one new function
 and one guard body; Functions digest only).
+Mail send statistics (#284) let the Family result validator admit one
+optional `stats` object, stripped before the result is checked as before:
+at most 48 values, each a boolean, a whole number of at most 12 digits, a
+helper id or a closed word for its key (one function body; Functions digest
+only).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -348,7 +353,7 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `d7b9c846` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 608 | `fb68052b` |
+| Functions | 608 | `9281d990` |
 | Triggers | 557 | `c9546d79` |
 | Policies | 28 | `1c9c3b2d` |
 
