@@ -39,6 +39,19 @@ from .snapshots import finish_snapshot, reconstruct_snapshot, stage_entities
 from .transport import source_session
 from .windows import RefreshWindow
 
+# Each staging batch is one execution.effect(): a transaction that holds the
+# deployment-wide work-order lock (736220,1) while it verifies the attempt and
+# writes the batch. At 500 rows that hold was 1.3-1.5 s on the validation
+# host, and every mail message, page and in-flight check (1 s limit) queued
+# behind it, batch after batch, for the whole refresh (#394). Smaller
+# batches cost a few more short transactions but let waiters in between.
+# stage_entities() refuses more than 500 rows, so this must stay at or below
+# that.
+STAGING_BATCH_ROWS = 125
+# Staging progress is reported about this often, as it was when batches
+# were 500 rows, so the smaller batches add no progress transitions.
+PROGRESS_ROWS = 500
+
 
 @dataclass(frozen=True)
 class RefreshInputs:
@@ -123,7 +136,7 @@ def _inputs(attempt_id, execution, claim):
 
 
 def load_and_stage_attempt(execution, claim, credential):
-    """Observe once with finite private HTTP, then stage in fenced 500-row batches.
+    """Observe once with finite private HTTP, then stage in small fenced batches.
 
     The caller must already maintain Task/source ownership. No SQL transaction
     spans provider I/O. Every attempt/retry repeats credential and current-scope
@@ -196,9 +209,10 @@ def load_and_stage_attempt(execution, claim, credential):
         return True
 
     total, done = sum(loaded.counts.values()), 0
+    reported = done
     execution.progress(done, total, phase=TaskPhase.STAGING)
     for kind, rows in loaded.corpus.items():
-        for batch in batched(rows.items(), 500):
+        for batch in batched(rows.items(), STAGING_BATCH_ROWS):
             with execution.effect():
                 stage_entities(
                     attempt.snapshot_id,
@@ -208,7 +222,12 @@ def load_and_stage_attempt(execution, claim, credential):
                     admit=admitted,
                 )
             done += len(batch)
-            execution.progress(done, total, phase=TaskPhase.STAGING)
+            # Progress is its own transition under the same lock, so report
+            # it per PROGRESS_ROWS rather than per batch. The validating
+            # report below always carries the final count.
+            if done - reported >= PROGRESS_ROWS:
+                execution.progress(done, total, phase=TaskPhase.STAGING)
+                reported = done
     execution.progress(done, total, phase=TaskPhase.VALIDATING)
     with execution.effect():
         return finish_snapshot(
