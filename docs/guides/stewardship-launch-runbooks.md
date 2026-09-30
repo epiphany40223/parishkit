@@ -236,6 +236,26 @@ portal, and do not resolve a `delivery_unknown` message without evidence. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this procedure was checked against the code.
 
+## Backup encryption key changed
+
+**You see:** the `backup_key_changed` incident (CRITICAL), and in System
+logs a `configuration_digest_mismatch` entry whose description says a backup
+was sealed to a different encryption key than the backup before it.
+
+**The system does:** it keeps backing up and copying off-site with the new
+public key. Nothing checks that the kept private key opens those backups,
+so a replaced key file, or a public key that is not the kept private key's
+pair, leaves every backup green but impossible to restore. The incident
+stays open for two days after the change and then resolves by itself; that
+does not mean anyone confirmed the key.
+
+**You do:** ask the server operator who holds the private key. Unless they
+installed a new key on purpose, they find out why the key file changed.
+Either way they open the newest backup with each kept copy of the private
+key, as the backup runbook's
+[restore drill](stewardship-backup-runbook.md#restore-drill) does with
+`backup-open`, and record which copies opened it.
+
 ## ParishSoft outage
 
 **You see:** the `source_refresh_failed` incident (a refresh failed) or

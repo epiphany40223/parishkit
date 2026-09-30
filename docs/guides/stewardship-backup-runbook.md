@@ -52,9 +52,21 @@ every backup would still succeed and none could be opened. A backup whose
 key differs from the previous run's (the `backup_data` file was replaced)
 still runs, prints `"recipient_changed": true` and logs a WARNING
 `configuration_digest_mismatch` line whose `failure_kind` is
-`backup_recipient_changed`; unless you installed a new key on purpose, find
-out why. The fingerprint names the installed public key, so on its own it
-proves nothing about the private key you kept. The
+`backup_recipient_changed`. The scheduler then raises the
+`backup_key_changed` operational incident (CRITICAL) through the configured
+alert routes, and writes one System log entry
+(`configuration_digest_mismatch`, outcome `changed`) that says in plain
+words what happened; the entry cannot name the fingerprints, so compare
+each backup's printed `recipient_fingerprint` (or its row in
+`stewardship_backup_run`) with the one recorded with the key. The incident
+stays open for two days after the backup that changed the key, even if
+later backups use the new key, and then resolves by itself: resolving means
+only that no backup in the last two days changed the key, not that anyone
+confirmed the kept key opens them, and nothing clears it earlier. Unless
+you installed a new key on purpose, find out why; either way, open the new
+set with each kept copy of the private key, as the restore drill does. The
+fingerprint names the installed public key, so on its own it proves nothing
+about the private key you kept. The
 [restore drill](#restore-drill) is the proof: `backup-open` opens a set only
 with the matching private key and then prints its `recipient_fingerprint`,
 so the drill records that each kept copy of the private key opened the set.

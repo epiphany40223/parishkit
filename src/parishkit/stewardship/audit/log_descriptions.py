@@ -337,9 +337,29 @@ def words(identifier):
     return identifier.replace("_", " ").capitalize()
 
 
-def describe(event):
-    """Return the plain sentence for a log type, or a readable fallback."""
-    text = DESCRIPTIONS.get(event)
+# Sentences for one type with a particular recorded outcome, where that
+# outcome means something the type's own sentence does not cover.
+OUTCOME_DESCRIPTIONS = {
+    ("configuration_digest_mismatch", "changed"): _(
+        "A backup was sealed to a different encryption key than the backup "
+        "before it. Unless the server operator installed a new key on "
+        "purpose, new backups may not open with the kept private key: ask the "
+        "operator to open the newest backup with each kept copy of the private "
+        "key (backup runbook, Checking the kept keys). Each backup's own "
+        "output, and its row in stewardship_backup_run, names the key's "
+        "recipient_fingerprint."
+    ),
+}
+
+
+def describe(event, context=None):
+    """Return the plain sentence for a log type, or a readable fallback.
+
+    ``context`` (a stored entry's context) selects a more specific sentence
+    for the outcomes ``OUTCOME_DESCRIPTIONS`` names.
+    """
+    outcome = (context or {}).get("outcome") if isinstance(context, dict) else None
+    text = OUTCOME_DESCRIPTIONS.get((event, outcome)) or DESCRIPTIONS.get(event)
     if text is not None:
         return text
     for prefix, sentence in PREFIXES:
