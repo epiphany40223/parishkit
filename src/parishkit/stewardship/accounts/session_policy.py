@@ -2,6 +2,8 @@
 
 SQL guards freeze these intervals independently. Changing them also requires a
 guard migration and the installed-policy contract tests, not just a Python edit.
+``tests/stewardship/test_session_idle_parity.py`` checks that every SQL idle
+literal still equals the idle limit here for its session table.
 """
 
 from datetime import timedelta
