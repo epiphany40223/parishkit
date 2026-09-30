@@ -72,7 +72,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert response["Cache-Control"] == "no-store"
         assert b"Updating" in html
         assert b"Current active population statistics" in html
-        assert b"Source generation" in html
+        assert b"ParishSoft data load" in html
         assert b"Historical as of day" in html
         assert str(setup[2].pk).encode() in html
         chart_path = (

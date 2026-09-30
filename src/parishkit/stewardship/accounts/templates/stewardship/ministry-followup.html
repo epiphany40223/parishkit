@@ -4,14 +4,15 @@
 <h1>{% translate "Ministry follow-up" %}</h1>
 <p>{{ metadata.name }}</p>
 <p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
-<p>{% translate "Names use the source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Timestamps use your browser timezone when available; UTC is the fallback." %}</p>
+{% aboutpage "ministry-followup" %}<p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
+<p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
-{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. You may read admitted history, but follow-up edits are unavailable." %}</p>{% endif %}
+{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <h2>{{ item.member_name }} — {{ item.ministry_name }}</h2>
 <p>{% if item.action == 'join' %}{% translate "Asked to join" %}{% else %}{% translate "Asked to leave" %}{% endif %}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
 <p>{% translate "Status:" %} {{ item.state_label }}{% if item.outcome_label %} — {{ item.outcome_label }}{% endif %}{% if item.assignee_label %}; {% translate "assigned to" %} {{ item.assignee_label }}{% endif %}</p>
-{% if item.source_resolved %}<p>{% translate "Resolved automatically from current parish roster evidence." %}</p>{% endif %}
+{% if item.source_resolved %}<p>{% translate "Resolved automatically: the current ParishSoft roster already shows this change." %}</p>{% endif %}
 {% if not item.latest %}<p class="notice">{% translate "The Family has since replaced or withdrawn this request. It is shown for history only." %}</p>{% endif %}
 {% if item.open %}
 <form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}">{% csrf_token %}
@@ -64,7 +65,7 @@ checkbox joins that form through its form attribute.{% endcomment %}
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% if row.cannot_serve %}<br>{% translate "Cannot participate in any ministries (physical limitations)" %}{% endif %}{% endif %}<br><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
 <td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}</td><td>{% if row.assignee_label %}{{ row.assignee_label }}{% else %}{% translate "Unassigned" %}{% endif %}</td>
 <td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="{% if bulk_ministry %}7{% else %}6{% endif %}">{% translate "No matching requests." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="{% if bulk_ministry %}7{% else %}6{% endif %}">{% translate "No matching requests. Try Any status, or clear the search and Ministry filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <form method="post" id="followup-assign" action="{% url 'admin:ministry_followup_assign' campaign_id %}">{% csrf_token %}
 {% if bulk_ministry %}<input type="hidden" name="request_key" value="{{ request_key }}"><input type="hidden" name="ministry" value="{{ bulk_ministry }}">

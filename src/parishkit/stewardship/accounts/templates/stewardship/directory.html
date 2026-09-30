@@ -27,7 +27,7 @@
 <details class="export-panel"><summary id="directory-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
 <p>{{ total|number }} {% translate "estimated matching Families, using the applied filters and sort above—not just this page. The file uses the data as it is when you queue the export; later changes are not included." %}</p>
 <p class="notice">{% translate "Sensitive parish information and Family codes: download only to a trusted device and share only with authorized recipients. The private email-link part of each Family's link is not included." %}</p>
-{% if not mutable %}<p class="notice">{% translate "Other campaign work (such as a restore review, cleanup or go-live step) is running, so new exports are unavailable for now. The directory itself can still be viewed." %}</p>{% endif %}
+{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. The directory itself can still be viewed." %}</p>{% endif %}
 <p>{% translate "The file has these columns:" %} {{ export_headings|join:", " }}.{% if mailing %} {% translate "Every listed Family is in the mail-merge file. Where a Family has no usable mailing address, its Addressee and address columns are blank; the file's report details say how many rows have no usable mailing address." %}{% endif %}</p>
 <form data-submit-waits method="post" action="{% url 'admin:family_directory_export' campaign_id %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}

@@ -80,7 +80,7 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, detail)
-        assert response.status_code == 200 and b"Campaign work is gated" in body
+        assert response.status_code == 200 and b"Other campaign work" in body
         assert b"<fieldset disabled>" in body
         assert post(browser, detail + "update", values).status_code == 403
         assert post(browser, route + "export", export_values).status_code == 403

@@ -42,7 +42,7 @@ def test_weekly_page_and_detail_preserve_capture_but_show_current_status(
             for url in (path, detail):
                 _, content = read(browser, url)
                 assert b"PRIVATE-WEEKLY-DISPATCH-CANARY" in content
-                assert b"Pinned report" in content
+                assert b"Saved report" in content
                 assert b"Current actionable request" in content
                 assert b"second@example.org" not in content
         harness, form, answers, _ = revisit(harness)
@@ -105,7 +105,7 @@ def test_weekly_detail_rejects_unselected_item_even_in_same_observation(
         path = f"/admin/reports/weekly-digests/{empty.pk}/"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, content = read(browser, path)
-            assert b"no new actionable requests" in content
+            assert b"No new requests needing follow-up" in content
             assert b"PRIVATE-WEEKLY-DISPATCH-CANARY" not in content
             # A supported WSGI socket is required before content selection.
             server, peer = socket.socketpair()

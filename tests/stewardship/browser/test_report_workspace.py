@@ -57,7 +57,7 @@ def test_report_and_exports_work_without_scripts(browser_engine, component_origi
         assert "$3,234.56" in page.locator("table").inner_text()
         visible(page.get_by_role("button", name="Apply report options"))
         visible(page.get_by_role("button", name="Generate export"))
-        visible(page.get_by_role("button", name="Queue current-input export"))
+        visible(page.get_by_role("button", name="Queue export with the latest data"))
         assert page.locator("[data-digest-controls]").is_hidden()
         page.goto(component_origin + "/report-export")
         visible(page.get_by_role("button", name="Download export"))

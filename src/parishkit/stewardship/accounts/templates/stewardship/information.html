@@ -3,11 +3,12 @@
 {% block content %}
 <h1>{% translate "Additional information and follow-up" %}</h1>
 <p>{{ metadata.name }}</p>
-<p>{% translate "Live Family requests, including inactive Families. Staff follow-up does not change the submitted text or its replacement/withdrawal history." %}</p>
-<p>{% translate "Family names use source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
-<p>{% translate "Date filters use campaign-local days in" %} {{ metadata.timezone }}. {% translate "Timestamps use your browser timezone when available; UTC is the fallback." %}</p>
+<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
+{% aboutpage "information-followup" %}<p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
+<p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
+<p>{% translate "Date filters use whole days in the campaign's time zone," %} {{ metadata.timezone }}. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and campaign selection" %}</a></p>
-{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. You may read admitted history, but follow-up edits are unavailable." %}</p>{% endif %}
+{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|duid }}</h2>
 <p>{{ item.disposition_label }}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
@@ -52,15 +53,14 @@
 <p>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
-<p>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. Complete text is captured when you queue the export; later changes do not alter that capture." %}</p>
+<p>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. The file uses the text as it is when you queue the export; later changes are not included." %}</p>
 <p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
 <form data-submit-waits method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
 <label for="information-format">{% translate "Export format" %}</label><select id="information-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
-<label for="information-export-timezone">{% translate "Export timezone" %}</label><select id="information-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-<p>{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
+<div class="label-row"><label for="information-export-timezone" id="information-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="information-export-timezone-tip" tip_label_id="information-export-timezone-label" tip_text=tip %}</div><select id="information-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Include complete Staff workflow history" %}</label>
 <button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
@@ -70,7 +70,7 @@
 {% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.disposition_label }}{% if row.previously_reported %}<br>{% translate "Previously emailed" %}{% endif %}</td><td>{{ row.text|truncatechars:240 }}</td>
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="6">{% translate "No matching requests." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="6">{% translate "No matching requests. Try All history in Request history, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endif %}
 {% endblock %}
