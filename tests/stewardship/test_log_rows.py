@@ -1,4 +1,4 @@
-"""Database-free log filter grammar, display whitelist and keyset merge."""
+"""Database-free log filter grammar, display whitelist and time-ordered merge."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -12,6 +12,7 @@ from parishkit.stewardship.audit.log_rows import (
     LEVELS,
     LogQuery,
     audit_row,
+    log_table,
     merge,
     operational_row,
 )
@@ -27,18 +28,24 @@ def test_debug_is_excluded_until_chosen_and_an_empty_choice_means_none():
     chosen = LogQuery.parse({"applied": "yes", "debug": "yes", "error": "yes"})
     assert chosen.levels == ("DEBUG", "ERROR")
     assert LogQuery.parse({"applied": "yes"}).levels == ()
-    # Paging keeps the applied filters and never carries a stale cursor forward.
+    # Paging keeps the applied filters; the filter fields never carry the
+    # snapshot, page, size or sort, so applying filters starts afresh.
     paged = LogQuery.parse(
         {
             "applied": "yes",
             "error": "yes",
-            "before": "2026-09-20T12:00:00.123456+00:00",
-            "before_id": IDENTIFIER,
+            "through": "2026-09-20T12:00:00.123456+00:00",
+            "page": "3",
+            "size": "25",
+            "sort": "oldest",
         }
     )
-    assert paged.cursor == (NOW, UUID(IDENTIFIER))
+    assert paged.snapshot == NOW and (paged.page_number, paged.page_size) == (3, 25)
+    assert paged.oldest and paged.order == "oldest"
     assert paged.form_values() == {"applied": "yes", "error": "yes", "source": "both"}
-    assert LogQuery().cursor is None
+    fresh = LogQuery()
+    assert fresh.snapshot is None and (fresh.page_number, fresh.page_size) == (1, 50)
+    assert fresh.order == "newest" and not fresh.oldest
 
 
 def test_query_accepts_only_the_closed_bounded_grammar():
@@ -90,11 +97,18 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         {"debug": "on", "applied": "yes"},
         # A tick without the submitted-form marker is not a real form.
         {"debug": "yes"},
+        # The retired keyset cursor is refused like any unknown field.
         {"before": "2026-09-20T12:00:00.123456+00:00"},
-        {"before_id": IDENTIFIER},
-        {"before": "2026-09-20T12:00:00+00:00", "before_id": IDENTIFIER},
-        {"before": "2026-09-20T12:00:00.123456-04:00", "before_id": IDENTIFIER},
-        {"before": "2026-13-20T12:00:00.123456+00:00", "before_id": IDENTIFIER},
+        {"through": "2026-09-20T12:00:00+00:00"},
+        {"through": "2026-09-20T12:00:00.123456-04:00"},
+        {"through": "2026-13-20T12:00:00.123456+00:00"},
+        {"page": "-1"},
+        {"page": "1" * 10},
+        {"page": "٣"},
+        {"size": "all"},
+        {"size": "7"},
+        {"sort": "created_at"},
+        {"sort": "time"},
         {"text": "anything"},
         {"source": 5},
     ):
@@ -175,8 +189,8 @@ def test_rows_show_only_reviewed_fields_with_short_scalar_values():
     assert record["details"] == [] and record["campaign_id"] is not None
 
 
-def test_merge_is_newest_first_across_sources_with_a_stable_cursor():
-    """A keyset cursor cannot skip or repeat entries while the log grows."""
+def test_merge_orders_the_union_by_time_then_identifier_in_both_directions():
+    """Each source's first rows merge into exactly the union's first rows."""
     low, high = UUID(int=1), UUID(int=2)
     tied = [
         operational(NOW, identifier=low),
@@ -184,31 +198,43 @@ def test_merge_is_newest_first_across_sources_with_a_stable_cursor():
     ]
     older = [operational(NOW - timedelta(seconds=n)) for n in (1, 3)]
     oldest = [audit(NOW - timedelta(seconds=n)) for n in (2, 4)]
-    page, following = merge([tied[0], *older], [tied[1], *oldest], size=4)
+    page = merge([tied[0], *older], [tied[1], *oldest])[:4]
     # The same instant is ordered by identifier, exactly as each query orders it.
     assert [row["id"] for row in page[:2]] == [high, low]
-    assert [row["created_at"] for row in page] == sorted(
-        (row["created_at"] for row in page), reverse=True
-    )
     assert [str(row["source"]) for row in page] == [
         "Audit",
         "Operational",
         "Operational",
         "Audit",
     ]
-    last = page[-1]
-    assert following == {
-        "before": last["created_at"].isoformat(timespec="microseconds"),
-        "before_id": str(last["id"]),
-    }
-    # The cursor round-trips through the closed grammar to the same instant.
-    assert LogQuery.parse(following).cursor == (last["created_at"], last["id"])
-    assert merge(older, [], size=4) == (older, None)
-    assert merge([], [], size=4) == ([], None)
-    # Microseconds are always written, even when they are zero.
-    whole = operational(NOW.replace(microsecond=0))
-    _, cursor = merge([whole, *older], [], size=1)
-    assert cursor["before"] == "2026-09-20T12:00:00.000000+00:00"
+    ascending = merge([*reversed(older), tied[0]], [*reversed(oldest)], oldest=True)
+    assert [row["created_at"] for row in ascending] == sorted(
+        row["created_at"] for row in ascending
+    )
+    assert merge([], []) == []
+
+
+def test_log_table_carries_filters_and_snapshot_but_no_url():
+    """Every navigator and heading control is a POST form carrying the
+    filters and the snapshot; the Time column is the only sort."""
+    query = LogQuery.parse(
+        {"applied": "yes", "error": "yes", "actor": IDENTIFIER, "size": "25"}
+    )
+    rows = [operational(NOW)] * 25
+    table = log_table(
+        query, rows, through=NOW, action="/admin/logs", number=2, total=60
+    )
+    assert (table.pages, table.method, table.action) == (3, "post", "/admin/logs")
+    fields = dict(table.next_fields)
+    assert fields["actor"] == IDENTIFIER and fields["page"] == "3"
+    assert fields["through"] == "2026-09-20T12:00:00.123456+00:00"
+    assert fields["sort"] == "newest" and fields["size"] == "25"
+    assert table.aria_sort("time") == "descending"
+    assert table.sort_target("time") == "oldest"
+    capped = log_table(
+        query, rows, through=NOW, action="/admin/logs", total=10_000, capped=True
+    )
+    assert capped.page_label == (1, None) and capped.next_fields
 
 
 def test_every_row_explains_its_type_in_plain_words():

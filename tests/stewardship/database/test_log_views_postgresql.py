@@ -80,6 +80,24 @@ def identifiers(response):
     ]
 
 
+def next_fields(response):
+    """The hidden fields of the navigator's Next form, or None on the last page.
+
+    Every paging control is a CSRF POST form; nothing is a link.
+    """
+    body = response.content.decode()
+    assert 'href="?' not in body
+    forms = re.findall(r'<form method="post" action="/admin/logs">(.*?)</form>', body)
+    for form in forms:
+        if ">Next</button>" in form:
+            return dict(
+                re.findall(
+                    r'<input type="hidden" name="([a-z_]+)" value="([^"]*)">', form
+                )
+            )
+    return None
+
+
 def levels(response):
     """The severity words shown in the table, in order."""
     return re.findall(
@@ -149,7 +167,12 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             {"start": "2026-02-30"},
             # The last representable day: refused, never an unhandled overflow.
             {"end": "9999-12-31"},
+            # The retired keyset cursor and malformed paging values.
             {"before": "2026-09-20T12:00:00.123456+00:00"},
+            {"through": "2026-09-20T12:00:00"},
+            {"sort": "created_at"},
+            {"size": "all"},
+            {"page": "0x1"},
         ):
             refused = post(browser, invalid)
             assert refused.status_code == 400
@@ -167,30 +190,28 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
     assert "@" not in str(contexts) and str(correlation) not in str(contexts)
 
 
-def test_older_entries_are_reached_by_a_stable_cursor(
-    auth_service, google, monkeypatch
-):
-    """New entries arriving while reading cannot skip or repeat an older one."""
+def test_pages_read_one_snapshot_while_the_log_grows(auth_service, google):
+    """New entries arriving while reading cannot skip or repeat an older one,
+    and the navigator says which page of how many is shown."""
     browser, _ = signed_in()
-    monkeypatch.setattr(log_views, "PAGE_SIZE", 3)
-    diagnostics(("INFO",) * 7)
-    wanted = {"applied": "yes", "info": "yes", "source": "operational"}
+    diagnostics(("INFO",) * 30)
+    wanted = {"applied": "yes", "info": "yes", "source": "operational", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         first = post(browser, wanted)
         seen = identifiers(first)
-        assert len(seen) == 3 and b"Older entries" in first.content
-        cursor = dict(
-            re.findall(
-                r'name="(before(?:_id)?)" value="([^"]+)"', first.content.decode()
-            )
-        )
-        assert set(cursor) == {"before", "before_id"}
+        assert len(seen) == 25 and b"Page 1 of 2" in first.content
+        following = next_fields(first)
+        assert following["page"] == "2" and following["sort"] == "newest"
+        assert following["size"] == "25" and following["through"]
         # The log grows between the two requests.
         diagnostics(("INFO",) * 2)
-        second = post(browser, wanted | cursor)
+        second = post(browser, following)
         older = identifiers(second)
-        assert len(older) == 3 and not set(older) & set(seen)
-        assert b"Back to the newest entries" in second.content
+        assert len(older) == 5 and not set(older) & set(seen)
+        assert b"Page 2 of 2" in second.content and next_fields(second) is None
+        # Applying the filters again takes a new snapshot with the new entries.
+        again = post(browser, wanted)
+        assert "Showing 1–25 of 32" in again.content.decode()
     stored = list(
         OperationalLog.objects.filter(level="INFO")
         .order_by("-created_at", "-id")
@@ -198,15 +219,61 @@ def test_older_entries_are_reached_by_a_stable_cursor(
     )
     # Exactly the entries after the first page as it stood, none skipped.
     start = stored.index(seen[-1]) + 1
-    assert older == stored[start : start + 3]
+    assert older == stored[start : start + 5]
 
 
-def test_a_cursor_crosses_both_tables_through_entries_sharing_one_instant(
+def test_the_time_column_sorts_both_ways_on_the_server(auth_service, google):
+    """Oldest first starts from the oldest stored entry; the heading toggles."""
+    browser, _ = signed_in()
+    diagnostics(("INFO",) * 3)
+    wanted = {"applied": "yes", "info": "yes", "source": "operational"}
+    stored = list(
+        OperationalLog.objects.filter(level="INFO")
+        .order_by("created_at", "id")
+        .values_list("correlation_id", flat=True)
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        newest = post(browser, wanted)
+        assert identifiers(newest) == stored[::-1]
+        body = newest.content.decode()
+        assert 'aria-sort="descending"' in body and "(sort ascending)" in body
+        assert '<input type="hidden" name="sort" value="oldest">' in body
+        oldest = post(browser, wanted | {"sort": "oldest"})
+        assert identifiers(oldest) == stored
+        assert 'aria-sort="ascending"' in oldest.content.decode()
+        # Applying the filters again keeps rows-per-page and sort, never the
+        # snapshot or page.
+        body = post(browser, wanted | {"sort": "oldest", "size": "25"}).content.decode()
+        filters = body[body.index('class="log-filters"') :]
+        filters = filters[: filters.index("</form>")]
+        assert '<input type="hidden" name="size" value="25">' in filters
+        assert '<input type="hidden" name="sort" value="oldest">' in filters
+        assert 'name="through"' not in filters and 'name="page"' not in filters
+
+
+def test_a_bounded_count_says_more_than_and_paging_stops_at_its_depth(
     auth_service, google, monkeypatch
+):
+    """Past the count bound the navigator says "more than"; a page past the
+    paging depth shows the last reachable page and says why."""
+    browser, _ = signed_in()
+    monkeypatch.setattr(log_views, "EXPORT_LIMIT", 30)
+    diagnostics(("INFO",) * 40)
+    wanted = {"applied": "yes", "info": "yes", "source": "operational", "size": "25"}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        first = post(browser, wanted)
+        assert b"of more than 30" in first.content and b"Page 1 of" not in first.content
+        assert next_fields(first)["page"] == "2"
+        deep = post(browser, next_fields(first) | {"page": "9"})
+        assert len(identifiers(deep)) == 5 and b"data-depth-limited" in deep.content
+        assert next_fields(deep) is None
+
+
+def test_pages_cross_both_tables_through_entries_sharing_one_instant(
+    auth_service, google
 ):
     """Ties are ordered by identifier, identically in PostgreSQL and in the merge."""
     browser, _ = signed_in()
-    monkeypatch.setattr(log_views, "PAGE_SIZE", 7)
     moment = timezone.now() - timedelta(hours=1)
     # Random identifiers, each doubling as its correlation so the page shows it.
     # Every entry in both tables shares one instant: only identifiers order them.
@@ -229,24 +296,19 @@ def test_a_cursor_crosses_both_tables_through_entries_sharing_one_instant(
         )
         for key in audited
     )
-    wanted = {"applied": "yes", "info": "yes", "event": "task_failed"}
-    walked, cursor = [], {}
+    walked = []
+    values = {"applied": "yes", "info": "yes", "event": "task_failed", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for _ in range(6):
-            response = post(browser, wanted | cursor)
+        for _ in range(4):
+            response = post(browser, values)
             assert response.status_code == 200
             walked.extend(identifiers(response))
-            cursor = dict(
-                re.findall(
-                    r'name="(before(?:_id)?)" value="([^"]+)"',
-                    response.content.decode(),
-                )
-            )
-            if not cursor:
+            values = next_fields(response)
+            if values is None:
                 break
-    # Every entry exactly once, in one total order, across five page boundaries.
+    # Every entry exactly once, in one total order, across the page boundary.
     assert walked == sorted([*diagnostic, *audited], reverse=True)
-    assert len(walked) == len(set(walked)) == 30 and not cursor
+    assert len(walked) == len(set(walked)) == 30 and values is None
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -346,7 +408,8 @@ def test_a_restore_review_beginning_during_the_request_audits_nothing(
 
 
 def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
-    """Five hundred more entries add no read: one per table, however many rows."""
+    """Five hundred more entries add no read: per table, one ordered key read
+    and one read of the page's own rows, however many rows match."""
     browser, _ = signed_in()
     # Entries by several distinct actors, so an actor lookup written per row
     # would show as many reads; one set lookup shows as exactly one.
@@ -378,12 +441,14 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         CaptureQueriesContext(connection) as many,
     ):
         response = browser.get(URL)
-    # Count only the reads the page itself makes: the two log tables, ordered,
-    # and the one actor lookup by identifier set. Total statements also include
-    # the session's throttled idle-activity update, which depends on timing,
-    # sign-in's own reads of the portal user by primary key, and the Family
-    # maintenance banner's read of its latest switch event, which a
-    # process-wide cache of a few seconds skips or repeats depending on timing.
+    # Count only the reads the page itself makes: each log table's ordered
+    # keys and its page rows by identifier set, and the one actor lookup by
+    # identifier set (the bounded counts are neither ordered nor by id).
+    # Total statements also include the session's throttled idle-activity
+    # update, which depends on timing, sign-in's own reads of the portal user
+    # by primary key, and the Family maintenance banner's read of its latest
+    # switch event, which a process-wide cache of a few seconds skips or
+    # repeats depending on timing.
     reads = [
         Counter(
             table
@@ -402,8 +467,9 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
     ]
     assert response.status_code == 200
     for captured in reads:
-        assert captured["stewardship_operational_log"] == 1
-        assert captured["stewardship_audit_event"] == 1
+        # A table whose rows are not on the page skips its row read.
+        assert 1 <= captured["stewardship_operational_log"] <= 2
+        assert 1 <= captured["stewardship_audit_event"] <= 2
         assert captured["stewardship_portal_user"] == 1
     # Every row on the page shows its actor's resolved address. The entries
     # share one instant, so which rows the page holds depends on identifiers.
@@ -412,9 +478,7 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         for index in range(5)
     )
     assert resolved == 50
-    assert (
-        response.content.count(b"<tr>") == 51 and b"Older entries" in response.content
-    )
+    assert response.content.count(b"<tr>") == 51 and next_fields(response)
 
 
 def export(browser, values=None):
@@ -504,26 +568,42 @@ def test_export_is_administrator_only_and_post_only(auth_service, google):
     assert export(staff).status_code == 403
 
 
+@pytest.mark.parametrize("oldest", [False, True])
 @pytest.mark.parametrize("model", [AuditEvent, OperationalLog])
-def test_older_entries_seek_into_the_creation_time_index(auth_service, model):
-    """An "Older entries" page starts its index scan at the cursor (#308).
-
-    The keyset OR alone leaves created_at only as a filter, so the scan
-    would walk every newer entry first; the redundant upper bound must
-    become an index condition.
-    """
-    query = SimpleNamespace(
-        actor=None,
-        correlation=None,
-        days=(None, None),
-        cursor=(timezone.now(), uuid4()),
-    )
+def test_page_keys_are_read_from_the_creation_time_index(auth_service, model, oldest):
+    """Either order reads its keys from the (created_at, id) index, and the
+    snapshot bound is an index condition, so no page sorts the table."""
+    query = SimpleNamespace(actor=None, correlation=None, days=(None, None))
     with transaction.atomic():
         with connection.cursor() as cursor:
             # The test tables are nearly empty; make the planner show the
             # index path it would take for a large table.
             cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("SET LOCAL enable_bitmapscan = off")
-        plan = log_views._bounded(model.objects.all(), query, size=50).explain()
-    assert "created_id" in plan
+        rows = log_views._filtered(model.objects.all(), query, timezone.now())
+        plan = log_views._ordered(rows, oldest=oldest)[:50].explain()
+    assert "created_id" in plan and "Sort" not in plan, plan
     assert re.search(r"Index Cond: \(created_at <= ", plan), plan
+
+
+def test_level_filtered_reads_and_counts_stay_on_indexes(auth_service):
+    """A level-filtered page and each log's bounded count read an index
+    under a LIMIT, so neither scans or counts a whole growing log."""
+    from parishkit.stewardship.web.tables import COUNT_LIMIT
+
+    query = SimpleNamespace(actor=None, correlation=None, days=(None, None))
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
+        levels = OperationalLog.objects.filter(level__in=["ERROR", "CRITICAL"])
+        rows = log_views._filtered(levels, query, timezone.now())
+        page = log_views._ordered(rows, oldest=False)[:50].explain()
+        counts = [
+            log_views._filtered(model.objects.all(), query, timezone.now())
+            .order_by()[: COUNT_LIMIT + 1]
+            .explain()
+            for model in (OperationalLog, AuditEvent)
+        ]
+    for plan in (page, *counts):
+        assert "Limit" in plan and "Seq Scan" not in plan, plan
+        assert re.search(r"Index|Bitmap", plan), plan
