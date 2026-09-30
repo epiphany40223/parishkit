@@ -888,7 +888,7 @@ def test_closed_resolution_cancels_a_family_message_with_no_task_left(
         with web_login():
             page = item.browser.get(f"/admin/campaign/{item.campaign.pk}/delivery")
             assert page.status_code == 200
-            assert "no remaining delivery task" in page.content.decode()
+            assert "nothing will send any more" in page.content.decode()
             _, token = commands.preview_resolution(
                 *item.arguments,
                 reason="Resolve closed mail",
