@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import form_action
 from .authentication import runtime
 from .campaign_family_test import (
@@ -21,6 +22,7 @@ from .campaign_family_test import (
     recent_tickets,
     request_tests,
 )
+from .content_forms import EMAIL_LABELS
 from .integration_views import ERRORS, _checked
 from .sessions import FreshAuthenticationRequired, freshness
 from .setup_views import error_response
@@ -172,6 +174,17 @@ def _page(
             if refresh
             else request.session.pop(SENT_KEY, None)
         )
+    # Choose, review, then send and follow (#196): a shown review is the
+    # review step, and the page after a send follows it. The trail runs
+    # through the email's editor and its fictional sample test.
+    slot = preview.template.slot
+    admin_navigation.place(
+        request,
+        arguments={"kind": "email", "slot": slot},
+        labels={"content_revision": EMAIL_LABELS.get(slot, slot)},
+        flow="family_test",
+        step="review" if duids else "send" if sent else "choose",
+    )
     response = render(
         request,
         "stewardship/campaign-mail-families.html",

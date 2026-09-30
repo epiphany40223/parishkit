@@ -7,6 +7,7 @@ from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET, require_POST
 
+from parishkit.stewardship.accounts import admin_navigation
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queue_wait import queue_wait
@@ -98,6 +99,14 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
+            # An exact export belongs to the participation report (#196).
+            admin_navigation.place(
+                request,
+                parent="participation",
+                arguments={"campaign_id": campaign_id},
+                flow="export",
+                step="download" if state.get("export_id") else "prepare",
+            )
             context = {
                 "job": job,
                 # WEB may read public source metadata, not every manifest column.

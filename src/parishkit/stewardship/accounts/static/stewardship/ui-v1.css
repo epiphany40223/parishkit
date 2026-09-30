@@ -125,6 +125,16 @@ main nav.breadcrumbs li + li::before { content: "\203A"; margin-inline-end: .35r
 main nav.breadcrumbs a { display: inline; min-height: 0; padding: 0; border: 0; background: none; color: var(--link); font-weight: 500; text-decoration: underline; }
 main nav.breadcrumbs [aria-current=page] { color: var(--ink); font-weight: 600; }
 
+/* Step indicator for multi-step Admin flows (edit, review, apply): a
+   numbered row under the breadcrumbs. Text states each step's status for
+   assistive technology; the filled or outlined number only repeats it. */
+.flow-steps { display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; list-style: none; margin: 0 0 1.25rem; padding: 0; font-size: .9rem; color: var(--muted); }
+.flow-step { display: inline-flex; align-items: center; gap: .45rem; }
+.flow-step-number { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border: 2px solid currentColor; border-radius: 50%; font-size: .8rem; font-weight: 700; }
+.flow-step-done .flow-step-number { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.flow-step-current { color: var(--ink); font-weight: 650; }
+.flow-step-current .flow-step-number { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+
 /* Typography */
 h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; }
 h1 { font-family: var(--serif); font-size: clamp(1.75rem, 4vw, 2.4rem); font-weight: 600; line-height: 1.2; letter-spacing: -.005em; margin-block: .25rem 1.25rem; }

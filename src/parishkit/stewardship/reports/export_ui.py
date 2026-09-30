@@ -11,6 +11,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from parishkit.stewardship.accounts import admin_navigation
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.jobs.models import TaskRun
@@ -101,6 +102,11 @@ def create(request, campaign_id):
         return _error(request, campaign_id=campaign_id, status=400)
 
 
+def _export_step(state):
+    """The export flow step a request's state shows: preparing or download."""
+    return "download" if state in {"ready", "expired"} else "prepare"
+
+
 @require_GET
 def detail(request, request_id):
     """Passive status never renews login; query/render remain guarded until close."""
@@ -169,16 +175,21 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
+            # The report page the export came from, for the trail (#196).
             if job.report == "ministry":
                 title = "Ministry export"
+                source = "ministry_report"
                 report_url = reverse("admin:ministry_report", args=(campaign_id,))
             elif job.report == "additional_information":
                 title = "Additional-information export"
+                source = "information_queue"
                 report_url = reverse("admin:information_queue", args=(campaign_id,))
             elif job.report == "financial":
                 title = "Financial stewardship export"
+                source = "financial_report"
                 report_url = reverse("admin:financial_report", args=(campaign_id,))
             elif job.report in {"family_directory", "postal_outreach"}:
+                source = "family_directory"
                 title = (
                     "Family-directory mail-merge export"
                     if job.parameters["postal"]
@@ -195,10 +206,18 @@ def detail(request, request_id):
                     report_url += "?" + urlencode(presets)
             else:
                 title = "Participation export"
+                source = "participation"
                 report_url = ReportQuery(
                     scope=job.parameters["population_scope"],
                     timezone=job.browser_timezone,
                 ).url(campaign_id)
+            admin_navigation.place(
+                request,
+                parent=source,
+                arguments={"campaign_id": campaign_id},
+                flow="export",
+                step=_export_step(state["state"]),
+            )
             testing = (
                 testing_codes_context(campaign_id)
                 if job.report in {"family_directory", "postal_outreach"}

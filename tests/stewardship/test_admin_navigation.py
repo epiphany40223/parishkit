@@ -29,10 +29,15 @@ ROUTES = _admin_patterns()
 
 
 def _arguments(name):
-    """Plausible resolved arguments for a route: UUIDs and short strings."""
+    """Plausible arguments for a route and its ancestors: UUIDs and strings.
+
+    A page's ancestors may need arguments its own route lacks (a test email
+    names no slot); its view supplies those, so the whole chain's are given.
+    """
     return {
         parameter: uuid4() if converter == "uuid" else "parishsoft"
-        for converter, parameter in ROUTES[name]
+        for page in navigation._chain(name)
+        for converter, parameter in ROUTES[page]
     }
 
 
@@ -96,8 +101,11 @@ def test_every_admin_page_renders_a_breadcrumb_trail(name):
     for ancestor, crumb in zip(chain[:-1], trail[-len(chain) : -1], strict=True):
         assert crumb["label"] == navigation.PAGES[ancestor].label
         needed = navigation.route_parameters()[ancestor]
-        assert crumb["url"] == reverse(
-            f"admin:{ancestor}", kwargs={key: arguments[key] for key in needed}
+        # A POST-only review page is named but never linked.
+        assert crumb["url"] == (
+            reverse(f"admin:{ancestor}", kwargs={key: arguments[key] for key in needed})
+            if navigation.PAGES[ancestor].linkable
+            else None
         )
     html = render_to_string(
         "stewardship/admin-breadcrumbs.html",
@@ -219,3 +227,169 @@ def test_share_options_is_offered_only_where_it_can_be_edited(
         SimpleNamespace(ministries=()), True, campaign, SimpleNamespace(mode=mode)
     )
     assert any(name == "share_settings" for _, name, _, _ in items) is offered
+
+
+def _match(name, **kwargs):
+    """A resolver-match stand-in for an Admin page."""
+    return SimpleNamespace(url_name=name, namespace=navigation.NAMESPACE, kwargs=kwargs)
+
+
+def test_a_test_email_trail_names_its_email_editor():
+    """Preview and test email sits under the revision it sends, by name."""
+    campaign, revision = uuid4(), uuid4()
+    placed = navigation.Placement(
+        arguments={"kind": "email", "slot": "initial"},
+        labels={"content_revision": "Initial invitation"},
+    )
+    match = _match("campaign_mail_families", campaign_id=campaign, revision_id=revision)
+    _, trail = navigation.build(match, _items(), placed)
+    assert [crumb["label"] for crumb in trail][2:] == [
+        navigation.PAGES["content_catalog"].label,
+        "Initial invitation",
+        navigation.PAGES["campaign_mail"].label,
+        navigation.PAGES["campaign_mail_families"].label,
+    ]
+    assert trail[3]["url"] == reverse(
+        "admin:content_revision", args=[campaign, "email", "initial", revision]
+    )
+    assert trail[4]["url"] == reverse("admin:campaign_mail", args=[campaign, revision])
+    assert navigation.back(match, placed)["url"] == trail[4]["url"]
+
+
+def test_a_placed_configuration_change_joins_its_origin_section():
+    """A change confirmed on an editor shows that editor's trail and section."""
+    campaign, request_id = uuid4(), uuid4()
+    placed = navigation.Placement(
+        parent="content_edit",
+        arguments={"campaign_id": campaign, "kind": "email", "slot": "initial"},
+        flow="change",
+        step="apply",
+    )
+    match = _match("configuration_request", request_id=request_id)
+    sections, trail = navigation.build(match, _items(), placed)
+    assert [crumb["label"] for crumb in trail] == [
+        navigation.PAGES["index"].label,
+        navigation.SECTION_LABELS["campaign"],
+        navigation.PAGES["content_catalog"].label,
+        navigation.PAGES["content_edit"].label,
+        navigation.PAGES["configuration_request"].label,
+    ]
+    edit = reverse("admin:content_edit", args=[campaign, "email", "initial"])
+    assert trail[3]["url"] == edit
+    assert [section["key"] for section in sections if section["current"]] == [
+        "campaign"
+    ]
+    assert navigation.back(match, placed) == {
+        "label": navigation.PAGES["content_edit"].label,
+        "url": edit,
+    }
+
+
+def test_an_unplaced_configuration_change_returns_home():
+    """Without a remembered origin, the status page stands under Home."""
+    match = _match("configuration_request", request_id=uuid4())
+    _, trail = navigation.build(match, _items())
+    assert [crumb["label"] for crumb in trail] == [
+        navigation.PAGES["index"].label,
+        navigation.PAGES["configuration_request"].label,
+    ]
+    assert navigation.back(match) == {
+        "label": navigation.PAGES["index"].label,
+        "url": reverse("admin:index"),
+    }
+
+
+def test_a_rule_change_returns_to_portal_users_not_the_post_only_review():
+    """The rule review cannot be opened by a link, so Return goes to users."""
+    placed = navigation.Placement(parent="user_rules", flow="change", step="apply")
+    match = _match("configuration_request", request_id=uuid4())
+    _, trail = navigation.build(match, _items(), placed)
+    assert trail[-2] == {"label": navigation.PAGES["user_rules"].label, "url": None}
+    assert navigation.back(match, placed)["url"] == reverse("admin:users")
+
+
+def test_an_unknown_placed_parent_is_ignored():
+    """A parent that is not a registered page leaves the static chain."""
+    match = _match("configuration_request", request_id=uuid4())
+    placed = navigation.Placement(parent="login")
+    _, trail = navigation.build(match, _items(), placed)
+    assert len(trail) == 2
+
+
+@pytest.mark.parametrize(
+    "step,states",
+    [
+        ("edit", ["current", "upcoming", "upcoming"]),
+        ("review", ["done", "current", "upcoming"]),
+        ("apply", ["done", "done", "current"]),
+    ],
+)
+def test_flow_steps_mark_done_current_and_upcoming(step, states):
+    """The indicator shows every step of the flow and where the Admin is."""
+    shown = navigation.steps(navigation.Placement(flow="change", step=step))
+    assert [item["state"] for item in shown] == states
+    assert [item["label"] for item in shown] == [
+        label for _key, label in navigation.FLOWS["change"]
+    ]
+    html = render_to_string(
+        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
+    )
+    assert html.count('aria-current="step"') == 1
+    assert html.count("(done)") == states.count("done")
+
+
+def test_flow_steps_are_absent_without_a_known_flow_and_step():
+    """Pages outside a flow, or naming an unknown step, show no indicator."""
+    for placed in (
+        None,
+        navigation.Placement(),
+        navigation.Placement(flow="change", step="nonsense"),
+        navigation.Placement(flow="nonsense", step="edit"),
+    ):
+        assert navigation.steps(placed) == []
+    assert "<ol" not in render_to_string(
+        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": []}}
+    )
+
+
+def test_change_origins_are_remembered_per_request_and_bounded():
+    """The session maps recent change requests to the editor they came from."""
+    campaign = uuid4()
+    editor = reverse("admin:content_edit", args=[campaign, "email", "initial"])
+    request = SimpleNamespace(session={}, path=editor)
+    first = uuid4()
+    navigation.remember_origin(request, first)
+    assert navigation.change_origin(request, first) == (
+        "content_edit",
+        {"campaign_id": campaign, "kind": "email", "slot": "initial"},
+    )
+    assert navigation.change_origin(request, uuid4()) is None
+    for _ in range(navigation.ORIGINS_KEPT):
+        navigation.remember_origin(request, uuid4())
+    assert len(request.session[navigation.ORIGINS_KEY]) == navigation.ORIGINS_KEPT
+    assert navigation.change_origin(request, first) is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/family/",
+        "/admin/no-such-page",
+        "/admin/logout",
+        # A fixed id keeps the test ID the same wherever it is collected.
+        "/admin/configuration/requests/00000000-0000-4000-8000-000000000001",
+        None,
+    ],
+)
+def test_change_origins_accept_only_registered_admin_pages(path):
+    """A remembered path that is not an Admin page only loses the trail."""
+    request_id = uuid4()
+    request = SimpleNamespace(session={navigation.ORIGINS_KEY: {str(request_id): path}})
+    assert navigation.change_origin(request, request_id) is None
+
+
+def test_change_origins_need_a_session():
+    """Requests without a session (scripts, tests) neither store nor read."""
+    request = SimpleNamespace(path="/admin/users")
+    navigation.remember_origin(request, uuid4())
+    assert navigation.change_origin(request, uuid4()) is None

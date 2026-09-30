@@ -11,9 +11,11 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 
+from . import admin_navigation
 from .authentication import runtime
 from .campaign_mail import SALT, prepare, request_sample
 from .campaign_mail_models import CampaignMailTest
+from .content_forms import EMAIL_LABELS
 from .integration_views import ERRORS, _checked
 from .setup_mail_views import LABELS
 from .setup_views import _closed, error_response
@@ -53,6 +55,14 @@ def campaign_mail(request, campaign_id, revision_id):
             form = CampaignMailForm(
                 initial={"preview_token": signing.dumps(preview.binding(), salt=SALT)}
             )
+        # The trail runs through this revision's editor, named for its email
+        # (#196); the test route itself carries no kind or slot.
+        slot = preview.row.template.slot
+        admin_navigation.place(
+            request,
+            arguments={"kind": "email", "slot": slot},
+            labels={"content_revision": EMAIL_LABELS.get(slot, slot)},
+        )
         rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
         items = [
             {

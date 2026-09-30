@@ -21,6 +21,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
+from . import admin_navigation
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -148,6 +149,8 @@ def _preview(request, service, actor):
         return _error(request, "policy")
     # The chrome presents the configuration this review was drawn against.
     request._stewardship_display_configuration = configuration
+    # The review step of a rule change started on Portal users (#196).
+    admin_navigation.place(request, flow="change", step="review")
     own = (
         PortalUser.objects.filter(pk=actor.identity)
         .values_list("email", flat=True)

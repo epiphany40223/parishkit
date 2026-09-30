@@ -31,6 +31,7 @@ from parishkit.stewardship.web.refusals import (
     stale_page,
 )
 
+from . import admin_navigation
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
 from .artwork_views import artwork_patch
 from .authentication import runtime
@@ -186,6 +187,8 @@ def _page(
         visual = sanitize_html(form["html"].value() or "")
     except ValueError:
         visual = ""
+    # The editor is the first step of edit, review, apply (#196).
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/content-settings.html",
@@ -321,6 +324,7 @@ def _preview(
             "smaller edits.",
         )
         return _page(request, form, campaign, label, status=400)
+    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/content-preview.html",

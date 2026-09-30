@@ -18,7 +18,7 @@
   </header>
   {% if admin_chrome %}<div class="admin-shell">{% include 'stewardship/admin-navigation.html' %}{% endif %}
   <main id="main" tabindex="-1">
-    {% if admin_chrome %}{% include 'stewardship/admin-breadcrumbs.html' %}{% include 'stewardship/admin-banners.html' %}{% endif %}
+    {% if admin_chrome %}{% include 'stewardship/admin-breadcrumbs.html' %}{% include 'stewardship/admin-flow-steps.html' %}{% include 'stewardship/admin-banners.html' %}{% endif %}
     {% block banners %}{% endblock %}
     {% include 'stewardship/components/errors.html' %}
     {% block content %}{% endblock %}
