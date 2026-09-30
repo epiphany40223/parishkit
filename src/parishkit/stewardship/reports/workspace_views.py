@@ -38,7 +38,7 @@ from .read_admission import admit_report_read
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
-from .workspace import RenderedReport, ReportQuery
+from .workspace import DAILY_SORTING, RenderedReport, ReportQuery
 
 REPORTABLE = ("draft", "scheduled", "active", "closed", "archived")
 
@@ -207,6 +207,32 @@ def participation(request, campaign_id, *, fact_set_id=None):
             finish(False)
 
 
+def daily_table(chart, presented, query):
+    """The daily table's sorted, paged context for one participation chart.
+
+    ``presented`` is ``participation_context(chart)``. Each day is paired
+    with its formatted cells, so the server sorts by the exact stored values
+    while the table shows the shared formatting. The whole document is
+    already in memory, so the shared navigator shows the total and allows
+    any page or "All".
+    """
+    table = paginate(
+        list(zip(chart.days, presented["rows"], strict=True)),
+        {"page": str(query.page), "size": query.size, "sort": query.sort},
+        carry=query.carried(),
+        sorting=DAILY_SORTING,
+    )
+    keys = ["date", "first", "participation", "pledge"]
+    return {
+        "table": table,
+        "rows": [cells for _day, cells in table.rows],
+        "columns": list(zip(keys, presented["headings"], strict=False)),
+        # A heading's sort is not one of the options form's date orders; the
+        # form offers it too, so applying other options keeps it.
+        "heading_sort": query.sort not in {"date_asc", "date_desc"},
+    }
+
+
 def _page_context(campaign_id, query, selected, principal):
     """Format detached shared observations; never recompute money in templates."""
     campaign = Campaign.objects.select_related("active_configuration").get(
@@ -263,19 +289,7 @@ def _page_context(campaign_id, query, selected, principal):
     }
     if selected.document is not None:
         context.update(participation_context(selected.document))
-        rows = (
-            context["rows"]
-            if query.sort == "date_asc"
-            else list(reversed(context["rows"]))
-        )
-        # The whole document is already in memory, so the shared navigator
-        # can show the total and allow any page or "All".
-        context["table"] = paginate(
-            rows,
-            {"page": str(query.page), "size": query.size},
-            carry=query.carried(),
-        )
-        context["rows"] = context["table"].rows
+        context.update(daily_table(selected.document, context, query))
         context["row_count"] = len(selected.document.days)
         context["chart_url"] = (
             reverse(

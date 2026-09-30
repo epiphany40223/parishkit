@@ -175,4 +175,42 @@ def test_daily_table_size_is_carried_only_when_not_default():
     assert "size=" not in ReportQuery.parse(QueryDict()).url(campaign)
     chosen = ReportQuery.parse(QueryDict("size=all&sort=date_desc"))
     assert chosen.size == "all" and "size=all" in chosen.url(campaign, page=1)
-    assert ("sort", "date_desc") in chosen.carried()
+    assert chosen.sort == "date_desc" and "sort=date_desc" in chosen.url(campaign)
+    # The shared table carries the sort itself, so the filters leave it out.
+    assert all(name != "sort" for name, _ in chosen.carried())
+
+
+def test_daily_table_sorts_every_column_on_the_server():
+    """Each heading sorts the whole in-memory document by its exact value;
+    the established date tokens still parse and anything else is refused."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.reports.workspace_views import daily_table
+
+    chart = document().participation
+    presented = participation_context(chart)
+
+    def dates(sort):
+        """The campaign dates in the order one sort token shows them."""
+        query = ReportQuery.parse(QueryDict(f"sort={sort}&size=all"))
+        table = daily_table(chart, presented, query)["table"]
+        return [day.local_date for day, _cells in table.rows]
+
+    by_date = sorted(day.local_date for day in chart.days)
+    assert dates("date_asc") == by_date and dates("date_desc") == by_date[::-1]
+    most = dates("-first")
+    counts = {day.local_date: day.first_responses for day in chart.days}
+    assert [counts[day] for day in most] == sorted(counts.values(), reverse=True)
+    for token in ("local_date", "first_responses", "-date"):
+        with pytest.raises(ValueError):
+            ReportQuery.parse(QueryDict(f"sort={token}"))
+    context = daily_table(chart, presented, ReportQuery.parse(QueryDict("sort=-first")))
+    assert context["heading_sort"] and len(context["columns"]) == len(
+        presented["headings"]
+    )
+    html = render_to_string(
+        "stewardship/table-navigator.html",
+        {"table": context["table"], "label": "Daily table pages"},
+    )
+    assert "Page 1 of 1" in html
+    assert '<input type="hidden" name="sort" value="-first">' in html
