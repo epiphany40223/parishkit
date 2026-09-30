@@ -15,9 +15,11 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.tables import paginate, table_parameters
 
 from .digest_building import retained_daily_document
 from .digest_models import DailyDigestReady, DailyDigestSnapshot
@@ -26,6 +28,27 @@ from .export_services import admit_campaign
 from .export_views import _principal
 from .facts import FactUnavailable
 from .statistics import StatisticsUnavailable
+from .workspace import DAILY_SORTING
+
+
+def daily_rows(context, parameters):
+    """Sort and page the pinned report's daily table like the live report's.
+
+    ``context`` is ``snapshot_context``; ``parameters`` the validated page,
+    size and sort. Rows pair each retained day with its formatted cells, so
+    the server sorts by exact values (see ``workspace.DAILY_SORTING``).
+    """
+    chart = context["chart"]
+    table = paginate(
+        list(zip(chart.days, context["rows"], strict=True)),
+        parameters,
+        sorting=DAILY_SORTING,
+    )
+    keys = ["date", "first", "participation", "pledge"]
+    return {
+        "table": table,
+        "columns": list(zip(keys, context["headings"], strict=False)),
+    }
 
 
 @require_GET
@@ -35,7 +58,18 @@ def snapshot(request, snapshot_id, *, representation="html"):
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        if request.GET or representation not in {"html", "png", "download"}:
+        # Only the HTML page's daily table takes (closed) paging and sort
+        # parameters; chart images take none.
+        try:
+            paging = filters(
+                request.GET,
+                allowed=table_parameters() if representation == "html" else set(),
+            )
+            if representation not in {"html", "png", "download"}:
+                raise ValueError("Unknown report representation.")
+            if paging:
+                paginate([], paging, sorting=DAILY_SORTING)
+        except ValueError:
             return private_response("Invalid report request.\n", status=400)
         # Only scope metadata is read before the response-lifetime barrier.
         retained = DailyDigestSnapshot.objects.only(
@@ -118,6 +152,7 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 chart_url=reverse("admin:daily_digest_chart", args=[snapshot_id]),
                 download_url=reverse("admin:daily_digest_download", args=[snapshot_id]),
             )
+            context |= daily_rows(context, paging)
             return iter(
                 (
                     render_to_string(

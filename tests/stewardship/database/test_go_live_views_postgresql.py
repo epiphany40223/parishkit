@@ -55,6 +55,13 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert browser.get(path + "/families?size=25").status_code == 200
         assert browser.get(path + "/families?page=0").status_code == 400
         assert browser.get(path + "/families?size=500").status_code == 400
+        sorted_page = browser.get(path + "/families?sort=-name")
+        assert sorted_page.status_code == 200
+        assert b'aria-sort="descending"' in sorted_page.content
+        assert b"Page 1 of 1" in sorted_page.content
+        assert b"sort=name" in sorted_page.content
+        for token in ("family_duid", "name;", "-id"):
+            assert browser.get(path + f"/families?sort={token}").status_code == 400
         assert browser.get(path + "?actor=other").status_code == 400
         assert browser.post(path, {}).status_code == 403  # missing CSRF
 

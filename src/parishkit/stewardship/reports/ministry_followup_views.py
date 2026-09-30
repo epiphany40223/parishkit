@@ -8,6 +8,7 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -20,6 +21,7 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import (
     MAX_BULK,
     WorkflowChange,
@@ -35,7 +37,7 @@ from .information import parse_page
 from .ministry_followup import (
     CHANNELS,
     OUTCOMES,
-    PAGE_SIZE,
+    SORTING,
     STATES,
     FollowupQuery,
     assignable,
@@ -45,6 +47,7 @@ from .ministry_followup import (
     valid_ministry,
 )
 from .read_admission import admit_report_read
+from .report_paging import clamp_query
 
 TEMPLATE = "stewardship/ministry-followup.html"
 FORMER = "Former portal user"
@@ -153,7 +156,18 @@ def _page_response(request, campaign_id, *, request_id=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
+            nonlocal query
             result = followup_page(campaign_id, query, principal, request_id=request_id)
+            # A page past the end of the queue shows its last page, as on
+            # every other Admin table; one open request is not paged.
+            moved = (
+                None
+                if request_id
+                else clamp_query(query, result["total"], query.page_size)
+            )
+            if moved is not None:
+                query = moved
+                result = followup_page(campaign_id, query, principal)
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)
@@ -208,7 +222,22 @@ def _page_response(request, campaign_id, *, request_id=None):
                 result,
                 campaign_id=campaign_id,
                 query=query,
-                query_fields=query.form_values(),
+                # The queue's shared navigator and sortable headings, as
+                # private POST forms back to the queue (web/tables.py).
+                table=report_table(
+                    result["rows"],
+                    number=query.page,
+                    size=query.page_size,
+                    total=result["total"],
+                    carry=[
+                        (key, value)
+                        for key, value in query.form_values().items()
+                        if key != "sort"
+                    ],
+                    sorting=SORTING,
+                    sort=query.sort,
+                    action=reverse("admin:ministry_followup", args=[campaign_id]),
+                ),
                 mutable=mutable,
                 item=item,
                 stale_assignee=stale_assignee,
@@ -223,10 +252,6 @@ def _page_response(request, campaign_id, *, request_id=None):
                 outcomes=OUTCOMES,
                 channels=CHANNELS,
                 viewer=str(principal.identity),
-                previous_page=query.page - 1 if query.page > 1 else None,
-                next_page=query.page + 1
-                if query.page * PAGE_SIZE < result["total"]
-                else None,
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)

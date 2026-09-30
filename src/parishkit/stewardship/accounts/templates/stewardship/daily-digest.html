@@ -32,11 +32,13 @@
 <p data-digest-values role="status" aria-live="polite"></p>
 </div>
 <p><a href="{{ download_url }}">{% translate "Download the original chart (PNG)" %}</a></p>
+{% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll"><table>
 <caption>{% translate "Exact retained daily values — Historical as of day" %}</caption>
-<thead><tr>{% for heading in headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
-<tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+<thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead>
+<tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table></div>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </section>
 <p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
 {% endblock %}

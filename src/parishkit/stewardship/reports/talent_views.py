@@ -1,5 +1,6 @@
 """Admin/Staff talents and limitations report, with CSV and XLSX downloads (#247)."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -7,6 +8,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -20,10 +22,89 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .talents import TalentQuery, talents_csv, talents_report, talents_xlsx
+
+# The page's two tables page and sort independently, so their table
+# parameters carry these prefixes.
+MEMBERS, FAMILIES = "members_", "families_"
+
+
+def _text(value):
+    """Case-insensitive text sort key; a missing value sorts as empty."""
+    return (value or "").casefold()
+
+
+# The report is complete in memory (the selection does not page it), so every
+# column sorts here, and the SQL order stays the tiebreak (Python's sort is
+# stable). Times sort newest first on their first click.
+MEMBER_SORTING = Sorting.by_column(
+    {
+        "member": lambda row: _text(row["member_name"]),
+        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "talents": lambda row: _text("; ".join(row["talents"])),
+        "cannot_serve": lambda row: bool(row["cannot_serve"]),
+        "latest": lambda row: row["submitted_at"],
+    },
+    default="family",
+    descending_first={"cannot_serve", "latest"},
+)
+FAMILY_SORTING = Sorting.by_column(
+    {
+        "family": lambda row: _text(row["family_name"]),
+        "duid": lambda row: row["family_duid"],
+        "latest": lambda row: row["submitted_at"],
+    },
+    default="family",
+    descending_first={"latest"},
+)
+
+
+def paging_values(parameters):
+    """Remove and return both tables' page/size/sort values from the form.
+
+    ``parameters`` is a mutable QueryDict. The values only choose what the
+    screen shows, so they never reach the SQL filters or a download; each
+    must be a single value that ``paginate`` accepts.
+    """
+    values = {}
+    for name in table_parameters(MEMBERS) | table_parameters(FAMILIES):
+        found = parameters.pop(name, None)
+        if found is None:
+            continue
+        if len(found) != 1:
+            raise ValueError("Table choices must be single values.")
+        values[name] = found[0]
+    # Refuse a bad choice now, as a 400, not later while rendering the page.
+    for prefix, sorting in ((MEMBERS, MEMBER_SORTING), (FAMILIES, FAMILY_SORTING)):
+        paginate([], values, prefix=prefix, sorting=sorting)
+    return values
+
+
+def tables(result, query, paging, action):
+    """Sort and page both tables as private POST tables (web/tables.py).
+
+    Each table's navigator and headings carry the private filters and the
+    other table's current choices, so paging one never resets the other.
+    """
+    filters = list(query.form_values().items())
+    shown = {}
+    for prefix, rows, sorting in (
+        (MEMBERS, result["members"], MEMBER_SORTING),
+        (FAMILIES, result["families"], FAMILY_SORTING),
+    ):
+        other = [
+            (key, value) for key, value in paging.items() if not key.startswith(prefix)
+        ]
+        table = paginate(
+            rows, paging, prefix=prefix, carry=filters + other, sorting=sorting
+        )
+        shown[prefix] = replace(table, method="post", action=action)
+    return shown[MEMBERS], shown[FAMILIES]
+
 
 FORMATS = {
     "csv": "text/csv",
@@ -95,6 +176,8 @@ def _respond(request, campaign_id, *, export, render):
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
             extra = {}
+            if not export:
+                extra["paging"] = paging_values(parameters)
             if export:
                 fmt = parameters.pop("format", ["csv"])
                 zone = parameters.pop("timezone", ["UTC"])
@@ -190,10 +273,18 @@ def report(request, campaign_id):
 
     def render(result, query, extra):
         """The native report page."""
+        members, families = tables(
+            result,
+            query,
+            extra["paging"],
+            reverse("admin:talents_report", args=[campaign_id]),
+        )
         return render_to_string(
             "stewardship/talents-report.html",
             result
             | {
+                "members_table": members,
+                "families_table": families,
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),

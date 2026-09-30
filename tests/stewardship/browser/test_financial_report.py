@@ -17,7 +17,6 @@ PAGES = (
     "/financial-empty",
     "/financial-gated",
     "/financial-last",
-    "/financial-beyond",
     "/financial-error-400",
     "/financial-error-503",
 )
@@ -55,8 +54,13 @@ def test_financial_mobile_keyboard_and_accessibility(
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "active"
-    assert page.get_by_role("button", name="Next page").count() == 1
-    assert page.get_by_role("button", name="Previous page").count() == 0
+    # The shared navigator (#203), above and below the table.
+    assert page.get_by_role("button", name="Next", exact=True).count() == 2
+    assert page.get_by_role("button", name="Previous", exact=True).count() == 0
+    visible(page.get_by_text("Page 1 of 2", exact=True).first)
+    # Family, Annual pledge and Responses sort through the SQL selection.
+    assert page.locator("th[aria-sort=ascending]").inner_text().startswith("Family")
+    assert page.locator("th button.sort-link").count() == 3
     # The complete export is offered beside the page, with its own controls.
     assert page.get_by_role("button", name="Queue complete export").count() == 1
     assert page.get_by_label("Export format").input_value() == "csv"
@@ -67,8 +71,8 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_label("Export format").is_disabled()
     assert page.get_by_label("Export timezone").is_disabled()
     page.goto(component_origin + "/financial-last")
-    assert page.get_by_role("button", name="Next page").count() == 0
-    assert page.get_by_role("button", name="Previous page").count() == 1
+    assert page.get_by_role("button", name="Next", exact=True).count() == 0
+    assert page.get_by_role("button", name="Previous", exact=True).count() == 2
     # Unproven giving is explained and shown as unavailable, never as zero.
     page.goto(component_origin + "/financial-unproven")
     visible(page.get_by_text("Unavailable does not mean zero", exact=False))
@@ -78,11 +82,6 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_text("None chosen", exact=True).count() == 1
     page.goto(component_origin + "/financial-empty")
     visible(page.get_by_text("No matching pledges.", exact=True))
-    # Past the last page the count still stands, so the text must not deny it.
-    page.goto(component_origin + "/financial-beyond")
-    visible(page.get_by_text("past the last matching pledge", exact=False))
-    assert page.get_by_text("No matching pledges.", exact=True).count() == 0
-    assert page.get_by_role("button", name="Previous page").count() == 1
     # A refused filter explains the money format and offers a way back.
     page.goto(component_origin + "/financial-error-400")
     assert page.get_by_role("alert").get_by_text("without commas", exact=False).count()
@@ -111,10 +110,18 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         # Pagination carries the applied filters, not the edited form fields.
         page.goto(component_origin + "/financial-report")
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Next page").click()
+            page.get_by_role("button", name="Next", exact=True).first.click()
         body = sent.value.post_data
         assert "page=2" in body and "search=Example" in body
         assert "pledge_min=100.00" in body and "?" not in sent.value.url
+
+        # A sortable heading posts the same filters with its sort token.
+        page.goto(component_origin + "/financial-report")
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Annual pledge", exact=False).click()
+        body = sent.value.post_data
+        assert "sort=pledge_desc" in body and "search=Example" in body
+        assert "page=" not in body and "?" not in sent.value.url
 
         # The export carries the applied filters, the chosen format and the
         # one-time key natively; without scripts the timezone stays UTC.

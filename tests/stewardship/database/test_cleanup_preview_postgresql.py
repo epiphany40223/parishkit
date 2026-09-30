@@ -35,12 +35,12 @@ def test_web_preview_reports_unresolved_testing_only_without_starting_cleanup(
     messages = mixed_mail(response_service)
     with task_login(ServiceRole.WEB), work_transaction():
         before = cleanup_preview(response_service.campaign.pk)
-        families, has_next = cleanup_families(
+        _, families, has_next, total = cleanup_families(
             response_service.campaign.pk,
             source_id=SourceCurrent.objects.get().snapshot_id,
             window=PageWindow(1, 50),
         )
-        assert len(families) == 1 and not has_next
+        assert len(families) == 1 and not has_next and total == (1, False)
         assert set(families[0]) == {"name", "duid"}
         assert families[0]["duid"] == 1
     assert before.submissions == before.families == 1
@@ -55,6 +55,51 @@ def test_web_preview_reports_unresolved_testing_only_without_starting_cleanup(
     assert after.unresolved == before.unresolved - 1
     # The additional cancellation event is itself sensitive Testing detail.
     assert after.inventory.total == before.inventory.total + 1
+
+
+def test_testing_families_sort_on_the_server_by_name_or_duid(
+    response_service, monkeypatch
+):
+    """Both columns order the whole inventory before it is paged."""
+    from django.db.models import F
+
+    from parishkit.stewardship.campaigns import cleanup_preview as module
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    form, answers = form_and_answers(response_service)
+    submit(response_service, form, answers)
+    campaign_id = response_service.campaign.pk
+    # Treat every campaign Family as affected, so the order is observable.
+    monkeypatch.setattr(
+        module,
+        "inventory_queries",
+        lambda _campaign: {
+            CleanupCategory.SUBMISSION: FamilyCampaign.objects.annotate(
+                family_id=F("pk")
+            )
+        },
+    )
+    source_id = SourceCurrent.objects.get().snapshot_id
+
+    def read(sort, size=50):
+        """One page of the inventory under the given sort token."""
+        with task_login(ServiceRole.WEB), work_transaction():
+            return cleanup_families(
+                campaign_id, source_id=source_id, window=PageWindow(1, size), sort=sort
+            )[1:]
+
+    rows, _, (total, capped) = read("duid")
+    assert total == len(rows) > 1 and not capped
+    duids = [row["duid"] for row in rows]
+    assert duids == sorted(duids)
+    assert [row["duid"] for row in read("-duid")[0]] == duids[::-1]
+    names = [row["name"].lower() for row in read("name")[0]]
+    assert names == sorted(names) and len(set(names)) > 1
+    assert [row["name"].lower() for row in read("-name")[0]] == sorted(
+        names, reverse=True
+    )
+    first, has_next, _ = read("-duid", size=1)
+    assert has_next and first[0]["duid"] == duids[-1]
 
 
 def test_inventory_grants_do_not_expose_rendered_mail_or_allow_deletion():

@@ -150,12 +150,61 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
         "size=501",
         "state=all&state=pending",
         "token=private",
+        "sort=created_at",
+        "sort=pk",
+        "sort=family__family_duid",
+        "sort=created&sort=-created",
     ],
 )
 def test_delivery_filters_are_closed(auth_service, google, query):
-    """Unknown/duplicate fields and unbounded pagination fail before reads."""
+    """Unknown/duplicate fields, raw column names as sorts and unbounded
+    pagination fail before reads."""
     browser, _ = signed_in()
     assert browser.get("/admin/deliveries?" + query).status_code == 400
+    assert browser.get("/admin/deliveries/refusals?" + query).status_code == 400
+
+
+def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, google):
+    """Every column heading re-sorts the whole list; the navigator says
+    "Page N of M" from a bounded count and keeps the sort on its links."""
+    harness = activate_response_service(response_service)
+    for mailbox in ("b@example.org", "a@example.org", "c@example.org"):
+        remember(refused(harness, address=mailbox), address=mailbox)
+    browser, _ = signed_in()
+    path = "/admin/deliveries/refusals"
+
+    def addresses(**query):
+        """The refused addresses in the order one page lists them."""
+        html = browser.get(path, query).content.decode()
+        return [
+            mailbox
+            for _, mailbox in sorted(
+                (html.index(f">{mailbox}<"), mailbox)
+                for mailbox in ("a@example.org", "b@example.org", "c@example.org")
+                if f">{mailbox}<" in html
+            )
+        ]
+
+    assert addresses(sort="address") == [
+        "a@example.org",
+        "b@example.org",
+        "c@example.org",
+    ]
+    assert addresses(sort="-address") == [
+        "c@example.org",
+        "b@example.org",
+        "a@example.org",
+    ]
+    assert addresses(sort="-address", size=25, page=1)[0] == "c@example.org"
+    html = browser.get(path, {"sort": "-address"}).content.decode()
+    assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
+    assert "Showing 1–3 of 3" in html
+    assert '<input type="hidden" name="sort" value="-address">' in html
+    listing = browser.get("/admin/deliveries", {"sort": "-attempts", "state": "all"})
+    assert listing.status_code == 200
+    html = listing.content.decode()
+    assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
+    assert "state=all&amp;size=25&amp;sort=attempts" in html
 
 
 def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch):  # noqa: F811

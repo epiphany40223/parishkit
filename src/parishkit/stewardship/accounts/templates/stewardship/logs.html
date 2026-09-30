@@ -2,11 +2,12 @@
 {% block title %}{% translate "System logs" %}{% endblock %}
 {% block content %}
 <h1>{% translate "System logs" %}</h1>
-{% aboutpage "system-logs" %}<p>{% translate "Operational diagnostics and the audit trail together, newest first. Entries hold reviewed identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
+{% aboutpage "system-logs" %}<p>{% translate "Operational diagnostics and the audit trail together, newest first unless you sort by Time the other way. Entries hold reviewed identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
 <p>{% translate "Times are UTC, as stored; they use your browser timezone when available. Audit records have no severity level, so the level choices apply to operational entries and the source choice decides whether audit records are listed." %}</p>
 <p>{% translate "Each entry's type is followed by a short explanation. An actor shown as Background worker is one of the system's own processes, not a person. The Related column lists everything recorded for the same task or request, the same actor or the same campaign, and opens a task's own page. Identifiers are under Technical details." %}</p>{% endaboutpage %}
 <form method="post" action="{% url 'admin:logs' %}" class="log-filters">{% csrf_token %}
 <input type="hidden" name="applied" value="yes">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div class="filter-bar">
 <fieldset class="log-level-choices"><legend>{% translate "Operational levels" %}</legend>
 {% for key,label,chosen in levels %}<label><input type="checkbox" name="{{ key }}" value="yes"{% if chosen %} checked{% endif %}> {% include "stewardship/components/level-icon.html" with level=key %} {{ label.1 }}</label>
@@ -30,9 +31,11 @@
 <div class="short"><label for="log-export-format">{% translate "File format" %}</label><select id="log-export-format" name="format"><option value="csv">{% translate "CSV (spreadsheet)" %}</option><option value="jsonl">{% translate "JSON Lines" %}</option></select></div>
 <div class="short"><label for="log-export-timezone">{% translate "Times in" %}</label><select id="log-export-timezone" name="timezone" data-browser-timezone><option value="UTC">UTC</option></select></div>
 <button type="submit">{% translate "Download" %}</button></form></details>
-<p>{% blocktranslate count counter=rows|length %}{{ counter }} entry on this page.{% plural %}{{ counter }} entries on this page.{% endblocktranslate %}</p>
+<p class="help">{% translate "Pages show the log as it was when you applied these filters; entries recorded since then appear when you apply the filters again." %}</p>
+{% if depth_limited %}<p class="notice" data-depth-limited>{% translate "Paging reaches only the first 10,000 entries in this order, so the last of those pages is shown. Choose a narrower date range, or sort by Time the other way, to see the rest." %}</p>{% endif %}
+{% translate "Log pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Log entries' %}"><table class="data-table log-table">
-<caption>{% translate "Operational and audit entries, newest first" %}</caption><thead><tr><th scope="col">{% translate "Time" %}</th><th scope="col">{% translate "Level" %}</th><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Actor" %}</th><th scope="col">{% translate "Related" %}</th><th scope="col">{% translate "Recorded detail" %}</th></tr></thead><tbody>
+<caption>{% translate "Operational and audit entries" %}</caption><thead><tr>{% translate "Time" as heading %}{% sort_heading table "time" heading %}<th scope="col">{% translate "Level" %}</th><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Actor" %}</th><th scope="col">{% translate "Related" %}</th><th scope="col">{% translate "Recorded detail" %}</th></tr></thead><tbody>
 {% for row in rows %}<tr{% if row.level == "CRITICAL" %} class="log-row-critical"{% endif %}>
 <th scope="row"><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></th>
 <td>{% if row.level %}<span class="log-level log-level-{{ row.level|lower }}">{% include "stewardship/components/level-icon.html" with level=row.level|lower %} {{ row.level_label }}</span>{% else %}<span class="log-kind">{{ row.level_label }}</span>{% endif %}<br><span class="help">{{ row.source }}</span></td>
@@ -46,8 +49,5 @@
 <dl><dt>{% translate "Correlation" %}</dt><dd class="log-correlation">{{ row.correlation_id }}</dd>{% if row.actor_id %}<dt>{% translate "Actor" %}</dt><dd>{{ row.actor_id }}</dd>{% endif %}{% if row.campaign_id %}<dt>{% translate "Campaign" %}</dt><dd>{{ row.campaign_id }}</dd>{% endif %}{% if row.subject_id %}<dt>{% translate "Subject" %}</dt><dd>{{ row.subject_id }}</dd>{% endif %}</dl></details></td>
 <td>{% if row.detail_rows %}<dl>{% for key,value in row.detail_rows %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}{% translate "None" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching entries." %}</td></tr>{% endfor %}</tbody></table></div>
-<nav aria-label="{% translate 'Log pages' %}">
-{% if query.before %}<form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<button type="submit">{% translate "Back to the newest entries" %}</button></form>{% endif %}
-{% if following %}<form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<input type="hidden" name="before" value="{{ following.before }}"><input type="hidden" name="before_id" value="{{ following.before_id }}"><button type="submit">{% translate "Older entries" %}</button></form>{% endif %}
-</nav>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}

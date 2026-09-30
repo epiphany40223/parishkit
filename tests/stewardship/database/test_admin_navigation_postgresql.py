@@ -172,12 +172,14 @@ def test_background_pagination_preserves_filtered_scope(auth_service, google):
     browser, _ = signed_in()
     response = browser.get("/admin/background?state=succeeded&size=1")
     assert response.status_code == 200
-    assert b"state=succeeded&amp;size=1&amp;page=2" in response.content
+    following = b"state=succeeded&amp;sort=-created&amp;size=1&amp;page=2"
+    assert following in response.content
     assert b'value="succeeded" selected' in response.content
-    # Shared navigator and table styling; a windowed page shows no total.
+    # Shared navigator and table styling; a windowed page shows a bounded total.
     assert b'class="table-nav"' in response.content
     assert b'class="data-table"' in response.content
-    assert b"Showing 1\xe2\x80\x931<" in response.content
+    assert b"Showing 1\xe2\x80\x931 of 2" in response.content
+    assert b"Page 1 of 2" in response.content
 
 
 def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):

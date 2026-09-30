@@ -9,21 +9,22 @@
   <select name="state" id="delivery-state">{% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|delivery_label }}</option>{% endfor %}</select>
   <label for="delivery-query">{% translate "Exact Family DUID or delivery ID" %}</label>
   <input id="delivery-query" name="q" value="{{ query }}" maxlength="64">
-  <input type="hidden" name="size" value="{{ table.size_value }}">
+  {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show deliveries" %}</button>
 </form>
 {% translate "Outgoing mail pages" as navigator_label %}
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="delivery-table-caption">
 <table class="data-table">
-  <caption id="delivery-table-caption">{% translate "Outgoing mail, most recently changed first" %}</caption>
+  <caption id="delivery-table-caption">{% translate "Outgoing mail" %}</caption>
   <thead><tr>
-    <th scope="col">{% translate "Recipient" %}</th>
-    <th scope="col">{% translate "Purpose" %}</th>
-    <th scope="col">{% translate "Mode" %}</th>
-    <th scope="col">{% translate "State" %}</th>
-    <th scope="col" class="numeric">{% translate "Provider attempts" %}</th>
-    <th scope="col">{% translate "Last changed" %}</th>
+    {% translate "Recipient" as heading %}{% sort_heading table "recipient" heading %}
+    {% translate "Purpose" as heading %}{% sort_heading table "purpose" heading %}
+    {% translate "Mode" as heading %}{% sort_heading table "mode" heading %}
+    {% translate "State" as heading %}{% sort_heading table "state" heading %}
+    {% translate "Provider attempts" as heading %}{% sort_heading table "attempts" heading "numeric" %}
+    {% translate "Last changed" as heading %}{% sort_heading table "changed" heading %}
+    {% translate "Created" as heading %}{% sort_heading table "created" heading %}
   </tr></thead>
   <tbody>
   {% for delivery in table.rows %}<tr>
@@ -33,7 +34,8 @@
     <td>{{ delivery.state|delivery_label }}</td>
     <td class="numeric">{{ delivery.attempt|number }}</td>
     <td><time datetime="{{ delivery.updated_at|instant }}" data-local-instant data-compact>{{ delivery.updated_at|instant }}</time></td>
-  </tr>{% empty %}<tr><td colspan="6">{% translate "No deliveries match this view." %}</td></tr>{% endfor %}
+    <td><time datetime="{{ delivery.created_at|instant }}" data-local-instant data-compact>{{ delivery.created_at|instant }}</time></td>
+  </tr>{% empty %}<tr><td colspan="7">{% translate "No deliveries match this view." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

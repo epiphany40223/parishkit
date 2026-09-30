@@ -7,6 +7,8 @@ from uuid import UUID
 from django.db import connection
 from django.db.models import Q
 
+from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
+
 from .outbox_models import OutboxMessage
 
 FIELDS = (
@@ -32,6 +34,28 @@ PURPOSES = (
     "family_test",
     "daily_digest",
     "weekly_digest",
+)
+# Every Outgoing mail column sorts on the server. Recipient sorts by Family
+# DUID (Administrator reports, which have no Family, sort last either way);
+# Created is the default, newest first. Only the state filter is indexed
+# (outbox_due, outbox_campaign_state); the orderings themselves are not, so
+# a page is a top-N sort of the filtered messages. The default "all" view
+# therefore scans the outbox, as its newest-first order always did; the
+# outbox grows by about one message per Family per mailing and is not
+# purged. id is the unique tiebreak.
+DELIVERY_SORTING = Sorting.by_column(
+    {
+        "recipient": ("family__family_duid",),
+        "purpose": ("purpose",),
+        "mode": ("mode",),
+        "state": ("state",),
+        "attempts": ("attempt",),
+        "changed": ("updated_at",),
+        "created": ("created_at",),
+    },
+    default="-created",
+    descending_first={"attempts", "changed", "created"},
+    tiebreak=("id",),
 )
 STATES = (
     "all",
@@ -85,8 +109,14 @@ def alert_counts(since):
     return {str(key): int(value) for key, value in events.items()}, unknown
 
 
-def listing(window, *, state, query):
-    """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL."""
+def listing(window, *, state, query, sort=DELIVERY_SORTING.default):
+    """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
+
+    Returns (window, rows, has_next, total): ``total`` is a bounded count of
+    every matching message (``web.tables.bounded_count``), and ``window`` the
+    page actually read (the last one when the requested page is past it).
+    ``sort`` is a DELIVERY_SORTING token the caller already validated.
+    """
     if state not in STATES or type(query) is not str or len(query) > 64:
         raise ValueError("Invalid delivery filter.")
     selected = messages()
@@ -101,7 +131,11 @@ def listing(window, *, state, query):
             except ValueError:
                 raise ValueError("Use an exact Family DUID or delivery ID.") from None
             selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
-    return window.rows(selected.order_by("-created_at", "-id").values(*FIELDS))
+    total = bounded_count(selected)
+    window, rows, has_next = read_window(
+        window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
+    )
+    return window, rows, has_next, total
 
 
 def family_duid(value):

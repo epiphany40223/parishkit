@@ -174,6 +174,36 @@ def test_task_and_history_pages_are_bounded_and_terminal_filter_is_explicit(
     assert len(history["events"]) == 1
 
 
+def test_task_listing_sorts_on_the_server_and_counts_its_pages(auth_service, google):
+    """Whitelisted sort tokens order the whole result before it is paged;
+    anything else, such as a raw column name, is refused."""
+    first, _second = new(), new()
+    browser, _ = signed_in()
+    oldest = browser.get(BASE, {"size": 1, "sort": "created"}).json()
+    assert oldest["tasks"][0]["id"] == str(first.run_id) and oldest["has_next"]
+    assert (oldest["matching"], oldest["matching_capped"]) == (2, False)
+    newest = browser.get(BASE, {"size": 1, "sort": "-created", "page": 2}).json()
+    assert newest["tasks"][0]["id"] == str(first.run_id)
+    # A page past the end shows the last page instead of an empty one.
+    past = browser.get(BASE, {"size": 1, "page": 9}).json()
+    assert past["page"] == 2 and past["tasks"][0]["id"] == str(first.run_id)
+    page = browser.get("/admin/background", {"size": 25, "page": 9}).content
+    assert b"Page 1 of 1" in page and b"No rows on this page" not in page
+    # A queued task has no heartbeat; newest heartbeat first lists the
+    # claimed task first, never the tasks without one.
+    claimed = act(new(), "claim")
+    beating = browser.get(BASE, {"sort": "-heartbeat", "state": "all"}).json()
+    assert beating["tasks"][0]["id"] == str(claimed.run_id)
+    assert all(task["heartbeat_at"] is None for task in beating["tasks"][1:])
+    for token in ("created_at", "-id", "task_type"):
+        assert browser.get(BASE, {"sort": token}).status_code == 400
+    page = browser.get("/admin/background", {"sort": "state", "size": 25})
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert 'aria-sort="ascending"' in html and "Page 1 of 1" in html
+    assert "sort=-state" in html
+
+
 @pytest.mark.parametrize("counts_only", [False, True])
 def test_revocation_during_query_discards_prepared_metadata(
     auth_service, google, monkeypatch, counts_only
@@ -238,8 +268,11 @@ def test_task_html_detail_is_bounded_passive_and_preserves_history_filters(
     response = browser.get(path, {"page": 1, "size": 1})
     assert response.status_code == 200 and response["Cache-Control"] == "no-store"
     assert b"1,000 out of 4,000 (25%)" in response.content
-    assert b"Task history (newest first)" in response.content
-    assert b"page=2&amp;size=1" in response.content
+    assert b"Task history" in response.content and b"Page 1 of 3" in response.content
+    assert b"sort=-version&amp;size=1&amp;page=2" in response.content
+    oldest = browser.get(path, {"size": 1, "sort": "version"}).content.decode()
+    assert 'aria-sort="ascending"' in oldest and '<td class="numeric">1</td>' in oldest
+    assert browser.get(path, {"sort": "created_at"}).status_code == 400
     assert PortalSession.objects.get().last_activity_at == before
     assert browser.get(f"/admin/background/task/{uuid4()}").status_code == 404
     assert Client().get(path).status_code == 403

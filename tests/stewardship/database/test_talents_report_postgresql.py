@@ -114,6 +114,24 @@ def test_native_page_and_downloads(response_service, google, settings):
         response, body = search(browser, route, {"talent": "cannot_serve"})
         assert response.status_code == 200 and b"No matching Members." in body
         assert search(browser, route, {"talent": "bad"})[0].status_code == 400
+        # Shared tables (#203): every column sorts on the server, both tables
+        # page independently, and the controls are POST forms, never links.
+        response, body = search(
+            browser,
+            route,
+            {"talent": "any", "members_sort": "-latest", "families_size": "25"},
+        )
+        assert response.status_code == 200 and b"Page 1 of 1" in body
+        assert b'aria-sort="descending"' in body and b'<a class="sort-link"' not in body
+        assert b'name="families_size" value="25"' in body
+        assert b'name="members_sort" value="latest"' in body
+        for invalid in (
+            {"members_sort": "submitted_at"},
+            {"families_sort": "-talents"},
+            {"members_size": "7"},
+            {"families_page": "x"},
+        ):
+            assert search(browser, route, invalid)[0].status_code == 400
         export = route + "export"
         response, body = search(
             browser, export, {"format": "csv", "timezone": "UTC", "talent": "any"}
@@ -131,3 +149,39 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert route.encode() in body
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()
     assert AuditEvent.objects.filter(event_type="talents_report_exported").exists()
+
+
+def test_both_tables_sort_every_column_in_memory():
+    """The complete in-memory report sorts before paging, per table."""
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.reports.talent_views import tables
+
+    def row(name, duid, day, talents=(), cannot=False):
+        """One member/family row as the selection shapes it."""
+        return {
+            "member_name": name,
+            "family_name": name,
+            "family_duid": duid,
+            "talents": list(talents),
+            "cannot_serve": cannot,
+            "submitted_at": datetime(2026, 9, day, tzinfo=UTC),
+        }
+
+    result = {
+        "members": [row("b", 2, 1, ["Zither"]), row("A", 1, 3, [], True)],
+        "families": [row("b", 2, 1), row("a", 1, 3)],
+    }
+    members, families = tables(
+        result,
+        TalentQuery(search="private"),
+        {"members_sort": "-cannot_serve", "families_sort": "-duid"},
+        "/r/",
+    )
+    assert [r["family_duid"] for r in members.rows] == [1, 2]
+    assert [r["family_duid"] for r in families.rows] == [2, 1]
+    assert members.method == families.method == "post" and members.action == "/r/"
+    assert ("search", "private") in members.carried
+    assert ("families_sort", "-duid") in members.carried
+    members, _ = tables(result, TalentQuery(), {"members_sort": "talents"}, "/r/")
+    assert [r["family_duid"] for r in members.rows] == [1, 2]

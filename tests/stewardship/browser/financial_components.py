@@ -5,8 +5,14 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.financial import FREQUENCY_LABELS, FinancialQuery
+from parishkit.stewardship.reports.financial import (
+    FINANCIAL_SORTING,
+    FREQUENCY_LABELS,
+    PAGE_SIZES,
+    FinancialQuery,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.web.tables import report_table
 
 
 def components(context, admin):
@@ -48,20 +54,37 @@ def components(context, admin):
     query = FinancialQuery.parse(
         dict(search="Example", pledge_min="100.00", share=online)
     )
+
+    def table(rows, *, number=1, total=51):
+        """The shared POST report table the view builds around one SQL page."""
+        return report_table(
+            rows,
+            number=number,
+            size=50,
+            total=total,
+            carry=[
+                (key, value)
+                for key, value in query.form_values().items()
+                if key != "sort"
+            ],
+            sorting=FINANCIAL_SORTING,
+            sort=query.sort,
+            action=f"/admin/reports/{campaign}/financial/",
+            sizes=PAGE_SIZES,
+        )
+
     values = dict(
         campaign_id=campaign,
         query=query,
         query_fields=query.form_values(),
         frequencies=FREQUENCY_LABELS,
         share_choices=[(other, "Another way"), (online, "Online <giving>")],
-        previous_page=None,
-        next_page=2,
+        table=table([row]),
         total=51,
         # The export form: enabled, with its one-time key and timezone choices.
         mutable=True,
         request_key=UUID(int=100),
         export_timezones=("America/New_York", "UTC"),
-        rows=[row],
         summary=dict(
             families=51,
             annual_total=MoneyAmount(6295950),
@@ -82,15 +105,13 @@ def components(context, admin):
         "/financial-report": values,
         "/financial-unproven": values
         | dict(
-            rows=[unproven, row | dict(active=False)],
+            table=table([unproven, row | dict(active=False)]),
             metadata=values["metadata"] | dict(giving_through=None),
         ),
-        "/financial-empty": values | dict(rows=[], total=0, next_page=None),
+        "/financial-empty": values | dict(table=table([], total=0), total=0),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
-        "/financial-last": values | dict(previous_page=1, next_page=None),
-        # A stale Next click: matches exist, but none on this page.
-        "/financial-beyond": values | dict(rows=[], previous_page=2, next_page=None),
+        "/financial-last": values | dict(table=table([row], number=2)),
     }
     result = {
         path: (

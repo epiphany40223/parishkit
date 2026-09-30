@@ -12,6 +12,7 @@ from parishkit.stewardship.audit.log_rows import (
     LEVELS,
     LogQuery,
     audit_row,
+    log_table,
     operational_row,
     page_context,
     task_subject,
@@ -67,7 +68,11 @@ def _render(query=None, rows=None):
         ]
     )
     return render_to_string(
-        "stewardship/logs.html", page_context(query or LogQuery(), rows, None)
+        "stewardship/logs.html",
+        page_context(
+            query or LogQuery(),
+            log_table(query or LogQuery(), rows, through=NOW, action="/admin/logs"),
+        ),
     )
 
 

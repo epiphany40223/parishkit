@@ -16,6 +16,7 @@ from parishkit.stewardship.audit.log_descriptions import (
 from parishkit.stewardship.audit.log_rows import (
     LogQuery,
     audit_row,
+    log_table,
     operational_row,
     page_context,
 )
@@ -133,7 +134,12 @@ def test_page_shows_explanation_actor_kind_and_related_link():
     operational.update(actor=None, actor_worker=False, task_subject=False)
     html = render_to_string(
         "stewardship/logs.html",
-        page_context(LogQuery(), [operational, audit], None),
+        page_context(
+            LogQuery(),
+            log_table(
+                LogQuery(), [operational, audit], through=NOW, action="/admin/logs"
+            ),
+        ),
     )
     assert "Removing old ParishSoft copies was skipped this time" in html
     assert "A Family signed in to the Family form." in html

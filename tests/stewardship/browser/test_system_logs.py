@@ -62,8 +62,13 @@ def test_logs_mobile_keyboard_and_accessibility(
     # The chosen filters are kept, including a ticked DEBUG.
     assert page.get_by_label("Debug", exact=True).is_checked()
     assert page.get_by_label("Task or request correlation identifier").input_value()
-    assert page.get_by_role("button", name="Older entries").count() == 1
-    assert page.get_by_role("button", name="Back to the newest entries").count() == 0
+    # The shared navigator, above and below the table, pages by POST forms.
+    assert page.get_by_role("button", name="Next", exact=True).count() == 2
+    assert page.get_by_role("button", name="Previous", exact=True).count() == 0
+    assert page.get_by_text("Page 1 of 2", exact=True).count() == 2
+    time = page.get_by_role("columnheader", name="Time", exact=False)
+    assert time.get_attribute("aria-sort") == "descending"
+    assert time.get_by_role("button", name="sort ascending").count() == 1
     search = page.get_by_label("Source")
     search.focus()
     # The type's help bubble sits between its label and its field. WebKit's
@@ -78,7 +83,8 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert not page.get_by_label("Debug", exact=True).is_checked()
     assert page.get_by_label("Critical", exact=True).is_checked()
     page.goto(component_origin + "/logs-older")
-    assert page.get_by_role("button", name="Back to the newest entries").count() == 1
+    assert page.get_by_role("button", name="Previous", exact=True).count() == 2
+    assert page.get_by_text("Page 2 of 2", exact=True).count() == 2
     # A CRITICAL entry stands out: its own icon on a highlighted row.
     critical = page.locator("tr.log-row-critical")
     assert critical.count() == 1
@@ -109,7 +115,7 @@ def test_logs_mobile_keyboard_and_accessibility(
 
 
 def test_log_filters_and_paging_without_scripts(browser_engine, component_origin):
-    """Identifiers and the cursor post natively, never through the URL."""
+    """Identifiers, the snapshot and the sort post natively, never in the URL."""
     context = browser_engine.new_context(java_script_enabled=False)
     try:
         page = context.new_page()
@@ -144,11 +150,20 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
 
         page.goto(component_origin + "/logs")
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Older entries").click()
+            page.get_by_role("button", name="Next", exact=True).first.click()
         body = sent.value.post_data
-        # The cursor travels with the applied filters, not the edited form.
-        assert "before=2026-09-19T15%3A0" in body and "before_id=" in body
+        # The snapshot travels with the applied filters, not the edited form.
+        assert "through=2026-09-19T15%3A04%3A05.123456%2B00%3A00" in body
+        assert "page=2" in body and "sort=newest" in body and "size=25" in body
         assert "debug=yes" in body and "correlation=00000000" in body
         assert "?" not in sent.value.url
+
+        page.goto(component_origin + "/logs")
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="sort ascending").click()
+        body = sent.value.post_data
+        # A heading keeps the filters and snapshot and starts at page one.
+        assert "sort=oldest" in body and "through=" in body and "page=" not in body
+        assert "correlation=00000000" in body and "?" not in sent.value.url
     finally:
         context.close()

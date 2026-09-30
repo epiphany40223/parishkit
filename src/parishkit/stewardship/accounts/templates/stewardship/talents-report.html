@@ -15,6 +15,7 @@
 <form method="post" action="{% url 'admin:talents_report' campaign_id %}">{% csrf_token %}
 <label for="talents-search">{% translate "Search name or Family DUID" %}</label><input id="talents-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="talents-filter">{% translate "Show" %}</label><select id="talents-filter" name="talent"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.talent == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.talent == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option>{% for key,label in talent_choices %}<option value="{{ key }}"{% if query.talent == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+{% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <button type="submit">{% translate "Apply filters" %}</button></form>
 <section aria-labelledby="talents-export-heading">
 <h2 id="talents-export-heading">{% translate "Download" %}</h2>
@@ -25,18 +26,22 @@
 <button type="submit">{% translate "Download with these filters" %}</button></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <h2>{% translate "Members" %}</h2>
+{% translate "Member pages" as members_label %}{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Members with talents or limitations' %}"><table>
-<caption>{% translate "Members with talents or limitations" %}</caption><thead><tr><th scope="col">{% translate "Member" %}</th><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Talents" %}</th><th scope="col">{% translate "Cannot participate in ministries" %}</th><th scope="col">{% translate "Latest response" %}</th></tr></thead><tbody>
-{% for row in members %}<tr>
+<caption>{% translate "Members with talents or limitations" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% translate "Talents" as heading %}{% sort_heading members_table "talents" heading %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
+{% for row in members_table.rows %}<tr>
 <th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
 <td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}</td>
 <td>{% for talent in row.talents %}{{ talent }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
 <td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
 {% empty %}<tr><td colspan="5">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
 <h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
+{% translate "Family pages" as families_label %}{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families that cannot attend Mass or prayer services' %}"><table>
-<caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Family DUID" %}</th><th scope="col">{% translate "Latest response" %}</th></tr></thead><tbody>
-{% for row in families %}<tr><th scope="row">{{ row.family_name }}</th><td>{{ row.family_duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+<caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading families_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading families_table "duid" heading %}{% translate "Latest response" as heading %}{% sort_heading families_table "latest" heading %}</tr></thead><tbody>
+{% for row in families_table.rows %}<tr><th scope="row">{{ row.family_name }}</th><td>{{ row.family_duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
 {% empty %}<tr><td colspan="3">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
 {% endblock %}

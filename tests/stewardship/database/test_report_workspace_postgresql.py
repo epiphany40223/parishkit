@@ -193,6 +193,12 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         ]
         assert len(days_one) == len(days_two) == 2
         assert days_one + days_two == sorted(days_one + days_two, reverse=True)
+        # Every column heading sorts on the server; the date heading is the
+        # sorted one here and says so.
+        assert b'aria-sort="descending"' in page_one and b"Page 1 of " in page_one
+        response, by_count = read(browser, path + "?sort=-first&size=2")
+        assert response.status_code == 200 and b"sort=first" in by_count
+        assert read(browser, path + "?sort=first_responses")[0].status_code == 400
         # An unrelated discovery result must never change this report's guard.
         monkeypatch.setattr(workspace_views, "campaign_ids", lambda: (uuid4(),))
         assert read(browser, path)[0].status_code == 200

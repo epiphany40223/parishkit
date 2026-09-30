@@ -734,6 +734,20 @@ def test_shared_table_selection_enables_bulk_actions(page, component_origin):
     visible(page.get_by_text("Showing 1–2 of 2").first)
 
 
+def test_sortable_headings_state_and_name_their_direction(page, component_origin):
+    """Sort headings are plain links: aria-sort marks the sorted column and
+    each link's accessible name says which direction it will choose."""
+    page.goto(component_origin + "/background")
+    created = page.get_by_role("columnheader", name="Created")
+    assert created.get_attribute("aria-sort") == "descending"
+    assert page.locator("th[aria-sort]").count() == 1
+    link = page.get_by_role("link", name="Created (sort ascending)")
+    assert "sort=created" in link.get_attribute("href")
+    task = page.get_by_role("link", name="Task (sort ascending)")
+    assert "sort=task" in task.get_attribute("href")
+    visible(page.get_by_text("Page 1 of 2").first)
+
+
 def test_campaign_modules_hide_and_disable_unselected_fields(page, component_origin):
     """Conditional groups cannot accidentally post data from a disabled module."""
     page.goto(component_origin + "/campaign-settings")

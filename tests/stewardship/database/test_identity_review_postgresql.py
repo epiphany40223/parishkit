@@ -155,7 +155,7 @@ def test_report_pagination_uses_bounded_windows_and_navigation(report):
         body = b"".join(response.streaming_content).decode()
         response.close()
         assert body.count('scope="row"') == 1
-        assert f'<th scope="row">{page}</th>' in body
+        assert f'<th scope="row" class="numeric">{page}</th>' in body
         # The shared navigator links only to pages that exist.
         assert ('rel="next"' in body) == (page == 1)
         assert ('rel="prev"' in body) == (page == 2)

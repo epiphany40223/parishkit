@@ -49,10 +49,14 @@ def links(request, campaign_id, request_id):
                 )
                 for record in context["records"]
             )
-            # Preparation records stay panels (each has its own controls); only
-            # the paging uses the shared navigator.
+            # Preparation records stay panels, newest first (each has its own
+            # controls), so there are no column headings to sort by; only the
+            # paging, with its page count, uses the shared navigator.
             context["table"] = window_table(
-                window, context["records"], context["has_next"]
+                context["window"],
+                context["records"],
+                context["has_next"],
+                total=context["total"],
             )
             response = render(request, "stewardship/go-live-links.html", context)
         return _checked(request, service, response)

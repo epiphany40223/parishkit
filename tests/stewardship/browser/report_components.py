@@ -9,7 +9,7 @@ from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.digest_presentation import participation_context
 from parishkit.stewardship.reports.workspace import ReportQuery
-from parishkit.stewardship.web.tables import paginate
+from parishkit.stewardship.reports.workspace_views import daily_table
 
 from ..test_daily_digest_content import document
 
@@ -40,7 +40,11 @@ def components(context, admin):
         "exact_row_count": len(chart.days),
         "export_allowed": True,
         "row_count": len(chart.days),
-        "table": paginate(participation_context(chart)["rows"], {}),
+        **daily_table(
+            chart,
+            participation_context(chart),
+            ReportQuery(timezone="America/Los_Angeles"),
+        ),
         "chart_url": "/digest-chart.png",
     }
     job = SimpleNamespace(

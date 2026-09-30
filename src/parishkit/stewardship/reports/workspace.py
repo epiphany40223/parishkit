@@ -7,9 +7,52 @@ from django.urls import reverse
 
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import PageWindow, filters
-from parishkit.stewardship.web.tables import ALL, PAGE_SIZES
+from parishkit.stewardship.web.tables import ALL, PAGE_SIZES, Sorting
 
 from .participation import SCOPE_LABELS
+
+
+def _ratio(day):
+    """Cumulative participation as a fraction, or None when unavailable."""
+    if not day.population_available or not day.cohort_denominator:
+        return None
+    return day.cumulative_responses / day.cohort_denominator
+
+
+def _first(day):
+    """First submissions that day, or None when the population is unavailable."""
+    return day.first_responses if day.population_available else None
+
+
+def _pledge(day):
+    """Cumulative annual pledges, or None when unavailable."""
+    return day.pledge_total if day.pledge_available else None
+
+
+# The daily table's rows are (day, formatted cells) pairs, and it sorts every
+# column on the server over the whole in-memory document. The date tokens
+# keep their established names (date_asc and date_desc), which older report
+# links and the options form still carry; an unavailable value sorts after
+# every known one ascending.
+DAILY_SORTING = Sorting(
+    {
+        "date_asc": ("date", False),
+        "date_desc": ("date", True),
+        "-first": ("first", True),
+        "first": ("first", False),
+        "-participation": ("participation", True),
+        "participation": ("participation", False),
+        "-pledge": ("pledge", True),
+        "pledge": ("pledge", False),
+    },
+    "date_asc",
+    {
+        "date": lambda row: row[0].local_date,
+        "first": lambda row: _first(row[0]),
+        "participation": lambda row: _ratio(row[0]),
+        "pledge": lambda row: _pledge(row[0]),
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -45,7 +88,7 @@ class ReportQuery:
             or not page.isascii()
             or not page.isdecimal()
             or str(int(page)) != page
-            or sort not in {"date_asc", "date_desc"}
+            or sort not in DAILY_SORTING.tokens
             or size not in {*map(str, PAGE_SIZES), ALL}
         ):
             raise ValueError("Invalid report filters.")
@@ -61,11 +104,13 @@ class ReportQuery:
         )
 
     def carried(self):
-        """Filter values every daily-table navigator link must keep."""
+        """Filter values every daily-table navigator link must keep.
+
+        The sort token is not listed: the shared table carries it itself.
+        """
         values = [
             ("scope", self.scope),
             ("inactive", "yes" if self.inactive else "no"),
-            ("sort", self.sort),
         ]
         if self.timezone_explicit:
             values.append(("timezone", self.timezone))

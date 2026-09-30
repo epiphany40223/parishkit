@@ -29,10 +29,11 @@
 <button type="submit">{% translate "Retry report work" %}</button>
 </form></section>
 {% endif %}
-<div class="table-scroll"><table><caption>{% translate "Task history (newest first)" %}</caption>
-<thead><tr><th scope="col">{% translate "Version" %}</th><th scope="col">{% translate "Time" %}</th><th scope="col">{% translate "Action" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "Phase and progress" %}</th></tr></thead>
-<tbody>{% for event in work.events %}<tr><td>{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{{ event.action }}</td><td>{{ event.state }}</td><td>{{ event.progress.phase }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
-{% if work.has_next %}<p><a href="?{{ next_query }}">{% translate "Older history" %}</a></p>{% endif %}
+{% if history %}{% translate "Task history pages" as history_label %}{% include "stewardship/table-navigator.html" with table=history label=history_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="task-history-caption"><table class="data-table"><caption id="task-history-caption">{% translate "Task history" %}</caption>
+<thead><tr>{% translate "Version" as heading %}{% sort_heading history "version" heading "numeric" %}{% translate "Time" as heading %}{% sort_heading history "time" heading %}{% translate "Action" as heading %}{% sort_heading history "action" heading %}{% translate "State" as heading %}{% sort_heading history "state" heading %}{% translate "Phase and progress" as heading %}{% sort_heading history "progress" heading %}</tr></thead>
+<tbody>{% for event in history.rows %}<tr><td class="numeric">{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{{ event.action }}</td><td>{{ event.state }}</td><td>{{ event.progress.phase }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No history on this page." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=history label=history_label %}{% endif %}
 {% if work.latest_run_id and work.latest_run_id != task.id %}<p><a href="{% url 'admin:background_task_page' work.latest_run_id %}">{% translate "View the latest retry" %}</a></p>{% endif %}
 <p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Refresh task" %}</a> · <a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
 <p>{% translate "Refreshing this status does not extend your login session." %}</p>

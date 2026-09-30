@@ -21,7 +21,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.hosted_file_types import FileRefused
-from parishkit.stewardship.web.tables import paginate, table_parameters
+from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import hosted_file_storage as storage
 from . import hosted_file_uses, hosted_files
@@ -128,6 +128,24 @@ class RenameForm(forms.Form):
     )
 
 
+# Every data column sorts on the server over the whole library (at most
+# MAX_FILES rows, read in placeholder order, so equal values keep that
+# order). Preview is a thumbnail of the Type column and Actions holds
+# controls, so neither is a sort key; Used in sorts by how many uses.
+LIBRARY_SORTING = Sorting.by_column(
+    {
+        "name": lambda row: row["file"].original_name.casefold(),
+        "placeholder": lambda row: row["file"].slug,
+        "type": lambda row: str(row["type"]).casefold(),
+        "size": lambda row: row["file"].size,
+        "uploaded": lambda row: row["file"].created_at,
+        "uses": lambda row: len(row["uses"]),
+    },
+    default="placeholder",
+    descending_first={"size", "uploaded", "uses"},
+)
+
+
 def _no_store(response):
     """Admin pages carry configuration; browsers keep no copy."""
     response["Cache-Control"] = "no-store"
@@ -174,7 +192,7 @@ def _library(request, *, form=None, status=200, notice=None):
         uploaded = next(
             (row for row in files if str(row.pk) == selected["uploaded"]), None
         )
-    table = paginate(_rows(files), selected)
+    table = paginate(_rows(files), selected, sorting=LIBRARY_SORTING)
     response = render(
         request,
         "stewardship/hosted-files.html",

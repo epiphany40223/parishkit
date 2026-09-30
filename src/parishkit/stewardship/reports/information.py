@@ -12,6 +12,7 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationRevision
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
+from parishkit.stewardship.web.tables import Sorting
 
 from .weekly_presentation import DISPOSITIONS
 
@@ -22,6 +23,23 @@ ORDERS = {
     "name_desc": "lower(family_name) DESC,id",
 }
 PAGE_SIZE = 50
+# Rows per page the queue offers; the selection accepts 1-100.
+PAGE_SIZES = (25, 50, 100)
+# The installed selection (stewardship_information_report_v1) orders and
+# pages the queue itself (ORDERS above mirrors it for exports), so its closed
+# ``sort`` vocabulary is the whole list of column sorts: Family by name and
+# Submitted by time, each either way, newest first on a first click.
+# Disposition, text, follow-up needed and completion cannot be sorted without
+# changing that frozen SQL (schema freeze, #203).
+INFORMATION_SORTING = Sorting(
+    {
+        "name": ("family", False),
+        "name_desc": ("family", True),
+        "newest": ("submitted", True),
+        "oldest": ("submitted", False),
+    },
+    "newest",
+)
 
 
 @dataclass(frozen=True, repr=False)
@@ -82,7 +100,7 @@ def parse_page(value):
     return int(value)
 
 
-def information_page(campaign_id, query, *, item_id=None):
+def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
     """Detach one coherent source/item page under the caller's campaign guard.
 
     The shared closed SQL query also owns complete export captures. Every private
@@ -97,7 +115,7 @@ def information_page(campaign_id, query, *, item_id=None):
                 json.dumps({"filters": query.form_values(), "history": False}),
                 query.page,
                 item_id,
-                PAGE_SIZE,
+                page_size,
             ),
         )
         value = cursor.fetchone()

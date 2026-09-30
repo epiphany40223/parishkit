@@ -6,7 +6,12 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.information import InformationQuery
+from parishkit.stewardship.reports.information import (
+    INFORMATION_SORTING,
+    PAGE_SIZES,
+    InformationQuery,
+)
+from parishkit.stewardship.web.tables import report_table
 
 
 def components(context, admin):
@@ -43,9 +48,23 @@ def components(context, admin):
         query_fields=query.form_values(),
         total=51,
         rows=[item],
+        table=report_table(
+            [item],
+            number=1,
+            size=50,
+            total=51,
+            carry=[
+                (key, value)
+                for key, value in query.form_values().items()
+                if key != "sort"
+            ],
+            sorting=INFORMATION_SORTING,
+            sort=query.sort,
+            action=f"/admin/reports/{campaign}/information/",
+            sizes=PAGE_SIZES,
+        ),
         mutable=True,
         export_timezones=("UTC", "America/Detroit"),
-        next_page=2,
         request_key=UUID(int=83),
         history_page=1,
         history=[

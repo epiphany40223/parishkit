@@ -561,6 +561,22 @@ def test_the_library_page_uses_the_shared_table(auth_service, google, media):
     assert 'data-copy="placeholder-' in page
 
 
+def test_the_library_sorts_every_column_on_the_server(auth_service, google, media):
+    """A heading's sort orders the whole library before paging; raw column
+    names are refused and the navigator shows the page count."""
+    browser, _ = signed_in()
+    uploaded(browser, "alpha.pdf", samples.pdf(), "zulu")
+    uploaded(browser, "Bravo.pdf", samples.pdf(), "yankee")
+    page = browser.get(LIBRARY, {"sort": "-name", "size": "25"}).content.decode()
+    assert page.index("Bravo.pdf") < page.index("alpha.pdf")
+    assert 'aria-sort="descending"' in page and "Page 1 of 1" in page
+    default = browser.get(LIBRARY).content.decode()
+    assert default.index("Bravo.pdf") < default.index("alpha.pdf")
+    by_name = browser.get(LIBRARY, {"sort": "name"}).content.decode()
+    assert by_name.index("alpha.pdf") < by_name.index("Bravo.pdf")
+    assert browser.get(LIBRARY, {"sort": "original_name"}).status_code == 400
+
+
 def other_connection():
     """A second session to the test database, as a concurrent request would use."""
     settings = connection.settings_dict

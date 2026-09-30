@@ -145,6 +145,7 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
         page = browser.get(path)
         assert b"Inactive links are prepared" in page.content
         assert page.context["records"][0]["task"].state == "succeeded"
+        assert page.context["total"] == (1, False) and b"Page 1 of 1" in page.content
         cancel = {"control": page.context["records"][0]["controls"]["cancel"]}
         other_cancel = {
             "control": browser.get(path).context["records"][0]["controls"]["cancel"]

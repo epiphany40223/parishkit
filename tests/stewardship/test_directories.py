@@ -65,6 +65,24 @@ def test_directory_audit_rejects_private_filter_values(context):
         sanitize(ContextKind.ACTION, context)
 
 
+def _table(rows):
+    """The shared POST report table the view builds around one SQL page."""
+    from parishkit.stewardship.reports.directories import DIRECTORY_SORTING
+    from parishkit.stewardship.web.tables import report_table
+
+    return report_table(
+        rows,
+        number=1,
+        size=50,
+        total=len(rows),
+        carry=(("search", "private"),),
+        sorting=DIRECTORY_SORTING,
+        sort="name",
+        action="/admin/directory/",
+        sizes=(50,),
+    )
+
+
 @pytest.mark.parametrize(
     "address, expected, label",
     [
@@ -97,15 +115,17 @@ def test_primary_address_nulls_and_unavailable_state(address, expected, label):
             "campaign_id": UUID(int=80),
             "metadata": {"source_generation": 1},
             "total": 1,
-            "rows": [
-                {
-                    "family_name": "Example",
-                    "display_name": "Example",
-                    "family_duid": 1,
-                    "address": address,
-                    "address_lines": lines,
-                }
-            ],
+            "table": _table(
+                [
+                    {
+                        "family_name": "Example",
+                        "display_name": "Example",
+                        "family_duid": 1,
+                        "address": address,
+                        "address_lines": lines,
+                    }
+                ]
+            ),
             "query": DirectoryQuery(),
         },
     )
@@ -128,20 +148,22 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
             "metadata": {"source_generation": 1},
             "total": 2,
             "testing_codes": testing,
-            "rows": [
-                {
-                    "family_name": "Example",
-                    "display_name": "Example, Anna and John",
-                    "family_duid": 1,
-                    "code": "ABCD-EFGH",
-                },
-                {
-                    "family_name": "Codeless",
-                    "display_name": "Codeless",
-                    "family_duid": 2,
-                    "code": None,
-                },
-            ],
+            "table": _table(
+                [
+                    {
+                        "family_name": "Example",
+                        "display_name": "Example, Anna and John",
+                        "family_duid": 1,
+                        "code": "ABCD-EFGH",
+                    },
+                    {
+                        "family_name": "Codeless",
+                        "display_name": "Codeless",
+                        "family_duid": 2,
+                        "code": None,
+                    },
+                ]
+            ),
             "query": DirectoryQuery(),
         },
     )
@@ -153,3 +175,37 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
     assert html.count("Example, Anna and John") == (2 if testing else 3)
     assert ("data-open-form-notice" in html) is not testing
     assert ("appear next to the codes once the campaign is live" in html) is testing
+
+
+def test_directory_headings_and_pages_post_private_filters():
+    """Family and DUID headings sort through the installed selection's closed
+    vocabulary; every control is a POST form, so the private search never
+    reaches a URL, and the page shows "Page N of M"."""
+    from uuid import UUID
+
+    from parishkit.stewardship.reports.report_paging import pop_page_size
+
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 1,
+            "table": _table(
+                [{"family_name": "A", "display_name": "A", "family_duid": 1}]
+            ),
+            "query": DirectoryQuery(search="private"),
+            "csrf_token": "token",
+        },
+    )
+    assert 'aria-sort="ascending"' in html and "Page 1 of 1" in html
+    assert '<input type="hidden" name="sort" value="name_desc">' in html
+    assert '<input type="hidden" name="sort" value="duid">' in html
+    assert "private" not in "".join(
+        part.split('"')[0] for part in html.split("href=")[1:]
+    )
+    assert html.count("aria-sort") == 1
+    for size in ("25", "5x", "050"):
+        with pytest.raises(ValueError):
+            pop_page_size(QueryDict(f"size={size}").copy(), (50,))
+    assert pop_page_size(QueryDict("size=50").copy(), (50,)) == 50

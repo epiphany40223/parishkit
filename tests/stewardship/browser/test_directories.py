@@ -65,7 +65,7 @@ def test_directory_pagination_works_without_scripts(browser_engine, component_or
         visible(page.get_by_role("columnheader", name="Mailing address"))
         page.route("**/families/", lambda route: route.fulfill(body="Next page"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Next page").click()
+            page.get_by_role("button", name="Next", exact=True).first.click()
         # Paging keeps the mailing columns on.
         assert (
             "page=2" in sent.value.post_data

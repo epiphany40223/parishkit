@@ -5,7 +5,28 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.ministries import STATES, MinistryQuery
+from parishkit.stewardship.reports.ministries import (
+    DETAIL_SORTING,
+    STATES,
+    SUMMARY_SORTING,
+    MinistryQuery,
+)
+from parishkit.stewardship.web.tables import report_table
+
+
+def _table(rows, query, total, *, ministry, action):
+    """The shared POST navigator/heading model the view builds (#203)."""
+    return report_table(
+        rows,
+        number=1,
+        size=50,
+        total=total,
+        carry=[(k, v) for k, v in query.form_values().items() if k != "sort"]
+        + ([("ministry", str(ministry))] if ministry else []),
+        sorting=DETAIL_SORTING if ministry else SUMMARY_SORTING,
+        sort=query.sort,
+        action=action,
+    )
 
 
 def components(context, admin):
@@ -24,12 +45,10 @@ def components(context, admin):
         packet_key=UUID(int=96),
         export_fields=query.form_values(),
         export_timezones=["UTC", "America/Detroit"],
-        query_fields=query.form_values() | {"ministry": 9},
         states=STATES,
         report_url=root + "join/",
         summary_url=root,
         total=51,
-        next_page=2,
         metadata=dict(
             name="Sample campaign",
             source_generation=1234,
@@ -63,20 +82,31 @@ def components(context, admin):
             )
         ],
     )
+    detail = _table(values["rows"], query, 51, ministry=9, action=root + "join/")
+    history = MinistryQuery(history="all")
     pages = {
-        "/ministry-detail": values,
+        "/ministry-detail": values | dict(table=detail),
         "/ministry-summary": values
         | dict(
             ministry_id=None,
             action=None,
             rows=[],
-            query_fields=query.form_values(),
             report_url=root,
+            table=_table(values["summaries"], query, 1, ministry=None, action=root),
         ),
-        "/ministry-history": values | dict(query=MinistryQuery(history="all")),
+        "/ministry-history": values
+        | dict(
+            query=history,
+            table=_table(values["rows"], history, 51, ministry=9, action=root),
+        ),
         "/ministry-empty": values
-        | dict(rows=[], summaries=[], total=0, next_page=None),
-        "/ministry-gated": values | dict(mutable=False),
+        | dict(
+            rows=[],
+            summaries=[],
+            total=0,
+            table=_table([], query, 0, ministry=9, action=root + "join/"),
+        ),
+        "/ministry-gated": values | dict(mutable=False, table=detail),
     }
     return {
         path: (

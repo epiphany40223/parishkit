@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -19,17 +20,21 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tables import report_table
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import (
+    FINANCIAL_SORTING,
     FREQUENCY_LABELS,
     PAGE_SIZE,
+    PAGE_SIZES,
     FinancialQuery,
     financial_page,
     giving_proof,
 )
 from .read_admission import admit_report_read
+from .report_paging import carried_filters, clamp_query, pop_page_size
 
 
 def _principal(request, store, *, read_only=False):
@@ -97,6 +102,7 @@ def report(request, campaign_id):
                 raise ValueError("Financial filters require private POST state.")
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
+            size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
             query = FinancialQuery.parse(parameters)
         except ValueError:
             # Only the requester's own filters are a 400. A later ValueError is
@@ -133,7 +139,7 @@ def report(request, campaign_id):
 
         def content():
             """Only detached authorized data reaches the native report template."""
-            nonlocal count, total
+            nonlocal count, total, query
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
@@ -141,18 +147,29 @@ def report(request, campaign_id):
             system = SystemConfiguration.objects.select_related(
                 "active_configuration__parish"
             ).get()
-            result = financial_page(
-                campaign_id,
-                query,
-                principal,
-                # SQL honors this only for the snapshot and configuration it
-                # then selects itself, so a concurrent change withholds money.
-                proof=giving_proof(campaign),
-                parish_name=system.active_configuration.parish.name,
-                configuration=configuration,
-                # The same size drives the paging arithmetic just below.
-                page_size=PAGE_SIZE,
-            )
+
+            def read():
+                """One SQL page of ``size`` rows for the current query."""
+                return financial_page(
+                    campaign_id,
+                    query,
+                    principal,
+                    # SQL honors this only for the snapshot and configuration
+                    # it then selects itself, so a concurrent change withholds
+                    # money.
+                    proof=giving_proof(campaign),
+                    parish_name=system.active_configuration.parish.name,
+                    configuration=configuration,
+                    # The same size drives the table's paging arithmetic.
+                    page_size=size,
+                )
+
+            result = read()
+            # A stale Next click after the result shrank shows the last page.
+            moved = clamp_query(query, result["total"], size)
+            if moved is not None:
+                query = moved
+                result = read()
             count, total = len(result["rows"]), result["total"]
             # The export form is offered disabled while the campaign cannot
             # accept new work, so the page never invites a request it refuses.
@@ -161,16 +178,22 @@ def report(request, campaign_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            # A stale Next click after the result shrank lands past the end;
-            # Previous then returns to the real last page, not another empty one.
-            last = max(1, -(-total // PAGE_SIZE))
             context = result | {
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
                 "frequencies": FREQUENCY_LABELS,
-                "previous_page": min(query.page - 1, last) if query.page > 1 else None,
-                "next_page": query.page + 1 if query.page * PAGE_SIZE < total else None,
+                "table": report_table(
+                    result["rows"],
+                    number=query.page,
+                    size=size,
+                    total=total,
+                    carry=carried_filters(query),
+                    sorting=FINANCIAL_SORTING,
+                    sort=query.sort,
+                    action=reverse("admin:financial_report", args=(campaign_id,)),
+                    sizes=PAGE_SIZES,
+                ),
                 "mutable": mutable,
                 "request_key": uuid4(),
                 "export_timezones": sorted(timezone_names()),

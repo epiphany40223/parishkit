@@ -9,10 +9,26 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
     OUTCOMES,
+    SORTING,
     STATES,
     FollowupQuery,
 )
+from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.models import STAFF_STATES
+
+
+def _table(rows, query, total, campaign):
+    """The shared POST navigator/heading model the queue view builds (#203)."""
+    return report_table(
+        rows,
+        number=1,
+        size=50,
+        total=total,
+        carry=[(k, v) for k, v in query.form_values().items() if k != "sort"],
+        sorting=SORTING,
+        sort=query.sort,
+        action=f"/admin/reports/{campaign}/ministries/follow-up/",
+    )
 
 
 def components(context, admin):
@@ -57,7 +73,7 @@ def components(context, admin):
     values = dict(
         campaign_id=campaign,
         query=query,
-        query_fields=query.form_values(),
+        table=_table([row], query, 51, campaign),
         mutable=True,
         item=None,
         history=[],
@@ -71,8 +87,6 @@ def components(context, admin):
         outcomes=OUTCOMES,
         channels=CHANNELS,
         viewer=str(leader),
-        previous_page=None,
-        next_page=2,
         total=51,
         rows=[row],
         ministries=[dict(duid=9, name="Example <Ministry>")],
@@ -91,11 +105,12 @@ def components(context, admin):
         "/followup-all": values
         | dict(
             query=unfiltered,
-            query_fields=unfiltered.form_values(),
+            table=_table([row], unfiltered, 51, campaign),
             bulk_ministry=None,
             assignees=[],
         ),
-        "/followup-empty": values | dict(rows=[], total=0, next_page=None),
+        "/followup-empty": values
+        | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
         "/followup-gated": values | dict(mutable=False, assignees=[]),
         "/followup-item": values
         | dict(item=row, history=[revision], next_history=2, bulk_ministry=None),

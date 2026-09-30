@@ -9,6 +9,7 @@ from parishkit.stewardship.audit.log_rows import (
     LEVEL_LABELS,
     LogQuery,
     audit_row,
+    log_table,
     merge,
     operational_row,
     page_context,
@@ -70,11 +71,17 @@ def components(context, admin):
     operational[0]["actor_id"] = UUID(int=900)
     operational[0]["actor_worker"] = True
 
-    def page(query, rows, following):
-        """Render the production context builder's output, as the view does."""
+    def page(query, rows, *, number=1, total=None):
+        """Render the production context builder's output, as the view does.
+
+        Navigator and heading forms post back to this fixture's own path.
+        """
+        table = log_table(
+            query, rows, through=moment, action="/logs", number=number, total=total
+        )
         return render_to_string(
             "stewardship/logs.html",
-            context | {"admin_chrome": admin} | page_context(query, rows, following),
+            context | {"admin_chrome": admin} | page_context(query, table),
         )
 
     everything = LogQuery.parse(
@@ -86,19 +93,23 @@ def components(context, admin):
             "error": "yes",
             "critical": "yes",
             "correlation": str(UUID(int=200)),
+            "size": "25",
         }
     )
-    # Six of the seven entries: four levels and both audit records, one older.
-    rows, following = merge(operational, audit, size=6)
-    older = LogQuery.parse({"applied": "yes", "error": "yes"} | following)
+    # Six of the seven entries, newest first: four levels and both audit
+    # records, shown as the first page of a longer snapshot.
+    rows = merge(operational, audit)[:6]
+    older = LogQuery.parse(
+        {"applied": "yes", "error": "yes", "size": "25", "page": "2"}
+    )
     result = {
-        "/logs": ("text/html", page(everything, rows, following)),
-        "/logs-default": ("text/html", page(LogQuery(), operational[1:3], None)),
-        "/logs-older": ("text/html", page(older, [*operational[4:], audit[1]], None)),
-        "/logs-empty": (
+        "/logs": ("text/html", page(everything, rows, total=30)),
+        "/logs-default": ("text/html", page(LogQuery(), operational[1:3])),
+        "/logs-older": (
             "text/html",
-            page(LogQuery.parse({"applied": "yes"}), [], None),
+            page(older, [*operational[4:], audit[1]], number=2, total=27),
         ),
+        "/logs-empty": ("text/html", page(LogQuery.parse({"applied": "yes"}), [])),
     }
     # The three error states: a refused filter value, a refused query string
     # and an outage, which is also what a denied reader sees.

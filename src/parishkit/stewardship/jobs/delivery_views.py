@@ -34,10 +34,22 @@ from parishkit.stewardship.web.contracts import (
     expected_version,
     filters,
 )
-from parishkit.stewardship.web.tables import window_table
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    bounded_count,
+    read_window,
+    window_table,
+)
 
 from .delivery_admin import clear_recipient_refusal
-from .delivery_metadata import FIELDS, STATES, family_duid, listing, messages
+from .delivery_metadata import (
+    DELIVERY_SORTING,
+    FIELDS,
+    STATES,
+    family_duid,
+    listing,
+    messages,
+)
 from .delivery_resolution import resolve_delivery
 from .delivery_resolution_models import DeliveryResolution
 from .models import TaskRun
@@ -50,6 +62,23 @@ UNAVAILABLE = (
     CryptographicError,
     LimiterUnavailable,
     ObjectDoesNotExist,
+)
+# Every Refused addresses column sorts on the server; the default keeps the
+# old Family DUID, then address, order. No index orders these keys (the
+# recipient_refusal_identity index leads with organization_id, then
+# family_duid), so each is a top-N sort over the unresolved refusals, a
+# small set (one row per refused Family address). id is the unique
+# tiebreak.
+REFUSAL_SORTING = Sorting.by_column(
+    {
+        "address": ("address",),
+        "duid": ("family_duid", "address"),
+        "refused": ("created_at",),
+        "id": ("id",),
+    },
+    default="duid",
+    descending_first={"refused"},
+    tiebreak=("id",),
 )
 MISSING_TARGET = (
     OutboxMessage.DoesNotExist,
@@ -142,9 +171,15 @@ def _retry_inputs(purpose):
     return dict(general=keys.general, public=keys.public, public_origin=origin)
 
 
-def _window(request, allowed):
-    """Bound all lists and reject repeated, unknown or malformed query options."""
-    values = filters(request.GET, allowed={"page", "size", *allowed})
+def _window(request, allowed, sorting=None):
+    """Bound all lists and reject repeated, unknown or malformed query options.
+
+    A list page passes its ``sorting``, which accepts and validates ``sort``.
+    """
+    names = {"page", "size", *allowed, *({"sort"} if sorting else ())}
+    values = filters(request.GET, allowed=names)
+    if sorting is not None:
+        values["sort"] = sorting.parse(values)
     return values, PageWindow(
         expected_version(values.get("page", "1")),
         expected_version(values.get("size", "25")),
@@ -198,7 +233,7 @@ def _next(request, window, has_next):
     return values.urlencode() if has_next else None
 
 
-def _table(request, window, rows, following):
+def _table(request, window, rows, following, *, total, sorting, sort):
     """Shared navigator model for a list page, carrying its validated filters."""
     return window_table(
         window,
@@ -207,8 +242,11 @@ def _table(request, window, rows, following):
         carry=[
             (name, value)
             for name, value in request.GET.items()
-            if name not in {"page", "size"}
+            if name not in {"page", "size", "sort"}
         ],
+        total=total,
+        sorting=sorting,
+        sort=sort,
     )
 
 
@@ -227,11 +265,21 @@ def delivery_list(request):
 
     def load():
         """Capture one filtered page without reading any private message payload."""
-        values, window = _window(request, {"state", "q"})
+        values, window = _window(request, {"state", "q"}, DELIVERY_SORTING)
         state, query = values.get("state", "all"), values.get("q", "")
-        rows, following = listing(window, state=state, query=query)
+        window, rows, following, total = listing(
+            window, state=state, query=query, sort=values["sort"]
+        )
         return dict(
-            table=_table(request, window, rows, following),
+            table=_table(
+                request,
+                window,
+                rows,
+                following,
+                total=total,
+                sorting=DELIVERY_SORTING,
+                sort=values["sort"],
+            ),
             states=STATES,
             selected_state=state,
             query=query,
@@ -324,15 +372,26 @@ def refusal_list(request):
 
     def load():
         """Read only a bounded current unresolved-address page."""
-        values, window = _window(request, {"duid"})
+        values, window = _window(request, {"duid"}, REFUSAL_SORTING)
         query = RecipientRefusal.objects.exclude(
             pk__in=RecipientRefusalResolution.objects.values("refusal_id")
         )
         if values.get("duid"):
             query = query.filter(family_duid=family_duid(values["duid"]))
-        rows, following = window.rows(query.order_by("family_duid", "address", "id"))
+        total = bounded_count(query)
+        window, rows, following = read_window(
+            window, REFUSAL_SORTING.order(query, values["sort"]), total
+        )
         return dict(
-            table=_table(request, window, rows, following),
+            table=_table(
+                request,
+                window,
+                rows,
+                following,
+                total=total,
+                sorting=REFUSAL_SORTING,
+                sort=values["sort"],
+            ),
             query=values.get("duid", ""),
         ), len(rows)
 

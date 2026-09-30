@@ -120,6 +120,24 @@ def test_native_directory_code_filters_contacts_and_response(
         assert response.status_code == 200 and harness.code.encode() in body
         response, body = read(browser, route + "?exact_code=" + harness.code)
         assert response.status_code == 400 and harness.code.encode() not in body
+        # Shared table (#203): sortable headings and the navigator are POST
+        # forms carrying the private filters, and only the installed
+        # selection's sort tokens and page size are accepted.
+        response, body = search(
+            browser, route, {"exact_code": harness.code, "sort": "duid", "size": "50"}
+        )
+        assert response.status_code == 200 and b"Page 1 of 1" in body
+        assert b'aria-sort="ascending"' in body and b'value="name"' in body
+        assert f'value="{harness.code}"'.encode() in body
+        assert b'href="?' not in body and b"exact_code=" not in body
+        for invalid in ({"sort": "family_duid"}, {"size": "25"}, {"size": "all"}):
+            assert search(browser, route, invalid)[0].status_code == 400
+        # The mailing columns and reach choice (#363) ride along on every
+        # heading and navigator form (two of each) plus the export form.
+        response, body = search(browser, route, {"mailing": "yes", "reach": "mail"})
+        assert response.status_code == 200
+        for field in (b'name="mailing" value="yes"', b'name="reach" value="mail"'):
+            assert body.count(b'<input type="hidden" ' + field) >= 5
         statistics = calculate_statistics(capture_statistics(harness.campaign.pk))
     assert result["active_total"] == statistics.active.families
     assert result["postal_total"] == statistics.active.no_deliverable_email
@@ -131,7 +149,7 @@ def test_native_directory_code_filters_contacts_and_response(
     assert contexts and harness.code not in json.dumps(contexts)
     assert "Example" not in json.dumps(contexts)
     assert any(context["exact_code_used"] for context in contexts)
-    assert all(context["directory_sort"] == "name" for context in contexts)
+    assert {context["directory_sort"] for context in contexts} == {"name", "duid"}
     assert any(
         context["matching_count"] == context["count"] == 1 for context in contexts
     )

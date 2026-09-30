@@ -15,11 +15,27 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
 from .log_descriptions import ACTOR_KINDS, describe, words
 from .schemas import FIELDS, Action
 
 PAGE_SIZE = 50
+# Only the Time column sorts. Both directions are served by the (created_at,
+# id) index each source has (operational_created_id, audit_event_created_id),
+# so a page reads index-ordered keys and merges them. Excluded columns:
+# Level (audit entries have none, so it cannot order the union), Type (the
+# audit log's audit_event_time index on (event_type, created_at) orders its
+# types, but the operational log's event column is unindexed; its
+# operational_level_time index orders by level. No index orders the union
+# by type, so every view would sort every matching operational row), Actor
+# (the name shown is an email looked up for display, not a stored value) and
+# Related / Recorded detail (links and key-value lists, not scalar values).
+LOG_SORTING = Sorting({"newest": ("time", True), "oldest": ("time", False)}, "newest")
+# Fields that page through one snapshot. The filter form keeps only the
+# rows-per-page and sort choices (``TablePage.view_fields``), never the
+# snapshot or page, so applying filters starts a new snapshot at page 1.
+PAGING = frozenset({"through", "page", "size", "sort"})
 # The only detail ever shown: fields some reviewed context schema names. A key
 # that merely looks like an identifier is not enough, because a future flat text
 # field or a trigger-written context would otherwise be rendered verbatim.
@@ -68,8 +84,14 @@ class LogQuery:
 
     DEBUG is excluded unless chosen. `applied` distinguishes a submitted form
     with no level ticked, which means none, from the first visit's default.
-    Paging is a keyset cursor because the log grows while it is being read: an
-    offset would skip or repeat entries as new ones arrive.
+    The log grows while it is being read, so paging is anchored to a snapshot:
+    the first view records `through`, the database time it read at, and every
+    later page, sort or size change carries it and lists only entries created
+    at or before it. New entries therefore cannot shift an offset page; they
+    appear once the filters are applied again. ``created_at`` is the insert
+    statement's start time, so an entry whose transaction began before the
+    snapshot but committed after it can still appear on a later page view,
+    shifting that page by one entry; such overlaps are rare and brief.
     """
 
     applied: str = ""
@@ -85,8 +107,10 @@ class LogQuery:
     campaign: str = ""
     start: str = ""
     end: str = ""
-    before: str = ""
-    before_id: str = ""
+    through: str = ""
+    page: str = ""
+    size: str = ""
+    sort: str = ""
 
     @classmethod
     def parse(cls, parameters):
@@ -108,7 +132,7 @@ class LogQuery:
             or (query.event and EVENT.fullmatch(query.event) is None)
         ):
             raise ValueError("Invalid log filters.")
-        for value in (query.actor, query.correlation, query.campaign, query.before_id):
+        for value in (query.actor, query.correlation, query.campaign):
             _identifier(value)
         for value in (query.start, query.end):
             if not value:
@@ -118,12 +142,18 @@ class LogQuery:
                 raise ValueError("Invalid log date filter.")
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid log date interval.")
-        if bool(query.before) != bool(query.before_id) or (
-            query.before and INSTANT.fullmatch(query.before) is None
+        if query.through:
+            if INSTANT.fullmatch(query.through) is None:
+                raise ValueError("Invalid log snapshot.")
+            datetime.fromisoformat(query.through)
+        if query.page and (
+            not (query.page.isascii() and query.page.isdecimal()) or len(query.page) > 9
         ):
-            raise ValueError("Invalid log cursor.")
-        if query.before:
-            datetime.fromisoformat(query.before)
+            raise ValueError("Invalid log page.")
+        if query.size and query.size not in {str(size) for size in PAGE_SIZES}:
+            raise ValueError("Invalid log page size.")
+        if query.sort:
+            LOG_SORTING.parse({"sort": query.sort})
         return query
 
     @property
@@ -142,18 +172,36 @@ class LogQuery:
         )
 
     @property
-    def cursor(self):
-        """The last entry already shown, or None for the newest page."""
-        if not self.before:
-            return None
-        return datetime.fromisoformat(self.before), UUID(self.before_id)
+    def snapshot(self):
+        """The instant this reading is anchored to, or None for a fresh one."""
+        return datetime.fromisoformat(self.through) if self.through else None
+
+    @property
+    def page_number(self):
+        """The requested 1-based page; the view clamps it to what exists."""
+        return max(1, int(self.page)) if self.page else 1
+
+    @property
+    def page_size(self):
+        """Entries per page."""
+        return int(self.size) if self.size else PAGE_SIZE
+
+    @property
+    def order(self):
+        """The validated sort token."""
+        return self.sort or LOG_SORTING.default
+
+    @property
+    def oldest(self):
+        """Whether the page lists the oldest entries first."""
+        return not LOG_SORTING.tokens[self.order][1]
 
     def form_values(self):
-        """Filter fields to carry into the next page, without the cursor."""
+        """Filter fields to carry into other pages, without paging or sort."""
         return {
             key: getattr(self, key)
             for key in self.__dataclass_fields__
-            if key not in {"before", "before_id"} and getattr(self, key)
+            if key not in PAGING and getattr(self, key)
         }
 
 
@@ -187,13 +235,50 @@ def detail_labels(details):
     return [(words(key), value) for key, value in details]
 
 
-def page_context(query, rows, following):
-    """The one template context, shared by the view and its browser fixtures."""
+def log_table(query, rows, *, through, action, number=1, total=None, capped=False):
+    """Describe one page of the log for the shared POST navigator.
+
+    ``total`` defaults to the rows given (a fixture's single page);
+    ``capped`` marks a bounded total, so the navigator says "more than" and
+    pages on while ``has_next`` allows. The snapshot instant travels with the
+    filters on every navigator and heading form, never in a URL.
+    """
+    size = query.page_size
+    total = len(rows) if total is None else total
+    return TablePage(
+        rows=list(rows),
+        number=number,
+        pages=max(1, -(-total // size)),
+        count=total,
+        size=size,
+        prefix="",
+        carried=(
+            *query.form_values().items(),
+            ("through", through.astimezone(UTC).isoformat(timespec="microseconds")),
+        ),
+        has_next=number * size < total,
+        allow_all=False,
+        sorting=LOG_SORTING,
+        sort=query.order,
+        method="post",
+        action=action,
+        capped=capped,
+    )
+
+
+def page_context(query, table, *, depth_limited=False):
+    """The one template context, shared by the view and its browser fixtures.
+
+    ``table`` is the page's ``web.tables.TablePage``; ``depth_limited`` says a
+    requested page lay past the paging depth and the last reachable one is
+    shown instead.
+    """
     return {
-        "rows": rows,
+        "rows": table.rows,
+        "table": table,
+        "depth_limited": depth_limited,
         "query": query,
         "query_fields": query.form_values(),
-        "following": following,
         "levels": [
             (level.lower(), LEVEL_LABELS[level], level in query.levels)
             for level in LEVEL_LABELS
@@ -265,25 +350,15 @@ def task_subject(row):
     )
 
 
-def merge(operational, audit, *, size=PAGE_SIZE):
-    """Newest first across both sources, with a cursor for the entries after.
+def merge(operational, audit, *, oldest=False):
+    """Order both sources' rows as one log: by time, then identifier.
 
-    Each source supplies at most `size + 1` rows already ordered newest first, so
-    the first `size` of their merge are exactly the next page of the union.
+    Each source supplies its first rows in the same order its own query uses
+    ((created_at, id), in the chosen direction), so the first N of the merge
+    are exactly the first N of the union.
     """
-    rows = sorted(
+    return sorted(
         [*operational, *audit],
         key=lambda row: (row["created_at"], row["id"]),
-        reverse=True,
+        reverse=not oldest,
     )
-    page = rows[:size]
-    following = None
-    if len(rows) > size:
-        last = page[-1]
-        following = {
-            "before": last["created_at"]
-            .astimezone(UTC)
-            .isoformat(timespec="microseconds"),
-            "before_id": str(last["id"]),
-        }
-    return page, following

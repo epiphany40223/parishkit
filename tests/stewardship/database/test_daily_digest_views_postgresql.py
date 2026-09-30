@@ -78,6 +78,15 @@ def test_report_and_chart_remain_exact_after_source_changes(family_mail, google)
             ).count()
             == 8
         )
+        # The daily table pages and sorts on the server like the live report;
+        # chart images still take no parameters.
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, sorted_page = read(browser, path + "?sort=date_desc&size=25")
+        assert (
+            b'aria-sort="descending"' in sorted_page and b"Page 1 of 1" in sorted_page
+        )
+        assert browser.get(path + "?sort=local_date").status_code == 400
+        assert browser.get(path + "chart.png?sort=date_desc").status_code == 400
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

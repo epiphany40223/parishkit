@@ -7,7 +7,7 @@
 <form method="get" class="panel">
   <label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
-  <input type="hidden" name="size" value="{{ table.size_value }}">
+  {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show refusals" %}</button>
 </form>
 {% translate "Refused address pages" as navigator_label %}
@@ -16,10 +16,10 @@
 <table class="data-table">
   <caption id="refusal-table-caption">{% translate "Unresolved refused addresses" %}</caption>
   <thead><tr>
-    <th scope="col">{% translate "Address" %}</th>
-    <th scope="col" class="numeric">{% translate "Family DUID" %}</th>
-    <th scope="col">{% translate "Refused at" %}</th>
-    <th scope="col">{% translate "Refusal ID" %}</th>
+    {% translate "Address" as heading %}{% sort_heading table "address" heading %}
+    {% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
+    {% translate "Refused at" as heading %}{% sort_heading table "refused" heading %}
+    {% translate "Refusal ID" as heading %}{% sort_heading table "id" heading %}
   </tr></thead>
   <tbody>
   {% for refusal in table.rows %}<tr>
