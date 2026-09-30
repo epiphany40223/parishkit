@@ -116,10 +116,15 @@ def test_compaction_preserves_manifests_anchors_current_and_shared_payloads(hist
         0,
         0,
     )
-    assert SourceCompactionBatch.objects.count() == 2
-    context = AuditContext.objects.get(event__subject_id=result.pk).context
+    # Each batch writes its marking row; the first also reclaimed rows.
+    assert SourceCompactionBatch.objects.count() == 3
+    assert result.marked.snapshot_count == 1
+    context = AuditContext.objects.get(event__subject_id=result.marked.pk).context
+    assert context == {"count": 0, "version": 3, "outcome": "succeeded"}
+    context = AuditContext.objects.get(event__subject_id=result.reclaimed.pk).context
     assert context == {"count": 9, "version": 3, "outcome": "succeeded"}
-    assert result.recent_cutoff == result.cutoff_at - RECENT_RETENTION
+    assert again.reclaimed is None
+    assert result.marked.recent_cutoff == result.marked.cutoff_at - RECENT_RETENTION
 
 
 def test_recent_history_is_retained_by_sql_not_materialized_uuid_sets(
