@@ -295,6 +295,13 @@ start. The design and connection budget are in the background-processing
 specification's
 [worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes).
 
+The `mail-dispatch` container also runs two processes by default: two mail
+consumers on the same queues, each with its own batched Family mail helper,
+so two messages are prepared and sent at a time. It is supervised the same
+way, and its timeouts are logged for `mail_helper`. The
+[Family mail dispatch guide](stewardship-family-mail-dispatch.md#two-mail-consumers)
+describes it and the one-command fallback to one process.
+
 ## Offline work and upgrade boundary
 
 Stop web and every online installer/worker before offline work. Dependency
@@ -354,14 +361,16 @@ ordinary backup output and retain the matching key material. Automated
 upgrade readiness checks beyond `upgrade-check` remain deferred by the
 pre-production policy.
 
-Phase 2 changes the mail-dispatch role limit to twice the configured rollout
-overlap, and the scheduler limit to the rollout overlap. The worker's limit
-is three times the rollout overlap, since its container runs two consumer
-processes ([source process](#the-workers-source-process)); a deployment
-provisioned before that change needs the one-time `ALTER ROLE` described
-in the deployment runbook's
+Phase 2 changes the scheduler limit to the rollout overlap. The worker's
+and mail dispatch's limits are three times the rollout overlap, since each
+container runs two consumer processes
+([source process](#the-workers-source-process)); a deployment provisioned
+before either change needs the one-time `ALTER ROLE` described in the
+deployment runbook's
 [worker connection limit](stewardship-deployment-runbook.md#worker-connection-limit-339)
-before the new worker starts. Earlier
+and
+[mail dispatch connection limit](stewardship-deployment-runbook.md#mail-dispatch-connection-limit)
+before the new process starts. Earlier
 development databases may still have the operator reserve as those role limits.
 Such databases intentionally fail both exact-role provisioning checks and runtime
 startup; rerunning first-deployment provisioning cannot upgrade them. Do not

@@ -47,6 +47,10 @@ SOURCE_QUEUES = frozenset({WorkQueue.SOURCE})
 # to the login's actual limit (jobs/queue_wait.py).
 SOURCE_SPLIT_CONNECTIONS = 6
 
+# Likewise the mail-dispatch login's limit at which its container runs a
+# second mail consumer process (runtime_process.split_mail).
+MAIL_SPLIT_CONNECTIONS = 6
+
 
 def exchange(queue):
     """The broker exchange a queue is bound to.

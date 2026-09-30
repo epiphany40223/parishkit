@@ -415,8 +415,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     broker, lease, closes, receipts, healthy = Mock(), Mock(), Mock(), Mock(), Mock()
     assembled = SimpleNamespace(broker=broker, store=object(), handlers={}, receipts={})
     stops, selected = [], []
-    sibling = Mock()
+    sibling, mail_sibling = Mock(), Mock()
     monkeypatch.setattr(runtime_process, "SourceConsumer", sibling)
+    monkeypatch.setattr(runtime_process, "MailConsumer", mail_sibling)
 
     def configure(config, *, stop, heartbeat, queues=None):
         """Retain the common stop event and exercise the actual health callback."""
@@ -476,9 +477,12 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         else:
             # Consumers acknowledge rotated credentials from their idle timer.
             kwargs["idle"]()
-            assert kwargs["companion"] is (
-                sibling.return_value if role is ServiceRole.WORKER else None
-            )
+            # Each consumer container runs its second process (#336 and the
+            # second mail consumer).
+            assert kwargs["companion"] is {
+                ServiceRole.WORKER: sibling.return_value,
+                ServiceRole.MAIL_DISPATCH: mail_sibling.return_value,
+            }.get(role)
             rotations.assert_called_once_with(configuration, assembled.receipts)
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
         assert stop.is_set()

@@ -46,6 +46,7 @@ def deployment_document(configuration):
         # so an omitted section silently reverts to its defaults there.
         "operational_alerts": asdict(configuration.operational_alerts),
         "family_mail_transport": configuration.family_mail_transport,
+        "mail_consumers": configuration.mail_consumers,
     }
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target

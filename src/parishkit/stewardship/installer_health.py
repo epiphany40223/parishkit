@@ -14,6 +14,8 @@ from .runtime_paths import private_directory
 # The worker container's source consumer (#336) publishes its own liveness
 # here; the worker process checks it and stops when it goes stale.
 SOURCE_HEARTBEAT = DIRECTORY / "source-heartbeat.json"
+# Likewise the mail-dispatch container's second mail consumer.
+MAIL_HEARTBEAT = DIRECTORY / "mail-heartbeat.json"
 
 
 def publish_heartbeat(path=None):

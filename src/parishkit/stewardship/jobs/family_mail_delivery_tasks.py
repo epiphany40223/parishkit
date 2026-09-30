@@ -40,9 +40,11 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
     CAPPED_RETRY_SECONDS,
+    DAILY_SEND_LIMIT,
     LIMIT_RETRY_SECONDS,
     MAILBOX_LIMITS,
     MAX_ATTEMPTS,
+    RESERVED_SENDS,
     FamilyDeliveryHeld,
     begin_submission,
     bound_dispatch,
@@ -71,6 +73,11 @@ LOG = logging.getLogger(__name__)
 RECOVERY_RETRY_SECONDS = 30
 # How long Family mail pauses after a shared outage before one probe is sent.
 OUTAGE_RECOVERY_SECONDS = 600
+# How often a mail consumer re-reads the deployment's last-24-hour recipient
+# count while it is far from the daily limit, and how near (in recipients)
+# the bulk limit it starts re-reading it for every message instead.
+DAILY_COUNT_SECONDS = 15
+NEAR_DAILY_LIMIT = 100
 
 
 class DeliveryCircuit:
@@ -94,6 +101,22 @@ class DeliveryCircuit:
     the CRITICAL ``mail_provider_failed`` incident (schema/mail_health.sql), and
     the first healthy outcome after the cooldown resolves it
     (jobs/mail_health.py).
+
+    Each mail consumer process has its own circuit, and the mail-dispatch
+    container runs two. Sharing it was not needed, since every outcome it
+    reacts to is definitive and durable. What each process costs on its own:
+    - Outage: a process pauses after its own three outage results, so an
+      outage costs at most three attempts per process instead of three in
+      all. They are ordinary outage results, settled like any other; a
+      connection that never reached DATA is definitely unsent and retried
+      without spending the message's budget. The CRITICAL pause log may
+      appear once per process.
+    - Mailbox limit: a refusal holds only the process that saw it. The other
+      process is held by its own next refusal, so at most one more message
+      per process is refused. That message is also definitely unsent and
+      is retried after the limit without spending its budget.
+    - Daily count: the count behind the daily cap is shared through
+      PostgreSQL; see daily_sends.
     """
 
     def __init__(self, *, recovery_seconds=None, systemic_stops=False):
@@ -120,13 +143,32 @@ class DeliveryCircuit:
         self.capped = False
 
     def daily_sends(self):
-        """The last-24-hour recipient count, re-read at most every 15 seconds.
+        """The deployment's last-24-hour recipient count, from PostgreSQL.
 
-        Every queued message consults it, so a fresh count per message would
-        repeat the same query thousands of times during a bulk send.
+        Every queued message consults it, so far from the limit it is re-read
+        at most every DAILY_COUNT_SECONDS: a fresh count per message would
+        repeat the same query thousands of times during a bulk send. Within
+        NEAR_DAILY_LIMIT recipients of the bulk limit it is re-read for every
+        message instead.
+
+        The count is shared state: every mail consumer process (the
+        mail-dispatch container runs two) reads the same stored outcomes, so
+        the processes cannot each spend the whole limit. What one process
+        cannot see is only another's message still in flight (submitted, not
+        yet settled), so near the limit the deployment can pass it by at most
+        one in-flight message per other process: a few recipients, far inside
+        RESERVED_SENDS. Far from it, a count up to DAILY_COUNT_SECONDS old
+        misses at most that long of sending (about 30 recipients for two
+        consumers at launch speed), less than NEAR_DAILY_LIMIT, so it cannot
+        jump past the limit unseen.
         """
         now = monotonic()
-        if self.counted_at is None or now - self.counted_at >= 15:
+        near = self.counted >= (DAILY_SEND_LIMIT - RESERVED_SENDS - NEAR_DAILY_LIMIT)
+        if (
+            self.counted_at is None
+            or near
+            or now - self.counted_at >= DAILY_COUNT_SECONDS
+        ):
             self.counted = sends_in_last_day()
             self.counted_at = now
         return self.counted

@@ -210,6 +210,24 @@ below six keeps one process on all three queues. The source queue shares the
 general queue's broker exchange and name prefix, so the Valkey ACL generated
 at provisioning already grants it.
 
+The `mail-dispatch` container likewise runs two mail consumer processes by
+default, so the launch's Family mail is prepared and sent two messages at a
+time. Unlike the worker's processes, both consume every mail queue, and each
+has its own batched Family mail helper and SMTP connection. A hint reaches
+whichever process takes it first. Each message is still exactly one Task:
+its claim locks the TaskRun row, checks that it is still queued and advances
+its fence, so a hint taken by both processes runs once and the other claims
+nothing. The main process supervises the second exactly as the worker
+supervises its source process, logging late heartbeats and a kill past the
+drain grace as `helper_timed_out` entries for `mail_helper`. The mail
+login's limit is three times the rollout overlap for the same reason as the
+worker's. The deployment setting `mail_consumers` (1 or 2, default 2) and
+its one-command override choose the count; a mail limit below six keeps
+one process. The daily sending limit's count is read from PostgreSQL, so
+both processes share it; the per-process outage and sending-limit holds and
+their bounds are described in the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers).
+
 ### Campaign lifecycle boundaries
 
 The scheduler owns persistence of date-driven campaign transitions. On every

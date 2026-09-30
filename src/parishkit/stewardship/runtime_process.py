@@ -372,34 +372,40 @@ def independent_producer(guard, operation, *args):
     return result
 
 
-def source_command(argv=None):
-    """This process's own invocation, narrowed to the source queue.
+def sibling_command(queue, argv=None):
+    """This process's own invocation, marked as its ``queue`` sibling.
 
-    The sibling re-executes exactly how this worker was started (from
-    ``sys.orig_argv``) plus ``--queue source``, rather than a separately
+    The sibling re-executes exactly how this process was started (from
+    ``sys.orig_argv``) plus ``--queue QUEUE``, rather than a separately
     constructed command, so whatever the entry point sets up before the CLI
     runs applies to both processes alike.
     """
     argv = list(sys.orig_argv if argv is None else argv)
     if "runtime" not in argv[1:] or "--queue" in argv:
-        raise ConfigError("The source consumer requires a worker runtime command.")
-    return [sys.executable, *argv[1:], "--queue", "source"]
+        raise ConfigError(f"The {queue} consumer requires a runtime command.")
+    return [sys.executable, *argv[1:], "--queue", queue]
 
 
-class SourceConsumer:
-    """The worker container's second consumer process: source work only (#336).
+def source_command(argv=None):
+    """The worker's invocation, narrowed to the source queue (#336)."""
+    return sibling_command("source", argv)
 
-    ParishSoft refreshes and setup source loads take minutes. On the general
-    consumer, which runs one message at a time, exports and operational
-    collection waited behind them. The worker process starts this sibling,
-    which re-executes the same admitted runtime (see ``source_command``) with the
-    same configuration, mounts, credentials and SQL login but consumes only
-    the source queue. Both share the container's lifetime: a stop request is
-    forwarded at once so both drain together, and a sibling that exits or
-    stops publishing liveness stops the worker, so the container exits (and
-    restarts, in production) instead of silently losing source work.
+
+class SiblingConsumer:
+    """A container's second consumer process, supervised by the first.
+
+    The main process starts this sibling, which re-executes the same admitted
+    runtime (see ``sibling_command``) with the same configuration, mounts,
+    credentials and SQL login. Both share the container's lifetime: a stop
+    request is forwarded at once so both drain together, and a sibling that
+    exits or stops publishing liveness stops the main process, so the
+    container exits (and restarts, in production) instead of silently losing
+    the sibling's work. Subclasses name the sibling's ``--queue`` value, its
+    heartbeat file and its reviewed timeout kind (audit.schemas).
     """
 
+    QUEUE = None
+    WHAT = None
     # Silence this long (twice the container probe's limit) stops the worker.
     STALE_LIMIT = 2 * PROBE_MAX_AGE
 
@@ -409,7 +415,12 @@ class SourceConsumer:
         self.stale = 0
         # Same interpreter, environment and entry point; output joins the
         # container's log.
-        self.process = subprocess.Popen(source_command(argv))
+        self.process = subprocess.Popen(sibling_command(self.QUEUE, argv))
+
+    @staticmethod
+    def heartbeat_path():
+        """The file this sibling publishes its liveness to."""
+        raise NotImplementedError
 
     def check(self):
         """Raise when the sibling has exited or has been silent far too long.
@@ -422,11 +433,11 @@ class SourceConsumer:
         (twice the probe's limit) stops the worker, and that is logged too.
         Before its first heartbeat the sibling's age counts from its start.
         """
-        from .installer_health import MAX_AGE_SECONDS, SOURCE_HEARTBEAT, heartbeat_age
+        from .installer_health import MAX_AGE_SECONDS, heartbeat_age
 
         if self.process.poll() is not None:
-            raise ConfigError("The source consumer exited.")
-        age = heartbeat_age(SOURCE_HEARTBEAT)
+            raise ConfigError(f"The {self.QUEUE} consumer exited.")
+        age = heartbeat_age(self.heartbeat_path())
         if age is None:
             age = monotonic() - self.started
         if age <= MAX_AGE_SECONDS:
@@ -437,17 +448,17 @@ class SourceConsumer:
             self._record("WARNING", MAX_AGE_SECONDS, age, count=self.stale)
             return
         self._record("ERROR", self.STALE_LIMIT, age, count=self.stale)
-        raise ConfigError("The source consumer stopped reporting progress.")
+        raise ConfigError(f"The {self.QUEUE} consumer stopped reporting progress.")
 
     def _record(self, level, limit, elapsed, *, count=None):
         """Log one stale-liveness observation or stop on the durable timeout log."""
         from .audit.timeouts import record_timeout
 
-        # "source_helper" is the reviewed timeout kind for a source-work
-        # helper process; reusing it keeps the SQL context vocabulary fixed.
+        # WHAT is a reviewed timeout kind for this kind of work's helper
+        # process; reusing it keeps the SQL context vocabulary fixed.
         record_timeout(
             Event.HELPER_TIMED_OUT,
-            what="source_helper",
+            what=self.WHAT,
             level=level,
             limit_seconds=limit,
             elapsed_seconds=elapsed,
@@ -472,6 +483,49 @@ class SourceConsumer:
             self._record("ERROR", self.drain_seconds, monotonic() - draining)
 
 
+class SourceConsumer(SiblingConsumer):
+    """The worker container's second consumer process: source work only (#336).
+
+    ParishSoft refreshes and setup source loads take minutes. On the general
+    consumer, which runs one message at a time, exports and operational
+    collection waited behind them; this sibling consumes only the source
+    queue.
+    """
+
+    QUEUE = "source"
+    WHAT = "source_helper"
+
+    @staticmethod
+    def heartbeat_path():
+        """The source consumer's own liveness file."""
+        from .installer_health import SOURCE_HEARTBEAT
+
+        return SOURCE_HEARTBEAT
+
+
+class MailConsumer(SiblingConsumer):
+    """Mail dispatch's second consumer process: the same mail queues.
+
+    One mail consumer sends one message at a time, so the launch's Family
+    mail took the sum of every message's preparation and SMTP time. A second
+    process on the same queues, with its own batched helper (#284) and SMTP
+    connection, sends another message meanwhile. The scheduler's hints go to
+    whichever process takes them first; each message is still exactly one
+    Task, and its claim and fences keep two processes from ever running it
+    twice (tests/stewardship/database/test_mail_consumers_postgresql.py).
+    """
+
+    QUEUE = "mail"
+    WHAT = "mail_helper"
+
+    @staticmethod
+    def heartbeat_path():
+        """The second mail consumer's own liveness file."""
+        from .installer_health import MAIL_HEARTBEAT
+
+        return MAIL_HEARTBEAT
+
+
 def split_source(configuration):
     """Whether the worker login can hold two consumer processes' connections.
 
@@ -488,34 +542,64 @@ def split_source(configuration):
     return role_limit(configuration, ServiceRole.WORKER) >= SOURCE_SPLIT_CONNECTIONS
 
 
-def serve_background(configuration, lease, *, source=False):
+def split_mail(configuration):
+    """Whether mail dispatch runs a second mail consumer process.
+
+    Two processes need the mail login's six connections, as for the worker
+    (``split_source``), and the deployment must ask for two consumers
+    (``mail_consumers``, default 2; 1 is the operator's fallback). A budget
+    too small for both keeps one process.
+    """
+    from .database_provisioning import role_limit
+    from .jobs.queues import MAIL_SPLIT_CONNECTIONS
+
+    return (
+        configuration.mail_consumers >= 2
+        and role_limit(configuration, ServiceRole.MAIL_DISPATCH)
+        >= MAIL_SPLIT_CONNECTIONS
+    )
+
+
+def serve_background(configuration, lease, *, source=False, mail=False):
     """Assemble one admitted queue process and retain exclusion through final drain.
 
     ``source`` selects the worker container's source-queue sibling, which the
-    worker's main process starts (see SourceConsumer).
+    worker's main process starts (see SourceConsumer); ``mail`` selects mail
+    dispatch's second mail consumer (see MailConsumer).
     """
     from uuid import uuid4
 
     from .consumer_runtime import publish_single_process_receipts
-    from .installer_health import SOURCE_HEARTBEAT, publish_heartbeat
+    from .installer_health import publish_heartbeat
     from .jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
     from .runtime_background import configure_background, matching_authority
 
     role = configuration.service_role
     if source and role is not ServiceRole.WORKER:
         raise ConfigError("Only the worker runs a source-queue consumer.")
+    if mail and role is not ServiceRole.MAIL_DISPATCH:
+        raise ConfigError("Only mail dispatch runs a second mail consumer.")
     queues = None
-    sibling = role is ServiceRole.WORKER and not source and split_source(configuration)
+    # The sibling this main process starts, if any; siblings start none.
+    companion_type = None
+    if role is ServiceRole.WORKER and not source and split_source(configuration):
+        companion_type = SourceConsumer
+    elif role is ServiceRole.MAIL_DISPATCH and not mail and split_mail(configuration):
+        companion_type = MailConsumer
     if source:
         queues = SOURCE_QUEUES
-    elif sibling:
+    elif companion_type is SourceConsumer:
         queues = ROLE_QUEUES[role] - SOURCE_QUEUES
+    # Both mail processes consume all of mail dispatch's queues.
+    this_sibling = SourceConsumer if source else MailConsumer if mail else None
     stop = StopEvent()
 
     def heartbeat():
         """Long task renewal and idle loop progress both retain lifecycle evidence."""
         lease.check()
-        publish_heartbeat(SOURCE_HEARTBEAT if source else None)
+        publish_heartbeat(
+            None if this_sibling is None else this_sibling.heartbeat_path()
+        )
 
     def stopping(signum, frame):
         """Signals request drainage; no provider work or SQL runs in this handler."""
@@ -557,10 +641,10 @@ def serve_background(configuration, lease, *, source=False):
         from .source.setup_cleanup import produce_setup_cleanup
         from .source.setup_final_production import produce_finalization
 
-        if source:
-            # The main worker process owns the container's receipts and
-            # rotation acknowledgement; both processes load the same mounts
-            # at container start and are only ever recreated together.
+        if this_sibling is not None:
+            # The main process owns the container's receipts and rotation
+            # acknowledgement; both processes load the same mounts at
+            # container start and are only ever recreated together.
             emit(Event.STARTUP_VALIDATED)
             return serve_consumer(
                 assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
@@ -573,8 +657,8 @@ def serve_background(configuration, lease, *, source=False):
         }:
             from .credential_runtime import acknowledge_rotations
 
-            if sibling and not stop.is_set():
-                companion = SourceConsumer(
+            if companion_type is not None and not stop.is_set():
+                companion = companion_type(
                     drain_seconds=configuration.runtime_budget.drain_seconds
                 )
             receipts = dict(assembled.receipts)
@@ -687,10 +771,15 @@ def execute_runtime(args):
         if runner is None:
             raise ConfigError("This service's operational runtime is unavailable.")
         options, queue = {}, getattr(args, "queue", None)
+        if queue is not None and (queue, configuration.service_role) not in {
+            ("source", ServiceRole.WORKER),
+            ("mail", ServiceRole.MAIL_DISPATCH),
+        }:
+            raise ConfigError("This service runs no such sibling consumer.")
         if configuration.service_role is ServiceRole.WORKER:
             options = {"source": queue == "source"}
-        elif queue is not None:
-            raise ConfigError("Only the worker runs a source-queue consumer.")
+        elif configuration.service_role is ServiceRole.MAIL_DISPATCH:
+            options = {"mail": queue == "mail"}
         with StartupLease(
             RuntimeLayout(configuration).interlock, offline=False
         ) as lease:

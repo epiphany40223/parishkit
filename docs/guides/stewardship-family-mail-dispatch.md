@@ -199,6 +199,74 @@ It is rendered into each service's document, so changing it there takes
 effect only with a reinstall, as the
 [runbook](stewardship-deployment-runbook.md) says for `operational_alerts`.
 
+## Two mail consumers
+
+One mail consumer prepares and sends one message at a time, so a large send
+takes the sum of every message's preparation and SMTP time. The
+`mail-dispatch` container therefore runs two mail consumer processes by
+default: the main process, and a second one it starts itself
+(`runtime ... --queue mail`). Both take hints from the same mail queues,
+each has its own batched helper, OAuth token and SMTP connection, and both
+use the one Workspace mailbox. `docker compose ... top mail-dispatch` lists
+both processes and, while Family mail is going out, up to two helpers.
+
+Two processes never send one message twice. Every message is one Task, and
+a consumer must claim the Task before it does anything: the claim locks the
+TaskRun row, requires it to be still queued and advances its fence. A hint
+taken by both processes therefore runs once, and the other process claims
+nothing (`tests/stewardship/database/test_mail_consumers_postgresql.py`
+races two real handlers to prove it).
+
+The processes share what must be shared and keep the rest per process:
+
+- **Daily limit.** The count of recipients sent in the last 24 hours is read
+  from PostgreSQL, so both processes see each other's sends. Far from the
+  bulk limit each process re-reads it at most every 15 seconds; within 100
+  recipients of the limit, before every message. Near the limit a process
+  cannot see only the other's one message still in flight, so the
+  deployment can pass the limit by at most that message's recipients, far
+  inside the 200 held back for receipts and digests.
+- **Gmail sending limits.** A refusal at Gmail's limit holds only the
+  process that received it. The other process is held by its own next
+  refusal, so at most one more message is refused. That message is
+  definitely unsent and is retried after the limit, like the first.
+- **Outages.** Each process pauses after its own three outage results, so
+  an outage costs at most three attempts per process. Each is an ordinary
+  outage result: a connection that never reached `DATA` is definitely unsent
+  and retried. The CRITICAL pause and limit log lines may appear once per
+  process.
+
+The main process supervises the second as the worker supervises its source
+process ([worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes)).
+A stop request reaches both, and they drain together. If the second process
+exits, the main process stops and the container exits (production restarts
+it). A late heartbeat from the second process is logged as a
+`helper_timed_out` entry for `mail_helper`, with the limit and how late it
+was. Silence for more than twice the probe's limit stops the container and
+is logged at `ERROR`, as is a kill at the end of the drain grace period.
+
+Two processes need six connections for the mail login (three each: the
+task, lease renewal and timeout log). A deployment provisioned before this
+change needs the one-time step in the runbook's
+[mail dispatch connection limit](stewardship-deployment-runbook.md#mail-dispatch-connection-limit).
+A runtime budget whose mail limit is below six runs one process.
+
+### Falling back to one mail consumer
+
+The setting is `mail_consumers` (1 or 2, default 2). To run one process,
+recreate only the mail worker with the variable set for that one command,
+exactly like the transport fallback below:
+
+```text
+PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS=1 docker compose ... up --detach --force-recreate mail-dispatch
+```
+
+To return to two, recreate it again without the variable. The same rules
+apply as for the transport switch: use the prefix form, never `export`; any
+later recreation without the prefix returns to the deployment setting; and
+both prefixes can be used together. One process needs no change to the SQL
+connection limit.
+
 ## Send statistics and tuning the batch caps
 
 Every Family outcome (and every digest outcome this worker settles) records
