@@ -9,7 +9,6 @@ from django.db import DatabaseError, transaction
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
@@ -26,7 +25,7 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import window_table
+from parishkit.stewardship.web.tables import Sorting, bounded_count, window_table
 
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
@@ -35,6 +34,15 @@ from .limiting import LimiterUnavailable
 from .models import SystemConfiguration
 from .policy import Capability, allows
 from .sessions import authenticated_admin
+
+# Family DUID sorts on the server through the family_campaign_duid unique
+# index (campaign_id, family_duid), which also makes it its own tiebreak.
+# The Code column is deliberately not sortable: codes are stored encrypted,
+# and sorting by them would mean decrypting every Family's code on every
+# page view; a random code's order means nothing to a reader anyway.
+CODE_SORTING = Sorting.by_column(
+    {"duid": ("family_duid",)}, default="duid", tiebreak=("id",)
+)
 
 
 @require_safe
@@ -47,7 +55,8 @@ def family_codes(request, campaign_id):
         if not allows(principal, Capability.FAMILY_CODES):
             return denial()
         try:
-            parsed = filters(request.GET, allowed={"page", "size"})
+            parsed = filters(request.GET, allowed={"page", "size", "sort"})
+            sort = CODE_SORTING.parse(parsed)
             window = PageWindow(
                 expected_version(parsed.get("page", "1")),
                 expected_version(parsed.get("size", "50")),
@@ -108,30 +117,33 @@ def family_codes(request, campaign_id):
             """
             nonlocal prepared_count
             with key_set_lock(cryptographic.general):
-                rows, has_next = window.rows(
-                    FamilyCampaign.objects.filter(
-                        campaign_id=campaign_id,
-                        active=True,
-                        code_ciphertext__isnull=False,
-                    ).order_by("family_duid")
+                families = FamilyCampaign.objects.filter(
+                    campaign_id=campaign_id,
+                    active=True,
+                    code_ciphertext__isnull=False,
                 )
+                rows, has_next = window.rows(CODE_SORTING.order(families, sort))
                 table = [
-                    [
-                        str(row.family_duid),
-                        cryptographic.general.decrypt(
+                    {
+                        "duid": row.family_duid,
+                        "code": cryptographic.general.decrypt(
                             row.code_ciphertext,
                             context=code_context(row.pk),
                         ).decode("ascii"),
-                    ]
+                    }
                     for row in rows
                 ]
                 body = render_to_string(
                     "stewardship/codes.html",
                     {
-                        "table_rows": table,
-                        "table_caption": _("Active Families"),
-                        "table_headings": [_("Family DUID"), _("Code")],
-                        "table": window_table(window, table, has_next),
+                        "table": window_table(
+                            window,
+                            table,
+                            has_next,
+                            total=bounded_count(families),
+                            sorting=CODE_SORTING,
+                            sort=sort,
+                        ),
                     },
                 ).encode()
                 prepared_count = len(table)

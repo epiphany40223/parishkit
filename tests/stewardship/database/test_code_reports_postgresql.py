@@ -91,9 +91,9 @@ def test_role_bound_code_report_and_safe_audit(
         if expected == 200:
             body = b"".join(response.streaming_content)
             assert code in body
-            # The shared navigator pages the report without inventing a total.
+            # The shared navigator pages the report with a bounded total.
             assert b'class="table-nav"' in body and b"Rows per page" in body
-            assert b'name="size"' in body and b" of 1<" not in body
+            assert b'name="size"' in body and b"Page 1 of 1" in body
             response.close()
             events = AuditEvent.objects.filter(
                 event_type="family_codes_viewed"
@@ -116,3 +116,53 @@ def test_role_bound_code_report_and_safe_audit(
     finally:
         server.close()
         client.close()
+
+
+def test_code_report_sorts_by_duid_on_the_server(auth_service, google, settings):
+    """DUID sorts both ways before paging; the encrypted code never sorts."""
+    from parishkit.stewardship.campaigns.family_identity import FamilyStatus
+
+    store = auth_service.store
+    result, row, _ = add_draft(store, store.active(), store.active().version_id)
+    campaign = Campaign.objects.get(pk=row["id"])
+    ring = keys()
+    populate(
+        campaign, ring, [FamilyStatus(n, True, True, True, True) for n in (3, 1, 2)]
+    )
+    settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
+        store, auth_service.limiter, ring.general, ring.mac, ring.public
+    )
+    browser, _ = signed_in()
+    path = f"/admin/campaign/{campaign.pk}/family-codes"
+
+    def duids(**query):
+        """The DUIDs one page lists, in order."""
+        server, client = socket.socketpair()
+        try:
+            response = browser.get(path, data=query, **{"gunicorn.socket": server})
+            assert response.status_code == 200
+            body = b"".join(response.streaming_content).decode()
+            response.close()
+        finally:
+            server.close()
+            client.close()
+        return [
+            int(line.split('class="numeric">')[1].split("<")[0])
+            for line in body.split('<th scope="row"')[1:]
+        ], body
+
+    assert duids()[0] == [1, 2, 3]
+    listed, body = duids(sort="-duid", size="25")
+    assert listed == [3, 2, 1] and 'aria-sort="descending"' in body
+    assert "Page 1 of 1" in body and "Showing 1–3 of 3" in body
+    assert duids(sort="-duid", size="25", page="1")[0] == [3, 2, 1]
+    for token in ("code", "family_duid", "-id"):
+        server, client = socket.socketpair()
+        try:
+            refused = browser.get(
+                path, data={"sort": token}, **{"gunicorn.socket": server}
+            )
+            assert refused.status_code == 400
+        finally:
+            server.close()
+            client.close()

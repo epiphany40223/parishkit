@@ -5,6 +5,12 @@
   <p>{% translate "These are the stable Production codes. Testing email uses separate rehearsal credentials." %}</p>
   {% translate "Family code pages" as navigator_label %}
   {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-  {% include 'stewardship/components/table.html' %}
+  <div class="table-scroll" role="region" aria-labelledby="codes-table-caption" tabindex="0">
+  <table class="data-table">
+    <caption id="codes-table-caption">{% translate "Active Families" %}</caption>
+    <thead><tr>{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}<th scope="col">{% translate "Code" %}</th></tr></thead>
+    <tbody>{% for row in table.rows %}<tr><th scope="row" class="numeric">{{ row.duid }}</th><td><code>{{ row.code }}</code></td></tr>{% empty %}<tr><td colspan="2">{% translate "No matching records." %}</td></tr>{% endfor %}</tbody>
+  </table>
+  </div>
   {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 {% endblock %}
