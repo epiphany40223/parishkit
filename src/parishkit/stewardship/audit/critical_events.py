@@ -1,15 +1,20 @@
 """The Admin critical-events banner: plain-language summary and shared acknowledgement.
 
 CRITICAL operational log rows from the last day are grouped by event for the
-banner. An Administrator's acknowledgement records each CRITICAL row the banner
-counts at that moment, so they stay hidden for every Admin while any other
-CRITICAL row, including one committed later by a long-running transaction,
-appears. Acknowledging changes no log row; it only records who saw what, with
-its audit event, in the same transaction.
+banner. The banner's Acknowledge form carries a signed list of the exact row
+ids it counted when the page was rendered, and an acknowledgement records only
+those rows. They then stay hidden for every Admin, while any other CRITICAL
+row, whether recorded after the page was shown or committed late by a
+long-running transaction with an earlier time, still appears: ids, not a time
+watermark, decide what was seen. Acknowledging changes no log row; it only
+records who saw what, with its audit event, in the same transaction.
 """
 
+import re
 from datetime import timedelta
+from uuid import UUID
 
+from django.core import signing
 from django.db import transaction
 
 from parishkit.stewardship.observability import Event
@@ -20,6 +25,12 @@ from .services import record_action
 
 # The banner looks back one day; acknowledgement hides events inside it.
 WINDOW = timedelta(hours=24)
+# At most this many row ids, oldest first, are signed into one banner form so
+# a failure loop cannot bloat every Admin page. Rows past the limit stay
+# counted and reappear after an acknowledgement, to be acknowledged next.
+ACKNOWLEDGE_LIMIT = 500
+SALT = "parishkit.stewardship.critical-events-acknowledge"
+_HEX_ID = re.compile(r"[0-9a-f]{32}")
 
 # Plain-language names for events that are recorded at CRITICAL level. Any
 # other event falls back to its identifier with underscores spelled as words.
@@ -55,16 +66,59 @@ def summary(counts):
     ]
 
 
-def acknowledge(actor_id, *, since, parish_id):
-    """Acknowledge every CRITICAL row the banner currently counts.
+def sign(ids):
+    """Sign the shown row ids into the Acknowledge form's token.
 
-    Returns how many rows were acknowledged; zero records nothing. A row that
-    another Administrator acknowledged concurrently is skipped by its unique
-    log reference rather than refused, so both requests succeed.
+    Compact hex ids, compressed, keep the hidden field small; the signature
+    (the project's secret key, with this module's salt) makes any edit to the
+    list fail ``shown`` rather than widen what is acknowledged.
+    """
+    return signing.dumps(
+        [UUID(str(value)).hex for value in ids], salt=SALT, compress=True
+    )
+
+
+def shown(token):
+    """Return the row ids a genuine banner form signed, or raise BadSignature.
+
+    A token that is missing, altered, signed for another purpose, or holding
+    anything but a bounded list of ids is refused as a bad signature, so the
+    view answers it like any other tampered form.
+    """
+    if type(token) is not str or not token:
+        raise signing.BadSignature("Missing acknowledgement list.")
+    # No max_age and no actor or session binding, on purpose: the signature
+    # only proves some Administrator's rendered banner counted these ids, and
+    # ``acknowledge`` rechecks each one (CRITICAL, inside the window, not yet
+    # acknowledged; acknowledgements are append-only). A replayed, old or
+    # another Administrator's token can therefore hide nothing that a banner
+    # did not show, and a spent one records nothing.
+    values = signing.loads(token, salt=SALT)
+    if (
+        type(values) is not list
+        or not values
+        or len(values) > ACKNOWLEDGE_LIMIT
+        or not all(type(value) is str and _HEX_ID.fullmatch(value) for value in values)
+    ):
+        raise signing.BadSignature("Malformed acknowledgement list.")
+    return [UUID(value) for value in values]
+
+
+def acknowledge(actor_id, *, ids, since, parish_id):
+    """Acknowledge the CRITICAL rows the banner showed, and no others.
+
+    ``ids`` comes from ``shown``: the rows counted when the page was rendered.
+    Only those still inside the window and not yet acknowledged are recorded,
+    so a CRITICAL row recorded after the page was shown stays visible. Returns
+    how many rows were acknowledged; zero records nothing. A row that another
+    Administrator acknowledged concurrently is skipped by its unique log
+    reference rather than refused, so both requests succeed.
     """
     with transaction.atomic():
         pending = list(
-            OperationalLog.objects.filter(level="CRITICAL", created_at__gte=since)
+            OperationalLog.objects.filter(
+                id__in=ids, level="CRITICAL", created_at__gte=since
+            )
             .exclude(id__in=CriticalEventAcknowledgement.objects.values("log_id"))
             .values_list("id", flat=True)
         )

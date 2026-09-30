@@ -5,7 +5,9 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.critical_events import ACKNOWLEDGE_LIMIT
 from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDOW
+from parishkit.stewardship.audit.critical_events import sign as critical_sign
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.domain import CampaignState
@@ -54,8 +56,10 @@ def portal_chrome(request):
     now = getattr(request, "_stewardship_display_now", None) or database_now()
     counts = _background_counts(actor, now)
     parish = getattr(configuration.active_configuration, "parish", None)
-    critical, delivery_unknown = (
-        alert_counts(now - CRITICAL_WINDOW) if admin else ({}, None)
+    critical, critical_ids, delivery_unknown = (
+        alert_counts(now - CRITICAL_WINDOW, limit=ACKNOWLEDGE_LIMIT)
+        if admin
+        else ({}, [], None)
     )
     go_live = bool(
         campaign
@@ -113,6 +117,10 @@ def portal_chrome(request):
             "family_portal_url": reverse("admin:family_portal"),
             "critical_count": sum(critical.values()),
             "critical_events": critical_summary(critical),
+            # The exact rows Acknowledge may record, signed (critical_events).
+            "critical_shown": critical_sign(critical_ids) if critical_ids else "",
+            # More pending than one form signs: the rest stay after Acknowledge.
+            "critical_limit": ACKNOWLEDGE_LIMIT,
             # The banner's System logs link filters from this UTC day onward.
             "critical_since_day": (now - CRITICAL_WINDOW).date().isoformat(),
             "background": counts,
@@ -263,6 +271,8 @@ def _setup_chrome(actor, configuration, session):
         "go_live": False,
         "critical_count": 0,
         "critical_events": [],
+        "critical_shown": "",
+        "critical_limit": ACKNOWLEDGE_LIMIT,
         "critical_since_day": None,
         "background": _background_counts(actor, now),
         "delivery_unknown": None,

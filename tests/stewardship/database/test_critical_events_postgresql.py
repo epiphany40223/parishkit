@@ -1,9 +1,11 @@
 """The critical-events banner explains itself and an Administrator can clear it."""
 
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 from django.db import transaction
+from django.utils import timezone
 
 from parishkit.stewardship.audit.models import (
     AuditEvent,
@@ -30,11 +32,26 @@ def critical(event):
         operational(event, level="CRITICAL")
 
 
-def acknowledge(browser):
-    """Post the banner's own form with the genuine CSRF cookie."""
+def shown(page):
+    """The signed id list the page's Acknowledge form carries."""
+    return page.split('name="shown" value="', 1)[1].split('"', 1)[0]
+
+
+def acknowledge(browser, token=None):
+    """Post the banner's own form with the genuine CSRF cookie.
+
+    Without ``token``, the form is the one on this Administrator's current
+    home page, as a click on Acknowledge would post it.
+    """
+    if token is None:
+        token = shown(home(browser))
     with web():
         return browser.post(
-            ROUTE, {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+            ROUTE,
+            {
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+                "shown": token,
+            },
         )
 
 
@@ -69,8 +86,8 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
     assert BANNER not in home(browser)
     other = signed_in_as(google, "second@example.org", "second-subject")
     assert BANNER not in home(other)
-    # Nothing new to acknowledge records nothing.
-    assert acknowledge(other).status_code == 302
+    # Replaying the acknowledged list records nothing new.
+    assert acknowledge(other, shown(page)).status_code == 302
     assert CriticalEventAcknowledgement.objects.count() == 3 and audits() == 1
     # A newer CRITICAL event brings the banner back, naming only itself.
     critical(Event.TASK_FAILED)
@@ -126,6 +143,7 @@ def test_acknowledgement_needs_an_administrator_and_post(
     browser, login = signed_in()
     assert login.status_code == 302
     critical(Event.SOURCE_INVALID)
+    token = shown(home(browser))
     with web():
         assert browser.get(ROUTE).status_code == 405
         assert browser.post(ROUTE).status_code == 403
@@ -135,10 +153,125 @@ def test_acknowledgement_needs_an_administrator_and_post(
             "coherent_configuration",
             lambda store: SimpleNamespace(restore_review_required=True),
         )
-        assert acknowledge(browser).status_code == 503
+        assert acknowledge(browser, token).status_code == 503
     staff = signed_in_as(google, "staff@example.org", "staff-subject")
     assert BANNER not in home(staff)
-    assert acknowledge(staff).status_code == 403
+    assert acknowledge(staff, token).status_code == 403
     assert not CriticalEventAcknowledgement.objects.exists()
     assert audits() == 0
     assert BANNER in home(browser)
+
+
+def test_a_critical_event_recorded_after_the_page_survives_acknowledge(
+    auth_service, google
+):
+    """Acknowledge records only the rows the page showed, never a newer one."""
+    browser, login = signed_in()
+    assert login.status_code == 302
+    critical(Event.SOURCE_INVALID)
+    page = home(browser)
+    assert "ParishSoft data refresh failed" in page
+    # A new CRITICAL arrives while the Administrator reads the page.
+    critical(Event.MAIL_PROVIDER_FAILED)
+    response = acknowledge(browser, shown(page))
+    assert response.status_code == 302
+    acknowledged = CriticalEventAcknowledgement.objects.get()
+    shown_row = OperationalLog.objects.get(event=Event.SOURCE_INVALID.value)
+    assert acknowledged.log_id == shown_row.pk
+    event = AuditEvent.objects.get(event_type="critical_events_acknowledged")
+    assert event.auditcontext.context == {"outcome": "succeeded", "count": 1}
+    page = home(browser)
+    assert BANNER in page and "Email sending failed" in page
+    assert "ParishSoft data refresh failed" not in page
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["edited", "unsigned", "other_salt", "missing"],
+)
+def test_a_tampered_id_list_is_refused(auth_service, google, tamper):
+    """An altered, forged or missing list acknowledges nothing and audits nothing."""
+    from django.core import signing
+
+    from parishkit.stewardship.audit.critical_events import SALT
+
+    browser, login = signed_in()
+    assert login.status_code == 302
+    critical(Event.SOURCE_INVALID)
+    token = shown(home(browser))
+    other = OperationalLog.objects.create(
+        level="CRITICAL", event=Event.TASK_FAILED.value, schema="exception", context={}
+    )
+    forged = {
+        # Swap one character of the signed payload, keeping its signature.
+        "edited": ("A" if token[0] != "A" else "B") + token[1:],
+        "unsigned": other.pk.hex,
+        "other_salt": signing.dumps([other.pk.hex], salt=SALT + ".other"),
+        "missing": "",
+    }[tamper]
+    assert acknowledge(browser, forged).status_code == 400
+    assert not CriticalEventAcknowledgement.objects.exists()
+    assert audits() == 0
+    assert BANNER in home(browser)
+
+
+def test_a_late_commit_with_an_earlier_time_survives_acknowledge(auth_service, google):
+    """A row not on the page stays, even when its time is older than a shown row."""
+    browser, login = signed_in()
+    assert login.status_code == 302
+    critical(Event.SOURCE_INVALID)
+    page = home(browser)
+    shown_row = OperationalLog.objects.get()
+    # A long transaction inserted this before the page was rendered but
+    # committed after it, so its created_at is earlier than the shown row's.
+    with transaction.atomic():
+        late = OperationalLog.objects.create(
+            level="CRITICAL",
+            event=Event.FACT_DRIFT.value,
+            schema="exception",
+            context={},
+            created_at=shown_row.created_at - timedelta(minutes=1),
+        )
+    assert acknowledge(browser, shown(page)).status_code == 302
+    assert list(
+        CriticalEventAcknowledgement.objects.values_list("log_id", flat=True)
+    ) == [shown_row.pk]
+    page = home(browser)
+    assert BANNER in page and "Report figures did not verify" in page
+    assert not CriticalEventAcknowledgement.objects.filter(log_id=late.pk).exists()
+
+
+def test_more_than_the_limit_acknowledges_the_oldest_and_keeps_the_rest(
+    auth_service, google
+):
+    """One form signs the oldest 500; the banner says so and keeps the rest."""
+    from parishkit.stewardship.audit.critical_events import ACKNOWLEDGE_LIMIT
+
+    browser, login = signed_in()
+    assert login.status_code == 302
+    start = timezone.now() - timedelta(hours=12)
+    OperationalLog.objects.bulk_create(
+        OperationalLog(
+            level="CRITICAL",
+            event=Event.TASK_FAILED.value,
+            schema="exception",
+            context={},
+            created_at=start + timedelta(seconds=index),
+        )
+        for index in range(ACKNOWLEDGE_LIMIT + 1)
+    )
+    page = home(browser)
+    assert f"Background task failed ({ACKNOWLEDGE_LIMIT + 1}×)" in page
+    assert f"Only the oldest {ACKNOWLEDGE_LIMIT} are acknowledged at a time" in page
+    assert acknowledge(browser, shown(page)).status_code == 302
+    newest = OperationalLog.objects.latest("created_at")
+    acknowledged = set(
+        CriticalEventAcknowledgement.objects.values_list("log_id", flat=True)
+    )
+    assert len(acknowledged) == ACKNOWLEDGE_LIMIT and newest.pk not in acknowledged
+    page = home(browser)
+    assert BANNER in page and "Background task failed" in page
+    assert "Background task failed (" not in page  # just the one remaining
+    assert "Only the oldest" not in page
+    assert acknowledge(browser, shown(page)).status_code == 302
+    assert BANNER not in home(browser)

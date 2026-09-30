@@ -288,11 +288,15 @@ kind of problem in plain language with its count (for example "ParishSoft data
 refresh failed (2×)"), links to the [log screen](#logs) filtered to CRITICAL
 operational entries from that window, and offers Acknowledge to Administrators
 (the System logs capability). One acknowledgement is shared: it records each
-CRITICAL entry the banner counts and the acknowledging Administrator in
-append-only rows with one audit event, hides those entries for every Admin, and
-changes no log entry. Any other CRITICAL entry, including one a long-running
-transaction commits after the acknowledgement, brings the banner back. The banner costs the Admin page one query, shared with the delivery
-warning count. It is distinct from security-event acknowledgement, which is
+CRITICAL entry the rendered banner counted and the acknowledging Administrator
+in append-only rows with one audit event, hides those entries for every Admin,
+and changes no log entry. The banner's form carries a signed list of those
+entries' ids (at most 500, oldest first; any beyond stay counted and remain
+after the acknowledgement), and an altered list is refused, so Acknowledge
+never hides an entry the Administrator was not shown. Any other CRITICAL
+entry, including one recorded after the page was shown or one a long-running
+transaction commits after the acknowledgement, brings the banner back. The
+banner costs the Admin page one query, shared with the delivery warning count. It is distinct from security-event acknowledgement, which is
 per recipient.
 
 ### Admin navigation
