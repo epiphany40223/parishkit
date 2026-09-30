@@ -29,11 +29,17 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @contextmanager
-def task_login(service, *, reconnect=False, exact=False):
-    """Create a fresh fixture role; exact-name probes never adopt existing roles."""
+def task_login(service, *, reconnect=False, exact=True):
+    """Create a fresh fixture role; exact-name probes never adopt existing roles.
+
+    SQL binds task claims and transitions to the provisioned login names
+    (stewardship_task_type_login_v1), so the exact name is the default. A
+    random name (exact=False) models an unrecognized login. The "download"
+    stream login writes no tasks and keeps its random name.
+    """
     name = (
         ("pk_stewardship_" + service.value.replace("-", "_"))
-        if exact
+        if exact and isinstance(service, ServiceRole)
         else "test_background_" + uuid4().hex
     )
     role = sql.Identifier(name)
@@ -77,7 +83,7 @@ def create_task(handler):
     """The creation path enters owning scope before enqueue's retry-root lock."""
     with handler.scope():
         return enqueue(
-            task_type="grant_probe",
+            task_type="branding_cleanup",
             domain_request_id=uuid4(),
             actor_id=None,
             correlation_id=uuid4(),
@@ -89,8 +95,8 @@ def test_scheduler_can_enqueue_and_scan_but_cannot_claim(tmp_path):
     """A producer can retain singleton/row locks without execution-write authority."""
     _, campaign, _ = draft_campaign(tmp_path)
     handler = source_handler(campaign)
-    handlers = {"grant_probe": handler}
-    with task_login(ServiceRole.SCHEDULER), scheduler_session() as guard:
+    handlers = {"branding_cleanup": handler}
+    with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
         task = create_task(handler)
         guard.check()
         hints, _ = collect_hints(handlers=handlers)
@@ -109,13 +115,13 @@ def test_worker_can_claim_progress_complete_and_record_private_safe_audit(tmp_pa
     """Verified metadata effects and their triggers need no broader web identity."""
     _, campaign, _ = draft_campaign(tmp_path)
     handler = source_handler(campaign)
-    with task_login(ServiceRole.WORKER):
+    with task_login(ServiceRole.WORKER, exact=True):
         task = create_task(handler)
         execution = claim_hint(
             task.run_id,
             queue=WorkQueue.GENERAL,
             worker_id=uuid4(),
-            handlers={"grant_probe": handler},
+            handlers={"branding_cleanup": handler},
         )
         execution.heartbeat()
         execution.progress(1, 1, phase=TaskPhase.VERIFYING)

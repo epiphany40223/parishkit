@@ -9540,6 +9540,62 @@ CREATE FUNCTION public.stewardship_task_history_v1() RETURNS trigger
     END;
     $$;
 
+-- FUNCTION: stewardship_task_login_guard_v1()
+CREATE FUNCTION public.stewardship_task_login_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    -- Bind task writes to the database login, not to the caller-supplied
+    -- actor_id: the execution guard trusts actor_id = worker_id, so without
+    -- this check any login holding UPDATE could claim, finish or cancel
+    -- another service's task. The schema owner (migration and SECURITY
+    -- DEFINER bodies, such as the delivery recovery commands) is exempt.
+    IF pg_has_role(current_user, (SELECT nspowner FROM pg_namespace
+            WHERE nspname='public'), 'USAGE') THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'INSERT' THEN
+        -- Web, worker and scheduler create tasks for other services, so any
+        -- login may create a known type; only its owner may execute it.
+        IF public.stewardship_task_type_login_v1(NEW.task_type) IS NULL THEN
+            RAISE EXCEPTION 'Unknown task type' USING ERRCODE='42501';
+        END IF;
+        RETURN NEW;
+    END IF;
+    -- The service whose compiled registry executes this type may claim,
+    -- heartbeat, finish, expire and recover it (the execution guard still
+    -- checks the fence and lease).
+    IF current_user = public.stewardship_task_type_login_v1(OLD.task_type) THEN
+        RETURN NEW;
+    END IF;
+    -- Web only creates work and cancels an Admin's waiting cleanup; it never
+    -- claims, executes or recovers any task.
+    IF current_user = 'pk_stewardship_web'
+       AND OLD.task_type = 'production_cleanup'
+       AND OLD.state IN ('queued', 'retry_wait')
+       AND NEW.state = 'cancelled' AND NEW.action = 'safe_cancel' THEN
+        RETURN NEW;
+    END IF;
+    -- The scheduler only retires superseded waiting source work while it
+    -- holds its session and source-cancellation locks.
+    IF current_user = 'pk_stewardship_scheduler'
+       AND OLD.task_type = 'source_refresh'
+       AND OLD.state IN ('queued', 'retry_wait', 'abandoned')
+       AND NEW.state = 'cancelled'
+       AND NEW.action IN ('safe_cancel', 'recovery_cancel')
+       AND NEW.lease_expires_at IS NULL
+       AND EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736229 AND objid=1
+            AND objsubid=2 AND granted)
+       AND EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1
+            AND objsubid=2 AND mode='ExclusiveLock' AND granted) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'This login cannot change this task' USING ERRCODE='42501';
+END $$;
+
 -- FUNCTION: stewardship_task_phase_v1()
 CREATE FUNCTION public.stewardship_task_phase_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -9579,34 +9635,6 @@ CREATE FUNCTION public.stewardship_task_run_mutable_v1() RETURNS trigger
                 RETURN NEW;
             END;
             $$;
-
--- FUNCTION: stewardship_task_scheduler_v1()
-CREATE FUNCTION public.stewardship_task_scheduler_v1() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
-    AS $$
-BEGIN
-    -- Capability-based, so the same boundary covers independently named test
-    -- and provisioned logins. Full worker writers retain the existing guards.
-    IF NOT has_column_privilege(current_user,
-            'public.stewardship_task_run', 'worker_id', 'UPDATE') THEN
-        IF OLD.task_type <> 'source_refresh'
-           OR OLD.state NOT IN ('queued', 'retry_wait', 'abandoned')
-           OR NEW.state <> 'cancelled'
-           OR NEW.action NOT IN ('safe_cancel', 'recovery_cancel')
-           OR NEW.lease_expires_at IS NOT NULL
-           OR NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
-                AND locktype='advisory' AND classid=736229 AND objid=1
-                AND objsubid=2 AND granted)
-           OR NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
-                AND locktype='advisory' AND classid=736220 AND objid=1
-                AND objsubid=2 AND mode='ExclusiveLock' AND granted) THEN
-            RAISE EXCEPTION 'Scheduler may only cancel waiting source work'
-                USING ERRCODE='42501';
-        END IF;
-    END IF;
-    RETURN NEW;
-END $$;
 
 -- FUNCTION: stewardship_task_state_v1()
 CREATE FUNCTION public.stewardship_task_state_v1() RETURNS trigger
@@ -9754,6 +9782,48 @@ CREATE FUNCTION public.stewardship_task_state_v1() RETURNS trigger
         RETURN NEW;
     END;
     $_$;
+
+-- FUNCTION: stewardship_task_type_login_v1(text)
+CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS text
+    LANGUAGE sql IMMUTABLE STRICT
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$ SELECT CASE
+        -- The login whose compiled registry executes each task type
+        -- (runtime_background.py): general-queue types run in the worker,
+        -- mail-queue types in mail dispatch. NULL is an unknown type.
+        WHEN task_type IN (
+            'activation_catchup',
+            'branding_cleanup',
+            'campaign_boundary',
+            'daily_digest_finalize',
+            'daily_digest_prepare',
+            'family_mail_prepare',
+            'family_mail_test',
+            'operational_collect',
+            'operational_prepare',
+            'operational_slack',
+            'production_cleanup',
+            'production_token_cleanup',
+            'production_tokens',
+            'report_exact_export',
+            'report_export',
+            'report_export_cleanup',
+            'report_fact_verification',
+            'report_facts',
+            'security_prepare',
+            'setup_finalize',
+            'setup_source_cleanup',
+            'setup_source_load',
+            'source_refresh',
+            'weekly_digest_finalize',
+            'weekly_digest_prepare')
+        THEN 'pk_stewardship_worker'
+        WHEN task_type IN (
+            'campaign_mail_test',
+            'outbox_delivery',
+            'setup_mail_test')
+        THEN 'pk_stewardship_mail_dispatch'
+    END $$;
 
 -- FUNCTION: stewardship_timezone_name_v1(text)
 CREATE FUNCTION public.stewardship_timezone_name_v1(zone text) RETURNS text

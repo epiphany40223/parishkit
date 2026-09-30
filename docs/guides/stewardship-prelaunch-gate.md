@@ -319,6 +319,11 @@ takes a per-campaign export lock, which the work gate, lifecycle transition,
 configuration activation and go-live gate paths also take (one new lock
 helper, one new trigger function and trigger, and eight guard bodies;
 Functions and Triggers digests).
+The #306 review then bound task claims and transitions to the database
+login that executes each task type: a new task login guard replaced the
+scheduler-only cancel guard, web may cancel only a waiting cleanup, and a
+login may create only a known type (one new mapping function and one
+replaced trigger function and trigger; Functions and Triggers digests).
 Regenerated from a fresh install, the current baseline is:
 
 | Category | Count | Digest prefix |
@@ -327,8 +332,8 @@ Regenerated from a fresh install, the current baseline is:
 | Columns | 2461 | `2c20283d` |
 | Constraints | 3398 | `5ee21d05` |
 | Indexes | 1008 | `fa41fc80` |
-| Functions | 605 | `c90a82ce` |
-| Triggers | 556 | `a4816cd5` |
+| Functions | 606 | `271adefa` |
+| Triggers | 556 | `e8cb79b7` |
 | Policies | 28 | `1c9c3b2d` |
 
 This baseline becomes the frozen production schema when the gate exits. A

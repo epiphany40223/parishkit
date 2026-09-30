@@ -177,7 +177,6 @@ WEB_UPDATE_TABLES = frozenset(
         "stewardship_campaign",
         "stewardship_campaign_work_gate",
         "stewardship_campaign_control",
-        "stewardship_task_run",
         "stewardship_activation_catchup",
     ]
 )
@@ -378,6 +377,11 @@ def runtime_grants(role, *, target=None):
             for table in names:
                 tables.setdefault(table, set()).add(privilege)
         tables["django_session"].add("DELETE")
+        # Web creates tasks and cancels an Admin's waiting cleanup, never
+        # claims or executes one; the task login guard enforces the same.
+        from .source.grants import SCHEDULER_CANCEL_COLUMNS
+
+        columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
         tables["stewardship_sealed_credential_staging"] = {"INSERT"}
         columns["stewardship_sealed_credential_staging"] = {
             "SELECT": {"reference", "request_id", "target", "fingerprint"}
