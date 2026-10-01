@@ -12,7 +12,7 @@ import csv
 import io
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from django.db import connection
@@ -67,6 +67,19 @@ class TalentQuery:
     def form_values(self):
         """Values for CSRF-protected re-submission and downloads."""
         return {"search": self.search, "talent": self.talent}
+
+    def offered(self, configuration):
+        """This query, with a talent filter no longer offered read as "any".
+
+        A page re-posted (sort, paging or download) after the parish removed
+        that talent would otherwise filter every row out while the menu, which
+        no longer lists it, shows "Everything".
+        """
+        if OPTION.fullmatch(self.talent) and self.talent not in talent_labels(
+            configuration
+        ):
+            return replace(self, talent="any")
+        return self
 
 
 def talent_labels(configuration):

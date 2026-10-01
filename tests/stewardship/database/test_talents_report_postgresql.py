@@ -145,6 +145,19 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert book.sheetnames == ["Members", "Families"]
         assert book["Members"]["D2"].value == "Painter; Other: Organ"
         assert search(browser, export, {"format": "pdf"})[0].status_code == 400
+        # A talent filter no longer offered (here, never offered) reads as
+        # "Everything": the tables, the re-posted forms and the download.
+        removed = str(uuid4())
+        response, body = search(
+            browser, route, {"talent": removed, "members_sort": "-latest"}
+        )
+        assert response.status_code == 200 and b"Other: Organ" in body
+        assert removed.encode() not in body
+        assert b'name="talent" value="any"' in body
+        response, body = search(
+            browser, export, {"format": "csv", "timezone": "UTC", "talent": removed}
+        )
+        assert response.status_code == 200 and b"Other: Organ" in body
         _, body = get(browser, route.replace("talents", "participation"))
         assert route.encode() in body
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()

@@ -166,3 +166,18 @@ def test_report_page_says_plainly_that_no_talents_are_collected():
     html = page({"modules": ["ministry"]}, result({PAINTER: ""}, {PAINTER: 1}))
     assert "does not collect talents" not in html
     assert "Members with talents or limitations" in html and "Painter" in html
+
+
+def test_a_talent_filter_no_longer_offered_reads_as_everything():
+    """Sort, paging and download all re-post the filter; a removed one is "any"."""
+    defaults = {"modules": ["ministry"]}
+    emptied = defaults | {"talent_options": []}
+    assert TalentQuery(talent=RETIRED).offered(defaults) == TalentQuery()
+    assert TalentQuery(talent=PAINTER).offered(emptied) == TalentQuery()
+    kept = TalentQuery(search="Alex", talent=PAINTER)
+    assert kept.offered(defaults) is kept
+    for fixed in ("any", "cannot_serve", "cannot_attend"):
+        query = TalentQuery(talent=fixed)
+        assert query.offered(emptied) is query
+    stale = TalentQuery(search="Alex", talent=RETIRED).offered(defaults)
+    assert stale.form_values() == {"search": "Alex", "talent": "any"}

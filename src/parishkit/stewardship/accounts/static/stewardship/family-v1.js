@@ -785,8 +785,17 @@
     if (!member.proposed) choices.leave = saved ? saved.leave : [];
     if (!form.service) return;
     const talentsKey = "talents." + member.id;
-    serviceEntry(member).talents = setAside.get(talentsKey) || {};
+    serviceEntry(member).talents = offeredTalents(setAside.get(talentsKey) || {});
     setAside.delete(talentsKey);
+  }
+  function offeredTalents(talents) {
+    // A set-aside can outlive a refresh that removed talents (or emptied the
+    // list), so restore only talents still offered, and a note only while its
+    // option still takes free text. Otherwise the Family would submit a talent
+    // with no checkbox left to remove it, and the server would refuse it.
+    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
+    return Object.fromEntries(Object.entries(talents).filter(([id]) => options.has(id)).map(
+      ([id, text]) => [id, options.get(id).free_text ? text : ""]));
   }
   function preserveService(previous, before) {
     // Keep this tab's own talent and "cannot participate" edits across a
