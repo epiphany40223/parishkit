@@ -71,8 +71,8 @@ def test_due_hints_are_published_before_the_producers_run(monkeypatch):
 
     The producers take the global work-order lock one after another, so a
     source refresh can stretch them to tens of seconds. The already-queued
-    task is published before they start, and again after; the duplicate
-    hint claims nothing.
+    task is published before they start, and not again after: the late scan
+    skips a row it just published that has not changed since (#394).
     """
     stop, seen, order = Event(), [], []
     due = queued().run_id
@@ -97,8 +97,8 @@ def test_due_hints_are_published_before_the_producers_run(monkeypatch):
     )
     produced = order[1]
     assert order[0] == [due]
-    assert seen == [due, due, produced] or seen == [due, produced, due]
-    # The duplicate hint is harmless: only the first claim succeeds.
+    assert seen == [due, produced]
+    # A duplicate hint is harmless anyway: only the first claim succeeds.
     arguments = dict(queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers=handlers())
     assert claim_hint(due, **arguments) is not None
     assert claim_hint(due, **arguments) is None

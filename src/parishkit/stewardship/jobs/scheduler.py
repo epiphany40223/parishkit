@@ -128,7 +128,15 @@ def _release(raw):
 
 
 def scan_once(
-    guard, *, handlers, publish, cursor=None, limit=100, stop=None, health=None
+    guard,
+    *,
+    handlers,
+    publish,
+    cursor=None,
+    limit=100,
+    stop=None,
+    health=None,
+    recent=None,
 ):
     """Emit a bounded page of hints; failed delivery remains durable and replayable.
 
@@ -136,6 +144,8 @@ def scan_once(
     known transport failures to HintPublicationUnavailable. Each failed hint
     remains durable for the next sweep, while the cursor advances so one broken
     queue cannot indefinitely block another. Unexpected errors still propagate.
+    ``recent`` (a RecentHints) remembers each published hint so later scans
+    skip re-admitting the unchanged row for a while.
     """
     if not isinstance(guard, SchedulerGuard) or not callable(publish):
         raise ValueError("An owned scheduler and bounded publisher are required.")
@@ -145,7 +155,7 @@ def scan_once(
     if health is not None and cursor is None:
         health.begin()
     hints, position = collect_hints(
-        handlers=handlers, cursor=cursor, limit=limit, health=health
+        handlers=handlers, cursor=cursor, limit=limit, health=health, recent=recent
     )
     published = unconfirmed = 0
     for hint in hints:
@@ -162,6 +172,8 @@ def scan_once(
                 health.unknown()
         else:
             published += 1
+            if recent is not None:
+                recent.published(hint.run_id)
     guard.check()
     if health is not None:
         if stop is not None and stop.is_set():

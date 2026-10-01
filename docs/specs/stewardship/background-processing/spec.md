@@ -28,6 +28,20 @@ for recovery, abandoned or past its lease. Only then does it take the
 handler's locks and repeat that check authoritatively. A row that becomes
 actionable after the first read is due work that a later scan hints again.
 
+A scan does not re-admit a TaskRun it published a hint for in the last 45
+seconds while the row's version is unchanged, since that hint is still queued
+or was just taken (#394). Any transition bumps the version and ends the skip,
+and a lost hint is replaced once the 45 seconds pass, before the broker's
+60-second hint expiry. The due-work health
+sample still counts a skipped row as admitted, so overdue work is still
+reported late. A skip does not recheck admission, so for up to 45 seconds after
+a pause, close or mode change a row hinted just before it still counts as
+admitted rather than held; nothing is published for it, and recovery needs
+five minutes of clear scans in any case. Likewise, a hint refused during a
+short pause leaves its row unchanged, so after the resume the row waits until
+45 seconds after that hint was published. This memory lives only in the scheduler process: a restarted
+scheduler admits and hints every due row again.
+
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
 Testing rehearsal work is separately and immutably classified, never satisfies
