@@ -189,6 +189,24 @@ docker rm parishkit-auth-tests
 Stopping the container discards its synthetic tmpfs data. There is no retained
 data to recover; the next run rebuilds the schema from migrations.
 
+## Fixture calendar
+
+The synthetic campaign fixtures use fixed dates: 2026-10-01 through
+2026-10-31 in America/New_York, with the initial invitation at 09:00. Many
+fixtures populate Families and promote source data on the real database clock,
+then pin the campaign clock to those dates. That is only monotonic while the
+real date is earlier. Later, the database correctly rejects the rewind
+(`Family identity cannot rewind source/cohort/code state`), and statistics
+become unavailable because the source appears to be promoted after the
+observation. Production is unaffected: there the campaign clock and source
+promotion read the same `statement_timestamp()`.
+
+Until [issue #421](https://github.com/epiphany40223/parishkit/issues/421) moves
+the fixtures to a calendar that does not expire, each CI database shard sets
+its disposable runner clock to 2026-09-30T12:00Z for the partition and restores
+it afterwards. Local runs on a real clock after 2026-10-01 fail about 100
+database tests for this reason alone; rely on CI for full database evidence.
+
 ## Foundation boundaries
 
 The initial records establish storage contracts, not usable authentication.
