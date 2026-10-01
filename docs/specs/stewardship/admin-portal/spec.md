@@ -1355,20 +1355,45 @@ background operation (about 1,100 Families take 20 to 25 minutes). The
 read-only **Family email progress** page (Campaign section, linked from
 Delivery controls and Outgoing mail) follows it live
 ([#413](https://github.com/epiphany40223/parishkit/issues/413)). It is for
-Administrators only, like Outgoing mail.
+Administrators only, like Outgoing mail. It is a moment-in-time view: it
+shows progress only while a send is in progress. Outgoing mail remains the
+permanent record of every email and its state.
 
-**Which send.** A send is one Family schedule definition of the current
-campaign (the invitation, or one reminder) in the current mode and, in
-Production, the current Production cycle. Every Family's occurrence of that
-definition is one email of the send. The page shows the send whose
-occurrences fell due most recently, so a reminder takes over once its first
-email is due, while a late-joining Family's invitation (due at the
-invitation's original time) does not pull the page back. Each Family counts
-once, by its newest occurrence, so a deliverability recovery that replaces a
-failed invitation is not counted twice.
+**Which send.** A send is one revision of one Family schedule definition of
+the current campaign (the invitation, or one reminder) in the current mode
+and, in Production, the current Production cycle. Every Family's occurrence
+of that revision is one email of the send, and so is every Family that
+planning still owes it (below). Moving or editing a schedule makes a new
+revision and so a new send. The earlier revision's emails stay on Outgoing
+mail but are not counted in the new send. Each Family counts once, by its
+newest occurrence of the revision, so a deliverability recovery that
+replaces a failed invitation is not counted twice.
 
-**What it shows.** Each Family's email is counted by its outbox message
-state, or, before preparation, by its occurrence:
+**In progress.** A send is in progress while it still has work to do:
+
+- an email not yet settled: an occurrence not yet prepared, or a message
+  pending, waiting to retry or being handed to the mail service;
+- a Family that planning still owes; or
+- a total that cannot be known yet.
+
+Sent, failed and uncertain emails are settled. Families not emailed, and
+reminders held behind a failed or uncertain invitation, are not work to do.
+A finished send is therefore not in progress, and neither is one whose
+remaining emails were cancelled, for example because its schedule was moved
+to a later time. A due send that planning has not started yet is in
+progress, as long as some Family is owed it. The page shows the in-progress
+send that fell due most recently. A reminder therefore takes over from the
+invitation once it is due, while a late-joining Family's invitation (due at
+the invitation's original time) does not pull the page back.
+
+**When no send is in progress,** the page says so ("No Family email send is
+in progress right now"), with no progress bar. It summarises the send whose
+occurrences fell due most recently in one line: its kind, when it finished,
+and how many emails were sent, failed, uncertain and not sent. It links to
+Outgoing mail.
+
+**Counts while a send is in progress.** Each Family's email is counted by
+its outbox message state, or, before preparation, by its occurrence:
 
 - **Sent**: delivered (the mail service accepted it).
 - **Failed**: permanent failure, or a preparation that failed. Failed
@@ -1376,8 +1401,8 @@ state, or, before preparation, by its occurrence:
   there, link to the failed preparation tasks in Background work.
 - **Uncertain**: delivery unknown, linked to Outgoing mail.
 - **Remaining**: pending, waiting to retry or submitting, or not yet
-  prepared, including the Families planning has not reached yet (below).
-  The part not yet prepared is also shown on its own while non-zero.
+  prepared, including the Families planning still owes. The part not yet
+  prepared is shown beside it, in brackets.
 - **Held: invitation failed or uncertain** (reminders only, shown when
   non-zero): a reminder not yet prepared for a Family whose newest invitation
   failed or is uncertain. Planning holds such a reminder until the invitation
@@ -1399,76 +1424,77 @@ state, or, before preparation, by its occurrence:
 The total is sent, failed, uncertain and remaining; the last three
 categories are shown beside it, not in it. The scheduler plans Families a
 few at a time, so for most of a send many Families have no occurrence yet.
-The total counts them from the start: an active, email-eligible Family with
-a deliverable address and no response (no effective live submission in
-Production, no submission in the active rehearsal in Testing) that has no
-occurrence of the schedule's current revision, and no fulfillment or restore
-hold for the send yet, is one remaining email, and for a reminder only once
-its invitation was delivered, as
+The total counts them from the start. A Family is owed the send when the
+rules in
 [Family invitations and reminders](../background-processing/spec.md#family-invitations-and-reminders)
-requires. Due times and the close are read on the campaign clock, as
-planning reads them. Once the campaign closes, or the send's schedule is
-removed or moved to a time still to come, no such Family is counted, since
-planning creates no more of its emails until then. Families planning has
-not reached are not yet counted under Couldn't be emailed or Not needed; a
-Family whose email a schedule replacement cancelled shows as Not needed and,
-until it is planned again under the new revision, also as remaining.
-While the Family population is being refreshed, or a Testing
-send has no active rehearsal, who will be emailed is not known: the page
-then shows the counts without a total, percentage or finish estimate, and
-says the emails are still being prepared, rather than a share of the emails
-planned so far. A labelled progress bar shows the finished share
-(sent, failed and uncertain), which reaches 100% only when nothing remains;
-an empty send shows a full bar. The current rate is emails finished per
-minute over the last five minutes (or since the send started, if that is
-sooner, with at least 30 seconds to measure); when nothing finished in that
-window the page says so instead of showing a zero rate. The estimated finish
-assumes the rate continues; there is none while nothing is finishing or
-while live delivery is paused. A pause is read from the campaign's pause
-control, not from held messages, which workers hold only as they reach them,
-and the page then says **Paused**. The page also shows when the send started
-(its first email was prepared) and, once nothing remains, when it finished
-(its last email settled) and its average rate. The finish time is the last
-change to any of the send's settled emails, so a later resolution (accepting
-an uncertain email, or retrying a failed one) moves it, and the average rate
-with it. Each Family's newest occurrence is chosen by recovery generation
-first, so after a schedule replacement an older revision's recovery attempt
-can outrank the newer revision's first attempt; both are accepted for v1.
+would have planning create its email, and it has no occurrence of the
+revision yet. Planning creates the send's emails only while its revision is
+the schedule's current one and is due, the campaign has not closed, and, in
+Testing, a rehearsal is active. Otherwise no Family is owed. Due times and
+the close are read on the campaign clock, as planning reads them. Families
+planning has not reached are not yet counted under Couldn't be emailed or
+Not needed.
 
-**Live updates.** While emails remain, the page re-reads a status-only
-fragment every 5 seconds, like the other
-[self-updating pages](#background-indicators): the reads are passive, never
-renew idle time, and are not audited; only opening the page records an
-audited Outgoing mail view. In Production the page also keeps checking while
-a send is about to start: while the campaign's activation catch-up is
-unfinished, or while an invitation or reminder is due within an hour either
-side of now and nothing is scheduled for it yet. A page opened right after
-confirming Production, or just before a reminder, therefore switches to the
-send by itself. Its wording hedges: a reminder no Family still needs
-schedules nothing, and an activation catch-up that keeps failing never
+While the Family population is being refreshed, who will be emailed is not
+known. The page then shows the counts without a total, percentage or finish
+estimate, and says the total is not known yet, rather than showing a share
+of the emails planned so far. While planning is held, the owed Families
+still count, but the page says **Held** instead of showing the send as
+sending. Planning is held during a restore review or a campaign change in
+progress, and while the campaign has not started or is not in a sending
+state. A Family whose planning keeps failing stays owed; Background work
+shows the failure.
+
+A labelled progress bar shows the finished share (sent, failed and
+uncertain), which reaches 100% only when nothing remains. The current rate
+is emails finished per minute over the last five minutes (or since the send
+started, if that is sooner, with at least 30 seconds to measure). When
+nothing finished in that window, the page says so instead of showing a zero
+rate. The estimated finish assumes the rate continues; there is none while
+nothing is finishing or while live delivery is paused. A pause is read from
+the campaign's pause control, not from held messages, which workers hold
+only as they reach them, and the page then says **Paused**. The page also
+shows when the send started (its first email was prepared). The summary's
+finish time is the last change to any of the send's settled emails, so a
+later resolution (accepting an uncertain email, or retrying a failed one)
+moves it; this is accepted for v1.
+
+**Live updates.** While there is a current campaign, the page re-reads a
+status-only fragment every 5 seconds, whether or not a send is in progress,
+like the other [self-updating pages](#background-indicators). The reads are
+passive, never renew idle time and are not audited; only opening the page
+records an audited Outgoing mail view. A page left open with no send in
+progress therefore switches to the next send by itself, in Testing as in
+Production. In Production it also says it is waiting for the next emails
+while the campaign's activation catch-up is unfinished, or while an
+invitation or reminder is due within an hour either side of now and nothing
+is scheduled for it yet. That wording hedges: a reminder no Family still
+needs schedules nothing, and an activation catch-up that keeps failing never
 schedules the invitations, so while waiting the page points to Background
 work. The page keeps checking for up to 3 hours after the last check that
 brought new counts (other self-updating pages stop an hour after they are
-opened), so a page opened an hour early follows the whole send; when it
-stops, it says to use **Refresh progress**. The region's counts change on every read, so it is not
-itself an ARIA live region; screen readers instead hear one short polite
-announcement when the send passes each quarter, pauses and finishes.
-Technical details sit outside the updated region. As on Outgoing mail, a
-restore review that begins while the page renders withholds it.
+opened), so a page opened an hour early follows the whole send. When it
+stops, it says to use **Refresh progress**. The region's counts change on
+every read, so it is not itself an ARIA live region. Screen readers instead
+hear one short polite announcement when the send passes each quarter,
+pauses, is held or is no longer in progress. Technical details sit outside
+the updated region. As on Outgoing mail, a restore review that begins while
+the page renders withholds it.
 
 **Cost.** Every read uses only rows and columns the web login already reads,
 runs in one read-only snapshot and takes no lock, in particular not the
 global work-order lock that the send's own workers take. The campaign's
 Family occurrences are found through the existing definition index and each
 email by primary key, with no schema change. A reminder also reads the
-invitations of the Families whose reminder is not prepared yet. The Families
-not yet planned are counted from the campaign's Family rows, each checked
-against the send's occurrences, fulfillments and restore holds by anti-join.
-At launch scale (about 1,100 Families among 5,000 other occurrences and
-messages) the reads take about 0.5, 3 and 2 ms on the test database; with
-50,000 other messages, about 0.7, 6 and 2.5 ms. Counting the Families not
-yet planned adds under 1 ms in both, and under 10 ms on the validation
-server during a live 1,100-Family Testing send.
+invitations of the Families whose reminder is not prepared yet. The owed
+Families are counted from the campaign's Family rows, each checked against
+the send's occurrences, fulfillments and restore holds by anti-join. Due
+sends not started yet are found from each Family schedule's current
+revision. At launch scale (about 1,100 Families among 5,000 other occurrences
+and messages), the reads take about 0.5, 3 and 2 ms on the test database;
+with 50,000 other messages, about 0.7, 6 and 2.5 ms. Counting the owed
+Families adds under 1 ms in both, and under 10 ms on the validation server
+during a live 1,100-Family Testing send.
 
 ### Family portal maintenance
 

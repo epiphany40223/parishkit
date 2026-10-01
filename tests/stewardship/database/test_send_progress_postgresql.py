@@ -173,21 +173,25 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
     assert message.sealed_substitutions not in body + fragment
 
 
-def test_an_uncertain_email_finishes_the_send_and_links_to_review(
+def test_a_finished_send_is_not_in_progress_and_is_summarised(
     family_mail,  # noqa: F811
     google,
 ):
-    """Delivery unknown counts as finished but uncertain, never as sent."""
+    """Delivery unknown is settled: uncertain, never sent, and not in progress.
+
+    The page says no send is in progress, summarises the send in one line
+    with no progress bar, links to Outgoing mail and keeps checking.
+    """
     uncertain(family_mail)
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
         body = browser.get(STATUS).content.decode()
-    assert "1 of 1 emails finished (100%)" in body
-    assert "<dt>Uncertain (delivery unknown)</dt><dd>1</dd>" in body
-    assert "<dt>Sent</dt><dd>0</dd>" in body
-    assert "data-live-pending" not in body
-    assert "Finished: no emails remain." in body
-    assert 'href="/admin/deliveries?state=delivery_unknown"' in body
+    assert "No Family email send is in progress right now" in body
+    assert "Last send: Invitation email, finished <time" in body
+    assert "0 sent, 0 failed, 1 uncertain, 0 not sent." in body
+    assert 'href="/admin/deliveries">Outgoing mail</a>' in body
+    assert "<progress" not in body
+    assert "data-live-pending" in body
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -217,15 +221,16 @@ def test_progress_is_for_administrators_only(auth_service, google, role):
     assert b"Family email progress" not in reader.get("/admin/").content
 
 
-def test_no_send_yet_says_so_without_polling(auth_service, google):
-    """A draft campaign with nothing due has nothing to follow."""
+def test_no_send_yet_says_so_and_keeps_checking(auth_service, google):
+    """A draft campaign with nothing due: nothing in progress, still checking."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
         body = browser.get(PAGE).content.decode()
-    assert "No invitation or reminder has become due yet." in body
-    assert "data-live-pending" not in body
+    assert "No Family email send is in progress right now" in body
+    assert "Last send" not in body
+    assert "data-live-pending" in body
 
 
 def test_unknown_query_options_are_refused(auth_service, google):
@@ -495,25 +500,27 @@ def explain(cursor, statement, values):
 def measure(values):
     """Plans of the panel statements; each reads occurrences by index, quickly.
 
-    Returns (choose, count, waiting, unplanned): a reminder also reads the
+    Returns (choose, count, waiting, owed, due): a reminder also reads the
     invitation of each Family whose reminder is not prepared yet, to find
-    reminders held behind it, and every send counts the Families planning
-    has not reached yet (here as for an invitation in ``values["mode"]``).
+    reminders held behind it, every send counts the Families planning has
+    not reached yet (here as for an invitation in ``values["mode"]``), and
+    the due sends not started yet are looked up.
     The schedule occurrences of one campaign's Family definitions are always
     found through the definition index, never by scanning every occurrence.
     """
     with read_transaction(), connection.cursor() as cursor:
         cursor.execute(send_progress._SCOPE, values)
-        _, revision, _, epoch = cursor.fetchone()
+        epoch = cursor.fetchone()[3]
         plans = (
-            explain(cursor, send_progress._CURRENT, values),
+            explain(cursor, send_progress._LATEST_SEND, values),
             explain(cursor, send_progress._COUNTS, values),
             explain(cursor, send_progress._WAITING, values),
             explain(
                 cursor,
-                send_progress.unplanned_statement(values["mode"], "initial"),
-                values | {"revision": revision, "epoch": epoch},
+                send_progress.owed_statement(values["mode"], "initial"),
+                values | {"epoch": epoch},
             ),
+            explain(cursor, send_progress._DUE_SENDS, values),
         )
     for plan_ in plans:
         assert "stewardship_schedule_occurrence" not in relations(
@@ -595,6 +602,7 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             "cycle": cycle,
             "since": now - send_progress.RATE_WINDOW,
             "definition": initial.pk,
+            "revision": initial.current_revision_id,
             "unreachable": list(send_progress.UNREACHABLE_REASONS),
         }
         launch = measure(values)
@@ -607,7 +615,7 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
                 counted["Plan"], "Seq Scan"
             ), json.dumps(counted)
         with capsys.disabled():
-            for label, (choose, count, reminder, unplanned) in (
+            for label, (choose, count, reminder, owed, due) in (
                 ("launch", launch),
                 ("years", years),
             ):
@@ -615,7 +623,8 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
                     f"\n#413 {label} cost: choose {choose['Execution Time']:.2f} ms,"
                     f" count {count['Execution Time']:.2f} ms,"
                     f" held reminders {reminder['Execution Time']:.2f} ms,"
-                    f" not yet planned {unplanned['Execution Time']:.2f} ms"
+                    f" not yet planned {owed['Execution Time']:.2f} ms,"
+                    f" due not started {due['Execution Time']:.2f} ms"
                 )
 
         # A reminder that fell due later takes over the panel.
@@ -765,9 +774,18 @@ def test_a_page_opened_before_go_live_schedules_keeps_checking(tmp_path):
     with campaign_clock(due):
         command(campaign, actor, Action.ACTIVATE)
     campaign.refresh_from_db()
-    with read_transaction():
+    # Before the invitation is due there is no send at all; once it is due,
+    # it is a due send not started yet: in progress, its Family owed.
+    with campaign_clock(due - timedelta(minutes=1)), read_transaction():
         now = database_now()
         assert send_progress.read_send(campaign.pk, "production", 0, now) is None
+    with campaign_clock(due), read_transaction():
+        now = database_now()
+        due_send = send_progress.read_send(campaign.pk, "production", 0, now)
+        assert due_send.in_progress and due_send.kind == "initial"
+        assert (due_send.remaining, due_send.unplanned, due_send.sent) == (1, 1, 0)
+    with read_transaction():
+        now = database_now()
         assert send_progress.upcoming(campaign, "production", 0, now)
         # Testing is not followed this way.
         assert not send_progress.upcoming(campaign, "testing", 0, now)
@@ -923,3 +941,67 @@ def test_a_reminder_total_counts_only_families_whose_invitation_was_delivered(
     assert counts.kind == "reminder"
     assert (counts.remaining, counts.unplanned, counts.waiting) == (2, 1, 0)
     assert send_progress.progress(counts).total == 2
+
+
+def test_in_progress_is_a_moment_in_time_across_a_moved_schedule(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """Due and not started, in progress, cancelled by a move, then due again.
+
+    1. Due, nothing planned yet: in progress, every Family owed.
+    2. One Family planned: still in progress, the others owed.
+    3. The schedule moves a day later: the planned email is cancelled
+       (``schedule_replaced``), nothing is owed until the new time, so no
+       send is in progress; the old send is what the summary describes.
+    4. At the new time the new revision is a new send, due and not started.
+    """
+    harness, actor = family_service, uuid4()
+    populate(
+        harness.campaign,
+        harness.rings,
+        [FamilyStatus(n, True, True, True, True) for n in (1, 2, 3)],
+        generation=2,
+    )
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    definition = ScheduleDefinition.objects.select_related("current_revision").get()
+    due = definition.current_revision.due_at
+    with campaign_clock(due):
+        waiting = read_current()
+        assert waiting.in_progress
+        assert (waiting.remaining, waiting.unplanned, waiting.sent) == (3, 3, 0)
+        with scheduler_session() as guard:
+            plan_family(guard, family_id=families[1], worker_id=actor)
+        running = read_current()
+        assert running.in_progress
+        assert (running.remaining, running.unprepared, running.unplanned) == (3, 3, 2)
+        moved = change(
+            auth_service.store,
+            auth_service.store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": str(definition.pk),
+                    "values": {"date": "2026-10-02"},
+                }
+            ],
+        )
+        assert moved.state == "applied"
+        assert ScheduleOccurrence.objects.get().reason == "schedule_replaced"
+        cancelled = read_current()
+        assert not cancelled.in_progress
+        assert (cancelled.not_needed, cancelled.remaining, cancelled.unplanned) == (
+            1,
+            0,
+            0,
+        )
+        assert not send_progress.progress(cancelled).active
+    definition.refresh_from_db()
+    later = definition.current_revision.due_at
+    assert later > due
+    with campaign_clock(later):
+        again = read_current()
+    assert again.in_progress
+    assert (again.remaining, again.unplanned, again.not_needed) == (3, 3, 0)

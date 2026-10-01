@@ -1,31 +1,39 @@
-"""Live progress of the current or most recent Family email send (#413).
+"""Live progress of the Family email send in progress, if any (#413).
 
-A *send* is one Family schedule definition (the invitation, or one reminder)
-of the current campaign, in the current mode and Production cycle: every
-Family's occurrence of that definition is one email of the send. The current
-send is the one whose occurrences fell due most recently, so a reminder
-replaces the invitation on the panel once its first email is due, while a
-late-joining Family's invitation (due at the invitation's original time) does
-not pull the panel back to the invitation.
+A *send* is one revision of one Family schedule definition (the invitation,
+or one reminder) of the current campaign, in the current mode and Production
+cycle: every Family's occurrence of that revision is one email of the send,
+and every Family planning still owes that revision is one more. Moving or
+editing a schedule makes a new revision and so a new send; the earlier
+revision's emails stay listed on Outgoing mail but are not part of it.
 
-Each Family counts once, by its newest occurrence (a deliverability recovery
-replaces a failed invitation with a new occurrence of the same definition).
-An occurrence's email is the outbox message it points to; before preparation
-there is none yet, and the email still counts as remaining, except for a
-reminder whose Family's invitation failed or is uncertain: planning holds
-that reminder until the invitation is resolved, so it waits in a bucket of
-its own instead of keeping the send from ever finishing.
+The panel is a moment-in-time view. A send is *in progress* when it still has
+work to do: an email not yet settled (an occurrence not yet prepared, or a
+message pending, waiting to retry or being submitted), or a Family planning
+still owes it (its revision is the schedule's current one and is due, and
+planning can still create it), or a total that cannot be known yet. Settled
+emails (sent, failed or uncertain), Families not emailed and reminders held
+behind a failed or uncertain invitation are not work to do, so a send whose
+remaining emails were cancelled, or which finished, is not in progress. The
+panel shows the in-progress send that fell due most recently; with none, it
+summarises the send whose occurrences fell due most recently.
+
+Each Family counts once, by its newest occurrence of the send (a
+deliverability recovery replaces a failed invitation with a new occurrence of
+the same revision). An occurrence's email is the outbox message it points
+to; before preparation there is none yet, and the email still counts as
+remaining, except for a reminder whose Family's invitation failed or is
+uncertain: planning holds that reminder until the invitation is resolved, so
+it waits in a bucket of its own instead of keeping the send in progress.
 
 The scheduler plans Families a few at a time, so early in a send most
-Families have no occurrence yet. Those still to be planned are counted from
+Families have no occurrence yet. Those planning still owes are counted from
 the Family population with the planner's own rules (``plan_family`` and
-``plan_recovery``): an active, email-eligible Family with a deliverable
-address that has not responded, has no occurrence or fulfillment of the send
-yet and is not under a restore hold, and, for a reminder, whose invitation
-was delivered. They are remaining, so the total is the whole send from its
-first email. While the population is being refreshed, or a Testing send has
-no active rehearsal, who will be emailed is not known, and neither is the
-total.
+``plan_recovery``, see ``_OWED``). They are remaining, so the total is the
+whole send from its first email. While the population is being refreshed,
+who will be emailed is not known, and neither is the total. While planning
+is held (a campaign change or restore review, or a campaign not open for
+sending), the owed Families still count, and the send is marked held.
 
 The statements read only rows and columns the web login already reads
 (``runtime_grants``). They take no lock: callers run them in
@@ -33,8 +41,9 @@ The statements read only rows and columns the web login already reads
 ``work_transaction``, so a page polled during the send never waits on, or
 delays, the global work-order lock the send's own workers take. Each is a
 bounded scan of one campaign's Family occurrences through the existing
-``definition_id`` foreign-key index plus a primary-key lookup per email; at
-launch scale (about 1,100 Families) they cost a few milliseconds.
+``definition_id`` foreign-key index plus a primary-key lookup per email, or
+one anti-join over the campaign's Family rows; at launch scale (about 1,100
+Families) they cost a few milliseconds.
 """
 
 import math
@@ -60,14 +69,31 @@ UPCOMING = timedelta(hours=1)
 # replaced this one, or the campaign closed).
 UNREACHABLE_REASONS = ("no_deliverable_recipient", "family_ineligible")
 
-# Picks the send: the Family definition whose occurrence fell due last.
-_CURRENT = (
-    "SELECT o.definition_id, d.kind "
+# The send whose occurrences fell due most recently: its definition, kind,
+# revision and due time.
+_LATEST_SEND = (
+    "SELECT o.definition_id, d.kind, o.revision_id, o.due_at "
     "FROM stewardship_schedule_definition d "
     "JOIN stewardship_schedule_occurrence o ON o.definition_id=d.id "
     "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder') "
     "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
     "ORDER BY o.due_at DESC, o.created_at DESC, o.id DESC LIMIT 1"
+)
+# Sends that are due but not started: a Family schedule's current revision
+# that is due on the campaign clock and has no occurrence yet. Planning
+# creates its first occurrences on its next sweep, unless no Family needs it
+# (``read_send`` keeps only those with Families owed). At most one per
+# Family schedule, and there are at most 100 of those.
+_DUE_SENDS = (
+    "SELECT d.id, d.kind, r.id, r.due_at "
+    "FROM stewardship_schedule_definition d "
+    "JOIN stewardship_schedule_revision r ON r.id=d.current_revision_id "
+    "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder') "
+    "AND r.due_at<=public.stewardship_campaign_now_v1() "
+    "AND NOT EXISTS (SELECT 1 FROM stewardship_schedule_occurrence o "
+    "WHERE o.definition_id=d.id AND o.revision_id=r.id AND o.mode=%(mode)s "
+    "AND o.production_cycle=%(cycle)s) "
+    "ORDER BY r.due_at DESC, d.id LIMIT 100"
 )
 # An occurrence's email, read by primary key. The LIMIT keeps it a per-row
 # index lookup: as the outbox grows (it is never purged), a plain join may be
@@ -80,8 +106,8 @@ _EMAIL = (
 _LATEST = (
     "SELECT DISTINCT ON (o.target) o.target, o.state, o.reason, o.outbox_id "
     "FROM stewardship_schedule_occurrence o "
-    "WHERE o.definition_id=%(definition)s AND o.mode=%(mode)s "
-    "AND o.production_cycle=%(cycle)s "
+    "WHERE o.definition_id=%(definition)s AND o.revision_id=%(revision)s "
+    "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
     "ORDER BY o.target, o.recovery_generation DESC, o.created_at DESC, o.id DESC"
 )
 # Counts one send. The message state, when there is a message, decides the
@@ -144,43 +170,60 @@ _WAITING = (
     "ORDER BY o.target, o.recovery_generation DESC, o.created_at DESC, o.id DESC"
     ") SELECT count(*) FILTER (WHERE undelivered) FROM invitation"
 )
-# Whether the Families still to be planned can be counted: whether planning
-# still creates this send's emails (the send is in the current mode and
-# Production cycle, the campaign has not closed, and the send's definition is
-# still selected and its current revision is due: a schedule moved to a later
-# time plans nothing until then), the current revision, whether the
-# population is being refreshed (no current credentials row, or Family rows
-# changed and not yet re-counted) and the active rehearsal, whose Testing
-# responses suppress a Family's email. Times are read on the campaign clock,
-# as planning reads them.
+# What decides whether planning still owes Families this send, read on the
+# campaign clock as planning reads it (``_planning_scope``):
+# - planning still creates the send's emails: the send is in the current mode
+#   and Production cycle, its revision is the schedule's current one and is
+#   due, the campaign has not closed, and a Testing send has an active
+#   rehearsal (without one, Testing planning and sending are both held, so
+#   nothing more is owed);
+# - planning is held for now: a restore review, a campaign change in
+#   progress (an unreleased work gate), a campaign not yet started or not in
+#   a sending state, or no current credentials;
+# - the population is being refreshed (Family rows changed and not yet
+#   re-counted), so who is owed is not known;
+# - the active rehearsal, whose Testing responses suppress a Family's email.
 _SCOPE = (
-    "SELECT %(mode)s=(SELECT mode FROM stewardship_system_configuration LIMIT 1) "
+    "SELECT %(mode)s=s.mode "
     "AND (%(mode)s<>'production' OR %(cycle)s=c.production_cycle) "
+    "AND d.current_revision_id IS NOT NULL AND r.id=%(revision)s "
+    "AND r.due_at<=public.stewardship_campaign_now_v1() "
     "AND public.stewardship_campaign_now_v1()<cc.ends_at "
-    "AND r.due_at<=public.stewardship_campaign_now_v1(), "
-    "r.id, coalesce(k.population_dirty,true), e.id "
+    "AND (%(mode)s<>'testing' OR e.id IS NOT NULL), "
+    "s.restore_review_required OR k.campaign_id IS NULL "
+    "OR public.stewardship_campaign_now_v1()<cc.starts_at "
+    "OR (%(mode)s='testing' AND c.state<>'draft') "
+    "OR (%(mode)s='production' AND c.state NOT IN ('scheduled','active','closed')) "
+    "OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate g "
+    "WHERE g.campaign_id=c.id AND g.state<>'released'), "
+    "coalesce(k.population_dirty,false), e.id "
     "FROM stewardship_campaign c "
+    "CROSS JOIN (SELECT mode, restore_review_required "
+    "FROM stewardship_system_configuration LIMIT 1) s "
     "JOIN stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id "
     "JOIN stewardship_schedule_definition d "
     "ON d.id=%(definition)s AND d.campaign_id=c.id "
     "LEFT JOIN stewardship_schedule_revision r ON r.id=d.current_revision_id "
-    "LEFT JOIN LATERAL (SELECT population_dirty, rehearsal_epoch_id "
+    "LEFT JOIN LATERAL (SELECT campaign_id, population_dirty, rehearsal_epoch_id "
     "FROM stewardship_campaign_credentials "
     "WHERE campaign_id=c.id AND NOT go_live_gate ORDER BY id LIMIT 1) k ON true "
     "LEFT JOIN stewardship_rehearsal_epoch e ON e.id=k.rehearsal_epoch_id "
     "AND e.campaign_id=c.id AND e.state='active' "
     "WHERE c.id=%(campaign)s"
 )
-# The Families planning has not reached yet that it will email, by the
-# planner's rules (see the module docstring). A Family has responded by its
-# effective live submission in Production, and by a submission in the active
-# rehearsal in Testing. Planning looks for the current revision's occurrence
-# only: after a schedule replacement, a Family whose earlier occurrence was
-# skipped is planned again. Each NOT EXISTS is an anti-join on the Family's
-# target, read through the definition's own index, so the cost grows with
-# the campaign's Families, not with the history of other schedules.
+# The Families planning still owes the send, by the rules of ``plan_family``
+# and ``plan_recovery`` (described in the background-processing spec's
+# "Family invitations and reminders"): an active, email-eligible Family with a
+# deliverable address that has not responded (its effective live submission
+# in Production, a submission in the active rehearsal in Testing), with no
+# occurrence of the send's revision, no fulfillment of the schedule and no
+# restore hold on it, and, for a reminder, whose invitation was delivered.
+# An undeliverable Family is skipped once planned, and an ineligible one is
+# never planned, so neither is owed. Each NOT EXISTS is an anti-join on the
+# Family's target, read through the definition's own index, so the cost
+# grows with the campaign's Families, not with other schedules' history.
 _TARGET = "'family:'||f.id::text"
-_UNPLANNED = (
+_OWED = (
     "SELECT count(*) FROM stewardship_family_campaign f "
     "WHERE f.campaign_id=%(campaign)s AND f.active AND f.email_eligible "
     "AND f.email_deliverable AND {responded} "
@@ -204,22 +247,25 @@ _RESPONDED = {
 # A reminder is sent only after the Family's invitation was delivered (or a
 # restore review assumed so); otherwise planning sends the invitation
 # instead, or holds the reminder behind a failed or uncertain invitation.
+# Like planning, only a selected (not removed) invitation schedule counts.
 _INVITED = (
     " AND (EXISTS (SELECT 1 FROM stewardship_schedule_definition i "
     "JOIN stewardship_schedule_fulfillment c ON c.definition_id=i.id "
-    "WHERE i.campaign_id=%(campaign)s AND i.kind='initial' AND c.mode=%(mode)s "
+    "WHERE i.campaign_id=%(campaign)s AND i.kind='initial' "
+    "AND i.current_revision_id IS NOT NULL AND c.mode=%(mode)s "
     "AND c.target=" + _TARGET + " AND c.slot='once' AND c.disposition='delivered') "
     "OR EXISTS (SELECT 1 FROM stewardship_schedule_definition i "
     "JOIN stewardship_restore_delivery_hold h ON h.definition_id=i.id "
-    "WHERE i.campaign_id=%(campaign)s AND i.kind='initial' AND h.mode=%(mode)s "
+    "WHERE i.campaign_id=%(campaign)s AND i.kind='initial' "
+    "AND i.current_revision_id IS NOT NULL AND h.mode=%(mode)s "
     "AND h.target=" + _TARGET + " AND h.slot='once' "
     "AND h.state='assumed_delivered'))"
 )
 
 
-def unplanned_statement(mode, kind):
-    """The ``_UNPLANNED`` count for one mode and send kind."""
-    return _UNPLANNED.format(
+def owed_statement(mode, kind):
+    """The ``_OWED`` count for one mode and send kind."""
+    return _OWED.format(
         responded=_RESPONDED[mode], reminder=_INVITED if kind == "reminder" else ""
     )
 
@@ -238,12 +284,12 @@ class SendCounts:
     ``since``. ``started_at`` is when the send's first email was prepared,
     and ``last_settled_at`` when its most recent email settled.
 
-    ``remaining`` includes ``unplanned``, the Families planning has not
-    reached yet that it will email; ``unprepared`` is the part of
-    ``remaining`` with no email prepared yet (those Families included).
-    ``unplanned`` is None when it cannot be known (see the module
-    docstring): ``remaining`` then counts only the planned Families, and
-    the send's total is unknown.
+    ``remaining`` includes ``unplanned``, the Families planning still owes
+    the send; ``unprepared`` is the part of ``remaining`` with no email
+    prepared yet (those Families included). ``unplanned`` is None when it
+    cannot be known (see the module docstring): ``remaining`` then counts
+    only the planned Families, and the send's total is unknown. ``held``
+    is whether planning is held for now.
     """
 
     kind: str
@@ -262,15 +308,33 @@ class SendCounts:
     now: datetime
     unprepared: int = 0
     unplanned: int | None = 0
+    held: bool = False
 
     @property
     def outbox_failed(self):
         """Failed emails that exist, so Outgoing mail can show them."""
         return self.failed - self.prepare_failed
 
+    @property
+    def in_progress(self):
+        """Whether the send still has work to do (see the module docstring)."""
+        return self.remaining > 0 or self.unplanned is None
+
+    @property
+    def not_sent(self):
+        """Families the send did not email: unreachable or no longer needed."""
+        return self.unreachable + self.not_needed
+
 
 def read_send(campaign_id, mode, cycle, now):
-    """Count the current Family send, or return None when there has been none.
+    """Read the send in progress, else the most recent send, else None.
+
+    The send in progress that fell due most recently is returned. Due sends
+    not started yet are considered as well as the send whose occurrences
+    fell due most recently, so a moved schedule's new due time, or a new
+    send's first minute, shows as soon as Families are owed. With nothing in
+    progress, the most recent send with occurrences is returned (its
+    ``in_progress`` is False), for the panel's one-line summary.
 
     ``cycle`` is the campaign's Production cycle in Production and 0 in
     Testing, so a campaign returned to Testing and confirmed again shows only
@@ -278,39 +342,58 @@ def read_send(campaign_id, mode, cycle, now):
     """
     if not isinstance(campaign_id, UUID):
         raise TypeError("A send belongs to one campaign.")
-    since = now - RATE_WINDOW
     values = {
         "campaign": campaign_id,
         "mode": mode,
         "cycle": cycle,
-        "since": since,
+        "since": now - RATE_WINDOW,
         "unreachable": list(UNREACHABLE_REASONS),
     }
     with connection.cursor() as cursor:
-        cursor.execute(_CURRENT, values)
-        current = cursor.fetchone()
-        if current is None:
-            return None
-        values["definition"], kind = current
-        cursor.execute(_COUNTS, values)
-        (
-            sent,
-            failed,
-            prepare_failed,
-            uncertain,
-            remaining,
-            unprepared,
-            unreachable,
-            not_needed,
-            started_at,
-            last_settled_at,
-            recent,
-        ) = cursor.fetchone()
-        waiting = 0
-        if kind == "reminder":
-            cursor.execute(_WAITING, values)
-            waiting = cursor.fetchone()[0]
-        unplanned = _unplanned(cursor, values, kind)
+        cursor.execute(_LATEST_SEND, values)
+        latest = cursor.fetchone()
+        cursor.execute(_DUE_SENDS, values)
+        sends = cursor.fetchall()
+        if latest is not None:
+            sends.append(latest)
+        # Newest due first; on a tie the send already under way goes first.
+        sends.sort(key=lambda send: (send[3], send is latest), reverse=True)
+        last = None
+        for definition, kind, revision, _ in sends:
+            counts = _count(
+                cursor,
+                values | {"definition": definition, "revision": revision},
+                kind,
+                now,
+            )
+            if counts.in_progress:
+                return counts
+            if latest is not None and (definition, revision) == (latest[0], latest[2]):
+                last = counts
+    return last
+
+
+def _count(cursor, values, kind, now):
+    """Count one send: its occurrences, held reminders and owed Families."""
+    cursor.execute(_COUNTS, values)
+    (
+        sent,
+        failed,
+        prepare_failed,
+        uncertain,
+        remaining,
+        unprepared,
+        unreachable,
+        not_needed,
+        started_at,
+        last_settled_at,
+        recent,
+    ) = cursor.fetchone()
+    waiting = 0
+    if kind == "reminder" and unprepared:
+        cursor.execute(_WAITING, values)
+        waiting = cursor.fetchone()[0]
+    unplanned, held = _owed(cursor, values, kind)
     return SendCounts(
         kind=kind,
         sent=sent,
@@ -324,37 +407,31 @@ def read_send(campaign_id, mode, cycle, now):
         started_at=started_at,
         last_settled_at=last_settled_at,
         recent=recent,
-        since=since,
+        since=values["since"],
         now=now,
         unprepared=unprepared - waiting + (unplanned or 0),
         unplanned=unplanned,
+        held=held,
     )
 
 
-def _unplanned(cursor, values, kind):
-    """Count the Families planning will still email, or None if unknowable.
+def _owed(cursor, values, kind):
+    """(Families planning still owes the send or None if unknowable, held).
 
-    Zero when planning creates no more of the send's emails now: it is not
-    in the current mode or Production cycle, the campaign has closed, or
-    the send's schedule was removed or moved to a time still to come.
-    Otherwise None while the population is being refreshed, or for a
-    Testing send without an active rehearsal (whose responses decide who is
-    emailed).
+    Zero when planning creates no more of the send's emails (see
+    ``_SCOPE``), so an old revision, a closed campaign, a schedule not yet
+    due and a Testing send without an active rehearsal all owe nothing.
+    None while the population is being refreshed.
     """
     cursor.execute(_SCOPE, values)
     row = cursor.fetchone()
-    if row is None:
-        return None
-    planning, revision, dirty, epoch = row
-    if not planning:
-        return 0
-    if dirty or (values["mode"] == "testing" and epoch is None):
-        return None
-    cursor.execute(
-        unplanned_statement(values["mode"], kind),
-        values | {"revision": revision, "epoch": epoch},
-    )
-    return cursor.fetchone()[0]
+    if row is None or not row[0]:
+        return 0, False
+    _, held, dirty, epoch = row
+    if dirty:
+        return None, held
+    cursor.execute(owed_statement(values["mode"], kind), values | {"epoch": epoch})
+    return cursor.fetchone()[0], held
 
 
 def upcoming(campaign, mode, cycle, now):
@@ -454,7 +531,7 @@ def progress(counts, *, paused=False):
     done = counts.sent + counts.failed + counts.uncertain
     known = counts.unplanned is not None
     total = done + counts.remaining if known else None
-    active = counts.remaining > 0 or not known
+    active = counts.in_progress
     percent = None if not known else 100 if total == 0 else done * 100 // total
     rate = finish_at = minutes_left = finished_at = None
     if active:

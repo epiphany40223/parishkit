@@ -1,11 +1,13 @@
 """Admin-only, read-only Family email progress page and its polled status (#413).
 
-The page shows the current or most recent Family send (``send_progress``).
-While emails remain, live-status-v1.js re-reads the status fragment every few
-seconds. Neither read takes the global work-order lock: the counts are read
-in ``read_transaction``, so watching the launch send never slows it down.
-The page records one audited view; the fragment, polled for as long as the
-send runs, records none and never renews the Admin's idle time.
+The page shows the Family send in progress (``send_progress``), or says that
+none is and summarises the most recent one. While there is a current
+campaign, live-status-v1.js re-reads the status fragment every few seconds,
+so a send that starts while the page is open appears by itself. Neither
+read takes the global work-order lock: the counts are read in
+``read_transaction``, so watching the launch send never slows it down. The
+page records one audited view; the fragment, polled for as long as the page
+is open, records none and never renews the Admin's idle time.
 """
 
 from django.db import DatabaseError, transaction
@@ -40,11 +42,13 @@ def _announcement(sent):
     if sent is None:
         return ""
     if not sent.active:
-        return _("Family email send finished.")
+        return _("No Family email send is in progress.")
     if sent.paused:
         return _("Family email send paused.")
+    if sent.counts.held:
+        return _("Family email send held.")
     if sent.percent is None:
-        return _("Family email send in progress; emails are still being prepared.")
+        return _("Family email send in progress; the total is not known yet.")
     return _("Family email send in progress, %(percent)s%% done.") % {
         "percent": sent.percent // 25 * 25
     }
@@ -62,9 +66,10 @@ def _load():
 
     Returns the template context, or None when the system is unavailable
     (no configuration yet, or a restore still under review). ``follow``
-    keeps an open page checking: while the send has emails left, or while a
-    Production send is about to start (``send_progress.upcoming``), so a
-    page opened before the first email switches to the send by itself.
+    keeps an open page checking while there is a current campaign, whether
+    or not a send is in progress, so a page left open switches to the next
+    send by itself. ``upcoming`` (a Production send about to start) only
+    changes what the idle page says.
     """
     with read_transaction():
         configuration = SystemConfiguration.objects.select_related(
@@ -91,7 +96,7 @@ def _load():
             "paused": paused,
             "send": sent,
             "upcoming": bool(soon),
-            "follow": bool(soon or (sent and sent.active)),
+            "follow": campaign is not None,
             "announcement": _announcement(sent),
             "poll_interval": POLL_MILLISECONDS,
             "give_up": GIVE_UP_MILLISECONDS,
