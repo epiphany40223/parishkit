@@ -25,6 +25,7 @@ from .observability import (
     installer_request,
 )
 from .probe import MAX_AGE_SECONDS as PROBE_MAX_AGE
+from .runtime_budget import STOP_MARGIN_SECONDS
 from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
@@ -44,7 +45,10 @@ def gunicorn_options(configuration):
         "reload": configuration.profile is DeploymentProfile.DEVELOPMENT,
         "reload_engine": "poll",
         "timeout": budget.server_timeout_seconds,
-        "graceful_timeout": budget.drain_seconds,
+        # A stop gives in-flight requests the container's stop grace less a
+        # margin, so the master kills, and durably logs, a worker still
+        # serving before Docker kills the container (#374; web_supervisor).
+        "graceful_timeout": budget.web_grace_seconds,
         "keepalive": 5,
         "worker_tmp_dir": "/tmp",
         # Gunicorn 25+ opens a runtime-management control socket under
@@ -109,9 +113,11 @@ def serve_web(configuration, lease):
     of inheriting stale preloaded code. Every child retains the lifecycle lease.
     """
     from gunicorn.app.base import BaseApplication
-    from gunicorn.arbiter import Arbiter
     from gunicorn.errors import HaltServer
     from gunicorn.glogging import Logger
+
+    from .runtime_database import database_settings
+    from .web_supervisor import RecordingArbiter
 
     lease.check()
     private_directory(DIRECTORY, create=True)
@@ -140,7 +146,11 @@ def serve_web(configuration, lease):
     # BaseApplication.run prints arbitrary RuntimeError messages; this boundary
     # instead lets execute_runtime suppress any private exception text.
     try:
-        Arbiter(Application()).run()
+        # The master logs a worker it kills at a limit on the web's own SQL
+        # login, read only when needed (web_supervisor).
+        RecordingArbiter(
+            Application(), database=lambda: database_settings(configuration)
+        ).run()
     except HaltServer:
         # HaltServer deliberately derives directly from BaseException. In a
         # multi-worker boot failure it can escape Gunicorn's own stop path.
@@ -411,11 +421,9 @@ class SiblingConsumer:
     WHAT = None
     # Silence this long (twice the container probe's limit) stops the worker.
     STALE_LIMIT = 2 * PROBE_MAX_AGE
-    # Docker kills the whole container ``drain_seconds`` (its stop grace
-    # period) after its SIGTERM. The sibling is killed this long before that,
-    # so its durable timeout entry is written first (the entry's own
-    # connection and statement limits are two seconds each).
-    KILL_MARGIN = 15
+    # The sibling is killed this long before Docker's kill of the whole
+    # container, so its durable timeout entry is written first.
+    KILL_MARGIN = STOP_MARGIN_SECONDS
 
     def __init__(self, *, drain_seconds, argv=None):
         self.drain_seconds = drain_seconds

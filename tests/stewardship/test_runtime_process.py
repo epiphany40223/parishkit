@@ -27,7 +27,11 @@ def test_web_process_settings_keep_finite_reserved_headroom(tmp_path, production
     assert options["threads"] == 8
     assert options["accesslog"] is None
     assert options["forwarded_allow_ips"] == ""
-    assert options["graceful_timeout"] > configuration.runtime_budget.download_seconds
+    budget = configuration.runtime_budget
+    assert options["graceful_timeout"] > budget.download_seconds
+    # The drain kill, and its durable entry, come before Docker's kill (#374).
+    assert options["graceful_timeout"] == budget.drain_seconds - 15
+    assert options["graceful_timeout"] < options["timeout"]
     assert options["timeout"] < configuration.runtime_budget.proxy_timeout_seconds
     assert options["reload"] is (not production)
     assert options["preload_app"] is False
@@ -37,6 +41,47 @@ def test_web_process_settings_keep_finite_reserved_headroom(tmp_path, production
     )
     assert options["post_worker_init"] is runtime_process.admitted_worker_started
     assert options["worker_exit"] is runtime_process.admitted_worker_exited
+
+
+def test_web_runs_the_recording_master_with_its_own_login(tmp_path, monkeypatch):
+    """The master that kills workers at a limit is the one that logs it (#374).
+
+    It reads the web's SQL login only when an entry is written.
+    """
+    from parishkit.stewardship import web_supervisor
+
+    configuration = configuration_at(tmp_path, production=True)
+    started = []
+
+    class Master:
+        """Stands in for the arbiter; records what it was built with."""
+
+        def __init__(self, app, *, database):
+            started.append((app, database))
+
+        def run(self):
+            """Return at once instead of serving."""
+
+    monkeypatch.setattr(web_supervisor, "RecordingArbiter", Master)
+    monkeypatch.setattr(runtime_process, "private_directory", Mock())
+    reads = []
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.database_settings",
+        lambda value: reads.append(value) or {"USER": "pk_stewardship_web"},
+    )
+    assert runtime_process.serve_web(configuration, Mock()) == 0
+    [(app, database)] = started
+    assert app.cfg.graceful_timeout == configuration.runtime_budget.web_grace_seconds
+    assert reads == []
+    assert database() == {"USER": "pk_stewardship_web"}
+    assert reads == [configuration]
+
+
+def test_sibling_consumers_share_the_web_stop_margin():
+    """One margin before Docker's kill for every process that kills at a limit."""
+    from parishkit.stewardship.runtime_budget import STOP_MARGIN_SECONDS
+
+    assert runtime_process.SiblingConsumer.KILL_MARGIN == STOP_MARGIN_SECONDS
 
 
 @pytest.mark.parametrize(

@@ -237,6 +237,11 @@ TIMEOUT_KINDS = frozenset(
         "provider_check",
         "renewal_drain",
         "control_lock",
+        # A web worker the Gunicorn master killed because it was still
+        # serving at the graceful-stop limit, or had stopped reporting
+        # to the master past its timeout (#374; web_supervisor).
+        "web_drain",
+        "web_heartbeat",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;

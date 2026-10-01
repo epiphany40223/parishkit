@@ -113,6 +113,12 @@ def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
         {"server_timeout_seconds": 360},
         {"proxy_timeout_seconds": 369},
         {"download_seconds": 5},
+        # A download must fit the web stop's grace, the drain less 15 s.
+        {
+            "download_seconds": 300,
+            "download_idle_seconds": 305,
+            "drain_seconds": 315,
+        },
         {
             "download_seconds": 4,
             "download_idle_seconds": 5,

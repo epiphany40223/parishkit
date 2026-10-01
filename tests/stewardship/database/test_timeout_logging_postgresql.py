@@ -87,6 +87,11 @@ def test_the_entry_survives_the_callers_rollback():
         ("helper_timed_out", {"what": "mail_helper", "helper": "other_worker"}),
         ("task_timed_out", {"what": "control_lock", "count": -1}),
         ("task_timed_out", {"what": "control_lock", "count": "7"}),
+        ("helper_timed_out", {"what": "web_drains"}),
+        ("helper_timed_out", {"what": "Web_Drain"}),
+        ("helper_timed_out", {"what": "web_drain", "limit_seconds": "345"}),
+        ("helper_timed_out", {"what": "web_drain", "count": -1}),
+        ("helper_timed_out", {"what": "web_heartbeat", "worker": 1}),
     ],
 )
 def test_sql_refuses_unreviewed_timeout_entries(event, context):
@@ -270,3 +275,39 @@ def test_grants_accept_exactly_the_installed_writer_guard():
                 "ALTER TABLE stewardship_operational_log "
                 "ENABLE TRIGGER stewardship_operational_log_writer_v1"
             )
+
+
+@pytest.mark.parametrize("what,count", [("web_drain", 2), ("web_heartbeat", None)])
+def test_the_web_master_records_a_killed_worker_durably(what, count):
+    """The Gunicorn master's own writer (no Django) lands a reviewed entry (#374)."""
+    from parishkit.stewardship.web_supervisor import record_web_kill
+
+    settings = dict(connection.settings_dict)
+    record_web_kill(
+        lambda: settings,
+        what=what,
+        limit_seconds=345,
+        elapsed_seconds=345.4,
+        count=count,
+    )
+    entry = OperationalLog.objects.get()
+    assert (entry.event, entry.level, entry.schema) == (
+        "helper_timed_out",
+        "ERROR",
+        "timeout",
+    )
+    expected = {"what": what, "limit_seconds": 345, "elapsed_seconds": 345}
+    if count is not None:
+        expected["count"] = count
+    assert entry.context == expected
+
+
+def test_the_web_master_never_raises_when_its_write_is_refused():
+    """A refused write (here: a login that may not insert) leaves no row."""
+    from parishkit.stewardship.web_supervisor import record_web_kill
+
+    settings = dict(connection.settings_dict, PASSWORD="wrong", USER="nobody")
+    record_web_kill(
+        lambda: settings, what="web_drain", limit_seconds=345, elapsed_seconds=346
+    )
+    assert not OperationalLog.objects.exists()

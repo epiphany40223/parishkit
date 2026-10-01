@@ -9,6 +9,13 @@ from dataclasses import dataclass, fields
 
 from parishkit.config import ConfigError
 
+# Docker kills a whole container ``drain_seconds`` (its stop grace period)
+# after its SIGTERM. A process that must still kill its own children at a
+# limit (the web master's workers, a worker's sibling consumer) does so this
+# much sooner, so its durable timeout entry is written before Docker's kill
+# (the entry's own connection and statement limits are two seconds each).
+STOP_MARGIN_SECONDS = 15
+
 
 @dataclass(frozen=True)
 class RuntimeBudget:
@@ -54,6 +61,8 @@ class RuntimeBudget:
             or self.download_idle_seconds > 1200
             or self.drain_seconds > 1800
             or self.total_connections > self.database_connections
+            # An in-flight download must be able to finish in a web stop.
+            or self.download_seconds >= self.web_grace_seconds
             or not (
                 self.download_seconds
                 < self.download_idle_seconds
@@ -75,6 +84,16 @@ class RuntimeBudget:
             or operator_processes > self.operator_connections
         ):
             raise ConfigError("Rendered process topology exceeds connection budgets.")
+
+    @property
+    def web_grace_seconds(self):
+        """How long a web stop lets in-flight requests finish.
+
+        This is Gunicorn's ``graceful_timeout``: the stop grace less
+        STOP_MARGIN_SECONDS, so a worker still serving is killed, and logged,
+        before Docker's own kill (#374).
+        """
+        return self.drain_seconds - STOP_MARGIN_SECONDS
 
     @property
     def total_connections(self):
