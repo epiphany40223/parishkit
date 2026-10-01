@@ -91,6 +91,17 @@ class FailureKind(StrEnum):
 
 # The off-site copy's Drive failure categories, mirroring
 # jobs.backup_models.FAILURE_KINDS, so a backup_offsite_failed line names why.
+# Which display-only comparison a report_shaping_failed line came from, when
+# one refresh can log it for more than one step. Event names are mirrored by
+# a SQL constraint, so the step rides on the reviewed event instead.
+SHAPING_STEPS = frozenset(
+    {
+        # A refresh's changed-record counts against its base (#242).
+        "source_changes",
+        # A full refresh's Ministry catalog differences (#342).
+        "ministry_catalog",
+    }
+)
 DRIVE_FAILURES = frozenset(
     {
         "authorization",
@@ -198,6 +209,7 @@ def emit(
     limit_seconds: int | None = None,
     elapsed_seconds: int | None = None,
     ministry_duid: int | None = None,
+    shaping: str | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -211,7 +223,8 @@ def emit(
     the limit that stopped work, with that limit and the elapsed time in
     whole seconds. Each is a closed word or a number, never provider text.
     ``ministry_duid`` is a source Ministry's positive integer DUID, only with
-    ``SOURCE_MINISTRY_NAME_REPAIRED``.
+    ``SOURCE_MINISTRY_NAME_REPAIRED``. ``shaping`` names the display-only
+    comparison (``SHAPING_STEPS``), only with ``REPORT_SHAPING_FAILED``.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -251,6 +264,10 @@ def emit(
         event is not Event.SOURCE_MINISTRY_NAME_REPAIRED or not _duid(ministry_duid)
     ):
         raise ValueError("A Ministry DUID must be a positive source identity.")
+    if shaping is not None and (
+        event is not Event.REPORT_SHAPING_FAILED or shaping not in SHAPING_STEPS
+    ):
+        raise ValueError("A shaping step must be a reviewed name.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -267,16 +284,20 @@ def emit(
                 "limit_seconds": limit_seconds,
                 "elapsed_seconds": elapsed_seconds,
                 "ministry_duid": ministry_duid,
+                "shaping": shaping,
             }
         ),
     )
 
 
-def emit_failure(error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id=None):
+def emit_failure(
+    error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id=None, shaping=None
+):
     """Classify a failure without serializing any exception-controlled field.
 
     ``level`` lowers the severity for a best-effort step whose failure the
-    caller absorbs; ``task_id`` names the task it happened in.
+    caller absorbs; ``task_id`` names the task it happened in; ``shaping``
+    names which display-only comparison failed (see ``emit``).
     """
     from django.db import DatabaseError
 
@@ -301,7 +322,7 @@ def emit_failure(error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id
         ),
         FailureKind.UNEXPECTED,
     )
-    emit(event, level=level, task_id=task_id, failure_kind=kind)
+    emit(event, level=level, task_id=task_id, failure_kind=kind, shaping=shaping)
     if debug_logging_enabled():
         # The reviewed event above carries only the category; say what failed.
         logging.getLogger("parishkit.stewardship.debug").debug(
@@ -556,6 +577,12 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _duid(context.get("ministry_duid"))
         ):
             safe.extra["ministry_duid"] = context["ministry_duid"]
+        if (
+            record.msg is Event.REPORT_SHAPING_FAILED
+            and isinstance(context, dict)
+            and context.get("shaping") in SHAPING_STEPS
+        ):
+            safe.extra["shaping"] = context["shaping"]
         if debug_logging_enabled():
             # The debug details are the only free text in a line. Scrub each
             # value before serialization. The current request's secrets come

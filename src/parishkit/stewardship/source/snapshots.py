@@ -20,6 +20,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .canonical import InvalidSourcePayload, canonical_payload
 from .leases import _now, verify_source
+from .ministry_catalog import CURSOR_KEY, record_changes
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .version_models import ENTITY_MODELS
 
@@ -222,6 +223,7 @@ def _changes(snapshot, manifest):
             event=Event.REPORT_SHAPING_FAILED,
             level=logging.WARNING,
             task_id=snapshot.task_id,
+            shaping="source_changes",
         )
         return None
 
@@ -290,6 +292,11 @@ def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
         changes = _changes(snapshot, manifest)
         if changes is not None:
             snapshot.cursor["changes"] = changes
+        # Ministries added, removed or renamed since the base, for the Admin
+        # home page's notice (#342); display-only in the same way.
+        ministries = record_changes(snapshot)
+        if ministries is not None:
+            snapshot.cursor[CURSOR_KEY] = ministries
         snapshot.completed_at = _now()
         snapshot.state = "ready"
         snapshot.version += 1

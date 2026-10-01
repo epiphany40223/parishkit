@@ -102,6 +102,14 @@ def summary(actor, configuration, now):
             {"target": target, "label": LABELS[target], "stopped": STOPPED[target]}
             for target in unfinished_switches(configuration)
         ]
+        from parishkit.stewardship.source.ministry_catalog import catalog_notice
+
+        # Ministries ParishSoft added, removed or renamed recently, and the
+        # current campaign's Ministries that are gone or look retired (#342).
+        # Those who may change Ministry activity see it. One query.
+        result["ministry_catalog"] = catalog_notice(
+            configuration, campaign, now, promoted=refreshed_at is not None
+        )
     if "administrator" in actor.roles:
         from .security_events import open_events
 

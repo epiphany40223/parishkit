@@ -353,6 +353,9 @@ success. Resolution transitions and resend creation follow the
 collection counts, validation result, source watermark/change cursor, and a
 content digest. These lightweight manifests remain indefinitely and record
 whether their complete corpus is still reconstructable or has been compacted.
+A snapshot's cursor may also carry display-only comparisons with its base: the
+changed-record counts and the Ministry catalog differences described in
+[ParishSoft Ministry catalog changes](../admin-portal/spec.md#parishsoft-ministry-catalog-changes).
 
 Normalized versioned tables store canonical Family, Member, Ministry, roster,
 fund, pledge, and contribution payloads by content digest. Content-addressed

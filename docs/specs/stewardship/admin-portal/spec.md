@@ -821,9 +821,9 @@ One unusable name never makes the Family form unavailable.
 
 A repaired Ministry name writes a `source_ministry_name_repaired` warning to
 the process log, once per process for each Ministry and name. The warning
-carries only the Ministry DUID. It does not appear on the System logs page; a
-durable Admin notice is tracked in
-[#342](https://github.com/epiphany40223/parishkit/issues/342). Fund names on
+carries only the Ministry DUID. It does not appear on the System logs page.
+Catalog changes themselves are reported on the Admin home page (see
+[ParishSoft Ministry catalog changes](#parishsoft-ministry-catalog-changes)). Fund names on
 Campaign settings and first-campaign setup follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
@@ -840,6 +840,99 @@ using the same suspension/reactivation and review rules as source promotion.
 It does not delete authoritative grants or alter manual Ministry assignments,
 Staff roles or Admin roles. The impact preview identifies affected seeded
 assignments before confirmation.
+
+### ParishSoft Ministry catalog changes
+
+Ministries are keyed by ParishSoft DUID, and only a full refresh re-reads the
+Ministry catalog; the 15-minute updates copy it unchanged (see the refresh
+cadence in
+[background processing](../background-processing/spec.md)). The system never
+changes a campaign's Ministry selections because the catalog changed. This
+section covers telling Administrators about catalog changes
+([#342](https://github.com/epiphany40223/parishkit/issues/342)); changing a
+live campaign's Ministries is designed below but not built.
+
+#### Catalog change notice
+
+When staging validates a full-refresh corpus that has a base snapshot, it
+compares the
+base's Ministry catalog with the new one by DUID and records the differences
+in the snapshot's cursor as `ministry_catalog`, beside the changed-record
+counts (see [Manual ParishSoft refresh](#manual-parishsoft-refresh)). The
+web role can already read that column, so no schema, grant or new log event is
+needed, and the record survives compaction because manifests do. Each entry is
+a DUID with names cleaned by the display rule above:
+
+- **added**: in the new catalog only, with its name;
+- **removed**: in the base only, with its last name; and
+- **renamed**: in both, with the name before and after.
+
+A first load has no base and records nothing; a snapshot with no Ministry
+differences records nothing. A 15-minute update copies its base's catalog, so
+it is not compared at all, which keeps the comparison off the global work lock
+for those runs. Each list keeps at most 50 entries, plus the full count. Like
+the change counts, the comparison is display-only: if it fails, staging omits
+it, logs a classified `report_shaping_failed` WARNING and the refresh
+continues. That process-log line carries `shaping: ministry_catalog` (the
+change counts' failure carries `shaping: source_changes`), so the two can be
+told apart without a new event name.
+
+The Admin home page shows Administrators with configuration access a
+"ParishSoft Ministry changes" panel listing the changes recorded by promoted
+snapshots from the last seven days (at most five refreshes, newest first). A
+rename whose new name starts with `X-` and whose old name did not is labeled as
+possibly retired: some parishes rename a retired Ministry that way. It is a
+display hint only and changes no behavior. The panel links to Ministry
+activity, where an Administrator can mark a Ministry inactive.
+
+While the current campaign is in draft, scheduled or open, entries for
+Ministries in its selections are marked "in the current campaign", the panel
+also links to that campaign's Ministry selections, and it lists, independent of
+the seven days, the campaign's selected Ministries that are missing from the
+current catalog (Families cannot see them) or whose current name starts with
+`X-`. A closed or archived campaign shows Families nothing, so none of this
+applies to it. The whole panel costs the home page one query.
+
+No System logs entry is written: the closed operational-event list is enforced
+in SQL, so a new event would be a schema change. A durable
+`ministry_catalog_changed` event can be added after the schema freeze.
+ParishSoft's own Ministry active/inactive flag is not compared. It is not
+reliable enough to decide visibility (see above), but a Ministry turned
+inactive there may be a stronger retirement signal than the `X-` hint; adding
+it to the notice is tracked for after launch in
+[#342](https://github.com/epiphany40223/parishkit/issues/342).
+
+#### Changing a live campaign's Ministries (design only)
+
+A live campaign's `ministry_duids` is structurally locked in SQL ("Live
+structural settings are locked"), so this needs a reviewed guard change and is
+deferred until after launch. The intended rules:
+
+- **Hide** a Ministry already works today: mark it inactive on Ministry
+  activity. It disappears from every Family form; nothing else changes.
+- **Remove** takes a DUID out of the campaign's selections through an
+  ordinary configuration request with an impact preview. The preview counts
+  open forms, submitted answers and open follow-up requests for it. Answers
+  already given are never deleted or rewritten: submissions keep their
+  recorded inputs, join and stop requests stay in Ministry follow-up until
+  staff close them, and reports keep showing them, marked as no longer in the
+  campaign. Re-adding the DUID shows those answers again.
+- **Add** puts a DUID that is in the current catalog and locally active into
+  the selections. Families see it on their next visit. Families who already
+  submitted are not asked again and get no mail.
+- Open forms whose offered Ministries changed are refreshed through the usual
+  changed-baseline review. That review should be limited to the Families whose
+  forms actually show the changed Ministry, not every open form.
+- Each change records the Administrator, the before and after selections and
+  the added and removed DUIDs in the configuration audit (the `ministry_duids`
+  context field already exists).
+- Reports and follow-up read the selections from the campaign configuration
+  version in effect, so the change history comes from existing configuration
+  versions and needs no new table.
+
+The schema work is the guard exemption for `ministry_duids` on a structurally
+locked campaign, with SQL checks that an added DUID is in the current catalog
+and the campaign is still open.
 
 ## Campaign configuration
 
