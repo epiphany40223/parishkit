@@ -183,6 +183,68 @@ def test_real_restricted_worker_prepares_one_redacted_message(family_mail, produ
     assert reference.code == family_mail.code
 
 
+# Two valid head addresses whose order differs by collation: byte order puts
+# "ab@..." first ("@" sorts before "c"), while a linguistic collation such as
+# en_US.UTF-8 skips punctuation and puts "abc@..." first. The worker sends
+# recipients in Python (code point) order, so the SQL guard must agree.
+PREFIX_ADDRESSES = ("ab@z.example.org", "abc@example.org")
+
+
+@pytest.fixture
+def prefix_addresses(monkeypatch):
+    """Give the Family head two addresses that byte and locale order disagree on."""
+    from . import response_builders
+
+    # The test proves something only where the database's default collation
+    # orders the pair differently from code point order (en_US.utf8 in the
+    # CI image). On a C/POSIX cluster it would pass with or without the fix.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT %s < %s", [PREFIX_ADDRESSES[1], PREFIX_ADDRESSES[0]])
+        if not cursor.fetchone()[0]:
+            pytest.skip(
+                "The database default collation orders the test addresses by "
+                "code point, so it cannot show a collation-dependent order."
+            )
+
+    original = response_builders.response_source
+
+    def source():
+        """The ordinary fixture source with a second, prefix-sharing address."""
+        data = original()
+        data.members[3]["emailAddress"] = "; ".join(reversed(PREFIX_ADDRESSES))
+        return data
+
+    monkeypatch.setattr(response_builders, "response_source", source)
+
+
+@pytest.mark.parametrize("production", [False, True])
+def test_preparation_orders_recipients_independent_of_collation(
+    prefix_addresses, family_mail, production
+):
+    """Recipient order is code point order whatever the database collation.
+
+    The Family recipient projection once sorted with the database's default
+    collation, so a Family with these addresses failed every preparation with
+    "Outbox insertion requires current preparation ownership".
+    """
+    assert list(PREFIX_ADDRESSES) == sorted(PREFIX_ADDRESSES)
+    if production:
+        family_mail = activate_response_service(family_mail)
+        complete_empty_catchup(family_mail.campaign, uuid4())
+    due = ScheduleDefinition.objects.get().current_revision.due_at
+    with campaign_clock(due):
+        ticket = allocate()
+        owner = handler(family_mail)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execution = claim(ticket, owner)
+            with maintain_execution(execution):
+                owner.execute(execution)
+    row = ScheduleOccurrence.objects.get(pk=ticket.occurrence_id)
+    message = OutboxMessage.objects.select_related("render").get(pk=row.outbox_id)
+    assert TaskRun.objects.get(pk=ticket.task_id).state == "succeeded"
+    assert message.render.intended_recipients == list(PREFIX_ADDRESSES)
+
+
 def test_preparation_in_activation_window_waits_and_succeeds(
     family_mail, caplog, monkeypatch
 ):

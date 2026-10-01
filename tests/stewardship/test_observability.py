@@ -156,6 +156,7 @@ def test_invalid_event_inputs_are_rejected():
     "kind",
     [
         "database_unavailable",
+        "database_write_refused",
         "configuration_unavailable",
         "filesystem_unavailable",
         "unexpected_failure",
@@ -163,13 +164,14 @@ def test_invalid_event_inputs_are_rejected():
 )
 def test_installer_failure_keeps_request_identity_and_safe_category(caplog, kind):
     """Distinct operational diagnoses retain no exception text or stack secrets."""
-    from django.db import DatabaseError
+    from django.db import DatabaseError, IntegrityError
 
     from parishkit.config import ConfigError
     from parishkit.stewardship.observability import installer_request
 
     error_type = {
         "database_unavailable": DatabaseError,
+        "database_write_refused": IntegrityError,
         "configuration_unavailable": ConfigError,
         "filesystem_unavailable": OSError,
         "unexpected_failure": RuntimeError,
@@ -182,6 +184,35 @@ def test_installer_failure_keeps_request_identity_and_safe_category(caplog, kind
     payload = json.loads(output)
     assert payload["message"] == "installer_request_failed"
     assert payload["extra"] == {"correlation_id": str(identifier), "failure_kind": kind}
+
+
+@pytest.mark.parametrize(
+    ("error_type", "sqlstate", "kind"),
+    [
+        ("IntegrityError", "23514", "database_write_refused"),
+        ("ProgrammingError", "42501", "database_write_refused"),
+        ("InternalError", "P0001", "database_write_refused"),
+        ("OperationalError", "08006", "database_unavailable"),
+        ("DatabaseError", None, "database_unavailable"),
+    ],
+)
+def test_guard_refusal_is_not_reported_as_an_outage(caplog, error_type, sqlstate, kind):
+    """A guard's refusal, whatever its SQLSTATE, is told apart from an outage."""
+    from django import db
+
+    from parishkit.stewardship.observability import emit_failure
+
+    class Cause(Exception):
+        """Stands in for the psycopg error Django chains as the cause."""
+
+    cause = Cause()
+    cause.sqlstate = sqlstate
+    error = getattr(db, error_type)("private-value")
+    error.__cause__ = cause
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(error)
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["failure_kind"] == kind
 
 
 @pytest.mark.parametrize(

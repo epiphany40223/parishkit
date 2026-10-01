@@ -388,7 +388,11 @@ before the dump) or `backup_dump_failed` (the dump itself), that the
 database is running and reachable and the backup login's password file
 still matches (the health command in the web container checks the database; the
 [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
-records how these log values were checked). The backup also refuses when
+records how these log values were checked). A `failure_kind` of
+`database_write_refused` is not an outage: the database answered, but a
+constraint or guard refused the write. It can clear on the next retry (an
+expired lease or an unreleased gate); if it repeats for the same task, the
+data or the code needs a look. The backup also refuses when
 it does not run under its own profile and database login (a changed Compose
 file, a root user, a writable root filesystem or an extra or writable
 mount), so rerender with `retarget-image` if the Compose file was edited
