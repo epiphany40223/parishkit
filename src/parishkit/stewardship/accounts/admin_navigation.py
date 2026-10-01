@@ -137,6 +137,8 @@ PAGES = {
     # Watching a launch or reminder send (#413): a sidebar entry of its own,
     # beside Delivery controls, so it is found without knowing where it is.
     "family_email_progress": Page("campaign", _("Family email progress")),
+    # The permanent record of every send (#432), listed beside the live panel.
+    "family_email_sends": Page("campaign", _("Family email sends")),
     # Reports
     "reports": Page("reports", _("Campaign reports")),
     "report_campaigns": Page("reports", _("Choose a campaign"), "reports"),

@@ -68,6 +68,7 @@ sections:
     "Restore release": [ADM-06, OPS-06]
     "Live delivery pause": [ADM-06]
     "Family email progress": [ADM-06]
+    "Family email sends": [ADM-06]
     "Family portal maintenance": [ADM-06]
     "Reopen and archive": [ADM-06]
     "Return to Testing after archive": [ADM-06]

@@ -1,0 +1,23 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship delivery %}
+{% block title %}{% translate "Family email sends" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Family email sends" %}</h1>
+<p>{% translate "Each invitation and reminder email this campaign has sent to Families, newest first, and how it turned out. Select a count to see those emails on the Outgoing mail page." %}</p>
+{% aboutpage "family-email-sends" %}<p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family email progress page, so the two always agree." %}</p>
+<dl><dt>{% translate "Scheduled" %}</dt><dd>{% translate "When the send was due. A send appears here once its first email is planned." %}</dd>
+<dt>{% translate "First email and latest result" %}</dt><dd>{% translate "When the first email was prepared, and when the last one got its result. A later fix, such as retrying a failed email, moves the latest result and the duration." %}</dd>
+<dt>{% translate "Total" %}</dt><dd>{% translate "Sent, failed and uncertain emails, plus any still to send. The other columns are not part of the total." %}</dd>
+<dt>{% translate "Sent" %}</dt><dd>{% translate "The mail service accepted the email. That does not prove it reached the inbox." %}</dd>
+<dt>{% translate "Failed" %}</dt><dd>{% translate "The email could not be sent. One that failed before it was prepared has no email to list; review it on Background work." %}</dd>
+<dt>{% translate "Uncertain" %}</dt><dd>{% translate "The mail service did not confirm either way. Resolve these on the Outgoing mail page." %}</dd>
+<dt>{% translate "Cancelled" %}</dt><dd>{% translate "Emails prepared and then cancelled before they were sent, for example because the schedule changed or the Family responded. These Families are also counted under Not needed or Couldn't be emailed." %}</dd>
+<dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, the schedule changed, or the campaign closed." %}</dd>
+<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible." %}</dd>
+<dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or is uncertain." %}</dd></dl>
+<p>{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on Mail schedules. A reminder that was removed has no number." %}</p>
+<p>{% translate "A send still in progress says so. The one the Family email progress page is showing links to it, and that page follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
+{% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
+{% else %}{% include "stewardship/family-email-sends-table.html" %}
+{% endif %}
+{% endblock %}

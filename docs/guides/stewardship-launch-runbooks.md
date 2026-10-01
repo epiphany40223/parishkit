@@ -216,8 +216,12 @@ them to the end. For the operator's view, run the report with
 `until` a time in the future. Its **Overview** shows how many invitations
 have gone out so far and the rate.
 
-**Afterwards.** Once the progress page is settled, run it again with
-`until` after the last outcome, and record in the operators' notes:
+**Afterwards.** **Campaign › Family email sends**
+([Family email sends](../specs/stewardship/admin-portal/spec.md#family-email-sends))
+keeps the send's final counts, its first and last times and its duration,
+and each count opens those emails on Outgoing mail. Once the progress page
+is settled, run the report again with `until` after the last outcome, and
+record in the operators' notes:
 
 - **Overview:** the message count, `wall_clock` and `accepted_per_minute`.
   With two mail consumers the send is expected to take about 20 minutes, at
