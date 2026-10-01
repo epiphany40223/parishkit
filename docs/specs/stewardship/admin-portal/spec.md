@@ -320,8 +320,8 @@ viewer may open:
 
 - **Campaign**: Campaign settings (or New campaign), Campaign images, Pages and emails, Mail
   schedules, Share options (financial campaigns), Member talents (Ministry
-  campaigns), Go-live readiness (drafts), Family email progress
-  and Delivery controls (Production).
+  campaigns), Go-live readiness (drafts), Family email progress, Family
+  email sends and Delivery controls (Production).
 - **Reports**: Campaign reports, Ministry reports, Family directory (Family
   codes and, with its mailing columns, postal outreach) and the Manual
   information report. The campaign reports page also
@@ -1499,6 +1499,76 @@ and messages), the reads take about 0.5, 3 and 2 ms on the test database;
 with 50,000 other messages, about 0.7, 6 and 2.5 ms. Counting the owed
 Families adds under 1 ms in both, and under 10 ms on the validation server
 during a live 1,100-Family Testing send.
+
+### Family email sends
+
+The read-only **Family email sends** page (Campaign section, linked from
+Outgoing mail and from the [Family email progress](#family-email-progress)
+page) is the permanent record of every Family send of the current campaign
+([#432](https://github.com/epiphany40223/parishkit/issues/432)). It is for
+Administrators only, like Outgoing mail.
+
+**One row per send.** A send is exactly what the progress page counts (see
+its **Which send**): one revision of one Family schedule in one mode and
+Production cycle, so the same invitation sent in Testing and in Production
+is two rows. A schedule edit makes a new revision and so a new row: the
+earlier row keeps the emails it sent, shows the unsent ones the edit
+cancelled, and is marked as changed later; the new row starts once its
+first email is planned. A send that planning has not started yet has no
+row; the progress page shows it from its first minute. Rows are newest
+first by scheduled time (the revision's due time), then by when the send's
+newest email was planned. Reminders are numbered once per campaign, by
+their schedules' current due times (Reminder 1 is the earliest current
+reminder), so a reminder has the same number in Testing and in Production
+and across its edits, and the numbers match the order on Mail schedules. A
+removed reminder has no current due time and is shown without a number. A Production send from before the campaign returned to Testing is
+marked as such.
+
+**What each row shows.** The kind (Invitation or Reminder N), the mode,
+the scheduled time, when the first email was prepared, when the latest one
+got its result, and the time between them; then the total and the counts
+Sent, Failed, Uncertain, Not needed, Couldn't be emailed and Held. Each row
+is counted by the progress page's own code, so the two pages always agree;
+see [Family email progress](#family-email-progress) for what each count and
+the total mean. A row also shows **Cancelled**: the send's emails that were
+prepared and then cancelled before sending (by a schedule edit, a response
+or the close). Those Families are also counted under Not needed or Couldn't
+be emailed, so Cancelled is not added to anything. A send still in
+progress says so. Only the send the progress page is showing links to it
+(the page shows one send: the in-progress send that fell due most recently);
+another send still in progress, such as an invitation still sending when a
+reminder falls due, says In progress without the link.
+
+**Links to Outgoing mail.** Sent, Failed, Uncertain and Cancelled link to
+Outgoing mail filtered to that send and the matching email state
+(delivered, failed delivery, delivery unknown and cancelled). The send
+filter is the query parameter `send=<schedule>:<revision>:<mode>:<cycle>`,
+combined with the existing state, search and paging parameters. It keeps
+each Family's newest email of the send, exactly the emails the counts
+read, so a linked count opens exactly the emails it counts. A malformed
+send, or one that is not a Family send, is refused rather than ignored, and
+the filtered page names the send and links back to all outgoing mail. When
+some of a count has no email (a failure before preparation, or an
+occurrence settled without one), the cell shows the count and, separately,
+a link to the emails there are; failures before preparation are reviewed on
+Background work, as on the progress page.
+
+**Cost.** The page lists the sends with one aggregate over the campaign's
+Family occurrences (through the definition index) and counts only the shown
+page's sends, each with the progress page's statements plus one count of
+its emails by state. A campaign has a handful of sends, so the list is
+paged in memory, 25 rows at a time (at most 100; there is no All, since
+every shown send is counted). It reads everything in one read-only
+snapshot. The filter on Outgoing mail checks only the named send's
+occurrences, reads the send's email ids the same way and finds the emails
+by primary key; like the rest of Outgoing mail, it reads its page statement
+by statement rather than in one snapshot, so during a live send its count
+and rows can differ by an email that changed in between. Every read uses
+tables the web login already reads and takes no lock, so it never waits on
+or delays a send. Both pages check that the viewer is an Administrator
+before validating the query. The page does not update itself, records one
+audited Outgoing mail view and does not renew the Admin's idle time; as on
+Outgoing mail, a restore review that begins while it renders withholds it.
 
 ### Family portal maintenance
 

@@ -10,6 +10,7 @@ from django.db.models import Q
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
+from .send_history import email_ids
 
 FIELDS = (
     "id",
@@ -116,17 +117,23 @@ def alert_counts(since, *, limit):
     return counts, [UUID(str(value)) for value in ids], unknown
 
 
-def listing(window, *, state, query, sort=DELIVERY_SORTING.default):
+def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
     """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
 
     Returns (window, rows, has_next, total): ``total`` is a bounded count of
     every matching message (``web.tables.bounded_count``), and ``window`` the
     page actually read (the last one when the requested page is past it).
     ``sort`` is a DELIVERY_SORTING token the caller already validated.
+    ``send``, a ``send_history.SendKey``, keeps only that Family email send's
+    emails: each Family's newest one, exactly those its history counts read.
     """
     if state not in STATES or type(query) is not str or len(query) > 64:
         raise ValueError("Invalid delivery filter.")
     selected = messages()
+    if send is not None:
+        # About one id per Family, read through the definition index; the
+        # messages are then found by primary key.
+        selected = selected.filter(pk__in=email_ids(send))
     if state != "all":
         selected = selected.filter(state=state)
     if query:

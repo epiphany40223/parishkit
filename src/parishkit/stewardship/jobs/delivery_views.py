@@ -55,6 +55,7 @@ from .delivery_resolution_models import DeliveryResolution
 from .models import TaskRun
 from .outbox_models import OutboxEvent, OutboxMessage
 from .recipient_models import RecipientRefusal, RecipientRefusalResolution
+from .send_history import SendKey, describe
 from .storage import TaskRetryConflict
 
 UNAVAILABLE = (
@@ -265,10 +266,19 @@ def delivery_list(request):
 
     def load():
         """Capture one filtered page without reading any private message payload."""
-        values, window = _window(request, {"state", "q"}, DELIVERY_SORTING)
+        values, window = _window(request, {"state", "q", "send"}, DELIVERY_SORTING)
         state, query = values.get("state", "all"), values.get("q", "")
+        # One Family email send, from the send history's links (#432). A
+        # malformed or unknown send is refused rather than ignored, so a
+        # filtered link never silently lists every email instead.
+        send = described = None
+        if "send" in values:
+            send = SendKey.parse(values["send"])
+            described = describe(send)
+            if described is None:
+                raise ValueError("Unknown Family email send.")
         window, rows, following, total = listing(
-            window, state=state, query=query, sort=values["sort"]
+            window, state=state, query=query, sort=values["sort"], send=send
         )
         return dict(
             table=_table(
@@ -283,6 +293,7 @@ def delivery_list(request):
             states=STATES,
             selected_state=state,
             query=query,
+            send=described,
         ), len(rows)
 
     return _page(request, "stewardship/deliveries.html", load)
