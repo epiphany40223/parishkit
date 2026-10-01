@@ -396,3 +396,94 @@ def test_refresh_unlocked_elsewhere_drops_the_stale_set_aside(page, component_or
     page.get_by_label(SERVE).uncheck()
     expect(page.get_by_label("Florist")).to_be_checked()
     expect(page.get_by_label("Painter")).not_to_be_checked()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_emptied_talent_list_shows_no_talents_anywhere(
+    page, component_origin, axe_source, width
+):
+    """A campaign whose talent list was emptied shows no Talents panel or line.
+
+    "Cannot participate" still appears and works, and each Member's answer
+    is sent with no talents, which the server accepts.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    form, submissions, errors = service_form(), [], []
+    form["service"]["talent_options"] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    begin(page, component_origin, form, recorder(submissions))
+    lock = show(page, page.get_by_label(SERVE))
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    assert page.get_by_text("special talent", exact=False).count() == 0
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    # Toggling the separate limitation never brings an empty panel back.
+    lock.check()
+    lock.uncheck()
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    review(page)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[0]["service"] == {
+        "members": {"3": {"cannot_serve": False, "talents": {}}},
+        "proposed_members": {},
+    }
+    assert not errors, errors
+
+
+def test_set_aside_talents_no_longer_offered_are_not_restored(page, component_origin):
+    """Unchecking the lock restores only talents the refreshed form still offers.
+
+    This tab sets Painter aside under the lock; another tab saves the Member
+    locked and the parish empties the list. Painter must not come back with
+    no checkbox left to remove it (the server would refuse it).
+    """
+    form, submissions = service_form(), []
+    fresh = deepcopy(form)
+    fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
+    fresh["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
+    fresh["service"]["talent_options"] = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Painter")).check()
+    page.get_by_label(SERVE).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
+    page.get_by_label(SERVE).uncheck()
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": {},
+    }
+
+
+def test_list_emptied_mid_session_removes_the_panel(page, component_origin):
+    """A refresh after the parish empties the list drops the panel and talents."""
+    form, submissions = service_form(), []
+    fresh = deepcopy(form)
+    fresh["service"]["talent_options"] = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Painter")).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(SERVE))).to_be_visible()
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    review(page)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": {},
+    }

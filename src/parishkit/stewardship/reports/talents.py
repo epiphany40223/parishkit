@@ -3,14 +3,16 @@
 Lists Members who chose a talent or cannot participate in ministries, and
 Families who cannot attend Mass or prayer services. Talent wording comes from
 the campaign's current talent list (or the built-in defaults); a talent the
-parish has since removed reads "Unavailable talent".
+parish has since removed reads "Unavailable talent". A campaign that offers
+no talents (its list was emptied, or it has no Ministry page) reports only
+the limitations: no talent column, count or filter appears anywhere.
 """
 
 import csv
 import io
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from django.db import connection
@@ -66,6 +68,19 @@ class TalentQuery:
         """Values for CSRF-protected re-submission and downloads."""
         return {"search": self.search, "talent": self.talent}
 
+    def offered(self, configuration):
+        """This query, with a talent filter no longer offered read as "any".
+
+        A page re-posted (sort, paging or download) after the parish removed
+        that talent would otherwise filter every row out while the menu, which
+        no longer lists it, shows "Everything".
+        """
+        if OPTION.fullmatch(self.talent) and self.talent not in talent_labels(
+            configuration
+        ):
+            return replace(self, talent="any")
+        return self
+
 
 def talent_labels(configuration):
     """The campaign's talent wording by identity, in its configured order."""
@@ -91,8 +106,20 @@ def talents_report(campaign_id, query, principal, *, configuration):
 
 
 def shape_result(result, *, configuration):
-    """Word talents in configured order, with any free text, for page and files."""
+    """Word talents in configured order, with any free text, for page and files.
+
+    When the campaign offers no talents, older answers' talents are dropped
+    along with the Members listed only for them, so the report is purely
+    about limitations and says plainly that no talents are collected.
+    """
     labels = talent_labels(configuration)
+    result["collects_talents"] = bool(labels)
+    if not labels:
+        result["members"] = [row for row in result["members"] if row["cannot_serve"]]
+        for row in result["members"]:
+            row["talents"] = {}
+        result["summary"]["members"] = len(result["members"])
+        result["summary"]["talents"] = {}
     position = {key: index for index, key in enumerate(labels)}
     for row in result["members"]:
         row["talents"] = [
@@ -116,6 +143,13 @@ def shape_result(result, *, configuration):
     return result
 
 
+def member_headings(result):
+    """Member columns; the Talents column only when the campaign collects talents."""
+    if result["collects_talents"]:
+        return MEMBER_HEADINGS
+    return tuple(heading for heading in MEMBER_HEADINGS if heading != "Talents")
+
+
 def export_tables(result, zone):
     """Two plain tables (Members, then Families) with localized timestamps."""
 
@@ -123,12 +157,13 @@ def export_tables(result, zone):
         """Show each response time in the requested display timezone."""
         return value.astimezone(zone).isoformat(timespec="seconds")
 
+    talents = result["collects_talents"]
     members = [
         (
             row["family_name"],
             str(row["family_duid"]),
             row["member_name"] + (" (proposed)" if row["proposed"] else ""),
-            "; ".join(row["talents"]),
+            *(("; ".join(row["talents"]),) if talents else ()),
             "Yes" if row["cannot_serve"] else "",
             instant(row["submitted_at"]),
         )
@@ -151,7 +186,10 @@ def talents_csv(result, zone):
     members, families = export_tables(result, zone)
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
-    for headings, rows in ((MEMBER_HEADINGS, members), (FAMILY_HEADINGS, families)):
+    for headings, rows in (
+        (member_headings(result), members),
+        (FAMILY_HEADINGS, families),
+    ):
         if rows is families:
             writer.writerow([])
         writer.writerow(headings)
@@ -167,7 +205,7 @@ def talents_xlsx(result, zone):
     members, families = export_tables(result, zone)
     book = Workbook()
     sheets = (
-        (book.active, "Members", MEMBER_HEADINGS, members),
+        (book.active, "Members", member_headings(result), members),
         (book.create_sheet(), "Families", FAMILY_HEADINGS, families),
     )
     for sheet, title, headings, rows in sheets:

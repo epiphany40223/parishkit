@@ -4,6 +4,7 @@
 <h1>{% translate "Talents and limitations" %}</h1>
 <p>{{ metadata.name }}</p>
 {% aboutpage "talents-report" %}<p>{% translate "Members who shared a talent or said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services. Each Family's current live response is used; a later submission replaces the earlier one, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>{% endaboutpage %}
+{% if not collects_talents %}<p class="notice">{% translate "This campaign does not collect talents, so this report lists only Members who cannot participate in ministries and Families who cannot attend Mass or prayer services." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
 <h2>{% translate "Summary" %}</h2>
 <dl>
@@ -27,15 +28,15 @@
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <h2>{% translate "Members" %}</h2>
 {% translate "Member pages" as members_label %}{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Members with talents or limitations' %}"><table>
-<caption>{% translate "Members with talents or limitations" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% translate "Talents" as heading %}{% sort_heading members_table "talents" heading %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% if collects_talents %}{% translate 'Members with talents or limitations' %}{% else %}{% translate 'Members who cannot participate in ministries' %}{% endif %}"><table>
+<caption>{% if collects_talents %}{% translate "Members with talents or limitations" %}{% else %}{% translate "Members who cannot participate in ministries" %}{% endif %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% if collects_talents %}{% translate "Talents" as heading %}{% sort_heading members_table "talents" heading %}{% endif %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
 {% for row in members_table.rows %}<tr>
 <th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
 <td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}</td>
-<td>{% for talent in row.talents %}{{ talent }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
+{% if collects_talents %}<td>{% for talent in row.talents %}{{ talent }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>{% endif %}
 <td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="5">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="{% if collects_talents %}5{% else %}4{% endif %}">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
 <h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
 {% translate "Family pages" as families_label %}{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}

@@ -226,14 +226,15 @@ def _respond(request, campaign_id, *, export, render):
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
+            configuration = campaign.active_configuration.values
+            # A removed talent filter reads as "Everything" for the tables,
+            # the re-posted sort/paging forms and the download alike.
+            shown = query.offered(configuration)
             result = talents_report(
-                campaign_id,
-                query,
-                principal,
-                configuration=campaign.active_configuration.values,
+                campaign_id, shown, principal, configuration=configuration
             )
             count = len(result["members"]) + len(result["families"])
-            return iter((render(result, query, extra),))
+            return iter((render(result, shown, extra),))
 
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
         response = campaign_response(

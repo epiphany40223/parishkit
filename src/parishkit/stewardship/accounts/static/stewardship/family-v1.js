@@ -785,8 +785,17 @@
     if (!member.proposed) choices.leave = saved ? saved.leave : [];
     if (!form.service) return;
     const talentsKey = "talents." + member.id;
-    serviceEntry(member).talents = setAside.get(talentsKey) || {};
+    serviceEntry(member).talents = offeredTalents(setAside.get(talentsKey) || {});
     setAside.delete(talentsKey);
+  }
+  function offeredTalents(talents) {
+    // A set-aside can outlive a refresh that removed talents (or emptied the
+    // list), so restore only talents still offered, and a note only while its
+    // option still takes free text. Otherwise the Family would submit a talent
+    // with no checkbox left to remove it, and the server would refuse it.
+    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
+    return Object.fromEntries(Object.entries(talents).filter(([id]) => options.has(id)).map(
+      ([id, text]) => [id, options.get(id).free_text ? text : ""]));
   }
   function preserveService(previous, before) {
     // Keep this tab's own talent and "cannot participate" edits across a
@@ -905,10 +914,16 @@
       edit(lockId);
     });
   }
+  function offersTalents() {
+    // A campaign whose talent list was emptied (or never collects talents)
+    // shows no Talents panel or review line at all; "cannot participate"
+    // is a separate answer and still appears.
+    return Boolean(form.service?.talent_options.length);
+  }
   function talentsEditor(member, parent) {
     // Talents come last on the Member's page, below the ministry updates,
     // and are hidden while the Member cannot participate (none are sent).
-    if (!form.service || serviceEntry(member).cannot_serve) return;
+    if (!offersTalents() || serviceEntry(member).cannot_serve) return;
     const entry = serviceEntry(member), prefix = "service-" + member.id;
     // Styled like the Ministry participation panel: a panel with an h4, and
     // the question as the checkbox group's legend.
@@ -1084,7 +1099,7 @@
       const entry = serviceEntry(member);
       const talents = form.service.talent_options.filter((option) => option.id in entry.talents).map(
         (option) => option.free_text ? option.label + ": " + entry.talents[option.id] : option.label);
-      if (!entry.cannot_serve) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
+      if (!entry.cannot_serve && offersTalents()) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
       if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }
