@@ -123,9 +123,13 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # and the chrome reuses the view's clock. Counts include each
         # transaction's BEGIN/COMMIT; the page measured 46 (66 before), plus
         # one fixed query for the "no campaign mail can reach" line while a
-        # campaign is open (47), and the ceiling keeps one statement of
-        # headroom so regressions are caught.
-        "admin_shell": _measure(admin_page, query_limit=48),
+        # campaign is open (47), plus one fixed query for the ParishSoft
+        # Ministry changes notice once a source is promoted (48; #342; one
+        # statement whether or not the campaign selects Ministries, which
+        # test_ministry_catalog_postgresql pins), and
+        # the ceiling keeps one statement of headroom so regressions are
+        # caught.
+        "admin_shell": _measure(admin_page, query_limit=49),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
 

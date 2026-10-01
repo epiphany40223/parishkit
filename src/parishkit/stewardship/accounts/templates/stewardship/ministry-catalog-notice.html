@@ -1,0 +1,22 @@
+{% load i18n stewardship %}{% comment %}
+The Admin home page's ParishSoft Ministry catalog notice (#342): the current
+campaign's Ministries that are gone from ParishSoft or look retired, then the
+Ministries recent refreshes added, removed or renamed. See the admin portal
+spec, "ParishSoft Ministry catalog changes".
+{% endcomment %}<section class="panel" id="ministry-catalog" aria-labelledby="ministry-catalog-heading">
+    <h2 id="ministry-catalog-heading">{% translate "ParishSoft Ministry changes" %}</h2>
+    {% if notice.missing %}<p class="notice notice-error" role="alert">{% translate "These Ministries are in the current campaign but are no longer in ParishSoft, so Families cannot see them:" %}</p>
+    <ul>{% for row in notice.missing %}<li>{{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }})</li>{% endfor %}</ul>{% endif %}
+    {% if notice.retired %}<p class="notice">{% translate "These Ministries are in the current campaign, but their ParishSoft names start with “X-”, which may mean they were retired:" %}</p>
+    <ul>{% for row in notice.retired %}<li>{{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }})</li>{% endfor %}</ul>{% endif %}
+    {% for refresh in notice.refreshes %}<div class="ministry-catalog-refresh">
+      <p><strong>{% translate "Found by the ParishSoft refresh at" %} <time datetime="{{ refresh.promoted_at|instant }}" data-local-instant>{{ refresh.promoted_at|instant }}</time></strong></p>
+      {% if refresh.added %}<p>{% translate "Added:" %}</p>
+      <ul>{% for row in refresh.added %}<li>{{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }}){% if row.in_campaign %} — {% translate "in the current campaign" %}{% endif %}</li>{% endfor %}{% if refresh.more.added %}<li>{% blocktranslate count counter=refresh.more.added %}and {{ counter }} more{% plural %}and {{ counter }} more{% endblocktranslate %}</li>{% endif %}</ul>{% endif %}
+      {% if refresh.removed %}<p>{% translate "Removed:" %}</p>
+      <ul>{% for row in refresh.removed %}<li>{{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }}){% if row.in_campaign %} — {% translate "in the current campaign" %}{% endif %}</li>{% endfor %}{% if refresh.more.removed %}<li>{% blocktranslate count counter=refresh.more.removed %}and {{ counter }} more{% plural %}and {{ counter }} more{% endblocktranslate %}</li>{% endif %}</ul>{% endif %}
+      {% if refresh.renamed %}<p>{% translate "Renamed:" %}</p>
+      <ul>{% for row in refresh.renamed %}<li>{{ row.before }} → {{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }}){% if row.retired %} — {% translate "possibly retired" %}{% endif %}{% if row.in_campaign %} — {% translate "in the current campaign" %}{% endif %}</li>{% endfor %}{% if refresh.more.renamed %}<li>{% blocktranslate count counter=refresh.more.renamed %}and {{ counter }} more{% plural %}and {{ counter }} more{% endblocktranslate %}</li>{% endif %}</ul>{% endif %}
+    </div>{% endfor %}
+    <p>{% translate "Campaigns never change their Ministries on their own. To hide a Ministry from the Family form, mark it inactive." %} <a href="{% url 'admin:ministries' %}">{% translate "Ministry activity" %}</a>{% if notice.campaign_id %} · <a href="{% url 'admin:campaign_settings' notice.campaign_id %}#ministry-selections">{% translate "Campaign settings" %}</a>{% endif %}</p>
+  </section>
