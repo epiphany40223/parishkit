@@ -97,9 +97,13 @@ FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_ticket_v1();
 -- session value can stand in for the original task's live database claim.
 -- Shared exact current-source projection for invitations and direct receipts.
 -- This is invoker-rights reading, not an independent send/admission capability.
+-- Order by code point (COLLATE "C"), the order Python's sorted() gives the
+-- rendered recipients. The database default collation (en_US.UTF-8 on the
+-- deployed image) skips punctuation, so it can order two valid addresses
+-- differently, and the render guard would then refuse the Family every time.
 CREATE FUNCTION public.stewardship_family_mail_recipients_v1(family uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT coalesce(jsonb_agg(address ORDER BY address),'[]'::jsonb) FROM (
+    SELECT coalesce(jsonb_agg(address ORDER BY address COLLATE "C"),'[]'::jsonb) FROM (
         SELECT DISTINCT item->>'value' AS address
         FROM public.stewardship_family_campaign f
         JOIN public.stewardship_source_current s ON true
