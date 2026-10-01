@@ -1,37 +1,45 @@
 {% load i18n stewardship %}{% comment %}
   The Family email progress region, shared by the page and the passive status
-  fragment that live-status-v1.js polls while emails remain or a send is about
-  to start. It is not itself a live region: its counts change on every poll,
-  so screen readers instead hear data-live-announce, copied into the page's
-  announcer only when that coarse status changes. Only the page passes
-  status_url.
+  fragment that live-status-v1.js polls. It shows live progress only while a
+  send is in progress (send.active); otherwise it says no send is in progress,
+  summarises the most recent send in one line and links to Outgoing mail, the
+  permanent record. It keeps polling while there is a current campaign, so a
+  new send appears by itself. It is not itself a live region: its counts
+  change on every poll, so screen readers instead hear data-live-announce,
+  copied into the page's announcer only when that coarse status changes. Only
+  the page passes status_url.
 {% endcomment %}<section class="panel" data-live-status="send-progress"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-give-up="{{ give_up }}" data-live-refresh-label="{% translate 'Refresh progress' %}" data-live-announce="{{ announcement }}"{% if follow %} data-live-pending{% endif %} aria-labelledby="send-progress-heading">
-<h2 id="send-progress-heading">{% if not send %}{% translate "No Family email sent yet" %}{% elif send.counts.kind == 'initial' %}{% translate "Invitation email" %}{% else %}{% translate "Reminder email" %}{% endif %}</h2>
-{% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
-{% elif not send %}{% if upcoming %}{% translate "Waiting for the first emails to be scheduled…" as running %}{% include 'stewardship/live-running.html' with message=running %}<p>{% translate "If this lasts more than a few minutes, check" %} <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a> {% translate "for a failed task." %}</p>{% else %}<p>{% translate "No invitation or reminder has become due yet. Refresh this page after the first one is due." %}</p>{% endif %}
-{% else %}{% if testing %}<p class="notice">{% translate "Testing mode: these emails go only to the Testing recipient." %}</p>{% endif %}
+{% if send.active %}<h2 id="send-progress-heading">{% if send.counts.kind == 'initial' %}{% translate "Invitation email" %}{% else %}{% translate "Reminder email" %}{% endif %}</h2>
+{% if testing %}<p class="notice">{% translate "Testing mode: these emails go only to the Testing recipient." %}</p>{% endif %}
 {% if send.paused %}<p class="notice"><strong>{% translate "Paused." %}</strong> {% translate "Live delivery is paused. The remaining emails wait until delivery resumes." %}</p>
-{% elif send.active %}{% translate "Sending Family emails…" as running %}{% include 'stewardship/live-running.html' with message=running %}
-{% else %}<p class="live-done"><strong>{% translate "Finished: no emails remain." %}</strong></p>{% if upcoming %}<p>{% translate "Another Family email may be due soon. If it starts, this page switches to it by itself." %}</p>{% endif %}{% endif %}
-<p id="send-progress-label">{% blocktranslate with done=send.done|number total=send.total|number percent=send.percent %}{{ done }} of {{ total }} emails finished ({{ percent }}%){% endblocktranslate %}</p>
-{% if send.total %}<progress value="{{ send.done }}" max="{{ send.total }}" aria-labelledby="send-progress-label"></progress>{% else %}<progress value="1" max="1" aria-labelledby="send-progress-label"></progress>{% endif %}
+{% elif send.counts.held %}<p class="notice"><strong>{% translate "Held." %}</strong> {% translate "No new emails are being prepared right now, because the campaign is not open for sending (for example, a campaign change is being applied, or the campaign has not started). Emails already prepared may still go out. Preparation continues by itself when the hold ends." %}</p>
+{% else %}{% translate "Sending Family emails…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}
+{% if send.total is None %}<p id="send-progress-label">{% blocktranslate with done=send.done|number %}{{ done }} emails finished so far. The full total is not known yet, because the Family list is being refreshed.{% endblocktranslate %}</p>
+<progress aria-labelledby="send-progress-label"></progress>
+{% else %}<p id="send-progress-label">{% blocktranslate with done=send.done|number total=send.total|number percent=send.percent %}{{ done }} of {{ total }} emails finished ({{ percent }}%){% endblocktranslate %}</p>
+{% if send.total %}<progress value="{{ send.done }}" max="{{ send.total }}" aria-labelledby="send-progress-label"></progress>{% else %}<progress value="1" max="1" aria-labelledby="send-progress-label"></progress>{% endif %}{% endif %}
 <dl class="send-progress-counts">
-<dt>{% translate "Total" %}</dt><dd>{{ send.total|number }}</dd>
+<dt>{% translate "Total" %}</dt><dd>{% if send.total is None %}{% translate "Not known yet" %}{% else %}{{ send.total|number }}{% endif %}</dd>
 <dt>{% translate "Sent" %}</dt><dd>{{ send.counts.sent|number }}</dd>
-<dt>{% translate "Remaining" %}</dt><dd>{{ send.counts.remaining|number }}</dd>
+<dt>{% translate "Remaining" %}</dt><dd>{{ send.counts.remaining|number }}{% if send.total is None %} {% translate "so far" %}{% endif %}{% if send.counts.unprepared %} ({% blocktranslate with count=send.counts.unprepared|number %}of these, {{ count }} not prepared yet{% endblocktranslate %}){% endif %}</dd>
 <dt>{% translate "Failed" %}</dt><dd>{{ send.counts.failed|number }}</dd>
 <dt>{% translate "Uncertain (delivery unknown)" %}</dt><dd>{{ send.counts.uncertain|number }}</dd>
 {% if send.counts.waiting %}<dt>{% translate "Held: invitation failed or uncertain" %}</dt><dd>{{ send.counts.waiting|number }}</dd>{% endif %}
 <dt>{% translate "Couldn't be emailed (no deliverable address or not eligible)" %}</dt><dd>{{ send.counts.unreachable|number }}</dd>
 {% if send.counts.not_needed %}<dt>{% translate "Not needed (already responded or replaced)" %}</dt><dd>{{ send.counts.not_needed|number }}</dd>{% endif %}
-<dt>{% if send.active %}{% translate "Current rate" %}{% else %}{% translate "Average rate" %}{% endif %}</dt><dd>{% if send.stalled %}{% translate "No emails finished in the last 5 minutes" %}{% elif send.rate is not None %}{% blocktranslate with rate=send.rate|number %}{{ rate }} emails per minute{% endblocktranslate %}{% else %}{% translate "Not enough sent yet to measure" %}{% endif %}</dd>
-{% if send.active %}<dt>{% translate "Estimated finish" %}</dt><dd>{% if send.finish_at %}<time data-local-instant datetime="{{ send.finish_at|instant }}">{{ send.finish_at|instant }}</time> ({% blocktranslate count minutes=send.minutes_left %}about {{ minutes }} minute{% plural %}about {{ minutes }} minutes{% endblocktranslate %}){% elif send.paused %}{% translate "Not while delivery is paused" %}{% elif send.stalled %}{% translate "Not while no emails are finishing" %}{% else %}{% translate "Not enough sent yet to estimate" %}{% endif %}</dd>{% endif %}
+<dt>{% translate "Current rate" %}</dt><dd>{% if send.stalled %}{% translate "No emails finished in the last 5 minutes" %}{% elif send.rate is not None %}{% blocktranslate with rate=send.rate|number %}{{ rate }} emails per minute{% endblocktranslate %}{% else %}{% translate "Not enough sent yet to measure" %}{% endif %}</dd>
+<dt>{% translate "Estimated finish" %}</dt><dd>{% if send.finish_at %}<time data-local-instant datetime="{{ send.finish_at|instant }}">{{ send.finish_at|instant }}</time> ({% blocktranslate count minutes=send.minutes_left %}about {{ minutes }} minute{% plural %}about {{ minutes }} minutes{% endblocktranslate %}){% elif send.paused %}{% translate "Not while delivery is paused" %}{% elif send.stalled %}{% translate "Not while no emails are finishing" %}{% elif send.total is None %}{% translate "Not until the full total is known" %}{% else %}{% translate "Not enough sent yet to estimate" %}{% endif %}</dd>
 <dt>{% translate "Started" %}</dt><dd>{% if send.counts.started_at %}<time data-local-instant datetime="{{ send.counts.started_at|instant }}">{{ send.counts.started_at|instant }}</time>{% else %}{% translate "Not started yet" %}{% endif %}</dd>
-{% if send.finished_at %}<dt>{% translate "Finished" %}</dt><dd><time data-local-instant datetime="{{ send.finished_at|instant }}">{{ send.finished_at|instant }}</time></dd>{% endif %}
 </dl>
 {% if send.counts.uncertain or send.counts.failed or send.counts.waiting %}<ul class="send-progress-review">
 {% if send.counts.uncertain or send.counts.waiting %}<li><a href="{% url 'admin:deliveries' %}?state=delivery_unknown">{% translate "Review uncertain emails" %}</a></li>{% endif %}
 {% if send.counts.outbox_failed or send.counts.waiting %}<li><a href="{% url 'admin:deliveries' %}?state=permanent_failure">{% translate "Review failed emails" %}</a></li>{% endif %}
 {% if send.counts.prepare_failed %}<li><a href="{% url 'admin:background' %}?state=failed&amp;task_type=family_mail_prepare">{% translate "Review emails that failed before they were prepared" %}</a></li>{% endif %}
 </ul>{% endif %}
+{% else %}<h2 id="send-progress-heading">{% translate "No Family email send is in progress right now" %}</h2>
+{% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
+{% else %}{% if upcoming %}{% translate "Waiting for the next emails to be scheduled…" as running %}{% include 'stewardship/live-running.html' with message=running %}<p>{% translate "If this lasts more than a few minutes, check" %} <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a> {% translate "for a failed task." %}</p>{% endif %}
+{% if send %}<p class="send-progress-last">{% if send.counts.kind == 'initial' %}{% translate "Last send: Invitation email" %}{% else %}{% translate "Last send: Reminder email" %}{% endif %}{% if send.finished_at %}, {% translate "finished" %} <time data-local-instant datetime="{{ send.finished_at|instant }}">{{ send.finished_at|instant }}</time>{% endif %}: {% blocktranslate with sent=send.counts.sent|number failed=send.counts.failed|number uncertain=send.counts.uncertain|number not_sent=send.counts.not_sent|number %}{{ sent }} sent, {{ failed }} failed, {{ uncertain }} uncertain, {{ not_sent }} not sent{% endblocktranslate %}{% if send.counts.waiting %}, {% blocktranslate with waiting=send.counts.waiting|number %}{{ waiting }} held behind their invitation{% endblocktranslate %}{% endif %}.</p>{% endif %}
+<p>{% translate "Every Family email and its state is listed on" %} <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a>.</p>
+<p>{% translate "This page checks by itself and shows the next invitation or reminder as soon as it starts." %}</p>{% endif %}
 {% endif %}</section>

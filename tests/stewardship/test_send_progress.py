@@ -6,6 +6,7 @@ running, stalled, paused and finished sends, and the status template for what it
 shows, when it keeps polling and what screen readers hear.
 """
 
+import math
 import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -164,14 +165,20 @@ def test_announcements_change_only_by_quarter_and_at_the_end():
     assert len(set(words)) == 4
     assert words[0] == words[1] == words[2]
     assert "25%" in words[3] and "50%" in words[5] and "75%" in words[6]
-    assert _announcement(progress(counts(sent=100))) == "Family email send finished."
+    assert (
+        _announcement(progress(counts(sent=100)))
+        == "No Family email send is in progress."
+    )
     paused = progress(counts(sent=10, remaining=90), paused=True)
     assert _announcement(paused) == "Family email send paused."
     assert _announcement(None) == ""
 
 
 def render(send, *, upcoming=False, **extra):
-    """Render the status region as the page or the polled fragment would."""
+    """Render the status region as the page or the polled fragment would.
+
+    As the view does, the region keeps polling whenever there is a campaign.
+    """
     return render_to_string(
         "stewardship/family-email-progress-status.html",
         {
@@ -180,7 +187,7 @@ def render(send, *, upcoming=False, **extra):
             "paused": bool(send and send.paused),
             "send": send,
             "upcoming": upcoming,
-            "follow": upcoming or bool(send and send.active),
+            "follow": extra.get("campaign", True) is not None,
             "announcement": _announcement(send),
             "poll_interval": POLL_MILLISECONDS,
             "give_up": GIVE_UP_MILLISECONDS,
@@ -225,22 +232,28 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     assert "<script" not in html
 
 
-def test_a_finished_send_stops_polling_and_shows_when_it_ended():
-    """No pending marker once nothing remains; start and finish are shown."""
+def test_a_finished_send_is_one_line_with_no_bar_and_the_page_keeps_checking():
+    """Moment in time: no send in progress, a summary line, Outgoing mail."""
     html = render(
         progress(
             counts(
-                sent=1100,
+                sent=1090,
+                failed=4,
+                uncertain=1,
+                unreachable=3,
+                not_needed=7,
                 started_at=NOW - timedelta(minutes=30),
                 last_settled_at=NOW - timedelta(minutes=8),
             )
         )
     )
-    assert "data-live-pending" not in region(html)
-    assert "Finished: no emails remain." in html
-    assert "<dt>Finished</dt>" in html and "<dt>Started</dt>" in html
-    assert "Average rate" in html and "Estimated finish" not in html
-    assert "Review" not in html
+    assert "No Family email send is in progress right now" in html
+    assert "Last send: Invitation email, finished <time" in html
+    assert "1,090 sent, 4 failed, 1 uncertain, 10 not sent." in html
+    assert 'href="/admin/deliveries">Outgoing mail</a>' in html
+    assert "<progress" not in html and "emails finished" not in html
+    # Still checking, so the next send appears by itself.
+    assert "data-live-pending" in region(html)
 
 
 def test_a_paused_send_says_so_instead_of_estimating():
@@ -260,13 +273,14 @@ def test_a_stalled_send_says_nothing_finished_recently():
     assert "emails per minute" not in html
 
 
-def test_an_empty_send_draws_a_full_bar():
-    """0 of 0 is finished, so the bar is full rather than empty."""
-    html = render(progress(counts(unreachable=2, not_needed=40)))
-    assert "0 of 0 emails finished (100%)" in html
-    assert '<progress value="1" max="1"' in html
-    assert "Couldn&#x27;t be emailed" in html or "Couldn't be emailed" in html
-    assert "data-live-pending" not in region(html)
+def test_a_cancelled_send_is_not_in_progress():
+    """Every remaining email cancelled (the schedule moved): over, no bar."""
+    sent = progress(counts(sent=65, not_needed=110, last_settled_at=NOW))
+    assert (sent.total, sent.active) == (65, False)
+    html = render(sent)
+    assert "No Family email send is in progress right now" in html
+    assert "65 sent, 0 failed, 0 uncertain, 110 not sent." in html
+    assert "<progress" not in html
 
 
 def test_reminder_buckets_and_preparation_failures_are_named():
@@ -281,6 +295,7 @@ def test_reminder_buckets_and_preparation_failures_are_named():
                 waiting=3,
                 unreachable=4,
                 not_needed=5,
+                remaining=1,
                 last_settled_at=NOW,
             )
         )
@@ -298,23 +313,74 @@ def test_reminder_buckets_and_preparation_failures_are_named():
     ("campaign", "upcoming", "text"),
     [
         (None, False, "There is no current campaign."),
-        (object(), False, "No invitation or reminder"),
-        (object(), True, "Waiting for the first emails to be scheduled"),
+        (object(), False, "No Family email send is in progress right now"),
+        (object(), True, "Waiting for the next emails to be scheduled"),
     ],
 )
-def test_before_the_first_send_polls_only_when_one_is_about_to_start(
-    campaign, upcoming, text
-):
-    """A page opened before go-live's first email switches to it by itself."""
+def test_before_the_first_send_the_page_keeps_checking(campaign, upcoming, text):
+    """A page opened before the first email switches to it by itself."""
     html = render(None, campaign=campaign, upcoming=upcoming)
     assert text in html
-    assert ("data-live-pending" in region(html)) is upcoming
-    assert "<progress" not in html
+    assert ("data-live-pending" in region(html)) is (campaign is not None)
+    assert "<progress" not in html and "Last send" not in html
 
 
 def test_a_finished_send_keeps_checking_when_the_next_one_is_due():
     """The invitation is done and a reminder is due within the hour."""
     html = render(progress(counts(sent=10, last_settled_at=NOW)), upcoming=True)
-    assert "Finished: no emails remain." in html
-    assert "Another Family email may be due soon." in html
+    assert "No Family email send is in progress right now" in html
+    assert "Waiting for the next emails to be scheduled" in html
+    assert "Last send: Invitation email" in html
     assert "data-live-pending" in region(html)
+
+
+def test_a_held_send_says_held_instead_of_sending():
+    """Planning held: the owed emails still count, but nothing claims to send."""
+    sent = progress(counts(sent=10, remaining=90, unplanned=90, held=True))
+    assert sent.active
+    html = render(sent)
+    assert "<strong>Held.</strong>" in html
+    assert "Sending Family emails" not in html
+    assert _announcement(sent) == "Family email send held."
+
+
+def test_families_not_yet_planned_count_in_the_total_from_the_start():
+    """12 sent of 1,103 Families is 1%, not 12 of the 24 planned so far (50%).
+
+    ``read_send`` adds the Families planning has not reached to remaining
+    (and to not prepared); the percentage and estimate use the whole send.
+    """
+    sent = progress(
+        counts(sent=12, remaining=1091, unprepared=1079, unplanned=1079, recent=12)
+    )
+    assert (sent.total, sent.done, sent.percent, sent.active) == (1103, 12, 1, True)
+    assert sent.minutes_left == math.ceil(1091 / sent.rate)
+    html = render(sent)
+    assert "12 of 1,103 emails finished (1%)" in html
+    assert '<progress value="12" max="1103"' in html
+    assert "<dd>1,091 (of these, 1,079 not prepared yet)</dd>" in html
+
+
+def test_an_unknown_total_shows_counts_without_a_percentage():
+    """While the Family list is refreshed, no share of a partial total is shown."""
+    sent = progress(
+        counts(sent=12, remaining=12, unprepared=0, unplanned=None, recent=12)
+    )
+    assert (sent.total, sent.percent, sent.active) == (None, None, True)
+    # A rate can still be measured, but there is nothing to estimate from.
+    assert sent.rate is not None and sent.finish_at is sent.minutes_left is None
+    assert _announcement(sent) == (
+        "Family email send in progress; the total is not known yet."
+    )
+    html = render(sent)
+    assert "12 emails finished so far." in html
+    assert "The full total is not known yet" in html
+    assert "%" not in html.split('id="send-progress-label">')[1].split("</p>")[0]
+    # An indeterminate bar: no value, so no share is claimed.
+    assert '<progress aria-labelledby="send-progress-label">' in html
+    assert "<dt>Total</dt><dd>Not known yet</dd>" in html
+    assert "<dd>12 so far</dd>" in html
+    assert "Not until the full total is known" in html
+    assert "data-live-pending" in region(html)
+    # Even with nothing planned left, the send is not finished while unknown.
+    assert progress(counts(sent=12, unplanned=None)).active

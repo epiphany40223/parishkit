@@ -19,7 +19,7 @@ ANNOUNCER = '[data-live-announcer="send-progress"]'
 def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
     page, component_origin, axe_source, width
 ):
-    """Running and finished pages pass axe, fit the phone, and label the bar."""
+    """Running and idle pages pass axe and fit the phone; only running has a bar."""
     page.set_viewport_size({"width": width, "height": 900})
     for path in (PAGE, FINISHED):
         page.goto(component_origin + path)
@@ -32,13 +32,18 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
             == []
         )
         bar = page.get_by_role("progressbar")
-        assert bar.count() == 1
-        name = page.evaluate(
-            "document.getElementById("
-            "document.querySelector('progress').getAttribute('aria-labelledby')"
-            ").textContent"
-        )
-        assert "emails finished" in name
+        if path == FINISHED:
+            # No send in progress: a one-line summary, no bar.
+            assert bar.count() == 0
+            visible(page.get_by_text("No Family email send is in progress right now"))
+        else:
+            assert bar.count() == 1
+            name = page.evaluate(
+                "document.getElementById("
+                "document.querySelector('progress').getAttribute('aria-labelledby')"
+                ").textContent"
+            )
+            assert "emails finished" in name
         # Counts change on every poll, so the region itself never speaks.
         assert page.locator(REGION).get_attribute("aria-live") is None
         assert page.get_by_role("link", name="Outgoing mail").count() >= 1
@@ -47,7 +52,10 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
 def test_the_running_page_follows_the_send_and_announces_only_its_end(
     page, component_origin
 ):
-    """One poll swaps in the finished counts; the announcer says so once."""
+    """One poll swaps in the idle state; the announcer says so once.
+
+    The page keeps checking after the send ends, so the next one appears.
+    """
     page.goto(component_origin + PAGE)
     region = page.locator(REGION)
     assert region.get_attribute("data-live-pending") is not None
@@ -59,10 +67,15 @@ def test_the_running_page_follows_the_send_and_announces_only_its_end(
     from playwright.sync_api import expect
 
     # The page polls every 5 s; allow a few polls on a slow engine.
-    expect(page.get_by_text("Finished: no emails remain.")).to_be_visible(timeout=20000)
-    assert region.get_attribute("data-live-pending") is None
-    visible(page.get_by_text("1,100 of 1,100 emails finished (100%)"))
-    assert page.locator(ANNOUNCER).text_content() == "Family email send finished."
+    expect(
+        page.get_by_text("No Family email send is in progress right now")
+    ).to_be_visible(timeout=20000)
+    assert region.get_attribute("data-live-pending") is not None
+    visible(page.get_by_text("Last send: Invitation email"))
+    assert page.get_by_role("progressbar").count() == 0
+    assert (
+        page.locator(ANNOUNCER).text_content() == "No Family email send is in progress."
+    )
     # Technical details stay outside the polled region and survive the swap.
     assert page.locator(REGION + " details").count() == 0
     assert page.locator("details.technical-details").count() == 1
@@ -101,11 +114,14 @@ def test_polls_every_five_seconds_and_announces_only_quarter_changes(
         timeout=10000
     )
     expect(announcer).to_have_text("Family email send in progress, 50% done.")
-    expect(page.get_by_text("Finished: no emails remain.")).to_be_visible(timeout=10000)
-    expect(announcer).to_have_text("Family email send finished.")
-    # A fixed 5-second pace, not the usual 2-second start and back-off.
-    gaps = [later - earlier for earlier, later in pairwise(polls)]
-    assert len(polls) == 3 and all(4.5 <= gap < 8 for gap in gaps), gaps
+    expect(
+        page.get_by_text("No Family email send is in progress right now")
+    ).to_be_visible(timeout=10000)
+    expect(announcer).to_have_text("No Family email send is in progress.")
+    # A fixed 5-second pace, not the usual 2-second start and back-off; it
+    # keeps checking after the send ends.
+    gaps = [later - earlier for earlier, later in pairwise(polls[:3])]
+    assert len(polls) >= 3 and all(4.5 <= gap < 8 for gap in gaps), gaps
 
 
 def test_watching_outlasts_the_old_hour_while_the_send_progresses(

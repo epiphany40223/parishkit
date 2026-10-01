@@ -53,7 +53,8 @@ def status(now, **values):
             "paused": False,
             "send": send,
             "upcoming": False,
-            "follow": send.active,
+            # As the view does: keep checking while there is a campaign.
+            "follow": True,
             "announcement": _announcement(send),
             "poll_interval": POLL_MILLISECONDS,
             "give_up": GIVE_UP_MILLISECONDS,
@@ -101,7 +102,7 @@ def components(context, admin):
                 "paused": False,
                 "send": send,
                 "upcoming": False,
-                "follow": bool(send and send.active),
+                "follow": True,
                 "announcement": _announcement(send),
                 "poll_interval": POLL_MILLISECONDS,
                 "give_up": GIVE_UP_MILLISECONDS,
