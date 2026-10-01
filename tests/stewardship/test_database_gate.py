@@ -171,7 +171,11 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
             "providers": ["configured initial", "complete abort"],
         },
     }
-    step = operational["steps"][-1]
+    (step,) = (
+        item
+        for item in operational["steps"]
+        if item.get("name") == "Validate isolated development and production scenarios"
+    )
     assert step["env"] == {
         "PARISHKIT_RUN_RUNTIME_TESTS": "1",
         "PROVIDER_MODES": "${{ matrix.providers }}",
