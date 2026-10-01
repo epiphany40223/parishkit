@@ -8,8 +8,8 @@ from uuid import uuid4
 import pytest
 from django.db import connection
 
-from parishkit.config import ConfigError
-from parishkit.stewardship.accounts.authority import parse_version
+from parishkit.stewardship import activation_hold
+from parishkit.stewardship.accounts.authority import AuthorityChanging, parse_version
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns import boundaries, boundary_tasks
 from parishkit.stewardship.campaigns.boundary_production import (
@@ -204,8 +204,13 @@ def test_scheduler_handler_has_no_execution_port():
         boundary_handler(scheduler=True).execute(None)
 
 
-def test_post_claim_manifest_mismatch_blocks_boundary_effect(tmp_path):
-    """A selected but unactivated manifest revokes an already claimed task."""
+def test_post_claim_manifest_mismatch_blocks_boundary_effect(tmp_path, monkeypatch):
+    """A selected but unactivated manifest revokes an already claimed task.
+
+    The selection is one activation ahead, so the effect first waits for it
+    (#429); here it never activates, and the wait hands back the hold.
+    """
+    monkeypatch.setattr(activation_hold, "WORKER_HOLD_SECONDS", 0.5)
     store, campaign, actor = draft_campaign(tmp_path)
     with campaign_clock(campaign.active_configuration.starts_at - timedelta(days=1)):
         command(campaign, actor, Action.ACTIVATE)
@@ -226,7 +231,7 @@ def test_post_claim_manifest_mismatch_blocks_boundary_effect(tmp_path):
         candidate = parse_version(document, validate_sections=store.validate_sections)
         store.write_version(candidate)
         store.select(candidate)
-        with maintain_execution(execution), pytest.raises(ConfigError):
+        with maintain_execution(execution), pytest.raises(AuthorityChanging):
             execution.handler.execute(execution)
     campaign.refresh_from_db()
     assert campaign.state == "scheduled"

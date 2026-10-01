@@ -43,6 +43,20 @@ validation/errors, candidate digest, installer checkpoints, and state:
 without changing YAML; a crash after YAML activation leaves the application
 fail-closed until the prepared matching database snapshot is activated.
 
+Even without a crash, applying a request selects the new YAML a moment
+before its database activation commits. While the selected YAML is exactly
+one activation ahead (its predecessor digest is the active database digest,
+and the active version is not the initial-setup bootstrap), authority checks
+report a distinct *activation in progress* rather than a generic mismatch.
+Work that meets it waits briefly and tries again, outside any transaction
+because the activation needs the work-order lock: background tasks for up to
+15 seconds and Admin pages for up to 3. A wait that runs out holds the work
+(never failing it) and logs its limit and elapsed time at WARNING; the
+installer completes the change. An Admin page that still meets it answers its
+ordinary `503` retry response, which is not logged as a server error. Every
+other mismatch still requires recovery. See
+[background holds](../background-processing/spec.md#configuration-activation-holds).
+
 An exceptional end-date/reopen candidate may lose its date eligibility or
 readiness before database activation can succeed. Its dedicated cancellation
 workflow records an immutable `CampaignConfigurationAbort` before restoring

@@ -1,10 +1,14 @@
 """Real Google/session policy protects operational task metadata and passive polls."""
 
+import logging
+import time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from django.test import Client
 
+from parishkit.stewardship import activation_hold
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
@@ -13,6 +17,7 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.phases import TaskPhase
 
 from ..policy_factory import address
+from .activation_builders import activation_window, errors
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -240,6 +245,57 @@ def test_unavailable_status_has_static_retry_error(auth_service, google, monkeyp
     assert response.status_code == 503 and response["Retry-After"] == "5"
     assert b"private-server-value" not in response.content
     assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
+
+
+@pytest.mark.parametrize("status", [False, True])
+def test_poll_in_activation_window_waits_and_answers(
+    auth_service, google, caplog, monkeypatch, status
+):
+    """A poll landing in an applied change's activation still answers (#429)."""
+    waits = []
+    monkeypatch.setattr(
+        activation_hold,
+        "time",
+        SimpleNamespace(
+            monotonic=time.monotonic,
+            sleep=lambda seconds: waits.append(seconds) or time.sleep(seconds),
+        ),
+    )
+    task = new()
+    browser, _ = signed_in()
+    path = (
+        f"/admin/background/task/{task.run_id}/status"
+        if status
+        else "/admin/background/counts"
+    )
+    with (
+        activation_window(auth_service.store, closes_after=0.5),
+        caplog.at_level(logging.INFO),
+    ):
+        response = browser.get(path)
+    assert response.status_code == 200
+    assert waits and not errors(caplog)
+
+
+@pytest.mark.parametrize("status", [False, True])
+def test_poll_through_unfinished_activation_answers_retry_without_error(
+    auth_service, google, caplog, monkeypatch, status
+):
+    """An activation that outlasts the wait gets the pollers' retry, not ERROR."""
+    monkeypatch.setattr(views, "WEB_HOLD_SECONDS", 0.5)
+    task = new()
+    browser, _ = signed_in()
+    path = (
+        f"/admin/background/task/{task.run_id}/status"
+        if status
+        else "/admin/background/counts"
+    )
+    with activation_window(auth_service.store), caplog.at_level(logging.INFO):
+        response = browser.get(path)
+    assert response.status_code == 503 and response["Retry-After"]
+    assert not errors(caplog)
+    # Outside the window the same page answers normally again.
+    assert browser.get(path).status_code == 200
 
 
 def test_detail_missing_identity_and_unsupported_methods_do_not_change_tasks(

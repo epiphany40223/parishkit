@@ -375,9 +375,16 @@ def independent_producer(guard, operation, *args):
     the singleton session is fatal, not a recoverable sub-producer failure.
     Each operation still owns its ordinary domain admission and transaction.
     """
+    from .accounts.authority import AuthorityChanging
+
     guard.check()
     try:
         result = operation(*args)
+    except AuthorityChanging as error:
+        # A configuration change between its YAML selection and database
+        # activation (#429). The next pass, seconds away, runs it again.
+        emit_failure(error, level=logging.WARNING)
+        result = ()
     except Exception as error:
         emit_failure(error)
         result = ()
@@ -606,6 +613,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
     """
     from uuid import uuid4
 
+    from .accounts.authority import AuthorityChanging
     from .consumer_runtime import publish_single_process_receipts
     from .installer_health import publish_heartbeat
     from .jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
@@ -736,6 +744,10 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             )
             try:
                 matching_authority(assembled.store)
+            except AuthorityChanging:
+                # A change is activating (#429): it is not a setup hold, and
+                # the next pass, seconds away, runs the ordinary producers.
+                return (*operational, *finalization)
             except ConfigError:
                 from .accounts.setup_startup import initial_setup_hold
 

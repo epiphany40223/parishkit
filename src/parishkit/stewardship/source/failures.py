@@ -19,6 +19,7 @@ from parishkit.parishsoft_pagination import (
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import InvalidSourceResponse, SourceTransportError
 from parishkit.retry import RetryError, TransientRetryError
+from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.schemas import ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational
@@ -36,7 +37,11 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _bindings
 from .canonical import InvalidSourcePayload
-from .errors import SourceCredentialChanged, SourceScopeChanged
+from .errors import (
+    SourceAuthorityChanging,
+    SourceCredentialChanged,
+    SourceScopeChanged,
+)
 from .leases import SourceLeaseUnavailable, release_source, verify_source
 from .loading import DestructiveSourceChange
 from .models import SourceMutationLease
@@ -92,6 +97,12 @@ def classify_read_failure(error, *, has_source_claim):
     ):
         return ReadFailure(False, False, Event.SOURCE_INVALID)
     if isinstance(error, SourceLeaseUnavailable):
+        return ReadFailure(True, True, Event.SOURCE_HELD)
+    if isinstance(error, (AuthorityChanging, SourceAuthorityChanging)):
+        # A configuration change that did not finish activating while this
+        # read waited for it (#429). It is held like a scope change, but as
+        # contention: an unfinished change is the installer's to complete,
+        # and it must not use up the bounded provider-failure allowance.
         return ReadFailure(True, True, Event.SOURCE_HELD)
     if isinstance(error, SourceScopeChanged):
         return ReadFailure(True, False, Event.SOURCE_HELD)

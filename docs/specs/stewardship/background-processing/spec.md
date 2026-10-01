@@ -196,6 +196,19 @@ instants before Production readiness. The timezone cannot change once the
 campaign is scheduled, so live and historical occurrences are never rebucketed
 or recomputed because the Parish default changes.
 
+### Configuration activation holds
+
+A task that meets a configuration
+[activation in progress](../data/spec.md#parish-and-integrations) waits it
+out at claim, at each effect's admission, at each transition and at recovery,
+then continues; its lease renewal retries within seconds instead of stopping
+the run. If the wait runs out, a task not yet claimed stays waiting for the
+next hint, a ParishSoft refresh settles as a held retry
+(`source_refresh_held`) that does not use up its provider-failure retry
+allowance, and any other running task recovers through its lease as usual.
+The consumer and the scheduler's producers log the hold at WARNING, never as
+an ERROR task failure.
+
 ### Worker queues and processes
 
 Each consumer process executes one message at a time. The `worker` container

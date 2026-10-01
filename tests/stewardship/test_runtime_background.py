@@ -396,7 +396,10 @@ def test_mail_authority_requires_exact_document_and_stable_pointer(monkeypatch, 
     identifier, digest = uuid4(), "a" * 64
     document = {"synthetic": "public configuration"}
     selected = SimpleNamespace(
-        version_id=identifier, digest=digest, document=lambda: document
+        version_id=identifier,
+        digest=digest,
+        predecessor_digest=None,
+        document=lambda: document,
     )
     projection = SimpleNamespace(digest=digest, canonical_document=document)
     runtime = SimpleNamespace(

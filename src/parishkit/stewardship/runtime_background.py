@@ -27,17 +27,38 @@ class BackgroundRuntime:
 
 
 def matching_authority(store):
-    """Every queue pass/effect holds when YAML selection and SQL truth disagree."""
+    """Every queue pass/effect holds when YAML selection and SQL truth disagree.
+
+    A selection exactly one activation ahead of SQL raises AuthorityChanging
+    (#429): the installer is between selecting the YAML and committing the
+    database pointer, so callers may wait briefly instead of failing.
+    """
+    from .accounts.authority import authority_mismatch
     from .accounts.runtime_models import SystemConfiguration
 
     selected = store.active()
-    actual = SystemConfiguration.objects.values_list(
-        "active_configuration_id", "active_configuration__digest"
+    row = SystemConfiguration.objects.values_list(
+        "active_configuration_id",
+        "active_configuration__digest",
+        "active_configuration__validation_schema",
     ).first()
+    actual = None if row is None else row[:2]
+    active = {
+        "active_digest": None if row is None else row[1],
+        "active_schema": None if row is None else row[2],
+    }
     if selected is None or actual != (selected.version_id, selected.digest):
-        raise ConfigError("Background configuration requires recovery.")
+        raise authority_mismatch(
+            selected, message="Background configuration requires recovery.", **active
+        )
     if store.manifest_reference() != actual:
-        raise ConfigError("Background configuration changed during admission.")
+        # The manifest moved after the first read: usually that same
+        # activation starting. Judge the new selection the same way.
+        raise authority_mismatch(
+            store.active(),
+            message="Background configuration changed during admission.",
+            **active,
+        )
 
 
 def mail_authority(store):
@@ -47,6 +68,7 @@ def mail_authority(store):
     parish projection rows. Compare the validated YAML document with the frozen
     SQL document and pointer instead of expanding its database read authority.
     """
+    from .accounts.authority import authority_mismatch
     from .accounts.runtime_models import SystemConfiguration
 
     selected = store.active()
@@ -59,7 +81,13 @@ def mail_authority(store):
         or runtime.active_configuration.canonical_document != selected.document()
         or store.manifest_reference() != (selected.version_id, selected.digest)
     ):
-        raise ConfigError("Mail configuration requires recovery.")
+        active = getattr(runtime, "active_configuration", None)
+        raise authority_mismatch(
+            selected,
+            getattr(active, "digest", None),
+            "Mail configuration requires recovery.",
+            active_schema=getattr(active, "validation_schema", None),
+        )
     return runtime
 
 
