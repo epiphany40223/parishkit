@@ -42,6 +42,45 @@ _SECTIONS = frozenset(
 )
 
 
+class AuthorityChanging(ConfigError):
+    """The selected YAML is exactly one activation ahead of the database.
+
+    ``apply_version`` selects the new YAML manifest and then, in a separate
+    transaction, activates the matching database snapshot. For about a second
+    between the two, every authority check sees a mismatch. That interval is
+    an ordinary configuration change in progress, not damage: callers may hold
+    their work briefly and try again (#429). Every other mismatch remains a
+    plain ConfigError that requires recovery.
+    """
+
+
+def authority_mismatch(selected, active_digest, message, *, active_schema=None):
+    """Build the error for a YAML/database mismatch, naming a pending activation.
+
+    ``selected`` is the selected ConfigurationVersion (or None) and
+    ``active_digest`` and ``active_schema`` the database's active digest and
+    validation schema (or None). Only a YAML selection whose predecessor is
+    exactly the database's active version is an activation in progress;
+    anything else (a skipped or rolled-back version, a missing side) still
+    needs recovery.
+
+    Initial setup is the exception. Its candidate stays selected over the
+    bootstrap configuration for the whole final ParishSoft load, by design,
+    so a mismatch over the bootstrap is the setup hold, not a brief change.
+    """
+    from .bootstrap_schema import BOOTSTRAP_SCHEMA
+
+    if (
+        selected is not None
+        and active_digest is not None
+        and active_schema != BOOTSTRAP_SCHEMA
+        and selected.digest != active_digest
+        and selected.predecessor_digest == active_digest
+    ):
+        return AuthorityChanging(message)
+    return ConfigError(message)
+
+
 def _uuid(value: object) -> str:
     """Require an explicitly serialized stable UUID, never generate one on load."""
     if type(value) is not str:

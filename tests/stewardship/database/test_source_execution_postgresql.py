@@ -1,5 +1,8 @@
 """Exercise the compiled handler through real hints, SQL and private HTTP fences."""
 
+import json
+import logging
+from contextlib import ExitStack
 from uuid import UUID, uuid4
 
 import pytest
@@ -7,6 +10,7 @@ from django.db import connection, connections
 
 from parishkit import parishsoft_transport
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
+from parishkit.stewardship import activation_hold
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.jobs.dispatch import claim_hint, execute_hint
@@ -14,6 +18,7 @@ from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scanning import collect_hints
+from parishkit.stewardship.runtime_background import bind_authority
 from parishkit.stewardship.source import execution as worker
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.execution import refresh_handler
@@ -33,6 +38,7 @@ from parishkit.stewardship.source.refresh_models import SourceRefreshFallback
 from parishkit.stewardship.source.requests import TASK_TYPE
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .activation_builders import activation_window, errors, recorded_holds
 from .campaign_builders import add_draft
 from .credential_builders import keys
 from .source_builders import running_source_task
@@ -386,3 +392,68 @@ def test_successful_new_owner_retires_but_never_reuses_old_staging(
     current = SourceCurrent.objects.get().snapshot
     assert current.pk != prior.pk and current.source_fence > prior.source_fence
     assert TaskRun.objects.get(pk=receipt.task_root_id).state == "succeeded"
+
+
+def window_provider(monkeypatch, store, *, closes_after):
+    """Fake the provider, opening an activation window at its first request.
+
+    The window opens while the read is in flight, so the next request's
+    preflight, the staging effects and the transitions all meet it (#429).
+    """
+    remaining, calls = list(pages()), []
+    window = ExitStack()
+
+    def exchange(payload, **kwargs):
+        """Answer from the synthetic pages; the first answer opens the window."""
+        if not calls:
+            window.enter_context(activation_window(store, closes_after=closes_after))
+        calls.append(json.loads(payload)["url"])
+        return b"200\n" + json.dumps(remaining.pop(0)).encode()
+
+    monkeypatch.setattr(parishsoft_transport, "_exchange", exchange)
+    return window, remaining
+
+
+def test_refresh_in_activation_window_waits_and_succeeds(tmp_path, monkeypatch, caplog):
+    """A settings change mid-refresh no longer strands the run (#429)."""
+    credential, store, *_ = configured(tmp_path)
+    compiled = bind_authority(
+        {TASK_TYPE: handler(tmp_path, credential, reconcile=permit)}, store
+    )[TASK_TYPE]
+    receipt = command()
+    holds = recorded_holds(monkeypatch)
+    window, remaining = window_provider(monkeypatch, store, closes_after=0.5)
+    with window, caplog.at_level(logging.INFO):
+        assert run(receipt, compiled)
+    assert not remaining and SourceSnapshot.objects.get().state == "promoted"
+    task = TaskRun.objects.get(pk=receipt.task_root_id)
+    assert task.state == "succeeded" and task.attempt == 1
+    assert holds and not errors(caplog)
+
+
+def test_refresh_held_by_unfinished_activation_retries_without_error(
+    tmp_path, monkeypatch, caplog
+):
+    """A window that outlasts the wait settles as a held retry, not a failure."""
+    monkeypatch.setattr(activation_hold, "WORKER_HOLD_SECONDS", 0.5)
+    credential, store, *_ = configured(tmp_path)
+    compiled = bind_authority(
+        {TASK_TYPE: handler(tmp_path, credential, reconcile=permit)}, store
+    )[TASK_TYPE]
+    receipt = command()
+    window, _ = window_provider(monkeypatch, store, closes_after=None)
+    with window, caplog.at_level(logging.INFO):
+        assert run(receipt, compiled)
+    task = TaskRun.objects.get(pk=receipt.task_root_id)
+    assert task.state == "retry_wait" and task.lease_expires_at is None
+    assert SourceSnapshot.objects.get().state == "rejected"
+    assert SourceMutationLease.objects.get().owner_id is None
+    held = OperationalLog.objects.get(event="source_refresh_held")
+    assert held.level == "INFO"
+    assert not errors(caplog)
+    # The give-up names its limit and elapsed time (timeout-logging rule).
+    assert any(
+        record.msg == "task_timed_out"
+        and getattr(record, "extra", {}).get("timeout") == "configuration_activation"
+        for record in caplog.records
+    )

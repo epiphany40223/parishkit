@@ -17,13 +17,16 @@ from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import runtime
+from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_activation
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.request_scope import ACTIVATION_HOLD
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -245,8 +248,36 @@ def _detail(identifier, window, sort, instant):
     }, len(events)
 
 
+def _held(step):
+    """Run a read, waiting out a configuration change that is activating.
+
+    The header counts and an open task page poll every few seconds, so they
+    regularly land in the second between an applied change's YAML selection
+    and its database activation (#429). Each read is retried briefly; one
+    that still meets the change answers the pollers' ordinary 503, which
+    they retry. That response is marked as the hold's own, so the request
+    scope keeps it out of the ERROR log; the wait logged a WARNING. A stuck
+    activation (no installer running) is an ordinary ConfigError and 503.
+    """
+    try:
+        return wait_out_activation(step, limit=WEB_HOLD_SECONDS, durable=False)
+    except AuthorityChanging:
+        response = _error(ErrorCode.UNAVAILABLE, 503)
+        setattr(response, ACTIVATION_HOLD, True)
+        return response
+    except ConfigError:
+        return _error(ErrorCode.UNAVAILABLE, 503)
+
+
 def _read(request, identifier=None, *, counts_only=False, audit=True):
     """Recheck current Admin authority; automatic polls never renew idle activity."""
+    return _held(
+        lambda: _read_once(request, identifier, counts_only=counts_only, audit=audit)
+    )
+
+
+def _read_once(request, identifier, *, counts_only, audit):
+    """Read once; see _read. An activation in progress propagates to _held."""
     try:
         service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=False)
@@ -295,6 +326,8 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
             response.stewardship_read_identity = current.identity
             response.stewardship_read_count = count
             return response
+    except AuthorityChanging:
+        raise
     except (ConfigError, LimiterUnavailable, DatabaseError, ValueError, TypeError):
         return _error(ErrorCode.UNAVAILABLE, 503)
 
@@ -307,6 +340,11 @@ def _finish_html(request, result, response, identifier=None, *, audit=True):
     audited: a watched task would otherwise add a background_viewed row
     every few seconds for up to an hour.
     """
+    return _held(lambda: _finish_once(request, result, response, identifier, audit))
+
+
+def _finish_once(request, result, response, identifier, audit):
+    """Recheck and audit once; see _finish_html."""
     try:
         service = runtime()
         with transaction.atomic():
@@ -329,6 +367,8 @@ def _finish_html(request, result, response, identifier=None, *, audit=True):
                 )
         response["Cache-Control"] = "no-store"
         return response
+    except AuthorityChanging:
+        raise
     except (ConfigError, LimiterUnavailable, DatabaseError, ValueError, TypeError):
         return _error(ErrorCode.UNAVAILABLE, 503)
 

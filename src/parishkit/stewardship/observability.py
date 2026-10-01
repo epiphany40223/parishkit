@@ -126,7 +126,9 @@ DRIVE_FAILURES = frozenset(
 # ``timeout_log_slot``: a timeout entry that gave up waiting for its
 # process's one timeout-log connection (audit.timeouts). And
 # ``family_sweep_budget``: the scheduler's Family schedule sweep ended a page
-# at its time budget (pacing only; it resumes on the next loop, #394).
+# at its time budget (pacing only; it resumes on the next loop, #394). And
+# ``configuration_activation``: work that stopped waiting for a configuration
+# change to finish activating (activation_hold, #429).
 TIMEOUT_LIMITS = frozenset(
     {
         "drive_copy_budget",
@@ -148,6 +150,7 @@ TIMEOUT_LIMITS = frozenset(
         "web_heartbeat",
         "timeout_log_slot",
         "family_sweep_budget",
+        "configuration_activation",
     }
 )
 

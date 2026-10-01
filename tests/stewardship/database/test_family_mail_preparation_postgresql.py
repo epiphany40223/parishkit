@@ -1,5 +1,6 @@
 """Real scheduler/worker preparation, without provider credentials or mail sends."""
 
+import logging
 from dataclasses import replace
 from uuid import uuid4
 
@@ -32,9 +33,11 @@ from parishkit.stewardship.jobs.outbox_validation import (
 )
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.runtime_background import bind_authority
 
 from ..content_factory import content
 from . import campaign_builders
+from .activation_builders import activation_window, errors, recorded_holds
 from .campaign_builders import campaign_clock, change, complete_empty_catchup
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
@@ -178,6 +181,34 @@ def test_real_restricted_worker_prepares_one_redacted_message(family_mail, produ
         private=family_mail.rings.private,
     )
     assert reference.code == family_mail.code
+
+
+def test_preparation_in_activation_window_waits_and_succeeds(
+    family_mail, caplog, monkeypatch
+):
+    """A settings change mid-preparation is a brief hold, not a failure (#429).
+
+    The window opens after the claim, so the preparation effect and its
+    completing transition both meet it and wait for the activation.
+    """
+    due = ScheduleDefinition.objects.get().current_revision.due_at
+    store = family_mail.service.store
+    holds = recorded_holds(monkeypatch)
+    with campaign_clock(due):
+        ticket = allocate()
+        owner = bind_authority({TASK_TYPE: handler(family_mail)}, store)[TASK_TYPE]
+        with task_login(ServiceRole.WORKER, exact=True):
+            execution = claim(ticket, owner)
+            with (
+                activation_window(store, closes_after=0.5),
+                caplog.at_level(logging.INFO),
+                maintain_execution(execution),
+            ):
+                owner.execute(execution)
+    task = TaskRun.objects.get(pk=ticket.task_id)
+    assert task.state == "succeeded" and task.attempt == 1
+    assert OutboxMessage.objects.count() == 1
+    assert holds and not errors(caplog)
 
 
 def test_mail_source_is_current_and_household_scoped(response_service):

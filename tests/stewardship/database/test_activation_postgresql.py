@@ -812,3 +812,25 @@ def test_unlocked_materializer_and_unconfigured_coherence_fail_closed(tmp_path):
     with pytest.raises(ConfigError):
         installer.coherent_configuration(store)
     assert not AppliedConfigurationVersion.objects.exists()
+
+
+@pytest.mark.parametrize("ahead", [1, 2])
+def test_authority_checks_name_only_a_one_step_activation(initialized, ahead):
+    """coherent_configuration and mail_authority map the window (#429)."""
+    from parishkit.stewardship.accounts.authority import (
+        AuthorityChanging,
+        parse_version,
+    )
+    from parishkit.stewardship.runtime_background import mail_authority
+
+    store, root, _ = initialized
+    previous = root
+    for _ in range(ahead):
+        document = successor_document(previous)
+        previous = parse_version(document, validate_sections=store.validate_sections)
+        store.write_version(previous)
+    store.select(previous)
+    for check in (installer.coherent_configuration, mail_authority):
+        with pytest.raises(ConfigError, match="recovery") as caught:
+            check(store)
+        assert isinstance(caught.value, AuthorityChanging) is (ahead == 1)

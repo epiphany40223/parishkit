@@ -6,6 +6,7 @@ the isolated runtime must first validate mounts, database grants and secrets.
 """
 
 import functools
+import logging
 import os
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from kombu import Exchange, Queue
 from kombu.exceptions import OperationalError
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.deployment import ServiceRole, ValkeyConfiguration, _host
 from parishkit.stewardship.observability import emit_failure
 
@@ -194,6 +196,12 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
                     stop=stop,
                     queues=consumed,
                 )
+            except AuthorityChanging as error:
+                # A configuration change still activating after the dispatcher
+                # waited for it (#429; its timeout line is already logged):
+                # the task holds. An unclaimed task is hinted again; a claimed
+                # one recovers through its lease like any interrupted run.
+                emit_failure(error, level=logging.WARNING)
             except Exception as error:
                 emit_failure(error)
                 record_sql_timeout(error, args)

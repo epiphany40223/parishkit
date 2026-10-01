@@ -7,6 +7,7 @@ and domain admission still protect each durable effect. A stopped worker may
 finish its current safe unit, but must not start another external operation.
 """
 
+import logging
 from contextlib import contextmanager
 from threading import Event, RLock, Thread
 from time import monotonic
@@ -19,6 +20,10 @@ from parishkit.stewardship.observability import emit_failure
 # Do not infer continuing ownership from a previously observed lease deadline;
 # the durable bounded retry/reconciliation workflow owns recovery instead.
 PULSE_SECONDS = 20
+# A renewal that met a configuration activation in progress (#429) tries
+# again this soon instead of a full pulse later. An activation takes about a
+# second, well inside the 60-second lease.
+ACTIVATION_RETRY_SECONDS = 2
 # This is a process-drain budget, not a promise that multiple independently
 # timed SQL statements finish within one statement timeout. Exhaustion must
 # terminate the consumer rather than let a lingering renewer overlap new work.
@@ -114,18 +119,36 @@ def renew_once(execution):
 
 
 def _renewal_loop(execution, done):
-    """One disposable SQL connection per pulse; no global settings are mutated."""
+    """One disposable SQL connection per pulse; no global settings are mutated.
+
+    A renewal that meets a configuration activation in progress (#429) is
+    not a lost lease: the lease still has most of its time left, so the loop
+    tries again shortly. A mismatch that outlasts the lease ends in ordinary
+    lease expiry and its recorded recovery.
+    """
+    from parishkit.stewardship.accounts.authority import AuthorityChanging
+
     previous = connection.settings_dict
     connection.settings_dict = {
         **previous,
         "OPTIONS": {**previous.get("OPTIONS", {}), "connect_timeout": 3},
     }
     started = None
+    pause = PULSE_SECONDS
     try:
-        while not done.wait(PULSE_SECONDS):
+        while not done.wait(pause):
             started = monotonic()
+            pause = PULSE_SECONDS
             try:
                 renew_once(execution)
+            except AuthorityChanging:
+                # Kept at DEBUG: a lost-lease investigation can see that a
+                # renewal met an activation, without a line per settings edit.
+                logging.getLogger("parishkit.stewardship.debug").debug(
+                    "lease renewal met a configuration activation; retrying"
+                )
+                pause = ACTIVATION_RETRY_SECONDS
+                continue
             finally:
                 connections.close_all()
             if execution.control.finished.is_set():

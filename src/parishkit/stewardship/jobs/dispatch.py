@@ -8,7 +8,7 @@ its actual domain gates and completion/recovery evidence under TaskRun locks.
 
 import time
 from collections.abc import Callable
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from threading import Event, Lock
 from uuid import UUID
@@ -16,6 +16,8 @@ from uuid import UUID
 from django.db import OperationalError, connection, transaction
 from django.db.models import DateTimeField, Func, Q
 
+from parishkit.stewardship.accounts.authority import AuthorityChanging
+from parishkit.stewardship.activation_hold import wait_out_activation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .lifetime import ExecutionControl, maintain_execution, maintain_source
@@ -210,37 +212,67 @@ class Execution:
         Handlers compose source/fact/domain storage inside this scope. No provider
         call belongs here. Each compiled scope must be reentrant and acquire its
         gate before TaskRun; the empty default is only for unrelated task domains.
+        Admission waits out a configuration activation in progress (#429); the
+        effect itself runs once, after admission.
         """
-        with self.control.lock:
+        # The lock is taken first: each context is entered before the next
+        # one's expression is evaluated.
+        with (
+            self.control.lock,
+            wait_out_activation(self._admitted_effect, task_id=self.claim.run_id),
+        ):
+            yield
+
+    def _admitted_effect(self):
+        """Open the scope and transaction and admit one effect, or undo both.
+
+        Returns the open scope and transaction as an ExitStack for the caller's
+        ``with``. A refusal rolls the transaction back before it propagates, so
+        the attempt can be repeated with nothing held.
+        """
+        with ExitStack() as stack:
             self.control.check()
-            with self.handler.scope(), transaction.atomic():
-                row = lock_task_claim(self.claim)
-                if self.handler.admit("effect", _status(row)) is not True:
-                    raise PermissionError("This task effect is not admitted.")
-                yield
+            stack.enter_context(self.handler.scope())
+            stack.enter_context(transaction.atomic())
+            row = lock_task_claim(self.claim)
+            if self.handler.admit("effect", _status(row)) is not True:
+                raise PermissionError("This task effect is not admitted.")
+            return stack.pop_all()
 
     def transition(self, action, **options):
-        """Recheck ownership and owning evidence before any execution transition."""
+        """Recheck ownership and owning evidence before any execution transition.
+
+        A transition outside any transaction waits out a configuration
+        activation in progress (#429) and then applies once.
+        """
         self.skips.ended()
         with self.control.lock:
-            self.control.check(allow_drain=True)
-            with self.handler.scope(), transaction.atomic():
-                row = lock_task_claim(self.claim)
-                result = change_run(
-                    run_id=row.pk,
-                    expected_version=row.version,
-                    action=action,
-                    actor_id=self.claim.worker_id,
-                    correlation_id=self.correlation_id,
-                    fence=self.claim.fence,
-                    admit=self.handler.admit,
-                    **options,
-                )
-                if self.handler.after_transition is not None:
-                    self.handler.after_transition(action, result)
+            result = wait_out_activation(
+                lambda: self._transition_once(action, options),
+                task_id=self.claim.run_id,
+            )
             if result.state != "running":
                 self.control.finished.set()
             return result
+
+    def _transition_once(self, action, options):
+        """Apply one transition in its own transaction, under the owning scope."""
+        self.control.check(allow_drain=True)
+        with self.handler.scope(), transaction.atomic():
+            row = lock_task_claim(self.claim)
+            result = change_run(
+                run_id=row.pk,
+                expected_version=row.version,
+                action=action,
+                actor_id=self.claim.worker_id,
+                correlation_id=self.correlation_id,
+                fence=self.claim.fence,
+                admit=self.handler.admit,
+                **options,
+            )
+            if self.handler.after_transition is not None:
+                self.handler.after_transition(action, result)
+        return result
 
     def check_inflight(self):
         """Observe an already-started external unit while allowing graceful drain.
@@ -263,7 +295,9 @@ class Execution:
 
         Returns True when ownership was verified in SQL, and False when a
         limit skipped the tick, so a caller that spaces out its checks does
-        not count a skipped one as verified.
+        not count a skipped one as verified. A configuration activation in
+        progress (#429) also returns False: the tick proves nothing, and the
+        next one (or the next transition) checks again once it commits.
         """
         if connection.in_atomic_block:
             # The transaction-local limits below would leak into the caller's
@@ -291,6 +325,8 @@ class Execution:
                     with self.handler.scope(), transaction.atomic():
                         row = lock_task_claim(self.claim)
                         admitted = self.handler.admit("effect", _status(row))
+            except AuthorityChanging:
+                return False
             except OperationalError as error:
                 what = _LIMIT_STOPS.get(getattr(error.__cause__, "sqlstate", None))
                 if what is None:
@@ -371,7 +407,11 @@ def execute_hint(run_id, *, queue, worker_id, handlers, stop=None):
         )
     if stop is not None and stop.is_set():
         return False
-    execution = claim_hint(run_id, queue=queue, worker_id=worker_id, handlers=handlers)
+    # The claim is one transaction; it waits out an activation in progress.
+    execution = wait_out_activation(
+        lambda: claim_hint(run_id, queue=queue, worker_id=worker_id, handlers=handlers),
+        task_id=run_id,
+    )
     if execution is None:
         return False
     from parishkit.stewardship.observability import task_scope
@@ -391,7 +431,19 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
     domains needing external evidence schedule their separate reconciliation.
     After recovery the ordinary scheduler supplies a new execution hint when
     due; this function never performs an external action or skips retry delay.
+    The whole pass is one transaction, so it waits out a configuration
+    activation in progress (#429) and runs again.
     """
+    return wait_out_activation(
+        lambda: _recover_once(
+            run_id, queue=queue, worker_id=worker_id, handlers=handlers
+        ),
+        task_id=run_id,
+    )
+
+
+def _recover_once(run_id, *, queue, worker_id, handlers):
+    """Apply one recovery pass; see recover_hint."""
     if not isinstance(run_id, UUID) or not isinstance(worker_id, UUID):
         raise ValueError("Task hints and worker identities must be canonical UUIDs.")
     if not isinstance(queue, WorkQueue):

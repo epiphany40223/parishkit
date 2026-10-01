@@ -242,6 +242,9 @@ TIMEOUT_KINDS = frozenset(
         # to the master past its timeout (#374; web_supervisor).
         "web_drain",
         "web_heartbeat",
+        # Background work that stopped waiting for a configuration change
+        # to finish activating (#429; activation_hold).
+        "configuration_activation",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;

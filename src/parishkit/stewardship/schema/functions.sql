@@ -5600,7 +5600,7 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('read_guard','lease','retention_budget','drive_copy_budget',
                 'drive_retry_budget','drive_request','drive_probe_wait',
                 'statement_timeout','lock_timeout','transaction_timeout','mail_helper','source_helper','provider_check',
-                'renewal_drain','control_lock','web_drain','web_heartbeat') THEN RETURN false; END IF;
+                'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation') THEN RETURN false; END IF;
         ELSIF key='helper' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('readiness_delivery_worker','readiness_notification_worker',
                 'family_delivery_worker','digest_delivery_worker','weekly_delivery_worker','operational_mail_worker',

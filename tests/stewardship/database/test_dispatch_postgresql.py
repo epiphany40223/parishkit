@@ -478,3 +478,105 @@ def test_hint_for_unclaimable_task_returns_before_the_handler_scope():
     assert not recover_hint(expired.run_id, **options)
     assert entered
     assert TaskRun.objects.get(pk=expired.run_id).state == "abandoned"
+
+
+def window_admit(store, calls):
+    """The real bound authority check in front of an always-admitting domain."""
+    from parishkit.stewardship.runtime_background import matching_authority
+
+    def admit(*args):
+        """Count each admission, then check the live YAML/SQL authority."""
+        calls.append(args[0])
+        matching_authority(store)
+        return True
+
+    return admit
+
+
+@pytest.fixture
+def configured_store(tmp_path):
+    """A real applied configuration for the bound authority check."""
+    from parishkit.stewardship.accounts.authority import AuthorityStore
+    from parishkit.stewardship.accounts.configuration_installation import (
+        prepare_initial_configuration,
+    )
+    from parishkit.stewardship.accounts.configuration_schema import validate_sections
+
+    from ..configuration_factory import configuration_version
+
+    store = AuthorityStore(tmp_path, validate_sections)
+    prepare_initial_configuration(
+        store,
+        configuration_version(),
+        testing_recipient="testing@example.org",
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+    )
+    return store
+
+
+def test_claim_and_recovery_wait_out_an_activation(configured_store):
+    """A hint or recovery pass in the window waits and proceeds (#429)."""
+    from .activation_builders import activation_window
+
+    store, calls = configured_store, []
+    task = queued()
+    handler = Handler(
+        WorkQueue.GENERAL,
+        window_admit(store, calls),
+        lambda context: context.transition("complete"),
+    )
+    arguments = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    with activation_window(store, closes_after=0.5):
+        assert execute_hint(task.run_id, **arguments)
+    assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
+    assert calls.count("claim") > 1
+    task, calls[:] = expired_task(), []
+    handler = Handler(
+        WorkQueue.GENERAL,
+        window_admit(store, calls),
+        lambda context: None,
+        recover=lambda status: RecoveryPlan("recovery_retry", 30),
+    )
+    arguments["handlers"] = {"dispatch_probe": handler}
+    with activation_window(store, closes_after=0.5):
+        assert recover_hint(task.run_id, **arguments)
+    assert TaskRun.objects.get(pk=task.run_id).state == "retry_wait"
+    assert calls.count("lease_expired") > 1
+
+
+def test_inflight_check_in_the_window_is_unverified(configured_store):
+    """A real bound in-flight check counts the window's tick as unverified."""
+    from .activation_builders import activation_window
+
+    store, seen = configured_store, []
+    task = queued()
+
+    def execute(context):
+        """Check once inside the window and once after it closes."""
+        with activation_window(store):
+            seen.append(context.check_inflight())
+        seen.append(context.check_inflight())
+        context.transition("complete")
+
+    handler = Handler(WorkQueue.GENERAL, window_admit(store, []), execute)
+    assert execute_hint(
+        task.run_id,
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={"dispatch_probe": handler},
+    )
+    assert seen == [False, True]
+
+
+def test_installation_running_reads_the_installer_lock():
+    """The stuck-activation check sees the installer's session lock."""
+    from parishkit.stewardship.accounts.installation_lock import installation_lock
+    from parishkit.stewardship.activation_hold import installation_running
+
+    assert not installation_running()
+    with installation_lock():
+        assert installation_running()
+    assert not installation_running()

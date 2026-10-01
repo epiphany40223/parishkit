@@ -24,7 +24,7 @@ from parishkit.stewardship.campaigns.work_locks import lock_current_campaign_exp
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .authority import apply_version, recover_active
+from .authority import apply_version, authority_mismatch, recover_active
 from .configuration_errors import (
     ConfigurationHistoryInvalid,
     ConfigurationReadinessUnavailable,
@@ -720,7 +720,15 @@ def coherent_configuration(store):
         or runtime is None
         or runtime.active_configuration_id != selected.version_id
     ):
-        raise ConfigError("Configuration is incomplete or requires recovery.")
+        # A selection one activation ahead is a change in progress (#429);
+        # only then is the active digest read, so the common path is unchanged.
+        active = None if runtime is None else runtime.active_configuration
+        raise authority_mismatch(
+            selected,
+            getattr(active, "digest", None),
+            "Configuration is incomplete or requires recovery.",
+            active_schema=getattr(active, "validation_schema", None),
+        )
     # Within one web request, the immutable corpus of an unchanged selection is
     # verified once (request_scope). The live selection above and the second
     # manifest read below still run on every call.
