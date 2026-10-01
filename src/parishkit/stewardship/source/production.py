@@ -1,8 +1,9 @@
 """Materialize bounded read-only refresh slots under the actual scheduler session."""
 
+import logging
 from uuid import UUID
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Q
 
 from parishkit.stewardship.accounts.configuration_models import (
@@ -16,12 +17,14 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scanning import ScanCursor
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
+from parishkit.stewardship.observability import Event, correlation, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .cadence import due_slots
 from .outcomes import scope_fingerprint
 from .refresh_models import SourceRefreshTick
 from .requests import TASK_TYPE, _organization, _receipt, _window, request_refresh
+from .send_hold import delta_held
 from .superseding import cancel_superseded_refresh
 
 
@@ -34,13 +37,15 @@ class SourceProducer:
             raise TypeError("A scheduler worker UUID is required.")
         self.worker_id = worker_id
         self.cursor = None
+        # Delta slots already logged as skipped, so each is logged once.
+        self.skipped = set()
 
     def __call__(self, guard):
         """Retire a bounded stale page before producing current-scope cadence slots."""
         _, self.cursor = sweep_superseded_refreshes(
             guard, worker_id=self.worker_id, cursor=self.cursor
         )
-        return produce_refreshes(guard)
+        return produce_refreshes(guard, skipped=self.skipped)
 
 
 def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
@@ -76,18 +81,29 @@ def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
     return cancelled, position
 
 
-def produce_refreshes(guard):
+def produce_refreshes(guard, *, skipped=None):
     """Create at most two current slots, without network or a new SQL connection.
 
     The scheduler retains its pinned session throughout. Restore/purge and absent
     configuration are holds, not consumed slots. Each cadence command and its
     provenance commit atomically; a lost insertion hint is recovered by the
     ordinary Task scanner. Existing slots never retry terminal work implicitly.
+
+    While a bulk Family send is in progress a not yet created delta slot is
+    skipped (``send_hold``): like a hold, it records nothing, so it is not a
+    failure, and every later loop decides again. The first loop after the send
+    creates the current slot's delta, which catches up. ``skipped`` holds the
+    slot keys already logged, so each skipped slot logs one INFO line.
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Refresh production requires actual scheduler ownership.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Refresh production must own its slot transaction.")
+    guard.check()
+    # Decide before joining the work-order lock: a send is what saturates it,
+    # and this read takes no lock, so the lock is not held any longer for it.
+    with transaction.atomic():
+        held = delta_held(database_now())
     guard.check()
     with work_transaction():
         campaign_id = SystemConfiguration.objects.values_list(
@@ -128,6 +144,9 @@ def produce_refreshes(guard):
             if previous is not None:
                 result.append(_receipt(previous.command))
                 continue
+            if held and slot.cause == "delta":
+                _log_skip(slot, skipped)
+                continue
 
             def authorize(current):
                 """Recheck exact applied inputs while retaining the same work order."""
@@ -157,3 +176,24 @@ def produce_refreshes(guard):
             result.append(receipt)
         guard.check()
     return tuple(result)
+
+
+def _log_skip(slot, skipped):
+    """Log a skipped delta slot once, under its slot's command identity.
+
+    The reviewed process log carries no free text, so the INFO line is
+    ``source_refresh_held`` correlated to the slot's would-be command; with
+    debug logging on, a DEBUG line says why and when the slot fell due.
+    """
+    if skipped is not None:
+        if slot.slot_key in skipped:
+            return
+        # Only the current slot can be skipped again; forget older ones.
+        skipped.clear()
+        skipped.add(slot.slot_key)
+    with correlation(slot.command_id):
+        emit(Event.SOURCE_HELD, level=logging.INFO)
+        logging.getLogger("parishkit.stewardship.debug").debug(
+            "15-minute ParishSoft update due %s skipped: a Family send is in progress",
+            slot.due_at.isoformat(),
+        )
