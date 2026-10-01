@@ -629,7 +629,12 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
                     f" due not started {due['Execution Time']:.2f} ms"
                 )
 
-        # A reminder that fell due later takes over the panel.
+        # A reminder that fell due later takes over the panel while both are
+        # in progress (the invitation still has 475 remaining): the rule is
+        # the in-progress send that fell due most recently. The copied
+        # reminder shares the invitation's revision, and so its due time;
+        # on that tie the send whose occurrences fell due last (the
+        # reminder's, two minutes ago) goes first.
         columns = [field.column for field in ScheduleDefinition._meta.concrete_fields]
         overrides = {"id": "md5('pk413-reminder')::uuid", "kind": "'reminder'"}
         with connection.cursor() as cursor:

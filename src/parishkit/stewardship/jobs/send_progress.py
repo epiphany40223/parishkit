@@ -70,11 +70,14 @@ UPCOMING = timedelta(hours=1)
 UNREACHABLE_REASONS = ("no_deliverable_recipient", "family_ineligible")
 
 # The send whose occurrences fell due most recently: its definition, kind,
-# revision and due time.
+# revision and that revision's due time. ``read_send`` orders every send by
+# its revision's due time, so this one is compared with the due sends on the
+# same footing (planning gives each occurrence its revision's due time).
 _LATEST_SEND = (
-    "SELECT o.definition_id, d.kind, o.revision_id, o.due_at "
+    "SELECT o.definition_id, d.kind, o.revision_id, r.due_at "
     "FROM stewardship_schedule_definition d "
     "JOIN stewardship_schedule_occurrence o ON o.definition_id=d.id "
+    "JOIN stewardship_schedule_revision r ON r.id=o.revision_id "
     "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder') "
     "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
     "ORDER BY o.due_at DESC, o.created_at DESC, o.id DESC LIMIT 1"
@@ -362,7 +365,8 @@ def read_send(campaign_id, mode, cycle, now):
         ]
         if latest is not None:
             sends.append(latest)
-        # Newest due first; on a tie the send already under way goes first.
+        # Newest due first; on a tie the send whose occurrences fell due most
+        # recently goes first.
         sends.sort(key=lambda send: (send[3], send is latest), reverse=True)
         last = None
         for definition, kind, revision, _ in sends:
