@@ -37,8 +37,21 @@ WITH selected AS MATERIALIZED (
 ), scoped AS MATERIALIZED (
     -- Widen before filtering, as the Ministry report does, so an unsupported
     -- configured ID cannot become an outage through predicate reordering.
-    SELECT n.duid::bigint AS duid FROM source x
-    CROSS JOIN LATERAL jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+    SELECT n.duid::bigint AS duid,n.in_campaign FROM source x
+    -- The campaign's selections plus any Ministry it no longer selects that
+    -- still has a current request (not cancelled or replaced) from this
+    -- campaign (#342): removing a Ministry never hides answers already given;
+    -- they are marked not in_campaign.
+    CROSS JOIN LATERAL (
+        SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+        UNION
+        SELECT DISTINCT r.ministry_duid::text,false
+        FROM stewardship_submission s
+        JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        WHERE s.campaign_id=x.id AND s.mode='live'
+          AND r.state NOT IN ('cancelled','superseded')
+          AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+    ) n(duid,in_campaign)
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
 ), chairs AS MATERIALIZED (
@@ -65,7 +78,7 @@ WITH selected AS MATERIALIZED (
             AND lower(r.payload->>'ministryRoleName')='chairperson'
     ) role WHERE role.name<>'' GROUP BY role.ministry_key
 ), ministries AS MATERIALIZED (
-    SELECT d.duid,
+    SELECT d.duid,d.in_campaign,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
             'Unavailable Ministry') AS name,
         coalesce(c.names,'[]'::jsonb) AS chairs
@@ -158,7 +171,7 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
     -- An empty selected Ministry still gets its section: a packet with a
     -- missing page would read as "nothing to do" for the wrong reason.
     'sections',coalesce((SELECT jsonb_agg(jsonb_build_object(
-            'duid',m.duid,'name',m.name,'chairs',m.chairs,
+            'duid',m.duid,'name',m.name,'chairs',m.chairs,'in_campaign',m.in_campaign,
             'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ministry_duid'
                 ORDER BY lower(d.member_name),d.member_name,d.action,d.id)
                 FROM detail d WHERE d.ministry_duid=m.duid),'[]'::jsonb))

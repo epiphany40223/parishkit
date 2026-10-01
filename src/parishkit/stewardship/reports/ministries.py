@@ -48,6 +48,9 @@ STATES = {
     "cancelled": "Cancelled",
     "superseded": "Superseded",
 }
+# A Ministry an Administrator removed from a live campaign whose requests are
+# kept (#342); SQL marks it in_campaign false.
+NOT_IN_CAMPAIGN = "No longer in this campaign"
 OUTCOMES = {
     "joined": "Joined ministry",
     "leave_confirmed": "Left ministry",
@@ -163,10 +166,19 @@ def campaign_ids(principal):
                 AND (%s OR EXISTS(SELECT 1
                     FROM jsonb_array_elements_text(cc.values->'ministry_duids') n
                     WHERE n::bigint BETWEEN 1 AND 2147483647
-                        AND n::bigint=ANY(%s::bigint[])))
+                        AND n::bigint=ANY(%s::bigint[]))
+                    -- A Ministry removed from a live campaign keeps its
+                    -- current (not withdrawn) requests in the report, as the
+                    -- report SQL does (#342).
+                    OR EXISTS(SELECT 1 FROM stewardship_submission s
+                    JOIN stewardship_ministry_request r ON r.submission_id=s.id
+                    WHERE s.campaign_id=c.id AND s.mode='live'
+                        AND r.state NOT IN ('cancelled','superseded')
+                        AND r.ministry_duid=ANY(%s::bigint[])))
             ORDER BY c.created_at DESC,c.id""",
             [
                 allows(principal, Capability.MINISTRY_REPORT),
+                sorted(value for value in principal.ministries if value < 2**31),
                 sorted(value for value in principal.ministries if value < 2**31),
             ],
         )

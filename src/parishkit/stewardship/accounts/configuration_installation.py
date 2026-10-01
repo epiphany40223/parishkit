@@ -199,6 +199,10 @@ class DatabaseMaterializer:
             lock_current_campaign_exports()
             runtime = SystemConfiguration.objects.select_for_update().first()
             self._campaign_admission()
+            from parishkit.stewardship.campaigns.live_ministries import (
+                live_selection_admitted,
+            )
+
             from .chair_seeding import confirmable
 
             if self.admit_actor is not None and not self.admit_actor():
@@ -217,6 +221,17 @@ class DatabaseMaterializer:
                 # durably, and restored like any other refusal.
                 self._record("failed", "invalid_candidate")
                 refused = SeedUnconfirmable("The confirmed Chairperson is no longer.")
+            elif not live_selection_admitted(
+                selected.document(),
+                runtime.current_campaign_id if runtime is not None else None,
+            ):
+                # A promotion between preflight and here dropped a Ministry
+                # being added to the live campaign: refused under the lock
+                # promotion takes, recorded, and restored like the others.
+                self._record("failed", "invalid_candidate")
+                refused = LiveMinistryUnavailable(
+                    "An added Ministry is no longer current and active."
+                )
             else:
                 self._apply(runtime, selected)
         if refused:
@@ -407,6 +422,10 @@ class ActorUnauthorized(ActivationRefused):
 
 class SeedUnconfirmable(ActivationRefused):
     """A confirmed Chairperson the promoted source no longer shows as one."""
+
+
+class LiveMinistryUnavailable(ActivationRefused):
+    """A Ministry added to a live campaign is no longer current and active (#342)."""
 
 
 def actor_authorized(request, *, lock):

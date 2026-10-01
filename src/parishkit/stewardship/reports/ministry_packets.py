@@ -26,7 +26,7 @@ from .information_rendering import (
     write_pages,
     xlsx_cell,
 )
-from .ministries import OUTCOMES, STATES
+from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATES
 
 TITLE = "Ministry follow-up packet"
 # The spreadsheet format's per-cell character limit. The library truncates
@@ -122,6 +122,13 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
             details=(
                 ("Ministry", entry["name"]),
                 ("Ministry DUID", str(entry["duid"])),
+                # Removed from a live campaign, with requests kept (#342).
+                # Captures made before the flag existed carry no such key.
+                *(
+                    (("Campaign selection", NOT_IN_CAMPAIGN),)
+                    if entry.get("in_campaign") is False
+                    else ()
+                ),
                 ("Chairs", ", ".join(entry["chairs"]) or "None recorded"),
                 ("Stewardship campaign", source["name"]),
                 ("Stewardship year", year),

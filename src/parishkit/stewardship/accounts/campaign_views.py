@@ -21,6 +21,7 @@ from parishkit.stewardship.campaigns.lifecycle import (
     draft_creation_admitted,
     structural_edit_admitted,
 )
+from parishkit.stewardship.campaigns.live_ministries import live_change_admitted
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
@@ -230,6 +231,11 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             "campaign": campaign,
             "form": form,
             "editable": editable,
+            # A live campaign's Ministries keep their own editor (#342).
+            "ministries_live": campaign is not None
+            and campaign.pk == configuration.current_campaign_id
+            and live_change_admitted(campaign.state, locked=campaign.structural_locked)
+            and "ministry" in campaign.active_configuration.values["modules"],
             "family_test_url": chosen_family_test_url(configuration, campaign),
             "production_progress_available": campaign is not None
             and configuration.current_campaign_id == campaign.pk

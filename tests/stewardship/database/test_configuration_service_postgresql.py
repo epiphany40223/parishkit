@@ -18,6 +18,7 @@ from parishkit.stewardship.accounts.configuration_service import (
     admit_configuration_database,
 )
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
+from parishkit.stewardship.runtime_grants import runtime_functions
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..test_ministry_activity import activity
@@ -41,7 +42,13 @@ def config_role():
         )
     try:
         with connection.cursor() as cursor:
-            grant_runtime(cursor, ROLE, CONFIGURATION_GRANTS, CONFIGURATION_COLUMNS)
+            grant_runtime(
+                cursor,
+                ROLE,
+                CONFIGURATION_GRANTS,
+                CONFIGURATION_COLUMNS,
+                runtime_functions(ServiceRole.CONFIG_INSTALLER),
+            )
         yield
     finally:
         with connection.cursor() as cursor:

@@ -9,6 +9,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .export_models import ExportRequest, MinistryExportSnapshot
 from .export_services import (
@@ -151,8 +152,19 @@ def create_ministry_export(
             offered = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
-            if not set(ministries) <= set(
-                offered.active_configuration.values.get("ministry_duids", ())
+            # A Ministry removed from a live campaign keeps its current (not
+            # withdrawn) requests, and the report offers it for a packet like
+            # any other, as the packet SQL does (#342).
+            if (
+                set(ministries)
+                - set(offered.active_configuration.values.get("ministry_duids", ()))
+                - set(
+                    MinistryRequest.objects.filter(
+                        submission__campaign_id=campaign_id, submission__mode="live"
+                    )
+                    .exclude(state__in=("cancelled", "superseded"))
+                    .values_list("ministry_duid", flat=True)
+                )
             ):
                 raise ValueError("A selected Ministry is not in this campaign.")
         return True

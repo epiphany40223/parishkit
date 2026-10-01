@@ -23,6 +23,9 @@
 </form>
 {% else %}
 <p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>
+{% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>
+<p>{% translate "This campaign is live, but its Ministries can still be added or removed while it is open. Answers Families already gave are never deleted." %}</p>
+<p><a class="button" href="{% url 'admin:campaign_ministries' campaign.pk %}">{% translate "Change campaign Ministries" %}</a></p></section>{% endif %}
 <div class="panel"><fieldset disabled><legend>{% translate "Saved campaign settings (read-only)" %}</legend>{{ form.as_div }}</fieldset></div>
 {% endif %}
 {% endblock %}

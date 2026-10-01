@@ -40,9 +40,23 @@ WITH selected AS MATERIALIZED (
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
             'Unavailable Ministry') AS name,
         CASE WHEN p.canonical::jsonb->'catalog_present'='true'::jsonb
-            THEN coalesce(a.active,true) ELSE NULL END AS active
+            THEN coalesce(a.active,true) ELSE NULL END AS active,
+        n.in_campaign
     FROM source x
-    CROSS JOIN LATERAL jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+    -- The campaign's selections plus any Ministry it no longer selects that
+    -- still has a current request (not cancelled or replaced) from this
+    -- campaign (#342): removing a Ministry never hides answers already given;
+    -- they are marked not in_campaign.
+    CROSS JOIN LATERAL (
+        SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+        UNION
+        SELECT DISTINCT r.ministry_duid::text,false
+        FROM stewardship_submission s
+        JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        WHERE s.campaign_id=x.id AND s.mode='live'
+          AND r.state NOT IN ('cancelled','superseded')
+          AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+    ) n(duid,in_campaign)
     LEFT JOIN stewardship_snapshot_ministry m
         ON m.snapshot_id=x.source_id AND m.source_key=n.duid
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
@@ -73,7 +87,7 @@ WITH selected AS MATERIALIZED (
         count(r.id) AS requests
     FROM ministries m LEFT JOIN requests r ON r.ministry_duid=m.duid
         AND r.revision=1 AND r.state NOT IN ('cancelled','superseded')
-    GROUP BY m.duid,m.name,m.active
+    GROUP BY m.duid,m.name,m.active,m.in_campaign
 ), summary_filtered AS MATERIALIZED (
     SELECT * FROM summary WHERE
         ((filters->>'activity')='any' OR ((filters->>'activity')='active' AND active IS TRUE)

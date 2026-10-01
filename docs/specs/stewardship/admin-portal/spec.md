@@ -382,10 +382,10 @@ Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
-Apply) on every settings editor (campaign settings, Copy campaign, pages and
-emails, mail schedules, share options, member talents, campaign images, Parish
-settings, Parish logos, each integration, Ministry activity and Finish
-switching), the reviews started on Portal users (login rules, chair
+Apply) on every settings editor (campaign settings, a live campaign's
+Ministries, Copy campaign, pages and emails, mail schedules, share options,
+member talents, campaign images, Parish settings, Parish logos, each
+integration, Ministry activity and Finish switching), the reviews started on Portal users (login rules, chair
 suggestions, chair reviews and assignments) and every change's status page;
 going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
@@ -829,9 +829,10 @@ Catalog changes themselves are reported on the Admin home page (see
 Campaign settings and first-campaign setup follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
-Local activity may be changed during a campaign without editing its structurally
-locked Ministry-selection set. Reactivating an excluded Ministry does not add
-it to that set. Historical administrative views retain their recorded inputs;
+Local activity may be changed during a campaign without editing its
+Ministry-selection set. Reactivating an excluded Ministry does not add it to
+that set; see
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries). Historical administrative views retain their recorded inputs;
 current parishioner pages and previews use the applied visibility policy.
 
 For [Chairperson suggestions and assignments](#chairperson-suggestions-and-assignments),
@@ -850,9 +851,9 @@ Ministry catalog; the 15-minute updates copy it unchanged (see the refresh
 cadence in
 [background processing](../background-processing/spec.md)). The system never
 changes a campaign's Ministry selections because the catalog changed. This
-section covers telling Administrators about catalog changes
-([#342](https://github.com/epiphany40223/parishkit/issues/342)); changing a
-live campaign's Ministries is designed below but not built.
+section covers telling Administrators about catalog changes and changing a
+live campaign's Ministries
+([#342](https://github.com/epiphany40223/parishkit/issues/342)).
 
 #### Catalog change notice
 
@@ -904,37 +905,61 @@ inactive there may be a stronger retirement signal than the `X-` hint; adding
 it to the notice is tracked for after launch in
 [#342](https://github.com/epiphany40223/parishkit/issues/342).
 
-#### Changing a live campaign's Ministries (design only)
+#### Changing a live campaign's Ministries
 
-A live campaign's `ministry_duids` is structurally locked in SQL ("Live
-structural settings are locked"), so this needs a reviewed guard change and is
-deferred until after launch. The intended rules:
+A live campaign's structural settings are locked (see
+[Campaign configuration](#campaign-configuration)), with one reviewed
+exemption: while the current campaign is scheduled or active, an
+Administrator may change its Ministry selections. Campaign settings links a
+live campaign to its own "Change campaign Ministries" page, which offers only
+the Ministry list and goes through the usual edit, review, apply flow as an
+ordinary configuration request. A closed or archived campaign's selections
+never change.
 
-- **Hide** a Ministry already works today: mark it inactive on Ministry
+- **Hide** a Ministry without removing it: mark it inactive on Ministry
   activity. It disappears from every Family form; nothing else changes.
-- **Remove** takes a DUID out of the campaign's selections through an
-  ordinary configuration request with an impact preview. The preview counts
-  open forms, submitted answers and open follow-up requests for it. Answers
-  already given are never deleted or rewritten: submissions keep their
-  recorded inputs, join and stop requests stay in Ministry follow-up until
-  staff close them, and reports keep showing them, marked as no longer in the
-  campaign. Re-adding the DUID shows those answers again.
-- **Add** puts a DUID that is in the current catalog and locally active into
-  the selections. Families see it on their next visit. Families who already
+- **Remove** takes a DUID out of the selections. Answers already given are
+  never deleted or rewritten: submissions keep their recorded inputs, join and
+  stop requests stay in Ministry follow-up until staff close them, and the
+  Ministry report, follow-up queue and follow-up packets keep showing them,
+  marked "No longer in this campaign", while it has a request that was not
+  later withdrawn or replaced. A Family who opens the form again no
+  longer sees that Ministry, and resubmitting does not withdraw its requests.
+  Adding the DUID back shows those answers unmarked again, including on the
+  Family form.
+- **Add** accepts only a DUID that is in the current ParishSoft catalog and
+  locally active. Families see it on their next visit. Families who already
   submitted are not asked again and get no mail.
-- Open forms whose offered Ministries changed are refreshed through the usual
-  changed-baseline review. That review should be limited to the Families whose
-  forms actually show the changed Ministry, not every open form.
-- Each change records the Administrator, the before and after selections and
-  the added and removed DUIDs in the configuration audit (the `ministry_duids`
-  context field already exists).
-- Reports and follow-up read the selections from the campaign configuration
-  version in effect, so the change history comes from existing configuration
-  versions and needs no new table.
 
-The schema work is the guard exemption for `ministry_duids` on a structurally
-locked campaign, with SQL checks that an added DUID is in the current catalog
-and the campaign is still open.
+The review lists each added and removed Ministry, with each one's submitted
+answers (current join and stop requests) and open follow-up requests, and the
+number of Families with a form open now. Every open form lists every offered
+Ministry, so all of those Families get the usual changed-baseline review before
+they can submit; the review cannot be narrowed to fewer Families. No mail is
+sent.
+
+Confirming records a `campaign_ministries_requested` audit event for the
+configuration request (the request's own status records whether it applied): the Administrator, the selections before
+(`previous_ministry_duids`) and after (`ministry_duids`), and the
+`added_ministry_duids` and `removed_ministry_duids`. Reports and follow-up read
+the selections from the campaign's configuration version in effect, so the
+append-only configuration versions hold the change history; there is no other
+history table.
+
+The same rules hold in SQL. The campaign activation guard
+(`stewardship_campaign_pointer_v1`) exempts only `ministry_duids` from "Live
+structural settings are locked". When the selections of a structurally locked
+campaign change, it requires the campaign to be scheduled or active, the
+selections to stay a sorted list of distinct whole numbers, and every added
+DUID to be visible under the candidate configuration: present in the promoted
+catalog, locally active and in a campaign with the Ministry module. The
+configuration installer holds no source grants, so it reads catalog presence
+only through the definer function `stewardship_ministry_catalog_v1()`, which
+returns DUIDs and nothing else and which only that login may execute. A
+removal reads no catalog. Activation repeats the addition check under the lock
+source promotion takes; if a refresh dropped or an Administrator inactivated
+the Ministry after the request was checked, the request fails and the previous
+settings stay in effect, so the Administrator reviews the change again.
 
 ## Campaign configuration
 
@@ -995,7 +1020,9 @@ The UI labels structural settings and their Production-readiness lock trigger.
 After a `draft` campaign moves to `scheduled` or directly to `active`, the
 server rejects structural mutations even if a stale browser exposes controls.
 They unlock only through the guarded pre-start withdrawal below; an `active`
-campaign never unlocks them. The campaign timezone is initialized from the
+campaign never unlocks them. The one exception is the Ministry selections
+(see
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)). The campaign timezone is initialized from the
 current Parish timezone, is editable in `draft`, and is one of these structural
 settings. Scheduled, active, closed, and archived pages display it read-only.
 Content and future schedules remain versioned/editable under the

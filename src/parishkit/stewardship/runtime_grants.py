@@ -228,12 +228,23 @@ DOWNLOAD_READ_TABLES = frozenset(
 FAMILY_LOGIN_FUNCTION = (
     "stewardship_family_login_v1(character varying, uuid, uuid, jsonb, text)"
 )
+# Promoted Ministry catalog DUIDs, for a live campaign's added Ministries (#342).
+MINISTRY_CATALOG_FUNCTION = "stewardship_ministry_catalog_v1()"
 
 
 def runtime_functions(role, *, target=None):
-    """Return the definer routines this login may EXECUTE (web's Family login)."""
+    """Return the definer routines this login may EXECUTE.
+
+    Web signs Families in; the configuration installer checks that a Ministry
+    added to a live campaign is in the promoted catalog, without source grants.
+    """
     role = _identity_role(role, target)
-    return frozenset({FAMILY_LOGIN_FUNCTION} if role is ServiceRole.WEB else ())
+    return frozenset(
+        {
+            ServiceRole.WEB: {FAMILY_LOGIN_FUNCTION},
+            ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
+        }.get(role, ())
+    )
 
 
 def _identity_role(role, target):

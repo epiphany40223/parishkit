@@ -1,0 +1,19 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review campaign Ministry changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review campaign Ministry changes" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+{% if added %}<section class="panel"><h2>{% translate "Ministries to add" %}</h2>
+<p>{% translate "Families see these at their next visit. Families who already submitted are not asked again and get no email." %}</p>
+<ul>{% for ministry in added %}<li>{{ ministry.name }} ({% translate "DUID" %} {{ ministry.duid|duid }}){% if ministry.answers %}: {% blocktranslate count counter=ministry.answers %}{{ counter }} earlier answer will show again{% plural %}{{ counter }} earlier answers will show again{% endblocktranslate %}{% endif %}</li>{% endfor %}</ul></section>{% endif %}
+{% if removed %}<section class="panel"><h2>{% translate "Ministries to remove" %}</h2>
+<p>{% translate "These leave the Family form. Nothing already answered is deleted: requests stay in Ministry follow-up until staff close them, and reports mark them No longer in this campaign." %}</p>
+<table><thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Submitted answers" %}</th><th scope="col">{% translate "Open follow-up requests" %}</th></tr></thead>
+<tbody>{% for ministry in removed %}<tr><td>{{ ministry.name }} ({% translate "DUID" %} {{ ministry.duid|duid }})</td><td>{{ ministry.answers|number }}</td><td>{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+<section class="panel"><h2>{% translate "Families with a form open now" %}</h2>
+<p>{{ open_forms|number }}</p>
+<p>{% translate "Every open form lists every Ministry, so each of these Families is asked to review the updated form before submitting. No email is sent." %}</p></section>
+<p>{% translate "Confirm to save this change. It is recorded with your name and the Ministries added and removed." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button>
+<a href="{% url 'admin:campaign_ministries' campaign.pk %}">{% translate "Cancel" %}</a></form>
+{% endblock %}

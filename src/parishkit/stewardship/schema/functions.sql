@@ -1123,6 +1123,7 @@ CREATE FUNCTION public.stewardship_campaign_pointer_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 DECLARE target uuid; candidate stewardship_campaign_configuration%ROWTYPE;
+    live_state text; live_before jsonb; live_added numeric[];
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     IF TG_OP='INSERT' THEN
@@ -1169,8 +1170,59 @@ BEGIN
         END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','ministry_duids']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','ministry_duids'])) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
+        END IF;
+        -- The one reviewed live structural exemption (#342): an Administrator
+        -- may change a locked campaign's Ministry selections while it is still
+        -- open. The value must stay canonical: a strictly ascending array of
+        -- whole numbers, as the YAML schema writes it. Removing is always
+        -- allowed. Every added DUID must be visible now: in the promoted
+        -- catalog, not inactive in this candidate's Ministry activity, in a
+        -- campaign with the Ministry module. Answers are never touched here.
+        -- Nested CASEs fix the evaluation order, so a malformed value is
+        -- refused, not miscast.
+        SELECT c.state, old_c.values->'ministry_duids' INTO live_state, live_before
+        FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
+        WHERE c.id=target AND c.structural_locked
+          AND old_c.values->'ministry_duids' IS DISTINCT FROM candidate.values->'ministry_duids';
+        IF FOUND THEN
+            IF live_state NOT IN ('scheduled','active')
+                OR NOT coalesce(CASE WHEN jsonb_typeof(candidate.values->'ministry_duids')='array'
+                    AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(candidate.values->'ministry_duids') e(duid)
+                        WHERE jsonb_typeof(e.duid)<>'number' OR e.duid#>>'{}'!~'^[0-9]{1,19}$') THEN
+                    candidate.values->'ministry_duids'=(SELECT coalesce(jsonb_agg(to_jsonb(d.duid) ORDER BY d.duid),'[]'::jsonb)
+                        FROM (SELECT DISTINCT (e.duid#>>'{}')::numeric AS duid
+                              FROM jsonb_array_elements(candidate.values->'ministry_duids') e(duid)) d)
+                    END,false) THEN
+                RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+            END IF;
+            -- The value is now a canonical array of whole numbers.
+            SELECT coalesce(array_agg((added.duid#>>'{}')::numeric),'{}') INTO live_added
+            FROM jsonb_array_elements(candidate.values->'ministry_duids') added(duid)
+            WHERE NOT coalesce(live_before @> added.duid,false);
+            IF cardinality(live_added)>0 THEN
+                IF NOT coalesce(candidate.values->'modules' ? 'ministry',false)
+                    OR EXISTS (SELECT 1 FROM unnest(live_added) d WHERE d NOT BETWEEN 1 AND 2147483647) THEN
+                    RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+                END IF;
+                -- A separate statement, reached only when a locked open campaign
+                -- gains a Ministry: PostgreSQL checks EXECUTE on the definer
+                -- stewardship_ministry_catalog_v1 whenever a statement naming it
+                -- starts, whatever a CASE or AND would evaluate. Only the
+                -- configuration installer, which holds no source grants, needs
+                -- it; setup completion and other activations never get here.
+                IF EXISTS (SELECT 1 FROM unnest(live_added) d
+                    WHERE NOT EXISTS (SELECT 1 FROM stewardship_ministry_catalog_v1() present
+                        WHERE present.ministry_duid=d::integer
+                          AND NOT EXISTS (SELECT 1 FROM stewardship_ministry_activity activity
+                              WHERE activity.configuration_id=NEW.active_configuration_id
+                                AND activity.organization_id=present.organization_id
+                                AND activity.ministry_duid=present.ministry_duid
+                                AND NOT activity.active))) THEN
+                    RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+                END IF;
+            END IF;
         END IF;
     END IF;
     NEW.current_campaign_id := target;
@@ -5142,6 +5194,22 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                             AND intent.request_schema='chair-seed-patch-v9'
                             AND current_user<>'pk_stewardship_web')
+                         -- A Ministry added to a live campaign that a source
+                         -- promotion dropped, or that turned inactive, after
+                         -- preflight (#342) is refused and restored the same
+                         -- way. Only a request whose one operation changes
+                         -- nothing but a structurally locked campaign's
+                         -- ministry_duids qualifies.
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                            AND jsonb_typeof(intent.patch)='array'
+                            AND jsonb_array_length(intent.patch)=1
+                            AND intent.patch->0->>'section'='campaigns'
+                            AND intent.patch->0->>'operation'='update'
+                            AND intent.patch->0->'values' ? 'ministry_duids'
+                            AND (intent.patch->0->'values') - 'ministry_duids'::text = '{}'::jsonb
+                            AND EXISTS (SELECT 1 FROM stewardship_campaign c
+                                WHERE c.id::text=intent.patch->0->>'id' AND c.structural_locked)
+                            AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b
                             JOIN stewardship_campaign_config_intent i ON i.id=b.intent_id WHERE i.request_id=NEW.request_id) OR EXISTS (
@@ -5484,6 +5552,7 @@ BEGIN
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
             'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational',
+            'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
@@ -5512,7 +5581,7 @@ BEGIN
         ELSIF key IN ('family_duid','member_duid','ministry_duid') THEN
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,10}$' THEN RETURN false; END IF;
             IF text_value::numeric NOT BETWEEN 1 AND 2147483647 THEN RETURN false; END IF;
-        ELSIF key='ministry_duids' THEN
+        ELSIF key IN ('ministry_duids','previous_ministry_duids','added_ministry_duids','removed_ministry_duids') THEN
             IF jsonb_typeof(value)<>'array' THEN RETURN false; END IF;
             previous_ministry:=0;
             FOR ministry IN SELECT * FROM jsonb_array_elements(value) LOOP
