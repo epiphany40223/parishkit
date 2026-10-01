@@ -238,6 +238,10 @@ class Execution:
         When a limit stops it, the tick is skipped and reported (see
         InflightSkips): the helper is still bounded by its deadline, and
         every later transition rechecks ownership under its locks.
+
+        Returns True when ownership was verified in SQL, and False when a
+        limit skipped the tick, so a caller that spaces out its checks does
+        not count a skipped one as verified.
         """
         if connection.in_atomic_block:
             # The transaction-local limits below would leak into the caller's
@@ -251,7 +255,7 @@ class Execution:
                 INFLIGHT_LOCK_SECONDS,
                 time.monotonic() - started,
             )
-            return
+            return False
         try:
             self.control.check(allow_drain=True)
             try:
@@ -272,10 +276,11 @@ class Execution:
                 self.skips.skipped(
                     self, what, INFLIGHT_LOCK_SECONDS, time.monotonic() - started
                 )
-                return
+                return False
             self.skips.ended()
             if admitted is not True:
                 raise PermissionError("This in-flight task is not admitted.")
+            return True
         finally:
             self.control.lock.release()
 

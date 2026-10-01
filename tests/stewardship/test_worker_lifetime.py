@@ -172,10 +172,10 @@ def test_inflight_check_skips_while_this_workers_lock_is_busy(monkeypatch):
     try:
         held.wait(5)
         started = time.monotonic()
-        assert context.check_inflight() is None
+        assert context.check_inflight() is False
         assert time.monotonic() - started < 1
         # A run of skips is reported once at its start ...
-        assert context.check_inflight() is None
+        assert context.check_inflight() is False
         assert len(reports) == 1
         assert reports[0]["what"] == "control_lock" and reports[0]["skipped"] == 1
         assert reports[0]["task_id"] == context.claim.run_id

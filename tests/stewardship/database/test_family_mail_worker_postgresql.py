@@ -766,3 +766,61 @@ def test_key_change_mid_switch_holds_mail_without_spending_attempts(
     assert len(alerts) == (1 if change == "installed" else 0)
     if alerts:
         assert alerts[0].levelname == "ERROR"
+
+
+def test_in_flight_checks_verify_ownership_in_sql_at_most_once_a_second(
+    dispatch_worker, monkeypatch
+):
+    """The helper's 0.25 s ticks reach SQL (and the work lock) once a second.
+
+    Each SQL in-flight check joins the deployment-wide work-order lock, and
+    the message's ownership was verified when it committed "submitting"
+    (#147). A fake clock drives the ticks: none in the first second reaches
+    SQL, the first at 1 s does, and the next only a second after that. The
+    process-local check still runs on every tick: a failed renewal seen on
+    a throttled tick stops the helper at once. A SQL check skipped at its
+    lock limit does not count as verified, so the next tick tries SQL again.
+    """
+    harness, path = dispatch_worker
+    clock = [100.0]
+    sql, local, executions = [], [], []
+    real_check = family_mail_delivery_tasks._check
+    real_inflight = family_mail_delivery_tasks._inflight_check
+
+    def counted(execution):
+        """Count SQL checks; the one at 102.0 is skipped at its lock limit."""
+        sql.append(clock[0])
+        return clock[0] != 102.0 and real_check(execution)
+
+    def inflight(execution):
+        """Keep the execution, to fail its renewal on a throttled tick."""
+        executions.append(execution)
+        return real_inflight(execution)
+
+    def provider(value, settings, mail, *, seconds, check, session):
+        for at in (100.0, 100.25, 100.5, 100.75, 101.0, 101.5, 101.75, 102.0):
+            clock[0] = at
+            check()
+            local.append(at)
+            if at == 100.5:
+                # A failed renewal must stop even a tick that skips SQL.
+                failed = executions[0].control.failed
+                failed.set()
+                try:
+                    with pytest.raises(RuntimeError, match="must stop"):
+                        check()
+                finally:
+                    failed.clear()
+        clock[0] = 102.25
+        check()
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(family_mail_delivery_tasks, "_check", counted)
+    monkeypatch.setattr(family_mail_delivery_tasks, "_inflight_check", inflight)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    assert sql == [101.0, 102.0, 102.25] and len(local) == 8
+    assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"

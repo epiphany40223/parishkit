@@ -79,6 +79,9 @@ OUTAGE_RECOVERY_SECONDS = 600
 # the bulk limit it starts re-reading it for every message instead.
 DAILY_COUNT_SECONDS = 15
 NEAR_DAILY_LIMIT = 100
+# How often a sending worker re-verifies its Task ownership in SQL while the
+# private helper runs; see _inflight_check.
+INFLIGHT_VERIFY_SECONDS = 1.0
 
 
 class DeliveryCircuit:
@@ -556,11 +559,44 @@ def _unavailable(execution):
 
 
 def _check(execution):
-    """Continue draining under Task ownership, without new-send admission."""
+    """Continue draining under Task ownership, without new-send admission.
+
+    Returns whether ownership was verified in SQL (False: the tick was
+    skipped at a lock limit; see Execution.check_inflight).
+    """
     try:
-        execution.check_inflight()
+        return execution.check_inflight()
     finally:
         connections.close_all()
+
+
+def _inflight_check(execution):
+    """Build the helper's in-flight check, verifying in SQL at most once a second.
+
+    The helper calls its check as soon as the request is written and then
+    every 0.25 s. Each SQL check joins the deployment-wide work-order lock,
+    so a typical 0.5 s Gmail send cost two or three more lock waits per
+    message, behind every other holder (#147). The message's "submitting"
+    state was committed under that lock a moment before, so ownership was
+    just verified. The process-local state (a failed renewal, a finished
+    execution) is still checked on every tick; the SQL check (lease, fence
+    and domain admission) runs only once INFLIGHT_VERIFY_SECONDS have passed
+    since the last verification. A SQL check skipped at its lock limit does
+    not count as one, so the next tick tries again. Losing ownership is then
+    noticed up to a second later (plus any skipped ticks), well inside the
+    60 s lease and the helper's own deadline.
+    """
+    verified = [monotonic()]
+
+    def check():
+        """Check local state now and, when due, ownership in SQL."""
+        execution.control.check(allow_drain=True)
+        if monotonic() - verified[0] < INFLIGHT_VERIFY_SECONDS:
+            return
+        if _check(execution):
+            verified[0] = monotonic()
+
+    return check
 
 
 def _launch_budget(deadline):
@@ -589,7 +625,6 @@ def _execute(
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
     started = time.monotonic()
-    execution.progress(0, 0, phase=TaskPhase.PREPARING)
     submitted = False
     launched = False
     message = None
@@ -600,6 +635,16 @@ def _execute(
         # wide work-order lock both mail consumers wait on.
         sent = circuit.daily_sends()
         with execution.effect():
+            # The PREPARING phase commits with this effect's reads rather
+            # than in a transaction of its own: one fewer wait for the
+            # deployment-wide work-order lock per message (#147). If the
+            # effect rolls back, the phase stays STARTING (set by the claim).
+            # preparation_attempts() and limit_history() read the phase, but
+            # treat STARTING and PREPARING alike and single out only
+            # RECONCILING, so the retry budget and recovery are unchanged.
+            # Keep it that way: a rule that treats STARTING as "not yet
+            # attempted" would undercount effects that failed here.
+            execution.progress(0, 0, phase=TaskPhase.PREPARING)
             message = bound_dispatch(_status(lock_task_claim(execution.claim)))
             terminal = {
                 "delivered": "complete",
@@ -715,7 +760,7 @@ def _execute(
             launched = True
             options = {
                 "seconds": min(30, remaining),
-                "check": lambda: _check(execution),
+                "check": _inflight_check(execution),
             }
             calling = time.monotonic()
             try:
