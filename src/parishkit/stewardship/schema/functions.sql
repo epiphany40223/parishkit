@@ -5184,7 +5184,8 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                          -- promotion dropped, or that turned inactive, after
                          -- preflight (#342) is refused and restored the same
                          -- way. Only a request whose one operation changes
-                         -- nothing but a campaign's ministry_duids qualifies.
+                         -- nothing but a structurally locked campaign's
+                         -- ministry_duids qualifies.
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                             AND jsonb_typeof(intent.patch)='array'
                             AND jsonb_array_length(intent.patch)=1
@@ -5192,6 +5193,8 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                             AND intent.patch->0->>'operation'='update'
                             AND intent.patch->0->'values' ? 'ministry_duids'
                             AND (intent.patch->0->'values') - 'ministry_duids'::text = '{}'::jsonb
+                            AND EXISTS (SELECT 1 FROM stewardship_campaign c
+                                WHERE c.id::text=intent.patch->0->>'id' AND c.structural_locked)
                             AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b

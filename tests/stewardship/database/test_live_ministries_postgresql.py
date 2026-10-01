@@ -17,6 +17,7 @@ from parishkit.stewardship.campaigns import admission, configuration, live_minis
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import campaign_ids
+from parishkit.stewardship.source.version_models import SourceMinistry
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .auth_builders import signed_in
@@ -446,3 +447,52 @@ def test_removed_ministry_without_current_requests_leaves_reports(response_servi
     assert not open_requests(9).exists()
     assert applied(select(harness, [4]))
     assert 9 not in summaries(harness)
+    # Python admission agrees with SQL: the leader cannot choose the campaign,
+    # and a stale packet form naming the Ministry is a bad selection.
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert harness.campaign.pk not in campaign_ids(leader)
+    with pytest.raises(ValueError, match="not in this campaign"):
+        packet(harness, user("admin@example.org").pk, (9,))
+
+
+def test_editor_never_offers_a_ministry_parishsoft_no_longer_lists(
+    response_service, google, monkeypatch
+):
+    """A locally active Ministry absent from ParishSoft is not addable live."""
+    harness = setup(response_service)
+    assert applied(select(harness, [4]))
+    # Source versions are immutable, so read Ministry 9 as ParishSoft no
+    # longer listing it; it stays locally active and in the settings catalog.
+    original = SourceMinistry.payload
+
+    def payload(self):
+        """Ministry 9 as a later promotion would show it."""
+        value = original.fget(self)
+        if self.source_key == "9":
+            value["catalog_present"] = False
+        return value
+
+    monkeypatch.setattr(SourceMinistry, "payload", property(payload))
+    browser, _ = signed_in()
+    form = browser.get(f"/admin/campaign/{harness.campaign.pk}/ministries")
+    assert form.status_code == 200, form.content
+    assert 'value="4"' in form.content.decode()
+    assert 'value="9"' not in form.content.decode()
+
+
+def test_checkpoint_refusal_needs_a_structurally_locked_campaign(
+    response_service, monkeypatch
+):
+    """The activation refusal a live change may record is refused for a draft."""
+    harness = response_service
+    start(harness)
+    harness.campaign.refresh_from_db()
+    assert not harness.campaign.structural_locked
+    monkeypatch.setattr(live_ministries, "live_selection_admitted", lambda *a: False)
+    result = select(harness, [4])
+    assert not applied(result)
+    assert "Invalid configuration installer transition" in str(result)
+    assert not ConfigurationChangeRequest.objects.filter(
+        checkpoints__state="failed"
+    ).exists()

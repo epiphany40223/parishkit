@@ -152,15 +152,18 @@ def create_ministry_export(
             offered = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
-            # A Ministry removed from a live campaign keeps its requests, and
-            # the report offers it for a packet like any other (#342).
+            # A Ministry removed from a live campaign keeps its current (not
+            # withdrawn) requests, and the report offers it for a packet like
+            # any other, as the packet SQL does (#342).
             if (
                 set(ministries)
                 - set(offered.active_configuration.values.get("ministry_duids", ()))
                 - set(
                     MinistryRequest.objects.filter(
                         submission__campaign_id=campaign_id, submission__mode="live"
-                    ).values_list("ministry_duid", flat=True)
+                    )
+                    .exclude(state__in=("cancelled", "superseded"))
+                    .values_list("ministry_duid", flat=True)
                 )
             ):
                 raise ValueError("A selected Ministry is not in this campaign.")

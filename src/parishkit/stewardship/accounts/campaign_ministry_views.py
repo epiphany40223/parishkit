@@ -29,6 +29,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.responses.models import FamilyFormBaseline
+from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingStale
@@ -69,6 +70,28 @@ class LiveMinistriesForm(forms.Form):
         """Offer only server-built choices: current selections and addable ones."""
         super().__init__(*args, **kwargs)
         self.fields["ministry_duids"].choices = ministries
+
+
+def _addable(choices, source, selected):
+    """Keep current selections plus Ministries ParishSoft still lists.
+
+    The settings catalog offers every locally active snapshot Ministry, even
+    one marked "Not in ParishSoft data". The installer and SQL refuse to add
+    such a Ministry, so the live editor never offers it.
+    """
+    present = (
+        set()
+        if source is None or source.snapshot_id is None
+        else {
+            str(int(row.source_key))
+            for row in SnapshotMinistry.objects.filter(
+                snapshot_id=source.snapshot_id
+            ).select_related("payload")
+            if row.payload.payload.get("catalog_present") is True
+        }
+    )
+    keep = present | {str(duid) for duid in selected}
+    return [row for row in choices if row[0] in keep]
 
 
 def _live_campaign(configuration, campaigns, held, campaign_id):
@@ -156,7 +179,7 @@ def _preview(request, service, actor, state, campaign, form):
         form.add_error(None, _("No Ministries have changed."))
         return _page(request, configuration, campaign, form, status=400)
     # The choices offer only the current selections and the active Ministries
-    # of the current catalog (campaign_views._catalog), so the form has already
+    # ParishSoft still lists (_addable), so the form has already
     # refused any other addition; the installer and SQL check it again.
     patch = [
         {
@@ -260,6 +283,7 @@ def campaign_ministries(request, campaign_id):
             campaign = _live_campaign(configuration, campaigns, held, campaign_id)
             values = campaign.active_configuration.values
             ministries, _funds = _catalog(configuration, source, values)
+            ministries = _addable(ministries, source, values["ministry_duids"])
             form = LiveMinistriesForm(
                 request.POST if request.method == "POST" else None,
                 initial={

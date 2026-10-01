@@ -168,10 +168,12 @@ def campaign_ids(principal):
                     WHERE n::bigint BETWEEN 1 AND 2147483647
                         AND n::bigint=ANY(%s::bigint[]))
                     -- A Ministry removed from a live campaign keeps its
-                    -- requests in the report, as the report SQL does (#342).
+                    -- current (not withdrawn) requests in the report, as the
+                    -- report SQL does (#342).
                     OR EXISTS(SELECT 1 FROM stewardship_submission s
                     JOIN stewardship_ministry_request r ON r.submission_id=s.id
                     WHERE s.campaign_id=c.id AND s.mode='live'
+                        AND r.state NOT IN ('cancelled','superseded')
                         AND r.ministry_duid=ANY(%s::bigint[])))
             ORDER BY c.created_at DESC,c.id""",
             [
