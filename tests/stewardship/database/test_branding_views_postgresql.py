@@ -15,6 +15,7 @@ from parishkit.stewardship.accounts.branding_staging import cleanup_branding
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.web.security import FILE_CSP
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -111,6 +112,9 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         response = browser.get(f"/branding/{asset.pk}.png")
         assert response.status_code == 200
         assert response["Content-Type"] == "image/png"
+        # The middleware keeps the view's long-lived public caching (#355).
+        assert response["Cache-Control"] == "public, max-age=31536000, immutable"
+        assert response["Content-Security-Policy"] == FILE_CSP
         assert b"".join(response.streaming_content).startswith(b"\x89PNG")
     assert (
         post(browser, preview, {"action": "confirm", "preview": token})["Location"]

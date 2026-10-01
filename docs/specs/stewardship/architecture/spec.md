@@ -513,6 +513,14 @@ another site, and browsers keep sending the real `Origin` with same-site form
 POSTs, which the CSRF check requires (under `no-referrer` they send
 `Origin: null`).
 Family pages and responses use `Cache-Control: no-store`.
+The security middleware sets `Cache-Control: no-store` on every response
+except static assets and two public, anonymous byte routes whose views choose
+their own caching: [hosted files](../hosted-files/spec.md) under `/files/`
+(`no-cache` with an ETag) and retained branding images under `/branding/`
+(`public, max-age=31536000, immutable`, since each image URL names one
+immutable asset). It keeps a view's own caching only for a marked `200` or
+`304` response on those paths that neither sets nor varies on cookies, so a
+private, authenticated or error response is never made cacheable by mistake.
 Every administration report response containing Family PII, Family codes,
 financial data, or census data uses the same no-store policy.
 Exact-code search values are accepted only in a CSRF-protected POST request
