@@ -121,7 +121,7 @@ def test_sweep_stops_at_its_time_budget_and_resumes(monkeypatch):
     emitted = Mock()
     monkeypatch.setattr(module, "emit", emitted)
     producer = module.FamilyScheduleProducer(uuid4(), seconds=30)
-    assert module.FamilyScheduleProducer(uuid4()).seconds == 40
+    assert module.FamilyScheduleProducer(uuid4()).seconds == 15
     assert len(producer(Mock(spec=SchedulerGuard))) == 2
     # Fewer than a page remained, but the sweep was cut short: no wrap.
     assert producer.cursor == identifiers[1]

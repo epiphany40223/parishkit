@@ -570,6 +570,38 @@ data that cannot be safely scoped, promote no delta and queue a full refresh.
 Ministry/fund data remains from the coherent prior full snapshot unless the
 delta loader can prove a complete replacement.
 
+#### Deltas wait for a bulk Family send
+
+Under send load a delta takes about five minutes and halves the Family send
+rate, because its promotion and population rebuild compete with the send for
+the global work-order lock (#440). So while an initial invitation or reminder
+is being sent, the scheduler skips the 15-minute slots. A send is in progress
+while at least 10 pieces of its work remain, counting messages pending (not
+paused), waiting to retry or being submitted and preparation tasks queued,
+running or waiting to retry, read from durable state with no lock taken.
+While Production delivery is paused only messages count, so a paused send
+keeps its deltas.
+The scheduled [full refresh](#full-cycle) and every
+[manual request](#manual-request) still run.
+
+A skipped slot creates nothing: no command, task or failure. Each scheduler
+loop decides again, so the first loop after the send creates the current
+slot's delta, which catches up. The scheduler logs `source_refresh_held` at
+INFO once per skipped slot, correlated to the slot's command identity.
+
+Skipping is bounded. While a send is in progress and deltas are actually
+being skipped (none requested since the current source was read, though
+deltas ran within the last day), the
+[staleness alarm](#critical-errors-and-notification) allows the source two
+hours beyond its configured threshold. The scheduler skips only while the
+current source is at least 30 minutes inside that allowance, so a send that
+runs longer gets its deltas back before the alarm would sound. That
+catch-up delta keeps the allowance; a delta requested earlier that has not
+promoted (a failing refresh) alarms at the threshold as before. Sending
+never waits on source age: Family preparation requires only that the
+population match the current source generation, which a skipped delta leaves
+unchanged.
+
 ### Full cycle
 
 A scheduled full refresh runs at an Admin-selected frequency: once a day at an
@@ -665,7 +697,7 @@ its own transaction, so no lock spans two Families. A page holds up to 100
 Families while the previous page allocated new preparation work, and 20 after
 one that allocated none, so a large send creates mail quickly without an idle
 or paused campaign holding the work-order lock for long. A page also ends once
-40 seconds of planning have passed, checked between Families, which bounds
+15 seconds of planning have passed, checked between Families, which bounds
 this producer's share of the scheduler loop and its 90-second heartbeat.
 Ending early is pacing, not a timeout: the next loop resumes after the last
 Family planned (#394). Each such page logs `work_budget_reached` with the
@@ -974,7 +1006,9 @@ Every error is durably logged. CRITICAL means timely Admin attention is needed,
 including:
 
 - database integrity/unavailability or inability to persist accepted work;
-- repeated source refresh failure/staleness beyond the configured threshold;
+- repeated source refresh failure/staleness beyond the configured threshold
+  (allowing more time while a
+  [Family send holds deltas](#deltas-wait-for-a-bulk-family-send));
 - wrong ParishSoft organization or implausible destructive source change;
 - systemic mail failure during a due campaign occurrence;
 - scheduler/worker health preventing due work;

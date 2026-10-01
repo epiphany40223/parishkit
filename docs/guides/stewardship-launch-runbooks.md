@@ -214,7 +214,12 @@ confirmed: it waits for the invitations to be scheduled and then follows
 them to the end. For the operator's view, run the report with
 `purpose='initial'`, `since` a few minutes before the confirmation and
 `until` a time in the future. Its **Overview** shows how many invitations
-have gone out so far and the rate.
+have gone out so far and the rate. While the send runs, the 15-minute
+ParishSoft updates are skipped
+([why](../specs/stewardship/background-processing/spec.md#deltas-wait-for-a-bulk-family-send)),
+so a ParishSoft change can take up to about 2 hours to arrive; if a change
+is urgent (say, a Family's address fix), use **Refresh now** on the home
+page after making it.
 
 **Afterwards.** **Campaign › Family email sends**
 ([Family email sends](../specs/stewardship/admin-portal/spec.md#family-email-sends))

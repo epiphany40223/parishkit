@@ -104,6 +104,7 @@ sections:
     "Mode routing": [BG-04]
     "ParishSoft refresh": [BG-05]
     "Delta cycle": [BG-05]
+    "Deltas wait for a bulk Family send": [BG-05]
     "Full cycle": [BG-05]
     "Manual request": [BG-05]
     "Family invitations and reminders": [BG-06]

@@ -27,15 +27,16 @@ IDLE_FAMILY_SWEEP_LIMIT = 20
 # Wall-clock budget for one loop's Family sweep. Each Family is planned in
 # its own global work-order lock transaction, and while that lock is
 # saturated (a send or a source refresh) one Family takes about 1-3 s on the
-# validation host, so a smaller budget would cap the page well below 100.
-# The budget bounds this producer's share of the scheduler loop, which also
-# runs the other producers and the due-hint scans before its 90-second
-# heartbeat. In the #394 live send those other steps took about 10-30 s of
-# a loop, so 40 s plus one overrunning Family (it is checked between
-# Families) still leaves about 15 s of margin. It is a pacing bound, not a
-# timeout: no transaction is interrupted, and the next loop resumes after
-# the last Family planned.
-FAMILY_SWEEP_SECONDS = 40
+# validation host, so under load the budget, not the page limit, ends the
+# page. The budget bounds this producer's share of the scheduler loop, which
+# also runs the other producers and the due-hint scans before its 90-second
+# heartbeat. A shorter loop publishes the hints for newly allocated
+# preparation sooner: with 40 s, the October 1 live send measured 70-80 s
+# from allocation to hint per task, and the shorter page did not lower the
+# measured send rate, because preparation and delivery, not planning, set
+# it. It is a pacing bound, not a timeout: no transaction is interrupted,
+# and the next loop resumes after the last Family planned.
+FAMILY_SWEEP_SECONDS = 15
 # Name of this budget in the work_budget_reached process-log line.
 BUDGET_NAME = "family_sweep_budget"
 
