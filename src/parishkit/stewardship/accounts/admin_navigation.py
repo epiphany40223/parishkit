@@ -130,6 +130,9 @@ PAGES = {
         "campaign", _("Return to Testing"), "campaign_settings"
     ),
     "delivery_control": Page("campaign", _("Delivery controls")),
+    # Watching a launch or reminder send (#413): a sidebar entry of its own,
+    # beside Delivery controls, so it is found without knowing where it is.
+    "family_email_progress": Page("campaign", _("Family email progress")),
     # Reports
     "reports": Page("reports", _("Campaign reports")),
     "report_campaigns": Page("reports", _("Choose a campaign"), "reports"),
@@ -239,6 +242,7 @@ NON_PAGES = frozenset(
         "exact_export_create",
         "exact_export_retry",
         "exact_export_status",
+        "family_email_progress_status",
         "export_cancel",
         "export_create",
         "export_download",

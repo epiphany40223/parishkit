@@ -17,6 +17,19 @@
 // When the work finishes while the page is watching, a terminal region may
 // ask for one follow-up: an a[data-live-follow] link is opened, or a
 // form[data-live-autosubmit] (such as a ready download) is submitted once.
+//
+// A region that follows a steadily changing count (such as Family email
+// progress) may set data-live-interval="<ms>" to poll at that fixed pace
+// (2-60 s) instead of backing off. Such a region is not itself aria-live,
+// because its counts change on every poll; it carries a short
+// data-live-announce sentence instead, which is copied into the page's
+// [data-live-announcer] element only when that sentence changes.
+//
+// A region may also set data-live-give-up="<ms>" (at most 3 hours) to
+// replace the one-hour limit; the limit then counts from the last poll that
+// brought new content, so a long send watched from well before it starts
+// keeps updating. data-live-refresh-label names the page's own refresh link
+// in the message shown when watching stops.
 (function () {
   "use strict";
   const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
@@ -31,7 +44,21 @@
   const own = region.getAttribute("data-live-url");
   const source = own && own.startsWith("/") && !own.startsWith("//")
     ? own : window.location.href;
-  const started = Date.now();
+  // When watching started, or (for a region with its own limit) when it
+  // last brought new content.
+  let started = Date.now();
+  const ownLimit = Number(region.getAttribute("data-live-give-up"));
+  const renews = Number.isFinite(ownLimit) && ownLimit > 0;
+  const giveUp = renews ? Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS;
+  const refreshLabel = region.getAttribute("data-live-refresh-label") || "Refresh status";
+  // A fixed pace, when the region asks for one, within sensible bounds.
+  const interval = Number(region.getAttribute("data-live-interval"));
+  const fixed = Number.isFinite(interval) && interval > 0
+    ? Math.min(Math.max(interval, 2000), 60000) : 0;
+  const announcer = [...document.querySelectorAll("[data-live-announcer]")]
+    .find((node) => node.getAttribute("data-live-announcer") === name);
+  // The page's first rendering is not news; announce only later changes.
+  let announced = region.getAttribute("data-live-announce") || "";
   let attempt = 0;
   let timer = 0;
   let inFlight = false;
@@ -91,11 +118,11 @@
   function schedule() {
     window.clearTimeout(timer);
     if (stopped || document.visibilityState !== "visible") return;
-    if (Date.now() - started > GIVE_UP_MS) {
-      stop("Still working. Use Refresh status to check again.");
+    if (Date.now() - started > giveUp) {
+      stop(`Still working. Use ${refreshLabel} to check again.`);
       return;
     }
-    timer = window.setTimeout(check, DELAYS[Math.min(attempt, DELAYS.length - 1)]);
+    timer = window.setTimeout(check, fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
     attempt += 1;
   }
 
@@ -122,6 +149,7 @@
       return;
     }
     lastMarkup = fresh.innerHTML;
+    if (renews) started = Date.now();
     region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
     // Mirror the fresh region's attributes (pending, state markers such as
     // data-export-state) so the page and its tests see the current state.
@@ -135,6 +163,16 @@
     });
     localize(region);
     elapsed();
+    announce();
+  }
+
+  function announce() {
+    // Polite and only on change, so a screen reader is not interrupted by
+    // every poll's new counts.
+    const text = region.getAttribute("data-live-announce") || "";
+    if (!announcer || text === announced) return;
+    announced = text;
+    announcer.textContent = text;
   }
 
   function finish() {

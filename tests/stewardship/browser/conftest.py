@@ -76,6 +76,7 @@ from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
 from .security_components import components as security_components
+from .send_progress_components import components as send_progress_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
@@ -1490,6 +1491,7 @@ def component_origin():
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
+    responses.update(send_progress_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),

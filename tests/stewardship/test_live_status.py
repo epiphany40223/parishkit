@@ -237,3 +237,32 @@ def test_elapsed_time_uses_the_server_clock_and_whole_units():
     # or "600 minutes ago".
     assert 'seconds < 3600 ? [Math.floor(seconds / 60), "minute"]' in source
     assert '[Math.floor(seconds / 3600), "hour"]' in source
+
+
+def test_script_supports_a_fixed_pace_and_change_only_announcements():
+    """A region may ask for a fixed pace and change-only announcements (#413).
+
+    Without data-live-interval the back-off above still applies, and a
+    region without an announcer element announces nothing extra.
+    """
+    source = SCRIPT.read_text()
+    assert 'region.getAttribute("data-live-interval")' in source
+    assert "Math.min(Math.max(interval, 2000), 60000)" in source
+    assert "fixed || DELAYS[" in source
+    assert 'region.getAttribute("data-live-announce")' in source
+    assert "if (!announcer || text === announced) return;" in source
+
+
+def test_script_lets_a_region_renew_its_own_watching_limit():
+    """A region may set its own watching limit, renewed by new content (#413).
+
+    The limit is at most 3 hours and counts from the last poll that brought
+    new content; other regions keep the one-hour limit from page load.
+    """
+    source = SCRIPT.read_text()
+    assert "const GIVE_UP_MS = 60 * 60 * 1000;" in source
+    assert 'region.getAttribute("data-live-give-up")' in source
+    assert "Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS" in source
+    assert "if (renews) started = Date.now();" in source
+    assert '|| "Refresh status"' in source
+    assert "Use ${refreshLabel} to check again." in source

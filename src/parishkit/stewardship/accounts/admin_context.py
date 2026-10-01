@@ -186,6 +186,7 @@ def _navigation_items(actor, admin, campaign, configuration):
                 add("campaign", "talent_settings", _("Member talents"), campaign.pk)
             if campaign.state == "draft":
                 add("campaign", "go_live", _("Go-live readiness"), campaign.pk)
+            add("campaign", "family_email_progress", _("Family email progress"))
         else:
             add("campaign", "campaign_new", _("New campaign"))
     if allows(actor, Capability.CAMPAIGN_REPORT):

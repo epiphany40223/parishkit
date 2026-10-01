@@ -57,7 +57,7 @@ from .accounts import (
     withdrawal_views,
 )
 from .audit import log_views
-from .jobs import delivery_views
+from .jobs import delivery_views, send_progress_views
 from .jobs import views as job_views
 from .reports import (
     campaign_picker,
@@ -550,6 +550,16 @@ admin_patterns = [
     path("logs", log_views.logs, name="logs"),
     path("logs/export", log_views.export_logs, name="logs_export"),
     path("deliveries", delivery_views.delivery_list, name="deliveries"),
+    path(
+        "deliveries/family-progress",
+        send_progress_views.family_email_progress,
+        name="family_email_progress",
+    ),
+    path(
+        "deliveries/family-progress/status",
+        send_progress_views.family_email_progress_status,
+        name="family_email_progress_status",
+    ),
     path("deliveries/refusals", delivery_views.refusal_list, name="delivery_refusals"),
     path(
         "deliveries/refusals/<uuid:refusal_id>",
