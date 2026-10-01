@@ -172,3 +172,53 @@ def test_framework_error_content_is_normalized():
         lambda _: HttpResponse("private-value", status=500)
     )(request)
     assert response.status_code == 500 and b"private-value" not in response.content
+
+
+PUBLIC_CACHE = "public, max-age=31536000, immutable"
+
+
+def own_cached(**changes):
+    """A view response that asks to keep its own public caching (#355)."""
+    response = HttpResponse(status=changes.pop("status", 200))
+    response["Cache-Control"] = PUBLIC_CACHE
+    response.stewardship_own_policy = changes.pop("marked", True)
+    if changes.pop("cookie", False):
+        response.set_cookie("pk_family_session", "value")
+    if "vary" in changes:
+        response["Vary"] = changes.pop("vary")
+    return response
+
+
+@pytest.mark.parametrize(
+    ("path", "changes", "kept"),
+    [
+        ("/branding/x.png", {}, True),
+        ("/files/token", {}, True),
+        ("/branding/x.png", {"status": 304}, True),
+        ("/branding/x.png", {"marked": False}, False),
+        ("/admin/configuration/branding/assets/x.png", {}, False),
+        ("/family/form", {}, False),
+        ("/branding/x.png", {"status": 403}, False),
+        ("/branding/x.png", {"status": 302}, False),
+        ("/branding/x.png", {"cookie": True}, False),
+        ("/branding/x.png", {"vary": "Accept-Encoding, Cookie"}, False),
+    ],
+    ids=[
+        "branding",
+        "hosted-file",
+        "not-modified",
+        "unmarked",
+        "private-branding",
+        "family-page",
+        "error",
+        "redirect",
+        "sets-cookie",
+        "varies-on-cookie",
+    ],
+)
+def test_only_public_byte_routes_keep_their_own_caching(path, changes, kept):
+    """A cacheable header survives only on a marked, cookie-free public route."""
+    response = SecurityBoundaryMiddleware(lambda _: own_cached(**changes))(
+        RequestFactory().get(path)
+    )
+    assert response["Cache-Control"] == (PUBLIC_CACHE if kept else "no-store")

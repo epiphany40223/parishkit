@@ -28,6 +28,9 @@ CSP = (
 # Hosted files (#346) are served under this policy instead: nothing may load
 # or run, and the bytes are never framed.
 FILE_CSP = "default-src 'none'; sandbox; frame-ancestors 'none'"
+# Public byte routes whose views may choose their own caching; see
+# keeps_own_caching().
+OWN_CACHING_PREFIXES = ("/branding/", "/files/")
 FORWARDED = (
     "HTTP_FORWARDED",
     "HTTP_X_FORWARDED_FOR",
@@ -175,6 +178,25 @@ def resolve_client(request):
     )
 
 
+def keeps_own_caching(request, response):
+    """Whether a response may keep the Cache-Control header its view chose.
+
+    Everything else is forced to no-store. Only public, anonymous byte routes
+    opt out: hosted files (#346) revalidate, and retained branding images
+    (#355) are immutable for a year. The view's marker alone is not enough,
+    so a marker that leaks onto a private route, an error page or a response
+    that sets or depends on cookies can never become cacheable by a browser
+    or a shared cache.
+    """
+    return (
+        getattr(response, "stewardship_own_policy", False)
+        and request.path_info.startswith(OWN_CACHING_PREFIXES)
+        and response.status_code in {200, 304}
+        and not response.cookies
+        and "cookie" not in response.get("Vary", "").lower()
+    )
+
+
 class SecurityBoundaryMiddleware:
     """Run before sessions/CSRF: validate ingress, hide internal routes, seal errors."""
 
@@ -238,9 +260,8 @@ class SecurityBoundaryMiddleware:
             response["Strict-Transport-Security"] = (
                 f"max-age={settings.SECURE_HSTS_SECONDS}"
             )
-        # A hosted file keeps its own revalidated caching (see its view).
-        if not request.path_info.startswith(settings.STATIC_URL) and not getattr(
-            response, "stewardship_own_policy", False
-        ):
+        if not request.path_info.startswith(
+            settings.STATIC_URL
+        ) and not keeps_own_caching(request, response):
             response["Cache-Control"] = "no-store"
         return response

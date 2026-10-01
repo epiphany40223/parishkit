@@ -287,6 +287,10 @@ def branding_asset(request, asset_id, *, private=False):
         )
         if private:
             return _checked(request, service, response)
+        # Keep this public, immutable caching past the security middleware's
+        # no-store default (#355); its own sandbox CSP is already the policy
+        # the middleware gives marked responses.
+        response.stewardship_own_policy = True
         return response
     except ERRORS as error:
         return _error(error)
