@@ -36,6 +36,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
 from parishkit.stewardship.campaigns.lifecycle import Action
+from parishkit.stewardship.campaigns.models import RestoreDeliveryHold
 from parishkit.stewardship.campaigns.runtime_models import ActivationCatchUpDemand
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
@@ -71,6 +72,7 @@ from .campaign_builders import (
     claimed_task,
     command,
     occurrence,
+    restored_runtime,
 )
 from .credential_builders import family_campaign, populate
 from .test_background_grants_postgresql import task_login
@@ -1005,3 +1007,167 @@ def test_in_progress_is_a_moment_in_time_across_a_moved_schedule(
         again = read_current()
     assert again.in_progress
     assert (again.remaining, again.unplanned, again.not_needed) == (3, 3, 0)
+
+
+# One Family per planning rule (#431 review M2). Families 1, 2 and 7 are
+# eligible with a deliverable address; 3 has none; 4 is not email-eligible;
+# 5 is inactive; 6 is eligible but under an unreviewed restore hold for the
+# send. For a reminder, 1, 2 and 6 had their invitation delivered and 7 did
+# not, so planning sends 7 the invitation instead.
+RULES = [
+    FamilyStatus(1, True, True, True, True),
+    FamilyStatus(2, True, True, True, True),
+    FamilyStatus(3, True, True, True, False, "eligible", "provider_suppressed"),
+    FamilyStatus(4, True, True, False, False, "eligible", "no_eligible_email"),
+    FamilyStatus(5, False, False, False, False, "inactive", "ineligible"),
+    FamilyStatus(6, True, True, True, True),
+    FamilyStatus(7, True, True, True, True),
+]
+OWED = {"initial": 3, "reminder": 2}
+
+
+def deliver(row, actor):
+    """Settle one invitation occurrence as delivered, with its fulfillment."""
+    task = claimed_task("schedule_occurrence", row.pk, actor)
+    row = advance(row, actor, "running", task_id=task.run_id, fence=task.fence)
+    row = advance(row, actor, "succeeded", fence=task.fence)
+    record_fulfillment(
+        occurrence_id=row.pk,
+        disposition="delivered",
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
+    )
+
+
+def restore_hold(campaign, definition, mode, family_id, actor):
+    """An unreviewed restore hold on ``definition`` for one Family."""
+    start = campaign.active_configuration.starts_at
+    with restored_runtime(start) as restore_id:
+        RestoreDeliveryHold.objects.create(
+            restore_id=restore_id,
+            definition=definition,
+            mode=mode,
+            target=f"family:{family_id}",
+            slot="once",
+            backup_at=start,
+            window_start=start,
+            window_end=start + timedelta(days=1),
+            discovery="inventory",
+            actor_id=actor,
+            correlation_id=uuid4(),
+        )
+
+
+def sweep(actor):
+    """Plan every Family once, as the scheduler's sweep does."""
+    with scheduler_session() as guard:
+        for family_id in FamilyCampaign.objects.values_list("pk", flat=True):
+            plan_family(guard, family_id=family_id, worker_id=actor)
+
+
+def check_owed_matches_planning(kind, plan):
+    """What the panel says is owed is exactly what planning then creates.
+
+    Read just before planning, the send's owed Families are its whole
+    remaining work; after ``plan`` they are all pending occurrences of the
+    send's revision, the total is unchanged and nothing is owed.
+    """
+    before = read_current()
+    assert before.kind == kind and before.in_progress
+    assert (before.unplanned, before.remaining, before.sent) == (OWED[kind],) * 2 + (0,)
+    plan()
+    after = read_current()
+    assert after.kind == kind
+    assert (after.unplanned, after.remaining) == (0, OWED[kind])
+    assert (
+        send_progress.progress(after).total
+        == send_progress.progress(before).total
+        == OWED[kind]
+    )
+    definition = (
+        ScheduleDefinition.objects.get(kind=kind)
+        if kind == "initial"
+        else (
+            ScheduleDefinition.objects.filter(kind="reminder").order_by(
+                "current_revision__due_at"
+            )[0]
+        )
+    )
+    assert (
+        ScheduleOccurrence.objects.filter(
+            revision_id=definition.current_revision_id, state="pending"
+        ).count()
+        == OWED[kind]
+    )
+
+
+@pytest.mark.parametrize("kind", ["initial", "reminder"])
+def test_owed_families_match_testing_planning_rule_by_rule(
+    family_service,  # noqa: F811
+    auth_service,
+    kind,
+):
+    """Testing: the count before the real planner equals what it creates."""
+    harness, actor = family_service, uuid4()
+    populate(harness.campaign, harness.rings, RULES, generation=2)
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    initial = ScheduleDefinition.objects.select_related("current_revision").get()
+    send = initial
+    if kind == "reminder":
+        rows = add_reminders(auth_service.store, harness.campaign, actor)
+        send = ScheduleDefinition.objects.get(pk=UUID(rows[0]["id"]))
+        with campaign_clock(initial.current_revision.due_at):
+            for duid in (1, 2, 6):
+                deliver(
+                    occurrence(initial, actor, target=f"family:{families[duid]}"),
+                    actor,
+                )
+    restore_hold(harness.campaign, send, "testing", families[6], actor)
+    send.refresh_from_db()
+    with campaign_clock(send.current_revision.due_at):
+        check_owed_matches_planning(kind, lambda: sweep(actor))
+
+
+@pytest.mark.parametrize("kind", ["initial", "reminder"])
+def test_owed_families_match_production_planning_rule_by_rule(tmp_path, kind):
+    """Production: the count before catch-up or the sweep equals what it creates.
+
+    The invitation is planned by the real activation catch-up, a reminder by
+    ordinary planning after it.
+    """
+    store, campaign, actor, rings = family_campaign(tmp_path)
+    populate(campaign, rings, RULES, generation=2)
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    initial = ScheduleDefinition.objects.select_related("current_revision").get()
+    send = initial
+    if kind == "reminder":
+        rows = add_reminders(store, campaign, actor)
+        send = ScheduleDefinition.objects.get(pk=UUID(rows[0]["id"]))
+    restore_hold(campaign, send, "production", families[6], actor)
+    due = initial.current_revision.due_at
+    with campaign_clock(due):
+        command(campaign, actor, Action.ACTIVATE)
+    demand = ActivationCatchUpDemand.objects.get()
+
+    def catch_up():
+        """The real activation catch-up worker plans every Family."""
+        with task_login(ServiceRole.WORKER, exact=True):
+            assert execute_hint(**execution_arguments(demand))
+
+    if kind == "initial":
+        with campaign_clock(due):
+            check_owed_matches_planning(kind, catch_up)
+        return
+    with campaign_clock(due):
+        catch_up()
+        for duid in (1, 2, 6):
+            deliver(
+                ScheduleOccurrence.objects.get(
+                    definition=initial, target=f"family:{families[duid]}"
+                ),
+                actor,
+            )
+    send.refresh_from_db()
+    with campaign_clock(send.current_revision.due_at):
+        check_owed_matches_planning(kind, lambda: sweep(actor))
