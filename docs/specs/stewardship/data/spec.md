@@ -50,10 +50,15 @@ and the active version is not the initial-setup bootstrap), authority checks
 report a distinct *activation in progress* rather than a generic mismatch.
 Work that meets it waits briefly and tries again, outside any transaction
 because the activation needs the work-order lock: background tasks for up to
-15 seconds and Admin pages for up to 3. A wait that runs out holds the work
-(never failing it) and logs its limit and elapsed time at WARNING; the
-installer completes the change. An Admin page that still meets it answers its
-ordinary `503` retry response, which is not logged as a server error. Every
+15 seconds and Admin pages for up to 3. The installer holds its session lock
+from YAML selection through activation, so a one-step mismatch seen twice
+while that lock is free is a failed activation, not one in progress: it is
+the ordinary mismatch that requires recovery, at once. A background wait
+that runs out holds the work (never failing it) and records a durable
+`task_timed_out` entry (`what` `configuration_activation`, its limit and
+elapsed time) at WARNING; an Admin page's logs only the process-log line. An
+Admin poll that still meets it answers its ordinary `503` retry response,
+which is not logged as a server error; every other `503` still is. Every
 other mismatch still requires recovery. See
 [background holds](../background-processing/spec.md#configuration-activation-holds).
 

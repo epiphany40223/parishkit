@@ -77,9 +77,6 @@ def authority_mismatch(selected, active_digest, message, *, active_schema=None):
         and selected.digest != active_digest
         and selected.predecessor_digest == active_digest
     ):
-        from parishkit.stewardship.request_scope import note_authority_changing
-
-        note_authority_changing()
         return AuthorityChanging(message)
     return ConfigError(message)
 

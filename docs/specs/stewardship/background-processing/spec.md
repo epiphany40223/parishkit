@@ -207,7 +207,8 @@ next hint, a ParishSoft refresh settles as a held retry
 (`source_refresh_held`) that does not use up its provider-failure retry
 allowance, and any other running task recovers through its lease as usual.
 The consumer and the scheduler's producers log the hold at WARNING, never as
-an ERROR task failure.
+an ERROR task failure; a mismatch with no installer running keeps its
+ordinary ERROR.
 
 ### Worker queues and processes
 

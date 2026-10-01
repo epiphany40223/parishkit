@@ -13,17 +13,18 @@ The memory lives in a context variable bound for one web request by
 ``RequestScopeMiddleware``. It is never shared across requests or threads, and
 outside a request (workers, installers, commands) nothing is remembered.
 
-The scope also notes when a request saw a configuration activation in
-progress (#429). Views answer that brief interval with their ordinary 503
-"temporarily unavailable, retry" response; the middleware marks it with a
-short Retry-After and keeps Django from logging it as a server ERROR.
+The middleware also finishes a response that a view built for a
+configuration activation in progress (#429), marked ACTIVATION_HOLD: it adds
+a short Retry-After and keeps Django from logging that expected 503 as a
+server ERROR. Every other 503 is logged as before.
 """
 
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 _VERIFIED = ContextVar("stewardship_verified_configuration", default=None)
-_ACTIVATING = ContextVar("stewardship_authority_changing", default=None)
+# The response attribute a view sets on the 503 it answers for an activation.
+ACTIVATION_HOLD = "stewardship_activation_hold"
 # Seconds a client should wait before retrying during an activation.
 ACTIVATION_RETRY_SECONDS = 2
 
@@ -32,11 +33,9 @@ ACTIVATION_RETRY_SECONDS = 2
 def request_scope():
     """Bind a fresh, empty memory for one request and always discard it after."""
     token = _VERIFIED.set({})
-    activating = _ACTIVATING.set([False])
     try:
         yield
     finally:
-        _ACTIVATING.reset(activating)
         _VERIFIED.reset(token)
 
 
@@ -45,28 +44,15 @@ def verified_configurations():
     return _VERIFIED.get()
 
 
-def note_authority_changing():
-    """Record that this request met a configuration activation in progress."""
-    noted = _ACTIVATING.get()
-    if noted is not None:
-        noted[0] = True
-
-
-def authority_changing_noted():
-    """Whether this request met a configuration activation in progress."""
-    noted = _ACTIVATING.get()
-    return noted is not None and noted[0]
-
-
 def mark_activation_response(response):
-    """Answer a 503 met during an activation as a brief, expected wait.
+    """Finish a 503 a view answered for an activation as an expected wait.
 
-    The page's poller already retries a 503; Retry-After says how soon. The
-    activation is an ordinary configuration change, so the response is
-    marked as already logged: Django's request logger would otherwise record
-    every such 503 at ERROR.
+    The page's poller already retries a 503; Retry-After says how soon. Only
+    a response the view marked ACTIVATION_HOLD is marked as already logged
+    (the view's wait logged its own WARNING): Django's request logger would
+    otherwise record it at ERROR. Any other 503 keeps its ERROR line.
     """
-    if response.status_code == 503 and authority_changing_noted():
+    if response.status_code == 503 and getattr(response, ACTIVATION_HOLD, False):
         if not response.has_header("Retry-After"):
             response["Retry-After"] = str(ACTIVATION_RETRY_SECONDS)
         response._has_been_logged = True

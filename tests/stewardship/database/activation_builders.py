@@ -2,21 +2,28 @@
 
 import logging
 from contextlib import contextmanager
-from threading import Timer
+from threading import Event, Thread, Timer
 from uuid import uuid4
 
+from django.db import connections
+
 from parishkit.stewardship.accounts.authority import parse_version
+from parishkit.stewardship.accounts.installation_lock import installation_lock
 
 
 @contextmanager
-def activation_window(store, *, closes_after=None):
+def activation_window(store, *, closes_after=None, installing=True):
     """Select a successor YAML one activation ahead of SQL, as apply_version does.
 
     The successor is written and selected but never activated, which is the
-    state between ``store.select`` and the database activation's commit. After
-    ``closes_after`` seconds a timer selects the base again: to every reader
-    that ends the window just as the activation's commit would, since YAML and
-    SQL agree once more. With ``None`` the window stays open for the block.
+    state between ``store.select`` and the database activation's commit. As
+    in apply_version, a separate session holds the installer lock throughout
+    (unless ``installing`` is False, which models an activation that failed
+    after selecting the YAML: nothing is running to finish it). After
+    ``closes_after`` seconds a timer selects the base again and releases the
+    lock: to every reader that ends the window just as the activation's commit
+    would, since YAML and SQL agree once more. With ``None`` the window stays
+    open for the block.
     """
     base = store.active()
     document = base.document()
@@ -24,10 +31,31 @@ def activation_window(store, *, closes_after=None):
     document["predecessor_digest"] = base.digest
     candidate = parse_version(document, validate_sections=store.validate_sections)
     store.write_version(candidate)
+    acquired, release = Event(), Event()
+
+    def installer():
+        """Hold the installer's session lock on this thread's own connection."""
+        try:
+            with installation_lock():
+                acquired.set()
+                release.wait(60)
+        finally:
+            connections.close_all()
+
+    holder = Thread(target=installer, daemon=True) if installing else None
+    if holder is not None:
+        holder.start()
+        assert acquired.wait(10)
     store.select(candidate)
+
+    def close():
+        """Agree again, then let the installer go, as a committed activation does."""
+        store.select(base)
+        release.set()
+
     timer = None
     if closes_after is not None:
-        timer = Timer(closes_after, store.select, args=(base,))
+        timer = Timer(closes_after, close)
         timer.start()
     try:
         yield candidate
@@ -35,7 +63,9 @@ def activation_window(store, *, closes_after=None):
         if timer is not None:
             timer.cancel()
             timer.join()
-        store.select(base)
+        close()
+        if holder is not None:
+            holder.join(10)
 
 
 def errors(caplog):

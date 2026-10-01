@@ -26,6 +26,7 @@ from parishkit.stewardship.activation_hold import WEB_HOLD_SECONDS, wait_out_act
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.request_scope import ACTIVATION_HOLD
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -254,11 +255,17 @@ def _held(step):
     regularly land in the second between an applied change's YAML selection
     and its database activation (#429). Each read is retried briefly; one
     that still meets the change answers the pollers' ordinary 503, which
-    they retry, and the request scope keeps it out of the ERROR log.
+    they retry. That response is marked as the hold's own, so the request
+    scope keeps it out of the ERROR log; the wait logged a WARNING. A stuck
+    activation (no installer running) is an ordinary ConfigError and 503.
     """
     try:
-        return wait_out_activation(step, limit=WEB_HOLD_SECONDS)
+        return wait_out_activation(step, limit=WEB_HOLD_SECONDS, durable=False)
     except AuthorityChanging:
+        response = _error(ErrorCode.UNAVAILABLE, 503)
+        setattr(response, ACTIVATION_HOLD, True)
+        return response
+    except ConfigError:
         return _error(ErrorCode.UNAVAILABLE, 503)
 
 

@@ -92,6 +92,7 @@ def test_the_entry_survives_the_callers_rollback():
         ("helper_timed_out", {"what": "web_drain", "limit_seconds": "345"}),
         ("helper_timed_out", {"what": "web_drain", "count": -1}),
         ("helper_timed_out", {"what": "web_heartbeat", "worker": 1}),
+        ("task_timed_out", {"what": "configuration_activations"}),
     ],
 )
 def test_sql_refuses_unreviewed_timeout_entries(event, context):
@@ -311,3 +312,24 @@ def test_the_web_master_never_raises_when_its_write_is_refused():
         lambda: settings, what="web_drain", limit_seconds=345, elapsed_seconds=346
     )
     assert not OperationalLog.objects.exists()
+
+
+def test_an_abandoned_activation_wait_is_recorded_durably(monkeypatch):
+    """The 15-second hold's give-up is a durable entry (#429)."""
+    from parishkit.stewardship import activation_hold
+    from parishkit.stewardship.accounts.authority import AuthorityChanging
+
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
+    monkeypatch.setattr(activation_hold, "installation_running", lambda: True)
+
+    def step():
+        """The change never finishes activating."""
+        raise AuthorityChanging("synthetic")
+
+    with pytest.raises(AuthorityChanging):
+        activation_hold.wait_out_activation(step, limit=1)
+    entry = OperationalLog.objects.get()
+    assert (entry.event, entry.level) == ("task_timed_out", "WARNING")
+    assert entry.context["what"] == "configuration_activation"
+    assert entry.context["limit_seconds"] == 1
+    assert entry.context["elapsed_seconds"] >= 1

@@ -30,6 +30,16 @@ from parishkit.stewardship.source.failures import classify_read_failure
 BASE, NEXT, OTHER = "a" * 64, "b" * 64, "c" * 64
 
 
+@pytest.fixture(autouse=True)
+def installer_running(monkeypatch):
+    """By default an installer holds its lock, as during a real activation."""
+    state = {"running": True}
+    monkeypatch.setattr(
+        activation_hold, "installation_running", lambda: state["running"]
+    )
+    return state
+
+
 def version(digest, predecessor):
     """A selected YAML version with just the fields authority checks read."""
     return SimpleNamespace(
@@ -101,10 +111,39 @@ def test_wait_retries_a_step_until_the_activation_commits(monkeypatch):
     assert len(attempts) == 3
 
 
-def test_wait_gives_up_at_its_limit_and_logs_the_timeout(monkeypatch, caplog):
-    """An activation that never commits is handed back, with limit and elapsed."""
+def test_worker_wait_gives_up_with_a_durable_timeout_entry(monkeypatch):
+    """Background work records the abandoned wait: what, limit and elapsed."""
+    from parishkit.stewardship.audit import timeouts
+
     monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
-    task = uuid4()
+    entries, task = [], uuid4()
+    monkeypatch.setattr(
+        timeouts,
+        "record_timeout",
+        lambda event, **facts: entries.append((event, facts)),
+    )
+
+    def step():
+        """The change never finishes activating."""
+        raise AuthorityChanging("synthetic")
+
+    with pytest.raises(AuthorityChanging):
+        activation_hold.wait_out_activation(step, limit=0.05, task_id=task)
+    ((event, facts),) = entries
+    assert event is LogEvent.TASK_TIMED_OUT
+    assert facts["what"] == "configuration_activation" and facts["level"] == "WARNING"
+    assert facts["task_id"] == task and facts["limit_seconds"] == 0.05
+    assert facts["elapsed_seconds"] >= 0.05
+
+
+def test_web_wait_gives_up_in_the_process_log_only(monkeypatch, caplog):
+    """An Admin poll's give-up is a WARNING line, never a durable entry."""
+    from parishkit.stewardship.audit import timeouts
+
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
+    monkeypatch.setattr(
+        timeouts, "record_timeout", lambda *a, **k: pytest.fail("durable entry")
+    )
 
     def step():
         """The change never finishes activating."""
@@ -114,13 +153,50 @@ def test_wait_gives_up_at_its_limit_and_logs_the_timeout(monkeypatch, caplog):
         caplog.at_level(logging.INFO, logger="parishkit.stewardship"),
         pytest.raises(AuthorityChanging),
     ):
-        activation_hold.wait_out_activation(step, limit=0.05, task_id=task)
+        activation_hold.wait_out_activation(step, limit=0.05, durable=False)
     (record,) = [r for r in caplog.records if r.msg == LogEvent.TASK_TIMED_OUT]
     assert record.levelno == logging.WARNING
     context = getattr(record, STRUCTURED_EXTRA_FIELD)
     assert context["timeout"] == "configuration_activation"
     assert context["limit_seconds"] == 0 and context["elapsed_seconds"] == 0
-    assert context["task_id"] == task
+
+
+@pytest.mark.parametrize("comes_back", [False, True])
+def test_a_mismatch_with_no_installer_running_is_not_waited_for(
+    monkeypatch, installer_running, comes_back
+):
+    """A YAML selected by a failed activation needs recovery, not a wait.
+
+    One idle sighting may be the instant after the commit released the lock,
+    so the step is tried once more; a second idle sighting raises the
+    ordinary ConfigError at once.
+    """
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0)
+    installer_running["running"] = False
+    attempts = []
+
+    def step():
+        """Mismatched until (optionally) the second attempt."""
+        attempts.append(1)
+        if comes_back and len(attempts) == 2:
+            return "done"
+        raise AuthorityChanging("synthetic")
+
+    if comes_back:
+        assert activation_hold.wait_out_activation(step) == "done"
+    else:
+        with pytest.raises(ConfigError) as caught:
+            activation_hold.wait_out_activation(step)
+        assert not isinstance(caught.value, AuthorityChanging)
+    assert len(attempts) == 2
+
+
+def test_activating_names_only_a_running_activation(installer_running):
+    """The scheduler's check: an AuthorityChanging while the installer runs."""
+    assert activation_hold.activating(AuthorityChanging("synthetic"))
+    assert not activation_hold.activating(ConfigError("synthetic"))
+    installer_running["running"] = False
+    assert not activation_hold.activating(AuthorityChanging("synthetic"))
 
 
 def test_wait_never_holds_an_open_transaction(monkeypatch):
@@ -269,32 +345,20 @@ def test_local_read_admission_carries_the_hold_out_of_shared_loaders():
         before_request()
 
 
-@pytest.mark.parametrize("noted", [False, True])
-def test_activation_503_is_not_logged_as_a_server_error(caplog, noted):
-    """Django logs a 503 at ERROR unless it met an activation in progress."""
+@pytest.mark.parametrize("held", [False, True])
+def test_only_the_holds_own_503_skips_the_server_error_log(caplog, held):
+    """Any other 503, even in a request that met an activation, stays ERROR."""
     from django.utils.log import log_response
 
-    with request_scope.request_scope():
-        if noted:
-            authority_mismatch(version(NEXT, BASE), BASE, "synthetic")
-        response = request_scope.mark_activation_response(HttpResponse(status=503))
-        with caplog.at_level(logging.WARNING, logger="django.request"):
-            log_response(
-                "Service Unavailable", response=response, request=HttpRequest()
-            )
+    response = HttpResponse(status=503)
+    if held:
+        setattr(response, request_scope.ACTIVATION_HOLD, True)
+    response = request_scope.mark_activation_response(response)
+    with caplog.at_level(logging.WARNING, logger="django.request"):
+        log_response("Service Unavailable", response=response, request=HttpRequest())
     errors = [r for r in caplog.records if r.name == "django.request"]
-    assert bool(errors) is not noted
-    assert response.has_header("Retry-After") is noted
-
-
-def test_activation_note_is_scoped_to_one_request():
-    """Outside a request nothing is noted; a new request starts clean."""
-    authority_mismatch(version(NEXT, BASE), BASE, "synthetic")
-    assert not request_scope.authority_changing_noted()
-    with request_scope.request_scope():
-        assert not request_scope.authority_changing_noted()
-        response = request_scope.mark_activation_response(HttpResponse(status=200))
-        assert not response.has_header("Retry-After")
+    assert bool(errors) is not held
+    assert response.has_header("Retry-After") is held
 
 
 def test_admin_poll_waits_out_activation_then_answers_retry(monkeypatch):
@@ -320,4 +384,114 @@ def test_admin_poll_waits_out_activation_then_answers_retry(monkeypatch):
         raise AuthorityChanging("synthetic")
 
     response = views._held(stuck)
-    assert response.status_code == 503 and response["Retry-After"]
+    assert response.status_code == 503
+    assert getattr(response, request_scope.ACTIVATION_HOLD)
+
+
+def test_admin_poll_answers_a_stuck_activation_as_an_ordinary_503(
+    monkeypatch, installer_running
+):
+    """No installer running: the ordinary 503, logged at ERROR as before."""
+    from parishkit.stewardship.jobs import views
+
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0)
+    installer_running["running"] = False
+
+    def stuck():
+        """A failed activation left the YAML selected."""
+        raise AuthorityChanging("synthetic")
+
+    response = views._held(stuck)
+    assert response.status_code == 503
+    assert not getattr(response, request_scope.ACTIVATION_HOLD, False)
+
+
+class FakeCursor:
+    """Accept check_inflight's transaction-local limits without SQL."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, *args):
+        """Nothing to set without a database."""
+
+
+def inflight_execution(monkeypatch, admit):
+    """An execution whose in-flight check runs real logic but no SQL."""
+    monkeypatch.setattr(
+        dispatch,
+        "connection",
+        SimpleNamespace(in_atomic_block=False, cursor=FakeCursor),
+    )
+    monkeypatch.setattr(dispatch, "transaction", SimpleNamespace(atomic=nullcontext))
+    monkeypatch.setattr(dispatch, "lock_task_claim", lambda claim: None)
+    monkeypatch.setattr(dispatch, "_status", lambda row: None)
+    return synthetic_execution(admit)
+
+
+def test_inflight_check_in_the_window_is_unverified_not_fatal(monkeypatch):
+    """A send already under way is not killed by a settings edit (#429)."""
+    calls = []
+
+    def admit(action, status):
+        """mail_authority in the window, then agreement again."""
+        calls.append(action)
+        if len(calls) == 1:
+            raise AuthorityChanging("synthetic")
+        return True
+
+    context = inflight_execution(monkeypatch, admit)
+    assert context.check_inflight() is False
+    assert context.check_inflight() is True
+
+
+def _changing(*args):
+    """An admission that calls mail_authority in the activation window."""
+    raise AuthorityChanging("synthetic")
+
+
+@pytest.mark.parametrize("owner", ["campaign", "operational", "setup"])
+def test_mail_helper_pulses_survive_the_activation_window(monkeypatch, tmp_path, owner):
+    """Campaign, operational and setup mail admit with mail_authority unwrapped.
+
+    Before #429 an AuthorityChanging there escaped the pulse and killed the
+    helper mid-send; now the pulse is an unverified tick and the send drains.
+    """
+    context = inflight_execution(monkeypatch, _changing)
+    if owner == "campaign":
+        from parishkit.stewardship.accounts import campaign_mail_tasks as tasks
+        from parishkit.stewardship.accounts.key_files import (
+            file_fingerprint,
+        )
+
+        path = tmp_path / "key"
+        path.write_bytes(b"SYNTHETIC")
+        path.chmod(0o600)
+        tasks._check(context, path, file_fingerprint(b"SYNTHETIC"))
+    elif owner == "operational":
+        from parishkit.stewardship.jobs import operational_mail_tasks as tasks
+
+        tasks._check(context)
+    else:
+        from parishkit.stewardship.accounts import setup_mail_tasks as tasks
+
+        tasks._check(context)
+    assert not context.control.failed.is_set()
+
+
+@pytest.mark.parametrize("running", [True, False])
+def test_scheduler_producer_logs_activation_as_warning_and_stuck_as_error(
+    monkeypatch, caplog, installer_running, running
+):
+    """A producer that met the window retries next pass at WARNING."""
+    from parishkit.stewardship import runtime_process
+
+    installer_running["running"] = running
+    guard = SimpleNamespace(check=lambda: None)
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        assert runtime_process.independent_producer(guard, _changing) == ()
+    (record,) = [r for r in caplog.records if r.msg == LogEvent.TASK_FAILED]
+    assert record.levelno == (logging.WARNING if running else logging.ERROR)

@@ -7,6 +7,7 @@ and domain admission still protect each durable effect. A stopped worker may
 finish its current safe unit, but must not start another external operation.
 """
 
+import logging
 from contextlib import contextmanager
 from threading import Event, RLock, Thread
 from time import monotonic
@@ -141,6 +142,11 @@ def _renewal_loop(execution, done):
             try:
                 renew_once(execution)
             except AuthorityChanging:
+                # Kept at DEBUG: a lost-lease investigation can see that a
+                # renewal met an activation, without a line per settings edit.
+                logging.getLogger("parishkit.stewardship.debug").debug(
+                    "lease renewal met a configuration activation; retrying"
+                )
                 pause = ACTIVATION_RETRY_SECONDS
                 continue
             finally:
