@@ -62,6 +62,10 @@ class FailureKind(StrEnum):
     """Safe operational categories, never exception text or credential values."""
 
     DATABASE = "database_unavailable"
+    # The database answered but a constraint or guard trigger refused the
+    # write (SQLSTATE class 23). Retrying alone will not help; the data or
+    # the code needs a look, so it is not reported as an outage.
+    DATABASE_REFUSED = "database_write_refused"
     LIMITER = "authentication_limiter_unavailable"
     CREDENTIAL = "credential_unavailable"
     CONFIGURATION = "configuration_unavailable"
@@ -307,7 +311,7 @@ def emit_failure(
     caller absorbs; ``task_id`` names the task it happened in; ``shaping``
     names which display-only comparison failed (see ``emit``).
     """
-    from django.db import DatabaseError
+    from django.db import DatabaseError, IntegrityError
 
     from parishkit.config import ConfigError
 
@@ -320,6 +324,8 @@ def emit_failure(
             kind
             for cls, kind in (
                 (LimiterUnavailable, FailureKind.LIMITER),
+                # Before DatabaseError, its base class: first match wins.
+                (IntegrityError, FailureKind.DATABASE_REFUSED),
                 (DatabaseError, FailureKind.DATABASE),
                 (CredentialValidationUnavailable, FailureKind.CREDENTIAL),
                 (CryptographicError, FailureKind.CREDENTIAL),

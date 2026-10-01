@@ -156,6 +156,7 @@ def test_invalid_event_inputs_are_rejected():
     "kind",
     [
         "database_unavailable",
+        "database_write_refused",
         "configuration_unavailable",
         "filesystem_unavailable",
         "unexpected_failure",
@@ -163,13 +164,14 @@ def test_invalid_event_inputs_are_rejected():
 )
 def test_installer_failure_keeps_request_identity_and_safe_category(caplog, kind):
     """Distinct operational diagnoses retain no exception text or stack secrets."""
-    from django.db import DatabaseError
+    from django.db import DatabaseError, IntegrityError
 
     from parishkit.config import ConfigError
     from parishkit.stewardship.observability import installer_request
 
     error_type = {
         "database_unavailable": DatabaseError,
+        "database_write_refused": IntegrityError,
         "configuration_unavailable": ConfigError,
         "filesystem_unavailable": OSError,
         "unexpected_failure": RuntimeError,
