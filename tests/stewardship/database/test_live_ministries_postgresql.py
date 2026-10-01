@@ -1,6 +1,7 @@
 """Changing a live campaign's Ministries (#342): guard, answers, reports, audit."""
 
 import re
+from datetime import timedelta
 from html import unescape
 from uuid import uuid4
 
@@ -12,15 +13,19 @@ from parishkit.stewardship.accounts.configuration_installation import install_re
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.audit.models import AuditContext
-from parishkit.stewardship.campaigns import admission, live_ministries
+from parishkit.stewardship.campaigns import admission, configuration, live_ministries
+from parishkit.stewardship.campaigns.lifecycle import Action
+from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.ministries import campaign_ids
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .auth_builders import signed_in
-from .campaign_builders import change, close_campaign
+from .campaign_builders import campaign_clock, change, close_campaign, command
+from .test_background_grants_postgresql import task_login
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import page, setup
-from .test_ministry_responses_postgresql import respond, revisit
+from .test_ministry_responses_postgresql import respond, revisit, start
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for
 
@@ -40,7 +45,10 @@ def select(harness, duids, *, patches=(), **values):
                     "operation": "update",
                     "section": "campaigns",
                     "id": str(harness.campaign.pk),
-                    "values": {"ministry_duids": list(duids), **values},
+                    "values": {
+                        "ministry_duids": None if duids is None else list(duids),
+                        **values,
+                    },
                 },
                 *patches,
             ],
@@ -123,6 +131,9 @@ def test_guard_allows_only_selection_changes_on_a_live_campaign(
     harness = setup(response_service)
     if bypass:
         monkeypatch.setattr(admission, "validate_installation", lambda *a, **k: None)
+        # Two-sided: the exemption itself admits a selection-only change.
+        assert applied(select(harness, [4]))
+        assert applied(select(harness, [4, 9]))
     result = select(harness, [4], additional_information=False)
     assert not applied(result) and selected(harness) == [4, 9]
     if bypass:
@@ -297,3 +308,141 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
         },
     )
     assert refused.status_code == 400
+
+
+def installed(harness, duids):
+    """Record a live change, then install it as the real installer login."""
+    from parishkit.stewardship.accounts.configuration_requests import record_request
+
+    store = harness.service.store
+    receipt = record_request(
+        base_digest=store.active().digest,
+        patch=[
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"ministry_duids": list(duids)},
+            }
+        ],
+        actor_id=uuid4(),
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+    with task_login(ServiceRole.CONFIG_INSTALLER, exact=True):
+        return install_request(
+            store, request_id=receipt.request_id, correlation_id=uuid4()
+        )
+
+
+def test_installer_login_applies_removal_and_addition(response_service):
+    """pk_stewardship_config_installer has no source grants, yet both apply.
+
+    A removal reads no catalog; an addition reads catalog presence through
+    the definer function its runtime_functions() grant names, in Python
+    preflight, at activation and in the SQL guard.
+    """
+    harness = setup(response_service)
+    removal = installed(harness, [4])
+    assert removal.state == "applied" and selected(harness) == [4]
+    addition = installed(harness, [4, 9])
+    assert addition.state == "applied" and selected(harness) == [4, 9]
+    # Not in the catalog: a terminal refusal, never a request left queued.
+    refused = installed(harness, [4, 9, 123])
+    assert refused.state == "failed" and refused.failure_code == "invalid_candidate"
+    assert selected(harness) == [4, 9]
+
+
+def test_activation_recheck_refuses_a_ministry_dropped_after_preflight(
+    response_service, monkeypatch
+):
+    """A promotion between preflight and activation is refused and restored.
+
+    Preflight is skipped here, standing in for one that ran before the
+    catalog changed. The recheck under the work-order lock refuses the
+    addition, records the request as failed and selects the previous YAML
+    again, so the next change applies without operator recovery.
+    """
+    harness = setup(response_service)
+    monkeypatch.setattr(admission, "validate_installation", lambda *a, **k: None)
+    result = installed(harness, [4, 9, 123])
+    assert result.state == "failed" and result.failure_code == "invalid_candidate"
+    assert selected(harness) == [4, 9]
+    assert installed(harness, [4]).state == "applied" and selected(harness) == [4]
+
+
+# A float never reaches SQL: the YAML layer refuses non-integer numbers.
+@pytest.mark.parametrize("value", [None, [4, 4], ["4", 9], [9, 4]], ids=str)
+def test_sql_requires_a_canonical_selection_list(response_service, monkeypatch, value):
+    """With every Python check bypassed, SQL refuses a malformed live value.
+
+    A missing key reaches the same test as JSON null: ``jsonb_typeof`` of SQL
+    NULL is not 'array'. A request cannot remove the key through a patch.
+    """
+    harness = setup(response_service)
+    monkeypatch.setattr(configuration, "_duids", lambda values: None)
+    monkeypatch.setattr(admission, "validate_installation", lambda *a, **k: None)
+    monkeypatch.setattr(live_ministries, "live_selection_admitted", lambda *a: True)
+    result = select(harness, value)
+    assert not applied(result) and selected(harness) == [4, 9]
+    assert SQL_REFUSAL in str(result)
+
+
+def scheduled(harness):
+    """Activate the harness campaign before it starts, so it is scheduled."""
+    from parishkit.stewardship.campaigns.rehearsals import (
+        cleanup_rehearsal,
+        invalidate_rehearsal,
+    )
+
+    start(harness)
+    epoch = invalidate_rehearsal(campaign_id=harness.campaign.pk, admit=lambda *a: True)
+    while cleanup_rehearsal(epoch):
+        pass
+    before = harness.campaign.active_configuration.starts_at - timedelta(days=1)
+    with campaign_clock(before):
+        command(harness.campaign, uuid4(), Action.ACTIVATE)
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.state == "scheduled"
+    assert harness.campaign.structural_locked
+    return harness
+
+
+@pytest.mark.parametrize("bypass", [False, True])
+def test_scheduled_campaign_takes_the_exemption(response_service, monkeypatch, bypass):
+    """SQL admits the change for a scheduled campaign too, Python bypassed or not."""
+    harness = scheduled(response_service)
+    if bypass:
+        monkeypatch.setattr(admission, "validate_installation", lambda *a, **k: None)
+        monkeypatch.setattr(live_ministries, "live_selection_admitted", lambda *a: True)
+    assert applied(select(harness, [4])) and selected(harness) == [4]
+    assert applied(select(harness, [4, 9])) and selected(harness) == [4, 9]
+
+
+def test_leader_of_a_removed_ministry_still_opens_the_campaign(response_service):
+    """The report's campaign list keeps a campaign with the leader's requests."""
+    harness = setup(response_service)
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    other = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({77}))
+
+    def readable(principal):
+        """Campaigns the leader may choose, read as the web login."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            return campaign_ids(principal)
+
+    assert harness.campaign.pk in readable(leader)
+    assert applied(select(harness, [4]))
+    assert harness.campaign.pk in readable(leader)
+    assert harness.campaign.pk not in readable(other)
+
+
+def test_removed_ministry_without_current_requests_leaves_reports(response_service):
+    """A removed Ministry whose requests were all withdrawn is not listed."""
+    harness = setup(response_service)
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"]["join"] = []
+    respond(harness, form, answers)
+    assert not open_requests(9).exists()
+    assert applied(select(harness, [4]))
+    assert 9 not in summaries(harness)

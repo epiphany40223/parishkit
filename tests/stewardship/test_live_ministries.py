@@ -55,3 +55,35 @@ def test_audit_context_accepts_the_change_lists():
 def test_summary_export_marks_removed_ministries(item, label):
     """Captures from before the flag existed have no in_campaign key."""
     assert activity(item) == label
+
+
+def test_only_the_config_installer_may_read_the_catalog_function():
+    """The definer catalog read is granted to one login; web keeps Family login."""
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.runtime_grants import (
+        FAMILY_LOGIN_FUNCTION,
+        MINISTRY_CATALOG_FUNCTION,
+        runtime_functions,
+    )
+
+    assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
+        MINISTRY_CATALOG_FUNCTION
+    }
+    assert runtime_functions(ServiceRole.WEB) == {FAMILY_LOGIN_FUNCTION}
+    for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
+        assert runtime_functions(role) == frozenset()
+
+
+def test_removal_reads_no_catalog(monkeypatch):
+    """Only an addition reads the catalog the installer may lack access to."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.campaigns import live_ministries
+
+    def unavailable(document):
+        """Fail the test if the catalog is read."""
+        raise AssertionError("catalog read")
+
+    monkeypatch.setattr(live_ministries, "addable_ministries", unavailable)
+    campaign = SimpleNamespace(state="active", structural_locked=True)
+    live_ministries.check_live_selection(campaign, [4, 9], [4], {})

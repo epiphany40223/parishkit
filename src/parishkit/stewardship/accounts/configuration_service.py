@@ -107,12 +107,12 @@ def admit_configuration_database():
     _identity("pk_stewardship_config_installer")
     from django.db import connection
 
-    from parishkit.stewardship.runtime_grants import admit_columns
+    from parishkit.stewardship.runtime_grants import admit_columns, runtime_functions
 
     allowed = {table: set(names) for table, names in CONFIGURATION_GRANTS.items()}
     for table, privileges in CONFIGURATION_COLUMNS.items():
         allowed.setdefault(table, set()).update(privileges)
-    admit_grants(allowed)
+    admit_grants(allowed, functions=runtime_functions(ServiceRole.CONFIG_INSTALLER))
     admit_columns(connection, CONFIGURATION_GRANTS, CONFIGURATION_COLUMNS)
 
 

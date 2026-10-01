@@ -922,7 +922,8 @@ never change.
   never deleted or rewritten: submissions keep their recorded inputs, join and
   stop requests stay in Ministry follow-up until staff close them, and the
   Ministry report, follow-up queue and follow-up packets keep showing them,
-  marked "No longer in this campaign". A Family who opens the form again no
+  marked "No longer in this campaign", while it has a request that was not
+  later withdrawn or replaced. A Family who opens the form again no
   longer sees that Ministry, and resubmitting does not withdraw its requests.
   Adding the DUID back shows those answers unmarked again, including on the
   Family form.
@@ -938,7 +939,7 @@ they can submit; the review cannot be narrowed to fewer Families. No mail is
 sent.
 
 Confirming records a `campaign_ministries_requested` audit event for the
-configuration request: the Administrator, the selections before
+configuration request (the request's own status records whether it applied): the Administrator, the selections before
 (`previous_ministry_duids`) and after (`ministry_duids`), and the
 `added_ministry_duids` and `removed_ministry_duids`. Reports and follow-up read
 the selections from the campaign's configuration version in effect, so the
@@ -948,9 +949,17 @@ history table.
 The same rules hold in SQL. The campaign activation guard
 (`stewardship_campaign_pointer_v1`) exempts only `ministry_duids` from "Live
 structural settings are locked". When the selections of a structurally locked
-campaign change, it requires the campaign to be scheduled or active and every
-added DUID to be visible under the candidate configuration: present in the
-promoted catalog, locally active and in a campaign with the Ministry module.
+campaign change, it requires the campaign to be scheduled or active, the
+selections to stay a sorted list of distinct whole numbers, and every added
+DUID to be visible under the candidate configuration: present in the promoted
+catalog, locally active and in a campaign with the Ministry module. The
+configuration installer holds no source grants, so it reads catalog presence
+only through the definer function `stewardship_ministry_catalog_v1()`, which
+returns DUIDs and nothing else and which only that login may execute. A
+removal reads no catalog. Activation repeats the addition check under the lock
+source promotion takes; if a refresh dropped or an Administrator inactivated
+the Ministry after the request was checked, the request fails and the previous
+settings stay in effect, so the Administrator reviews the change again.
 
 ## Campaign configuration
 

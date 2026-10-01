@@ -136,8 +136,9 @@ WITH selected AS MATERIALIZED (
         n.in_campaign
     FROM source x
     -- The campaign's selections plus any Ministry it no longer selects that
-    -- still has requests from this campaign (#342): removing a Ministry
-    -- never hides answers already given; they are marked not in_campaign.
+    -- still has a current request (not cancelled or replaced) from this
+    -- campaign (#342): removing a Ministry never hides answers already given;
+    -- they are marked not in_campaign.
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
@@ -145,6 +146,7 @@ WITH selected AS MATERIALIZED (
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
         WHERE s.campaign_id=x.id AND s.mode='live'
+          AND r.state NOT IN ('cancelled','superseded')
           AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
     ) n(duid,in_campaign)
     LEFT JOIN stewardship_snapshot_ministry m

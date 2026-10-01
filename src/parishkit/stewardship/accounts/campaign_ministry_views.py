@@ -23,10 +23,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.audit.schemas import Action, ActorKind
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.live_ministries import (
-    addable_ministries,
-    live_change_admitted,
-)
+from parishkit.stewardship.campaigns.live_ministries import live_change_admitted
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -158,16 +155,9 @@ def _preview(request, service, actor, state, campaign, form):
     if not added and not removed:
         form.add_error(None, _("No Ministries have changed."))
         return _page(request, configuration, campaign, form, status=400)
-    document = configuration.active_configuration.canonical_document
-    if set(added) - addable_ministries(document):
-        form.add_error(
-            "ministry_duids",
-            _(
-                "Only Ministries in the latest ParishSoft data and marked active "
-                "on Ministry activity can be added."
-            ),
-        )
-        return _page(request, configuration, campaign, form, status=400)
+    # The choices offer only the current selections and the active Ministries
+    # of the current catalog (campaign_views._catalog), so the form has already
+    # refused any other addition; the installer and SQL check it again.
     patch = [
         {
             "operation": "update",

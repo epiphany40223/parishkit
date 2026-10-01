@@ -5097,6 +5097,31 @@ AS $$
     )
 $$;
 
+-- The promoted ParishSoft Ministry catalog's DUIDs (#342), and nothing else:
+-- no name, roster or payload. The configuration installer may add a Ministry
+-- to a live campaign only when it is in this catalog, but holds no source
+-- grants by design, so it reads presence through this definer function. The
+-- caller applies local activity and campaign selection itself. Grant EXECUTE
+-- only to logins whose runtime_functions() name it.
+CREATE FUNCTION public.stewardship_ministry_catalog_v1()
+    RETURNS TABLE(organization_id bigint, ministry_duid integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT ministry.organization_id, membership.source_key::integer
+    FROM public.stewardship_source_current pointer
+    JOIN public.stewardship_snapshot_ministry membership
+        ON membership.snapshot_id=pointer.snapshot_id
+    JOIN public.stewardship_source_ministry ministry ON ministry.id=membership.payload_id
+    WHERE pointer.singleton
+      AND ministry.canonical::jsonb->'catalog_present'='true'::jsonb
+      -- Each DUID is a positive signed 32-bit key; CASE orders the cast after
+      -- the shape test.
+      AND CASE WHEN membership.source_key ~ '^[0-9]{1,10}$'
+          THEN membership.source_key::bigint BETWEEN 1 AND 2147483647 ELSE false END
+$$;
+REVOKE ALL ON FUNCTION public.stewardship_ministry_catalog_v1() FROM PUBLIC;
+
 CREATE FUNCTION public.stewardship_response_ministry_current_v1(
     source_id uuid, family_id uuid, member_key text, ministry_id integer)
     RETURNS boolean LANGUAGE sql STABLE

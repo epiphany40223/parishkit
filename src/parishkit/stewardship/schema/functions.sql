@@ -1174,23 +1174,39 @@ BEGIN
         END IF;
         -- The one reviewed live structural exemption (#342): an Administrator
         -- may change a locked campaign's Ministry selections while it is still
-        -- open. Removing is always allowed. Every added DUID must be visible
-        -- now: in the promoted catalog, locally active in this candidate, in a
-        -- campaign with the Ministry module. Answers are never touched here.
+        -- open. The value must stay canonical: a strictly ascending array of
+        -- whole numbers, as the YAML schema writes it. Removing is always
+        -- allowed. Every added DUID must be visible now: in the promoted
+        -- catalog (read through the definer stewardship_ministry_catalog_v1,
+        -- since the installer holds no source grants), not inactive in this
+        -- candidate's Ministry activity, in a campaign with the Ministry
+        -- module. Answers are never touched here. Nested CASEs fix the
+        -- evaluation order, so a malformed value is refused, not miscast.
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
               AND old_c.values->'ministry_duids' IS DISTINCT FROM candidate.values->'ministry_duids'
-              AND (c.state NOT IN ('scheduled','active') OR EXISTS (
+              AND (c.state NOT IN ('scheduled','active')
+                OR NOT coalesce(CASE WHEN jsonb_typeof(candidate.values->'ministry_duids')='array'
+                    AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(candidate.values->'ministry_duids') e(duid)
+                        WHERE jsonb_typeof(e.duid)<>'number' OR e.duid#>>'{}'!~'^[0-9]{1,19}$') THEN
+                    candidate.values->'ministry_duids'=(SELECT coalesce(jsonb_agg(to_jsonb(d.duid) ORDER BY d.duid),'[]'::jsonb)
+                        FROM (SELECT DISTINCT (e.duid#>>'{}')::numeric AS duid
+                              FROM jsonb_array_elements(candidate.values->'ministry_duids') e(duid)) d)
+                    END,false)
+                OR EXISTS (
                   SELECT 1 FROM jsonb_array_elements(candidate.values->'ministry_duids') added(duid)
                   WHERE NOT old_c.values->'ministry_duids' @> added.duid
-                    -- Nested CASEs fix the evaluation order, so a malformed
-                    -- value is refused instead of failing a cast.
                     AND NOT coalesce(CASE WHEN jsonb_typeof(added.duid)='number'
                         AND added.duid#>>'{}'~'^[0-9]{1,10}$' THEN
                         CASE WHEN (added.duid#>>'{}')::bigint BETWEEN 1 AND 2147483647 THEN
-                            stewardship_response_ministry_visible_v1(
-                                (SELECT snapshot_id FROM stewardship_source_current WHERE singleton),
-                                NEW.active_configuration_id,target,(added.duid#>>'{}')::integer)
+                            candidate.values->'modules' ? 'ministry'
+                            AND EXISTS (SELECT 1 FROM stewardship_ministry_catalog_v1() present
+                                WHERE present.ministry_duid=(added.duid#>>'{}')::integer
+                                  AND NOT EXISTS (SELECT 1 FROM stewardship_ministry_activity activity
+                                      WHERE activity.configuration_id=NEW.active_configuration_id
+                                        AND activity.organization_id=present.organization_id
+                                        AND activity.ministry_duid=present.ministry_duid
+                                        AND NOT activity.active))
                         END END,false)))) THEN
             RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
         END IF;
@@ -5163,6 +5179,19 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                          -- activation the same way and restored the same way.
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                             AND intent.request_schema='chair-seed-patch-v9'
+                            AND current_user<>'pk_stewardship_web')
+                         -- A Ministry added to a live campaign that a source
+                         -- promotion dropped, or that turned inactive, after
+                         -- preflight (#342) is refused and restored the same
+                         -- way. Only a request whose one operation changes
+                         -- nothing but a campaign's ministry_duids qualifies.
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                            AND jsonb_typeof(intent.patch)='array'
+                            AND jsonb_array_length(intent.patch)=1
+                            AND intent.patch->0->>'section'='campaigns'
+                            AND intent.patch->0->>'operation'='update'
+                            AND intent.patch->0->'values' ? 'ministry_duids'
+                            AND (intent.patch->0->'values') - 'ministry_duids'::text = '{}'::jsonb
                             AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b
