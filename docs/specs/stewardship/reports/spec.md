@@ -493,7 +493,11 @@ one choice of everything, cannot participate, cannot attend, or a single
 talent; a summary counts each. The filtered result downloads immediately as CSV
 (Members, then Families) or XLSX (one sheet each), in a chosen display
 timezone. Viewing and downloading are audited with a count only. These answers
-are never written to ParishSoft. The Ministry follow-up queue also notes when a
+are never written to ParishSoft. When the campaign offers no talents, the
+page says so plainly and lists only the limitations: no Talents column, talent
+counts or talent filters appear on the page or in the downloads, and Members
+listed only for talents an earlier response chose are left out. The Ministry
+follow-up queue also notes when a
 leave comes from a Member who cannot participate in any ministries.
 
 ## System logs

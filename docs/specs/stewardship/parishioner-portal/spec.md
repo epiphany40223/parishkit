@@ -328,6 +328,10 @@ alongside the share options (see
 edited them offers the built-in defaults: Painter, Florist, Seamstress,
 Carpenter, Attorney, Gardener and Other. An option marked for free text (Other)
 requires a short description, at most 200 characters. No talent is required.
+A campaign whose talent list an Admin emptied offers no talents: no panel
+appears on the Member's page, the review step shows no talents line, and each
+Member's answer is sent with no talents. Talents an earlier response chose are
+dropped once their option is no longer offered.
 
 Above the Ministry choices, each Member may check "Because of physical
 limitations, I/we cannot participate in any ministries at this time." While

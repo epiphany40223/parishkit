@@ -396,3 +396,40 @@ def test_refresh_unlocked_elsewhere_drops_the_stale_set_aside(page, component_or
     page.get_by_label(SERVE).uncheck()
     expect(page.get_by_label("Florist")).to_be_checked()
     expect(page.get_by_label("Painter")).not_to_be_checked()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_emptied_talent_list_shows_no_talents_anywhere(
+    page, component_origin, axe_source, width
+):
+    """A campaign whose talent list was emptied shows no Talents panel or line.
+
+    "Cannot participate" still appears and works, and each Member's answer
+    is sent with no talents, which the server accepts.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    form, submissions, errors = service_form(), [], []
+    form["service"]["talent_options"] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    begin(page, component_origin, form, recorder(submissions))
+    lock = show(page, page.get_by_label(SERVE))
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    assert page.get_by_text("special talent", exact=False).count() == 0
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    # Toggling the separate limitation never brings an empty panel back.
+    lock.check()
+    lock.uncheck()
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    review(page)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[0]["service"] == {
+        "members": {"3": {"cannot_serve": False, "talents": {}}},
+        "proposed_members": {},
+    }
+    assert not errors, errors

@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 
 from parishkit.stewardship.reports.talents import (
     UNAVAILABLE,
+    TalentQuery,
     shape_result,
     talents_csv,
     talents_xlsx,
@@ -92,3 +93,76 @@ def test_xlsx_escapes_control_characters_in_source_names():
     member = book["Members"]["C2"]
     assert member.data_type == "s" and member.value == "Alex\\u000bExample"
     assert book["Families"]["A2"].value == "Example\\u000b"
+
+
+def test_campaign_without_talents_reports_only_limitations():
+    """An emptied talent list drops every talent column, count and filter.
+
+    A Member listed only for a talent an earlier response chose is left out;
+    a Member who cannot participate stays, with no talents shown.
+    """
+    emptied = {"modules": ["ministry"], "talent_options": []}
+    raw = result({PAINTER: ""}, {PAINTER: 2})
+    raw["members"].append(
+        raw["members"][0] | {"member_name": "Sam Example", "cannot_serve": True}
+    )
+    raw["summary"] |= {"members": 2, "cannot_serve": 1}
+    shaped = shape_result(raw, configuration=emptied)
+    assert shaped["collects_talents"] is False
+    assert [row["member_name"] for row in shaped["members"]] == ["Sam Example"]
+    assert shaped["members"][0]["talents"] == []
+    assert shaped["summary"]["talents"] == [] and shaped["summary"]["members"] == 1
+    assert shaped["talent_choices"] == []
+    rows = list(csv.reader(io.StringIO(talents_csv(shaped, UTC).decode())))
+    assert rows[0] == [
+        "Family",
+        "Family DUID",
+        "Member",
+        "Cannot participate in ministries",
+        "Latest response",
+    ]
+    assert rows[1][3] == "Yes"
+    book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
+    headings = [cell.value for cell in book["Members"][1]]
+    assert "Talents" not in headings and len(headings) == 5
+    # A campaign that does collect talents keeps its Talents column.
+    kept = shape_result(
+        result({PAINTER: ""}, {PAINTER: 1}), configuration={"modules": ["ministry"]}
+    )
+    assert kept["collects_talents"] is True
+    rows = list(csv.reader(io.StringIO(talents_csv(kept, UTC).decode())))
+    assert rows[0][3] == "Talents"
+
+
+def test_report_page_says_plainly_that_no_talents_are_collected():
+    """The page explains the empty list instead of showing talent columns."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.reports.talent_views import tables
+
+    def page(configuration, raw):
+        """Render the report page from a shaped result, as the view does."""
+        shaped = shape_result(raw, configuration=configuration)
+        query = TalentQuery()
+        members, families = tables(shaped, query, {}, "/report")
+        return render_to_string(
+            "stewardship/talents-report.html",
+            shaped
+            | {
+                "metadata": {"name": "Renewal"},
+                "members_table": members,
+                "families_table": families,
+                "campaign_id": "00000000-0000-4000-8000-000000000000",
+                "query": query,
+                "query_fields": query.form_values(),
+                "export_timezones": ["UTC"],
+            },
+        )
+
+    html = page({"modules": ["ministry"], "talent_options": []}, result({}, {}))
+    assert "This campaign does not collect talents" in html
+    assert "Talents</" not in html and "Members with talents" not in html
+    assert "Painter" not in html and 'colspan="4"' in html
+    html = page({"modules": ["ministry"]}, result({PAINTER: ""}, {PAINTER: 1}))
+    assert "does not collect talents" not in html
+    assert "Members with talents or limitations" in html and "Painter" in html

@@ -1,5 +1,6 @@
 """Member talents and "cannot participate in any ministries" (issue #247)."""
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from parishkit.stewardship.campaigns.configuration import campaign_values
 from parishkit.stewardship.responses.financial import ShareOption
 from parishkit.stewardship.responses.inputs import definition_digest
 from parishkit.stewardship.responses.ministry import MinistryInputs, MinistryOption
+from parishkit.stewardship.responses.presentation import _service_presentation
 from parishkit.stewardship.responses.service import (
     DEFAULT_TALENTS,
     InvalidServiceAnswers,
@@ -221,3 +223,53 @@ def test_disabled_ministry_module_accepts_only_an_empty_section():
     assert validate_service_answers({}, {}, None, ()) == {}
     with pytest.raises(InvalidServiceAnswers):
         validate_service_answers(service(), {}, None, ())
+
+
+def test_emptied_talent_list_offers_none_and_still_validates():
+    """An Admin-emptied list stays empty; answers carry no talents (bug fix).
+
+    "Cannot participate" still works, and a stale talent from before the
+    list was emptied is refused rather than silently stored.
+    """
+    emptied = {"modules": ["ministry"], "talent_options": []}
+    assert talent_options(emptied) == ()
+    locked = {"1": {"cannot_serve": True, "talents": {}}}
+    result = validate_service_answers(
+        service(**locked),
+        ministries(**{"1": {"join": [], "leave": [7, 8]}}),
+        INPUTS,
+        (),
+    )
+    assert result["members"] == {
+        "1": {"cannot_serve": True, "talents": {}},
+        "2": {"cannot_serve": False, "talents": {}},
+    }
+    with pytest.raises(InvalidServiceAnswers) as caught:
+        validate_service_answers(
+            service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
+            ministries(),
+            INPUTS,
+            (),
+        )
+    assert set(caught.value.fields) == {"service.members.1.talents"}
+
+
+def test_prior_talents_drop_when_the_list_is_later_emptied():
+    """A saved answer with talents prefills none once no talents are offered."""
+    prior = SimpleNamespace(
+        answers={
+            "service": {
+                "members": {
+                    "1": {"cannot_serve": False, "talents": {PAINTER: "", OTHER: "x"}},
+                    "2": {"cannot_serve": True, "talents": {}},
+                },
+                "proposed_members": {},
+            }
+        }
+    )
+    shown = _service_presentation(ministries(), (), prior)
+    assert shown["talent_options"] == []
+    assert shown["members"] == {
+        "1": {"cannot_serve": False, "talents": {}},
+        "2": {"cannot_serve": True, "talents": {}},
+    }

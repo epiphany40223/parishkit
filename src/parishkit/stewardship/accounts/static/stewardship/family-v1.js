@@ -905,10 +905,16 @@
       edit(lockId);
     });
   }
+  function offersTalents() {
+    // A campaign whose talent list was emptied (or never collects talents)
+    // shows no Talents panel or review line at all; "cannot participate"
+    // is a separate answer and still appears.
+    return Boolean(form.service?.talent_options.length);
+  }
   function talentsEditor(member, parent) {
     // Talents come last on the Member's page, below the ministry updates,
     // and are hidden while the Member cannot participate (none are sent).
-    if (!form.service || serviceEntry(member).cannot_serve) return;
+    if (!offersTalents() || serviceEntry(member).cannot_serve) return;
     const entry = serviceEntry(member), prefix = "service-" + member.id;
     // Styled like the Ministry participation panel: a panel with an h4, and
     // the question as the checkbox group's legend.
@@ -1084,7 +1090,7 @@
       const entry = serviceEntry(member);
       const talents = form.service.talent_options.filter((option) => option.id in entry.talents).map(
         (option) => option.free_text ? option.label + ": " + entry.talents[option.id] : option.label);
-      if (!entry.cannot_serve) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
+      if (!entry.cannot_serve && offersTalents()) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
       if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }
