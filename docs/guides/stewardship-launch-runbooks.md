@@ -204,9 +204,17 @@ sends included, and holds back 200 of its 1,800 for receipts and digests.
 The launch's roughly 1,400 recipients fit the remaining 1,600 only if little
 else was sent in the 24 hours before it.
 
-**While it runs.** Run the report with `purpose='initial'`, `since` a few
-minutes before the confirmation and `until` a time in the future. Its
-**Overview** shows how many invitations have gone out so far and the rate.
+**While it runs.** Watch **Campaign › Family email progress** in the Admin
+portal
+([Family email progress](../specs/stewardship/admin-portal/spec.md#family-email-progress)).
+It updates by itself every few seconds with the sent, remaining, failed and
+uncertain counts, the current rate and an estimated finish time, and it does
+not slow the send down. It can be opened as soon as Production is
+confirmed: it waits for the invitations to be scheduled and then follows
+them to the end. For the operator's view, run the report with
+`purpose='initial'`, `since` a few minutes before the confirmation and
+`until` a time in the future. Its **Overview** shows how many invitations
+have gone out so far and the rate.
 
 **Afterwards.** Once the progress page is settled, run it again with
 `until` after the last outcome, and record in the operators' notes:

@@ -6,7 +6,7 @@
 {% aboutpage "outgoing-mail" %}<dl><dt>{% translate "Delivered" %}</dt><dd>{% translate "The mail service accepted the email. That does not prove it reached the inbox." %}</dd><dt>{% translate "Delivery unknown" %}</dt><dd>{% translate "The mail service did not confirm either way, so the email may or may not have arrived. These are never retried automatically; open one to decide what to do." %}</dd><dt>{% translate "Failed delivery" %}</dt><dd>{% translate "The email could not be sent. Open it to see its history and whether a retry is offered." %}</dd><dt>{% translate "Pending, Waiting to retry and Submitting" %}</dt><dd>{% translate "The email is still on its way; no action is needed." %}</dd></dl>
 <p>{% translate "Mode is Testing for email sent while the system is in Testing mode, which goes only to the Testing recipient, and Production for real email. Provider attempts counts how many times the email was handed to the mail service." %}</p>
 <p>{% translate "Opening or refreshing this page does not extend your sign-in." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Review refused addresses" %}</a></p>
+<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:delivery_refusals' %}">{% translate "Review refused addresses" %}</a></p>
 <form method="get" class="panel">
   <label for="delivery-state">{% translate "Delivery state" %}</label>
   <select name="state" id="delivery-state">{% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|delivery_label }}</option>{% endfor %}</select>

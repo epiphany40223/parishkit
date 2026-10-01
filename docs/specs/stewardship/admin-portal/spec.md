@@ -320,7 +320,7 @@ viewer may open:
 
 - **Campaign**: Campaign settings (or New campaign), Campaign images, Pages and emails, Mail
   schedules, Share options (financial campaigns), Member talents (Ministry
-  campaigns), Go-live readiness (drafts)
+  campaigns), Go-live readiness (drafts), Family email progress
   and Delivery controls (Production).
 - **Reports**: Campaign reports, Ministry reports, Family directory (Family
   codes and, with its mailing columns, postal outreach) and the Manual
@@ -525,10 +525,12 @@ not affect presence semantics or carry form answers.
 
 Every Admin page that follows background work (configuration changes,
 credential replacement, Testing cleanup, Family link preparation, chosen-Family
-tests, background task details, integration key changes and report exports)
+tests, background task details, integration key changes, report exports and
+[Family email progress](#family-email-progress))
 updates itself: while the work is queued or running it shows a worded running
 indicator and re-reads its passive status, backing off from 2 to 10 seconds
-and pausing while the tab is hidden; it states success or failure prominently
+(or at the fixed pace a page asks for, 2 to 60 seconds) and pausing while the
+tab is hidden; it states success or failure prominently
 when the work finishes and then stops. These status reads are passive like the
 indicator polling above, and a page never reloads itself through a view that
 counts as activity, so an open page cannot keep an idle login alive. Nor does
@@ -1318,6 +1320,105 @@ or campaign schedules. Once every held or uncertain row is resolved, the same
 atomic workflow clears the durable pause control; closed campaigns do not use
 the ordinary Resume action. Reopen readiness is blocked until the prior pause
 and held-message state is resolved.
+
+### Family email progress
+
+Sending the invitations, and later each reminder, to every Family is a long
+background operation (about 1,100 Families take 20 to 25 minutes). The
+read-only **Family email progress** page (Campaign section, linked from
+Delivery controls and Outgoing mail) follows it live
+([#413](https://github.com/epiphany40223/parishkit/issues/413)). It is for
+Administrators only, like Outgoing mail.
+
+**Which send.** A send is one Family schedule definition of the current
+campaign (the invitation, or one reminder) in the current mode and, in
+Production, the current Production cycle. Every Family's occurrence of that
+definition is one email of the send. The page shows the send whose
+occurrences fell due most recently, so a reminder takes over once its first
+email is due, while a late-joining Family's invitation (due at the
+invitation's original time) does not pull the page back. Each Family counts
+once, by its newest occurrence, so a deliverability recovery that replaces a
+failed invitation is not counted twice.
+
+**What it shows.** Each Family's email is counted by its outbox message
+state, or, before preparation, by its occurrence:
+
+- **Sent**: delivered (the mail service accepted it).
+- **Failed**: permanent failure, or a preparation that failed. Failed
+  emails link to Outgoing mail; preparation failures, which have no email
+  there, link to the failed preparation tasks in Background work.
+- **Uncertain**: delivery unknown, linked to Outgoing mail.
+- **Remaining**: pending, waiting to retry or submitting, or not yet
+  prepared.
+- **Held: invitation failed or uncertain** (reminders only, shown when
+  non-zero): a reminder not yet prepared for a Family whose newest invitation
+  failed or is uncertain. Planning holds such a reminder until the invitation
+  is resolved (`initial_unfulfilled` or `delivery_unresolved`), so it is not
+  remaining and the send can still finish. This is a narrower test than
+  planning's own: a reminder held for rarer reasons (a newest invitation
+  skipped or coalesced without delivery, an unreviewed restore hold, or
+  another uncertain email for the Family) still counts as remaining, and one
+  sent because a restore assumed its failed invitation delivered counts as
+  held until it is prepared. These need a restore or a deliverability edge
+  case, never the launch invitation, and are an accepted v1 limit.
+- **Couldn't be emailed**: skipped or cancelled because the Family has no
+  deliverable address (`no_deliverable_recipient`) or is no longer eligible
+  (`family_ineligible`).
+- **Not needed** (shown when non-zero): skipped, coalesced or cancelled for
+  any other reason, such as the Family having responded, a later email
+  replacing this one, or the campaign closing.
+
+The total is sent, failed, uncertain and remaining; the last three
+categories are shown beside it, not in it. Families are scheduled in small
+groups as a send starts, so for its first minutes the total can still grow;
+the page's help says so. A labelled progress bar shows the finished share
+(sent, failed and uncertain), which reaches 100% only when nothing remains;
+an empty send shows a full bar. The current rate is emails finished per
+minute over the last five minutes (or since the send started, if that is
+sooner, with at least 30 seconds to measure); when nothing finished in that
+window the page says so instead of showing a zero rate. The estimated finish
+assumes the rate continues; there is none while nothing is finishing or
+while live delivery is paused. A pause is read from the campaign's pause
+control, not from held messages, which workers hold only as they reach them,
+and the page then says **Paused**. The page also shows when the send started
+(its first email was prepared) and, once nothing remains, when it finished
+(its last email settled) and its average rate. The finish time is the last
+change to any of the send's settled emails, so a later resolution (accepting
+an uncertain email, or retrying a failed one) moves it, and the average rate
+with it. Each Family's newest occurrence is chosen by recovery generation
+first, so after a schedule replacement an older revision's recovery attempt
+can outrank the newer revision's first attempt; both are accepted for v1.
+
+**Live updates.** While emails remain, the page re-reads a status-only
+fragment every 5 seconds, like the other
+[self-updating pages](#background-indicators): the reads are passive, never
+renew idle time, and are not audited; only opening the page records an
+audited Outgoing mail view. In Production the page also keeps checking while
+a send is about to start: while the campaign's activation catch-up is
+unfinished, or while an invitation or reminder is due within an hour either
+side of now and nothing is scheduled for it yet. A page opened right after
+confirming Production, or just before a reminder, therefore switches to the
+send by itself. Its wording hedges: a reminder no Family still needs
+schedules nothing, and an activation catch-up that keeps failing never
+schedules the invitations, so while waiting the page points to Background
+work. The page keeps checking for up to 3 hours after the last check that
+brought new counts (other self-updating pages stop an hour after they are
+opened), so a page opened an hour early follows the whole send; when it
+stops, it says to use **Refresh progress**. The region's counts change on every read, so it is not
+itself an ARIA live region; screen readers instead hear one short polite
+announcement when the send passes each quarter, pauses and finishes.
+Technical details sit outside the updated region. As on Outgoing mail, a
+restore review that begins while the page renders withholds it.
+
+**Cost.** Every read uses only rows and columns the web login already reads,
+runs in one read-only snapshot and takes no lock, in particular not the
+global work-order lock that the send's own workers take. The campaign's
+Family occurrences are found through the existing definition index and each
+email by primary key, with no schema change. A reminder also reads the
+invitations of the Families whose reminder is not prepared yet. At launch
+scale (about 1,100 Families among 5,000 other occurrences and messages) the
+reads take about 0.5, 3 and 2 ms on the test database; with 50,000 other
+messages, about 0.7, 6 and 2.5 ms.
 
 ### Family portal maintenance
 

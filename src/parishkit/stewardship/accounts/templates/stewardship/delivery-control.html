@@ -7,6 +7,7 @@
 {% aboutpage "delivery-control" %}<p>{% translate "Pausing does not close the campaign: Families can still respond, and their confirmation emails wait until you resume. Nothing is sent to the Testing recipient instead. Alerts to administrators and test emails you send yourself still go out." %}</p>
 <p>{% translate "Email that is already being handed to the mail service when you pause may still go out; pausing cannot recall it. An email whose result is uncertain is resolved on the Outgoing mail page, not here." %}</p>
 <p>{% translate "Every pause, resume or resolution asks for a reason and shows a preview first. Nothing changes until you confirm it." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a></p>
 <section class="panel"><h2>{% translate "Current live-mail inventory" %}</h2>
 <dl><dt>{% translate "Queued messages" %} {% translate "Waiting for their send time or for the mail worker to pick them up." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-queued-tip" tip_text=tip %}</dt><dd>{{ inventory.queued|number }}</dd>
 <dt>{% translate "Held messages" %} {% translate "Stopped by a pause. They are sent or cancelled when you resume or resolve them." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-held-tip" tip_text=tip %}</dt><dd>{{ inventory.held|number }}</dd>
