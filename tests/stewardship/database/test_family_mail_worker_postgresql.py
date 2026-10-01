@@ -8,6 +8,7 @@ from threading import Event
 from time import monotonic
 from uuid import uuid4
 
+import psycopg
 import pytest
 from django.db import connection, connections
 
@@ -18,7 +19,8 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.family_delivery_process import FamilyMailSession
-from parishkit.stewardship.jobs import family_mail_delivery_tasks
+from parishkit.stewardship.jobs import family_mail_delivery_tasks, family_mail_dispatch
+from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.dispatch import claim_hint
 from parishkit.stewardship.jobs.family_mail_delivery_tasks import delivery_handler
 from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
@@ -173,6 +175,160 @@ def test_launch_budget_read_does_not_wait_for_the_global_work_lock(
         release.set()
         pool.shutdown(wait=True)
     assert len(holders) == 1 and len(calls) == 1 and 0 < calls[0] <= 30
+    assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
+
+
+LOGIN_ROWS = ("stewardship_system_configuration", "stewardship_campaign_credentials")
+
+
+def other_session(settings):
+    """A second autocommit session on the test database, outside Django."""
+    return psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        dbname=settings["NAME"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        autocommit=True,
+    )
+
+
+def login_rows_free(settings):
+    """Whether a Family login could share the rows it locks, within 1 s.
+
+    A login takes the runtime row and its campaign's credential row FOR
+    SHARE (accounts/family_authentication.py). This tries the same on a
+    second session under a 1 s lock_timeout and reports whether it got them.
+    """
+    with other_session(settings) as other:
+        other.execute("SET lock_timeout = '1s'")
+        try:
+            with other.transaction():
+                other.execute(
+                    "SELECT id FROM stewardship_system_configuration FOR SHARE"
+                )
+                other.execute(
+                    "SELECT id FROM stewardship_campaign_credentials FOR SHARE"
+                )
+        except psycopg.errors.LockNotAvailable:
+            return False
+    return True
+
+
+def writers_refused(settings):
+    """Whether a writer's row lock on both login rows is refused right now.
+
+    Sharing the rows with logins must still keep them unchanged until the
+    mail transaction commits. Any UPDATE of them first takes a row lock
+    that conflicts with FOR SHARE; this takes that same lock, FOR NO KEY
+    UPDATE NOWAIT, on a second session, once per table.
+    """
+    refused = []
+    with other_session(settings) as other:
+        for table in LOGIN_ROWS:
+            try:
+                with other.transaction():
+                    other.execute(f"SELECT id FROM {table} FOR NO KEY UPDATE NOWAIT")
+                refused.append(False)
+            except psycopg.errors.LockNotAvailable:
+                refused.append(True)
+    return all(refused)
+
+
+@pytest.mark.parametrize("production", [False, True])
+def test_whole_family_delivery_runs_beside_a_long_family_login(
+    dispatch_worker, monkeypatch, production
+):
+    """No step of a Family delivery waits for a login's shared locks (#147).
+
+    Another session holds a login's FOR SHARE locks on the runtime and
+    credential rows for up to 12 s while the whole delivery runs: claim,
+    effect, submission (with its schedule planning), in-flight checks,
+    outcome and completion. Any FOR UPDATE on those rows anywhere on that
+    path, including a shared lock later upgraded, would wait for the
+    login, so the delivery must finish well before the share is released.
+    """
+    harness, path = dispatch_worker
+    if production:
+        harness = activate_response_service(harness)
+        complete_empty_catchup(harness.campaign, uuid4())
+    settings = dict(connection.settings_dict)
+    ready, release = Event(), Event()
+
+    def login():
+        """Hold a login's shares until released, or 12 s at most."""
+        with other_session(settings) as other, other.transaction():
+            for table in LOGIN_ROWS:
+                other.execute(f"SELECT id FROM {table} FOR SHARE")
+            ready.set()
+            release.wait(12)
+
+    def provider(value, settings, mail, *, seconds, check, session):
+        for _ in range(6):
+            check()
+            Event().wait(0.25)
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        with ThreadPoolExecutor(1) as pool:
+            held = pool.submit(login)
+            assert ready.wait(10)
+            started = monotonic()
+            try:
+                deliver(harness, path, message)
+            finally:
+                took = monotonic() - started
+                release.set()
+            held.result()
+    assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
+    assert took < 8, took
+
+
+def test_family_mail_admission_does_not_hold_up_family_logins(
+    dispatch_worker, monkeypatch
+):
+    """A sending worker shares the rows a Family login locks (#147).
+
+    Family mail admission used to lock the runtime and credential rows FOR
+    UPDATE, so every login waited for each message's whole admission and
+    submission transaction. Another session tries a login's FOR SHARE
+    locks inside the worker's effect (after its admission) and right after
+    it commits "submitting" (after every guarded write), and must get them
+    at once both times. A writer's row lock on those rows must still be
+    refused at both points.
+    """
+    harness, path = dispatch_worker
+    settings = dict(connection.settings_dict)
+    probes = []
+    real_sender = family_mail_delivery_tasks.configured_sender_name
+    real_change = family_mail_dispatch.change_message
+
+    def sender(*args, **kwargs):
+        """Probe inside the worker's effect, after its admission."""
+        probes.append(("effect", login_rows_free(settings), writers_refused(settings)))
+        return real_sender(*args, **kwargs)
+
+    def change(*args, **kwargs):
+        """Probe inside the submission, after the guarded write."""
+        result = real_change(*args, **kwargs)
+        if kwargs.get("action") is DeliveryAction.SUBMIT:
+            probes.append(
+                ("submit", login_rows_free(settings), writers_refused(settings))
+            )
+        return result
+
+    def provider(value, settings, mail, *, seconds, check, session):
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "configured_sender_name", sender)
+    monkeypatch.setattr(family_mail_dispatch, "change_message", change)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    assert probes == [("effect", True, True), ("submit", True, True)]
     assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
 
 
@@ -610,3 +766,61 @@ def test_key_change_mid_switch_holds_mail_without_spending_attempts(
     assert len(alerts) == (1 if change == "installed" else 0)
     if alerts:
         assert alerts[0].levelname == "ERROR"
+
+
+def test_in_flight_checks_verify_ownership_in_sql_at_most_once_a_second(
+    dispatch_worker, monkeypatch
+):
+    """The helper's 0.25 s ticks reach SQL (and the work lock) once a second.
+
+    Each SQL in-flight check joins the deployment-wide work-order lock, and
+    the message's ownership was verified when it committed "submitting"
+    (#147). A fake clock drives the ticks: none in the first second reaches
+    SQL, the first at 1 s does, and the next only a second after that. The
+    process-local check still runs on every tick: a failed renewal seen on
+    a throttled tick stops the helper at once. A SQL check skipped at its
+    lock limit does not count as verified, so the next tick tries SQL again.
+    """
+    harness, path = dispatch_worker
+    clock = [100.0]
+    sql, local, executions = [], [], []
+    real_check = family_mail_delivery_tasks._check
+    real_inflight = family_mail_delivery_tasks._inflight_check
+
+    def counted(execution):
+        """Count SQL checks; the one at 102.0 is skipped at its lock limit."""
+        sql.append(clock[0])
+        return clock[0] != 102.0 and real_check(execution)
+
+    def inflight(execution):
+        """Keep the execution, to fail its renewal on a throttled tick."""
+        executions.append(execution)
+        return real_inflight(execution)
+
+    def provider(value, settings, mail, *, seconds, check, session):
+        for at in (100.0, 100.25, 100.5, 100.75, 101.0, 101.5, 101.75, 102.0):
+            clock[0] = at
+            check()
+            local.append(at)
+            if at == 100.5:
+                # A failed renewal must stop even a tick that skips SQL.
+                failed = executions[0].control.failed
+                failed.set()
+                try:
+                    with pytest.raises(RuntimeError, match="must stop"):
+                        check()
+                finally:
+                    failed.clear()
+        clock[0] = 102.25
+        check()
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(family_mail_delivery_tasks, "_check", counted)
+    monkeypatch.setattr(family_mail_delivery_tasks, "_inflight_check", inflight)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    assert sql == [101.0, 102.0, 102.25] and len(local) == 8
+    assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"

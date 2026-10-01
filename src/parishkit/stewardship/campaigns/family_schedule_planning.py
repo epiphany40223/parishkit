@@ -115,7 +115,13 @@ def plan_family(guard, *, family_id, worker_id):
             correlation_id = claim_event(guard)
         else:
             try:
-                scope, epoch = _planning_scope(campaign_id, postclose=True)
+                # A dispatching mail worker reaches here from its submission,
+                # whose admission already took these rows FOR SHARE: keep that
+                # mode rather than upgrade it while a Family login holds a
+                # share (#147). Planning never writes them.
+                scope, epoch = _planning_scope(
+                    campaign_id, postclose=True, share=dispatch
+                )
             except PermissionError:
                 return FamilyPlanningResult(family_id, held=True, reason="scope_held")
             through = scope.instant
@@ -329,9 +335,15 @@ def plan_family(guard, *, family_id, worker_id):
         )
 
 
-def _planning_scope(campaign_id, *, postclose=False, allow_missing_epoch=False):
-    """Planning waits for current mode/epoch and ordinary lifecycle admission."""
-    scope = _scope(campaign_id)
+def _planning_scope(
+    campaign_id, *, postclose=False, allow_missing_epoch=False, share=False
+):
+    """Planning waits for current mode/epoch and ordinary lifecycle admission.
+
+    ``share`` takes the runtime and credential rows FOR SHARE rather than FOR
+    UPDATE, for admission-only callers; see jobs.admission._scope.
+    """
+    scope = _scope(campaign_id, share=share)
     campaign, runtime = scope.campaign, scope.runtime
     if (
         campaign is None
@@ -369,11 +381,27 @@ def _planning_scope(campaign_id, *, postclose=False, allow_missing_epoch=False):
         )
     ):
         raise PermissionError("Ordinary schedule planning is held.")
-    credentials = (
-        CampaignCredentialState.objects.select_for_update()
-        .filter(campaign_id=campaign_id, go_live_gate=False)
-        .first()
-    )
+    if share:
+        # A Family login takes this row FOR SHARE as well (#147). Django has
+        # no FOR SHARE, so one raw statement locks and reads the row: the
+        # go_live_gate filter is evaluated once, on the row that is locked.
+        credentials = next(
+            iter(
+                CampaignCredentialState.objects.raw(
+                    "SELECT * FROM stewardship_campaign_credentials"
+                    " WHERE campaign_id=%s AND NOT go_live_gate"
+                    " ORDER BY id LIMIT 1 FOR SHARE",
+                    [campaign_id],
+                )
+            ),
+            None,
+        )
+    else:
+        credentials = (
+            CampaignCredentialState.objects.select_for_update()
+            .filter(campaign_id=campaign_id, go_live_gate=False)
+            .first()
+        )
     if credentials is None:
         raise PermissionError("Schedule planning requires current credential scope.")
     epoch = None

@@ -414,7 +414,9 @@ def disposition(message, *, check_recipient=False):
         )
     ):
         return "scope_replaced"
-    scope = _scope(message.campaign_id)
+    # Admission only: share the runtime and credential rows with Family
+    # logins rather than make each login wait for this transaction (#147).
+    scope = _scope(message.campaign_id, share=True)
     if (
         message.mode == "production"
         and occurrence.production_cycle != scope.campaign.production_cycle
@@ -426,7 +428,7 @@ def disposition(message, *, check_recipient=False):
     ):
         return "campaign_closed"
     try:
-        _planning_scope(message.campaign_id)
+        _planning_scope(message.campaign_id, share=True)
     except PermissionError:
         raise FamilyDeliveryHeld("Family delivery awaits current scope.") from None
     if message.mode == "production" and scope.campaign.delivery_paused:
@@ -591,7 +593,7 @@ def begin_submission(
         )
         reason = disposition(message, check_recipient=True)
         if reason == "delivery_paused":
-            scope = _scope(message.campaign_id)
+            scope = _scope(message.campaign_id, share=True)
             if (
                 message.pause_hold_id is None
                 or message.pause_version != scope.campaign.pause_version
@@ -627,8 +629,10 @@ def begin_submission(
             ).exists()
         ):
             raise FamilyDeliveryHeld("Family delivery configuration changed.")
+        # The submission writes only its message, occurrence and Task rows,
+        # never the runtime or credential rows, so admission shares them.
         if row is None:
-            scope = _scope(message.campaign_id)
+            scope = _scope(message.campaign_id, share=True)
         else:
             decision = plan_family(
                 claim, family_id=message.family_id, worker_id=claim.worker_id
@@ -637,7 +641,7 @@ def begin_submission(
                 raise FamilyDeliveryHeld("Family delivery recovery is held.")
             if decision.selected != row.pk:
                 return None
-            scope, _ = _planning_scope(message.campaign_id)
+            scope, _ = _planning_scope(message.campaign_id, share=True)
         if message.pause_hold_id is not None:
             release_message_hold(
                 message_id=message.pk,

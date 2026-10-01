@@ -36,12 +36,37 @@ class WorkScope:
     instant: datetime
 
 
-def _scope(campaign_id):
-    """Read runtime then campaign after the shared order lock; missing state denies."""
+def _scope(campaign_id, *, share=False):
+    """Read runtime then campaign after the shared order lock; missing state denies.
+
+    The runtime row is normally locked FOR UPDATE. ``share`` locks it FOR
+    SHARE instead, for admission-only callers (Family mail dispatch) that
+    never write it, nor any row a Family login locks, later in the same
+    transaction. Every writer of the row still takes FOR UPDATE after the
+    work-order lock, so either lock keeps it unchanged until commit; but a
+    Family login takes FOR SHARE on it too, and an admission's FOR UPDATE
+    made each login wait for that admission's whole transaction (#147).
+    A caller that might later update the row, or lock a credential or
+    session row first, must keep the default: upgrading a shared lock while
+    a login holds one could deadlock with that login.
+    """
     if campaign_id is not None and not isinstance(campaign_id, UUID):
         raise TypeError("Work scope requires a canonical campaign identity.")
     require_work_order()
-    runtime = SystemConfiguration.objects.select_for_update().first()
+    if share:
+        # Django has no FOR SHARE, so one raw statement locks and reads the
+        # row: what is read is exactly what is locked.
+        runtime = next(
+            iter(
+                SystemConfiguration.objects.raw(
+                    "SELECT * FROM stewardship_system_configuration"
+                    " ORDER BY id LIMIT 1 FOR SHARE"
+                )
+            ),
+            None,
+        )
+    else:
+        runtime = SystemConfiguration.objects.select_for_update().first()
     if runtime is None or runtime.active_configuration_id is None:
         raise PermissionError("Background work requires applied configuration.")
     campaign = None
