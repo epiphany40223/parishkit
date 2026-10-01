@@ -142,6 +142,8 @@ TIMEOUT_LIMITS = frozenset(
         "provider_check",
         "renewal_drain",
         "control_lock",
+        "web_drain",
+        "web_heartbeat",
         "timeout_log_slot",
     }
 )

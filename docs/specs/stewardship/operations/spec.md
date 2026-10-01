@@ -645,7 +645,16 @@ statement, lock or transaction timeout (including the lease renewal's own
 lock and statement limits and its drain limit), or a helper process killed at its
 deadline is an ERROR (`task_timed_out`, `helper_timed_out`). A helper entry is
 written right after the kill and names the helper (a mail, ParishSoft or provider
-check helper) and the task it served, when a worker runs it. A lost worker
+check helper) and the task it served, when a worker runs it. A web worker
+killed by Gunicorn's master is a `helper_timed_out` ERROR as well, which the
+master writes just before the kill on the web login's own connection, without
+loading Django. It is `web_drain` when a worker is still serving at the end of
+a stop's grace, with how many workers were killed. That grace is the
+container's stop grace less a margin, so the kill and its entry come before
+Docker's, as for the
+[worker's sibling processes](../background-processing/spec.md#worker-queues-and-processes). It is
+`web_heartbeat` when a worker was silent for longer than the server timeout.
+The master waits at most five seconds for the entry before it kills. A lost worker
 lease is a WARNING, and an ERROR with the failed outcome when it ends the
 task's last attempt (`task_lease_lost`). Housekeeping that stops at its time
 budget and resumes on its next run is INFO for retention and WARNING for the
