@@ -204,7 +204,10 @@ promotion read the same `statement_timestamp()`.
 Until [issue #421](https://github.com/epiphany40223/parishkit/issues/421) moves
 the fixtures to a calendar that does not expire, each CI database shard sets
 its disposable runner clock to 2026-09-30T12:00Z for the partition and restores
-it afterwards. Local runs on a real clock after 2026-10-01 fail about 100
+it afterwards. The `stewardship-operational` job does the same around its
+Compose scenarios, after pulling the runtime service images: its setup wizard
+seeds the same campaign, and once the 09:00 invitation is due the scheduler
+creates an occurrence that the bootstrap proof does not expect. Local runs on a real clock after 2026-10-01 fail about 100
 database tests for this reason alone; rely on CI for full database evidence.
 
 ## Foundation boundaries
