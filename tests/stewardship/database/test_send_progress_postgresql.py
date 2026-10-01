@@ -8,6 +8,10 @@ temporary copies of the three tables the panel reads: temporary tables are
 searched before ``public``, keep the real indexes, and can hold about 1,100
 Families' rows without running 1,100 real preparations. Every generated
 identifier is derived from a fixed name and row number, so runs repeat.
+
+The send's total counts the Families planning has not reached yet, so it is
+also checked part-way through real planning (Testing and a reminder) and on
+the launch-scale copies, which add Families with no occurrence yet.
 """
 
 import json
@@ -19,12 +23,16 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
+from django.db.models import F
 from psycopg import sql
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.credential_models import (
+    CampaignCredentialState,
+    FamilyCampaign,
+)
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -33,9 +41,13 @@ from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
     ScheduleOccurrence,
 )
+from parishkit.stewardship.campaigns.schedule_production import (
+    FamilyScheduleProducer,
+)
 from parishkit.stewardship.campaigns.schedules import (
     change_occurrence,
     create_occurrence,
+    record_fulfillment,
 )
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
@@ -53,15 +65,19 @@ from .auth_builders import signed_in
 from .campaign_builders import (
     add_draft,
     admit_test_work,
+    advance,
     campaign_clock,
     change,
+    claimed_task,
     command,
+    occurrence,
 )
 from .credential_builders import family_campaign, populate
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
 from .test_delivery_views_postgresql import uncertain
 from .test_export_campaign_lock_postgresql import contender
+from .test_family_auth_postgresql import family_service  # noqa: F401
 from .test_family_mail_dispatch_postgresql import prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_family_schedule_planning_postgresql import add_reminders
@@ -74,7 +90,12 @@ SHADOWED = (
     "stewardship_schedule_definition",
     "stewardship_schedule_occurrence",
     "stewardship_outbox_message",
+    "stewardship_family_campaign",
 )
+# Launch-scale Families planning has not reached yet: eligible ones the send
+# will still email, and ineligible ones it never will.
+UNPLANNED = range(9001, 9021)
+INELIGIBLE = range(9101, 9106)
 # Unrelated rows (other schedules' occurrences, receipts and digests) so the
 # planner sees a realistically mixed table rather than only this send: about
 # a launch's worth, then about several years' worth of outgoing mail.
@@ -380,6 +401,36 @@ def clone_rows(rows, *, source, definition, due_minutes, label, cycle):
         cursor.execute("DROP TABLE pk413_plan")
 
 
+def clone_families(family, numbers, *, label, eligible=True):
+    """Copy the real Family row once per number, as the Family ``clone_rows`` targets.
+
+    Each copy's id is the one ``clone_rows`` derives from ``label`` and the
+    Family number, so a copy with occurrences is planned and one without is
+    not. An ineligible copy is one the send never emails.
+    """
+    columns = [field.column for field in FamilyCampaign._meta.concrete_fields]
+    overrides = {"id": "md5(%(label)s||'f'||n)::uuid", "family_duid": "100000+n"}
+    if not eligible:
+        overrides |= {"email_eligible": "false", "email_deliverable": "false"}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            sql.SQL(
+                "INSERT INTO pg_temp.stewardship_family_campaign ({}) SELECT {} "
+                "FROM public.stewardship_family_campaign r, "
+                "unnest(%(numbers)s::int[]) n WHERE r.id=%(source)s"
+            ).format(
+                sql.SQL(",").join(map(sql.Identifier, columns)),
+                sql.SQL(",").join(
+                    sql.SQL(overrides[name])
+                    if name in overrides
+                    else sql.Identifier("r", name)
+                    for name in columns
+                ),
+            ),
+            {"label": label, "numbers": list(numbers), "source": family},
+        )
+
+
 def add_noise(first, count, models=(ScheduleOccurrence, OutboxMessage)):
     """Other schedules' occurrences and other mail, which the panel never reads.
 
@@ -444,17 +495,25 @@ def explain(cursor, statement, values):
 def measure(values):
     """Plans of the panel statements; each reads occurrences by index, quickly.
 
-    Returns (choose, count, waiting): a reminder also reads the invitation
-    of each Family whose reminder is not prepared yet, to find reminders
-    held behind it. The
-    schedule occurrences of one campaign's Family definitions are always
+    Returns (choose, count, waiting, unplanned): a reminder also reads the
+    invitation of each Family whose reminder is not prepared yet, to find
+    reminders held behind it, and every send counts the Families planning
+    has not reached yet (here as for an invitation in ``values["mode"]``).
+    The schedule occurrences of one campaign's Family definitions are always
     found through the definition index, never by scanning every occurrence.
     """
     with read_transaction(), connection.cursor() as cursor:
+        cursor.execute(send_progress._SCOPE, values)
+        _, revision, _, epoch = cursor.fetchone()
         plans = (
             explain(cursor, send_progress._CURRENT, values),
             explain(cursor, send_progress._COUNTS, values),
             explain(cursor, send_progress._WAITING, values),
+            explain(
+                cursor,
+                send_progress.unplanned_statement(values["mode"], "initial"),
+                values | {"revision": revision, "epoch": epoch},
+            ),
         )
     for plan_ in plans:
         assert "stewardship_schedule_occurrence" not in relations(
@@ -479,17 +538,23 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
 ):
     """About 1,100 Families: exact counts, index plans and a few milliseconds."""
     real = source(family_mail)
+    family = OutboxMessage.objects.get(pk=real[0]).family_id
     campaign, mode, cycle = scope()
     initial = ScheduleDefinition.objects.get(kind="initial")
-    with shadowed():
+    # Planning reads due times on the campaign clock, so the panel does too.
+    with shadowed(), campaign_clock(initial.current_revision.due_at):
+        rows = plan()
         clone_rows(
-            plan(),
+            rows,
             source=real,
             cycle=cycle,
             definition=initial.pk,
             due_minutes=20,
             label="pk413-i",
         )
+        planned = sorted({row[0] for row in rows})
+        clone_families(family, [*planned, *UNPLANNED], label="pk413-i")
+        clone_families(family, INELIGIBLE, label="pk413-i", eligible=False)
         add_noise(1, NOISE)
         with read_transaction():
             now = database_now()
@@ -511,14 +576,17 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             counts.unreachable,
             counts.not_needed,
             counts.recent,
-        ) == (605, 15, 5, 5, 455, 0, 8, 15, 215)
+        ) == (605, 15, 5, 5, 475, 0, 8, 15, 215)
+        # The 20 eligible Families planning has not reached are remaining
+        # and not prepared; the ineligible ones are in no count.
+        assert (counts.unplanned, counts.unprepared) == (20, 70)
         shown = send_progress.progress(counts)
-        assert (shown.total, shown.done, shown.percent) == (1080, 625, 57)
-        # 215 settled in five minutes is 43 a minute; 455 left is 11 minutes.
-        assert shown.rate == 43 and shown.minutes_left == 11
+        assert (shown.total, shown.done, shown.percent) == (1100, 625, 56)
+        # 215 settled in five minutes is 43 a minute; 475 left is 12 minutes.
+        assert shown.rate == 43 and shown.minutes_left == 12
         # The page renders the same read for the Admin.
         body = signed_in()[0].get(STATUS).content.decode()
-        assert "625 of 1,080 emails finished (57%)" in body
+        assert "625 of 1,100 emails finished (56%)" in body
         assert "43.0 emails per minute" in body
 
         values = {
@@ -539,14 +607,15 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
                 counted["Plan"], "Seq Scan"
             ), json.dumps(counted)
         with capsys.disabled():
-            for label, (choose, count, reminder) in (
+            for label, (choose, count, reminder, unplanned) in (
                 ("launch", launch),
                 ("years", years),
             ):
                 print(
                     f"\n#413 {label} cost: choose {choose['Execution Time']:.2f} ms,"
                     f" count {count['Execution Time']:.2f} ms,"
-                    f" held reminders {reminder['Execution Time']:.2f} ms"
+                    f" held reminders {reminder['Execution Time']:.2f} ms,"
+                    f" not yet planned {unplanned['Execution Time']:.2f} ms"
                 )
 
         # A reminder that fell due later takes over the panel.
@@ -585,7 +654,10 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
         with read_transaction():
             later = send_progress.read_send(campaign, mode, cycle, database_now())
         assert later.kind == "reminder"
+        # No copied Family's invitation was delivered (there is no such
+        # fulfillment), so no Family is still owed this reminder.
         assert (later.sent, later.remaining, later.recent) == (2, 1, 2)
+        assert later.unplanned == 0
 
 
 def test_a_campaign_without_family_occurrences_has_no_send(family_mail):  # noqa: F811
@@ -737,3 +809,117 @@ def test_a_reminder_held_behind_an_uncertain_invitation_lets_the_send_finish(
     assert counts.kind == "reminder"
     assert (counts.waiting, counts.remaining) == (1, 0)
     assert send_progress.progress(counts).active is False
+
+
+def read_current():
+    """Read the current send as the page does: read-only, as the web login."""
+    campaign, mode, cycle = scope()
+    with task_login(ServiceRole.WEB, exact=True), read_transaction():
+        return send_progress.read_send(campaign, mode, cycle, database_now())
+
+
+def test_the_total_counts_families_planning_has_not_reached(
+    family_service,  # noqa: F811
+):
+    """Part-way through real Testing planning, the total is the whole send.
+
+    Of five Families, three will be emailed: one undeliverable Family is
+    skipped once planned, and one without an eligible address is never
+    planned at all. With two planned, the other two eligible Families
+    already count as remaining, so the total is three from the start.
+    """
+    harness = family_service
+    populate(
+        harness.campaign,
+        harness.rings,
+        [
+            FamilyStatus(1, True, True, True, True),
+            FamilyStatus(2, True, True, True, True),
+            FamilyStatus(3, True, True, True, True),
+            FamilyStatus(4, True, True, True, False, "eligible", "provider_suppressed"),
+            FamilyStatus(5, True, True, False, False, "eligible", "no_eligible_email"),
+        ],
+        generation=2,
+    )
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    definition = ScheduleDefinition.objects.select_related("current_revision").get()
+    with campaign_clock(definition.current_revision.due_at):
+        with scheduler_session() as guard:
+            for duid in (1, 4):
+                plan_family(guard, family_id=families[duid], worker_id=uuid4())
+        early = read_current()
+        assert early.kind == "initial"
+        assert (
+            early.remaining,
+            early.unprepared,
+            early.unplanned,
+            early.unreachable,
+        ) == (3, 3, 2, 1)
+        shown = send_progress.progress(early)
+        assert (shown.total, shown.percent, shown.active) == (3, 0, True)
+        # The rest of the population, through the real scheduler sweep.
+        with (
+            task_login(ServiceRole.SCHEDULER, exact=True),
+            scheduler_session() as guard,
+        ):
+            FamilyScheduleProducer(uuid4())(guard)
+        late = read_current()
+        assert (late.remaining, late.unplanned, late.unreachable) == (3, 0, 1)
+        assert send_progress.progress(late).total == 3
+        # While the Family population is being refreshed, who will be
+        # emailed is not known: no total and no percentage.
+        CampaignCredentialState.objects.filter(
+            campaign_id=harness.campaign.pk, go_live_gate=False
+        ).update(population_dirty=True, version=F("version") + 1)
+        unknown = read_current()
+        assert (unknown.unplanned, unknown.remaining) == (None, 3)
+        shown = send_progress.progress(unknown)
+        assert (shown.total, shown.percent, shown.active) == (None, None, True)
+    # Before the schedule's due time (as after it is moved to a later time)
+    # planning creates nothing more, so no Family still counts.
+    with campaign_clock(definition.current_revision.due_at - timedelta(minutes=1)):
+        assert read_current().unplanned == 0
+
+
+def test_a_reminder_total_counts_only_families_whose_invitation_was_delivered(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """A reminder is owed only after a delivered invitation.
+
+    Families 1 and 3 had their invitation delivered and family 2 did not
+    (planning would send it the invitation instead). With only family 3's
+    reminder planned, family 1 is still counted and family 2 is not.
+    """
+    harness, actor = family_service, uuid4()
+    populate(
+        harness.campaign,
+        harness.rings,
+        [FamilyStatus(n, True, True, True, True) for n in (1, 2, 3)],
+        generation=2,
+    )
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    reminders = add_reminders(auth_service.store, harness.campaign, actor)
+    first = ScheduleDefinition.objects.get(pk=UUID(reminders[0]["id"]))
+    initial = ScheduleDefinition.objects.get(kind="initial")
+    with campaign_clock(initial.current_revision.due_at):
+        for duid in (1, 3):
+            row = occurrence(initial, actor, target=f"family:{families[duid]}")
+            task = claimed_task("schedule_occurrence", row.pk, actor)
+            row = advance(row, actor, "running", task_id=task.run_id, fence=task.fence)
+            row = advance(row, actor, "succeeded", fence=task.fence)
+            record_fulfillment(
+                occurrence_id=row.pk,
+                disposition="delivered",
+                actor_id=actor,
+                correlation_id=uuid4(),
+                admit=admit_test_work,
+            )
+    with campaign_clock(first.current_revision.due_at):
+        with scheduler_session() as guard:
+            planned = plan_family(guard, family_id=families[3], worker_id=actor)
+        assert ScheduleOccurrence.objects.get(pk=planned.selected).definition == first
+        counts = read_current()
+    assert counts.kind == "reminder"
+    assert (counts.remaining, counts.unplanned, counts.waiting) == (2, 1, 0)
+    assert send_progress.progress(counts).total == 2

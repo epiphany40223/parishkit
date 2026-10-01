@@ -43,9 +43,18 @@ def _announcement(sent):
         return _("Family email send finished.")
     if sent.paused:
         return _("Family email send paused.")
+    if sent.percent is None:
+        return _("Family email send in progress; emails are still being prepared.")
     return _("Family email send in progress, %(percent)s%% done.") % {
         "percent": sent.percent // 25 * 25
     }
+
+
+def _audited_count(sent):
+    """The emails the audited view showed: the total, or those counted so far."""
+    if sent is None:
+        return 0
+    return sent.done + sent.counts.remaining if sent.total is None else sent.total
 
 
 def _load():
@@ -128,7 +137,7 @@ def _read(request, template, *, page):
                     actor_id=current.identity,
                     context={
                         "outcome": Outcome.SUCCEEDED,
-                        "count": context["send"].total if context["send"] else 0,
+                        "count": _audited_count(context["send"]),
                     },
                 )
         response["Cache-Control"] = "no-store"

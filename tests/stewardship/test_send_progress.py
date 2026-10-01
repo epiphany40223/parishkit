@@ -6,6 +6,7 @@ running, stalled, paused and finished sends, and the status template for what it
 shows, when it keeps polling and what screen readers hear.
 """
 
+import math
 import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -318,3 +319,45 @@ def test_a_finished_send_keeps_checking_when_the_next_one_is_due():
     assert "Finished: no emails remain." in html
     assert "Another Family email may be due soon." in html
     assert "data-live-pending" in region(html)
+
+
+def test_families_not_yet_planned_count_in_the_total_from_the_start():
+    """12 sent of 1,103 Families is 1%, not 12 of the 24 planned so far (50%).
+
+    ``read_send`` adds the Families planning has not reached to remaining
+    (and to not prepared); the percentage and estimate use the whole send.
+    """
+    sent = progress(
+        counts(sent=12, remaining=1091, unprepared=1079, unplanned=1079, recent=12)
+    )
+    assert (sent.total, sent.done, sent.percent, sent.active) == (1103, 12, 1, True)
+    assert sent.minutes_left == math.ceil(1091 / sent.rate)
+    html = render(sent)
+    assert "12 of 1,103 emails finished (1%)" in html
+    assert '<progress value="12" max="1103"' in html
+    assert "<dt>Remaining: not prepared yet</dt><dd>1,079</dd>" in html
+
+
+def test_an_unknown_total_shows_counts_without_a_percentage():
+    """While the Family list is refreshed, no share of a partial total is shown."""
+    sent = progress(
+        counts(sent=12, remaining=12, unprepared=0, unplanned=None, recent=12)
+    )
+    assert (sent.total, sent.percent, sent.active) == (None, None, True)
+    # A rate can still be measured, but there is nothing to estimate from.
+    assert sent.rate is not None and sent.finish_at is sent.minutes_left is None
+    assert _announcement(sent) == (
+        "Family email send in progress; emails are still being prepared."
+    )
+    html = render(sent)
+    assert "12 emails finished so far." in html
+    assert "the full total is not known yet" in html
+    assert "%" not in html.split('id="send-progress-label">')[1].split("</p>")[0]
+    # An indeterminate bar: no value, so no share is claimed.
+    assert '<progress aria-labelledby="send-progress-label">' in html
+    assert "<dt>Total</dt><dd>Not known yet</dd>" in html
+    assert "<dd>12 so far</dd>" in html
+    assert "Not until the full total is known" in html
+    assert "data-live-pending" in region(html)
+    # Even with nothing planned left, the send is not finished while unknown.
+    assert progress(counts(sent=12, unplanned=None)).active

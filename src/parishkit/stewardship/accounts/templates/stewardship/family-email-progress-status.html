@@ -13,19 +13,22 @@
 {% if send.paused %}<p class="notice"><strong>{% translate "Paused." %}</strong> {% translate "Live delivery is paused. The remaining emails wait until delivery resumes." %}</p>
 {% elif send.active %}{% translate "Sending Family emails…" as running %}{% include 'stewardship/live-running.html' with message=running %}
 {% else %}<p class="live-done"><strong>{% translate "Finished: no emails remain." %}</strong></p>{% if upcoming %}<p>{% translate "Another Family email may be due soon. If it starts, this page switches to it by itself." %}</p>{% endif %}{% endif %}
-<p id="send-progress-label">{% blocktranslate with done=send.done|number total=send.total|number percent=send.percent %}{{ done }} of {{ total }} emails finished ({{ percent }}%){% endblocktranslate %}</p>
-{% if send.total %}<progress value="{{ send.done }}" max="{{ send.total }}" aria-labelledby="send-progress-label"></progress>{% else %}<progress value="1" max="1" aria-labelledby="send-progress-label"></progress>{% endif %}
+{% if send.total is None %}<p id="send-progress-label">{% blocktranslate with done=send.done|number %}{{ done }} emails finished so far. Emails are still being prepared, so the full total is not known yet.{% endblocktranslate %}</p>
+<progress aria-labelledby="send-progress-label"></progress>
+{% else %}<p id="send-progress-label">{% blocktranslate with done=send.done|number total=send.total|number percent=send.percent %}{{ done }} of {{ total }} emails finished ({{ percent }}%){% endblocktranslate %}</p>
+{% if send.total %}<progress value="{{ send.done }}" max="{{ send.total }}" aria-labelledby="send-progress-label"></progress>{% else %}<progress value="1" max="1" aria-labelledby="send-progress-label"></progress>{% endif %}{% endif %}
 <dl class="send-progress-counts">
-<dt>{% translate "Total" %}</dt><dd>{{ send.total|number }}</dd>
+<dt>{% translate "Total" %}</dt><dd>{% if send.total is None %}{% translate "Not known yet" %}{% else %}{{ send.total|number }}{% endif %}</dd>
 <dt>{% translate "Sent" %}</dt><dd>{{ send.counts.sent|number }}</dd>
-<dt>{% translate "Remaining" %}</dt><dd>{{ send.counts.remaining|number }}</dd>
+<dt>{% translate "Remaining" %}</dt><dd>{{ send.counts.remaining|number }}{% if send.total is None %} {% translate "so far" %}{% endif %}</dd>
+{% if send.counts.unprepared %}<dt>{% translate "Remaining: not prepared yet" %}</dt><dd>{{ send.counts.unprepared|number }}</dd>{% endif %}
 <dt>{% translate "Failed" %}</dt><dd>{{ send.counts.failed|number }}</dd>
 <dt>{% translate "Uncertain (delivery unknown)" %}</dt><dd>{{ send.counts.uncertain|number }}</dd>
 {% if send.counts.waiting %}<dt>{% translate "Held: invitation failed or uncertain" %}</dt><dd>{{ send.counts.waiting|number }}</dd>{% endif %}
 <dt>{% translate "Couldn't be emailed (no deliverable address or not eligible)" %}</dt><dd>{{ send.counts.unreachable|number }}</dd>
 {% if send.counts.not_needed %}<dt>{% translate "Not needed (already responded or replaced)" %}</dt><dd>{{ send.counts.not_needed|number }}</dd>{% endif %}
 <dt>{% if send.active %}{% translate "Current rate" %}{% else %}{% translate "Average rate" %}{% endif %}</dt><dd>{% if send.stalled %}{% translate "No emails finished in the last 5 minutes" %}{% elif send.rate is not None %}{% blocktranslate with rate=send.rate|number %}{{ rate }} emails per minute{% endblocktranslate %}{% else %}{% translate "Not enough sent yet to measure" %}{% endif %}</dd>
-{% if send.active %}<dt>{% translate "Estimated finish" %}</dt><dd>{% if send.finish_at %}<time data-local-instant datetime="{{ send.finish_at|instant }}">{{ send.finish_at|instant }}</time> ({% blocktranslate count minutes=send.minutes_left %}about {{ minutes }} minute{% plural %}about {{ minutes }} minutes{% endblocktranslate %}){% elif send.paused %}{% translate "Not while delivery is paused" %}{% elif send.stalled %}{% translate "Not while no emails are finishing" %}{% else %}{% translate "Not enough sent yet to estimate" %}{% endif %}</dd>{% endif %}
+{% if send.active %}<dt>{% translate "Estimated finish" %}</dt><dd>{% if send.finish_at %}<time data-local-instant datetime="{{ send.finish_at|instant }}">{{ send.finish_at|instant }}</time> ({% blocktranslate count minutes=send.minutes_left %}about {{ minutes }} minute{% plural %}about {{ minutes }} minutes{% endblocktranslate %}){% elif send.paused %}{% translate "Not while delivery is paused" %}{% elif send.stalled %}{% translate "Not while no emails are finishing" %}{% elif send.total is None %}{% translate "Not until the full total is known" %}{% else %}{% translate "Not enough sent yet to estimate" %}{% endif %}</dd>{% endif %}
 <dt>{% translate "Started" %}</dt><dd>{% if send.counts.started_at %}<time data-local-instant datetime="{{ send.counts.started_at|instant }}">{{ send.counts.started_at|instant }}</time>{% else %}{% translate "Not started yet" %}{% endif %}</dd>
 {% if send.finished_at %}<dt>{% translate "Finished" %}</dt><dd><time data-local-instant datetime="{{ send.finished_at|instant }}">{{ send.finished_at|instant }}</time></dd>{% endif %}
 </dl>

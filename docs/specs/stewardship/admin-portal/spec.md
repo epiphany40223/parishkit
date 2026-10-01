@@ -1376,7 +1376,8 @@ state, or, before preparation, by its occurrence:
   there, link to the failed preparation tasks in Background work.
 - **Uncertain**: delivery unknown, linked to Outgoing mail.
 - **Remaining**: pending, waiting to retry or submitting, or not yet
-  prepared.
+  prepared, including the Families planning has not reached yet (below).
+  The part not yet prepared is also shown on its own while non-zero.
 - **Held: invitation failed or uncertain** (reminders only, shown when
   non-zero): a reminder not yet prepared for a Family whose newest invitation
   failed or is uncertain. Planning holds such a reminder until the invitation
@@ -1396,9 +1397,27 @@ state, or, before preparation, by its occurrence:
   replacing this one, or the campaign closing.
 
 The total is sent, failed, uncertain and remaining; the last three
-categories are shown beside it, not in it. Families are scheduled in small
-groups as a send starts, so for its first minutes the total can still grow;
-the page's help says so. A labelled progress bar shows the finished share
+categories are shown beside it, not in it. The scheduler plans Families a
+few at a time, so for most of a send many Families have no occurrence yet.
+The total counts them from the start: an active, email-eligible Family with
+a deliverable address and no response (no effective live submission in
+Production, no submission in the active rehearsal in Testing) that has no
+occurrence of the schedule's current revision, and no fulfillment or restore
+hold for the send yet, is one remaining email, and for a reminder only once
+its invitation was delivered, as
+[Family invitations and reminders](../background-processing/spec.md#family-invitations-and-reminders)
+requires. Due times and the close are read on the campaign clock, as
+planning reads them. Once the campaign closes, or the send's schedule is
+removed or moved to a time still to come, no such Family is counted, since
+planning creates no more of its emails until then. Families planning has
+not reached are not yet counted under Couldn't be emailed or Not needed; a
+Family whose email a schedule replacement cancelled shows as Not needed and,
+until it is planned again under the new revision, also as remaining.
+While the Family population is being refreshed, or a Testing
+send has no active rehearsal, who will be emailed is not known: the page
+then shows the counts without a total, percentage or finish estimate, and
+says the emails are still being prepared, rather than a share of the emails
+planned so far. A labelled progress bar shows the finished share
 (sent, failed and uncertain), which reaches 100% only when nothing remains;
 an empty send shows a full bar. The current rate is emails finished per
 minute over the last five minutes (or since the send started, if that is
@@ -1442,10 +1461,14 @@ runs in one read-only snapshot and takes no lock, in particular not the
 global work-order lock that the send's own workers take. The campaign's
 Family occurrences are found through the existing definition index and each
 email by primary key, with no schema change. A reminder also reads the
-invitations of the Families whose reminder is not prepared yet. At launch
-scale (about 1,100 Families among 5,000 other occurrences and messages) the
-reads take about 0.5, 3 and 2 ms on the test database; with 50,000 other
-messages, about 0.7, 6 and 2.5 ms.
+invitations of the Families whose reminder is not prepared yet. The Families
+not yet planned are counted from the campaign's Family rows, each checked
+against the send's occurrences, fulfillments and restore holds by anti-join.
+At launch scale (about 1,100 Families among 5,000 other occurrences and
+messages) the reads take about 0.5, 3 and 2 ms on the test database; with
+50,000 other messages, about 0.7, 6 and 2.5 ms. Counting the Families not
+yet planned adds under 1 ms in both, and under 10 ms on the validation
+server during a live 1,100-Family Testing send.
 
 ### Family portal maintenance
 
