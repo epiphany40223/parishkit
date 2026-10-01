@@ -124,7 +124,9 @@ DRIVE_FAILURES = frozenset(
 # (audit.schemas.TIMEOUT_KINDS, pinned by a test), so its process-log line
 # carries the same facts when the durable write fails. And
 # ``timeout_log_slot``: a timeout entry that gave up waiting for its
-# process's one timeout-log connection (audit.timeouts).
+# process's one timeout-log connection (audit.timeouts). And
+# ``family_sweep_budget``: the scheduler's Family schedule sweep ended a page
+# at its time budget (pacing only; it resumes on the next loop, #394).
 TIMEOUT_LIMITS = frozenset(
     {
         "drive_copy_budget",
@@ -145,6 +147,7 @@ TIMEOUT_LIMITS = frozenset(
         "web_drain",
         "web_heartbeat",
         "timeout_log_slot",
+        "family_sweep_budget",
     }
 )
 

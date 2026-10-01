@@ -6,8 +6,9 @@ not authority: restarting at the beginning is always safe. Denied work advances
 the cursor so a large held prefix cannot permanently starve later eligible work.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from time import monotonic
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -49,6 +50,68 @@ class ExecutionHint:
     queue: WorkQueue
 
 
+# How long the scheduler trusts a hint it published for an unchanged row.
+# Shorter than the broker's 60 s hint expiry (broker.publish_hint), so a
+# hint still waiting deep in a backed-up queue is replaced before it expires.
+RECENT_HINT_SECONDS = 45
+
+
+@dataclass
+class RecentHints:
+    """Hints this scheduler published lately, so its sweeps skip re-admitting them.
+
+    Admitting a due row takes the handler's scope, which for most tasks is
+    the deployment-wide work-order lock, one transaction per row. During a
+    large send every sweep used to re-admit and re-publish each queued row
+    until a consumer claimed it, holding that lock for most of the send
+    (#394, #147). A row published within RECENT_HINT_SECONDS whose version
+    has not changed is skipped instead: its hint is still queued or was
+    just taken. Any transition (claim, retry, lease expiry, recovery) bumps
+    the version, so changed work is admitted again at once; a lost hint is
+    replaced after the window. Only published hints count: a hint whose
+    publication failed or never happened is not remembered.
+
+    This is in memory only. A restarted scheduler starts empty and admits
+    and hints every due row again, which duplicate-safe consumers tolerate.
+    """
+
+    seconds: float = RECENT_HINT_SECONDS
+    clock: object = monotonic
+    # run_id -> (row version, clock time) of each published hint.
+    published_at: dict = field(default_factory=dict)
+    # run_id -> row version of hints admitted in the current page.
+    pending: dict = field(default_factory=dict)
+
+    def fresh(self, row):
+        """Whether this unchanged row was published within the window."""
+        entry = self.published_at.get(row.pk)
+        return (
+            entry is not None
+            and entry[0] == row.version
+            and self.clock() - entry[1] < self.seconds
+        )
+
+    def admitted(self, row):
+        """Note the version of a row whose hint this page will publish."""
+        self.pending[row.pk] = row.version
+
+    def published(self, run_id):
+        """Remember a hint the transport accepted."""
+        version = self.pending.pop(run_id, None)
+        if version is not None:
+            self.published_at[run_id] = (version, self.clock())
+
+    def start_page(self):
+        """Forget unpublished admissions and hints older than the window."""
+        now = self.clock()
+        self.pending.clear()
+        self.published_at = {
+            key: entry
+            for key, entry in self.published_at.items()
+            if now - entry[1] < self.seconds
+        }
+
+
 def due(row, now):
     """Unknown provider state is recoverable work, never automatic redispatch."""
     return (
@@ -60,12 +123,14 @@ def due(row, now):
     )
 
 
-def collect_hints(*, handlers, cursor=None, limit=100, health=None):
+def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None):
     """Select one fair page with fresh domain admission, without publishing I/O.
 
     Publishers run after every transaction here has committed. A hint may become
     stale immediately after selection; the dispatcher always reclaims/rechecks
     PostgreSQL. Broker success/failure never changes durable TaskRun state.
+    With ``recent`` (a RecentHints), rows hinted lately and unchanged since
+    are skipped without admission; the caller reports each publication back.
     """
     if connection.in_atomic_block:
         raise StorageInvariantError("Scheduler scanning must own its transactions.")
@@ -76,6 +141,8 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None):
     handlers = dict(handlers)
     if any(not isinstance(handler, Handler) for handler in handlers.values()):
         raise ValueError("Scheduler requires the internal handler registry.")
+    if recent is not None:
+        recent.start_page()
     with transaction.atomic():
         now = database_now()
         rows = TaskRun.objects.filter(task_type__in=handlers).filter(
@@ -91,6 +158,14 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None):
         page = list(rows.order_by("not_before", "id")[:limit])
     hints = []
     for candidate in page:
+        if recent is not None and recent.fresh(candidate):
+            # Hinted lately and unchanged, so not re-admitted under the lock.
+            # The due-work health proof still counts it as admitted, so an
+            # overdue row is still reported late (architecture spec, change
+            # 4). Its lateness uses this page's clock and row.
+            if health is not None:
+                health.admitted(candidate, now)
+            continue
         handler = handlers[candidate.task_type]
         try:
             with (
@@ -108,6 +183,8 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None):
                     if health is not None:
                         health.admitted(row, instant)
                     hints.append(ExecutionHint(row.pk, handler.queue))
+                    if recent is not None:
+                        recent.admitted(row)
                 elif health is not None:
                     health.unknown()
         except (PermissionError, ConfigError):

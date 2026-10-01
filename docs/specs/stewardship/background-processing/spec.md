@@ -22,6 +22,25 @@ the ordinary recovery policy. Provider-submitting or delivery-unknown mail
 goes only to reconciliation, never automatic redispatch. Holds remain enforced.
 Broker loss may delay work but cannot strand it because its original insertion
 hint was lost; duplicate hints still refer to the same idempotent durable row.
+A consumer first reads the hinted row without the work-order lock and drops
+the hint unless the task is claimable (queued or retry-waiting, and due) or,
+for recovery, abandoned or past its lease. Only then does it take the
+handler's locks and repeat that check authoritatively. A row that becomes
+actionable after the first read is due work that a later scan hints again.
+
+A scan does not re-admit a TaskRun it published a hint for in the last 45
+seconds while the row's version is unchanged, since that hint is still queued
+or was just taken (#394). Any transition bumps the version and ends the skip,
+and a lost hint is replaced once the 45 seconds pass, before the broker's
+60-second hint expiry. The due-work health
+sample still counts a skipped row as admitted, so overdue work is still
+reported late. A skip does not recheck admission, so for up to 45 seconds after
+a pause, close or mode change a row hinted just before it still counts as
+admitted rather than held; nothing is published for it, and recovery needs
+five minutes of clear scans in any case. Likewise, a hint refused during a
+short pause leaves its row unchanged, so after the resume the row waits until
+45 seconds after that hint was published. This memory lives only in the scheduler process: a restarted
+scheduler admits and hints every due row again.
 
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
@@ -625,6 +644,19 @@ Family without one receives no outbox row; its occurrence terminates as
 `skipped` with the non-error reason `no_deliverable_recipient`. Permanent
 refusals therefore cannot create empty-recipient messages or systemic-provider
 failures, while the skipped occurrence preserves reporting and recovery state.
+
+Each scheduler loop plans the current campaign's Families in one page, in
+stable order from where the previous loop stopped. Each Family is planned in
+its own transaction, so no lock spans two Families. A page holds up to 100
+Families while the previous page allocated new preparation work, and 20 after
+one that allocated none, so a large send creates mail quickly without an idle
+or paused campaign holding the work-order lock for long. A page also ends once
+40 seconds of planning have passed, checked between Families, which bounds
+this producer's share of the scheduler loop and its 90-second heartbeat.
+Ending early is pacing, not a timeout: the next loop resumes after the last
+Family planned (#394). Each such page logs `work_budget_reached` with the
+budget and the elapsed seconds; with debug logging on, every page also logs
+how many Families it visited.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation

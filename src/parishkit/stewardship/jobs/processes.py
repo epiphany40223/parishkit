@@ -17,6 +17,7 @@ from parishkit.stewardship.observability import emit_failure
 from .broker import BrokerRuntime, publish_hint
 from .due_work_health import DueWorkScan
 from .queues import ROLE_QUEUES
+from .scanning import RecentHints
 from .scheduler import SchedulerOwnershipLost, scan_once, scheduler_session
 
 
@@ -179,6 +180,8 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
         raise ConfigError("An isolated scheduler and compiled producer are required.")
     cursor, delay = None, 2
     health = DueWorkScan()
+    # In memory only: a restarted scheduler hints every due row again.
+    recent = RecentHints()
 
     def publish(hint):
         """Verify offline exclusion before each bounded publication."""
@@ -199,6 +202,7 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
             cursor=cursor,
             stop=stop,
             health=health,
+            recent=recent,
             **limit,
         ).cursor
 
@@ -235,11 +239,12 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
                 # starts. It shares the fair cursor: the late scan continues
                 # after the rows it covered, so no row is checked twice unless
                 # all due work fit in the early page, and then at most
-                # EARLY_SCAN_ROWS rows are. Mid-sweep it is skipped, since the
-                # late scan is already partway through the due rows. A hint
-                # published twice is harmless anyway: claim_hint() claims a
-                # task only while it is queued or retry-waiting and due, under
-                # its row lock.
+                # EARLY_SCAN_ROWS rows are, and not even then for a row that
+                # ``recent`` shows was just published and has not changed.
+                # Mid-sweep it is skipped, since the late scan is already
+                # partway through the due rows. A hint published twice is
+                # harmless anyway: claim_hint() claims a task only while it is
+                # queued or retry-waiting and due, under its row lock.
                 #
                 # Failures in either scan or the producers are counted
                 # together: the loop backs off (doubling up to 60 s) once per

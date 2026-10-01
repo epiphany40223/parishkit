@@ -777,7 +777,9 @@ Promotion keeps the exclusive lock and the `FOR UPDATE` admission.
 rechecks admission under its own locks, so a skipped re-check costs nothing.
 However, the due-work health sample counts each admitted row. A row skipped
 because it was hinted recently must still count as recently admitted, not as
-unknown.
+unknown. #394 implemented this change before launch; the [durable
+scheduling](../background-processing/spec.md#durable-scheduling-and-task-execution)
+spec describes the behavior.
 
 **Changes 6–9** need schema changes, which the v1 schema freeze defers. The
 SQL functions to change are:

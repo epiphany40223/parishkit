@@ -9,6 +9,7 @@ from parishkit.stewardship.jobs.dispatch import (
     Handler,
     RecoveryPlan,
     WorkQueue,
+    claim_hint,
     execute_hint,
     recover_hint,
 )
@@ -407,3 +408,73 @@ def test_inflight_check_skips_a_slow_statement():
     assert first.context["what"] == summary.context["what"] == "statement_timeout"
     assert "count" not in first.context and summary.context["count"] == 2
     assert summary.context["elapsed_seconds"] >= 2
+
+
+def test_hint_for_unclaimable_task_returns_before_the_handler_scope():
+    """Duplicate and early hints skip the work-order lock entirely (#394).
+
+    The handler's scope is where production handlers take the global work
+    lock. A hint for a task that is running, finished or not yet due must
+    return without entering it; a due queued task still claims through it.
+    """
+    from contextlib import contextmanager
+
+    entered = []
+
+    @contextmanager
+    def scope():
+        """Record each entry, as the work-order lock would be taken."""
+        entered.append(1)
+        yield
+
+    def finish(execution):
+        """Complete the claimed task."""
+        execution.transition("complete")
+
+    handler = Handler(WorkQueue.GENERAL, lambda *args: True, finish, scope=scope)
+    options = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    running = queued()
+    change_run(
+        run_id=running.run_id,
+        expected_version=running.version,
+        action="claim",
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+        lease_seconds=60,
+    )
+    assert claim_hint(running.run_id, **options) is None
+    assert not recover_hint(running.run_id, **options)
+    assert not entered
+    # A retry delay in the future is not yet claimable either.
+    task = expired_task()
+    retry = Handler(
+        WorkQueue.GENERAL,
+        lambda *args: True,
+        finish,
+        recover=lambda status: RecoveryPlan("recovery_retry", 30),
+    )
+    assert recover_hint(
+        task.run_id,
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={"dispatch_probe": retry},
+    )
+    assert TaskRun.objects.get(pk=task.run_id).state == "retry_wait"
+    assert claim_hint(task.run_id, **options) is None
+    assert not entered
+    # A due queued task is claimed under the scope and then finished.
+    fresh = queued()
+    assert execute_hint(fresh.run_id, **options)
+    entered.clear()
+    assert claim_hint(fresh.run_id, **options) is None
+    assert not recover_hint(fresh.run_id, **options)
+    assert not entered
+    assert TaskRun.objects.get(pk=fresh.run_id).state == "succeeded"
+    # An expired lease passes the precheck and is recovered under the scope.
+    expired = expired_task()
+    assert not recover_hint(expired.run_id, **options)
+    assert entered
+    assert TaskRun.objects.get(pk=expired.run_id).state == "abandoned"
