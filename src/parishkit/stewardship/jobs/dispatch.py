@@ -14,6 +14,7 @@ from threading import Event, Lock
 from uuid import UUID
 
 from django.db import OperationalError, connection, transaction
+from django.db.models import DateTimeField, Func, Q
 
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -29,6 +30,27 @@ from .storage import _locked, _status, change_run
 INFLIGHT_LOCK_SECONDS = 1
 # SQLSTATEs of a statement stopped by lock_timeout and by statement_timeout.
 _LIMIT_STOPS = {"55P03": "lock_timeout", "57014": "statement_timeout"}
+# PostgreSQL wall time, as database_now() reads it, for the lock-free hint
+# prechecks below. Not now(): that is the transaction's start time.
+_CLOCK = Func(function="clock_timestamp", output_field=DateTimeField())
+# Rows a hint may claim, and rows a recovery hint may act on.
+_CLAIMABLE = Q(state__in=("queued", "retry_wait"), not_before__lte=_CLOCK)
+_RECOVERABLE = Q(state="abandoned") | Q(state="running", lease_expires_at__lte=_CLOCK)
+
+
+def _hint_actionable(run_id, condition):
+    """Whether a hinted row looks actionable now, read without any lock (#394).
+
+    Claiming or recovering from a hint takes the handler's scope, which for
+    most tasks is the deployment-wide work-order lock. During a large send
+    most hints a consumer takes are duplicates for tasks already claimed or
+    finished, and taking that lock only to find so held up everyone else.
+    This read lets those hints return early. It decides only that nothing
+    is to be done, which the authoritative check under the locks would also
+    decide for the same row; a row that becomes actionable after this read
+    is due work, and the scheduler's next scan hints it again.
+    """
+    return TaskRun.objects.filter(condition, pk=run_id).exists()
 
 
 def record_inflight_skip(facts):
@@ -310,8 +332,11 @@ def claim_hint(run_id, *, queue, worker_id, handlers):
     handler = handlers.get(original.task_type)
     if not isinstance(handler, Handler) or handler.queue is not queue:
         raise PermissionError("This task is unavailable to the admitted consumer.")
+    if not _hint_actionable(run_id, _CLAIMABLE):
+        return None
     with handler.scope(), _locked(original.correlation_id, root_id=original.root_id):
         row = TaskRun.objects.select_for_update().get(pk=run_id)
+        # The authoritative check, repeated under the locks.
         if row.state not in {"queued", "retry_wait"} or row.not_before > database_now():
             return None
         status = change_run(
@@ -377,6 +402,8 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
     handler = handlers.get(original.task_type)
     if not isinstance(handler, Handler) or handler.queue is not queue:
         raise PermissionError("This task is unavailable to the admitted consumer.")
+    if not _hint_actionable(run_id, _RECOVERABLE):
+        return False
     with handler.scope(), _locked(original.correlation_id, root_id=original.root_id):
         row = TaskRun.objects.select_for_update().get(pk=run_id)
         now = database_now()

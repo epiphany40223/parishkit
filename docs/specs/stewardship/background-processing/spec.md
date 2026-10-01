@@ -22,6 +22,11 @@ the ordinary recovery policy. Provider-submitting or delivery-unknown mail
 goes only to reconciliation, never automatic redispatch. Holds remain enforced.
 Broker loss may delay work but cannot strand it because its original insertion
 hint was lost; duplicate hints still refer to the same idempotent durable row.
+A consumer first reads the hinted row without the work-order lock and drops
+the hint unless the task is claimable (queued or retry-waiting, and due) or,
+for recovery, abandoned or past its lease. Only then does it take the
+handler's locks and repeat that check authoritatively. A row that becomes
+actionable after the first read is due work that a later scan hints again.
 
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
