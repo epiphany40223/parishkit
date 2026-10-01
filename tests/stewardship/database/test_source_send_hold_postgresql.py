@@ -207,9 +207,10 @@ def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
 ):
     """A delta requested but not promoted, or no deltas at all, still alarms.
 
-    "requested": a delta was asked for after the current source was read but
-    has not promoted (a failing or stuck refresh). "unused": no delta was
-    requested within the last day, as with a quarter-hour full refresh.
+    "requested": a delta was asked for after the current source was read and
+    well before the resume point, and has not promoted (a failing or stuck
+    refresh). "unused": no delta was requested within the last day, as with
+    a quarter-hour full refresh.
     """
     credential, *_ = configured(tmp_path)
     if deltas == "requested":
@@ -221,6 +222,35 @@ def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
     sending(monkeypatch)
     with monkeypatch.context() as patch:
         future_observation(patch, 121)
+        observe()
+    assert OperationalIncident.objects.get(kind="source_stale")
+
+
+def test_catch_up_delta_keeps_the_alarm_held_until_the_allowance_ends(
+    tmp_path, monkeypatch, settings
+):
+    """The scheduler's own resume-time delta does not sound a false alarm.
+
+    The resume point is moved back to the current source's read, so the
+    delta requested just after it is a catch-up request, as one made when
+    skipping ends would be. A sample then still holds; one past the
+    allowance alarms.
+    """
+    credential, *_ = configured(tmp_path)
+    skipping_deltas(credential)
+    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
+    monkeypatch.setattr(
+        send_hold, "RESUME_LEAD", send_hold.SEND_ALLOWANCE + timedelta(seconds=120)
+    )
+    command(cause="delta", actor_id=None)
+    sending(monkeypatch)
+    with monkeypatch.context() as patch:
+        future_observation(patch, 121)
+        observe()
+    assert not OperationalIncident.objects.exists()
+    allowance = int(send_hold.SEND_ALLOWANCE.total_seconds())
+    with monkeypatch.context() as patch:
+        future_observation(patch, 121 + allowance)
         observe()
     assert OperationalIncident.objects.get(kind="source_stale")
 

@@ -29,10 +29,13 @@ matches the current source generation, which a skipped refresh leaves
 unchanged.
 
 The relaxed alarm applies only while deltas are actually being skipped: no
-delta was requested since the current source was read, though deltas were in
-use within the last day. A delta that was requested but has not promoted (a
-refresh failing or stuck), or a frequency with no deltas (a full refresh
-every quarter hour), alarms at the configured threshold as before.
+delta was requested between the current source's read and the resume point
+(``resume_at``), though deltas were in use within the last day. A delta
+requested in that span but not promoted (a refresh failing or stuck), or a
+frequency with no deltas (a full refresh every quarter hour), alarms at the
+configured threshold as before. Deltas requested at or after the resume
+point are the scheduler's own catch-up, which the allowance's last
+``RESUME_LEAD`` exists to let finish, so they keep the alarm relaxed.
 """
 
 from datetime import timedelta
@@ -91,6 +94,15 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
     return messages + preparations >= minimum
 
 
+def resume_at(observed_at):
+    """When the scheduler stops skipping deltas for source read at ``observed_at``.
+
+    ``RESUME_LEAD`` before the send's allowance runs out.
+    """
+    stale = timedelta(seconds=configured_policy().source_stale_seconds)
+    return observed_at + stale + SEND_ALLOWANCE - RESUME_LEAD
+
+
 def within_allowance(observed_at, now):
     """Whether source observed at ``observed_at`` is within a send's allowance."""
     stale = timedelta(seconds=configured_policy().source_stale_seconds)
@@ -100,14 +112,18 @@ def within_allowance(observed_at, now):
 def deltas_skipped(observed_at, now):
     """Whether delta refreshes have been skipped since ``observed_at``.
 
-    Stateless: deltas were requested within the last day, but none since the
-    current source was read (a delta's command precedes its read). The
+    Stateless: deltas were requested within the last day, but none after the
+    current source was read (a delta's command precedes its read) and before
+    the resume point. A request at or after the resume point is the
+    scheduler's own catch-up delta, not a sign of a failing refresh. The
     command table is small (about 100 rows a day) and this runs only for a
     stale sample during a send.
     """
     deltas = SourceRefreshCommand.objects.filter(cause="delta")
     return (
-        not deltas.filter(created_at__gt=observed_at).exists()
+        not deltas.filter(
+            created_at__gt=observed_at, created_at__lt=resume_at(observed_at)
+        ).exists()
         and deltas.filter(created_at__gt=now - DELTA_CADENCE_WINDOW).exists()
     )
 
@@ -126,4 +142,4 @@ def delta_held(now):
         .values_list("snapshot__started_at", flat=True)
         .first()
     )
-    return started_at is not None and within_allowance(started_at - RESUME_LEAD, now)
+    return started_at is not None and now < resume_at(started_at)

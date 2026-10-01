@@ -593,10 +593,11 @@ Skipping is bounded. While a send is in progress and deltas are actually
 being skipped (none requested since the current source was read, though
 deltas ran within the last day), the
 [staleness alarm](#critical-errors-and-notification) allows the source two
-hours beyond its configured threshold. A requested delta that has not
-promoted still alarms at the threshold. The scheduler skips only while
-the current source is at least 30 minutes inside that allowance, so a send
-that runs longer gets its deltas back before the alarm would sound. Sending
+hours beyond its configured threshold. The scheduler skips only while the
+current source is at least 30 minutes inside that allowance, so a send that
+runs longer gets its deltas back before the alarm would sound. That
+catch-up delta keeps the allowance; a delta requested earlier that has not
+promoted (a failing refresh) alarms at the threshold as before. Sending
 never waits on source age: Family preparation requires only that the
 population match the current source generation, which a skipped delta leaves
 unchanged.
