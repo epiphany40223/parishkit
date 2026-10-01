@@ -36,7 +36,10 @@ def gunicorn_options(configuration):
         "bind": ["0.0.0.0:8000"],
         "workers": budget.web_processes,
         "threads": budget.web_threads,
-        "worker_class": "gthread",
+        # gthread, except that a stop drops idle keep-alive connections
+        # after ``keepalive`` seconds instead of waiting for the proxy to
+        # close them (#374; see web_worker).
+        "worker_class": "parishkit.stewardship.web_worker.DrainingThreadWorker",
         "preload_app": False,
         "reload": configuration.profile is DeploymentProfile.DEVELOPMENT,
         "reload_engine": "poll",
