@@ -121,6 +121,8 @@ def bare_arbiter(**attributes):
     arbiter.stewardship_stop_began = None
     arbiter.WORKERS = {}
     arbiter._stats = {"workers_killed": 0}
+    # Gunicorn's real reap would waitpid(-1) the test process's own children.
+    arbiter.reap_workers = lambda: None
     for name, value in attributes.items():
         setattr(arbiter, name, value)
     return arbiter
@@ -157,12 +159,60 @@ def test_a_drain_kill_is_recorded_before_the_workers_are_killed(written, emitted
 
 
 def test_no_entry_when_every_worker_already_exited(written):
-    """A stop whose workers all finished in time kills nothing and logs nothing."""
+    """Workers that exited since the stop's last reap are not killed or logged."""
     arbiter = bare_arbiter(
-        cfg=SimpleNamespace(graceful_timeout=345), stewardship_stop_began=monotonic()
+        cfg=SimpleNamespace(graceful_timeout=345),
+        stewardship_stop_began=monotonic() - 345,
+        # A worker that exited in the last moments, not yet reaped by stop().
+        WORKERS={2**22: SimpleNamespace()},
     )
+    arbiter.reap_workers = arbiter.WORKERS.clear
     arbiter.kill_workers(signal.SIGKILL)
     assert written == []
+
+
+def test_a_quick_shutdown_names_its_own_limit(written):
+    """SIGINT or SIGQUIT cuts the stop to Gunicorn's 2 s; the entry says so."""
+    child = sleeper()
+    arbiter = bare_arbiter(
+        cfg=SimpleNamespace(graceful_timeout=345),
+        WORKERS={child.pid: SimpleNamespace()},
+        stewardship_stop_began=monotonic() - 3.2,
+    )
+    try:
+        arbiter.kill_workers(signal.SIGKILL)
+        assert child.wait(timeout=10) == -signal.SIGKILL
+    finally:
+        child.kill()
+        child.wait()
+    assert written == [
+        {"what": "web_drain", "limit_seconds": 2, "elapsed_seconds": 3, "count": 1}
+    ]
+
+
+def test_a_thread_that_cannot_start_still_kills_the_worker(monkeypatch, emitted):
+    """Recording can never crash the master or skip the kill (#428 review)."""
+
+    def refuse(self):
+        """As when the host cannot create another thread."""
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(web_supervisor.Thread, "start", refuse)
+    child = sleeper()
+    worker = SimpleNamespace(tmp=SimpleNamespace(last_update=lambda: monotonic() - 371))
+    arbiter = bare_arbiter(timeout=370, WORKERS={child.pid: worker})
+    try:
+        arbiter.kill_worker(child.pid, signal.SIGABRT)
+        assert child.wait(timeout=10) == -signal.SIGABRT
+    finally:
+        child.kill()
+        child.wait()
+    assert emitted == [
+        (
+            Event.HELPER_TIMED_OUT,
+            {"level": 40, "failure_kind": FailureKind.UNEXPECTED},
+        )
+    ]
 
 
 def test_a_silent_worker_is_recorded_at_its_abort(written, emitted):
@@ -189,7 +239,7 @@ import json, sys, time
 from gunicorn.app.base import BaseApplication
 from parishkit.stewardship import web_supervisor
 
-port, out = int(sys.argv[1]), sys.argv[2]
+port, out, grace = int(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 
 def record(settings, context):
     with open(out, "a") as stream:
@@ -197,10 +247,11 @@ def record(settings, context):
 
 web_supervisor._insert = record
 
-def slow(environ, start_response):
-    time.sleep(60)
-    start_response("200 OK", [])
-    return [b""]
+def app(environ, start_response):
+    if environ["PATH_INFO"] == "/slow":
+        time.sleep(60)
+    start_response("200 OK", [("Content-Length", "2")])
+    return [b"ok"]
 
 class Application(BaseApplication):
     def load_config(self):
@@ -209,27 +260,32 @@ class Application(BaseApplication):
             "workers": 1,
             "threads": 2,
             "worker_class": "parishkit.stewardship.web_worker.DrainingThreadWorker",
-            "graceful_timeout": 1,
+            "graceful_timeout": grace,
+            "keepalive": 1,
             "control_socket_disable": True,
             "accesslog": None,
         }.items():
             self.cfg.set(key, value)
 
     def load(self):
-        return slow
+        return app
 
 web_supervisor.RecordingArbiter(Application(), database=lambda: {}).run()
 """
 
 
-def test_a_real_master_records_a_worker_still_serving_at_the_grace(tmp_path):
-    """SIGTERM the master mid-request: the worker is killed and logged."""
+def stopped_master(tmp_path, *, grace, path):
+    """Run a real master, send one request, SIGTERM it; return the stop time.
+
+    The request is sent on a keep-alive connection and left open, idle once
+    it is answered (``/``) or still in flight (``/slow``).
+    """
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     out = tmp_path / "entries.jsonl"
     master = subprocess.Popen(
-        [sys.executable, "-c", MASTER, str(port), str(out)],
+        [sys.executable, "-c", MASTER, str(port), str(out), str(grace)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -243,14 +299,29 @@ def test_a_real_master_records_a_worker_still_serving_at_the_grace(tmp_path):
                 assert monotonic() < deadline, "the master never listened"
                 sleep(0.1)
         with client:
-            client.sendall(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
-            # Let the worker take the request before the stop begins.
+            client.sendall(f"GET {path} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+            # Let the worker take (or answer) the request before the stop.
             sleep(1)
+            started = monotonic()
             master.send_signal(signal.SIGTERM)
-            assert master.wait(timeout=15) == 0
+            assert master.wait(timeout=grace + 15) == 0
+            stopped = monotonic() - started
     finally:
         master.kill()
         master.wait()
+    return stopped, out
+
+
+def test_a_real_idle_stop_is_fast_and_writes_nothing(tmp_path):
+    """A normal stop with an idle keep-alive connection: no kill, no entry."""
+    stopped, out = stopped_master(tmp_path, grace=30, path="/")
+    assert stopped < 10
+    assert not out.exists()
+
+
+def test_a_real_master_records_a_worker_still_serving_at_the_grace(tmp_path):
+    """SIGTERM the master mid-request: the worker is killed and logged."""
+    _, out = stopped_master(tmp_path, grace=1, path="/slow")
     entries = [json.loads(line) for line in out.read_text().splitlines()]
     assert len(entries) == 1
     assert entries[0]["what"] == "web_drain"

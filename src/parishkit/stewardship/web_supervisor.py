@@ -45,6 +45,9 @@ from .observability import Event, FailureKind, emit
 # The longest the master waits for one durable entry before it kills anyway.
 # The write's own connect, statement and lock limits are shorter.
 RECORD_SECONDS = 5
+# Gunicorn's quick shutdown: a SIGINT or SIGQUIT during a graceful stop cuts
+# what is left of it to this many seconds (Arbiter.stop).
+QUICK_SHUTDOWN_SECONDS = 2
 
 INSERT = (
     "INSERT INTO stewardship_operational_log "
@@ -130,17 +133,27 @@ def record_within(seconds, database, **values):
 
     The write runs on a daemon thread, so a database that hangs past the
     write's own limits cannot hold the master, and the kill that follows,
-    for longer than ``seconds``.
+    for longer than ``seconds``. Never raises: a thread that cannot start
+    (the host is out of memory or processes) must not crash the master's
+    main loop or skip the kill that follows, so it is only logged.
     """
-    writer = Thread(
-        target=record_web_kill,
-        args=(database,),
-        kwargs=values,
-        name="stewardship-web-kill-log",
-        daemon=True,
-    )
-    writer.start()
-    writer.join(timeout=seconds)
+    try:
+        writer = Thread(
+            target=record_web_kill,
+            args=(database,),
+            kwargs=values,
+            name="stewardship-web-kill-log",
+            daemon=True,
+        )
+        writer.start()
+        writer.join(timeout=seconds)
+    except Exception:
+        with suppress(Exception):
+            emit(
+                Event.HELPER_TIMED_OUT,
+                level=logging.ERROR,
+                failure_kind=FailureKind.UNEXPECTED,
+            )
 
 
 class RecordingArbiter(Arbiter):
@@ -162,21 +175,28 @@ class RecordingArbiter(Arbiter):
         """Record the workers a stop is about to SIGKILL at its limit, then kill.
 
         Only ``stop`` sends SIGKILL to every worker, once its drain has run
-        out; a worker that has already exited is no longer in ``WORKERS``.
+        out. ``stop`` reaps only every 0.1 s, so workers that exited since are
+        reaped first: only workers still running are counted and logged.
+
+        A stop that ends before ``graceful_timeout`` was cut short by
+        Gunicorn's quick shutdown (SIGINT or SIGQUIT), whose limit is
+        QUICK_SHUTDOWN_SECONDS; the entry names that limit instead.
         """
-        if (
-            sig == signal.SIGKILL
-            and self.WORKERS
-            and self.stewardship_stop_began is not None
-        ):
-            record_within(
-                RECORD_SECONDS,
-                self.stewardship_database,
-                what="web_drain",
-                limit_seconds=self.cfg.graceful_timeout,
-                elapsed_seconds=monotonic() - self.stewardship_stop_began,
-                count=len(self.WORKERS),
-            )
+        if sig == signal.SIGKILL and self.stewardship_stop_began is not None:
+            self.reap_workers()
+            if self.WORKERS:
+                elapsed = monotonic() - self.stewardship_stop_began
+                limit = self.cfg.graceful_timeout
+                if elapsed < limit:
+                    limit = QUICK_SHUTDOWN_SECONDS
+                record_within(
+                    RECORD_SECONDS,
+                    self.stewardship_database,
+                    what="web_drain",
+                    limit_seconds=limit,
+                    elapsed_seconds=elapsed,
+                    count=len(self.WORKERS),
+                )
         super().kill_workers(sig)
 
     def kill_worker(self, pid, sig):
