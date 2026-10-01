@@ -10,7 +10,7 @@ from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import address_lines
-from .ministries import OUTCOMES, STATES
+from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATES
 
 
 @dataclass(frozen=True, repr=False)
@@ -24,6 +24,23 @@ class MinistryDocument:
     headings: tuple[str, ...]
     title: str
     sheet_name: str = "Ministry requests"
+
+
+def activity(item):
+    """A summary row's activity, noting a Ministry no longer in the campaign.
+
+    Captures made before the in_campaign flag existed carry no such key.
+    """
+    label = (
+        "Unavailable"
+        if item["active"] is None
+        else "Active"
+        if item["active"]
+        else "Inactive"
+    )
+    if item.get("in_campaign") is False:
+        label = f"{label}; {NOT_IN_CAMPAIGN.lower()}"
+    return label
 
 
 def ministry_document(payload, parameters, *, parish_name, requested_at, timezone):
@@ -104,11 +121,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 (
                     item["name"],
                     str(item["duid"]),
-                    "Unavailable"
-                    if item["active"] is None
-                    else "Active"
-                    if item["active"]
-                    else "Inactive",
+                    activity(item),
                     f"{item['joining']:,}",
                     f"{item['leaving']:,}",
                     f"{item['unresolved']:,}",

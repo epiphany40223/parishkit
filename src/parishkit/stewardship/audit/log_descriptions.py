@@ -306,6 +306,9 @@ DESCRIPTIONS = {
     "chair_review_decided": _(
         "An Administrator decided on a Ministry chairperson change."
     ),
+    "campaign_ministries_requested": _(
+        "An Administrator asked to change a live campaign's Ministries."
+    ),
     # Campaign schedule (audit, written by the database).
     "campaign_boundary_completed": _(
         "A scheduled campaign date change (such as opening or closing) happened."

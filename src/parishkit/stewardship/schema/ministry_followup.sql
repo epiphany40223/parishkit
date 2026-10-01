@@ -132,16 +132,28 @@ WITH selected AS MATERIALIZED (
     -- configured ID cannot become an outage through predicate reordering.
     SELECT n.duid::bigint AS duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
-            'Unavailable Ministry') AS name
+            'Unavailable Ministry') AS name,
+        n.in_campaign
     FROM source x
-    CROSS JOIN LATERAL jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+    -- The campaign's selections plus any Ministry it no longer selects that
+    -- still has requests from this campaign (#342): removing a Ministry
+    -- never hides answers already given; they are marked not in_campaign.
+    CROSS JOIN LATERAL (
+        SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
+        UNION
+        SELECT DISTINCT r.ministry_duid::text,false
+        FROM stewardship_submission s
+        JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        WHERE s.campaign_id=x.id AND s.mode='live'
+          AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+    ) n(duid,in_campaign)
     LEFT JOIN stewardship_snapshot_ministry m
         ON m.snapshot_id=x.source_id AND m.source_key=n.duid
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
 ), requests AS MATERIALIZED (
-    SELECT r.*,s.submitted_at,f.family_duid,m.name AS ministry_name,
+    SELECT r.*,s.submitted_at,f.family_duid,m.name AS ministry_name,m.in_campaign,
         row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
             r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
     FROM source x
@@ -192,7 +204,7 @@ WITH selected AS MATERIALIZED (
         submitted_at DESC,id) AS ordinal
     FROM filtered ORDER BY ordinal LIMIT page_limit OFFSET page_offset
 ), detail AS (
-    SELECT r.ordinal,r.id,r.version,r.ministry_duid,r.ministry_name,r.member_name,
+    SELECT r.ordinal,r.id,r.version,r.ministry_duid,r.ministry_name,r.in_campaign,r.member_name,
         r.entity_kind,r.action,r.state,r.outcome,r.assignee_id,r.submitted_at,
         r.cannot_serve,
         r.resolved_at,r.resolution_source_id IS NOT NULL AS source_resolved,
@@ -215,7 +227,7 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
     'authorized',EXISTS(SELECT 1 FROM ministries),
     'metadata',jsonb_build_object('id',x.id,'name',x.name,'timezone',x.timezone,
         'source_as_of',x.source_as_of,'observed_at',x.observed_at),
-    'ministries',coalesce((SELECT jsonb_agg(jsonb_build_object('duid',duid,'name',name)
+    'ministries',coalesce((SELECT jsonb_agg(jsonb_build_object('duid',duid,'name',name,'in_campaign',in_campaign)
         ORDER BY lower(name),duid) FROM ministries),'[]'::jsonb),
     'total',(SELECT count(*) FROM filtered),
     'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)

@@ -91,6 +91,7 @@ class Action(StrEnum):
     HOSTED_FILE_SLUG_CHANGED = "hosted_file_slug_changed"
     HOSTED_FILE_DELETED = "hosted_file_deleted"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
+    CAMPAIGN_MINISTRIES_REQUESTED = "campaign_ministries_requested"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"
@@ -181,6 +182,12 @@ FIELDS = {
         "ministry_duid",
         "ministry_duids",
         "ministry_operational",
+        # A live campaign's Ministry selection change (#342): the selections
+        # before it and the DUIDs it adds and removes; `ministry_duids` holds
+        # the selections after it.
+        "previous_ministry_duids",
+        "added_ministry_duids",
+        "removed_ministry_duids",
         # An Administrator's decision on a suspended Chairperson seed and the
         # reason entered for it: the decision is a closed word; the reason is
         # the Administrator's own bounded text, refused when it carries an
@@ -199,6 +206,15 @@ FIELDS = {
     },
 }
 
+# Sorted, distinct Ministry DUID lists; mirrored in stewardship_safe_context_v1.
+MINISTRY_LIST_FIELDS = frozenset(
+    {
+        "ministry_duids",
+        "previous_ministry_duids",
+        "added_ministry_duids",
+        "removed_ministry_duids",
+    }
+)
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # Stored hosted-file types (#346); mirrored in stewardship_safe_context_v1.
 HOSTED_FILE_KINDS = frozenset({"pdf", "docx", "xlsx", "pptx", "png", "jpeg"})
@@ -281,7 +297,7 @@ def sanitize(kind, values):
         elif key in {"family_duid", "member_duid", "ministry_duid"}:
             valid = type(value) is int and 0 < value < 2**31
             safe[key] = value
-        elif key == "ministry_duids":
+        elif key in MINISTRY_LIST_FIELDS:
             valid = (
                 type(value) is list
                 and all(type(item) is int and 0 < item < 2**31 for item in value)

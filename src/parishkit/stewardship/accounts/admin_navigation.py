@@ -116,6 +116,10 @@ PAGES = {
         "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
     ),
     "talent_settings": Page("campaign", _("Member talents")),
+    # A live campaign's one editable structural setting (#342).
+    "campaign_ministries": Page(
+        "campaign", _("Campaign Ministries"), "campaign_settings"
+    ),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing Families"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),

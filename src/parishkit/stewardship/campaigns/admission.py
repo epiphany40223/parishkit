@@ -115,6 +115,17 @@ def validate_installation(document, *, request_id=None):
         editable = {"name", "year_label", "content_versions", "artwork"}
         if intent and intent.campaign_id == row.pk:
             editable.add("end_date")
+        before = row.active_configuration.values.get("ministry_duids")
+        if (
+            row.structural_locked
+            and type(values.get("ministry_duids")) is list
+            and values["ministry_duids"] != before
+        ):
+            # The one live structural exemption (#342), checked like SQL does.
+            from .live_ministries import check_live_selection
+
+            check_live_selection(row, before, values["ministry_duids"], document)
+            editable.add("ministry_duids")
         if row.structural_locked and {
             key: value for key, value in values.items() if key not in editable
         } != {

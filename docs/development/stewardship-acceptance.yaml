@@ -61,7 +61,7 @@ sections:
     "Ministry activity management": [ADM-03, DAT-05, FAM-05]
     "ParishSoft Ministry catalog changes": [ADM-03, ADM-08]
     "Catalog change notice": [ADM-03, ADM-08]
-    "Changing a live campaign's Ministries (design only)": [ADM-04]
+    "Changing a live campaign's Ministries": [ADM-04]
     "Campaign configuration": [ADM-04]
     "Member talents": [ADM-04]
     "Production transition": [ADM-05]
