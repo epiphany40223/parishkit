@@ -87,3 +87,41 @@ def test_removal_reads_no_catalog(monkeypatch):
     monkeypatch.setattr(live_ministries, "addable_ministries", unavailable)
     campaign = SimpleNamespace(state="active", structural_locked=True)
     live_ministries.check_live_selection(campaign, [4, 9], [4], {})
+
+
+def test_every_configuration_activator_is_accounted_for():
+    """The logins that can move the pointer guard, and which hold the catalog.
+
+    Only the installer adds a Ministry to a live campaign. Setup completion
+    (worker) activates a draft, bootstrap creates the singleton, and admin
+    recovery changes login rules, so none reaches the guard's catalog read.
+    A new activator must be checked against it (#342).
+    """
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.runtime_grants import (
+        MINISTRY_CATALOG_FUNCTION,
+        runtime_functions,
+        runtime_grants,
+    )
+
+    activators = set()
+    for role in ServiceRole:
+        try:
+            tables, _columns = runtime_grants(role)
+        except ConfigError:
+            continue
+        if "INSERT" in tables.get("stewardship_config_activation", ()):
+            activators.add(role)
+    assert activators == {
+        ServiceRole.WORKER,
+        ServiceRole.CONFIG_INSTALLER,
+        ServiceRole.BOOTSTRAP,
+        ServiceRole.ADMIN_RECOVERY,
+    }
+    holders = {
+        role
+        for role in activators - {ServiceRole.BOOTSTRAP}
+        if MINISTRY_CATALOG_FUNCTION in runtime_functions(role)
+    }
+    assert holders == {ServiceRole.CONFIG_INSTALLER}

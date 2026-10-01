@@ -336,6 +336,59 @@ def installed(harness, duids):
         )
 
 
+def changed(harness, values, role):
+    """Record one campaign change, then install it as ``role``'s real login."""
+    from parishkit.stewardship.accounts.configuration_requests import record_request
+
+    store = harness.service.store
+    receipt = record_request(
+        base_digest=store.active().digest,
+        patch=[
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": values,
+            }
+        ],
+        actor_id=uuid4(),
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+    with task_login(role, exact=True):
+        return install_request(
+            store, request_id=receipt.request_id, correlation_id=uuid4()
+        )
+
+
+@pytest.mark.parametrize(
+    "role", [ServiceRole.CONFIG_INSTALLER, ServiceRole.ADMIN_RECOVERY], ids=str
+)
+def test_only_an_addition_needs_the_catalog_function(
+    response_service, monkeypatch, role
+):
+    """A login without the catalog grant still fires the pointer guard freely.
+
+    PostgreSQL checks EXECUTE on a function when a statement naming it starts,
+    whatever a CASE or AND would evaluate, and PL/pgSQL switches a trigger's
+    statements to a generic plan after five runs in a session. So the guard
+    names the catalog function only in a statement it reaches for an actual
+    addition to a locked campaign. Here the login holds no catalog grant and
+    applies seven guarded changes on one connection: a removal, then names.
+    The real installer login holds the grant and adds Ministries elsewhere;
+    setup completion runs as the worker (test_setup_completion_postgresql).
+    """
+    from . import test_background_grants_postgresql as grants
+
+    harness = setup(response_service)
+    monkeypatch.setattr(grants, "runtime_functions", lambda *a, **k: frozenset())
+    assert changed(harness, {"ministry_duids": [4]}, role).state == "applied"
+    for number in range(6):
+        result = changed(harness, {"name": f"Renamed {number}"}, role)
+        assert result.state == "applied", result
+    assert selected(harness) == [4]
+
+
 def test_installer_login_applies_removal_and_addition(response_service):
     """pk_stewardship_config_installer has no source grants, yet both apply.
 
