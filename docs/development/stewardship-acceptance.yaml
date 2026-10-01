@@ -19,6 +19,10 @@ sections:
     "Family credential security": [ARC-05]
     "Web security and privacy": [ARC-03, ARC-07]
     "Availability and performance": [ARC-08]
+    "Work-order lock scope": [ARC-08]
+    "Invariants": [ARC-08]
+    "Design": [ARC-08]
+    "Ranked changes": [ARC-08]
     "Accessibility and client behavior": [ARC-08, DOM-04]
   data/spec.md:
     "Storage principles": [DAT-01]

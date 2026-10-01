@@ -657,6 +657,138 @@ fingerprint, the campaign-scoped access-token lookup digest with uniqueness,
 submission state/time, Ministry, workflow status, log time/level, and outbox/
 task state. Pagination is server-side for potentially large tables.
 
+### Work-order lock scope
+
+This section is the design for narrowing the common work-order lock
+(PostgreSQL advisory lock `736220,1`) after the v1 launch. The measurements
+behind it are in
+[#147](https://github.com/epiphany40223/parishkit/issues/147). Readers
+already avoid the lock ([Admin page
+snapshots](../data/spec.md#admin-page-snapshots)), and export admission uses a
+per-campaign lock ([export admission
+order](../data/spec.md#export-admission-order)). What remains is the writers'
+steady-state work.
+
+The baseline below is what #147 measured, before changes 1 and 2 in [Ranked
+changes](#ranked-changes). The lock is also the admission lock for every
+background task step. Each handler's scope is the work transaction, so every
+claim, effect, progress or heartbeat transition, in-flight check and scheduler
+admission check joins it. Admission then locks the runtime row
+(`SystemConfiguration`) `FOR UPDATE`. The busiest holders are:
+
+- ParishSoft refresh staging: one hold per 125-row batch, back to back for the
+  whole staging phase.
+- Fetch admission: one hold per ParishSoft request.
+- Family mail: eight holds per message in the consumer (the claim, the
+  PREPARING progress, the effect, the submission, two in-flight checks, the
+  outcome and the completion).
+- The scheduler's admission check of each due row, repeated on every sweep
+  until a consumer claims the row: about six holds per message during a
+  launch-size backlog.
+- The scheduler's Family schedule sweep: 20 of its 43 holds per idle loop,
+  even when nothing is due.
+
+Because these holders all serialize with each other, a Family login waits too.
+A login takes the runtime row `FOR SHARE`, so it waits for every admission
+transaction that holds that row `FOR UPDATE`.
+
+Changes 1 and 2 change this baseline for Family mail only. Its admission takes
+the runtime and credential rows `FOR SHARE`, so logins no longer wait for it,
+and a message joins the lock fewer times: the PREPARING progress commits with
+the effect, and the SQL in-flight check runs at most once a second, so a
+typical half-second send needs none.
+
+#### Invariants
+
+Any narrower scheme must keep what the lock provides today:
+
+1. **No deadlocks.** Writers take one global order: the work lock, then task
+   root and run rows, then domain rows.
+2. **Atomic admit-then-write against transitions.** A transition sees every
+   write admitted before it, and any admission after it sees the transition.
+   Transitions include lifecycle and controls, configuration and credential
+   activation, mode changes, restore holds, purge and go-live gates, and
+   source promotion.
+3. **Exclusion around shared mutable state.** Examples are the source pointer,
+   the per-campaign submission sequence, and the runtime row.
+4. **SQL guards stay the backstop.** About 50 SQL functions take the lock
+   themselves, and most guards on writer tables refuse a transaction that does
+   not hold it in `ExclusiveLock` mode.
+
+#### Design
+
+Split the order into two tiers.
+
+- **Transitions keep the exclusive work lock.**
+- **Steady-state work on one entity** (one task's steps, one message, one
+  Family, one source attempt) holds that entity's own lock instead: a row lock
+  or an advisory key. Two mechanisms keep it ordered against transitions:
+  - **Share the rows transitions update.** This needs no schema change. The
+    work takes the runtime, campaign, credential and source-lease rows
+    `FOR SHARE` (or the lease row `FOR UPDATE`) before any task row. Every
+    transition already locks those rows `FOR UPDATE` after the work lock, so
+    the two still exclude each other. The exclusion does not depend on that
+    explicit lock: any `UPDATE` of a row first takes a row lock that
+    conflicts with `FOR SHARE`, so a writer that skips the explicit lock
+    still waits for the shared work to commit.
+  - **Hold the work lock in shared mode.** This needs a schema change. Guards
+    must accept `ShareLock` together with the entity's key, and functions that
+    take the exclusive lock must not upgrade a shared hold.
+
+Three rules apply to every narrowed path:
+
+- Never upgrade a lock inside a narrowed transaction. In particular, a
+  transaction that takes the runtime row `FOR SHARE` must not later lock it
+  `FOR UPDATE`. A Family login holds the same share, so the upgrade can
+  deadlock with it.
+- Take locks in a fixed order: the runtime row, then the campaign, then the
+  task root, then the task run, then the entity's rows.
+- Take singleton rows only `FOR SHARE` during admission.
+
+#### Ranked changes
+
+The changes are ranked by benefit to the launch send and to Family
+responsiveness, against risk.
+
+| Rank | Change | Schema | Risk |
+| --- | --- | --- | --- |
+| 1 | Family mail admission locks the runtime and credential rows `FOR SHARE`, so logins stop waiting for mail | no | low |
+| 2 | Fewer lock takes per Family message: the PREPARING progress joins the effect, and the SQL in-flight check runs at most once a second | no | low |
+| 3 | Source fetch admission and staging batches leave the work lock: share the runtime row, then the task, lease and snapshot rows | no | medium |
+| 4 | The scheduler does not re-admit a due row it hinted within the last minute, while keeping the due-work health proof | no | medium |
+| 5 | Family schedule sweep skips, without the lock, Families whose groups cannot change, with a periodic full sweep | no | medium |
+| 6 | Task steps (claim, progress, heartbeat, settle, in-flight check, scheduler admission) in shared mode with a per-task key | yes | high |
+| 7 | Family form issue and submission in shared mode with a per-Family key, plus a campaign row lock for the submission sequence | yes | high |
+| 8 | Source attempt start and snapshot completion leave the work lock | yes | medium |
+| 9 | Promotion precomputes its Family and chair effects outside the lock and applies them in a short, verified step | yes | high |
+
+**Change 3** has the largest effect on the launch send while a refresh runs. It
+needs a new ordering argument against these other holders:
+
+- scheduler supersession
+- setup completion
+- compaction
+- credential switching
+- promotion
+
+Promotion keeps the exclusive lock and the `FOR UPDATE` admission.
+
+**Change 4** is only an optimization. A hint is advisory, and the consumer
+rechecks admission under its own locks, so a skipped re-check costs nothing.
+However, the due-work health sample counts each admitted row. A row skipped
+because it was hinted recently must still count as recently admitted, not as
+unknown.
+
+**Changes 6–9** need schema changes, which the v1 schema freeze defers. The
+SQL functions to change are:
+
+- the task, delivery and Family guards that assert `mode='ExclusiveLock'`
+- `stewardship_delivery_new_hold_v1` and `stewardship_control_guard_v1`,
+  which take the lock themselves
+- `stewardship_refresh_attempt_guard_v1` and
+  `stewardship_refresh_snapshot_completion_v1`
+- the `SystemConfiguration FOR UPDATE` in the baseline and submission guards
+
 ## Accessibility and client behavior
 
 The UI meets WCAG 2.2 AA: semantic landmarks, labels and instructions, keyboard
