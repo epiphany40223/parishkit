@@ -62,9 +62,9 @@ class FailureKind(StrEnum):
     """Safe operational categories, never exception text or credential values."""
 
     DATABASE = "database_unavailable"
-    # The database answered but a constraint or guard trigger refused the
-    # write (SQLSTATE class 23). Retrying alone will not help; the data or
-    # the code needs a look, so it is not reported as an outage.
+    # The database answered but a constraint or guard refused the statement
+    # (see _GUARD_REFUSALS); not an outage. It may clear on retry (an expired
+    # lease, an unreleased gate) or need a look at the data or the code.
     DATABASE_REFUSED = "database_write_refused"
     LIMITER = "authentication_limiter_unavailable"
     CREDENTIAL = "credential_unavailable"
@@ -302,6 +302,20 @@ def emit(
     )
 
 
+# SQLSTATEs that mean the database answered and refused: an integrity
+# constraint or a guard trigger's ERRCODE='23514' (class 23), a guard's
+# ERRCODE='42501', or a guard's RAISE without an ERRCODE (P0001).
+_GUARD_REFUSALS = ("23", "42501", "P0001")
+
+
+def _guard_refusal(error):
+    """Tell whether a database error is a refusal rather than an outage."""
+    from django.db import DatabaseError
+
+    state = getattr(error.__cause__, "sqlstate", None) or ""
+    return isinstance(error, DatabaseError) and state.startswith(_GUARD_REFUSALS)
+
+
 def emit_failure(
     error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id=None, shaping=None
 ):
@@ -319,7 +333,8 @@ def emit_failure(
     from .accounts.cryptography import CryptographicError
     from .accounts.limiting import LimiterUnavailable
 
-    kind = next(
+    kind = FailureKind.DATABASE_REFUSED if _guard_refusal(error) else None
+    kind = kind or next(
         (
             kind
             for cls, kind in (

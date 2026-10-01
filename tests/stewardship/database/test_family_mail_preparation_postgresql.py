@@ -195,6 +195,17 @@ def prefix_addresses(monkeypatch):
     """Give the Family head two addresses that byte and locale order disagree on."""
     from . import response_builders
 
+    # The test proves something only where the database's default collation
+    # orders the pair differently from code point order (en_US.utf8 in the
+    # CI image). On a C/POSIX cluster it would pass with or without the fix.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT %s < %s", [PREFIX_ADDRESSES[1], PREFIX_ADDRESSES[0]])
+        if not cursor.fetchone()[0]:
+            pytest.skip(
+                "The database default collation orders the test addresses by "
+                "code point, so it cannot show a collation-dependent order."
+            )
+
     original = response_builders.response_source
 
     def source():

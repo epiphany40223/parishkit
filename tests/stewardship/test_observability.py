@@ -187,6 +187,35 @@ def test_installer_failure_keeps_request_identity_and_safe_category(caplog, kind
 
 
 @pytest.mark.parametrize(
+    ("error_type", "sqlstate", "kind"),
+    [
+        ("IntegrityError", "23514", "database_write_refused"),
+        ("ProgrammingError", "42501", "database_write_refused"),
+        ("InternalError", "P0001", "database_write_refused"),
+        ("OperationalError", "08006", "database_unavailable"),
+        ("DatabaseError", None, "database_unavailable"),
+    ],
+)
+def test_guard_refusal_is_not_reported_as_an_outage(caplog, error_type, sqlstate, kind):
+    """A guard's refusal, whatever its SQLSTATE, is told apart from an outage."""
+    from django import db
+
+    from parishkit.stewardship.observability import emit_failure
+
+    class Cause(Exception):
+        """Stands in for the psycopg error Django chains as the cause."""
+
+    cause = Cause()
+    cause.sqlstate = sqlstate
+    error = getattr(db, error_type)("private-value")
+    error.__cause__ = cause
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(error)
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["failure_kind"] == kind
+
+
+@pytest.mark.parametrize(
     "supplied", ["synthetic-secret", "3ac12758-abf8-41df-ae3a-9f3c0b43e30a"]
 )
 def test_client_cannot_supply_correlation_id(client, supplied):
