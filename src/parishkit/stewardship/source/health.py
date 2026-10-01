@@ -37,7 +37,7 @@ from parishkit.stewardship.observability import Event
 from .errors import SourceOrganizationChanged, SourceScopeChanged
 from .models import SourceCurrent, SourceSnapshot
 from .requests import _organization, _window
-from .send_hold import family_send_active, within_allowance
+from .send_hold import deltas_skipped, family_send_active, within_allowance
 
 FAILURE_EVENTS = (
     Event.SOURCE_INVALID,
@@ -131,11 +131,13 @@ def observe_source_health():
     if stale:
         # The scheduler skips delta refreshes while a Family send is in
         # progress (send_hold), so the source ages on purpose. Within the
-        # send's allowance that is a hold: it neither alarms nor resolves.
+        # send's allowance, and only while deltas are actually being skipped,
+        # that is a hold: it neither alarms nor resolves.
         if (
             snapshot is not None
             and within_allowance(observed_at, scope.instant)
             and family_send_active()
+            and deltas_skipped(observed_at, scope.instant)
         ):
             return
         record_observation(

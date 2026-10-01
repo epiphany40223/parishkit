@@ -55,6 +55,15 @@ def sending(monkeypatch, active=True):
     monkeypatch.setattr(health, "family_send_active", lambda: active)
 
 
+def skipping_deltas(credential):
+    """Promote a full refresh and then a delta: the delta cadence is in use.
+
+    No delta is requested after that, as when the scheduler skips them.
+    """
+    publish(credential)
+    publish(credential, kind="delta")
+
+
 def causes():
     """The causes of every refresh slot the scheduler has created."""
     return sorted(SourceRefreshTick.objects.values_list("command__cause", flat=True))
@@ -149,7 +158,7 @@ def test_skipping_ends_before_the_send_allowance_runs_out(tmp_path, monkeypatch)
 def test_stale_alarm_holds_within_the_send_allowance(tmp_path, monkeypatch, settings):
     """Skipped deltas age the source on purpose: no alarm, no resolution."""
     credential, *_ = configured(tmp_path)
-    publish(credential)
+    skipping_deltas(credential)
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
@@ -167,7 +176,7 @@ def test_stale_alarm_holds_within_the_send_allowance(tmp_path, monkeypatch, sett
 def test_stale_alarm_is_unchanged_without_a_send(tmp_path, monkeypatch, settings):
     """With no send in progress, staleness alarms at the configured threshold."""
     credential, *_ = configured(tmp_path)
-    publish(credential)
+    skipping_deltas(credential)
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch, active=False)
     with monkeypatch.context() as patch:
@@ -181,7 +190,7 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
 ):
     """An alarm raised before the send stays open until a refresh succeeds."""
     credential, *_ = configured(tmp_path)
-    publish(credential)
+    skipping_deltas(credential)
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     with monkeypatch.context() as patch:
         future_observation(patch, 121)
@@ -192,14 +201,57 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
     assert OperationalIncident.objects.get(kind="source_stale").resolved_at is None
 
 
+@pytest.mark.parametrize("deltas", ["requested", "unused"])
+def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
+    tmp_path, monkeypatch, settings, deltas
+):
+    """A delta requested but not promoted, or no deltas at all, still alarms.
+
+    "requested": a delta was asked for after the current source was read but
+    has not promoted (a failing or stuck refresh). "unused": no delta was
+    requested within the last day, as with a quarter-hour full refresh.
+    """
+    credential, *_ = configured(tmp_path)
+    if deltas == "requested":
+        skipping_deltas(credential)
+        command(cause="delta", actor_id=None)
+    else:
+        publish(credential)
+    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
+    sending(monkeypatch)
+    with monkeypatch.context() as patch:
+        future_observation(patch, 121)
+        observe()
+    assert OperationalIncident.objects.get(kind="source_stale")
+
+
 @contextmanager
-def shadow_work():
+def shadow_work(mode="production", paused=False):
     """Temporary message and Task tables with just the columns the check reads.
 
     Temporary tables are searched before ``public``, so the real statements
-    run against them, without building real sends.
+    run against them, without building real sends. The runtime and campaign
+    copies hold one current campaign in ``mode``, ``paused`` or not.
     """
     with connection.cursor() as cursor:
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_campaign "
+            "(id uuid PRIMARY KEY, delivery_paused boolean)"
+        )
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_system_configuration "
+            "(id uuid PRIMARY KEY, mode text, current_campaign_id uuid)"
+        )
+        campaign = uuid4()
+        cursor.execute(
+            "INSERT INTO pg_temp.stewardship_campaign VALUES (%s,%s)",
+            [campaign, paused],
+        )
+        cursor.execute(
+            "INSERT INTO pg_temp.stewardship_system_configuration "
+            "VALUES (gen_random_uuid(),%s,%s)",
+            [mode, campaign],
+        )
         cursor.execute(
             "CREATE TEMP TABLE stewardship_outbox_message "
             "(id uuid PRIMARY KEY, purpose text, state text, pause_hold_id uuid)"
@@ -214,6 +266,8 @@ def shadow_work():
         with connection.cursor() as cursor:
             cursor.execute("DROP TABLE pg_temp.stewardship_outbox_message")
             cursor.execute("DROP TABLE pg_temp.stewardship_task_run")
+            cursor.execute("DROP TABLE pg_temp.stewardship_system_configuration")
+            cursor.execute("DROP TABLE pg_temp.stewardship_campaign")
 
 
 def add(table, rows):
@@ -269,6 +323,24 @@ def test_send_activity_counts_remaining_family_work():
         assert send_hold.family_send_active()
 
 
+@pytest.mark.parametrize(
+    "mode,paused,active",
+    [
+        ("production", True, False),
+        ("production", False, True),
+        ("testing", True, True),
+    ],
+)
+def test_paused_production_counts_messages_only(mode, paused, active):
+    """Preparations held by a Production pause do not keep deltas skipped."""
+    with transaction.atomic(), shadow_work(mode, paused):
+        add("task", [(PREPARE, "queued")] * 20)
+        assert send_hold.family_send_active() is active
+        # Unpaused messages still count during the pause.
+        add("message", [("initial", "pending", False)] * 10)
+        assert send_hold.family_send_active()
+
+
 @pytest.mark.parametrize("role", [ServiceRole.SCHEDULER, ServiceRole.WORKER])
 def test_restricted_logins_can_read_the_send_check(tmp_path, monkeypatch, role):
     """The scheduler decides skips and the collector's worker samples health."""
@@ -276,6 +348,7 @@ def test_restricted_logins_can_read_the_send_check(tmp_path, monkeypatch, role):
     publish(credential)
     with task_login(role), transaction.atomic():
         assert not send_hold.family_send_active(minimum=1)
+        assert not send_hold.deltas_skipped(database_now(), database_now())
         if role is ServiceRole.SCHEDULER:
             # With a send reported, the current source's age is read too.
             monkeypatch.setattr(send_hold, "family_send_active", lambda: True)

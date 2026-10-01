@@ -579,6 +579,8 @@ is being sent, the scheduler skips the 15-minute slots. A send is in progress
 while at least 10 pieces of its work remain, counting messages pending (not
 paused), waiting to retry or being submitted and preparation tasks queued,
 running or waiting to retry, read from durable state with no lock taken.
+While Production delivery is paused only messages count, so a paused send
+keeps its deltas.
 The scheduled [full refresh](#full-cycle) and every
 [manual request](#manual-request) still run.
 
@@ -587,9 +589,12 @@ loop decides again, so the first loop after the send creates the current
 slot's delta, which catches up. The scheduler logs `source_refresh_held` at
 INFO once per skipped slot, correlated to the slot's command identity.
 
-Skipping is bounded. While a send is in progress the
+Skipping is bounded. While a send is in progress and deltas are actually
+being skipped (none requested since the current source was read, though
+deltas ran within the last day), the
 [staleness alarm](#critical-errors-and-notification) allows the source two
-hours beyond its configured threshold, and the scheduler skips only while
+hours beyond its configured threshold. A requested delta that has not
+promoted still alarms at the threshold. The scheduler skips only while
 the current source is at least 30 minutes inside that allowance, so a send
 that runs longer gets its deltas back before the alarm would sound. Sending
 never waits on source age: Family preparation requires only that the
