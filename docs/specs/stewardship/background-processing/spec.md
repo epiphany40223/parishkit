@@ -665,7 +665,7 @@ its own transaction, so no lock spans two Families. A page holds up to 100
 Families while the previous page allocated new preparation work, and 20 after
 one that allocated none, so a large send creates mail quickly without an idle
 or paused campaign holding the work-order lock for long. A page also ends once
-40 seconds of planning have passed, checked between Families, which bounds
+15 seconds of planning have passed, checked between Families, which bounds
 this producer's share of the scheduler loop and its 90-second heartbeat.
 Ending early is pacing, not a timeout: the next loop resumes after the last
 Family planned (#394). Each such page logs `work_budget_reached` with the
