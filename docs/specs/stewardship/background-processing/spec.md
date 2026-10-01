@@ -626,6 +626,19 @@ Family without one receives no outbox row; its occurrence terminates as
 refusals therefore cannot create empty-recipient messages or systemic-provider
 failures, while the skipped occurrence preserves reporting and recovery state.
 
+Each scheduler loop plans the current campaign's Families in one page, in
+stable order from where the previous loop stopped. Each Family is planned in
+its own transaction, so no lock spans two Families. A page holds up to 100
+Families while the previous page allocated new preparation work, and 20 after
+one that allocated none, so a large send creates mail quickly without an idle
+or paused campaign holding the work-order lock for long. A page also ends once
+40 seconds of planning have passed, checked between Families, which bounds
+this producer's share of the scheduler loop and its 90-second heartbeat.
+Ending early is pacing, not a timeout: the next loop resumes after the last
+Family planned (#394). Each such page logs `work_budget_reached` with the
+budget and the elapsed seconds; with debug logging on, every page also logs
+how many Families it visited.
+
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
 after source promotion. The same catch-up applies when an already eligible
