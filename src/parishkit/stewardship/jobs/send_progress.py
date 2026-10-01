@@ -79,20 +79,19 @@ _LATEST_SEND = (
     "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
     "ORDER BY o.due_at DESC, o.created_at DESC, o.id DESC LIMIT 1"
 )
-# Sends that are due but not started: a Family schedule's current revision
-# that is due on the campaign clock and has no occurrence yet. Planning
-# creates its first occurrences on its next sweep, unless no Family needs it
-# (``read_send`` keeps only those with Families owed). At most one per
-# Family schedule, and there are at most 100 of those.
+# Every due send: each Family schedule's current revision that is due on the
+# campaign clock, whether or not planning has started it. A send that is not
+# the most recently due one can still be in progress: an invitation still
+# sending when a reminder falls due (the reminder coalesces into it), or a
+# schedule moved to an earlier time that is already due. At most one per
+# Family schedule, and there are at most 100 of those (a campaign normally
+# has an invitation and a few reminders).
 _DUE_SENDS = (
     "SELECT d.id, d.kind, r.id, r.due_at "
     "FROM stewardship_schedule_definition d "
     "JOIN stewardship_schedule_revision r ON r.id=d.current_revision_id "
     "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder') "
     "AND r.due_at<=public.stewardship_campaign_now_v1() "
-    "AND NOT EXISTS (SELECT 1 FROM stewardship_schedule_occurrence o "
-    "WHERE o.definition_id=d.id AND o.revision_id=r.id AND o.mode=%(mode)s "
-    "AND o.production_cycle=%(cycle)s) "
     "ORDER BY r.due_at DESC, d.id LIMIT 100"
 )
 # An occurrence's email, read by primary key. The LIMIT keeps it a per-row
@@ -329,10 +328,12 @@ class SendCounts:
 def read_send(campaign_id, mode, cycle, now):
     """Read the send in progress, else the most recent send, else None.
 
-    The send in progress that fell due most recently is returned. Due sends
-    not started yet are considered as well as the send whose occurrences
-    fell due most recently, so a moved schedule's new due time, or a new
-    send's first minute, shows as soon as Families are owed. With nothing in
+    The send in progress that fell due most recently is returned. Every due
+    send (each schedule's current revision, started or not) is considered as
+    well as the send whose occurrences fell due most recently. So a moved
+    schedule's new due time, or a new send's first minute, shows as soon as
+    Families are owed, and an invitation still sending is not hidden by a
+    reminder that fell due after it. With nothing in
     progress, the most recent send with occurrences is returned (its
     ``in_progress`` is False), for the panel's one-line summary.
 
@@ -353,7 +354,12 @@ def read_send(campaign_id, mode, cycle, now):
         cursor.execute(_LATEST_SEND, values)
         latest = cursor.fetchone()
         cursor.execute(_DUE_SENDS, values)
-        sends = cursor.fetchall()
+        # The latest send is usually also a due current revision: count it once.
+        sends = [
+            send
+            for send in cursor.fetchall()
+            if latest is None or (send[0], send[2]) != (latest[0], latest[2])
+        ]
         if latest is not None:
             sends.append(latest)
         # Newest due first; on a tie the send already under way goes first.

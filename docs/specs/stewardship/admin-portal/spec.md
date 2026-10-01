@@ -1381,10 +1381,14 @@ reminders held behind a failed or uncertain invitation, are not work to do.
 A finished send is therefore not in progress, and neither is one whose
 remaining emails were cancelled, for example because its schedule was moved
 to a later time. A due send that planning has not started yet is in
-progress, as long as some Family is owed it. The page shows the in-progress
+progress, as long as some Family is owed it. Every due send is checked, not
+only the one that fell due most recently, and the page shows the in-progress
 send that fell due most recently. A reminder therefore takes over from the
-invitation once it is due, while a late-joining Family's invitation (due at
-the invitation's original time) does not pull the page back.
+invitation once it is due and has emails of its own to send, while a
+late-joining Family's invitation (due at the invitation's original time)
+does not pull the page back. An invitation still sending when a reminder
+falls due (the reminder is then coalesced into it), or a schedule moved to
+an earlier time that has already passed, stays on the page.
 
 **When no send is in progress,** the page says so ("No Family email send is
 in progress right now"), with no progress bar. It summarises the send whose
@@ -1489,8 +1493,8 @@ email by primary key, with no schema change. A reminder also reads the
 invitations of the Families whose reminder is not prepared yet. The owed
 Families are counted from the campaign's Family rows, each checked against
 the send's occurrences, fulfillments and restore holds by anti-join. Due
-sends not started yet are found from each Family schedule's current
-revision. At launch scale (about 1,100 Families among 5,000 other occurrences
+sends are found from each Family schedule's current revision, and each one
+other than the latest is counted the same way. At launch scale (about 1,100 Families among 5,000 other occurrences
 and messages), the reads take about 0.5, 3 and 2 ms on the test database;
 with 50,000 other messages, about 0.7, 6 and 2.5 ms. Counting the owed
 Families adds under 1 ms in both, and under 10 ms on the validation server

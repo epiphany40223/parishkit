@@ -1009,11 +1009,96 @@ def test_in_progress_is_a_moment_in_time_across_a_moved_schedule(
     assert (again.remaining, again.unplanned, again.not_needed) == (3, 3, 0)
 
 
+def three_families(harness):
+    """Families 1 to 3, all eligible with a deliverable address, by DUID."""
+    populate(
+        harness.campaign,
+        harness.rings,
+        [FamilyStatus(n, True, True, True, True) for n in (1, 2, 3)],
+        generation=2,
+    )
+    return dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+
+
+def test_an_invitation_still_sending_is_not_hidden_by_a_later_reminder(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """A reminder falls due mid-invitation: the invitation stays on the page.
+
+    Family 2's reminder is coalesced into its still-pending invitation, so
+    the reminder (the latest send) has nothing to do, while the invitation
+    still has two pending emails and family 3 owed.
+    """
+    harness, actor = family_service, uuid4()
+    families = three_families(harness)
+    rows = add_reminders(auth_service.store, harness.campaign, actor)
+    reminder = ScheduleDefinition.objects.get(pk=UUID(rows[0]["id"]))
+    initial = ScheduleDefinition.objects.select_related("current_revision").get(
+        kind="initial"
+    )
+    with campaign_clock(initial.current_revision.due_at), scheduler_session() as guard:
+        plan_family(guard, family_id=families[1], worker_id=actor)
+    with campaign_clock(reminder.current_revision.due_at):
+        with scheduler_session() as guard:
+            plan_family(guard, family_id=families[2], worker_id=actor)
+        coalesced = ScheduleOccurrence.objects.get(
+            definition=reminder, target=f"family:{families[2]}"
+        )
+        assert coalesced.state == "coalesced"
+        counts = read_current()
+    assert counts.kind == "initial" and counts.in_progress
+    assert (counts.remaining, counts.unplanned) == (3, 1)
+
+
+def test_a_schedule_moved_earlier_shows_its_new_send(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """Moved to an earlier time already past: its started send stays shown.
+
+    The first revision's occurrence (due later) is the most recently due,
+    but its email was cancelled by the move; the new revision, due earlier,
+    has one planned email and two Families owed.
+    """
+    harness, actor = family_service, uuid4()
+    families = three_families(harness)
+    definition = ScheduleDefinition.objects.select_related("current_revision").get()
+    first = definition.current_revision.due_at
+    with campaign_clock(first + timedelta(hours=2)):
+        with scheduler_session() as guard:
+            plan_family(guard, family_id=families[1], worker_id=actor)
+        moved = change(
+            auth_service.store,
+            auth_service.store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": str(definition.pk),
+                    "values": {"time": "08:00:00"},
+                }
+            ],
+        )
+        assert moved.state == "applied"
+        definition.refresh_from_db()
+        assert definition.current_revision.due_at < first
+        with scheduler_session() as guard:
+            plan_family(guard, family_id=families[2], worker_id=actor)
+        counts = read_current()
+    assert counts.in_progress and counts.kind == "initial"
+    assert (counts.remaining, counts.unplanned, counts.not_needed) == (3, 2, 0)
+
+
 # One Family per planning rule (#431 review M2). Families 1, 2 and 7 are
 # eligible with a deliverable address; 3 has none; 4 is not email-eligible;
 # 5 is inactive; 6 is eligible but under an unreviewed restore hold for the
-# send. For a reminder, 1, 2 and 6 had their invitation delivered and 7 did
-# not, so planning sends 7 the invitation instead.
+# send. Family 8's invitation was already delivered, so it is sent, not owed,
+# in the invitation's send. For a reminder, 1, 2, 6 and 8 had their
+# invitation delivered and 7 did not, so planning sends 7 the invitation
+# instead. (A Family that responded needs a real submission, which these
+# fixtures cannot make cheaply; the planner's own tests cover that rule.)
 RULES = [
     FamilyStatus(1, True, True, True, True),
     FamilyStatus(2, True, True, True, True),
@@ -1022,8 +1107,12 @@ RULES = [
     FamilyStatus(5, False, False, False, False, "inactive", "ineligible"),
     FamilyStatus(6, True, True, True, True),
     FamilyStatus(7, True, True, True, True),
+    FamilyStatus(8, True, True, True, True),
 ]
-OWED = {"initial": 3, "reminder": 2}
+OWED = {"initial": 3, "reminder": 3}
+# Already delivered within the send itself (family 8's invitation).
+SENT = {"initial": 1, "reminder": 0}
+INVITED = (1, 2, 6, 8)
 
 
 def deliver(row, actor):
@@ -1066,24 +1155,31 @@ def sweep(actor):
             plan_family(guard, family_id=family_id, worker_id=actor)
 
 
-def check_owed_matches_planning(kind, plan):
+def check_owed_matches_planning(kind, plan, *, owed=None, sent=None):
     """What the panel says is owed is exactly what planning then creates.
 
     Read just before planning, the send's owed Families are its whole
     remaining work; after ``plan`` they are all pending occurrences of the
-    send's revision, the total is unchanged and nothing is owed.
+    send's revision, the total is unchanged and nothing is owed. ``owed``
+    and ``sent`` default to the fixture's ``OWED`` and ``SENT``.
     """
+    owed = OWED[kind] if owed is None else owed
+    sent = SENT[kind] if sent is None else sent
     before = read_current()
     assert before.kind == kind and before.in_progress
-    assert (before.unplanned, before.remaining, before.sent) == (OWED[kind],) * 2 + (0,)
+    assert (before.unplanned, before.remaining, before.sent) == (
+        owed,
+        owed,
+        sent,
+    )
     plan()
     after = read_current()
     assert after.kind == kind
-    assert (after.unplanned, after.remaining) == (0, OWED[kind])
+    assert (after.unplanned, after.remaining, after.sent) == (0, owed, sent)
     assert (
         send_progress.progress(after).total
         == send_progress.progress(before).total
-        == OWED[kind]
+        == owed + sent
     )
     definition = (
         ScheduleDefinition.objects.get(kind=kind)
@@ -1098,7 +1194,7 @@ def check_owed_matches_planning(kind, plan):
         ScheduleOccurrence.objects.filter(
             revision_id=definition.current_revision_id, state="pending"
         ).count()
-        == OWED[kind]
+        == owed
     )
 
 
@@ -1114,15 +1210,17 @@ def test_owed_families_match_testing_planning_rule_by_rule(
     families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
     initial = ScheduleDefinition.objects.select_related("current_revision").get()
     send = initial
+    delivered = (8,)
     if kind == "reminder":
         rows = add_reminders(auth_service.store, harness.campaign, actor)
         send = ScheduleDefinition.objects.get(pk=UUID(rows[0]["id"]))
-        with campaign_clock(initial.current_revision.due_at):
-            for duid in (1, 2, 6):
-                deliver(
-                    occurrence(initial, actor, target=f"family:{families[duid]}"),
-                    actor,
-                )
+        delivered = INVITED
+    with campaign_clock(initial.current_revision.due_at):
+        for duid in delivered:
+            deliver(
+                occurrence(initial, actor, target=f"family:{families[duid]}"),
+                actor,
+            )
     restore_hold(harness.campaign, send, "testing", families[6], actor)
     send.refresh_from_db()
     with campaign_clock(send.current_revision.due_at):
@@ -1157,11 +1255,13 @@ def test_owed_families_match_production_planning_rule_by_rule(tmp_path, kind):
 
     if kind == "initial":
         with campaign_clock(due):
-            check_owed_matches_planning(kind, catch_up)
+            # Before go-live no Production invitation can exist, so family 8
+            # is simply owed here: the activation catch-up plans it too.
+            check_owed_matches_planning(kind, catch_up, owed=4, sent=0)
         return
     with campaign_clock(due):
         catch_up()
-        for duid in (1, 2, 6):
+        for duid in INVITED:
             deliver(
                 ScheduleOccurrence.objects.get(
                     definition=initial, target=f"family:{families[duid]}"
