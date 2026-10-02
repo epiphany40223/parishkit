@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from parishkit.config import ConfigError
 
 from .deployment import (
+    BULK_FAMILY_SEND_VARIABLE,
+    BULK_SEND_BATCH_VARIABLE,
     FAMILY_MAIL_TRANSPORT_VARIABLE,
     MAIL_CONSUMERS_VARIABLE,
     SECRET_NAMES,
@@ -333,6 +335,19 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             # Likewise "1" falls back from two mail consumer processes to one.
             service["environment"][MAIL_CONSUMERS_VARIABLE] = (
                 "${" + MAIL_CONSUMERS_VARIABLE + ":-}"
+            )
+            service["environment"][BULK_SEND_BATCH_VARIABLE] = (
+                "${" + BULK_SEND_BATCH_VARIABLE + ":-}"
+            )
+        if role in {
+            ServiceRole.SCHEDULER,
+            ServiceRole.WORKER,
+            ServiceRole.MAIL_DISPATCH,
+        }:
+            # Empty unless exported: "1" turns on the bulk Family send
+            # (#430) on these three services at their next recreation.
+            service["environment"][BULK_FAMILY_SEND_VARIABLE] = (
+                "${" + BULK_FAMILY_SEND_VARIABLE + ":-}"
             )
         if role in {
             ServiceRole.BOOTSTRAP,

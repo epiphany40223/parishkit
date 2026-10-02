@@ -721,7 +721,11 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                 companion=companion,
             )
         producer = SourceProducer(uuid4())
-        schedules = FamilyScheduleProducer(uuid4())
+        # The bulk sweep only when the bulk Family send is on (#430); off,
+        # the producer is built exactly as before.
+        schedules = FamilyScheduleProducer(
+            uuid4(), **({"bulk": True} if configuration.bulk_family_send else {})
+        )
         digests = DigestScheduleProducer(uuid4())
         daily = DailyDigestProducer(uuid4())
         daily_finalization = DailyDigestFinalizeProducer(uuid4())
@@ -794,6 +798,13 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             stop=stop,
             heartbeat=heartbeat,
             produce=produce,
+            # The bulk Family send's consumers drain these task types
+            # themselves (#430), so a hint only has to wake them.
+            **(
+                {"drained": frozenset({"family_mail_prepare", "outbox_delivery"})}
+                if configuration.bulk_family_send
+                else {}
+            ),
         )
     finally:
         stop.set()

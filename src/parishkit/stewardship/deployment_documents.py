@@ -47,6 +47,8 @@ def deployment_document(configuration):
         "operational_alerts": asdict(configuration.operational_alerts),
         "family_mail_transport": configuration.family_mail_transport,
         "mail_consumers": configuration.mail_consumers,
+        "bulk_family_send": configuration.bulk_family_send,
+        "bulk_send_batch": configuration.bulk_send_batch,
     }
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
