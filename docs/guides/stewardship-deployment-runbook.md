@@ -642,9 +642,8 @@ sequence with the commands that exist.
    Likewise it returns to two mail consumer processes; if the one-process
    fallback is in use, put `PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS=1` before it
    too ([Falling back to one mail consumer](stewardship-family-mail-dispatch.md#falling-back-to-one-mail-consumer)).
-   The bulk Family send is off after any recreation without its variable;
-   to keep it on, put `PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1` before it
-   and recreate `scheduler` and `worker` too
+   The bulk Family send is off after a `retarget-image` run without its
+   variable; to keep it on, run step 3 with it
    ([Turning on the bulk Family send](stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)).
    `docker compose ... top mail-dispatch` lists two application processes
    (`runtime ... --queue mail` is the second). The release that introduced

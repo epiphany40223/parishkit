@@ -716,21 +716,24 @@ An optional path plans, prepares and sends scheduled Family mail (initial
 invitations and reminders) in batches, so each turn on the work-order lock
 covers several Families or messages rather than one step of one message
 ([#430](https://github.com/epiphany40223/parishkit/issues/430)). It is off by
-default; the deployment setting `bulk_family_send` (or
-`PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1`) on the scheduler, worker and
-mail-dispatch services turns it on, and turning it off restores the
-one-at-a-time path. It writes the same rows through the same owners and SQL
-guards, so either path finishes or recovers what the other started, and the
-switch may change mid-send.
+default and turned on for the scheduler, worker and mail-dispatch services
+by re-rendering the deployment with the switch on (see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)).
+The switch is not a deployment input: it is never part of the provisioning
+record, and a render with it off is byte-for-byte the render of the release
+before it, so returning to that release is an ordinary retarget. It writes
+the same rows through the same owners and SQL guards, so either path finishes
+or recovers what the other started, and the switch may change mid-send.
 
 - **Batches.** A batch is one work-order transaction. It adds items until
-  its item limit or a lock-hold budget of half a second, checked between
-  items, whichever comes first. The budget keeps every hold well inside the
-  waits other lock takers allow: a task's lease renewal (2 seconds), an
-  in-flight mail check (1 second) and Family logins. Each item runs in its own
-  savepoint; an item that any guard or admission check refuses, or that is
-  held, paused, cancelled or superseded, rolls back untouched and is handled
-  later by the one-at-a-time path.
+  its item limit, or until the time held so far plus its slowest item so far
+  would reach a lock-hold budget of half a second. The budget keeps holds
+  well inside the waits other lock takers allow: a task's lease renewal
+  (2 seconds), an in-flight mail check (1 second) and Family logins. Each item
+  runs in its own savepoint and counts only once that savepoint is released;
+  an item that any guard or admission check refuses, or that is held, paused,
+  cancelled or superseded, rolls back untouched and is handled later by the
+  one-at-a-time path.
 - **Planning.** The scheduler's Family sweep plans several Families per
   transaction, within the page limits above.
 - **Preparation.** A worker claims, prepares and completes several
@@ -741,27 +744,38 @@ switch may change mid-send.
   budget ends the batch first. It then sends them one after another over its
   one SMTP connection, outside any transaction, and records every outcome and
   Task completion in budget-bounded transactions before it begins the next
-  batch. Each message keeps
-  its own Task, claim, fence and lease; a batch's lease and each message's
-  provider deadline allow for its place in the batch. Before each send the
-  consumer checks its provider circuit and, without the lock, the mode,
-  current campaign, close, pause and go-live gate; a message
-  not sent then, or once its deadline or the batch's launch cutoff has
-  passed, is recorded as definitely unsent and retried later. The cutoff is
-  logged as a timeout.
-- **Crashes.** A consumer that dies after the `submitting` commit leaves up
-  to B messages `submitting`. After their lease and provider deadline,
-  recovery records each `delivery_unknown`, exactly as for one message, and
-  none is sent again automatically. Lower B bounds how many an Administrator
-  may need to settle.
-- **Draining.** A hint wakes a consumer, which then takes further batches of
-  due rows itself for up to a minute, so newly prepared mail is sent without
-  waiting for a scheduler loop; other mail waits at most that long.
+  batch. Each message keeps its own Task, claim, fence and lease. Each
+  message's provider deadline allows a full 30-second helper budget for every
+  message ahead of it, up to a cap, and a message is launched only with at
+  least 25 seconds of its deadline left, so no send starts short of time.
+- **Holds before launch.** Just before each send the consumer checks its
+  provider circuit and, without the lock, what family mail admission checks
+  under it: mode, current campaign and rehearsal epoch, revision and
+  occurrence state, production cycle, close and campaign end, pause, go-live
+  gate, source reconciliation, work gates, catch-up and restore holds. A
+  message not launched then, or past the batch's launch cutoff or short of
+  its deadline, is recorded as definitely unsent. Like the one-at-a-time
+  path's admission holds this spends none of its attempt budget, and the
+  Task waits in the reconciling phase until it is looked at again. A message
+  whose mode, epoch or revision has changed, or a Testing message held by a
+  closed go-live gate, is recorded as a definitive failure instead: it was
+  never sent and can no longer be. The cutoff, a deadline shortfall and a
+  helper stopped at the lease margin are logged as timeouts.
+- **Crashes.** A consumer that dies after the `submitting` commit leaves at
+  most one batch `submitting`, sent or not. After their lease and provider
+  deadline, recovery records each `delivery_unknown`, exactly as for one
+  message, and none is sent again automatically. Lower B bounds how many an
+  Administrator may need to settle.
+- **Draining.** Only a hint for scheduled Family mail (or Family mail
+  preparation) starts a drain: the consumer takes the hinted Task first, then
+  further batches of due rows itself for up to 30 seconds, so newly prepared
+  mail is sent without waiting for a scheduler loop. Any other hint, such as
+  a receipt, digest or alert, is handled at once by the one-at-a-time path.
+  The process heartbeat is beaten between batches and between sends.
 
-Pause, close, mode, go-live, restore-hold, epoch and token checks are the
-existing per-item admission checks and SQL guards. Testing routing and the
-daily sending limit are unchanged; near the daily limit the bulk path leaves
-messages to the one-at-a-time path, which decides them one by one.
+Testing routing and the daily sending limit are unchanged; near the daily
+limit the bulk path leaves messages to the one-at-a-time path, which decides
+them one by one.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
