@@ -770,7 +770,8 @@ or recovers what the other started, and the switch may change mid-send.
   Administrator may need to settle.
 - **Draining.** Only a hint for scheduled Family mail (or Family mail
   preparation) starts a drain: the consumer takes the hinted Task first, then
-  further batches of due rows itself for up to 30 seconds, so newly prepared
+  further batches of due rows itself for up to 30 seconds, waiting up to
+  5 seconds (polling without the lock) when it finds none, so newly prepared
   mail is sent without waiting for a scheduler loop. Any other hint, such as
   a receipt, digest or alert, is handled at once by the one-at-a-time path.
   The process heartbeat is beaten between batches and between sends.
