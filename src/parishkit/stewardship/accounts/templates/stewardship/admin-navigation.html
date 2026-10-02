@@ -2,7 +2,8 @@
   Admin sidebar, built from accounts/admin_navigation.py. The disclosure is
   open by default so the menu works without JavaScript; ui-v1.js collapses it
   on narrow screens only. aria-current marks the current page. Sign out is a
-  POST form (logout is CSRF-protected) styled as the last menu item.
+  POST form (logout is CSRF-protected) styled as the last menu item. Each
+  section title is a heading that also names its list of links.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
   <details class="admin-menu" open data-admin-menu>
     <summary>{% translate "Menu" %}</summary>
@@ -13,7 +14,7 @@
       <li><a href="{{ admin_chrome.home_url }}"{% if admin_chrome.home_current %} aria-current="page"{% endif %}>{% translate "Home" %}</a></li>
       {% for section in admin_chrome.sections %}
       <li class="admin-section{% if section.current %} is-current{% endif %}">
-        <p class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</p>
+        <h2 class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</h2>
         <ul aria-labelledby="admin-section-{{ section.key }}">
           {% for item in section.items %}<li><a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a></li>{% endfor %}
         </ul>

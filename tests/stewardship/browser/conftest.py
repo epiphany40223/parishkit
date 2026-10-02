@@ -1018,6 +1018,51 @@ def component_origin():
             {"configuration": {"mode": "testing"}, "admin_chrome": admin},
         ),
         (
+            # A fuller sidebar than the shared fixture's single section, so the
+            # group headings, dividers and indented link groups are checked
+            # together.
+            "/admin-navigation",
+            "home",
+            {
+                "configuration": {"mode": "testing"},
+                "admin_chrome": admin
+                | {
+                    "sections": [
+                        {
+                            "key": "campaign",
+                            "label": "Campaign",
+                            "current": False,
+                            "items": [
+                                {
+                                    "url": "/campaign-settings",
+                                    "label": "Campaign settings",
+                                    "current": None,
+                                },
+                                {
+                                    "url": "/schedules",
+                                    "label": "Mail schedules",
+                                    "current": None,
+                                },
+                            ],
+                        },
+                        *admin["sections"],
+                        {
+                            "key": "system",
+                            "label": "System",
+                            "current": False,
+                            "items": [
+                                {
+                                    "url": "/background",
+                                    "label": "Background work",
+                                    "current": None,
+                                },
+                            ],
+                        },
+                    ]
+                },
+            },
+        ),
+        (
             "/codes",
             "codes",
             {
