@@ -307,6 +307,30 @@ later recreation without the prefix returns to the deployment setting; and
 both prefixes can be used together. One process needs no change to the SQL
 connection limit.
 
+## Turning on the bulk Family send
+
+The [bulk Family send](../specs/stewardship/background-processing/spec.md#bulk-family-send)
+plans, prepares and sends invitations and reminders in batches. It is off by
+default. It needs the batched transport (above): with the per-message
+fallback the mail worker keeps sending one message at a time. Turn it on for
+the three services that use it, with the variable on that one command:
+
+```text
+PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1 docker compose ... up --detach --force-recreate scheduler worker mail-dispatch
+```
+
+To turn it off, recreate the same three services without the variable (or
+with `=0`). Work already started either way is finished by whichever path
+runs next; no cleanup is needed. To change B, the most messages one send
+batch marks `submitting` before sending (default 20), add
+`PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=10` (1–100) to the same command; it
+affects only `mail-dispatch`. A smaller B means fewer `delivery_unknown`
+messages to settle if a mail consumer dies mid-batch. The YAML settings are
+`bulk_family_send: true` and `bulk_send_batch`. The same prefix rules apply
+as for the transport switch. At startup the worker and mail worker log a
+WARNING saying the bulk send is on and with which B; with debug logging on,
+each batch logs how many items it took and its longest lock hold.
+
 ## Send statistics and tuning the batch caps
 
 Every Family outcome (and every digest outcome this worker settles) records
