@@ -95,6 +95,8 @@ def families(request, monkeypatch):
 
     monkeypatch.setattr(response_builders, "response_source", source)
     monkeypatch.setattr(response_builders, "RehearsalCredential", OneCredential)
+    # One pass per call: no idle wait for work that will never come here.
+    monkeypatch.setattr(family_mail_bulk, "IDLE_SECONDS", 0)
     harness, path = request.getfixturevalue("dispatch_worker")
     from parishkit.stewardship.campaigns.credential_keys import (
         initialize_key_inventories,

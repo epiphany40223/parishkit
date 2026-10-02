@@ -38,7 +38,7 @@ path when the scheduler hints it.
 import logging
 from dataclasses import dataclass, replace
 from random import randint
-from time import monotonic
+from time import monotonic, sleep
 from uuid import uuid4
 
 from django.db import connection, connections, transaction
@@ -92,6 +92,12 @@ HOLD_SECONDS = 0.75
 # liveness probe (90 s) never sees a drain as silence. Kept short so other
 # work in the same queue is not kept waiting behind a long send.
 DRAIN_SECONDS = 30
+# How long a drain waits, polling without the lock, for new due work once it
+# finds none (the preparer is usually seconds ahead of the senders), before
+# it returns to its queue. Without it a consumer idles until the scheduler's
+# next loop hints it again, often tens of seconds during a send.
+IDLE_SECONDS = 5
+IDLE_POLL_SECONDS = 0.5
 # Consecutive item refusals after which a batch stops early: a campaign-wide
 # hold refuses every item, and each refusal costs lock time.
 REFUSALS_TO_STOP = 3
@@ -293,14 +299,14 @@ def _drain(step, stop, pulse):
     """Repeat ``step`` (one batch) while it finds work, for DRAIN_SECONDS.
 
     ``step(exclude)`` returns how many items it finished and the ids it
-    tried, which later batches of this drain skip. The drain ends when a
-    step finds nothing left to try, or after two steps in a row finish
-    nothing (a campaign-wide hold, say). One empty step alone does not end
-    it: its items were often just taken by the other consumer. The
-    heartbeat is beaten after every batch, as the lease renewal thread does
-    during one task.
+    tried, which later batches of this drain skip. A step that finishes
+    nothing (no due work, or its items were just taken by the other
+    consumer) starts an idle wait: the drain polls again every
+    IDLE_POLL_SECONDS and ends once IDLE_SECONDS pass with nothing finished,
+    or at DRAIN_SECONDS. The heartbeat is beaten after every batch and poll,
+    as the lease renewal thread does during one task.
     """
-    started, tried, total, empty = monotonic(), set(), 0, 0
+    started, tried, total, idle = monotonic(), set(), 0, None
     while monotonic() - started < DRAIN_SECONDS:
         if stop is not None and stop.is_set():
             break
@@ -308,9 +314,16 @@ def _drain(step, stop, pulse):
         _beat(pulse)
         tried.update(attempted)
         total += finished
-        empty = 0 if finished else empty + 1
-        if not attempted or empty >= 2:
+        if finished:
+            idle = None
+            continue
+        idle = monotonic() if idle is None else idle
+        if monotonic() - idle >= IDLE_SECONDS:
             break
+        if stop is not None:
+            stop.wait(IDLE_POLL_SECONDS)
+        else:
+            sleep(IDLE_POLL_SECONDS)
     return total
 
 
@@ -850,122 +863,68 @@ def _lease_check(claimed, task_id):
     return check
 
 
+# One statement for _held_now: the checks family_mail_dispatch.disposition
+# and family_schedule_planning._planning_scope make under the lock, in the
+# same order, read here without it. One round trip per message keeps this
+# cheap beside the send (ten ORM queries cost noticeable CPU per message).
+HELD_NOW_SQL = """
+SELECT CASE
+  WHEN m.id IS NULL THEN 'missing'
+  WHEN r.id IS NULL OR c.id IS NULL OR o.id IS NULL OR k.campaign_id IS NULL
+    OR r.current_campaign_id IS DISTINCT FROM m.campaign_id OR r.mode <> m.mode
+    OR r.restore_review_required THEN 'scope'
+  WHEN o.revision_id IS DISTINCT FROM d.current_revision_id
+    OR o.state IN ('skipped','coalesced')
+    OR (m.mode='production' AND o.production_cycle <> c.production_cycle)
+    OR (m.mode='testing' AND (c.state <> 'draft'
+        OR k.rehearsal_epoch_id IS DISTINCT FROM m.rehearsal_epoch_id)) THEN 'scope'
+  WHEN c.state IN ('closed','archived')
+    OR stewardship_campaign_now_v1() >= p.ends_at THEN 'closed'
+  WHEN m.mode='production' AND (c.delivery_paused
+    OR c.state NOT IN ('scheduled','active')) THEN 'paused'
+  WHEN k.go_live_gate THEN 'go_live'
+  WHEN k.population_dirty OR s.snapshot_id IS NULL
+    OR k.source_snapshot_id IS DISTINCT FROM s.snapshot_id
+    OR k.source_generation IS DISTINCT FROM s.generation THEN 'source'
+  WHEN EXISTS (SELECT 1 FROM stewardship_campaign_work_gate g
+        WHERE g.campaign_id=m.campaign_id AND g.state<>'released')
+    OR (m.mode='production' AND EXISTS (SELECT 1 FROM stewardship_activation_catchup a
+        WHERE a.campaign_id=m.campaign_id AND a.completed_at IS NULL))
+    OR (m.purpose='reminder' AND EXISTS (
+        SELECT 1 FROM stewardship_restore_delivery_hold h
+        JOIN stewardship_schedule_definition i ON i.id=h.definition_id
+        WHERE i.campaign_id=m.campaign_id AND i.kind='initial' AND h.mode=m.mode
+          AND h.target=o.target AND h.slot='once' AND h.state='unreviewed'))
+    THEN 'hold'
+END
+FROM (SELECT 1) AS one
+LEFT JOIN stewardship_outbox_message m ON m.id=%s
+LEFT JOIN stewardship_system_configuration r ON true
+LEFT JOIN stewardship_campaign c ON c.id=m.campaign_id
+LEFT JOIN stewardship_campaign_configuration p ON p.id=c.active_configuration_id
+LEFT JOIN stewardship_schedule_occurrence o ON o.id=m.semantic_key
+LEFT JOIN stewardship_schedule_definition d ON d.id=o.definition_id
+LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=m.campaign_id
+LEFT JOIN stewardship_source_current s ON s.singleton
+"""
+
+
 def _held_now(message_id):
-    """Why this message must not be launched now, or None (lock-free reads).
+    """Why this message must not be launched now, or None (one lock-free read).
 
     A pause, a mode change, a close, the go-live gate or a schedule change is
     a transition under the work-order lock, so a batch committed before it
     may still hold "submitting" messages. Each later message is checked here
     just before its send against what family_mail_dispatch.disposition and
-    the planning scope check under the lock, and, if held, recorded as
-    definitely unsent instead (retried, or cancelled by the single path,
-    once it is looked at again). A message already being sent finishes, as
-    on the one-at-a-time path. The SQL guards refuse any new "submitting"
-    write.
+    the planning scope check under the lock (HELD_NOW_SQL), and, if held,
+    recorded as definitely unsent instead (retried, or cancelled by the
+    single path, once it is looked at again). A message already being sent
+    finishes, as on the one-at-a-time path. The SQL guards refuse any new
+    "submitting" write.
     """
-    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-    from parishkit.stewardship.campaigns.credential_models import (
-        CampaignCredentialState,
-    )
-    from parishkit.stewardship.campaigns.models import (
-        ActivationCatchUpDemand,
-        Campaign,
-        CampaignWorkGate,
-        RestoreDeliveryHold,
-    )
-    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
-    from parishkit.stewardship.source.snapshot_models import SourceCurrent
-
-    from .outbox_models import OutboxMessage
-
-    message = OutboxMessage.objects.filter(pk=message_id).first()
-    if message is None:
-        return "missing"
-    runtime = SystemConfiguration.objects.first()
-    campaign = (
-        Campaign.objects.select_related("active_configuration")
-        .filter(pk=message.campaign_id)
-        .first()
-    )
-    occurrence = (
-        ScheduleOccurrence.objects.select_related("definition")
-        .filter(pk=message.semantic_key)
-        .first()
-    )
-    population = CampaignCredentialState.objects.filter(
-        campaign_id=message.campaign_id
-    ).first()
-    if (
-        runtime is None
-        or campaign is None
-        or occurrence is None
-        or population is None
-        or runtime.current_campaign_id != message.campaign_id
-        or runtime.mode != message.mode
-        or runtime.restore_review_required
-    ):
-        return "scope"
-    if (
-        occurrence.revision_id != occurrence.definition.current_revision_id
-        or occurrence.state in {"skipped", "coalesced"}
-        or (
-            message.mode == "production"
-            and occurrence.production_cycle != campaign.production_cycle
-        )
-        or (
-            message.mode == "testing"
-            and (
-                campaign.state != "draft"
-                or population.rehearsal_epoch_id != message.rehearsal_epoch_id
-            )
-        )
-    ):
-        return "scope"
     with connection.cursor() as cursor:
-        cursor.execute("SELECT stewardship_campaign_now_v1()")
-        now = cursor.fetchone()[0]
-    if (
-        campaign.state in {"closed", "archived"}
-        or now >= campaign.active_configuration.ends_at
-    ):
-        return "closed"
-    if message.mode == "production" and (
-        campaign.delivery_paused or campaign.state not in {"scheduled", "active"}
-    ):
-        return "paused"
-    current = SourceCurrent.objects.filter(singleton=True).first()
-    if (
-        population.go_live_gate
-        or population.population_dirty
-        or current is None
-        or population.source_snapshot_id != current.snapshot_id
-        or population.source_generation != current.generation
-    ):
-        return "go_live" if population.go_live_gate else "source"
-    if (
-        CampaignWorkGate.objects.filter(campaign_id=message.campaign_id)
-        .exclude(state="released")
-        .exists()
-        or (
-            message.mode == "production"
-            and ActivationCatchUpDemand.objects.filter(
-                campaign_id=message.campaign_id, completed_at__isnull=True
-            ).exists()
-        )
-        or (
-            message.purpose == "reminder"
-            and RestoreDeliveryHold.objects.filter(
-                definition__campaign_id=message.campaign_id,
-                definition__kind="initial",
-                mode=message.mode,
-                target=occurrence.target,
-                slot="once",
-                state="unreviewed",
-            ).exists()
-        )
-    ):
-        return "hold"
-    return None
+        cursor.execute(HELD_NOW_SQL, [message_id])
+        return cursor.fetchone()[0]
 
 
 def _record_timeout(what, task_id, limit, elapsed, count, *, helper=None):
