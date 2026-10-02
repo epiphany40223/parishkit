@@ -1,5 +1,6 @@
 """Family email progress in a real browser (#413): accessible, live and quiet."""
 
+from datetime import timedelta
 from itertools import pairwise
 from time import monotonic
 
@@ -124,8 +125,22 @@ def test_polls_every_five_seconds_and_announces_only_quarter_changes(
     assert len(polls) >= 3 and all(4.5 <= gap < 8 for gap in gaps), gaps
 
 
+# Counts each poll timer the page arms (its 5-second fixed pace), so a test
+# can wait until the page has read a poll's answer and scheduled the next
+# one before it moves the clock again.
+COUNT_ARMED_POLLS = """() => {
+    const setTimeout = window.setTimeout;
+    window.armedPolls = 0;
+    window.setTimeout = function (callback, delay, ...rest) {
+        if (delay === 5000) window.armedPolls += 1;
+        return setTimeout.call(window, callback, delay, ...rest);
+    };
+}"""
+
+
+@pytest.mark.parametrize("jump", ["between_polls", "during_a_poll"])
 def test_watching_outlasts_the_old_hour_while_the_send_progresses(
-    page, component_origin
+    page, component_origin, jump
 ):
     """The limit counts from the last change, so a long watch keeps going.
 
@@ -133,38 +148,68 @@ def test_watching_outlasts_the_old_hour_while_the_send_progresses(
     Each poll that brings new counts restarts the 3-hour limit; once the
     counts stop changing for that long, watching stops and the message
     names this page's own refresh link.
+
+    The clock is paused and only moves when the test moves it, and each
+    jump waits until the page has re-armed its poll timer: the page arms the
+    next poll only after the previous answer arrives, so jumping earlier
+    would skip that timer (#425). The ``during_a_poll`` case deliberately
+    jumps 150 minutes while the fourth poll is in flight, as a computer
+    waking from sleep would: the page must still check once more before it
+    stops, because that answer predates the jump.
     """
     from playwright.sync_api import expect
 
     from .conftest import NOW
-    from .waits import recorded
+    from .waits import eventually, recorded
 
     polls = []
+    held = []
 
     def respond(route):
         """New counts on the first three polls, then the same ones."""
         polls.append(monotonic())
+        if jump == "during_a_poll" and len(polls) == 4:
+            held.append(route)  # Answered after the clock jump below.
+            return
         step = min(len(polls), 3)
         body = status(NOW, sent=480 + 10 * step, remaining=600 - 10 * step)
         route.fulfill(content_type="text/html", body=body)
 
+    def poll(minutes, count):
+        """Jump ``minutes`` ahead; the poll it fires is answered and re-armed."""
+        page.clock.fast_forward(minutes * 60 * 1000)
+        recorded(page, polls, count)
+        eventually(page, "window.armedPolls", count)
+
     page.clock.install(time=NOW)
+    page.clock.pause_at(NOW + timedelta(seconds=1))
     page.route("**" + STATUS, respond)
     page.goto(component_origin + PAGE)
+    page.evaluate(COUNT_ARMED_POLLS)
     problem = page.locator(".live-status-problem")
     for count in (1, 2, 3):
         # Two hours after load in all, well past the old one-hour limit.
-        page.clock.fast_forward(40 * 60 * 1000)
-        recorded(page, polls, count)
+        poll(40, count)
     expect(page.get_by_text("530 of 1,100 emails finished (48%)")).to_be_visible()
     assert problem.is_hidden()
     # Unchanged counts no longer renew the limit: 40 + 150 minutes later the
-    # page stops watching.
-    page.clock.fast_forward(40 * 60 * 1000)
-    recorded(page, polls, 4)
-    page.clock.fast_forward(150 * 60 * 1000)
+    # page stops watching, after one last poll that still shows no change.
+    if jump == "between_polls":
+        poll(40, 4)
+        page.clock.fast_forward(150 * 60 * 1000)
+    else:
+        page.clock.fast_forward(40 * 60 * 1000)
+        recorded(page, polls, 4)
+        page.clock.fast_forward(150 * 60 * 1000)
+        held[0].fulfill(
+            content_type="text/html", body=status(NOW, sent=510, remaining=570)
+        )
+        eventually(page, "window.armedPolls", 4)
+        assert problem.is_hidden()
+        page.clock.fast_forward(5000)
     recorded(page, polls, 5)
     expect(problem).to_have_text("Still working. Use Refresh progress to check again.")
     page.clock.fast_forward(60 * 60 * 1000)
-    page.wait_for_timeout(200)
+    page.evaluate("() => true")  # One round trip after the clock jump.
     assert len(polls) == 5
+    assert page.evaluate("window.armedPolls") == 4

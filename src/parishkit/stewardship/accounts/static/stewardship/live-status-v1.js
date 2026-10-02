@@ -47,6 +47,11 @@
   // When watching started, or (for a region with its own limit) when it
   // last brought new content.
   let started = Date.now();
+  // When the latest check was sent. The limit is judged from it, not from
+  // the moment its answer is read: if the clock jumps while a check is in
+  // flight (a computer waking from sleep), the answer predates the jump, so
+  // one fresh check must still run before watching stops.
+  let asked = started;
   const ownLimit = Number(region.getAttribute("data-live-give-up"));
   const renews = Number.isFinite(ownLimit) && ownLimit > 0;
   const giveUp = renews ? Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS;
@@ -118,7 +123,7 @@
   function schedule() {
     window.clearTimeout(timer);
     if (stopped || document.visibilityState !== "visible") return;
-    if (Date.now() - started > giveUp) {
+    if (asked - started > giveUp) {
       stop(`Still working. Use ${refreshLabel} to check again.`);
       return;
     }
@@ -192,6 +197,7 @@
   async function check() {
     if (stopped || inFlight || document.visibilityState !== "visible") return;
     inFlight = true;
+    asked = Date.now();
     try {
       const response = await fetch(source, {
         credentials: "same-origin",

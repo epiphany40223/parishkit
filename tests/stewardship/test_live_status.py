@@ -257,12 +257,15 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     """A region may set its own watching limit, renewed by new content (#413).
 
     The limit is at most 3 hours and counts from the last poll that brought
-    new content; other regions keep the one-hour limit from page load.
+    new content; other regions keep the one-hour limit from page load. It is
+    judged from when the latest check was sent, so a clock jump while a check
+    is in flight still leaves one fresh check before watching stops (#425).
     """
     source = SCRIPT.read_text()
     assert "const GIVE_UP_MS = 60 * 60 * 1000;" in source
     assert 'region.getAttribute("data-live-give-up")' in source
     assert "Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS" in source
     assert "if (renews) started = Date.now();" in source
+    assert "if (asked - started > giveUp) {" in source
     assert '|| "Refresh status"' in source
     assert "Use ${refreshLabel} to check again." in source
