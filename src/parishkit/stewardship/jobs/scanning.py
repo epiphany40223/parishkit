@@ -73,6 +73,12 @@ class RecentHints:
 
     This is in memory only. A restarted scheduler starts empty and admits
     and hints every due row again, which duplicate-safe consumers tolerate.
+
+    ``drained`` names the task types the bulk Family send (#430) works
+    through in batches. Its consumers find their due rows themselves, so a
+    hint only has to wake them: once ``per_page`` bulk rows of a type are
+    admitted in a page, the page's other bulk rows of that type are skipped
+    like fresh ones (and, like them, counted as admitted for health).
     """
 
     seconds: float = RECENT_HINT_SECONDS
@@ -81,9 +87,21 @@ class RecentHints:
     published_at: dict = field(default_factory=dict)
     # run_id -> row version of hints admitted in the current page.
     pending: dict = field(default_factory=dict)
+    drained: frozenset = frozenset()
+    # One hint per consumer process that drains the type: two mail
+    # consumers, one worker; two covers both.
+    per_page: int = 2
+    # task type -> bulk rows admitted in the current page.
+    counts: dict = field(default_factory=dict)
 
-    def fresh(self, row):
-        """Whether this unchanged row was published within the window."""
+    def fresh(self, row, *, bulk=False):
+        """Whether this unchanged row was published within the window.
+
+        A ``bulk`` row (see ``drained``) is also fresh once its type has
+        ``per_page`` admitted bulk rows in this page.
+        """
+        if bulk and self.counts.get(row.task_type, 0) >= self.per_page:
+            return True
         entry = self.published_at.get(row.pk)
         return (
             entry is not None
@@ -91,9 +109,11 @@ class RecentHints:
             and self.clock() - entry[1] < self.seconds
         )
 
-    def admitted(self, row):
+    def admitted(self, row, *, bulk=False):
         """Note the version of a row whose hint this page will publish."""
         self.pending[row.pk] = row.version
+        if bulk:
+            self.counts[row.task_type] = self.counts.get(row.task_type, 0) + 1
 
     def published(self, run_id):
         """Remember a hint the transport accepted."""
@@ -105,11 +125,38 @@ class RecentHints:
         """Forget unpublished admissions and hints older than the window."""
         now = self.clock()
         self.pending.clear()
+        self.counts.clear()
         self.published_at = {
             key: entry
             for key, entry in self.published_at.items()
             if now - entry[1] < self.seconds
         }
+
+
+def _bulk_rows(page, drained):
+    """The page's rows that the bulk Family send drains (#430), if it is on.
+
+    Preparation tasks all are; delivery tasks only for scheduled Family mail
+    (receipts, digests, tests and alerts keep one hint per row).
+    """
+    if not drained:
+        return set()
+    from .outbox_models import OutboxMessage
+
+    rows = {row.pk for row in page if row.task_type in drained}
+    delivery = {
+        row.domain_request_id: row.pk
+        for row in page
+        if row.pk in rows and row.task_type == "outbox_delivery"
+    }
+    family = set(
+        OutboxMessage.objects.filter(
+            pk__in=list(delivery), purpose__in=("initial", "reminder")
+        ).values_list("pk", flat=True)
+    )
+    return {pk for pk in rows if pk not in delivery.values()} | {
+        delivery[message] for message in family
+    }
 
 
 def due(row, now):
@@ -156,9 +203,10 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None)
                 | Q(not_before=cursor.not_before, id__gt=cursor.run_id)
             )
         page = list(rows.order_by("not_before", "id")[:limit])
+        bulk = _bulk_rows(page, recent.drained) if recent is not None else set()
     hints = []
     for candidate in page:
-        if recent is not None and recent.fresh(candidate):
+        if recent is not None and recent.fresh(candidate, bulk=candidate.pk in bulk):
             # Hinted lately and unchanged, so not re-admitted under the lock.
             # The due-work health proof still counts it as admitted, so an
             # overdue row is still reported late (architecture spec, change
@@ -184,7 +232,7 @@ def collect_hints(*, handlers, cursor=None, limit=100, health=None, recent=None)
                         health.admitted(row, instant)
                     hints.append(ExecutionHint(row.pk, handler.queue))
                     if recent is not None:
-                        recent.admitted(row)
+                        recent.admitted(row, bulk=row.pk in bulk)
                 elif health is not None:
                     health.unknown()
         except (PermissionError, ConfigError):

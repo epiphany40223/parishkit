@@ -163,6 +163,11 @@ class Handler:
     scope: Callable = nullcontext
     pulse: Callable | None = None
     after_transition: Callable | None = None
+    # Optional bulk entry point (#430, jobs/family_mail_bulk.py): given a
+    # hint's run id, it works through due tasks of this type in batches
+    # before the ordinary hint path runs. None (the default) is today's
+    # one-task-per-hint path.
+    bulk: Callable | None = None
 
     def __post_init__(self):
         """Reject incomplete handlers before any durable task can be claimed."""
@@ -173,7 +178,12 @@ class Handler:
             )
             or any(
                 value is not None and not callable(value)
-                for value in (self.recover, self.pulse, self.after_transition)
+                for value in (
+                    self.recover,
+                    self.pulse,
+                    self.after_transition,
+                    self.bulk,
+                )
             )
         ):
             raise ValueError("A complete internal task handler is required.")

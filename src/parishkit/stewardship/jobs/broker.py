@@ -296,6 +296,17 @@ def consume_hint(args, kwargs, *, service, handlers, stop=None, queues=None):
     handler = handlers.get(task_type)
     if not isinstance(handler, Handler) or handler.queue not in consumed:
         raise PermissionError("Task type is unavailable to this isolated consumer.")
+    if handler.bulk is not None:
+        # The bulk Family send (#430): batches of due tasks first. Whatever
+        # it leaves, the hinted task included, takes the ordinary path below.
+        try:
+            handler.bulk(run_id, stop=stop)
+        except Exception as error:
+            # A failed batch rolled back what it had not committed; the
+            # hinted task still gets the ordinary path.
+            emit_failure(error)
+        if stop is not None and stop.is_set():
+            return False
     options = dict(queue=handler.queue, worker_id=uuid4(), handlers=handlers)
     if execute_hint(run_id, **options, stop=stop):
         return True

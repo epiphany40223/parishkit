@@ -568,14 +568,21 @@ def begin_submission(
     public_origin,
     metadata_only=False,
     configuration_id=None,
+    nested=False,
+    provider_seconds=None,
 ):
     """Resolve private content only under final admission, then commit before IO.
 
     A None return means cancellation, coalescing or a pause, not acceptance.
     Rerendering is restricted to definitely unsent states; uncertain payloads
     remain immutable until explicit reconciliation.
+
+    ``nested`` lets the bulk send (#430, jobs/family_mail_bulk.py) run this
+    inside its own lock transaction, which commits several submissions at
+    once before any is sent; ``provider_seconds`` is then this message's
+    deadline, later for messages further back in the batch.
     """
-    if connection.in_atomic_block:
+    if connection.in_atomic_block and not nested:
         raise StorageInvariantError("Family submission must commit independently.")
     from .family_mail_dispatch_content import current_content
 
@@ -726,7 +733,9 @@ def begin_submission(
             correlation_id=claim.run_id,
             run_id=claim.run_id,
             task_fence=claim.fence,
-            provider_seconds=PROVIDER_SECONDS,
+            provider_seconds=PROVIDER_SECONDS
+            if provider_seconds is None
+            else provider_seconds,
             admit=admit,
         )
         message.refresh_from_db()

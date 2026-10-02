@@ -22,11 +22,14 @@ def delivery_handler(
     scheduler=False,
     batched=True,
     shared_stop=None,
+    bulk=None,
 ):
     """Stored purpose selects a verifier; it never replaces that verifier's proof.
 
     ``batched`` selects the Family mail transport (deployment setting
     ``family_mail_transport``; see family_mail_delivery_tasks.delivery_handler).
+    ``bulk`` turns on the bulk Family send (#430), which only ever takes
+    scheduled Family mail, so it is the Family owner's entry point.
     """
     campaign = campaign_handler(
         store,
@@ -36,6 +39,7 @@ def delivery_handler(
         scheduler=scheduler,
         batched=batched,
         shared_stop=shared_stop,
+        bulk=bulk,
     )
     # Each Administrator-routed owner keeps its own cohort, content and SQL
     # admission; the purpose only names which compiled owner must prove it.
@@ -70,5 +74,10 @@ def delivery_handler(
         return selected.execute(execution)
 
     return Handler(
-        WorkQueue.MAIL, admit, execute, recover=recover, scope=work_transaction
+        WorkQueue.MAIL,
+        admit,
+        execute,
+        recover=recover,
+        scope=work_transaction,
+        bulk=campaign.bulk,
     )
