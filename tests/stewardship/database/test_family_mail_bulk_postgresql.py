@@ -6,6 +6,7 @@ several synthetic Families, with a fake provider standing in for Gmail.
 
 from datetime import timedelta
 from threading import Barrier, Thread
+from time import sleep
 from uuid import uuid4
 
 import pytest
@@ -106,15 +107,18 @@ def families(request, monkeypatch):
 class Provider:
     """A fake Gmail that records each message's recipients."""
 
-    def __init__(self, status=Status.ACCEPTED, *, on_call=None):
-        """Answer ``status``; ``on_call(n)`` runs before the n-th answer."""
+    def __init__(self, status=Status.ACCEPTED, *, on_call=None, delay=0.0):
+        """Answer ``status`` after ``delay`` s; ``on_call(n)`` runs before answer n."""
         self.calls, self.status, self.on_call = [], status, on_call
-        self.keys = []
+        self.keys, self.delay, self.seconds = [], delay, []
 
     def __call__(self, value, settings, mail, *, seconds, check, session):
         """Record the message, as Gmail would receive it, then answer."""
         assert not connection.in_atomic_block and 0 < seconds <= 30
         assert value == KEY
+        self.seconds.append(seconds)
+        if self.delay:
+            sleep(self.delay)
         check()
         self.calls.append(mail.recipients)
         self.keys.append(mail.semantic_key)
@@ -143,9 +147,25 @@ def prepare_owner(harness, bulk=ON):
 def prepare_all(harness, bulk=ON):
     """Run the worker's bulk preparation once, as a hint would."""
     owner = prepare_owner(harness, bulk)
+    hint = TaskRun.objects.filter(task_type=PREPARE).values_list("pk", flat=True)
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
-        owner.bulk(uuid4())
+        owner.bulk(hint.first())
     connections.close_all()
+
+
+def family_hint():
+    """A due scheduled-Family delivery task, as the scheduler would hint it."""
+    return (
+        TaskRun.objects.filter(
+            task_type=TASK_TYPE,
+            state__in=("queued", "retry_wait"),
+            domain_request_id__in=OutboxMessage.objects.filter(
+                purpose__in=("initial", "reminder")
+            ).values("pk"),
+        )
+        .values_list("pk", flat=True)
+        .first()
+    )
 
 
 def mail_owner(harness, path, bulk=ON):
@@ -162,8 +182,10 @@ def mail_owner(harness, path, bulk=ON):
 def send_all(harness, path, owner=None):
     """Run one mail consumer's bulk send once, as a hint would."""
     owner = owner or mail_owner(harness, path)
+    hint = family_hint()
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
-        owner.bulk(uuid4())
+        if hint is not None:
+            owner.bulk(hint)
     connections.close_all()
     return owner
 
@@ -288,13 +310,13 @@ def test_two_bulk_senders_never_send_a_message_twice(families, monkeypatch):
         plan()
         prepare_all(harness)
         owners = [mail_owner(harness, path) for _ in range(2)]
-        start, errors = Barrier(2), []
+        start, errors, hint = Barrier(2), [], family_hint()
 
         def run(owner):
             """One consumer's bulk pass, started together with the other."""
             try:
                 start.wait()
-                owner.bulk(uuid4())
+                owner.bulk(hint)
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
             finally:
@@ -317,6 +339,7 @@ def test_pause_mid_batch_sends_nothing_more(families, monkeypatch):
     harness, path = families
     harness = activate_response_service(harness)
     complete_empty_catchup(harness.campaign, uuid4())
+    _one_batch(monkeypatch)
 
     def pause_after_first(count):
         """Pause Production delivery as soon as the first message is sent."""
@@ -334,9 +357,7 @@ def test_pause_mid_batch_sends_nothing_more(families, monkeypatch):
     with campaign_clock(due()):
         plan()
         prepare_all(harness)
-        with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
-            mail_owner(harness, path).bulk(uuid4())
-            connections.close_all()
+        send_all(harness, path)
     assert len(provider.calls) == 1
     states = sorted(OutboxMessage.objects.values_list("state", flat=True))
     # One sent; the rest of its batch definitely unsent (retry after the
@@ -359,6 +380,7 @@ def test_crash_after_submitting_never_resends(families, monkeypatch):
     monkeypatch.setattr(family_mail_bulk, "LEASE_MARGIN_SECONDS", 1)
     monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 4)
     monkeypatch.setattr(family_mail_bulk, "DEADLINE_STEP_SECONDS", 0)
+    monkeypatch.setattr(family_mail_bulk, "MIN_LAUNCH_SECONDS", 1)
 
     class Killed(BaseException):
         """Stands in for the process being killed mid-send."""
@@ -443,4 +465,262 @@ def test_a_mode_switch_before_sending_sends_no_testing_mail(families, monkeypatc
     assert provider.calls == []
     assert not OutboxMessage.objects.filter(
         mode="testing", state__in=("delivered", "submitting", "delivery_unknown")
+    ).exists()
+
+
+def _as_owner(statements):
+    """Run SQL as the test owner with triggers off, then resume the mail login.
+
+    Simulates a lifecycle transition landing mid-batch (the real transitions
+    need an Administrator session): only rows the bulk send reads before its
+    next launch change. The mail role's connection is idle between sends.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("RESET SESSION AUTHORIZATION")
+        cursor.execute("SET session_replication_role = replica")
+        for statement in statements:
+            cursor.execute(statement)
+        cursor.execute("SET session_replication_role = origin")
+        cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_mail_dispatch")
+
+
+def _one_batch(monkeypatch):
+    """Let one send batch take every message (a long hold budget)."""
+    monkeypatch.setattr(family_mail_bulk, "HOLD_SECONDS", 60)
+
+
+def _reconciling(message):
+    """Whether the message's task waits as an unspent hold (RECONCILING)."""
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        preparation_attempts,
+    )
+    from parishkit.stewardship.jobs.storage import _status
+
+    task = TaskRun.objects.get(root_id=message.task_id)
+    return task.phase == "reconciling" and preparation_attempts(_status(task)) == 0
+
+
+def _timeouts(what):
+    """Durable timeout entries the bulk send recorded for ``what``."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    sleep(0.5)  # record_timeout_within writes on its own thread
+    return [
+        row.context
+        for row in OperationalLog.objects.filter(event="task_timed_out")
+        if row.context.get("what") == what
+    ]
+
+
+@pytest.mark.parametrize("change", ["go_live", "close", "mode"])
+def test_a_transition_mid_batch_sends_nothing_more(families, monkeypatch, change):
+    """Go-live, close or a mode switch after the first send: no later send.
+
+    Unlaunched messages are recorded definitely unsent. A close is a hold
+    that spends no attempt; a mode switch or a closed go-live gate makes the
+    Testing messages definitively unsendable, recorded failed (never sent,
+    never unknown), as finish_submission records a changed mode.
+    """
+    harness, path = families
+    _one_batch(monkeypatch)
+    statements = {
+        "go_live": ["UPDATE stewardship_campaign_credentials SET go_live_gate=true"],
+        "close": [
+            "CREATE OR REPLACE FUNCTION stewardship_campaign_now_v1() "
+            "RETURNS timestamptz LANGUAGE sql STABLE AS "
+            "$$SELECT now() + interval '400 days'$$"
+        ],
+        "mode": ["UPDATE stewardship_system_configuration SET mode='production'"],
+    }[change]
+
+    def transition(count):
+        """Apply the transition right after the first message is sent."""
+        if count == 1:
+            _as_owner(statements)
+
+    provider = Provider(on_call=transition)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        send_all(harness, path)
+    assert len(provider.calls) == 1
+    rest = list(OutboxMessage.objects.exclude(state="delivered"))
+    assert len(rest) == EXTRA
+    if change in {"mode", "go_live"}:
+        assert {message.state for message in rest} == {"permanent_failure"}
+    else:
+        assert {message.state for message in rest} == {"retry_wait"}
+        assert all(_reconciling(message) for message in rest)
+
+
+def test_late_positions_are_released_unsent_not_rushed(families, monkeypatch):
+    """A message whose deadline leaves under MIN_LAUNCH_SECONDS is not launched.
+
+    Per-position deadlines step by DEADLINE_STEP_SECONDS (here 1 s, with a
+    2 s provider), so alternate messages fall short; each is released as an
+    unspent hold and the shortfall is logged durably.
+    """
+    harness, path = families
+    _one_batch(monkeypatch)
+    monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 30)
+    monkeypatch.setattr(family_mail_bulk, "DEADLINE_STEP_SECONDS", 1)
+    monkeypatch.setattr(family_mail_bulk, "MIN_LAUNCH_SECONDS", 29)
+    provider = Provider(delay=2.0)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        send_all(harness, path)
+    held = list(OutboxMessage.objects.filter(state="retry_wait"))
+    assert held and provider.calls
+    assert len(held) + len(provider.calls) == EXTRA + 1
+    assert all(seconds >= 29 for seconds in provider.seconds)
+    assert all(_reconciling(message) for message in held)
+    (entry,) = _timeouts("mail_helper")
+    assert entry["limit_seconds"] == 29 and entry["count"] == len(held)
+
+
+def test_the_launch_cutoff_releases_the_rest_and_is_logged(families, monkeypatch):
+    """Past SEND_CUTOFF_SECONDS no message is launched; the cut is logged."""
+    harness, path = families
+    _one_batch(monkeypatch)
+    monkeypatch.setattr(family_mail_bulk, "SEND_CUTOFF_SECONDS", 1)
+    provider = Provider(delay=1.2)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        send_all(harness, path)
+    assert len(provider.calls) == 1
+    held = list(OutboxMessage.objects.filter(state="retry_wait"))
+    assert len(held) == EXTRA and all(_reconciling(message) for message in held)
+    (entry,) = _timeouts("lease")
+    assert entry["limit_seconds"] == 1 and entry["count"] == EXTRA
+
+
+def test_the_lease_margin_stops_a_late_helper_as_unknown(families, monkeypatch):
+    """A helper still running at the lease margin is stopped: unknown, logged."""
+    harness, path = families
+    _one_batch(monkeypatch)
+    monkeypatch.setattr(family_mail_bulk, "SEND_LEASE_SECONDS", 60)
+    monkeypatch.setattr(family_mail_bulk, "LEASE_MARGIN_SECONDS", 59)
+    monkeypatch.setattr(family_mail_bulk, "SEND_CUTOFF_SECONDS", 1)
+    provider = Provider(delay=1.2)
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        send_all(harness, path)
+    states = sorted(OutboxMessage.objects.values_list("state", flat=True))
+    assert states == ["delivery_unknown"] + ["retry_wait"] * EXTRA
+    entries = _timeouts("lease")
+    # The lease-margin stop (limit 60 - 59) and the cutoff (limit 1).
+    assert sorted(entry.get("count", 1) for entry in entries) == [1, EXTRA]
+    assert {entry["limit_seconds"] for entry in entries} == {1}
+
+
+def test_an_unrecorded_outcome_is_recovered_as_unknown(families, monkeypatch):
+    """An outcome the database refuses leaves its message for recovery only."""
+    harness, path = families
+    _one_batch(monkeypatch)
+    monkeypatch.setattr(family_mail_bulk, "SEND_LEASE_SECONDS", 5)
+    monkeypatch.setattr(family_mail_bulk, "LEASE_MARGIN_SECONDS", 1)
+    monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 4)
+    monkeypatch.setattr(family_mail_bulk, "DEADLINE_STEP_SECONDS", 0)
+    monkeypatch.setattr(family_mail_bulk, "MIN_LAUNCH_SECONDS", 1)
+    provider = Provider()
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    real_finish, failed = family_mail_dispatch.finish_submission, []
+
+    def refuse_first(identifier, claim, result, **options):
+        """The database refuses the first outcome once."""
+        if not failed:
+            failed.append(identifier)
+            raise RuntimeError("synthetic refusal of an outcome")
+        return real_finish(identifier, claim, result, **options)
+
+    monkeypatch.setattr(family_mail_dispatch, "finish_submission", refuse_first)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        send_all(harness, path)
+    assert OutboxMessage.objects.get(pk=failed[0]).state == "submitting"
+    assert (
+        OutboxMessage.objects.filter(state="delivered").count()
+        == len(provider.calls) - 1
+    )
+    _wait_for_lease_expiry()
+    message = OutboxMessage.objects.get(pk=failed[0])
+    with campaign_clock(due()):
+        single(harness, path, message.task_id)
+        send_all(harness, path)
+    message.refresh_from_db()
+    assert message.state == "delivery_unknown"
+    assert len(provider.keys) == len(set(provider.keys)) == EXTRA + 1
+
+
+def test_a_kill_before_the_first_send_leaves_only_unknowns(families, monkeypatch):
+    """Killed between the "submitting" commit and the first send: no resend."""
+    harness, path = families
+    _one_batch(monkeypatch)
+    monkeypatch.setattr(family_mail_bulk, "SEND_LEASE_SECONDS", 5)
+    monkeypatch.setattr(family_mail_bulk, "LEASE_MARGIN_SECONDS", 1)
+    monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 4)
+    monkeypatch.setattr(family_mail_bulk, "DEADLINE_STEP_SECONDS", 0)
+    monkeypatch.setattr(family_mail_bulk, "MIN_LAUNCH_SECONDS", 1)
+    provider = Provider()
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+
+    class Killed(BaseException):
+        """Stands in for SIGKILL right after the commit."""
+
+    def killed(*args, **kwargs):
+        raise Killed
+
+    monkeypatch.setattr(family_mail_bulk, "_held_now", killed)
+    real_finish = family_mail_dispatch.finish_submission
+    monkeypatch.setattr(family_mail_dispatch, "finish_submission", _never)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        with pytest.raises(Killed):
+            send_all(harness, path)
+    assert provider.calls == []
+    submitting = list(OutboxMessage.objects.filter(state="submitting"))
+    assert len(submitting) == EXTRA + 1
+    monkeypatch.setattr(family_mail_dispatch, "finish_submission", real_finish)
+    _wait_for_lease_expiry()
+    with campaign_clock(due()):
+        for message in submitting:
+            single(harness, path, message.task_id)
+        send_all(harness, path)
+    # Never sent, but its outcome cannot be known: settled by an Administrator.
+    assert provider.calls == []
+    assert set(OutboxMessage.objects.values_list("state", flat=True)) == {
+        "delivery_unknown"
+    }
+
+
+def test_a_receipt_hint_does_not_wait_behind_a_drain(families, monkeypatch):
+    """A receipt's hint starts no drain; the receipt goes out at once."""
+    from .test_receipt_dispatch_postgresql import receipt
+
+    harness, path = families
+    provider = Provider()
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", provider)
+    with campaign_clock(due()):
+        plan()
+        prepare_all(harness)
+        message = receipt(harness)
+        owner = mail_owner(harness, path)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+            assert owner.bulk(message.task_id) == 0
+        connections.close_all()
+        assert provider.calls == []
+        single(harness, path, message.task_id, owner)
+    message.refresh_from_db()
+    assert message.state == "delivered" and len(provider.calls) == 1
+    assert not OutboxMessage.objects.filter(
+        purpose="initial", state="delivered"
     ).exists()

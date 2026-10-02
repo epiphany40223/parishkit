@@ -300,7 +300,9 @@ def consume_hint(args, kwargs, *, service, handlers, stop=None, queues=None):
         # The bulk Family send (#430): batches of due tasks first. Whatever
         # it leaves, the hinted task included, takes the ordinary path below.
         try:
-            handler.bulk(run_id, stop=stop)
+            # This registered handler's admission (with the runtime's
+            # authority checks) and heartbeat serve every batch.
+            handler.bulk(run_id, stop=stop, owner=handler, pulse=handler.pulse)
         except Exception as error:
             # A failed batch rolled back what it had not committed; the
             # hinted task still gets the ordinary path.

@@ -2,9 +2,9 @@
 
 This is an optional, faster path for the large scheduled Family sends
 (invitations and reminders). It is off by default and turned on by the
-deployment setting ``bulk_family_send`` (environment variable
-``PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1``) on the worker and mail-dispatch
-services. Off, the consumers run exactly the one-task-per-hint path.
+deployment setting ``bulk_family_send`` on the scheduler, worker and
+mail-dispatch services. Off, the consumers run exactly the one-task-per-hint
+path.
 
 Why: during a send every step of every message took its own turn on the
 deployment-wide work-order lock (736220,1): a claim, an effect, a submission,
@@ -19,24 +19,25 @@ one-at-a-time path makes, and only changes how they are grouped:
 - Sending: one lock transaction claims several ``outbox_delivery`` tasks and
   commits each message's "submitting" state (the durable record, made before
   anything reaches Gmail). The consumer then sends them one after another over
-  its one SMTP session, outside any transaction, and one more lock transaction
-  records every outcome and completes every task.
+  its one SMTP session, outside any transaction, and records every outcome and
+  completes every task before it begins the next batch.
 
 The rows written are the rows the one-at-a-time path writes, with the same
 owners, so either path can finish or recover what the other started, and
 turning the switch off mid-send is safe.
 
 A batch ends at whichever comes first: its item limit or its lock-hold
-budget, checked between items. The budget bounds how long one transaction
-holds the lock (Family form requests, Admin pages, the scheduler and the
-other consumer wait for it). Anything a batch cannot finish (an item a guard
-or admission check refuses, a held or paused message, a changed selection,
-any error) is rolled back to its savepoint, untouched, and is later handled
-by the one-at-a-time path when the scheduler hints it.
+budget. The budget bounds how long one transaction holds the lock (Family
+form requests, Admin pages, the scheduler and the other consumer wait for
+it). Anything a batch cannot finish (an item a guard or admission check
+refuses, a held or paused message, a changed selection, any error) is rolled
+back to its savepoint, untouched, and is later handled by the one-at-a-time
+path when the scheduler hints it.
 """
 
 import logging
 from dataclasses import dataclass, replace
+from random import randint
 from time import monotonic
 from uuid import uuid4
 
@@ -70,22 +71,24 @@ PREPARE_BATCH = 100
 # the validation host), so B is a ceiling on that exposure, not a target.
 SEND_BATCH = 20
 SEND_BATCH_RANGE = range(1, 101)
-# Most seconds one batch transaction keeps adding items while it holds the
-# work-order lock (checked between items, so one item more can follow). The
-# items themselves are the same guarded writes as before; this only bounds
-# how long others wait for the lock behind one batch. It must stay well under
-# the shortest wait any other lock taker allows itself: a running task's
-# lease renewal gives up after 2 s (jobs/lifetime.renew_once, which stops
-# that task), an in-flight mail check after 1 s (skipped and logged), and a
-# Family login waits for the runtime row a preparation locks. One Family
-# item takes about 0.1-0.2 s locally and roughly 3-4 times that on the
-# validation host, so this keeps a batch hold near one second there, close
-# to a single item's hold on the one-at-a-time path.
+# Most seconds one batch transaction holds the work-order lock. Before each
+# item after the first, the batch stops if the time held so far plus the
+# slowest item it has run would reach this, so a hold stays within the
+# budget unless one item is slower than every earlier one. The items are
+# the same guarded writes as before; this only bounds how long others wait
+# for the lock behind one batch. It must stay well under the shortest wait
+# any other lock taker allows itself: a running task's lease renewal gives
+# up after 2 s (jobs/lifetime.renew_once, which stops that task), an
+# in-flight mail check after 1 s (skipped and logged), and a Family login
+# waits for the runtime row a preparation locks. One Family item takes about
+# 0.1-0.2 s locally and roughly 3-4 times that on the validation host.
 HOLD_SECONDS = 0.5
 # How long one hint's consumer keeps taking further batches (the drain)
-# before it returns to its queue, so other mail (receipts, digests) and
-# other tasks are not kept waiting behind a long send.
-DRAIN_SECONDS = 60
+# before it returns to its queue. Checked before each batch; the process
+# heartbeat is beaten between batches and between sends, so the container's
+# liveness probe (90 s) never sees a drain as silence. Kept short so other
+# work in the same queue is not kept waiting behind a long send.
+DRAIN_SECONDS = 30
 # Consecutive item refusals after which a batch stops early: a campaign-wide
 # hold refuses every item, and each refusal costs lock time.
 REFUSALS_TO_STOP = 3
@@ -96,15 +99,26 @@ SEND_LEASE_SECONDS = 240
 # message is then unknown, never resent), so the outcome commit that follows
 # still holds a live claim.
 LEASE_MARGIN_SECONDS = 30
-# No new message is launched later than this after the batch's claim; any
+# No new message is launched later than this after the batch's commit; any
 # message still unsent then is recorded as definitely unsent (retried later).
 SEND_CUTOFF_SECONDS = 150
+# A message is launched only with at least this much of its provider
+# deadline left; the helper then gets min(30, what is left), like the
+# one-at-a-time path's PROVIDER_SECONDS. With less, a slow Gmail could stop
+# the helper after DATA began, an unknown outcome that is never retried, so
+# the message is released as definitely unsent instead.
+MIN_LAUNCH_SECONDS = 25
 # Provider deadline of the first message in a send batch (the one-at-a-time
 # path's PROVIDER_SECONDS) and the allowance added for each message ahead of
-# it in the batch, capped so recovery after a crash is not delayed long.
+# it: one whole helper budget each, so even if every earlier send used its
+# full 30 s, this one still has its full budget at launch. Capped at the
+# launch cutoff plus one helper budget; positions past the cap launch only
+# if earlier sends were quick, and are released unsent otherwise.
 FIRST_DEADLINE_SECONDS = 30
-DEADLINE_STEP_SECONDS = 5
-MAX_DEADLINE_SECONDS = 180
+DEADLINE_STEP_SECONDS = 30
+MAX_DEADLINE_SECONDS = SEND_CUTOFF_SECONDS + 30
+# How soon a message held before launch (pause, scope, deadline) is retried.
+HOLD_RETRY_SECONDS = 30
 # Scheduled Family mail only; receipts, digests and tests keep their path.
 BULK_PURPOSES = ("initial", "reminder")
 
@@ -128,12 +142,13 @@ class BulkSettings:
             raise ValueError("Bulk Family send settings are invalid.")
 
 
-def _candidates(task_type, limit, exclude=(), purposes=None):
+def _candidates(task_type, limit, exclude=(), purposes=None, first=None):
     """Due, claimable task ids of one type, oldest first, read without a lock.
 
     Like the hint pre-check in dispatch, this only chooses what to try: every
     item is claimed under the locks with the full admission check, and one
-    found already claimed (by the other consumer, say) is skipped.
+    found already claimed (by the other consumer, say) is skipped. ``first``
+    (the hinted task) is tried before the others.
     """
     rows = TaskRun.objects.filter(_CLAIMABLE, task_type=task_type).exclude(
         pk__in=list(exclude)
@@ -146,7 +161,10 @@ def _candidates(task_type, limit, exclude=(), purposes=None):
                 purpose__in=purposes, state__in=("pending", "retry_wait")
             ).values("pk")
         )
-    return list(rows.order_by("not_before", "id").values_list("pk", flat=True)[:limit])
+    ids = list(rows.order_by("not_before", "id").values_list("pk", flat=True)[:limit])
+    if first is not None and first not in exclude:
+        ids = [first] + [value for value in ids if value != first]
+    return ids
 
 
 def _claim(run_id, handler, worker_id, lease_seconds):
@@ -193,27 +211,31 @@ def _transition(claim, correlation_id, handler, action, **options):
 
 
 def _run_batch(ids, item, *, limit, seconds=None):
-    """Run ``item`` for each id in one lock transaction, each in a savepoint.
+    """Run ``item(run_id, position)`` for each id in one lock transaction.
 
-    Stops after ``limit`` successes, once ``seconds`` of lock hold have
-    passed (checked between items), or after REFUSALS_TO_STOP refusals in a
-    row. Returns ``(done, tried, hold)``: what ``item`` returned for each
-    success, every id tried, and how long the lock was held.
+    Each item runs in its own savepoint; ``position`` is how many items
+    have succeeded before it. A success counts (and its return value is
+    kept) only once its savepoint has been released. Stops after ``limit``
+    successes, after REFUSALS_TO_STOP refusals in a row, or before an item
+    that would likely take the hold past ``seconds`` (the hold so far plus
+    the slowest item so far; see HOLD_SECONDS). Returns ``(done, tried,
+    hold)``: what ``item`` returned for each success, every id tried, and
+    how long the lock was held.
     """
     seconds = HOLD_SECONDS if seconds is None else seconds
-    done, tried, refusals = [], [], 0
+    done, tried, refusals, slowest = [], [], 0, 0.0
     with work_transaction():
         started = monotonic()
         for run_id in ids:
             if len(done) >= limit or refusals >= REFUSALS_TO_STOP:
                 break
-            if tried and monotonic() - started >= seconds:
+            if tried and monotonic() - started + slowest >= seconds:
                 break
             tried.append(run_id)
+            begun = monotonic()
             try:
                 with transaction.atomic(), remembered_scopes():
-                    done.append(item(run_id))
-                refusals = 0
+                    value = item(run_id, len(done))
             except _Skip:
                 pass
             except Exception as error:
@@ -221,20 +243,32 @@ def _run_batch(ids, item, *, limit, seconds=None):
                 # one-at-a-time path handles it when it is next hinted.
                 refusals += 1
                 DEBUG.debug("bulk item %s left for the single path: %r", run_id, error)
+            else:
+                done.append(value)
+                refusals = 0
+            slowest = max(slowest, monotonic() - begun)
     return done, tried, monotonic() - started
 
 
-def _drain(step, stop):
+def _beat(pulse):
+    """Publish this process's liveness heartbeat, if it has one."""
+    if pulse is not None:
+        pulse()
+
+
+def _drain(step, stop, pulse):
     """Repeat ``step`` (one batch) while it finds work, for DRAIN_SECONDS.
 
     ``step(exclude)`` returns how many items it finished and the ids it
-    tried, which later batches of this drain skip.
+    tried, which later batches of this drain skip. The heartbeat is beaten
+    after every batch, as the lease renewal thread does during one task.
     """
     started, tried, total = monotonic(), set(), 0
     while monotonic() - started < DRAIN_SECONDS:
         if stop is not None and stop.is_set():
             break
         finished, attempted = step(tried)
+        _beat(pulse)
         tried.update(attempted)
         total += finished
         if not finished:
@@ -249,53 +283,63 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
     """Build the general worker's bulk preparation entry point, or None.
 
     The returned callable takes a hint's run id: it prepares batches of due
-    preparation tasks (the hinted one usually among them), and returns. The
-    caller then runs the ordinary hint path, which finds the hinted task done
-    or handles it singly.
+    preparation tasks (the hinted one first), and returns. The caller then
+    runs the ordinary hint path, which finds the hinted task done or handles
+    it singly. The caller passes its registered handler (``owner``), whose
+    admission includes the runtime's authority checks; ``handler`` is only
+    the fallback for direct callers.
     """
     if not settings.enabled:
         return None
     from .family_mail_preparation import prepare_occurrence
     from .family_mail_tasks import TASK_TYPE, disposition, owned_preparation
 
-    def item(run_id):
-        """Claim, prepare and complete one preparation task."""
-        claim, correlation_id = _claim(run_id, handler, uuid4(), 60)
-        task = lock_task_claim(claim)
-        ticket = owned_preparation(_status(task))
-        terminal = disposition(ticket)
-        if terminal is None:
-            terminal = prepare_occurrence(
-                ticket,
-                claim,
-                general=general,
-                mac=mac,
-                public=public,
-                public_origin=public_origin,
-            )
-        _transition(claim, correlation_id, handler, terminal)
-        return run_id
-
-    def step(exclude):
-        """Prepare one batch; see _run_batch."""
-        ids = _candidates(TASK_TYPE, PREPARE_BATCH * 2, exclude)
-        if not ids:
-            return 0, ()
-        done, tried, hold = _run_batch(ids, item, limit=PREPARE_BATCH)
-        DEBUG.debug(
-            "bulk preparation: %d of %d tried in %.2f s of lock hold",
-            len(done),
-            len(tried),
-            hold,
-        )
-        return len(done), tried
-
-    def run(run_id, *, stop=None):
+    def run(run_id, *, stop=None, owner=None, pulse=None):
         """Drain due preparation in batches, then return to the hint path."""
         if connection.in_atomic_block:
             raise RuntimeError("Bulk preparation must own its transactions.")
+        current = owner or handler
+        first = [run_id]
+
+        def item(task_id, position):
+            """Claim, prepare and complete one preparation task."""
+            claim, correlation_id = _claim(task_id, current, uuid4(), 60)
+            task = lock_task_claim(claim)
+            ticket = owned_preparation(_status(task))
+            terminal = disposition(ticket)
+            if terminal is None:
+                terminal = prepare_occurrence(
+                    ticket,
+                    claim,
+                    general=general,
+                    mac=mac,
+                    public=public,
+                    public_origin=public_origin,
+                )
+            _transition(claim, correlation_id, current, terminal)
+            return task_id
+
+        def step(exclude):
+            """Prepare one batch; see _run_batch."""
+            ids = _candidates(
+                TASK_TYPE,
+                PREPARE_BATCH * 2,
+                exclude,
+                first=first.pop() if first else None,
+            )
+            if not ids:
+                return 0, ()
+            done, tried, hold = _run_batch(ids, item, limit=PREPARE_BATCH)
+            DEBUG.debug(
+                "bulk preparation: %d of %d tried in %.2f s of lock hold",
+                len(done),
+                len(tried),
+                hold,
+            )
+            return len(done), tried
+
         try:
-            return _drain(step, stop)
+            return _drain(step, stop, pulse)
         finally:
             connections.close_all()
 
@@ -307,7 +351,12 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
 
 @dataclass
 class _Sending:
-    """One message of a send batch, from its "submitting" commit to its outcome."""
+    """One message of a send batch, from its "submitting" commit to its outcome.
+
+    ``held`` names why the message was not launched (it is then recorded as
+    definitely unsent, without spending its attempt budget), and
+    ``retry_seconds`` how soon it may be tried again.
+    """
 
     claim: TaskClaim
     correlation_id: object
@@ -315,8 +364,11 @@ class _Sending:
     mail: object
     deadline: object
     attempt: int
+    recipients: int
     result: FamilyDeliveryResult | None = None
     stats: dict | None = None
+    held: str | None = None
+    retry_seconds: int = HOLD_RETRY_SECONDS
 
 
 def delivery_bulk(
@@ -324,10 +376,12 @@ def delivery_bulk(
 ):
     """Build a mail consumer's bulk send entry point, or None.
 
-    The returned callable takes a hint's run id and sends batches of due
-    scheduled Family messages, then returns; the caller then runs the
-    ordinary hint path, which handles anything left (the hinted task when it
-    is a receipt, digest or test, or held, say).
+    The returned callable takes a hint's run id. Only a hint for scheduled
+    Family mail (an initial invitation or reminder) starts a drain, with the
+    hinted message first; any other hint (a receipt, digest, test or alert)
+    returns at once, so it never waits behind a send. The caller then runs
+    the ordinary hint path, which handles anything left. The caller passes
+    its registered handler (``owner``), as for preparation.
     """
     if not settings.enabled or session is None:
         return None
@@ -355,16 +409,17 @@ def delivery_bulk(
         finish_submission,
         result_retry_seconds,
     )
+    from .outbox_models import OutboxMessage
 
     batch = settings.send_batch
 
-    def begin_item(run_id, context):
+    def begin_item(run_id, position, context, current):
         """Claim one message's task and commit its "submitting" state."""
-        claim, correlation_id = _claim(run_id, handler, uuid4(), SEND_LEASE_SECONDS)
+        claim, correlation_id = _claim(run_id, current, uuid4(), SEND_LEASE_SECONDS)
         _transition(
             claim,
             correlation_id,
-            handler,
+            current,
             "progress",
             progress=(0, 0),
             phase=TaskPhase.PREPARING,
@@ -382,7 +437,6 @@ def delivery_bulk(
         if context["sent"] + context["recipients"] + recipients > context["allowed"]:
             # Near the daily limit the single path decides message by message.
             raise _Skip
-        position = len(context["items"])
         prepared = begin_submission(
             message.pk,
             claim,
@@ -399,13 +453,13 @@ def delivery_bulk(
             # Selection changed or held; nothing of it is kept (savepoint).
             raise _Skip
         mail, deadline, _, attempt = prepared
-        context["recipients"] += recipients
-        context["items"].append(
-            _Sending(claim, correlation_id, message.pk, mail, deadline, attempt)
+        # Returned, not recorded: the caller keeps it only once this item's
+        # savepoint has been released.
+        return _Sending(
+            claim, correlation_id, message.pk, mail, deadline, attempt, recipients
         )
-        return run_id
 
-    def begin(exclude, candidate):
+    def begin(exclude, candidate, current, first):
         """One lock transaction: up to B messages committed as "submitting".
 
         The transaction also stops at the lock-hold budget, so a batch is
@@ -415,17 +469,25 @@ def delivery_bulk(
         widen what a crash leaves unknown and let early messages' provider
         deadlines run out before their turn to be sent.
         """
-        ids = _candidates(TASK_TYPE, batch * 2, exclude, purposes=BULK_PURPOSES)
+        ids = _candidates(
+            TASK_TYPE, batch * 2, exclude, purposes=BULK_PURPOSES, first=first
+        )
         if not ids:
             return None, ()
         context = {
-            "items": [],
             "sent": circuit.daily_sends(),
             "recipients": 0,
             # Leave one largest message (100 recipients, the SQL cap) of
             # room, so the batch never decides at the limit itself.
             "allowed": DAILY_SEND_LIMIT - RESERVED_SENDS - 100,
         }
+
+        def item(run_id, position):
+            """Begin one message, counting its recipients only on success."""
+            sending = begin_item(run_id, position, context, current)
+            context["recipients"] += sending.recipients
+            return sending
+
         with work_transaction():
             configuration_id = SystemConfiguration.objects.get().active_configuration_id
             workspace = AppliedIntegration.objects.get(
@@ -440,53 +502,56 @@ def delivery_bulk(
                 sender_name=configured_sender_name(configuration_id),
                 workspace=workspace,
             )
-            _, tried, hold = _run_batch(
-                ids, lambda run_id: begin_item(run_id, context), limit=batch
-            )
+            items, tried, hold = _run_batch(ids, item, limit=batch)
             # The clock the provider deadlines were written on, read just
             # before commit, paired with this process's monotonic clock.
             context["db_now"], context["mono"] = database_now(), monotonic()
+        context["items"] = items
         DEBUG.debug(
             "bulk send: %d of %d tried submitting in %.2f s of lock hold",
-            len(context["items"]),
+            len(items),
             len(tried),
             hold,
         )
         return context, tried
 
-    def send_all(context, candidate):
+    def send_all(context, candidate, pulse):
         """Send each committed message in turn, outside any transaction."""
         workspace = context["workspace"]
         base = workspace.settings
         claimed = context["mono"]
-        cut = []
+        cut, short = [], []
         for item in context["items"]:
+            _beat(pulse)
             started = monotonic()
             remaining = (item.deadline - context["db_now"]).total_seconds() - (
                 started - context["mono"]
             )
-            item.result = FamilyDeliveryResult(
-                FamilyDeliveryStatus.TRANSIENT,
-                len(item.mail.recipients),
-                health=ProviderHealth.UNOBSERVED,
-            )
+            # Until launched, a message is definitely unsent: a hold, never a
+            # failed attempt (see finish_item). "stopped" stays only if this
+            # loop ends before deciding (an error in the checks below).
+            item.result, item.held = _unsent(item), "stopped"
             item.stats = {"transport": "batched"}
             if started - claimed >= SEND_CUTOFF_SECONDS:
+                item.held = "cutoff"
                 cut.append(item)
                 continue
-            held = (
-                "deadline"
-                if remaining <= 1
-                else "circuit"
-                if circuit.blocks_new_send() or circuit.limit_remaining()
-                else _held_now(item.message_id)
-            )
-            if held is not None:
-                # Not launched: definitely unsent, so it is retried later.
-                DEBUG.debug(
-                    "bulk send: message %s not sent (%s)", item.message_id, held
-                )
+            if remaining < MIN_LAUNCH_SECONDS:
+                item.held = "deadline"
+                short.append(started - claimed)
                 continue
+            wait = circuit.limit_remaining()
+            if circuit.blocks_new_send() or wait:
+                item.held = "circuit"
+                # Like the single path's limit and outage holds (_defer_held):
+                # spread out, so held messages do not all probe together.
+                item.retry_seconds = max(60, int(wait)) + randint(0, 300)
+                continue
+            reason = _held_now(item.message_id)
+            if reason is not None:
+                item.held = reason
+                continue
+            item.held = None
             settings_ = base | {
                 "sender": item.mail.sender,
                 "reply_to": item.mail.reply_to,
@@ -509,7 +574,7 @@ def delivery_bulk(
                     item.mail,
                     session=session,
                     seconds=min(30, remaining),
-                    check=_lease_check(claimed),
+                    check=_lease_check(claimed, item.claim.run_id),
                 )
             except Exception:
                 item.result = FamilyDeliveryResult(
@@ -520,8 +585,33 @@ def delivery_bulk(
             finally:
                 item.stats.update(submit_ms=elapsed_ms(calling), **session.take_stats())
             _observe(item.result)
+        held = [item for item in context["items"] if item.held]
+        if held:
+            DEBUG.debug(
+                "bulk send: %d messages released unsent: %s",
+                len(held),
+                ", ".join(sorted({item.held for item in held})),
+            )
         if cut:
-            _record_cutoff(cut[0].claim.run_id, len(cut), monotonic() - claimed)
+            _record_timeout(
+                "lease",
+                cut[0].claim.run_id,
+                SEND_CUTOFF_SECONDS,
+                monotonic() - claimed,
+                len(cut),
+            )
+        if short:
+            # Messages whose own provider deadline (set by batch position)
+            # left less than MIN_LAUNCH_SECONDS for the helper when their
+            # turn came; elapsed is the longest wait since the batch commit.
+            _record_timeout(
+                "mail_helper",
+                context["items"][0].claim.run_id,
+                MIN_LAUNCH_SECONDS,
+                max(short),
+                len(short),
+                helper="family_delivery_worker",
+            )
 
     def _observe(result):
         """React to one outcome as the single path does (circuit and limits)."""
@@ -547,16 +637,29 @@ def delivery_bulk(
                 result.limit,
             )
 
-    def finish_item(item):
-        """Record one outcome and settle its task, as the single path does."""
+    def finish_item(item, current):
+        """Record one outcome and settle its task, as the single path does.
+
+        A message held before launch is recorded as definitely unsent with
+        ``hold=True``: it does not spend the attempt budget, and its task
+        waits in the RECONCILING phase, which the single path's attempt
+        count leaves out, exactly like its admission holds. Unsent mail
+        whose mode, epoch or revision has changed is still recorded as a
+        definitive failure, as finish_submission always has.
+        """
         result = _with_stats(item.result, item.stats or {})
-        status = finish_submission(item.message_id, item.claim, result)
+        held = item.held is not None
+        status = finish_submission(item.message_id, item.claim, result, hold=held)
         if status.state.value == "retry_wait":
-            if result.limit is not None or result.health is ProviderHealth.UNAVAILABLE:
+            if (
+                held
+                or result.limit is not None
+                or (result.health is ProviderHealth.UNAVAILABLE)
+            ):
                 _transition(
                     item.claim,
                     item.correlation_id,
-                    handler,
+                    current,
                     "progress",
                     progress=(0, 0),
                     phase=TaskPhase.RECONCILING,
@@ -564,21 +667,23 @@ def delivery_bulk(
             _transition(
                 item.claim,
                 item.correlation_id,
-                handler,
+                current,
                 "retryable_failure",
-                retry_seconds=result_retry_seconds(result, item.attempt),
+                retry_seconds=item.retry_seconds
+                if held
+                else result_retry_seconds(result, item.attempt),
             )
         else:
             _transition(
                 item.claim,
                 item.correlation_id,
-                handler,
+                current,
                 "complete"
                 if status.state.value == "delivered"
                 else "permanent_failure",
             )
 
-    def finish(items):
+    def finish(items, current):
         """Record every outcome, in lock-budget chunks, one savepoint each.
 
         An outcome that cannot be recorded leaves its message "submitting"
@@ -591,62 +696,92 @@ def delivery_bulk(
             chunk = []
             try:
                 with work_transaction():
-                    started = monotonic()
-                    while left and (not chunk or monotonic() - started < HOLD_SECONDS):
+                    started, slowest = monotonic(), 0.0
+                    while left and (
+                        not chunk or monotonic() - started + slowest < HOLD_SECONDS
+                    ):
                         item = left.pop(0)
                         chunk.append(item)
+                        begun = monotonic()
                         try:
                             with transaction.atomic():
-                                finish_item(item)
+                                finish_item(item, current)
                         except Exception as error:
                             _unrecorded(error)
+                        slowest = max(slowest, monotonic() - begun)
             except Exception:
                 for item in chunk:
                     try:
                         with work_transaction():
-                            finish_item(item)
+                            finish_item(item, current)
                     except Exception as error:
                         _unrecorded(error)
 
-    def step(exclude):
-        """One send batch: submitting commit, sends, outcome commit."""
-        if circuit.blocks_new_send() or circuit.limit_remaining():
-            return 0, ()
-        candidate = read_private(credential_path)
-        # Settle retired helpers before anything commits "submitting":
-        # failing to reap one is fatal, and must not strand sent-looking mail.
-        session.reap()
-        context, tried = begin(exclude, candidate)
-        if context is None:
-            return 0, ()
-        items = context["items"]
-        if not items:
-            return 0, tried
-        try:
-            send_all(context, candidate)
-        finally:
-            # Whatever happened (even a fatal helper drain failure), record
-            # what is known: unlaunched messages are definitely unsent.
-            for item in items:
-                if item.result is None:
-                    item.result = FamilyDeliveryResult(
-                        FamilyDeliveryStatus.TRANSIENT,
-                        len(item.mail.recipients),
-                        health=ProviderHealth.UNOBSERVED,
-                    )
-            finish(items)
-        return len(items), tried
+    def hinted_bulk(run_id):
+        """Whether a hint is for scheduled Family mail (the only drain trigger)."""
+        message = (
+            TaskRun.objects.filter(pk=run_id, task_type=TASK_TYPE)
+            .values_list("domain_request_id", flat=True)
+            .first()
+        )
+        return (
+            message is not None
+            and OutboxMessage.objects.filter(
+                pk=message, purpose__in=BULK_PURPOSES
+            ).exists()
+        )
 
-    def run(run_id, *, stop=None):
+    def run(run_id, *, stop=None, owner=None, pulse=None):
         """Drain due Family mail in batches, then return to the hint path."""
         if connection.in_atomic_block:
             raise RuntimeError("Bulk sending must own its transactions.")
+        current = owner or handler
+        first = [run_id]
+
+        def step(exclude):
+            """One send batch: submitting commit, sends, outcome commit."""
+            if circuit.blocks_new_send() or circuit.limit_remaining():
+                return 0, ()
+            candidate = read_private(credential_path)
+            # Settle retired helpers before anything commits "submitting":
+            # failing to reap one is fatal, and must not strand sent mail.
+            session.reap()
+            context, tried = begin(
+                exclude, candidate, current, first.pop() if first else None
+            )
+            if context is None:
+                return 0, ()
+            items = context["items"]
+            if not items:
+                return 0, tried
+            try:
+                send_all(context, candidate, pulse)
+            finally:
+                # Whatever happened (even a fatal helper drain failure),
+                # record what is known: unlaunched messages are unsent.
+                for item in items:
+                    if item.result is None:
+                        item.result, item.held = _unsent(item), "stopped"
+                finish(items, current)
+            return len(items), tried
+
         try:
-            return _drain(step, stop)
+            if not hinted_bulk(run_id):
+                return 0
+            return _drain(step, stop, pulse)
         finally:
             connections.close_all()
 
     return run
+
+
+def _unsent(item):
+    """A definitely unsent result for a message that was never launched."""
+    return FamilyDeliveryResult(
+        FamilyDeliveryStatus.TRANSIENT,
+        len(item.mail.recipients),
+        health=ProviderHealth.UNOBSERVED,
+    )
 
 
 def _unrecorded(error):
@@ -658,7 +793,7 @@ def _unrecorded(error):
     )
 
 
-def _lease_check(claimed):
+def _lease_check(claimed, task_id):
     """The helper's in-flight check for a batch message.
 
     The one-at-a-time path re-verifies its claim in SQL about once a second
@@ -671,8 +806,9 @@ def _lease_check(claimed):
     def check():
         """Stop the helper if the batch has run past its lease margin."""
         elapsed = monotonic() - claimed
-        if elapsed >= SEND_LEASE_SECONDS - LEASE_MARGIN_SECONDS:
-            _record_cutoff(None, 1, elapsed)
+        limit = SEND_LEASE_SECONDS - LEASE_MARGIN_SECONDS
+        if elapsed >= limit:
+            _record_timeout("lease", task_id, limit, elapsed, None)
             raise TimeoutError("Bulk send batch outlived its lease margin.")
 
     return check
@@ -681,53 +817,123 @@ def _lease_check(claimed):
 def _held_now(message_id):
     """Why this message must not be launched now, or None (lock-free reads).
 
-    A pause, a mode change, a close or the go-live gate is a transition under
-    the work-order lock, so a batch committed before it may still hold
-    "submitting" messages. Each later message is checked here just before
-    its send and, if held, recorded as definitely unsent instead (retried
-    once admitted again). A message already being sent finishes, as on the
-    one-at-a-time path. The SQL guards refuse any new "submitting" write.
+    A pause, a mode change, a close, the go-live gate or a schedule change is
+    a transition under the work-order lock, so a batch committed before it
+    may still hold "submitting" messages. Each later message is checked here
+    just before its send against what family_mail_dispatch.disposition and
+    the planning scope check under the lock, and, if held, recorded as
+    definitely unsent instead (retried, or cancelled by the single path,
+    once it is looked at again). A message already being sent finishes, as
+    on the one-at-a-time path. The SQL guards refuse any new "submitting"
+    write.
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.credential_models import (
         CampaignCredentialState,
     )
-    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.campaigns.models import (
+        ActivationCatchUpDemand,
+        Campaign,
+        CampaignWorkGate,
+        RestoreDeliveryHold,
+    )
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
     from .outbox_models import OutboxMessage
 
-    row = (
-        OutboxMessage.objects.filter(pk=message_id)
-        .values_list("mode", "campaign_id")
-        .first()
-    )
-    if row is None:
+    message = OutboxMessage.objects.filter(pk=message_id).first()
+    if message is None:
         return "missing"
-    mode, campaign_id = row
-    runtime = SystemConfiguration.objects.values_list(
-        "mode", "current_campaign_id"
-    ).first()
+    runtime = SystemConfiguration.objects.first()
     campaign = (
-        Campaign.objects.filter(pk=campaign_id)
-        .values_list("state", "delivery_paused")
+        Campaign.objects.select_related("active_configuration")
+        .filter(pk=message.campaign_id)
         .first()
     )
-    if runtime != (mode, campaign_id) or campaign is None:
+    occurrence = (
+        ScheduleOccurrence.objects.select_related("definition")
+        .filter(pk=message.semantic_key)
+        .first()
+    )
+    population = CampaignCredentialState.objects.filter(
+        campaign_id=message.campaign_id
+    ).first()
+    if (
+        runtime is None
+        or campaign is None
+        or occurrence is None
+        or population is None
+        or runtime.current_campaign_id != message.campaign_id
+        or runtime.mode != message.mode
+        or runtime.restore_review_required
+    ):
         return "scope"
-    state, paused = campaign
-    if state in {"closed", "archived"}:
+    if (
+        occurrence.revision_id != occurrence.definition.current_revision_id
+        or occurrence.state in {"skipped", "coalesced"}
+        or (
+            message.mode == "production"
+            and occurrence.production_cycle != campaign.production_cycle
+        )
+        or (
+            message.mode == "testing"
+            and (
+                campaign.state != "draft"
+                or population.rehearsal_epoch_id != message.rehearsal_epoch_id
+            )
+        )
+    ):
+        return "scope"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_campaign_now_v1()")
+        now = cursor.fetchone()[0]
+    if (
+        campaign.state in {"closed", "archived"}
+        or now >= campaign.active_configuration.ends_at
+    ):
         return "closed"
-    if mode == "production" and paused:
+    if message.mode == "production" and (
+        campaign.delivery_paused or campaign.state not in {"scheduled", "active"}
+    ):
         return "paused"
-    if CampaignCredentialState.objects.filter(
-        campaign_id=campaign_id, go_live_gate=True
-    ).exists():
-        return "go_live"
+    current = SourceCurrent.objects.filter(singleton=True).first()
+    if (
+        population.go_live_gate
+        or population.population_dirty
+        or current is None
+        or population.source_snapshot_id != current.snapshot_id
+        or population.source_generation != current.generation
+    ):
+        return "go_live" if population.go_live_gate else "source"
+    if (
+        CampaignWorkGate.objects.filter(campaign_id=message.campaign_id)
+        .exclude(state="released")
+        .exists()
+        or (
+            message.mode == "production"
+            and ActivationCatchUpDemand.objects.filter(
+                campaign_id=message.campaign_id, completed_at__isnull=True
+            ).exists()
+        )
+        or (
+            message.purpose == "reminder"
+            and RestoreDeliveryHold.objects.filter(
+                definition__campaign_id=message.campaign_id,
+                definition__kind="initial",
+                mode=message.mode,
+                target=occurrence.target,
+                slot="once",
+                state="unreviewed",
+            ).exists()
+        )
+    ):
+        return "hold"
     return None
 
 
-def _record_cutoff(task_id, count, elapsed):
-    """Durably log messages a batch stopped launching at its cutoff (#293)."""
+def _record_timeout(what, task_id, limit, elapsed, count, *, helper=None):
+    """Durably log work the bulk send stopped at a time limit (#293)."""
     from parishkit.stewardship.audit.timeouts import record_timeout_within
     from parishkit.stewardship.observability import Event
 
@@ -735,9 +941,10 @@ def _record_cutoff(task_id, count, elapsed):
         2,
         Event.TASK_TIMED_OUT,
         level="WARNING",
-        what="lease",
+        what=what,
+        helper=helper,
         task_id=task_id,
-        limit_seconds=SEND_CUTOFF_SECONDS,
+        limit_seconds=limit,
         elapsed_seconds=elapsed,
         count=count,
     )
