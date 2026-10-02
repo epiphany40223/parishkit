@@ -1,5 +1,6 @@
 """Opt-in strict YAML parsing without changing existing CLI configuration."""
 
+import os
 import traceback
 from io import BytesIO
 from pathlib import Path
@@ -284,3 +285,72 @@ def test_strict_unmarked_parser_error_never_echoes_exception_text(
         load_yaml_config(path)
     assert "synthetic-private" in str(legacy.value)
     assert isinstance(legacy.value.__cause__, config.yaml.YAMLError)
+
+
+def test_cached_strict_parse_is_keyed_on_exact_bytes(tmp_path, monkeypatch):
+    """A hit skips the parser; any byte change re-parses and errors still raise."""
+    path = tmp_path / "configuration.yaml"
+    path.write_text("section:\n  value: first\n", encoding="utf-8")
+    parse = Mock(wraps=config.yaml.load)
+    monkeypatch.setattr(config.yaml, "load", parse)
+
+    def load():
+        """Read through the opt-in cache, as the authority store does."""
+        return load_yaml_config(path, reject_duplicate_keys=True, cache_parsed=True)
+
+    assert load() == load() == {"section": {"value": "first"}}
+    assert parse.call_count == 1
+    # Same length and restored mtime: only the content says it changed.
+    stamp = path.stat()
+    path.write_text("section:\n  value: other\n", encoding="utf-8")
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert path.stat().st_size == stamp.st_size
+    assert load() == {"section": {"value": "other"}}
+    assert parse.call_count == 2
+    for text in ("section:\n  value: a\n  value: b\n", "section: [\n"):
+        path.write_text(text, encoding="utf-8")
+        with pytest.raises(ConfigError):
+            load()
+        with pytest.raises(ConfigError):
+            load()
+    assert parse.call_count == 6
+    # Failures were not stored: restoring the last good bytes is a hit again,
+    # and an uncached read parses without consulting the cache.
+    path.write_text("section:\n  value: other\n", encoding="utf-8")
+    assert load() == {"section": {"value": "other"}}
+    assert parse.call_count == 6
+    assert load_yaml_config(path, reject_duplicate_keys=True) == {
+        "section": {"value": "other"}
+    }
+    assert parse.call_count == 7
+
+
+def test_cached_strict_parse_cannot_be_mutated_by_callers(tmp_path):
+    """Each caller owns its result; mutating it never changes a later hit."""
+    path = tmp_path / "configuration.yaml"
+    path.write_text("section:\n  values: [1, 2]\n", encoding="utf-8")
+    first = load_yaml_config(path, reject_duplicate_keys=True, cache_parsed=True)
+    first["section"]["values"].append(3)
+    first["extra"] = True
+    second = load_yaml_config(path, reject_duplicate_keys=True, cache_parsed=True)
+    assert second == {"section": {"values": [1, 2]}}
+    second["section"]["values"].clear()
+    assert load_yaml_config(path, reject_duplicate_keys=True, cache_parsed=True) == {
+        "section": {"values": [1, 2]}
+    }
+
+
+def test_cached_strict_parse_is_bounded_and_strict_only(tmp_path, monkeypatch):
+    """The cache holds one entry per path, a few paths, and only strict reads."""
+    monkeypatch.setattr(config, "_PARSE_CACHE_PATHS", 2)
+    for name in ("a", "b", "c"):
+        path = tmp_path / f"{name}.yaml"
+        for value in (1, 2):
+            path.write_text(f"value: {value}\n", encoding="utf-8")
+            load_yaml_config(path, reject_duplicate_keys=True, cache_parsed=True)
+    assert list(config._parse_cache) == [
+        str(tmp_path / "b.yaml"),
+        str(tmp_path / "c.yaml"),
+    ]
+    with pytest.raises(ValueError, match="requires reject_duplicate_keys"):
+        load_yaml_config(path, cache_parsed=True)

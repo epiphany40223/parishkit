@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import stat
+import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -16,6 +19,13 @@ ConfigData = dict[str, Any]
 STRICT_YAML_MAX_BYTES = 8_000_000
 STRICT_YAML_MAX_NODES = 100_000
 STRICT_YAML_MAX_DEPTH = 64
+
+# Opt-in cache of strict parses, keyed by path and checked against a SHA-256
+# of the file's exact bytes on every read (see _load_strict_yaml). Bounded:
+# one entry per path and at most _PARSE_CACHE_PATHS paths per process.
+_PARSE_CACHE_PATHS = 8
+_parse_cache: dict[str, tuple[bytes, ConfigData]] = {}
+_parse_cache_lock = threading.Lock()
 
 
 class ConfigError(ValueError):
@@ -97,14 +107,24 @@ class _UniqueKeySafeLoader(yaml.SafeLoader):
         return super().construct_mapping(node, deep=deep)
 
 
-def _load_strict_yaml(path: str | Path, *, required: bool) -> ConfigData:
+def _load_strict_yaml(
+    path: str | Path, *, required: bool, cache_parsed: bool = False
+) -> ConfigData:
     """Bound strict reads and expose only authored diagnostics and numeric locations.
 
     Keep path resolution, filesystem access, and scalar construction inside the
     private-error boundary. Chained parser/OS exceptions can contain filenames
     and YAML snippets, so suppress their normal traceback rendering as well.
     Legacy consumers retain the separate, detailed diagnostics below.
+
+    With ``cache_parsed``, the file is still read in full on every call, but
+    the YAML parse is reused when the bytes hash equal to the last successful
+    parse of this path. Any change in content, even with the same size and
+    mtime, therefore misses and re-parses (and raises if it is now invalid).
+    Only successful parses are stored, so an error can never return a stale
+    value. Callers get a deep copy, so no caller can mutate the cached result.
     """
+    digest = key = None
     try:
         config_path = Path(path).expanduser()
         try:
@@ -119,6 +139,13 @@ def _load_strict_yaml(path: str | Path, *, required: bool) -> ConfigData:
             data = stream.read(STRICT_YAML_MAX_BYTES + 1)
         if len(data) > STRICT_YAML_MAX_BYTES:
             raise ConfigError("configuration YAML exceeds input byte limit")
+        if cache_parsed:
+            key = str(config_path)
+            digest = hashlib.sha256(data).digest()
+            with _parse_cache_lock:
+                cached = _parse_cache.get(key)
+            if cached is not None and cached[0] == digest:
+                return copy.deepcopy(cached[1])
         raw_data = yaml.load(data.decode("utf-8"), Loader=_UniqueKeySafeLoader)
     except ConfigError:
         # Only our own loader emits ConfigError, with authored public messages.
@@ -142,6 +169,14 @@ def _load_strict_yaml(path: str | Path, *, required: bool) -> ConfigData:
             "configuration YAML must contain a top-level mapping "
             "of key/value sections, not a list or scalar value."
         )
+    if cache_parsed:
+        # Store a private copy: the caller owns the object returned here.
+        with _parse_cache_lock:
+            _parse_cache.pop(key, None)
+            if len(_parse_cache) >= _PARSE_CACHE_PATHS:
+                # Dicts keep insertion order: drop the least recently stored.
+                del _parse_cache[next(iter(_parse_cache))]
+            _parse_cache[key] = (digest, copy.deepcopy(raw_data))
     return raw_data
 
 
@@ -150,6 +185,7 @@ def load_yaml_config(
     *,
     required: bool = False,
     reject_duplicate_keys: bool = False,
+    cache_parsed: bool = False,
 ) -> ConfigData:
     """Load a YAML config file as a dictionary.
 
@@ -160,15 +196,19 @@ def load_yaml_config(
     omit paths, source contents, and chained parser/OS error details, retaining
     authored hints and numeric source locations. The default preserves existing
     tools' YAML merge/last-value behavior, read limits, and detailed diagnostics.
+    ``cache_parsed`` (strict reads only) reuses the previous parse while the
+    file's bytes are unchanged; see ``_load_strict_yaml``.
     """
 
+    if cache_parsed and not reject_duplicate_keys:
+        raise ValueError("cache_parsed requires reject_duplicate_keys")
     if path is None:
         if required:
             raise ConfigError("configuration file path is required")
         return {}
 
     if reject_duplicate_keys:
-        return _load_strict_yaml(path, required=required)
+        return _load_strict_yaml(path, required=required, cache_parsed=cache_parsed)
 
     config_path = Path(path).expanduser()
     if not config_path.exists():

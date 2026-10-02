@@ -262,7 +262,11 @@ class AuthorityStore:
                 raise ConfigError("invalid configuration version reference")
             if metadata.st_size > 8_000_000:
                 raise ConfigError("configuration YAML exceeds input byte limit")
-            data = load_yaml_config(path, required=True, reject_duplicate_keys=True)
+            # Admission checks call this for every work item while holding the
+            # global work lock (#447): reuse the parse while the bytes match.
+            data = load_yaml_config(
+                path, required=True, reject_duplicate_keys=True, cache_parsed=True
+            )
             # Stored versions were admitted by candidate or history
             # validation; content text rules are not re-run (content_trust).
             with trusted_content():

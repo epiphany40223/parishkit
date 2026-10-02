@@ -5,6 +5,7 @@ import os
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
@@ -213,6 +214,9 @@ def test_strict_resource_failures_are_sanitized(authority, monkeypatch, target, 
     authority.write_version(version)
     authority.select(version)
     name = f"{version.version_id}.yaml" if target == "version" else "active.yaml"
+    # select() parsed these exact bytes; forget that so each fault below
+    # meets the parser as a first read would.
+    shared_config._parse_cache.clear()
     if fault == "depth":
         # Flow notation fits even the manifest's pre-existing 4,096-byte limit,
         # so it exercises the strict parser instead of the earlier stat check.
@@ -507,3 +511,39 @@ def test_applied_retry_requires_complete_materialization(authority):
         apply_version(authority, materializer, version)
     with pytest.raises(ConfigError):
         recover_active(authority, materializer)
+
+
+def test_unchanged_version_reuses_its_parse_but_any_change_is_reread(
+    authority, monkeypatch
+):
+    """Admission rereads the bytes each time but parses only new content (#447)."""
+    version = candidate()
+    authority.write_version(version)
+    shared_config._parse_cache.clear()
+    parse = Mock(wraps=shared_config.yaml.load)
+    monkeypatch.setattr(shared_config.yaml, "load", parse)
+    assert authority.read_version(version.version_id) == version
+    assert authority.read_version(version.version_id) == version
+    assert parse.call_count == 1
+    # Mutating what a caller received cannot reach the cached parse.
+    version.document()["sections"].clear()
+    assert authority.read_version(version.version_id) == version
+    assert parse.call_count == 1
+    # Same size, same mtime, different bytes: the new content is parsed.
+    path = authority.root / f"{version.version_id}.yaml"
+    text = path.read_text(encoding="utf-8")
+    stamp = path.stat()
+    path.write_text(text.replace("Synthetic", "Synthetiq"), encoding="utf-8")
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert path.stat().st_size == stamp.st_size
+    changed = authority.read_version(version.version_id)
+    assert changed.digest != version.digest
+    assert changed.document()["sections"]["parish"][0]["values"] == {
+        "label": "Synthetiq parish"
+    }
+    assert parse.call_count == 2
+    # Malformed new content raises; the earlier good parse is never returned.
+    path.write_text(text + "schema_version: 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="^configuration version is unreadable"):
+        authority.read_version(version.version_id)
+    assert parse.call_count == 3
