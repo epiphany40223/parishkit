@@ -1,5 +1,7 @@
 """Bulk Family send switch (#430): configuration, Compose and scheduler scans."""
 
+import json
+from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -65,10 +67,11 @@ def test_a_send_batch_outside_one_to_a_hundred_is_rejected(value):
 
 
 def test_the_switch_reaches_the_scheduler_worker_and_mail_dispatch(tmp_path):
-    """The one-command switch reaches exactly the three services that use it."""
-    compose, _ = render_runtime(
-        configuration_at(tmp_path, production=True), image=IMAGE
+    """Rendered on, the one-command off switch reaches exactly its services."""
+    configuration = replace(
+        configuration_at(tmp_path, production=True), bulk_family_send=True
     )
+    compose, documents = render_runtime(configuration, image=IMAGE)
     services = compose["services"]
     for name, expected in (
         (BULK_FAMILY_SEND_VARIABLE, ["mail-dispatch", "scheduler", "worker"]),
@@ -83,6 +86,67 @@ def test_the_switch_reaches_the_scheduler_worker_and_mail_dispatch(tmp_path):
             == expected
         )
         assert services["mail-dispatch"]["environment"][name] == "${" + name + ":-}"
+    assert any(b"bulk_family_send" in _bytes(value) for value in documents.values())
+
+
+def _bytes(value):
+    """A rendered document as bytes, whatever form the renderer returned."""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode()
+    return json.dumps(value, sort_keys=True).encode()
+
+
+# The deployment document's keys before #430: a switch-off render must keep
+# exactly these, so the release before it can load every rendered document.
+PRE_BULK_KEYS = {
+    "schema_version",
+    "profile",
+    "service_role",
+    "public_origin",
+    "trusted_proxy_hops",
+    "paths",
+    "postgres",
+    "valkey",
+    "secrets",
+    "authentication_limits",
+    "runtime_budget",
+    "runtime_network",
+    "operational_alerts",
+    "family_mail_transport",
+    "mail_consumers",
+}
+
+
+def test_a_switch_off_render_is_the_pre_bulk_render(tmp_path):
+    """Off, no rendered byte mentions the bulk send (rollback to v0.3.7)."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = configuration_at(tmp_path, production=True)
+    assert configuration.bulk_family_send is False
+    for mode in ("configured", "initial", "configured-slack"):
+        compose, documents = render_runtime(
+            configuration, image=IMAGE, provider_mode=mode
+        )
+        rendered = [json.dumps(compose).encode()] + [
+            _bytes(value) for value in documents.values()
+        ]
+        assert not any(
+            b"bulk" in value.lower() or b"BULK" in value for value in rendered
+        )
+    document = deployment_document(configuration)["deployment"]
+    assert set(document) - {"credential_target"} == PRE_BULK_KEYS
+
+
+def test_the_provisioning_record_never_holds_the_switch(tmp_path):
+    """Switched on or off, the recorded inputs (and a rollback's) are the same."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    configuration = configuration_at(tmp_path, production=True)
+    on = replace(configuration, bulk_family_send=True, bulk_send_batch=10)
+    assert deployment_document(on, switches=False) == deployment_document(configuration)
+    assert deployment_document(on)["deployment"]["bulk_family_send"] is True
 
 
 def test_bulk_settings_are_validated():
