@@ -341,7 +341,10 @@ logout is CSRF-protected. Pages carry no product footer.
 Entries use the same capability checks as the pages they open, and a section
 with no visible entry is omitted; the menu is not the security boundary. The
 entry for the current page, or for the nearest ancestor page listed in the
-menu, is marked `aria-current="page"` and its section is highlighted. On wide
+menu, is marked `aria-current="page"` and its section is highlighted. Each
+section title is a level-2 heading that names its list of entries, styled as a
+small muted label (not like a link) with a divider above every section after
+the first and the section's entries indented beneath it. On wide
 screens the sidebar is a sticky column; on narrow screens it collapses behind a
 Menu disclosure that works without script.
 
