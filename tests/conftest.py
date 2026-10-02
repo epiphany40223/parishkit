@@ -8,6 +8,14 @@ import pytest
 pytest_plugins = ("parishkit.stewardship.quality_pytest",)
 
 
+@pytest.fixture(autouse=True)
+def _fresh_yaml_parse_cache():
+    """Start each test without strict YAML parses cached by an earlier test."""
+    from parishkit import config
+
+    config._parse_cache.clear()
+
+
 def pytest_addoption(parser):
     """Expose collection evidence without changing normal test selection."""
     parser.addoption(
