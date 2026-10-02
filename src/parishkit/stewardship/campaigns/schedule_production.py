@@ -174,30 +174,27 @@ class _Chunks:
 
     def __init__(self, bulk):
         """Remember whether chunks are on; none is open yet."""
-        self.bulk, self.stack, self.opened, self.slowest = bulk, None, 0.0, 0.0
+        self.bulk, self.stack, self.pace = bulk, None, None
 
     def next(self):
         """Commit the chunk before a Family that would take it past budget.
 
-        As in family_mail_bulk._run_batch: the hold so far plus the slowest
-        Family so far must stay under the bulk hold budget; otherwise the
-        chunk commits and a new one opens for this Family.
+        As in family_mail_bulk._run_batch: the hold so far plus the average
+        Family so far must stay under the bulk hold budget (_Pace);
+        otherwise the chunk commits and a new one opens for this Family.
         """
-        from parishkit.stewardship.jobs.family_mail_bulk import HOLD_SECONDS
+        from parishkit.stewardship.jobs.family_mail_bulk import _Pace
 
         from .work_locks import work_transaction
 
         if not self.bulk:
             return
-        if (
-            self.stack is not None
-            and monotonic() - self.opened + self.slowest >= HOLD_SECONDS
-        ):
+        if self.stack is not None and not self.pace.fits():
             self.close()
         if self.stack is None:
             self.stack = ExitStack()
             self.stack.enter_context(work_transaction())
-            self.opened = monotonic()
+            self.pace = _Pace()
 
     def item(self):
         """A savepoint with remembered scopes in bulk mode; nothing otherwise."""
@@ -205,14 +202,9 @@ class _Chunks:
             return nullcontext()
         from parishkit.stewardship.jobs.admission import remembered_scopes
 
-        stack, begun = ExitStack(), monotonic()
-
-        def ran():
-            """Note how long this Family took, to size the rest of the chunk."""
-            self.slowest = max(self.slowest, monotonic() - begun)
-
+        stack, pace = ExitStack(), self.pace
         # Callbacks run last-in first-out: the timing covers the savepoint.
-        stack.callback(ran)
+        stack.callback(pace.ran, monotonic())
         stack.enter_context(transaction.atomic())
         stack.enter_context(remembered_scopes())
         return stack

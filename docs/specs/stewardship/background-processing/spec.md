@@ -726,10 +726,12 @@ the same rows through the same owners and SQL guards, so either path finishes
 or recovers what the other started, and the switch may change mid-send.
 
 - **Batches.** A batch is one work-order transaction. It adds items until
-  its item limit, or until the time held so far plus its slowest item so far
-  would reach a lock-hold budget of half a second. The budget keeps holds
-  well inside the waits other lock takers allow: a task's lease renewal
-  (2 seconds), an in-flight mail check (1 second) and Family logins. Each item
+  its item limit, or until the time held so far plus its average item so far
+  would reach a lock-hold budget of 0.75 seconds. The budget keeps holds
+  inside the waits other lock takers allow: a task's lease renewal waits up
+  to 2 seconds, which covers two full batches (one per consumer process)
+  ahead of it; an in-flight mail check waits 1 second, and Family logins
+  wait too. Each item
   runs in its own savepoint and counts only once that savepoint is released;
   an item that any guard or admission check refuses, or that is held, paused,
   cancelled or superseded, rolls back untouched and is handled later by the

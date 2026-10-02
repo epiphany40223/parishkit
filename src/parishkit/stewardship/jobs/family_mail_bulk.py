@@ -73,16 +73,19 @@ SEND_BATCH = 20
 SEND_BATCH_RANGE = range(1, 101)
 # Most seconds one batch transaction holds the work-order lock. Before each
 # item after the first, the batch stops if the time held so far plus the
-# slowest item it has run would reach this, so a hold stays within the
-# budget unless one item is slower than every earlier one. The items are
+# average item so far would reach this (see _Pace), so a hold overruns the
+# budget only by how much one item is slower than the average. The items are
 # the same guarded writes as before; this only bounds how long others wait
 # for the lock behind one batch. It must stay well under the shortest wait
 # any other lock taker allows itself: a running task's lease renewal gives
-# up after 2 s (jobs/lifetime.renew_once, which stops that task), an
-# in-flight mail check after 1 s (skipped and logged), and a Family login
-# waits for the runtime row a preparation locks. One Family item takes about
-# 0.1-0.2 s locally and roughly 3-4 times that on the validation host.
-HOLD_SECONDS = 0.5
+# up after 2 s (jobs/lifetime.renew_once, which stops that task), so even a
+# waiter queued behind two full batches (one per consumer process) waits
+# about 1.5 s; an in-flight mail check gives up after 1 s (skipped and
+# logged, never stopping its task), and a Family login waits for the
+# runtime row a preparation locks. One Family item takes about 0.1-0.25 s
+# locally and roughly 3-4 times that on the validation host, where a batch
+# is then one or two items (still one transaction instead of three to five).
+HOLD_SECONDS = 0.75
 # How long one hint's consumer keeps taking further batches (the drain)
 # before it returns to its queue. Checked before each batch; the process
 # heartbeat is beaten between batches and between sends, so the container's
@@ -210,6 +213,38 @@ def _transition(claim, correlation_id, handler, action, **options):
     return status
 
 
+class _Pace:
+    """The hold-budget rule for one batch transaction (review M3).
+
+    ``fits()`` before each item after the first: whether the hold so far
+    plus the average item so far stays under the budget. The average, not
+    the slowest, item is the estimate: the first item of a transaction also
+    pays one-time costs (the lock, cold reads), and judging every later item
+    by it would end nearly every batch after one item.
+    """
+
+    def __init__(self, seconds=None):
+        """Start timing a transaction that has just taken the lock."""
+        self.seconds = HOLD_SECONDS if seconds is None else seconds
+        self.started, self.count, self.spent = monotonic(), 0, 0.0
+
+    def fits(self):
+        """Whether another average item would still fit in the budget."""
+        if not self.count:
+            return True
+        average = self.spent / self.count
+        return monotonic() - self.started + average < self.seconds
+
+    def ran(self, begun):
+        """Count one item that started at ``begun`` (monotonic)."""
+        self.count += 1
+        self.spent += monotonic() - begun
+
+    def held(self):
+        """Seconds held so far."""
+        return monotonic() - self.started
+
+
 def _run_batch(ids, item, *, limit, seconds=None):
     """Run ``item(run_id, position)`` for each id in one lock transaction.
 
@@ -217,19 +252,17 @@ def _run_batch(ids, item, *, limit, seconds=None):
     have succeeded before it. A success counts (and its return value is
     kept) only once its savepoint has been released. Stops after ``limit``
     successes, after REFUSALS_TO_STOP refusals in a row, or before an item
-    that would likely take the hold past ``seconds`` (the hold so far plus
-    the slowest item so far; see HOLD_SECONDS). Returns ``(done, tried,
-    hold)``: what ``item`` returned for each success, every id tried, and
-    how long the lock was held.
+    that would likely take the hold past ``seconds`` (see _Pace). Returns
+    ``(done, tried, hold)``: what ``item`` returned for each success, every
+    id tried, and how long the lock was held.
     """
-    seconds = HOLD_SECONDS if seconds is None else seconds
-    done, tried, refusals, slowest = [], [], 0, 0.0
+    done, tried, refusals = [], [], 0
     with work_transaction():
-        started = monotonic()
+        pace = _Pace(seconds)
         for run_id in ids:
             if len(done) >= limit or refusals >= REFUSALS_TO_STOP:
                 break
-            if tried and monotonic() - started + slowest >= seconds:
+            if not pace.fits():
                 break
             tried.append(run_id)
             begun = monotonic()
@@ -246,8 +279,8 @@ def _run_batch(ids, item, *, limit, seconds=None):
             else:
                 done.append(value)
                 refusals = 0
-            slowest = max(slowest, monotonic() - begun)
-    return done, tried, monotonic() - started
+            pace.ran(begun)
+    return done, tried, pace.held()
 
 
 def _beat(pulse):
@@ -260,10 +293,14 @@ def _drain(step, stop, pulse):
     """Repeat ``step`` (one batch) while it finds work, for DRAIN_SECONDS.
 
     ``step(exclude)`` returns how many items it finished and the ids it
-    tried, which later batches of this drain skip. The heartbeat is beaten
-    after every batch, as the lease renewal thread does during one task.
+    tried, which later batches of this drain skip. The drain ends when a
+    step finds nothing left to try, or after two steps in a row finish
+    nothing (a campaign-wide hold, say). One empty step alone does not end
+    it: its items were often just taken by the other consumer. The
+    heartbeat is beaten after every batch, as the lease renewal thread does
+    during one task.
     """
-    started, tried, total = monotonic(), set(), 0
+    started, tried, total, empty = monotonic(), set(), 0, 0
     while monotonic() - started < DRAIN_SECONDS:
         if stop is not None and stop.is_set():
             break
@@ -271,7 +308,8 @@ def _drain(step, stop, pulse):
         _beat(pulse)
         tried.update(attempted)
         total += finished
-        if not finished:
+        empty = 0 if finished else empty + 1
+        if not attempted or empty >= 2:
             break
     return total
 
@@ -696,10 +734,8 @@ def delivery_bulk(
             chunk = []
             try:
                 with work_transaction():
-                    started, slowest = monotonic(), 0.0
-                    while left and (
-                        not chunk or monotonic() - started + slowest < HOLD_SECONDS
-                    ):
+                    pace = _Pace()
+                    while left and pace.fits():
                         item = left.pop(0)
                         chunk.append(item)
                         begun = monotonic()
@@ -708,7 +744,7 @@ def delivery_bulk(
                                 finish_item(item, current)
                         except Exception as error:
                             _unrecorded(error)
-                        slowest = max(slowest, monotonic() - begun)
+                        pace.ran(begun)
             except Exception:
                 for item in chunk:
                     try:
