@@ -35,7 +35,11 @@ def _row(identifier):
 
 
 def enqueue_preparation(guard, occurrence_id):
-    """Bind the original mode/epoch once; repeat scheduling reuses its root."""
+    """Bind the original mode/epoch once; repeat scheduling reuses its root.
+
+    Its own transaction, or a savepoint inside the scheduler's bulk sweep
+    transaction (#430).
+    """
     if not isinstance(guard, SchedulerGuard) or not isinstance(occurrence_id, UUID):
         raise TypeError("Family preparation requires owned schedule production.")
     guard.check()
@@ -291,9 +295,19 @@ def recover_preparation(status):
 
 
 def preparation_handler(
-    *, scheduler=False, general=None, mac=None, public=None, public_origin=None
+    *,
+    scheduler=False,
+    general=None,
+    mac=None,
+    public=None,
+    public_origin=None,
+    bulk=None,
 ):
-    """Only the general worker may prepare content and decrypt manual codes."""
+    """Only the general worker may prepare content and decrypt manual codes.
+
+    ``bulk`` (a family_mail_bulk.BulkSettings) turns on batched preparation
+    for the worker (#430); the scheduler's registration never has it.
+    """
     if type(scheduler) is not bool:
         raise TypeError("Preparation requires a compiled service role.")
     if not scheduler and any(
@@ -323,10 +337,25 @@ def preparation_handler(
                 )
         execution.transition(terminal)
 
-    return Handler(
+    handler = Handler(
         WorkQueue.GENERAL,
         admit_preparation,
         execute,
         recover=recover_preparation,
         scope=work_transaction,
+    )
+    if scheduler or bulk is None:
+        return handler
+    from .family_mail_bulk import preparation_bulk, with_bulk
+
+    return with_bulk(
+        handler,
+        preparation_bulk(
+            handler,
+            general=general,
+            mac=mac,
+            public=public,
+            public_origin=public_origin,
+            settings=bulk,
+        ),
     )

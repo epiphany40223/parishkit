@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from parishkit.config import ConfigError
 
 from .deployment import (
+    BULK_FAMILY_SEND_VARIABLE,
+    BULK_SEND_BATCH_VARIABLE,
     FAMILY_MAIL_TRANSPORT_VARIABLE,
     MAIL_CONSUMERS_VARIABLE,
     SECRET_NAMES,
@@ -334,6 +336,22 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             service["environment"][MAIL_CONSUMERS_VARIABLE] = (
                 "${" + MAIL_CONSUMERS_VARIABLE + ":-}"
             )
+        if configuration.bulk_family_send and role in {
+            ServiceRole.SCHEDULER,
+            ServiceRole.WORKER,
+            ServiceRole.MAIL_DISPATCH,
+        }:
+            # Only while the bulk Family send (#430) was rendered on, so a
+            # deployment with it off renders exactly what the release before
+            # it did: "0" exported for one recreation turns it off on these
+            # services without re-rendering (empty keeps the rendered value).
+            service["environment"][BULK_FAMILY_SEND_VARIABLE] = (
+                "${" + BULK_FAMILY_SEND_VARIABLE + ":-}"
+            )
+            if role is ServiceRole.MAIL_DISPATCH:
+                service["environment"][BULK_SEND_BATCH_VARIABLE] = (
+                    "${" + BULK_SEND_BATCH_VARIABLE + ":-}"
+                )
         if role in {
             ServiceRole.BOOTSTRAP,
             ServiceRole.MIGRATION,

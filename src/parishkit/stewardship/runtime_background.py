@@ -114,6 +114,28 @@ def source_refusal_suppressions(scope):
     return source_suppressions(scope)
 
 
+def _bulk_settings(configuration):
+    """The bulk Family send settings (#430), or None while it is off.
+
+    Logged once per process at startup, so the operator can see which Family
+    send path a worker or mail consumer runs.
+    """
+    import logging
+
+    from .jobs.family_mail_bulk import BulkSettings
+
+    log = logging.getLogger("parishkit.stewardship.jobs.family_mail_bulk")
+    if not configuration.bulk_family_send:
+        return None
+    log.warning(
+        "Bulk Family send is on (batches of up to %d messages); unset "
+        "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND and recreate the scheduler, "
+        "worker and mail-dispatch services to return to one at a time.",
+        configuration.bulk_send_batch,
+    )
+    return BulkSettings(True, configuration.bulk_send_batch)
+
+
 def scheduler_handlers():
     """Compiled metadata admission only; accidental provider/file execution refuses."""
     from .accounts.branding_cleanup import TASK_TYPE as BRANDING_CLEANUP
@@ -369,6 +391,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 mac=rings["family_code_mac"],
                 public=rings["token_public"],
                 public_origin=configuration.public_origin,
+                bulk=_bulk_settings(configuration),
             ),
             FAMILY_MAIL_TEST: family_test_handler(
                 general=rings["general_encryption"],
@@ -501,6 +524,9 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                 private=rings.get("token_private"),
                 public_origin=configuration.public_origin,
                 batched=configuration.family_mail_transport == "batched",
+                bulk=None
+                if role is ServiceRole.SCHEDULER
+                else _bulk_settings(configuration),
                 # Both mail consumer processes share a SYSTEMIC stop.
                 shared_stop=None
                 if role is ServiceRole.SCHEDULER

@@ -54,13 +54,15 @@ class FamilyPlanningResult:
     examined: int = 0
 
 
-def plan_family(guard, *, family_id, worker_id):
+def plan_family(guard, *, family_id, worker_id, nested=False):
     """Recheck current scope and atomically prepare one complete Family group.
 
     Work already bound to a task or outbox is conservatively held here;
     only unallocated pending rows are safe planning inputs. Revision replacement
     has its separate journal-aware owner.
     The selected pending row is not provider permission or a task execution hint.
+    ``nested`` lets the scheduler's bulk sweep (#430) plan several Families
+    in one work-order transaction, each in its own savepoint.
     """
     if (
         not isinstance(guard, (SchedulerGuard, TaskClaim))
@@ -69,7 +71,7 @@ def plan_family(guard, *, family_id, worker_id):
     ):
         raise TypeError("Family planning requires actual schedule ownership.")
     claimed = isinstance(guard, TaskClaim)
-    if not claimed and connection.in_atomic_block:
+    if not claimed and connection.in_atomic_block and not nested:
         raise StorageInvariantError("Family planning must own its transaction.")
     if claimed:
         require_work_order()
@@ -336,6 +338,23 @@ def plan_family(guard, *, family_id, worker_id):
 
 
 def _planning_scope(
+    campaign_id, *, postclose=False, allow_missing_epoch=False, share=False
+):
+    """Planning scope; remembered per bulk item (jobs.admission.remembered_scopes)."""
+    from parishkit.stewardship.jobs.admission import remembered
+
+    return remembered(
+        ("planning", campaign_id, postclose, allow_missing_epoch, share),
+        lambda: _read_planning_scope(
+            campaign_id,
+            postclose=postclose,
+            allow_missing_epoch=allow_missing_epoch,
+            share=share,
+        ),
+    )
+
+
+def _read_planning_scope(
     campaign_id, *, postclose=False, allow_missing_epoch=False, share=False
 ):
     """Planning waits for current mode/epoch and ordinary lifecycle admission.

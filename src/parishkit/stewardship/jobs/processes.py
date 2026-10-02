@@ -164,12 +164,16 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None, companion=None
 EARLY_SCAN_ROWS = 20
 
 
-def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
+def serve_scheduler(
+    runtime, *, handlers, lease, stop, heartbeat, produce, drained=frozenset()
+):
     """Own one SQL session for the entire loop; failed hints remain durable work.
 
     The compiled producer performs bounded durable scheduling, never provider
     I/O. A connection loss exits this process rather than silently reconnecting
     without singleton ownership. Known failed hints reappear in later sweeps.
+    ``drained`` names the task types the bulk Family send works through
+    itself (#430); see RecentHints.
     """
     if (
         not isinstance(runtime, BrokerRuntime)
@@ -181,7 +185,7 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
     cursor, delay = None, 2
     health = DueWorkScan()
     # In memory only: a restarted scheduler hints every due row again.
-    recent = RecentHints()
+    recent = RecentHints(drained=frozenset(drained))
 
     def publish(hint):
         """Verify offline exclusion before each bounded publication."""

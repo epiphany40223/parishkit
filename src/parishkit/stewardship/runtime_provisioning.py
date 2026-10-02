@@ -184,7 +184,7 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
     intent = _json(
         {
             "version": 1,
-            "deployment": deployment_document(configuration),
+            "deployment": deployment_document(configuration, switches=False),
             "image": image,
             "checkout": str(checkout) if checkout is not None else None,
             "bind_source_root": str(bind_source_root)

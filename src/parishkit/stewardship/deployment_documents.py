@@ -4,8 +4,14 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 
-def deployment_document(configuration):
-    """Serialize validated metadata only; credential values are never opened."""
+def deployment_document(configuration, *, switches=True):
+    """Serialize validated metadata only; credential values are never opened.
+
+    ``switches=False`` leaves out the operational switches that are not
+    deployment inputs (the bulk Family send, #430): the provisioning record
+    keeps only inputs, so turning a switch on or off is never an input
+    change, and an earlier release can still read the record.
+    """
     postgres = {
         item.name: getattr(configuration.postgres, item.name)
         for item in fields(configuration.postgres)
@@ -48,6 +54,12 @@ def deployment_document(configuration):
         "family_mail_transport": configuration.family_mail_transport,
         "mail_consumers": configuration.mail_consumers,
     }
+    if configuration.bulk_family_send and switches:
+        # Written only while the bulk Family send (#430) is on, so a
+        # deployment with it off renders exactly what the release before it
+        # did, and that release can load every document (rollback).
+        result["bulk_family_send"] = True
+        result["bulk_send_batch"] = configuration.bulk_send_batch
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
     return {"deployment": result}

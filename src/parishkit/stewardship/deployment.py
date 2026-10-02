@@ -144,6 +144,13 @@ FAMILY_MAIL_TRANSPORT_VARIABLE = "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT"
 # More would need a larger mail login connection limit than role_limit gives.
 MAIL_CONSUMER_COUNTS = frozenset({1, 2})
 MAIL_CONSUMERS_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS"
+# The bulk Family send (#430, jobs/family_mail_bulk.py): off by default; "1"
+# on the scheduler, worker and mail-dispatch services plans, prepares and
+# sends scheduled Family mail in batches. "0" or unset is the one-at-a-time
+# path. BULK_SEND_BATCH is B, the most messages one send batch commits as
+# "submitting" before sending them (1-100, default 20).
+BULK_FAMILY_SEND_VARIABLE = "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND"
+BULK_SEND_BATCH_VARIABLE = "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH"
 
 
 @dataclass(frozen=True)
@@ -168,6 +175,8 @@ class DeploymentConfiguration:
     operational_alerts: IncidentPolicy = field(default_factory=IncidentPolicy)
     family_mail_transport: str = "batched"
     mail_consumers: int = 2
+    bulk_family_send: bool = False
+    bulk_send_batch: int = 20
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -337,6 +346,8 @@ def load_deployment(
             "operational_alerts",
             "family_mail_transport",
             "mail_consumers",
+            "bulk_family_send",
+            "bulk_send_batch",
         },
         "deployment",
     )
@@ -597,6 +608,18 @@ def load_deployment(
         consumers = int(consumers)
     if type(consumers) is not int or consumers not in MAIL_CONSUMER_COUNTS:
         raise ConfigError("mail_consumers must be 1 or 2")
+    bulk = select("BULK_FAMILY_SEND", None)
+    if bulk in (None, ""):
+        # Empty means unset, as for the transport switch above.
+        bulk = deployment.get("bulk_family_send", False)
+    elif bulk in {"0", "1"}:
+        bulk = bulk == "1"
+    if type(bulk) is not bool:
+        raise ConfigError("bulk_family_send must be true or false (1 or 0)")
+    batch = select("BULK_SEND_BATCH", None)
+    if batch in (None, ""):
+        batch = deployment.get("bulk_send_batch", 20)
+    batch = _integer(batch, "bulk_send_batch", 1, 100)
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -621,4 +644,6 @@ def load_deployment(
         alert_policy,
         transport,
         consumers,
+        bulk,
+        batch,
     )

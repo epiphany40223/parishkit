@@ -7,6 +7,8 @@ Restore/purge/cleanup/operational exception handlers require their owning later
 workflows; no caller-supplied boolean or queue name can enable an exemption.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
@@ -36,7 +38,51 @@ class WorkScope:
     instant: datetime
 
 
+# Scopes already read in the current bulk item (#430), or None outside one.
+_REMEMBERED = ContextVar("stewardship_remembered_scopes", default=None)
+
+
+@contextmanager
+def remembered_scopes():
+    """Read each campaign scope once for one bulk Family item (#430).
+
+    One Family message's preparation or submission checks its campaign
+    scope (runtime, campaign, credential and gate rows) about eight times,
+    through each admission callback, inside one transaction that holds the
+    work-order lock. Every writer of those rows takes that lock first, and
+    the item itself writes none of them, so within the item every read
+    returns the same rows. Inside this context ``_scope`` and
+    ``family_schedule_planning._planning_scope`` return the first result
+    for the same arguments instead of reading again. A refusal is not
+    remembered (it is raised again on the next call), and the context is
+    entered per item, never across items or transactions. Only the bulk
+    send uses it; the one-at-a-time path is unchanged.
+    """
+    token = _REMEMBERED.set({})
+    try:
+        yield
+    finally:
+        _REMEMBERED.reset(token)
+
+
+def remembered(key, read):
+    """Return ``read()``, once per key inside remembered_scopes()."""
+    memo = _REMEMBERED.get()
+    if memo is None:
+        return read()
+    if key not in memo:
+        memo[key] = read()
+    return memo[key]
+
+
 def _scope(campaign_id, *, share=False):
+    """Read runtime and campaign scope; see _read_scope (remembered per bulk item)."""
+    return remembered(
+        ("scope", campaign_id, share), lambda: _read_scope(campaign_id, share=share)
+    )
+
+
+def _read_scope(campaign_id, *, share=False):
     """Read runtime then campaign after the shared order lock; missing state denies.
 
     The runtime row is normally locked FOR UPDATE. ``share`` locks it FOR

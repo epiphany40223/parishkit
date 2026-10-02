@@ -1,10 +1,11 @@
 """Fair bounded Family sweeps with PostgreSQL-owned outcomes, not broker state."""
 
 import logging
+from contextlib import ExitStack, nullcontext
 from time import monotonic
 from uuid import UUID
 
-from django.db import connection
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.family_mail_epochs import ensure_preparation_epoch
@@ -45,7 +46,12 @@ class FamilyScheduleProducer:
     """Only traversal is in memory; restart repeats durable idempotent planning."""
 
     def __init__(
-        self, worker_id, *, limit=FAMILY_SWEEP_LIMIT, seconds=FAMILY_SWEEP_SECONDS
+        self,
+        worker_id,
+        *,
+        limit=FAMILY_SWEEP_LIMIT,
+        seconds=FAMILY_SWEEP_SECONDS,
+        bulk=False,
     ):
         """Bound each sweep and attribute effects to the actual scheduler process.
 
@@ -53,6 +59,9 @@ class FamilyScheduleProducer:
         its wall time; whichever comes first ends the call, and the next call
         resumes after the last Family visited. A call after one that found
         nothing to prepare visits at most IDLE_FAMILY_SWEEP_LIMIT Families.
+        ``bulk`` (the bulk Family send, #430) plans several Families per
+        work-order transaction, each in its own savepoint, until the bulk
+        lock-hold budget; off, each Family has its own transaction.
         """
         if (
             not isinstance(worker_id, UUID)
@@ -64,7 +73,10 @@ class FamilyScheduleProducer:
             raise ValueError(
                 "Family schedule sweeps require a bounded process identity."
             )
+        if type(bulk) is not bool:
+            raise ValueError("The bulk sweep switch must be a boolean.")
         self.worker_id, self.limit, self.seconds = worker_id, limit, seconds
+        self.bulk = bulk
         self.campaign_id, self.cursor = None, None
         # Whether the last page created new preparation work. Start at the
         # full page: a restart mid-send should not slow it.
@@ -106,27 +118,42 @@ class FamilyScheduleProducer:
         limit = self.limit if self.busy else min(self.limit, IDLE_FAMILY_SWEEP_LIMIT)
         identifiers = list(rows.order_by("id").values_list("id", flat=True)[:limit])
         results, started, finished, found = [], monotonic(), True, False
-        for index, identifier in enumerate(identifiers):
-            if index and monotonic() - started >= self.seconds:
-                # Out of time: keep the cursor so the next loop resumes here.
-                finished = False
-                break
-            guard.check()
-            try:
-                result = plan_family(
-                    guard, family_id=identifier, worker_id=self.worker_id
-                )
-                results.append(result)
-                if result.selected is not None and not result.held:
-                    found |= _enqueue(guard, result.selected)
-            except PermissionError:
-                # Current campaign/Family may change between enumeration and
-                # locked admission. No earlier scope survives that boundary.
-                pass
-            except StorageInvariantError as error:
-                # A malformed group must not starve independent Families.
-                emit_failure(error)
-            self.cursor = identifier
+        # In bulk mode one work-order transaction (a "chunk") covers several
+        # Families until the bulk hold budget, then commits; see _Chunks.
+        chunks = _Chunks(self.bulk)
+        try:
+            for index, identifier in enumerate(identifiers):
+                if index and monotonic() - started >= self.seconds:
+                    # Out of time: keep the cursor so the next loop resumes here.
+                    finished = False
+                    break
+                chunks.next()
+                guard.check()
+                try:
+                    with chunks.item():
+                        result = plan_family(
+                            guard,
+                            family_id=identifier,
+                            worker_id=self.worker_id,
+                            # Off, the call is exactly the one before #430.
+                            **({"nested": True} if self.bulk else {}),
+                        )
+                        results.append(result)
+                        if result.selected is not None and not result.held:
+                            found |= _enqueue(guard, result.selected)
+                except PermissionError:
+                    # Current campaign/Family may change between enumeration
+                    # and locked admission. No earlier scope survives that
+                    # boundary.
+                    pass
+                except StorageInvariantError as error:
+                    # A malformed group must not starve independent Families.
+                    emit_failure(error)
+                self.cursor = identifier
+        except BaseException:
+            chunks.close(failed=True)
+            raise
+        chunks.close()
         if finished and len(identifiers) < limit:
             self.cursor = None
         self.busy = found
@@ -134,6 +161,65 @@ class FamilyScheduleProducer:
         _report(visited, limit, finished, started, self)
         guard.check()
         return tuple(results)
+
+
+class _Chunks:
+    """The bulk sweep's work-order transactions (#430); a no-op when off.
+
+    ``next()`` before each Family commits the open chunk once it has held
+    the lock for the bulk hold budget and opens a new one; ``item()`` wraps
+    one Family in a savepoint, so a refused or failed Family rolls back
+    alone; ``close()`` commits the last chunk (or rolls it back on error).
+    """
+
+    def __init__(self, bulk):
+        """Remember whether chunks are on; none is open yet."""
+        self.bulk, self.stack, self.pace = bulk, None, None
+
+    def next(self):
+        """Commit the chunk before a Family that would take it past budget.
+
+        As in family_mail_bulk._run_batch: the hold so far plus the average
+        Family so far must stay under the bulk hold budget (_Pace);
+        otherwise the chunk commits and a new one opens for this Family.
+        """
+        from parishkit.stewardship.jobs.family_mail_bulk import _Pace
+
+        from .work_locks import work_transaction
+
+        if not self.bulk:
+            return
+        if self.stack is not None and not self.pace.fits():
+            self.close()
+        if self.stack is None:
+            self.stack = ExitStack()
+            self.stack.enter_context(work_transaction())
+            self.pace = _Pace()
+
+    def item(self):
+        """A savepoint with remembered scopes in bulk mode; nothing otherwise."""
+        if not self.bulk:
+            return nullcontext()
+        from parishkit.stewardship.jobs.admission import remembered_scopes
+
+        stack, pace = ExitStack(), self.pace
+        # Callbacks run last-in first-out: the timing covers the savepoint.
+        stack.callback(pace.ran, monotonic())
+        stack.enter_context(transaction.atomic())
+        stack.enter_context(remembered_scopes())
+        return stack
+
+    def close(self, *, failed=False):
+        """Commit the open chunk, if any; roll it back when ``failed``."""
+        stack, self.stack = self.stack, None
+        if stack is None:
+            return
+        if failed:
+            # Roll back: a database error may have broken the transaction,
+            # and committing it would raise again and hide the first error.
+            stack.__exit__(RuntimeError, RuntimeError("bulk sweep failed"), None)
+        else:
+            stack.close()
 
 
 def _enqueue(guard, occurrence_id):

@@ -40,7 +40,10 @@ admitted rather than held; nothing is published for it, and recovery needs
 five minutes of clear scans in any case. Likewise, a hint refused during a
 short pause leaves its row unchanged, so after the resume the row waits until
 45 seconds after that hint was published. This memory lives only in the scheduler process: a restarted
-scheduler admits and hints every due row again.
+scheduler admits and hints every due row again. While the
+[bulk Family send](#bulk-family-send) is on, its consumers find their own due
+rows, so a scan admits at most two of its rows per task type and page (one
+wakeup per consumer process) and skips the rest the same way.
 
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
@@ -250,7 +253,9 @@ has its own batched Family mail helper and SMTP connection. A hint reaches
 whichever process takes it first. Each message is still exactly one Task:
 its claim locks the TaskRun row, checks that it is still queued and advances
 its fence, so a hint taken by both processes runs once and the other claims
-nothing. The main process supervises the second exactly as the worker
+nothing. With the [bulk Family send](#bulk-family-send) on, a process claims
+several such Tasks at once, each still under its own claim and fence. The
+main process supervises the second exactly as the worker
 supervises its source process, logging late heartbeats and a kill past the
 drain grace as `helper_timed_out` entries for `mail_helper` with no
 `helper` field (SMTP helper kills of the same kind name their helper). The
@@ -702,7 +707,78 @@ this producer's share of the scheduler loop and its 90-second heartbeat.
 Ending early is pacing, not a timeout: the next loop resumes after the last
 Family planned (#394). Each such page logs `work_budget_reached` with the
 budget and the elapsed seconds; with debug logging on, every page also logs
-how many Families it visited.
+how many Families it visited. With the [bulk Family send](#bulk-family-send)
+on, one transaction plans several Families instead.
+
+### Bulk Family send
+
+An optional path plans, prepares and sends scheduled Family mail (initial
+invitations and reminders) in batches, so each turn on the work-order lock
+covers several Families or messages rather than one step of one message
+([#430](https://github.com/epiphany40223/parishkit/issues/430)). It is off by
+default and turned on for the scheduler, worker and mail-dispatch services
+by re-rendering the deployment with the switch on (see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)).
+The switch is not a deployment input: it is never part of the provisioning
+record, and a render with it off is byte-for-byte the render of the release
+before it, so returning to that release is an ordinary retarget. It writes
+the same rows through the same owners and SQL guards, so either path finishes
+or recovers what the other started, and the switch may change mid-send.
+
+- **Batches.** A batch is one work-order transaction. It adds items until
+  its item limit, or until the time held so far plus its average item so far
+  would reach a lock-hold budget of 0.75 seconds. The budget keeps holds
+  inside the waits other lock takers allow: a task's lease renewal waits up
+  to 2 seconds, which covers two full batches (one per consumer process)
+  ahead of it; an in-flight mail check waits 1 second, and Family logins
+  wait too. Each item
+  runs in its own savepoint and counts only once that savepoint is released;
+  an item that any guard or admission check refuses, or that is held, paused,
+  cancelled or superseded, rolls back untouched and is handled later by the
+  one-at-a-time path.
+- **Planning.** The scheduler's Family sweep plans several Families per
+  transaction, within the page limits above.
+- **Preparation.** A worker claims, prepares and completes several
+  preparation Tasks per transaction.
+- **Sending.** In one transaction a mail consumer commits up to B messages
+  as `submitting` (the durable record made before anything reaches the
+  provider; B is `bulk_send_batch`, 1–100, default 20), fewer when the hold
+  budget ends the batch first. It then sends them one after another over its
+  one SMTP connection, outside any transaction, and records every outcome and
+  Task completion in budget-bounded transactions before it begins the next
+  batch. Each message keeps its own Task, claim, fence and lease. Each
+  message's provider deadline allows a full 30-second helper budget for every
+  message ahead of it, up to a cap, and a message is launched only with at
+  least 25 seconds of its deadline left, so no send starts short of time.
+- **Holds before launch.** Just before each send the consumer checks its
+  provider circuit and, without the lock, what family mail admission checks
+  under it: mode, current campaign and rehearsal epoch, revision and
+  occurrence state, production cycle, close and campaign end, pause, go-live
+  gate, source reconciliation, work gates, catch-up and restore holds. A
+  message not launched then, or past the batch's launch cutoff or short of
+  its deadline, is recorded as definitely unsent. Like the one-at-a-time
+  path's admission holds this spends none of its attempt budget, and the
+  Task waits in the reconciling phase until it is looked at again. A message
+  whose mode, epoch or revision has changed, or a Testing message held by a
+  closed go-live gate, is recorded as a definitive failure instead: it was
+  never sent and can no longer be. The cutoff, a deadline shortfall and a
+  helper stopped at the lease margin are logged as timeouts.
+- **Crashes.** A consumer that dies after the `submitting` commit leaves at
+  most one batch `submitting`, sent or not. After their lease and provider
+  deadline, recovery records each `delivery_unknown`, exactly as for one
+  message, and none is sent again automatically. Lower B bounds how many an
+  Administrator may need to settle.
+- **Draining.** Only a hint for scheduled Family mail (or Family mail
+  preparation) starts a drain: the consumer takes the hinted Task first, then
+  further batches of due rows itself for up to 30 seconds, waiting up to
+  5 seconds (polling without the lock) when it finds none, so newly prepared
+  mail is sent without waiting for a scheduler loop. Any other hint, such as
+  a receipt, digest or alert, is handled at once by the one-at-a-time path.
+  The process heartbeat is beaten between batches and between sends.
+
+Testing routing and the daily sending limit are unchanged; near the daily
+limit the bulk path leaves messages to the one-at-a-time path, which decides
+them one by one.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
