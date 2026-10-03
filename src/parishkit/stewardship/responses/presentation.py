@@ -351,7 +351,8 @@ def _page_content(baseline, campaign, family, names, member_count, financial):
     substitutions = public_substitutions(baseline.configuration.parish, campaign)
     substitutions.update(
         family_name=family_display_name(family),
-        # "Andrew and Betty Test", as the Family's email names them (#468).
+        # Every listed Member, grouped by last name with the same rule the
+        # email uses for its heads ("Andrew, Betty and Cy Test", #468).
         family_member_names=heads_salutation_name(names),
         family_url="/family/",
         pronoun=household_pronoun(member_count),

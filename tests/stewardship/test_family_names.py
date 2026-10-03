@@ -158,15 +158,21 @@ def test_family_heads_name_can_put_first_names_first(heads, expected):
             "Bob Lee",
         ),
         ([{"first": None, "last": "Lee"}], "Lee"),
-        # Missing a last name: the first name stands alone, ungrouped.
+        # Missing a last name: the first name stands alone after every surname
+        # group, so it never reads as sharing a surname ("Cher Lee").
         (
             [{"first": "Cher", "last": ""}, {"first": "Bob", "last": "Lee"}],
-            "Cher and Bob Lee",
+            "Bob Lee and Cher",
         ),
         # Captures made before first and last names were kept separately.
         (
             [{"name": "Old Capture"}, {"first": "Bob", "last": "Lee"}],
-            "Old Capture and Bob Lee",
+            "Bob Lee and Old Capture",
+        ),
+        # Letter case never splits a group; the first spelling is kept.
+        (
+            [{"first": "Andrew", "last": "Test"}, {"first": "Betty", "last": "test"}],
+            "Andrew and Betty Test",
         ),
         # Surrounding whitespace never splits a group.
         (

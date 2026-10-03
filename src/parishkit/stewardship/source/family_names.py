@@ -44,15 +44,18 @@ def _head_full_name(head):
 def heads_salutation_name(heads, default=""):
     """The heads as a salutation addresses them: "Andrew and Betty Test".
 
-    The rule, in the heads' order:
+    The rule, in the heads' order except as noted:
 
-    - Heads with a last name are grouped under it; a group is placed where its
-      first head appears. Each group reads as the ``name_series`` of its first
-      names followed by the last name once ("Ann, Bob and Cy Lee"). Blank
-      first names add nothing, so a group of only surnames is just the
-      surname.
+    - Heads with a last name are grouped under it, ignoring letter case (the
+      first spelling seen is used); a group is placed where its first head
+      appears. Each group reads as the ``name_series`` of its first names
+      followed by the last name once ("Ann, Bob and Cy Lee"). Blank first
+      names add nothing, so a group of only surnames is just the surname.
     - A head without a last name (a first name only, or an older capture with
-      just ``name``) keeps its full display name as a group of its own.
+      just ``name``) keeps its full display name as a group of its own. These
+      come after every surname group, so a lone first name never reads as
+      sharing the next group's surname ("Bob Lee and Cher", not "Cher and Bob
+      Lee").
     - The groups are then joined by ``name_series`` again: "Andrew and Betty
       Test and Carol Smith"; "Ann Lee, Bob Ray and Cy Fox".
 
@@ -60,20 +63,19 @@ def heads_salutation_name(heads, default=""):
     """
     groups = []  # (last name, [first names]) in order of first appearance
     by_last = {}
+    alone = []  # full names of heads without a last name
     for head in heads:
         first, last = _text(head, "first"), _text(head, "last")
         if last:
-            if last not in by_last:
-                by_last[last] = []
-                groups.append((last, by_last[last]))
-            by_last[last].append(first)
+            key = last.casefold()
+            if key not in by_last:
+                by_last[key] = []
+                groups.append((last, by_last[key]))
+            by_last[key].append(first)
         elif full := _head_full_name(head):
-            # No surname to share: the whole name stands as its own group.
-            groups.append(("", [full]))
-    return (
-        name_series(f"{name_series(firsts)} {last}".strip() for last, firsts in groups)
-        or default
-    )
+            alone.append(full)
+    parts = [f"{name_series(firsts)} {last}".strip() for last, firsts in groups]
+    return name_series(parts + alone) or default
 
 
 def family_heads_name(surname, heads, *, surname_first=True):
