@@ -236,6 +236,124 @@ fresh-install, restart, ownership, failure or persistence checks.
 6. Publish only after Review Gate 5 and explicit human release authorization;
    never push a release tag automatically.
 
+### OPS-10: Local laptop environment
+
+Implements the
+[local laptop environment specification](../../specs/stewardship/local-environment/spec.md)
+and refines the PR sequence of
+[#476](https://github.com/epiphany40223/parishkit/issues/476). It is
+post-launch work outside the phase and gate sequence. Each item is one pull
+request with independent review and full CI. Normal CI stays Docker-free and
+credential-free throughout.
+
+Dependencies: items 2 and 3 follow item 1 in order. Items 4, 5, 6 and 8 depend
+only on items 2 and 3 and may proceed in any order or in parallel, except that
+item 4's mail-catcher activation test lands with or after item 5. Item 7
+depends on items 4, 5, 6 and 8. Item 9 depends on items 5, 6, 7 and 8,
+since it installs the mail-catcher and fake ParishSoft credentials, loads from
+the fake, runs `up` in fake-clock mode and prints a sign-in link. Item 10 depends on item 9 and on the
+scripted Production upgrade (#460, #461).
+
+1. **PR 0, specification and spike.** Write the local-environment
+   specification, this package and its checklist, and record the spike
+   (VirtioFS ownership and multi-arch base-image digests) that chose a Lima VM.
+   Tests: none; Markdown lint and the traceability test.
+2. **PR 1, LOCAL profile.** Add `DeploymentProfile.LOCAL` and
+   `profile.behind_proxy`; give every existing profile comparison its LOCAL
+   behaviour from the specification's branch table; validate the
+   `https://localhost:8443` origin, one proxy hop and the local image-tag
+   pattern, keeping the GHCR digest rule for Production. Reword the
+   `deployment.py` messages that say "locally" to name development and test.
+   Update the [deployment metadata guide](../../development/stewardship-deployment.md).
+   Tests: fast tests for every row of the branch table, proving LOCAL never
+   takes a development or test result and other profiles are unchanged;
+   Production rejecting a local tag and LOCAL rejecting a GHCR reference.
+3. **PR 2, ingress and topology.** Render the LOCAL Compose and Caddyfile: Caddy
+   `tls internal` on `127.0.0.1:8443` only, the Mailpit UI on `127.0.0.1:8025`
+   only, no `application-egress` network, an `ingress` network without IP
+   masquerade joined only by Caddy and Mailpit, Compose `name`
+   `parishkit-local`, HSTS off, secure cookies on, and the LOCAL banner.
+   Tests: golden files proving the rendered Production Compose and Caddyfile are
+   byte-identical before and after; grants and Valkey ACL identical across
+   profiles; CI rendering checks of the local topology.
+4. **PR 3, go-live in LOCAL.** Add the LOCAL `localhost` rule to
+   `check_public_origin` and `origin_check_worker` (not `deployment._origin`),
+   so the real go-live flow works locally; make `smoke` refuse LOCAL. Tests:
+   the origin-check rule for LOCAL with every other profile unchanged; a
+   database test that LOCAL activation through the real go-live flow sends
+   every message only through the mail-catcher transport (this test lands with
+   or after item 5).
+5. **PR 4, mail catcher.** Add the mail-catcher credential document, the
+   `LOCAL_SMTP_ENDPOINT` transport at every Gmail call site, the helper
+   `profile` field for SMTP helpers, the Mailpit service, and refusals in both
+   directions at the Workspace installer and setup-wizard intake, plus the
+   sentinel OAuth client, Slack and Drive refusals. Tests: fake-SMTP tests;
+   helper refusal of the local endpoint for non-local requests; the Gmail
+   endpoint and transport unchanged.
+6. **PR 5a, fake ParishSoft and synthetic parish.** Add the generator (default
+   100 Families and 25 Ministries, `--families N` scaling the other
+   collections, a realistic adult and child mix, Ministry rosters drawn only
+   from non-child Members), the fake v2 service, its configuration file and
+   `fake-parishsoft` command; thread
+   `LOCAL_SOURCE_BASE_URL` through every `ParishSoftConfig` call site and both
+   helper subprocesses with the `profile` request field. Tests: fixed-seed
+   digest at the default size and at 1,100 Families; the scaling table; the
+   no-children roster rule and the roster proportions at both sizes; endpoint contract tests through the strict
+   `CoherentParishSoftClient` loaders, including 401 on a wrong key and the
+   late-added Family's release; a database setup-load test.
+7. **PR 5b, fake clock and campaign seeder.** Add the libfaketime-derived
+   local images (application, PostgreSQL, Valkey) and the fake-clock Compose
+   override, with its one shared forward-only offset file. Production images
+   and digests stay unchanged. Add the `local-seed` steps under existing
+   identities only (no superuser, no bypass, no new login or grant):
+   - phase 1 at the Friday before the start configures dates and all
+     schedules, meets go-live readiness (full refresh, Family test mail,
+     provider-check receipts, no pending configuration request) and runs the
+     real go-live through a real request with an `authenticated_admin`
+     session;
+   - phase 2 steps the clock through the timeline, waiting for work to settle
+     at each occurrence instant;
+   - phase 3 runs the invariant `DO` block under `migration`;
+   - phase 4 restores normal mode and runs the final refresh.
+
+   The clock-mode marker persists the mode, and the clock mount is admitted
+   only for LOCAL. Estimated at 20 to 30 minutes at 100 Families, with
+   per-step timing.
+   Tests:
+   - timeline tests at 100 and 1,100 Families without Docker (calendar, no
+     future event, today floor, proportional shape, Reminder floor,
+     cumulative share with floors inside the allocation, funnel order,
+     determinism, Friday 09:00 later than now minus 17 days);
+   - seed tests in the documented VM run at 20 and 100 Families (never in
+     CI): the invariant check (against the seeded now),
+     historical-ordering cases, mail-catcher-only sending for Family, digest,
+     security and operational mail, `scheduled` go-live without catch-up, and
+     normal mode at the end;
+   - verification that singly due occurrences are not coalesced, that cookies
+     work under fake-clock `Expires`, and that Family delivery is not held by
+     source staleness across jumps;
+   - fast tests for clock-mount admission in both directions;
+   - the fake-clock override rendering tests.
+8. **PR 6, local test sign-in.** Refactor the post-OAuth core of
+   `complete_identity` into a shared function; add `local-sign-in`, the Valkey
+   token consumed by a Lua script, and the `local_urls` GET form and POST.
+   Tests: the absence tests in the specification, including `configure_web`
+   selecting `local_urls` only for LOCAL; Google sign-in behaviour unchanged;
+   a security-focused review.
+9. **PR 7a, VM and operator script.** Add `tools/stewardship-local.sh` with
+   `vm`, `up [--families N]` (run in fake-clock mode 17 days behind real time,
+   including the offer to seed after the wizard), clock-mode persistence for
+   every command that starts services,
+   `snapshot [--seeded]`, `reset [--seeded]` (fake-clock mode for the
+   post-setup snapshot, normal mode for the seeded one), `seed [--response-scale m]`
+   (background-friendly, locked, with per-phase progress and timing), `reseed`, `status`, `down`,
+   `sign-in` and `ca`, and a developer guide. Tests: `shellcheck`; a documented human run in the VM, including the
+   no-egress check.
+10. **PR 7b, local deploy.** Add the `local` mode of the scripted upgrade's host
+    script and the `deploy` command, with Production output unchanged. Tests:
+    `shellcheck`; Production output byte-identical; a documented human
+    `deploy` in the VM.
+
 ## Review handoffs
 
 - Review Gate 1 requires OPS-01 through OPS-04 and baseline OPS-08/OPS-09.
@@ -243,6 +361,8 @@ fresh-install, restart, ownership, failure or persistence checks.
 - Review Gate 4 requires an independent destructive-workflow and restore review
   of OPS-05 through OPS-07.
 - Review Gate 5 exercises OPS-08/OPS-09, every runbook, and the release artifact.
+- OPS-10 is outside the review gates: each of its pull requests gets an
+  independent review, and item 8 a security-focused one.
 
 ## Completion criteria
 

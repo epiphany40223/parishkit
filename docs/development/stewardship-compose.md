@@ -8,6 +8,10 @@ production deployment. HTTP serves intentional unavailable pages and liveness.
 Readiness remains `503`. PostgreSQL and Valkey run independently; application
 database/broker integration follows in Phase 1.
 
+This scaffold is superseded for running the real application on a laptop: use
+the [local laptop environment](../specs/stewardship/local-environment/spec.md)
+instead, which runs the production-shaped deployment in a Linux VM.
+
 ## Local development
 
 Install current maintained Docker Engine/Desktop with BuildKit enabled, the

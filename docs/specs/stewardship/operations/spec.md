@@ -1073,3 +1073,8 @@ CI adds the coverage threshold, migration drift check, frontend static/build
 check, browser/accessibility job, Compose smoke job, and image build/scan. Fast
 unit checks remain useful locally; slow integration/browser/container jobs are
 documented and reproducible before a pull request is considered complete.
+
+See also the [local laptop environment](../local-environment/spec.md) for
+exercising a change end to end in a production-shaped deployment on a laptop
+before it reaches Production; it adds fast, database and rendering tests to CI
+but no Docker run.

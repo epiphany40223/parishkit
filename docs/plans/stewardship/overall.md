@@ -680,6 +680,15 @@ Run the standard protocol on the complete branch, then:
 - merge through the normal pull-request process. Creating or pushing a semantic
   release tag remains a separate explicitly human-authorized action.
 
+## Post-launch work packages
+
+These packages were added after the v1 launch and sit outside the phase and
+gate sequence above. Each states its own dependencies and review rules.
+
+- **OPS-10** — the [local laptop environment](operations.md#ops-10-local-laptop-environment)
+  for testing Admin and Family changes before Production
+  ([#476](https://github.com/epiphany40223/parishkit/issues/476)).
+
 ## Review-gate protocol
 
 Every formal gate uses this sequence:

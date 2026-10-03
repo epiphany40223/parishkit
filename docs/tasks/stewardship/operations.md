@@ -273,3 +273,21 @@ timeout and oversized-log corrections, are complete with no unresolved accepted
 Medium+ findings. PR #28 passed final-head CI `34819275741` and complete
 merge-group CI `34820311292`; its protected merge
 `c0ab9a1259c6a2c459b6568917e2da56278f061b` is verified on `origin/main`.
+
+## OPS-10: Local laptop environment
+
+Scope and dependencies: [OPS-10 work package](../../plans/stewardship/operations.md#ops-10-local-laptop-environment).
+Specification: [local laptop environment](../../specs/stewardship/local-environment/spec.md).
+
+- [ ] OPS-10.01 — PR 0: specify the local environment and record the Lima VM spike.
+- [ ] OPS-10.02 — PR 1: add the LOCAL profile and LOCAL behaviour at every existing profile branch.
+- [ ] OPS-10.03 — PR 2: render the local ingress and topology with Production golden files unchanged.
+- [ ] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
+- [ ] OPS-10.05 — PR 4: add the mail catcher and two-way credential refusals.
+- [ ] OPS-10.06 — PR 5a: add the fake ParishSoft service and the scalable synthetic parish.
+- [ ] OPS-10.07 — PR 5b: add the fake clock and the time-travel campaign and response seeder.
+- [ ] OPS-10.08 — PR 6: add the local test sign-in through the shared identity core.
+- [ ] OPS-10.09 — PR 7a: add the Lima VM operator script, seeded snapshots and developer guide.
+- [ ] OPS-10.10 — PR 7b: add the local deploy mode of the scripted upgrade.
+
+Evidence: Not started.

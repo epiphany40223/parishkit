@@ -60,6 +60,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   images, backup/restore, observability, CI, and test expectations.
 - [Hosted files](hosted-files/spec.md): the Admin-managed library of PDF,
   Office and image files that content links with `{{ file.<slug> }}`.
+- [Local laptop environment](local-environment/spec.md): the
+  production-shaped `local` profile in a Lima VM, with a mail catcher, fake
+  ParishSoft, synthetic parish, seeded campaign and local test sign-in.
 
 ## Terminology
 
@@ -335,6 +338,7 @@ Every source requirement maps to one normative section:
 | Logs and campaign replay | [Admin portal](admin-portal/spec.md) and [data](data/spec.md) |
 | Compose, TLS, persistence, release, backups, tests | [Operations](operations/spec.md) |
 | Hosted parishioner files and file placeholders | [Hosted files](hosted-files/spec.md) |
+| Testing changes on a laptop before Production | [Local environment](local-environment/spec.md) |
 
 When requirements conflict, the explicit decisions and definitions in this
 specification set take precedence over the
