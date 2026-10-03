@@ -66,10 +66,10 @@ still the design record for preparation and disposal),
   and finish step 6 within that window.
 - The prepared Family links of step 5 are bound to the ParishSoft data they
   were prepared from, and the scheduled delta refresh runs every 15 minutes
-  (on the quarter hour), including during go-live; the nightly full refresh
-  (at the ParishSoft integration's nightly time, 02:00 by default) does the
-  same, so avoid that hour. Any refresh that lands after preparation makes
-  it stale. Start step 5 just after a quarter-hour delta
+  (on the quarter hour), including during go-live; the scheduled full
+  refreshes (at the ParishSoft integration's listed times, 02:00 alone by
+  default) do the same, so avoid those hours. Any refresh that lands after
+  preparation makes it stale. Start step 5 just after a quarter-hour delta
   has finished, and go straight on to step 6.
 - Plan for both: cleanup, the wait for a delta and preparation often use up
   most of the 30 minutes. If cleanup finishes late in the window, start a
@@ -219,11 +219,15 @@ them to the end. For the operator's view, run the report with
 `purpose='initial'`, `since` a few minutes before the confirmation and
 `until` a time in the future. Its **Overview** shows how many invitations
 have gone out so far and the rate. While the send runs, the 15-minute
-ParishSoft updates are skipped
+ParishSoft updates and any daytime full refresh are skipped
 ([why](../specs/stewardship/background-processing/spec.md#deltas-wait-for-a-bulk-family-send)),
 so a ParishSoft change can take up to about 2 hours to arrive; if a change
 is urgent (say, a Family's address fix), use **Refresh now** on the home
-page after making it.
+page after making it. The 15-minute updates carry only Family address, phone,
+email and registration changes; a new Family, a status or Send No Mail change,
+Members, ministries and giving arrive with the next full refresh, scheduled
+at the ParishSoft integration's listed times (02:00 alone by default) or
+started with **Refresh now**.
 
 **Afterwards.** **Campaign › Family email sends**
 ([Family email sends](../specs/stewardship/admin-portal/spec.md#family-email-sends))
@@ -353,7 +357,7 @@ by default); the home page's latest refresh time stops advancing.
 
 **The system does:** it keeps serving the last successful snapshot, so the
 Family form, reports and staff pages keep working on that data; it retries on
-its nightly and fifteen-minute cadence and resolves the incident by itself
+its scheduled full and fifteen-minute cadence and resolves the incident by itself
 after a successful refresh of the current scope, as the
 [source health guide](stewardship-source-health.md) explains. Two other source
 incidents are refusals, not outages: `source_tenant_mismatch` (the key now

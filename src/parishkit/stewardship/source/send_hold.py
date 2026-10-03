@@ -1,12 +1,14 @@
-"""Skip 15-minute delta refreshes while a bulk Family send is in progress (#440).
+"""Skip scheduled refreshes while a bulk Family send is in progress (#440, #465).
 
 Under send load a delta refresh ran about five of every fifteen minutes and
 halved the send rate: its promotion and Family population rebuild compete for
 the global work-order lock with Family planning, preparation and delivery, and
 a promotion marks the population dirty until it is rebuilt. So while an
 initial invitation or reminder is being sent, the scheduler does not create
-the delta slot's refresh. The scheduled full refresh and every manual refresh
-still run.
+the delta slot's refresh, nor a scheduled full refresh at any configured
+daytime time other than the nightly one (#465), which competes the same way.
+The nightly full refresh, an hourly or quarter-hour full refresh and every
+manual refresh still run.
 
 A send is in progress while at least ``ACTIVE_MINIMUM`` pieces of its work
 remain in durable state: Family messages pending (not paused), waiting to
@@ -129,11 +131,12 @@ def deltas_skipped(observed_at, now):
 
 
 def delta_held(now):
-    """Whether the scheduler should skip a delta slot due at ``now``.
+    """Whether the scheduler should skip a delta or daytime full slot due at ``now``.
 
     Only while a send is in progress and the current source is still
     ``RESUME_LEAD`` inside the allowance; with no promoted source yet there
-    is nothing to protect.
+    is nothing to protect. The scheduler applies the answer to delta slots
+    and to full slots at a configured time other than the nightly one.
     """
     if not family_send_active():
         return False

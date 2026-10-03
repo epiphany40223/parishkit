@@ -765,7 +765,12 @@ What to watch after deploying it:
 ## Rollback
 
 An application-only rollback is possible only when the new release changed
-neither the schema nor any runtime grant:
+neither the schema nor any runtime grant. The first post-launch forward
+migration, `stewardship_source.0002_refresh_tick_times` (#465), already rules
+it out for any release that includes it: the previous image refuses a
+database whose applied migrations it does not know, so from that release on
+roll back by database restore (below) or roll forward with a fix. For a
+release that qualifies:
 stop the online services, run `retarget-image` with the previous digest (in
 that previous image), pull, put the previous release's static tree back
 *in place*, as step 5 refreshes it (empty `cache/static` and copy the kept

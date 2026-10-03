@@ -1,7 +1,8 @@
 """Delta refreshes skipped while a bulk Family send is in progress (#440).
 
 The scheduler skips a 15-minute slot during a send and creates it once the
-send ends; the scheduled full refresh and a manual refresh are never skipped.
+send ends; the nightly full refresh and a manual refresh are never skipped. A
+full refresh at another listed daytime time waits like a delta (#465).
 The staleness alarm holds within the send's allowance and behaves as before
 past it. The send itself is counted from real (temporary, column-subset)
 message and Task tables, and the restricted scheduler and worker logins can
@@ -10,7 +11,7 @@ read what the check needs.
 
 import logging
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -31,12 +32,14 @@ from parishkit.stewardship.source.production import SourceProducer, produce_refr
 from parishkit.stewardship.source.refresh_models import SourceRefreshTick
 
 from .test_background_grants_postgresql import task_login
-from .test_refresh_frequency_postgresql import with_frequency
+from .test_refresh_frequency_postgresql import with_frequency, with_schedule
 from .test_source_attempts_postgresql import configured
 from .test_source_health_postgresql import future_observation, observe, publish
 from .test_source_requests_postgresql import command
 
 pytestmark = pytest.mark.django_db(transaction=True)
+# 13:23 parish time (America/New_York): a daytime full refresh at 12:00 is due.
+NOW = datetime(2026, 9, 11, 17, 23, 42, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -130,6 +133,46 @@ def test_full_and_manual_refreshes_are_not_skipped(tmp_path, monkeypatch):
     assert causes() == ["nightly"]
     manual = command()
     assert TaskRun.objects.get(pk=manual.task_root_id).state == "queued"
+
+
+def test_daytime_full_refresh_waits_for_a_send_and_catches_up_after(
+    tmp_path, monkeypatch, caplog
+):
+    """A full refresh at a listed daytime time is held like a delta (#465).
+
+    Nothing is created while the send runs; each held slot logs one INFO
+    line; the first loop after the send creates both slots, and the full one
+    records the daytime time it was due at.
+    """
+    with_schedule(tmp_path, full_refresh_times=["02:00", "12:00"])
+    monkeypatch.setattr(production, "database_now", lambda: NOW)
+    monkeypatch.setattr(production, "delta_held", lambda now: True)
+    producer = SourceProducer(uuid4())
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    with scheduler_session() as guard:
+        assert producer(guard) == ()
+        assert producer(guard) == ()
+    assert causes() == []
+    assert len(held_lines(caplog)) == 2
+    assert not TaskRun.objects.filter(task_type="source_refresh").exists()
+    monkeypatch.setattr(production, "delta_held", lambda now: False)
+    with scheduler_session() as guard:
+        assert len(producer(guard)) == 2
+    assert causes() == ["delta", "nightly"]
+    assert SourceRefreshTick.objects.get(command__cause="nightly").nightly_time == (
+        "12:00"
+    )
+
+
+def test_nightly_full_refresh_still_runs_during_a_send(tmp_path, monkeypatch):
+    """The listed nightly time is the one full refresh a send never holds."""
+    with_schedule(tmp_path, full_refresh_times=["02:00", "20:00"])
+    monkeypatch.setattr(production, "database_now", lambda: NOW)
+    monkeypatch.setattr(production, "delta_held", lambda now: True)
+    with scheduler_session() as guard:
+        assert len(produce_refreshes(guard)) == 1
+    assert causes() == ["nightly"]
+    assert SourceRefreshTick.objects.get().nightly_time == "02:00"
 
 
 def test_without_promoted_source_nothing_is_skipped(tmp_path, monkeypatch):
