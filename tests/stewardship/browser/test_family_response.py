@@ -467,6 +467,8 @@ def test_disabled_additional_data_cannot_be_replayed_from_old_response(
         route.fulfill(json={"accepted": True})
 
     page.route("**/family/submit", submit)
+    # The form loads on its own (#466); wait for it before checking absence.
+    expect(page.locator("[data-step-link]").first).to_be_attached()
     assert page.locator("#additional-information").count() == 0
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()

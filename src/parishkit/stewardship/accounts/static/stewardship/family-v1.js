@@ -2214,12 +2214,18 @@
     // the Try again button so the Family isn't left with nothing.
     if (busy) return;
     busy = true; start.disabled = true;
-    const failed = (text) => { say(text); entry.hidden = false; };
+    const retry = () => {
+      // Show Try again and move keyboard focus to the message beside it, so
+      // a keyboard or screen-reader user lands where the problem is explained.
+      entry.hidden = false;
+      if (!message.hidden) message.focus();
+    };
+    const failed = (text) => { say(text); retry(); };
     try {
       const result = await send("/family/form", {});
       if (!result && closedForMaintenance && !finished) {
         // Closed for maintenance: keep the notice and offer a retry.
-        entry.hidden = false;
+        retry();
         return;
       }
       if (!result || finished) return;

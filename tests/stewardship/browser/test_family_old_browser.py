@@ -67,6 +67,10 @@ def test_missing_api_reveals_the_notice(page, component_origin, removal):
         + " Please update your device’s software, or use another device or browser."
     )
     expect(notice).to_have_attribute("role", "alert")
-    # The check only reveals the notice and never touches the form area, whose
-    # own script may or may not get as far as loading the form (#466).
-    expect(page.locator("#family-flow")).to_be_attached()
+    # The check only reveals the notice and never touches the form area. That
+    # area's own script either loads the form or, when the missing API breaks
+    # loading, offers Try again (#466); the page is never left empty.
+    expect(page.locator("#family-flow")).to_be_visible()
+    expect(
+        page.locator(".family-nav").or_(page.get_by_role("button", name="Try again"))
+    ).to_be_visible()
