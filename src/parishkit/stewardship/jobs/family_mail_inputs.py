@@ -12,7 +12,7 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.families import FamilyRecipients, family_recipients
 from parishkit.stewardship.source.family_names import (
     family_display_name,
-    name_series,
+    heads_salutation_name,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshots import read_snapshot
@@ -39,13 +39,9 @@ class FamilyMailSource:
     active_members: int
 
 
-def _name(values):
-    """Use stable source names without inventing missing personal information."""
-    return " ".join(
-        value.strip()
-        for key in ("firstName", "lastName")
-        if isinstance(value := values.get(key), str) and value.strip()
-    )
+def _head(values):
+    """A head as ``heads_salutation_name`` reads one: stable source names only."""
+    return {"first": values.get("firstName"), "last": values.get("lastName")}
 
 
 def load_family_mail_source(family):
@@ -101,8 +97,8 @@ def load_family_mail_source(family):
         )
         # Names describe the heads who actually have eligible addresses, not
         # unrelated adults/minors or a proposed replacement census contact.
-        names = [
-            _name(members[str(head)])
+        heads = [
+            _head(members[str(head)])
             for head in sorted(value["active_head_duids"])
             if any(
                 item["valid"] and item["value"] in projection.eligible
@@ -114,8 +110,8 @@ def load_family_mail_source(family):
             current.generation,
             projection,
             family_display_name(value, "Family"),
-            # "A, B and C", as the directory writes the heads (#303 L11).
-            name_series(names),
+            # "Andrew and Betty Test", as every salutation names the heads (#468).
+            heads_salutation_name(heads),
             sum(member["active"] is True for member in members.values()),
         )
 

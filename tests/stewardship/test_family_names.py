@@ -10,6 +10,7 @@ from parishkit.stewardship.source import family_names
 from parishkit.stewardship.source.family_names import (
     family_display_name,
     family_heads_name,
+    heads_salutation_name,
     name_series,
 )
 
@@ -108,8 +109,90 @@ def test_name_series_joins_naturally(parts, expected):
     ],
 )
 def test_family_heads_name_can_put_first_names_first(heads, expected):
-    """Envelope order: shared surname once at the end, else each full name."""
+    """Salutation order (heads_salutation_name), with the surname as the fallback."""
     assert family_heads_name("Squyres", heads, surname_first=False) == expected
+
+
+@pytest.mark.parametrize(
+    ("heads", "expected"),
+    [
+        # The launch-day request (#468): "Dear Andrew and Betty Test:".
+        (
+            [{"first": "Andrew", "last": "Test"}, {"first": "Betty", "last": "Test"}],
+            "Andrew and Betty Test",
+        ),
+        # Two surname groups, then three single-head groups.
+        (
+            [
+                {"first": "Andrew", "last": "Test"},
+                {"first": "Betty", "last": "Test"},
+                {"first": "Carol", "last": "Smith"},
+            ],
+            "Andrew and Betty Test and Carol Smith",
+        ),
+        (
+            [
+                {"first": "Ann", "last": "Lee"},
+                {"first": "Bob", "last": "Ray"},
+                {"first": "Cy", "last": "Fox"},
+            ],
+            "Ann Lee, Bob Ray and Cy Fox",
+        ),
+        # A group sits where its first head appears, in the heads' order.
+        (
+            [
+                {"first": "Ann", "last": "Lee"},
+                {"first": "Bob", "last": "Ray"},
+                {"first": "Cy", "last": "Lee"},
+            ],
+            "Ann and Cy Lee and Bob Ray",
+        ),
+        (
+            [{"first": first, "last": "Lee"} for first in ("Ann", "Bob", "Cy")],
+            "Ann, Bob and Cy Lee",
+        ),
+        ([{"first": "Ann", "last": "Lee"}], "Ann Lee"),
+        # Missing a first name: the surname still names the group.
+        (
+            [{"first": "", "last": "Lee"}, {"first": "Bob", "last": "Lee"}],
+            "Bob Lee",
+        ),
+        ([{"first": None, "last": "Lee"}], "Lee"),
+        # Missing a last name: the first name stands alone after every surname
+        # group, so it never reads as sharing a surname ("Cher Lee").
+        (
+            [{"first": "Cher", "last": ""}, {"first": "Bob", "last": "Lee"}],
+            "Bob Lee and Cher",
+        ),
+        # Captures made before first and last names were kept separately.
+        (
+            [{"name": "Old Capture"}, {"first": "Bob", "last": "Lee"}],
+            "Bob Lee and Old Capture",
+        ),
+        # Letter case never splits a group; the first spelling is kept.
+        (
+            [{"first": "Andrew", "last": "Test"}, {"first": "Betty", "last": "test"}],
+            "Andrew and Betty Test",
+        ),
+        # Surrounding whitespace never splits a group.
+        (
+            [{"first": " Ann ", "last": "Lee "}, {"first": "Bob", "last": " Lee"}],
+            "Ann and Bob Lee",
+        ),
+        # No usable names at all.
+        ([{"first": "", "last": ""}, {"name": None}], ""),
+        ([], ""),
+    ],
+)
+def test_heads_salutation_name_groups_first_names_by_surname(heads, expected):
+    """First names grouped under each shared surname, groups joined naturally."""
+    assert heads_salutation_name(heads) == expected
+
+
+def test_heads_salutation_name_default_names_a_headless_family():
+    """Callers that need a non-empty salutation supply the Family's name."""
+    assert heads_salutation_name([], "Family") == "Family"
+    assert heads_salutation_name([{"name": " "}], "Lee") == "Lee"
 
 
 def test_directory_sql_trims_exactly_what_python_strips():

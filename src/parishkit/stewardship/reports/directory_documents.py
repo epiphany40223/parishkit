@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.family_names import (
     family_heads_name,
+    heads_salutation_name,
 )
 from parishkit.stewardship.web.presentation import phone as format_phone
 
@@ -106,8 +107,8 @@ def mailable(address):
 
 def head_names(heads):
     """The Family heads' names as one natural phrase ("Aaron and Isabelle
-    Williams"), or "" without heads; see ``family_heads_name``."""
-    return family_heads_name("", heads, surname_first=False)
+    Williams"), or "" without heads; see ``heads_salutation_name``."""
+    return heads_salutation_name(heads)
 
 
 def _zip(address):
