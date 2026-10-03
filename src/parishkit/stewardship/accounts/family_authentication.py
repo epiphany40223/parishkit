@@ -514,7 +514,7 @@ def access(request, token):
 
 @require_safe
 def portal(request):
-    """Render an answer-free shell; Testing consent precedes private form loading."""
+    """Render an answer-free shell; the page script loads the private form."""
     try:
         principal = authenticated_family(request, service=runtime(), activity=True)
         if principal is None:
