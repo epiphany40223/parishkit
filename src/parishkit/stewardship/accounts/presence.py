@@ -23,6 +23,10 @@ from parishkit.stewardship.campaigns.credential_models import (
     DeploymentCredentialState,
     FamilySession,
 )
+from parishkit.stewardship.campaigns.engagement import (
+    engagement_mode,
+    record_engagement,
+)
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import read_transaction
@@ -89,6 +93,18 @@ def heartbeat(request):
             if row.presence_at is None or now >= row.presence_at + INTERVAL:
                 FamilySession.objects.filter(pk=row.pk, version=row.version).update(
                     presence_at=now, presence_section=section, version=F("version") + 1
+                )
+                # The furthest step reached, durably (#477): the session's
+                # presence column is only the current step and the row itself
+                # is deleted after an hour. Same 30-second bound as above.
+                record_engagement(
+                    family_id=row.family_id,
+                    mode=engagement_mode(row.mode),
+                    rehearsal_epoch_id=row.rehearsal_epoch_id,
+                    actor_id=row.family_id,
+                    seen_at=now,
+                    section=section,
+                    section_at=now,
                 )
             # The second admission catches an eligibility/epoch transition while
             # preparing the response, without extending idle or absolute expiry.

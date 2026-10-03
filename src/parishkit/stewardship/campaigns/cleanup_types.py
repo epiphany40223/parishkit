@@ -32,6 +32,9 @@ class CleanupCategory(StrEnum):
     RECOVERY_REPLACEMENT = "recovery_replacements"
     WEEKLY_RECIPIENT = "weekly_digest_recipients"
     WEEKLY_SNAPSHOT = "weekly_digest_snapshots"
+    # Testing Family engagement rows (#477): behavioural evidence about real
+    # Families collected during rehearsal, deleted with the other Testing detail.
+    ENGAGEMENT = "engagement"
 
 
 @dataclass(frozen=True, repr=False)

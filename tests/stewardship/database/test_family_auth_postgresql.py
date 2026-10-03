@@ -263,9 +263,10 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(
         assert client.get("/family/").status_code == 302
         assert FamilySession.objects.get().revoked_at is not None
     assert client.get("/access/" + family_service.token).status_code == 403
-    # A batch of one removes one session and one credential independently;
-    # parent session cleanup follows deletion of its PROTECT metadata child.
-    assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 2
+    # A batch of one removes one session, one credential and the Family's
+    # Testing engagement row (#477) independently; parent session cleanup
+    # follows deletion of its PROTECT metadata child.
+    assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 3
     assert not FamilySession.objects.filter(pk=session.pk).exists()
     assert not Session.objects.filter(pk=session.session_id).exists()
     assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 0

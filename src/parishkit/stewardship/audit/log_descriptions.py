@@ -275,6 +275,14 @@ DESCRIPTIONS = {
     "family_tokens_ready": _("Family links are ready."),
     "family_tokens_cancelled": _("Preparing Family links was cancelled."),
     "family_presence_viewed": _("Someone opened the list of Families online now."),
+    "family_engagement_backfilled": _(
+        "An operator filled the Families' response-progress records from "
+        "retained sign-in and form history."
+    ),
+    "family_engagement_failed": _(
+        "A Family's sign-in or form opening could not be recorded for response "
+        "reporting; the Family was not affected."
+    ),
     "family_codes_viewed": _("Someone opened the Family codes list."),
     # ParishSoft data (audit).
     "source_compacted": _("Old ParishSoft copies were removed to save space."),

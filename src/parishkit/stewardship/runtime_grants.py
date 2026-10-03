@@ -475,6 +475,9 @@ def runtime_grants(role, *, target=None):
         from .responses.grants import add_response_web_grants
 
         add_response_web_grants(tables, columns)
+        from .campaigns.engagement_grants import add_engagement_web_grants
+
+        add_engagement_web_grants(tables, columns)
         # Verified clearance is append-only and independently admitted by SQL;
         # its trigger owns the one-Family eligibility effect, not the web login.
         tables["stewardship_recipient_refusal"] = {"SELECT"}

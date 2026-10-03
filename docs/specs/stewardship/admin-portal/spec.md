@@ -1075,9 +1075,11 @@ Going live is a dedicated workflow, not a toggle. It requires:
   `retry_wait`, or `delivery_unknown`, plus a terminal-delivery summary ready
   for aggregation;
 - a cleanup inventory of all Testing submissions/workflows, sensitive test
-  audit payloads, Testing outbox detail, and Testing ScheduleOccurrence/
-  ScheduleFulfillment rows, with exact submission, distinct-Family, and
-  message/result counts plus an Admin-only Family list; and
+  audit payloads, Testing outbox detail, Testing
+  [Family engagement](../data/spec.md#family-engagement) rows, and Testing
+  ScheduleOccurrence/ScheduleFulfillment rows, with exact submission,
+  distinct-Family, and message/result counts plus an Admin-only Family list;
+  and
 - completion of the gated asynchronous cleanup below, followed by fresh Google
   authentication and a typed Production confirmation.
 
