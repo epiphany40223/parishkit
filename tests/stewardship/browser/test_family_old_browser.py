@@ -22,12 +22,10 @@ def test_capable_browser_never_sees_the_notice(page, component_origin):
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     prepare(page, component_origin)
-    begin = page.get_by_role("button", name="Begin reviewing")
-    expect(begin).to_be_visible()
-    expect(page.locator("#browser-unsupported")).to_be_hidden()
-    begin.click()
     expect(page.locator(".family-nav")).to_be_visible()
     expect(page.locator("#browser-unsupported")).to_be_hidden()
+    # The form loaded on its own (#466), so the retry fallback never showed.
+    expect(page.locator("#family-entry")).to_be_hidden()
     assert errors == []
 
 
@@ -69,5 +67,6 @@ def test_missing_api_reveals_the_notice(page, component_origin, removal):
         + " Please update your device’s software, or use another device or browser."
     )
     expect(notice).to_have_attribute("role", "alert")
-    # The check only reveals the notice; the Begin button is still there.
-    expect(page.get_by_role("button", name="Begin reviewing")).to_be_visible()
+    # The check only reveals the notice and never touches the form area, whose
+    # own script may or may not get as far as loading the form (#466).
+    expect(page.locator("#family-flow")).to_be_attached()

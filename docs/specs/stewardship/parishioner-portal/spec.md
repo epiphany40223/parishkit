@@ -70,6 +70,13 @@ session, and returns to `/`.
 
 ## Form state and navigation
 
+There is no entry page: after successful authentication the form opens
+straight away in both Production and Testing, so a Family following an
+invitation never meets an unexplained extra click (#466). Only when the form
+cannot be loaded, or the site is
+[closed for maintenance](../admin-portal/spec.md#family-portal-maintenance),
+does the page say so and offer a **Try again** button that loads it again.
+
 One server response supplies a normalized baseline/effective form payload,
 the enabled step definitions, and the server-issued baseline reference defined
 by [submission concurrency](../data/spec.md#submission-concurrency).
@@ -501,10 +508,10 @@ submission.
 During Testing mode every otherwise eligible Family may use the portal during
 campaign dates through its current rehearsal-epoch code or token under the
 [credential policy](../architecture/spec.md#family-credential-security).
-Production credentials are not accepted in Testing. Testing has no entry page
-or interstitial: after successful authentication the form opens straight away,
-and the Testing banner (below) is the only mode notice. If the form cannot be
-loaded, the page says so and offers **Try again**.
+Production credentials are not accepted in Testing. Testing has no
+interstitial: the form opens straight away, exactly as in Production (see
+[Form state and navigation](#form-state-and-navigation)), and the Testing
+banner (below) is the only mode notice.
 
 Every form step has a persistent, non-color-only Testing banner repeating that
 answers are disposable, and the final button reads **Submit test response**.

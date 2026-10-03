@@ -19,11 +19,8 @@ pytestmark = pytest.mark.parametrize(
 
 
 def start(page, origin, *, form=None, submit=None):
-    """Exercise the real entry button, never inject or persist a client draft."""
-    prepare(page, origin, submit=submit)
-    if form:
-        page.route("**/family/form", lambda route: route.fulfill(json={"form": form}))
-    page.get_by_role("button", name="Begin reviewing").click()
+    """Let the page load the form itself; never inject or persist a client draft."""
+    prepare(page, origin, form=form, submit=submit)
 
 
 @pytest.mark.parametrize("width", [320, 1280])

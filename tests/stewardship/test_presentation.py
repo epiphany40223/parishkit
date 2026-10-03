@@ -125,6 +125,10 @@ def test_family_shell_has_no_inline_assets_and_keeps_noscript_fallback():
     assert 'src="/static/stewardship/family-support-v1.js"' in html
     notice = 'id="browser-unsupported" class="notice notice-error" role="alert" hidden'
     assert notice in html
+    # Production has no entry page either (#466): family-v1.js loads the form
+    # at once, and the hidden panel is only its Try again fallback.
+    assert '<div class="panel" id="family-entry" hidden>' in html
+    assert "Try again" in html and "Begin reviewing" not in html
     assert "<script>" not in html and "<style>" not in html
     assert 'href="#main"' in html
 

@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import NOW
 from .test_family_response import expect, form_payload, prepare, review
 
 pytestmark = pytest.mark.parametrize(
@@ -31,9 +30,13 @@ def test_the_maintenance_page_is_friendly_and_accessible(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
-def test_a_form_load_during_maintenance_offers_a_retry(page, component_origin):
-    """The note replaces a generic failure, and Try again loads the form later."""
-    page.clock.install(time=NOW)
+@pytest.mark.parametrize("testing", [True, False])
+def test_a_form_load_during_maintenance_offers_a_retry(page, component_origin, testing):
+    """The note replaces a generic failure, and Try again loads the form later.
+
+    Both modes load the form as soon as the page opens (#466), so the fallback
+    is the same in Production and Testing.
+    """
     attempts = []
 
     def load(route):
@@ -42,13 +45,9 @@ def test_a_form_load_during_maintenance_offers_a_retry(page, component_origin):
         if len(attempts) == 1:
             route.fulfill(status=503, json=MAINTENANCE)
         else:
-            route.fulfill(json={"form": form_payload(testing=True)})
+            route.fulfill(json={"form": form_payload(testing=testing)})
 
-    page.route("**/family/form", load)
-    page.route(
-        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
-    )
-    page.goto(component_origin + "/family-testing")
+    prepare(page, component_origin, testing=testing, load=load)
     message = page.locator("#family-flow-message")
     expect(message).to_contain_text("temporarily closed for maintenance")
     expect(message).to_contain_text("Back by 3 PM.")
@@ -74,7 +73,6 @@ def test_a_submit_during_maintenance_keeps_the_answers(page, component_origin):
             route.fulfill(json={"accepted": True})
 
     prepare(page, component_origin, submit=submit)
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     button = page.get_by_role("button", name="Submit to Sample Parish")
     button.click()
@@ -104,7 +102,6 @@ def test_a_session_ending_after_a_maintenance_refusal_says_nothing_was_submitted
             route.fulfill(status=403, json={})
 
     prepare(page, component_origin, submit=submit)
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     button = page.get_by_role("button", name="Submit to Sample Parish")
     button.click()

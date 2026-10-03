@@ -826,8 +826,6 @@ def test_welcome_order_banner_notice_family_icon(
         form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
         form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
     prepare(page, component_origin, testing=testing, form=form)
-    if not testing:
-        page.get_by_role("button", name="Begin reviewing").click()
     expect(page.locator('[data-page="intro"]')).to_be_visible()
     expected = (
         (["banner"] if testing else [])

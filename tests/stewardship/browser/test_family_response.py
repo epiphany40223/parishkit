@@ -196,15 +196,23 @@ def form_payload(*, testing=False):
     }
 
 
-def prepare(page, origin, *, testing=False, submit=None, form=None):
-    """Capture boundary traffic; presence is explicitly answer-free and separate."""
+def prepare(page, origin, *, testing=False, submit=None, form=None, load=None):
+    """Capture boundary traffic; presence is explicitly answer-free and separate.
+
+    The page loads the form as soon as it opens (#466), so every route must be
+    in place before ``goto``: pass a fixed ``form`` or a ``load`` handler here
+    rather than routing ``/family/form`` afterwards.
+    """
     page.clock.install(time=NOW)
     attempts = []
 
     def begin(route):
-        """Return fixture data only after the actual browser consent action."""
+        """Record the automatic form load, then answer it."""
         attempts.append(route.request)
-        route.fulfill(json={"form": form or form_payload(testing=testing)})
+        if load:
+            load(route)
+        else:
+            route.fulfill(json={"form": form or form_payload(testing=testing)})
 
     page.route("**/family/form", begin)
     page.route(
@@ -231,8 +239,6 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
         route.fulfill(json={"accepted": True})
 
     attempts = prepare(page, component_origin, submit=submit)
-    assert attempts == []
-    page.get_by_role("button", name="Begin reviewing").click()
     expect(page.get_by_label("First name (required)")).to_have_value("Alex")
     assert attempts[0].post_data_json == {}
     assert attempts[0].headers["x-csrftoken"] == "a" * 64
@@ -293,6 +299,18 @@ def test_testing_submits_without_acknowledgment_checkboxes(page, component_origi
     assert "testing_acknowledged" not in submissions[0]["answers"]
 
 
+def test_production_opens_the_form_without_a_click(page, component_origin):
+    """#466: a Family arriving from an invitation sees the form, not a button."""
+    attempts = prepare(page, component_origin)
+    expect(page.locator("[data-step-link]").first).to_be_attached()
+    expect(page.get_by_label("First name (required)")).to_have_value("Alex")
+    # The entry panel is only the failure fallback; it never showed here.
+    expect(page.locator("#family-entry")).to_be_hidden()
+    assert page.get_by_role("button", name="Try again").count() == 0
+    assert page.get_by_text("Testing mode:", exact=False).count() == 0
+    assert [attempt.post_data_json for attempt in attempts] == [{}]
+
+
 def thank_you_page(page, origin, testing):
     """Submit a response and return the thank-you page's content and banner."""
     prepare(
@@ -301,8 +319,6 @@ def thank_you_page(page, origin, testing):
         testing=testing,
         submit=lambda route: route.fulfill(json={"accepted": True}),
     )
-    if not testing:
-        page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     page.get_by_role(
         "button", name="Submit test response" if testing else "Submit to Sample Parish"
@@ -340,7 +356,6 @@ def test_stale_response_keeps_only_actual_edits_and_requires_review(
         route.fulfill(status=409, json={"error": "review_required", "form": fresh})
 
     prepare(page, component_origin, submit=submit)
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My edit")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -358,7 +373,6 @@ def test_expiry_erases_sensitive_form_and_never_submits(page, component_origin):
     prepare(
         page, component_origin, submit=lambda route: submissions.append(route.request)
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("Private tab edit")
     page.clock.fast_forward(4 * 60 * 60 * 1000)
     expect(page.locator("#family-cancel")).to_be_hidden()
@@ -371,7 +385,6 @@ def test_expiry_erases_sensitive_form_and_never_submits(page, component_origin):
 def test_invalid_email_blur_and_answer_markup_stays_text(page, component_origin):
     """Browser validation blocks progression and answer values never become HTML."""
     prepare(page, component_origin)
-    page.get_by_role("button", name="Begin reviewing").click()
     email = show(page, page.get_by_label("Email address (optional)"))
     email.fill("invalid")
     show(page, page.get_by_label("First name (required)")).fill(
@@ -406,7 +419,6 @@ def test_accepted_submission_wins_over_local_expiry(page, component_origin, in_f
             route.fulfill(json={"accepted": True})
 
     prepare(page, component_origin, submit=submit)
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     if in_flight:
@@ -444,19 +456,17 @@ def test_disabled_additional_data_cannot_be_replayed_from_old_response(
     page, component_origin
 ):
     """R1-04/05: tolerate old hidden text without sending a disabled answer."""
-    prepare(page, component_origin)
     form = form_payload()
     form["additional_enabled"] = False
     form["additional_information"] = "Old text that is no longer enabled"
     submissions = []
-    page.route("**/family/form", lambda route: route.fulfill(json={"form": form}))
+    prepare(page, component_origin, form=form)
 
     def submit(route):
         submissions.append(route.request.post_data_json)
         route.fulfill(json={"accepted": True})
 
     page.route("**/family/submit", submit)
-    page.get_by_role("button", name="Begin reviewing").click()
     assert page.locator("#additional-information").count() == 0
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -486,7 +496,6 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
             json={"error": "review_required", "form": form},
         ),
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My proposed name")
     show(page, page.get_by_label("Additional information (optional)")).fill(
         "My proposed note"
@@ -534,7 +543,6 @@ def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_
             status=409, json={"error": "review_required", "form": fresh}
         ),
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My edit")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -575,7 +583,6 @@ def test_expiry_after_definite_rejection_warns_changes_were_not_saved(
         component_origin,
         submit=lambda route: route.fulfill(status=409, json=payload),
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator(".family-nav")).to_be_visible()
@@ -610,7 +617,6 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
             )
 
     prepare(page, component_origin, submit=respond)
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("#family-flow-message")).to_contain_text("could not confirm")
@@ -627,9 +633,9 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
     )
 
 
-def test_testing_form_load_failure_offers_a_retry(page, component_origin):
-    """Testing opens the form itself; a failed load shows a Try again button."""
-    page.clock.install(time=NOW)
+@pytest.mark.parametrize("testing", [True, False])
+def test_form_load_failure_offers_a_retry(page, component_origin, testing):
+    """Both modes open the form themselves; a failed load shows Try again (#466)."""
     attempts = []
 
     def load(route):
@@ -638,18 +644,15 @@ def test_testing_form_load_failure_offers_a_retry(page, component_origin):
         if len(attempts) == 1:
             route.fulfill(status=503, body="unavailable", content_type="text/plain")
         else:
-            route.fulfill(json={"form": form_payload(testing=True)})
+            route.fulfill(json={"form": form_payload(testing=testing)})
 
-    page.route("**/family/form", load)
-    page.route(
-        "**/family/presence", lambda route: route.fulfill(json={"recorded": True})
-    )
-    page.goto(component_origin + "/family-testing")
+    prepare(page, component_origin, testing=testing, load=load)
     retry = page.get_by_role("button", name="Try again")
     expect(retry).to_be_visible()
     expect(page.locator("#family-flow-message")).to_contain_text("could not be loaded")
     retry.click()
     expect(page.locator("[data-step-link]").first).to_be_attached()
+    expect(page.locator("#family-entry")).to_be_hidden()
     assert len(attempts) == 2
 
 
@@ -659,8 +662,6 @@ def test_session_timeout_shows_one_notice_under_the_testing_banner(
 ):
     """One red notice with one working sign-in link; Testing banner on top."""
     prepare(page, component_origin, testing=testing)
-    if not testing:
-        page.get_by_role("button", name="Begin reviewing").click()
     expect(page.locator("[data-step-link]").first).to_be_attached()
     page.clock.fast_forward(3_700_000)
     notice = page.locator("#session-expired")
@@ -694,7 +695,6 @@ def test_a_server_ended_session_notice_stays_shown(page, component_origin):
         component_origin,
         submit=lambda route: route.fulfill(status=403, body="Forbidden"),
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     notice = page.locator("#session-expired")
@@ -715,7 +715,6 @@ def test_temporary_outage_on_submit_keeps_answers_and_is_not_uncertain(
             status=503, json={"error": "temporarily_unavailable"}
         ),
     )
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My edit")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -764,13 +763,11 @@ def test_form_opened_in_second_tab_keeps_first_tab_edits(page, component_origin)
     )
     page.clock.install(time=NOW)
     page.goto(component_origin + "/family")
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My edit")
     # The Family opens the form again in a second tab of the same session.
     second = context.new_page()
     second.clock.install(time=NOW)
     second.goto(component_origin + "/family")
-    second.get_by_role("button", name="Begin reviewing").click()
     expect(second.locator("[data-step-link]").first).to_be_attached()
     assert len(issued) == 2
     second.close()
@@ -816,11 +813,8 @@ def test_replaced_baseline_with_changed_records_asks_for_a_choice(
         submit=lambda route: route.fulfill(
             status=409, json={"error": "reload_required"}
         ),
+        load=load,
     )
-    # Replace prepare()'s fixed form with the two-step one above.
-    page.unroute("**/family/form")
-    page.route("**/family/form", load)
-    page.get_by_role("button", name="Begin reviewing").click()
     show(page, page.get_by_label("First name (required)")).fill("My edit")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()

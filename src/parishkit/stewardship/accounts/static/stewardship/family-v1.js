@@ -2208,23 +2208,18 @@
   const start = document.getElementById("family-start");
   const entry = document.getElementById("family-entry");
   async function begin() {
-    // Load the Family's form. Production waits for "Begin reviewing"; Testing
-    // opens it at once, since the Testing banner is the only mode notice.
+    // Load the Family's form. Both modes open it as soon as the page loads;
+    // a Family following a real invitation should not meet an extra click
+    // (#466). The entry panel is hidden until a load fails, when it offers
+    // the Try again button so the Family isn't left with nothing.
     if (busy) return;
     busy = true; start.disabled = true;
-    const failed = (text) => {
-      // Testing opens the form without an entry panel; on failure show the
-      // panel with a retry button so the Family isn't left with nothing.
-      say(text);
-      entry.hidden = false;
-      if (testing) start.textContent = "Try again";
-    };
+    const failed = (text) => { say(text); entry.hidden = false; };
     try {
       const result = await send("/family/form", {});
       if (!result && closedForMaintenance && !finished) {
         // Closed for maintenance: keep the notice and offer a retry.
         entry.hidden = false;
-        if (testing) start.textContent = "Try again";
         return;
       }
       if (!result || finished) return;
@@ -2234,7 +2229,7 @@
     finally { busy = false; start.disabled = false; }
   }
   start.addEventListener("click", begin);
-  if (testing) begin();
+  begin();
   cancel.addEventListener("submit", (event) => {
     if (dirty() && !window.confirm("Discard your unsubmitted changes and sign out?")) {
       event.preventDefault(); return;
