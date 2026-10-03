@@ -32,7 +32,7 @@ a Family, a credential or a message.
 Operational email goes out through the same Google Workspace mailbox as
 campaign mail, so during a mail-provider outage its own alert may never
 arrive. Configure the optional Slack channel for that reason. In the portal,
-every Admin page shows **Critical events recorded in the past 24 hours** when
+every Admin page shows **Critical problems in the past 24 hours** when
 there are any, the home page lists open security events and recent failed
 background tasks, and the Background work page carries the Admin-only warning
 that links to unresolved `delivery_unknown` messages. Notices are sent only
@@ -114,13 +114,18 @@ still the design record for preparation and disposal),
    email must have been previewed and sent successfully with the current
    configuration; no Testing delivery may be unfinished or unknown; and no
    configuration change may be pending. Then start the full refresh with
-   **Refresh now** on the home page and wait for it to finish. Reviewing and
-   verifying readiness change nothing; only **Start Testing cleanup** in step
-   4 acts.
-3. **Administrator: verify and read the impact.** Choose **Verify readiness
-   and public origin**. Read the Family and Admin report mail impact: the page
-   says whether confirming now would make the campaign active immediately
-   (initial mail is then prepared at once) or schedule it for its start date.
+   **Refresh now** on the home page and wait for it to finish. **Refresh now**
+   is the full ParishSoft refresh: the home page link opens the **Refresh from
+   ParishSoft** page (`/admin/source/refresh`), and that page's **Refresh
+   now** button starts it. Reviewing and checking readiness change nothing;
+   only **Start Testing cleanup** in step 4 acts.
+3. **Administrator: check readiness and read the impact.** Choose **Check
+   readiness and public web address** in the **Public web address check**
+   panel. Read the Family and Admin report mail impact: the page says whether
+   confirming now would make the campaign active immediately (initial mail is
+   then prepared at once) or schedule it for its start date. Once the check
+   passes, the **Start irreversible Testing cleanup** panel appears with the
+   acknowledgement and the cleanup button for step 4.
 4. **Administrator: start the cleanup.** Within five minutes of the preview,
    tick **I acknowledge that deleting the inventoried Testing data is
    irreversible.** and choose **Start Testing cleanup**. Rehearsal codes and
@@ -146,15 +151,14 @@ still the design record for preparation and disposal),
    refresh first, timed as in the timing notes above, then discard and
    prepare again.
 6. **Administrator: confirm.** Choose **Review final Production
-   confirmation** and copy the page's address (or keep it open in another
-   tab) before signing in: the page requires a Google sign-in made after the
-   cleanup completed and within the last five minutes, and **Sign in again
-   with Google** returns you to the portal home page, not here. Sign in, go
-   straight back to the copied address, choose **Verify final readiness and
-   mail impact**, check the exact preview (start and close dates, and
-   immediate versus scheduled), type `Production`, and choose **Confirm
-   Production**, all within five minutes of the sign-in. A changed input
-   means a new preview, not a failure.
+   confirmation**. The page requires a Google sign-in made after the cleanup
+   completed and within the last five minutes: choose **Confirm with Google**
+   in its **Confirm it's you with Google** panel, and the sign-in brings you
+   back to this page. Then choose **Verify final readiness and mail impact**,
+   check the exact preview (start and close dates, and immediate versus
+   scheduled), type `Production`, and choose **Confirm Production**, all
+   within five minutes of the sign-in. A changed input means a new preview,
+   not a failure.
 7. **Administrator: watch the result.** The **Production activation
    progress** page (`/admin/campaign/<campaign id>/production`) shows the
    outcome. A campaign that became active prepares its initial mail in the
@@ -170,13 +174,13 @@ still the design record for preparation and disposal),
 **Withdrawal** returns a *scheduled* campaign to draft in Testing, and is
 possible only before its start: once the start passes, the campaign is active
 and cannot be withdrawn. Open **Withdraw from Production** from the progress
-page and copy its address, sign in again with Google (which returns to the
-home page), go back to the copied address, give a reason, acknowledge that
-deleted Testing data cannot be restored, choose **Preview withdrawal** and
-then **Confirm withdrawal from Production**. If the preview reports work in
-flight or uncertain, the confirm button is withheld: resolve that work, sign
-in again if more than five minutes have passed since the last sign-in, then
-preview again and confirm within five minutes and before the start.
+page, choose **Confirm with Google** (the sign-in brings you back to this
+page), give a reason, tick **I understand that deleted Testing data cannot be
+restored.**, choose **Preview withdrawal** and then **Confirm withdrawal from
+Production**. If the preview reports work in flight or uncertain, the confirm
+button is withheld: resolve that work, choose **Confirm with Google** again if
+more than five minutes have passed since the last sign-in, then preview again
+and confirm within five minutes and before the start.
 Withdrawal is refused while delivery is paused: the progress page then hides
 the withdrawal link, and the withdrawal page says the campaign is
 not eligible, as it does for an active campaign. Resume first, which needs
@@ -479,7 +483,7 @@ only for the current Production campaign.
       submitted must finish, every unknown delivery must be resolved (below;
       the unknown count also includes messages awaiting an idempotent
       retry), report preparation must reach its safe point, and any blocked
-      Family group on the **Overdue Family-mail planning** panel must be
+      Family group on the **Overdue Family email** panel must be
       resolved. The resume controls are hidden entirely while an activation
       catch-up is incomplete, including one whose preparation has failed: if
       the **Production activation progress** page shows a failure, choose
@@ -493,15 +497,14 @@ only for the current Production campaign.
       wait for it to complete.
    2. Three five-minute clocks govern the rest (the sign-in, the sender test
       and the preview), so do steps 2 to 4 in one go.
-      Confirming needs a Google sign-in from the last five minutes, and
-      **Sign in again with Google** returns you to the portal home page, not
-      here: copy this page's address first, sign in, and go straight back.
+      Confirming needs a Google sign-in from the last five minutes: choose
+      **Confirm with Google**, and the sign-in brings you back to this page.
       Then choose **Preview and send a test to the configured Testing
       recipient**, which opens the campaign mail page, send the test there,
-      go straight back to the copied delivery control address, and reload
-      until it says **The current provider and sender accepted a test after
-      this pause.** That proof is also valid for five minutes, and the
-      preview and the confirmation both check it again.
+      go straight back to **Campaign delivery controls**, and reload until it
+      says **The current provider and sender accepted a test after this
+      pause.** That proof is also valid for five minutes, and the preview
+      and the confirmation both check it again.
    3. Give the reason and choose **Preview resume**. Review the exact
       preview: overdue invitations and reminders are coalesced (redundant
       slots coalesced, inapplicable ones skipped), overdue daily or weekly
@@ -512,8 +515,8 @@ only for the current Production campaign.
       anything that changed cancels the confirmation without releasing mail,
       and you preview again. If the confirm button is missing, or confirming
       reports an authentication error, changed inputs or "Check this
-      value." (an expired preview), a clock has run out: sign in again as in
-      step 2, send a new test, and preview again.
+      value." (an expired preview), a clock has run out: confirm with Google
+      again as in step 2, send a new test, and preview again.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
