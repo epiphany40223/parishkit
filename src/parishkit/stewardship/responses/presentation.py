@@ -8,7 +8,10 @@ from parishkit.stewardship.accounts.branding_context import campaign_artwork
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.source.family_names import family_display_name
+from parishkit.stewardship.source.family_names import (
+    family_display_name,
+    heads_salutation_name,
+)
 from parishkit.stewardship.web.presentation import parish_date, parish_instant
 
 from .census import (
@@ -72,7 +75,7 @@ def form_presentation(form):
         for field in values
         if field.entity == "member"
     }
-    members = []
+    members, names = [], []
     relationships = {
         field.identity: field.effective.value.value
         for field in values
@@ -113,17 +116,20 @@ def form_presentation(form):
                     "conflict": effective.conflict,
                 }
             )
+        first, last = (
+            (indexed[identifier, name].value.value or "")
+            if census
+            else (context.get((identifier, name)) or "")
+            for name in ("first_name", "last_name")
+        )
+        # Separate names for the salutation, so the browser payload does not grow.
+        names.append({"first": first, "last": last})
         members.append(
             {
                 "id": str(identifier),
                 "fields": fields,
                 "relationship": relationships.get(identifier),
-                "display_name": " ".join(
-                    (indexed[identifier, name].value.value or "")
-                    if census
-                    else (context.get((identifier, name)) or "")
-                    for name in ("first_name", "last_name")
-                ).strip(),
+                "display_name": f"{first} {last}".strip(),
                 "request": _terminal_presentation(identifier, indexed, proposals)
                 if census
                 else None,
@@ -198,7 +204,7 @@ def form_presentation(form):
         if prior
         else None,
         "content": _page_content(
-            baseline, campaign, family, members, member_count, form.inputs.financial
+            baseline, campaign, family, names, member_count, form.inputs.financial
         ),
         # Optional campaign banner and page icons (#248); absent when unset.
         "images": campaign_artwork(campaign.values),
@@ -334,17 +340,19 @@ def _household_presentation(values, prior):
     }
 
 
-def _page_content(baseline, campaign, family, members, member_count, financial):
+def _page_content(baseline, campaign, family, names, member_count, financial):
     """Render selected immutable blocks through the existing inert sanitizer.
 
     Email-only credential substitutions are empty in the authenticated flow;
     rendering a page must never mint or decrypt a link/code. All Family names
-    come from the effective projection, not a second, competing source read.
+    come from the effective projection, not a second, competing source read;
+    ``names`` holds each listed Member's first and last name, in page order.
     """
     substitutions = public_substitutions(baseline.configuration.parish, campaign)
     substitutions.update(
         family_name=family_display_name(family),
-        family_member_names=", ".join(member["display_name"] for member in members),
+        # "Andrew and Betty Test", as the Family's email names them (#468).
+        family_member_names=heads_salutation_name(names),
         family_url="/family/",
         pronoun=household_pronoun(member_count),
     )

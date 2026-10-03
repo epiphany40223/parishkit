@@ -104,6 +104,15 @@ def csv_rows(report):
             ],
             "Aaron Williams and Isabelle Smith",
         ),
+        # A shared surname is said once even when another surname is present.
+        (
+            [
+                {"name": "Aaron Williams", "first": "Aaron", "last": "Williams"},
+                {"name": "Isabelle Williams", "first": "Isabelle", "last": "Williams"},
+                {"name": "Carol Smith", "first": "Carol", "last": "Smith"},
+            ],
+            "Aaron and Isabelle Williams and Carol Smith",
+        ),
         (
             [
                 {"name": "A Ng", "first": "A", "last": "Ng"},
@@ -119,7 +128,7 @@ def csv_rows(report):
     ],
 )
 def test_head_names_join_naturally(heads, expected):
-    """Shared surnames are said once; otherwise each full name is kept."""
+    """First names group under each shared surname (heads_salutation_name)."""
     assert head_names(heads) == expected
 
 
