@@ -1,5 +1,6 @@
 """The system logs screen reuses the shared browser server and real row shaping."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -71,13 +72,14 @@ def components(context, admin):
     operational[0]["actor_id"] = UUID(int=900)
     operational[0]["actor_worker"] = True
 
-    def page(query, rows, *, number=1, total=None):
+    def page(query, rows, *, number=1, total=None, action="/logs"):
         """Render the production context builder's output, as the view does.
 
-        Navigator and heading forms post back to this fixture's own path.
+        Navigator and heading forms post back to this fixture's own path, or
+        to ``action`` (the fixture server's redirecting path, for #478).
         """
         table = log_table(
-            query, rows, through=moment, action="/logs", number=number, total=total
+            query, rows, through=moment, action=action, number=number, total=total
         )
         return render_to_string(
             "stewardship/logs.html",
@@ -102,8 +104,17 @@ def components(context, admin):
     older = LogQuery.parse(
         {"applied": "yes", "error": "yes", "size": "25", "page": "2"}
     )
+    # The same snapshot oldest first: what the Time heading's POST form
+    # returns, served to the in-place re-sort tests from a GET path (#478).
+    oldest = replace(everything, sort="oldest")
     result = {
         "/logs": ("text/html", page(everything, rows, total=30)),
+        "/logs-oldest": ("text/html", page(oldest, rows[::-1], total=30)),
+        # The same page whose controls post to the server's redirecting path.
+        "/logs-expired": (
+            "text/html",
+            page(everything, rows, total=30, action="/redirect-to-login"),
+        ),
         "/logs-default": ("text/html", page(LogQuery(), operational[1:3])),
         "/logs-older": (
             "text/html",

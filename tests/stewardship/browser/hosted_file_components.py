@@ -74,10 +74,21 @@ def components(context, admin):
             "max_bytes": 200 * 1024 * 1024,
         }
     )
+    # The page the Name heading leads to, at the exact query string it
+    # carries, for the in-place re-sort tests (#478).
+    by_name = "/hosted-files?" + library["table"].heading_query("name")
     return {
         "/hosted-files": (
             "text/html",
             render_to_string("stewardship/hosted-files.html", library),
+        ),
+        by_name: (
+            "text/html",
+            render_to_string(
+                "stewardship/hosted-files.html",
+                library
+                | {"table": paginate(rows, {"sort": "name"}, sorting=LIBRARY_SORTING)},
+            ),
         ),
         "/hosted-file-unavailable": (
             "text/html",

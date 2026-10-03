@@ -31,11 +31,11 @@
 <button type="submit">{% translate "Retry report work" %}</button>
 </form></section>
 {% endif %}
-{% if history %}{% translate "Task history pages" as history_label %}{% include "stewardship/table-navigator.html" with table=history label=history_label %}
+{% if history %}{% translate "Task history pages" as history_label %}<div id="{{ history.anchor }}" data-table-region>{% include "stewardship/table-navigator.html" with table=history label=history_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="task-history-caption"><table class="data-table"><caption id="task-history-caption">{% translate "Task history" %}</caption>
 <thead><tr>{% translate "Version" as heading %}{% sort_heading history "version" heading "numeric" %}{% translate "Time" as heading %}{% sort_heading history "time" heading %}{% translate "Action" as heading %}{% sort_heading history "action" heading %}{% translate "State" as heading %}{% sort_heading history "state" heading %}{% translate "Phase and progress" as heading %}{% sort_heading history "progress" heading %}</tr></thead>
 <tbody>{% for event in history.rows %}<tr><td class="numeric">{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{% include "stewardship/task-action.html" with action=event.action %}</td><td>{% include "stewardship/task-state.html" with state=event.state %}</td><td>{{ event.phase_text }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No history on this page. Use the page controls to see other pages of history." %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=history label=history_label %}{% endif %}
+{% include "stewardship/table-navigator.html" with table=history label=history_label %}</div>{% endif %}
 {% if work.latest_run_id and work.latest_run_id != task.id %}<p><a href="{% url 'admin:background_task_page' work.latest_run_id %}">{% translate "View the latest retry" %}</a></p>{% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Task ID" %}</dt><dd>{{ task.id }}</dd>

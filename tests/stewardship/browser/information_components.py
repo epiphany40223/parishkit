@@ -1,5 +1,6 @@
 """Synthetic staff requests rendered through the actual production templates."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
@@ -36,19 +37,10 @@ def components(context, admin):
         notes="Called; awaiting a response.",
     )
     query = InformationQuery(search="Sample", disposition="all")
-    values = dict(
-        metadata=dict(
-            name="Sample campaign",
-            source_generation=3,
-            source_as_of=instant,
-            timezone="America/New_York",
-        ),
-        campaign_id=campaign,
-        query=query,
-        query_fields=query.form_values(),
-        total=51,
-        rows=[item],
-        table=report_table(
+
+    def table(query):
+        """The queue's one-row report table under ``query``'s sort."""
+        return report_table(
             [item],
             number=1,
             size=50,
@@ -62,7 +54,24 @@ def components(context, admin):
             sort=query.sort,
             action=f"/admin/reports/{campaign}/information/",
             sizes=PAGE_SIZES,
+        )
+
+    # What the Family heading's POST form returns: the queue by Family name,
+    # served from a GET path to the in-place re-sort tests (#478).
+    by_name = replace(query, sort="name")
+    values = dict(
+        metadata=dict(
+            name="Sample campaign",
+            source_generation=3,
+            source_as_of=instant,
+            timezone="America/New_York",
         ),
+        campaign_id=campaign,
+        query=query,
+        query_fields=query.form_values(),
+        total=51,
+        rows=[item],
+        table=table(query),
         mutable=True,
         export_timezones=("UTC", "America/Detroit"),
         request_key=UUID(int=83),
@@ -82,6 +91,15 @@ def components(context, admin):
     )
     pages = {
         "/information": ("information", values),
+        "/information-by-name": (
+            "information",
+            values
+            | {
+                "query": by_name,
+                "query_fields": by_name.form_values(),
+                "table": table(by_name),
+            },
+        ),
         "/information-queue-gated": ("information", values | {"mutable": False}),
         "/information-item": ("information", values | {"item": item}),
         "/information-unresolved": (

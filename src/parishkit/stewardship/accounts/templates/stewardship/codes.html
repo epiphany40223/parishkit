@@ -4,6 +4,7 @@
   <h1>{% translate "Family campaign codes" %}</h1>
   <p>{% translate "These are the stable Production codes. Testing email uses separate rehearsal credentials." %}</p>
   {% translate "Family code pages" as navigator_label %}
+  <div id="{{ table.anchor }}" data-table-region>
   {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
   <div class="table-scroll" role="region" aria-labelledby="codes-table-caption" tabindex="0">
   <table class="data-table">
@@ -13,4 +14,5 @@
   </table>
   </div>
   {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+  </div>
 {% endblock %}

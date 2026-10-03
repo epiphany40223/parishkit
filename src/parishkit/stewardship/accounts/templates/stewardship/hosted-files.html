@@ -19,6 +19,7 @@
 <button type="submit">{% translate "Upload" %}</button></form>
 <p>{% blocktranslate with count=count max_files=max_files used=total|filesizeformat limit=max_bytes|filesizeformat %}{{ count }} of {{ max_files }} files, {{ used }} of {{ limit }} used.{% endblocktranslate %}</p>
 {% translate "Hosted file pages" as navigator_label %}
+<div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <form method="post" action="{% url 'admin:hosted_file_delete' %}" data-select-table>
   {% csrf_token %}<input type="hidden" name="action" value="preview">
@@ -60,4 +61,5 @@
   </div>
 </form>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 {% endblock %}

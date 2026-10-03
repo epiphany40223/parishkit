@@ -87,7 +87,9 @@ def next_fields(response):
     """
     body = response.content.decode()
     assert 'href="?' not in body
-    forms = re.findall(r'<form method="post" action="/admin/logs">(.*?)</form>', body)
+    forms = re.findall(
+        r'<form method="post" action="/admin/logs(?:#[a-z-]+)?">(.*?)</form>', body
+    )
     for form in forms:
         if ">Next</button>" in form:
             return dict(

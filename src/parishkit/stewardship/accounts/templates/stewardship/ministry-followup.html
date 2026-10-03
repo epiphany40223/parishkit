@@ -44,7 +44,7 @@
 <nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}
-<form method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}
 <label for="followup-search">{% translate "Search Member or Ministry name" %}</label><input id="followup-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-ministry">{% translate "Ministry" %}</label><select id="filter-ministry" name="ministry"><option value="">{% translate "All my Ministries" %}</option>{% for ministry in ministries %}<option value="{{ ministry.duid }}"{% if query.ministry == ministry.duid|stringformat:'s' %} selected{% endif %}>{{ ministry.name }}{% if ministry.in_campaign is False %} ({% translate "no longer in this campaign" %}){% endif %}</option>{% endfor %}</select>
 <label for="filter-action">{% translate "Request" %}</label><select id="filter-action" name="action"><option value="any">{% translate "Join or leave" %}</option><option value="join"{% if query.action == 'join' %} selected{% endif %}>{% translate "Join" %}</option><option value="leave"{% if query.action == 'leave' %} selected{% endif %}>{% translate "Leave" %}</option></select>
@@ -52,12 +52,13 @@
 <label for="filter-outcome">{% translate "Outcome" %}</label><select id="filter-outcome" name="outcome"><option value="any">{% translate "Any outcome" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}"{% if query.outcome == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <label for="filter-assignee">{% translate "Assigned to" %}</label><select id="filter-assignee" name="assignee"><option value="any">{% translate "Anyone" %}</option><option value="mine"{% if query.assignee == 'mine' %} selected{% endif %}>{% translate "Me" %}</option><option value="unassigned"{% if query.assignee == 'unassigned' %} selected{% endif %}>{% translate "Nobody" %}</option></select>
 <label for="filter-history">{% translate "Request history" %}</label><select id="filter-history" name="history"><option value="current">{% translate "Current requests" %}</option><option value="all"{% if query.history == 'all' %} selected{% endif %}>{% translate "Include replaced and withdrawn requests" %}</option></select>
-<label for="filter-sort">{% translate "Sort order" %}</label><select id="filter-sort" name="sort"><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Oldest first" %}</option><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Member name A–Z" %}</option><option value="ministry"{% if query.sort == 'ministry' %} selected{% endif %}>{% translate "Ministry A–Z" %}</option></select>
+<label for="filter-sort">{% translate "Sort order" %}</label><select id="filter-sort" name="sort" data-table-sync-field><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Oldest first" %}</option><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Member name A–Z" %}</option><option value="ministry"{% if query.sort == 'ministry' %} selected{% endif %}>{% translate "Ministry A–Z" %}</option></select>
 <input type="hidden" name="size" value="{{ table.size_value }}">
 <button type="submit">{% translate "Apply filters" %}</button></form>
 {% comment %}The table sits outside the bulk-assignment form, because its
 sortable headings are forms of their own and forms cannot nest; each row
 checkbox joins that form through its form attribute.{% endcomment %}
+<div id="{{ table.anchor }}" data-table-region>
 {% translate "Follow-up result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry follow-up results' %}"><table>
 <caption>{% translate "Ministry requests and current follow-up" %}</caption><thead><tr>{% if bulk_ministry %}<th scope="col">{% translate "Select" %}</th>{% endif %}{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}<th scope="col">{% translate "Status" %}</th><th scope="col">{% translate "Assigned to" %}</th><th scope="col">{% translate "Last contact" %}</th></tr></thead><tbody>
@@ -68,6 +69,7 @@ checkbox joins that form through its form attribute.{% endcomment %}
 <td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="{% if bulk_ministry %}7{% else %}6{% endif %}">{% translate "No matching requests. Try Any status, or clear the search and Ministry filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 <form method="post" id="followup-assign" action="{% url 'admin:ministry_followup_assign' campaign_id %}">{% csrf_token %}
 {% if bulk_ministry %}<input type="hidden" name="request_key" value="{{ request_key }}"><input type="hidden" name="ministry" value="{{ bulk_ministry }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Assign the selected requests" %}</legend>
