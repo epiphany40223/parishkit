@@ -280,7 +280,7 @@ Scope and dependencies: [OPS-10 work package](../../plans/stewardship/operations
 Specification: [local laptop environment](../../specs/stewardship/local-environment/spec.md).
 
 - [x] OPS-10.01 — PR 0: specify the local environment and record the Lima VM spike.
-- [ ] OPS-10.02 — PR 1: add the LOCAL profile and LOCAL behaviour at every existing profile branch.
+- [x] OPS-10.02 — PR 1: add the LOCAL profile and LOCAL behaviour at every existing profile branch.
 - [ ] OPS-10.03 — PR 2: render the local ingress and topology with Production golden files unchanged.
 - [ ] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
 - [ ] OPS-10.05 — PR 4: add the mail catcher and two-way credential refusals.
@@ -299,4 +299,10 @@ contracts including `test_traceability.py`) passed in
 [run 37156380899](https://github.com/epiphany40223/parishkit/actions/runs/37156380899/job/111300525759);
 the previous head `5b455860` passed every job in
 [run 37153822037](https://github.com/epiphany40223/parishkit/actions/runs/37153822037).
-OPS-10.02 through OPS-10.10 remain open.
+OPS-10.02 is complete in
+[PR #481](https://github.com/epiphany40223/parishkit/pull/481), which added
+`DeploymentProfile.LOCAL` and `behind_proxy`, gave every existing profile
+branch its LOCAL behaviour and pinned the Production golden files; every CI
+job passed in
+[run 37158085479](https://github.com/epiphany40223/parishkit/actions/runs/37158085479).
+OPS-10.03 through OPS-10.10 remain open.
