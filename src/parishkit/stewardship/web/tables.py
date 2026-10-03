@@ -7,7 +7,9 @@ number), ``size`` (rows per page, one of ``PAGE_SIZES`` or ``all``) and
 template include ``stewardship/table-navigator.html`` renders the matching
 controls above and below a table, the ``sort_heading`` template tag renders
 each sortable column heading, and ``ui-v1.js`` adds row selection for tables
-that offer bulk actions (see the admin-portal spec).
+that offer bulk actions and re-sorts or re-pages a table in place, without a
+full page load, when its template wraps it in a ``data-table-region`` element
+with the table's ``anchor`` id (see the admin-portal spec).
 
 A table whose filters are public travels in the query string (``method``
 "get"): navigator and heading controls are plain links and a GET form. A
@@ -187,6 +189,20 @@ class TablePage:
     def sort_name(self):
         """The query parameter holding this table's sort token."""
         return f"{self.prefix}sort"
+
+    @property
+    def anchor(self):
+        """The id of the element wrapping this table's navigators and rows.
+
+        Templates put it on a ``<div data-table-region>`` around the table
+        (see ``table-navigator.html``); every heading and navigator control
+        names it as a URL fragment, so a full page load lands on the table
+        rather than at the top, and ``ui-v1.js`` finds the same element in a
+        fetched page to swap it in place (#478). A prefix keeps the id unique
+        when several tables share one page: ``members_`` → ``members-table``.
+        """
+        prefix = self.prefix.rstrip("_-")
+        return f"{prefix}-table" if prefix else "table"
 
     @property
     def size_value(self):

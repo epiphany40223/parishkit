@@ -78,6 +78,7 @@ from .report_components import components as report_components
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
+from .talent_components import components as talent_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
@@ -295,6 +296,37 @@ def component_origin():
         "name": "Community outreach",
         "active": True,
         "included": True,
+    }
+
+    def ministries_table(parameters, search=""):
+        """The two-row Ministry catalog table under the given sort/page choice,
+        narrowed to the names containing ``search`` (a filter, #484)."""
+        rows = [ministry, ministry | {"duid": 12346, "name": "Lectors"}]
+        return paginate(
+            [row for row in rows if search in row["name"]],
+            parameters,
+            carry=(("q", search), ("state", "all")),
+            sorting=CATALOG_SORTING,
+        )
+
+    def background_table(window, has_next):
+        """One page of the background-task table, 51 tasks in all."""
+        return window_table(
+            window,
+            [BACKGROUND_TASK],
+            has_next,
+            total=(51, False),
+            sorting=TASK_SORTING,
+            sort=TASK_SORTING.default,
+        )
+
+    background = {
+        "work": {
+            "counts": {"active": 1, "queued": 0, "retry_wait": 0, "abandoned": 0},
+            "tasks": [BACKGROUND_TASK],
+        },
+        "states": ("nonterminal", "all", "succeeded", "failed"),
+        "selected_state": "nonterminal",
     }
     branding_asset = {"pk": uuid4(), "label": "large", "width": 1024, "height": 512}
     setup_draft = {
@@ -1373,16 +1405,7 @@ def component_origin():
         (
             "/ministries",
             "ministries",
-            {
-                "table": paginate(
-                    [ministry, ministry | {"duid": 12346, "name": "Lectors"}],
-                    {},
-                    carry=(("state", "all"),),
-                    sorting=CATALOG_SORTING,
-                ),
-                "query": "",
-                "state": "all",
-            },
+            {"table": ministries_table({}), "query": "", "state": "all"},
         ),
         (
             "/ministry-preview",
@@ -1486,27 +1509,52 @@ def component_origin():
         (
             "/background",
             "background",
-            {
-                "work": {
-                    "counts": {
-                        "active": 1,
-                        "queued": 0,
-                        "retry_wait": 0,
-                        "abandoned": 0,
-                    },
-                    "tasks": [BACKGROUND_TASK],
-                },
-                "states": ("nonterminal", "all", "succeeded", "failed"),
-                "selected_state": "nonterminal",
-                "table": window_table(
-                    PageWindow(1, 50),
-                    [BACKGROUND_TASK],
-                    True,
-                    total=(51, False),
-                    sorting=TASK_SORTING,
-                    sort=TASK_SORTING.default,
+            background | {"table": background_table(PageWindow(1, 50), True)},
+        ),
+        # The pages the shared tables' own controls lead to, at the exact
+        # query strings those controls carry (#478): the Ministry table
+        # sorted by name the other way, at 25 rows per page (the navigator's
+        # own form, then each direction of the Ministry heading), and page 2
+        # of the background tasks.
+        *(
+            (
+                "/ministries?" + query,
+                "ministries",
+                {"table": ministries_table(chosen), "query": "", "state": "all"},
+            )
+            for query, chosen in (
+                (ministries_table({}).heading_query("name"), {"sort": "-name"}),
+                (ministries_table({"size": "25"}).query(1), {"size": "25"}),
+                (
+                    ministries_table({"size": "25"}).heading_query("name"),
+                    {"size": "25", "sort": "-name"},
                 ),
-            },
+                (
+                    ministries_table({"size": "25", "sort": "-name"}).heading_query(
+                        "name"
+                    ),
+                    {"size": "25", "sort": "name"},
+                ),
+            )
+        ),
+        # The Ministry filter form's own GET query (#484): a search that keeps
+        # one Ministry and one that matches none.
+        *(
+            (
+                f"/ministries?q={search}&state=all&size=50&sort=name",
+                "ministries",
+                {
+                    "table": ministries_table({}, search),
+                    "query": search,
+                    "state": "all",
+                },
+            )
+            for search in ("Lectors", "Nothing")
+        ),
+        (
+            "/background?" + background_table(PageWindow(1, 50), True).next_query,
+            "background",
+            background | {"table": background_table(PageWindow(2, 50), False)},
         ),
     ):
         responses[path] = (
@@ -1540,6 +1588,7 @@ def component_origin():
     responses.update(send_progress_components(context, admin))
     responses.update(send_history_components(context, admin))
     responses.update(hosted_file_components(context, admin))
+    responses.update(talent_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
@@ -1593,7 +1642,18 @@ def component_origin():
             """Fixture HTTP traffic must not generate private request diagnostics."""
 
         def do_POST(self):
-            """Fixtures never issue external redirects, even to synthetic identities."""
+            """Fixtures never issue external redirects, even to synthetic identities.
+
+            One path answers as an expired session does, with a redirect to
+            the sign-in page, so the in-place table tests (#478) can see a
+            real redirect, which Playwright cannot fulfil from a route on
+            every engine.
+            """
+            if self.path == "/redirect-to-login":
+                self.send_response(303)
+                self.send_header("Location", "/login")
+                self.end_headers()
+                return
             self.send_response(405)
             self.end_headers()
 

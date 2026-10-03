@@ -219,9 +219,7 @@ def test_daily_table_sorts_every_column_on_the_server():
         with pytest.raises(ValueError):
             ReportQuery.parse(QueryDict(f"sort={token}"))
     context = daily_table(chart, presented, ReportQuery.parse(QueryDict("sort=-first")))
-    assert context["heading_sort"] and len(context["columns"]) == len(
-        presented["headings"]
-    )
+    assert len(context["columns"]) == len(presented["headings"])
     html = render_to_string(
         "stewardship/table-navigator.html",
         {"table": context["table"], "label": "Daily table pages"},

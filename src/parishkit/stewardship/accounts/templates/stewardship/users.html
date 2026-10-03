@@ -9,6 +9,12 @@
 
 <h2 id="domain-rules">{% translate "Google Workspace hosted-domain rules" %}</h2>
 <p>{% translate "A domain rule matches only a sign-in whose Google account presents that signed hosted-domain claim. An email address that merely ends with the domain never matches, so personal or consumer accounts must be authorized by exact address. A domain rule can never grant Administrator." %}</p>
+{% comment %}Every table here keeps only its anchor id, so a full load lands on
+it, and none re-sorts in place (#478): the domain and address tables carry the
+autosave role forms users-v1.js wires once at load, and a page where one table
+swaps in place while another loads in full would lose the in-place choice.
+{% endcomment %}
+<div id="{{ domain_table.anchor }}">
 {% translate "Hosted-domain rule pages" as domain_label %}{% include "stewardship/table-navigator.html" with table=domain_table label=domain_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="domain-rules"><table class="data-table">
 <caption>{% translate "Hosted-domain rules" %}</caption><thead><tr>{% translate "Domain" as heading %}{% sort_heading domain_table "domain" heading %}{% translate "Roles" as heading %}{% sort_heading domain_table "roles" heading %}{% translate "Recorded Google accounts this rule authorizes" as heading %}{% sort_heading domain_table "authorized" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading domain_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading domain_table "warnings" heading %}<th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
@@ -24,6 +30,7 @@
 <button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No hosted-domain rules." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=domain_table label=domain_label %}
+</div>
 <form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="domain"><input type="hidden" name="operation" value="set">
 <fieldset><legend>{% translate "Add a hosted-domain rule" %}</legend>
 <label for="new-domain">{% translate "Hosted domain" %}</label> <input id="new-domain" name="identity" maxlength="253" required inputmode="url" autocomplete="off">
@@ -32,6 +39,7 @@
 
 <h2 id="address-rules">{% translate "Exact-address rules" %}</h2>
 <p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader role that came only from a Chairperson is suspended while the parish source no longer confirms that Chairperson. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so. Ticking no role at all is an explicit deny." %}</p>
+<div id="{{ address_table.anchor }}">
 {% translate "Exact-address rule pages" as address_label %}{% include "stewardship/table-navigator.html" with table=address_table label=address_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-rules"><table class="data-table">
 <caption>{% translate "Exact-address rules" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading address_table "email" heading %}{% translate "Rule origin" as heading %}{% sort_heading address_table "origin" heading %}{% translate "Configured roles and each grant's origin" as heading %}{% sort_heading address_table "configured" heading %}{% translate "Roles granted now" as heading %}{% sort_heading address_table "granted" heading %}{% translate "Ministry assignments" as heading %}{% sort_heading address_table "assignments" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading address_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading address_table "warnings" heading %}<th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
@@ -49,6 +57,7 @@
 <button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form>{% if row.seed_only %}<form method="post" action="{% url 'admin:chair_reviews' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="decision" value="keep_role"><input type="hidden" name="identity" value="{{ row.email }}"><button type="submit">{% translate "Keep Ministry leader independently" %}</button></form>{% endif %}</td></tr>
 {% empty %}<tr><td colspan="8">{% translate "No exact-address rules." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=address_table label=address_label %}
+</div>
 <form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="operation" value="set">
 <fieldset><legend>{% translate "Add an exact-address rule" %}</legend>
 <label for="new-address">{% translate "Email address" %}</label> <input id="new-address" name="identity" type="email" maxlength="254" required autocomplete="off">
@@ -64,6 +73,7 @@
 {% if assignment_table.count %}
 <h2 id="domain-assignments">{% translate "Ministry assignments for people authorized by a domain rule" %}</h2>
 <p>{% translate "These people have no exact-address rule. An assignment takes effect only when a Google identity for that address presents a hosted-domain claim whose rule grants Ministry leader. A recorded identity is judged by the claim it really presented, never by its email ending." %}</p>
+<div id="{{ assignment_table.anchor }}">
 {% translate "Domain-authorized assignment pages" as assignment_label %}{% include "stewardship/table-navigator.html" with table=assignment_table label=assignment_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="domain-assignments"><table class="data-table">
 <caption>{% translate "Assignments without an exact-address rule" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading assignment_table "email" heading %}{% translate "Ministry assignments" as heading %}{% sort_heading assignment_table "assignments" heading %}{% translate "In effect now" as heading %}{% sort_heading assignment_table "leading" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading assignment_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading assignment_table "warnings" heading %}</tr></thead><tbody>
@@ -75,11 +85,13 @@
 <td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
 {% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=assignment_table label=assignment_label %}
+</div>
 {% endif %}
 
 {% if review_table.count %}
 <h2 id="chair-reviews">{% translate "Suspended Chairperson assignments awaiting review" %}</h2>
 <p>{% translate "Each row is a Parish source Chairperson assignment the promoted source no longer confirms, with the Member it was confirmed for and why it is suspended. It grants no Ministry scope now. Restore it as an Administrator entry, which the parish source never rewrites, or remove it; either is reviewed before it is saved, and the reason you enter is recorded in the audit log. If the parish source shows the Member as Chairperson again before you decide, the seed reactivates and the review closes by itself." %}</p>
+<div id="{{ review_table.anchor }}">
 {% translate "Suspended assignment pages" as review_label %}{% include "stewardship/table-navigator.html" with table=review_table label=review_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="chair-reviews"><table class="data-table">
 <caption>{% translate "Suspended seeded assignments" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading review_table "email" heading %}{% translate "Ministry" as heading %}{% sort_heading review_table "ministry" heading %}{% translate "Confirmed Member" as heading %}{% sort_heading review_table "member" heading %}{% translate "Why suspended" as heading %}{% sort_heading review_table "reason" heading %}{% translate "Suspended since" as heading %}{% sort_heading review_table "opened" heading %}{% translate "Current source" as heading %}{% sort_heading review_table "current" heading %}{% translate "Roles granted now" as heading %}{% sort_heading review_table "granted" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading review_table "last_login" heading %}<th scope="col">{% translate "Decide" %}</th></tr></thead><tbody>
@@ -99,11 +111,13 @@
 {% if not row.manual %}<button type="submit" name="decision" value="restore">{% translate "Review restore as Administrator entry" %}</button> {% endif %}<button type="submit" name="decision" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
 {% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=review_table label=review_label %}
+</div>
 {% endif %}
 
 <h2 id="chair-suggestions">{% translate "Chairperson suggestions from the parish source" %}</h2>
 {% if suggestion_table.count %}
 <p>{% translate "Each row is a current Chairperson of an active Ministry in the promoted parish source, with the valid address the source records. A suggestion grants nothing. The login rule shown beside it is what the evaluator grants the address now, a hosted-domain rule only to a Google account presenting its claim; the assignment is what is configured for that Ministry and whether it is in force. Select suggestions and review them to confirm each as an exact-address rule with a Chairperson-seeded Ministry leader grant and a seeded assignment; an address used by several active Members needs its Member chosen." %}</p>
+<div id="{{ suggestion_table.anchor }}">
 {% translate "Chairperson suggestion pages" as suggestion_label %}{% include "stewardship/table-navigator.html" with table=suggestion_table label=suggestion_label %}
 <form method="post" action="{% url 'admin:chair_confirmations' %}" data-select-table>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 <div class="bulk-bar">{% include "stewardship/table-selection.html" %}<button type="submit" data-bulk-action>{% translate "Review selected suggestions" %}</button></div>
@@ -121,6 +135,7 @@
 {% endfor %}</tbody></table></div>
 </form>
 {% include "stewardship/table-navigator.html" with table=suggestion_table label=suggestion_label %}
+</div>
 {% else %}
 <p>{% translate "The promoted parish source records no current Chairperson of an active Ministry with a valid address." %}</p>
 {% endif %}

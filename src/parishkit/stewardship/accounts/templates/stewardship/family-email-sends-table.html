@@ -2,6 +2,7 @@
   The Family email sends table and its page controls (#432), split out so
   it can be rendered and tested without the Admin page chrome.
 {% endcomment %}{% translate "Family email send pages" as navigator_label %}
+<div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="send-table-caption">
 <table class="data-table">
@@ -40,3 +41,4 @@
 </table>
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>

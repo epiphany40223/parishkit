@@ -84,15 +84,25 @@ def components(context, admin):
     )
     detail = _table(values["rows"], query, 51, ministry=9, action=root + "join/")
     history = MinistryQuery(history="all")
+    summary = values | dict(ministry_id=None, action=None, rows=[], report_url=root)
+    # The summary by Ministry name the other way, with a second Ministry on
+    # the page: what its heading's POST form returns, served from a GET path
+    # to the in-place re-sort tests (#478).
+    descending = MinistryQuery(search="Example", sort="name_desc")
+    more = [dict(values["summaries"][0], duid=10, name="Another Ministry")]
+    summaries = more + values["summaries"]
     pages = {
         "/ministry-detail": values | dict(table=detail),
-        "/ministry-summary": values
+        "/ministry-summary": summary
         | dict(
-            ministry_id=None,
-            action=None,
-            rows=[],
-            report_url=root,
             table=_table(values["summaries"], query, 1, ministry=None, action=root),
+        ),
+        "/ministry-summary-desc": summary
+        | dict(
+            query=descending,
+            export_fields=descending.form_values(),
+            summaries=summaries,
+            table=_table(summaries, descending, 2, ministry=None, action=root),
         ),
         "/ministry-history": values
         | dict(

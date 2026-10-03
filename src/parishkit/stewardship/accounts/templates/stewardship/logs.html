@@ -5,7 +5,7 @@
 {% aboutpage "system-logs" %}<p>{% translate "What the system did (operational entries) and who changed what (the audit trail), together, newest first unless you sort by Time the other way. Entries hold identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
 <p>{% translate "Times show to the second in your computer's time zone, with its difference from UTC, when your browser allows it, otherwise in UTC. The From and Through dates are whole days in UTC. Audit records have no level, so the level choices apply only to operational entries; use Source to include or leave out audit records." %}</p>
 <p>{% translate "Each entry's type is followed by a short explanation. An actor shown as Background worker is one of the system's own processes, not a person. The Related column lists everything recorded for the same task or request, the same actor or the same campaign, and opens a task's own page. Identifiers are under Technical details." %}</p>{% endaboutpage %}
-<form method="post" action="{% url 'admin:logs' %}" class="log-filters">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:logs' %}" class="log-filters">{% csrf_token %}
 <input type="hidden" name="applied" value="yes">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div class="filter-bar">
@@ -28,12 +28,13 @@
 </div></details></form>
 <details class="export-panel"><summary>{% translate "Download these log entries" %}</summary>
 <p>{% translate "Downloads the entries that match the filters above, newest first, starting from the newest entry whatever page you are on. A download holds at most the newest 10,000 entries; choose a narrower date range for older ones. The file has the same detail this page shows." %}</p>
-<form method="post" action="{% url 'admin:logs_export' %}" class="filter-bar" data-submit-repeatable>{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:logs_export' %}" class="filter-bar" data-submit-repeatable>{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <div class="short"><label for="log-export-format">{% translate "File format" %}</label><select id="log-export-format" name="format"><option value="csv">{% translate "CSV (spreadsheet)" %}</option><option value="jsonl">{% translate "JSON Lines" %}</option></select></div>
 <div class="short"><label for="log-export-timezone">{% translate "Times in" %}</label><select id="log-export-timezone" name="timezone" data-browser-timezone><option value="UTC">UTC</option></select></div>
 <button type="submit">{% translate "Download" %}</button></form></details>
 <p class="help">{% translate "Pages show the log as it was when you applied these filters; entries recorded since then appear when you apply the filters again." %}</p>
-{% if depth_limited %}<p class="notice" data-depth-limited>{% translate "Paging reaches only the first 10,000 entries in this order, so the last of those pages is shown. Choose a narrower date range, or sort by Time the other way, to see the rest." %}</p>{% endif %}
+<div id="log-depth-notice" data-table-sync>{% if depth_limited %}<p class="notice" data-depth-limited>{% translate "Paging reaches only the first 10,000 entries in this order, so the last of those pages is shown. Choose a narrower date range, or sort by Time the other way, to see the rest." %}</p>{% endif %}</div>
+<div id="{{ table.anchor }}" data-table-region>
 {% translate "Log pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Log entries' %}"><table class="data-table log-table">
 <caption>{% translate "Operational and audit entries" %}</caption><thead><tr>{% translate "Time" as heading %}{% sort_heading table "time" heading %}<th scope="col">{% translate "Level" %}</th><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Actor" %}</th><th scope="col">{% translate "Related" %}</th><th scope="col">{% translate "Recorded detail" %}</th></tr></thead><tbody>
@@ -51,4 +52,5 @@
 <td>{% if row.detail_rows %}<dl>{% for key,value in row.detail_rows %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}{% translate "None" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching entries. Try a wider date range, more levels, or clearing the type and identifier filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 {% endblock %}

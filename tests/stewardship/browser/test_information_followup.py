@@ -33,6 +33,9 @@ def test_staff_queue_detail_history_and_accessibility(
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
     assert "Private" not in sent.value.url and "?" not in sent.value.url
+    # Let the submission finish (in place or not) before the next navigation,
+    # which it would otherwise interrupt.
+    visible(page.get_by_text("Filtered"))
     for path in (
         "/information",
         "/information-item",
