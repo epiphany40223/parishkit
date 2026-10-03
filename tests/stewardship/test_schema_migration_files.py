@@ -30,6 +30,9 @@ FROZEN = {
     "0002_family_engagement.sql": (
         "d029ac9aa4a5e7d6be742e4497e612c24bbffa93d6f3ce51d7d443a60c8d050a"
     ),
+    "0003_refresh_tick_times.sql": (
+        "906afe7be0ad16ada790a814adfa0ea83893c76956c75eef17900f4e6d286c02"
+    ),
 }
 
 

@@ -96,11 +96,14 @@ separation remains an OPS-02/OPS-04 prerequisite before deployment.
 ## Nightly source cadence extension
 
 The Phase 2 ParishSoft editor emits `source-cadence-v8` when public integration
-settings contain `nightly_time`. The setting uses parish-local `HH:MM`; its
-scheduling and default behavior remain owned by the
+settings contain any of `nightly_time`, `full_refresh`, `full_refresh_times`
+or `delta_refresh`. The times use parish-local `HH:MM`, the list is sorted,
+unique and names the nightly time; their scheduling and default behavior
+remain owned by the
 [full-cycle specification](../specs/stewardship/background-processing/spec.md#full-cycle).
-Validation delegates to the frozen content/policy/campaign rules after checking
-only the added field. Older schema names continue to reject that field.
+Every one is optional, so earlier v8 documents stay valid. Validation
+delegates to the frozen content/policy/campaign rules after checking only the
+added fields. Older schema names continue to reject those fields.
 
 Ordinary edits, additive offline recovery and fingerprint-only selection retain
 distinct v8 request discriminators. Provider authentication scope excludes

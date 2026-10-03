@@ -10,7 +10,6 @@ from parishkit.stewardship.accounts.configuration_schema import (
     schema_for,
     validator_for,
 )
-from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.accounts.integration_selection import (
     authentication_scope,
     integration_records,
@@ -69,12 +68,6 @@ def test_nightly_time_upgrade_preserves_base_and_credential_scope(value):
     for old in ("foundation-policy-v2", "campaign-content-v5"):
         with pytest.raises(ConfigError):
             validator_for(old)(candidate.document())
-    form = IntegrationForm(
-        "parishsoft",
-        {"base_digest": base.digest, "organization_id": "12345", "nightly_time": value},
-    )
-    assert form.is_valid(), form.errors
-    assert form.public_settings()["nightly_time"] == value
 
 
 @pytest.mark.parametrize(
@@ -173,23 +166,62 @@ def test_unknown_full_refresh_frequency_fails_before_persistence(frequency):
         build_candidate(base, patch, candidate_id=uuid4())
 
 
-def test_form_offers_three_frequencies_with_daily_default():
-    """An omitted choice keeps the documented once-a-day default."""
-    form = IntegrationForm(
-        "parishsoft", {"base_digest": "a" * 64, "organization_id": "12345"}
-    )
-    assert form.is_valid(), form.errors
-    assert form.public_settings()["full_refresh"] == "daily"
-    form = IntegrationForm(
-        "parishsoft",
-        {
-            "base_digest": "a" * 64,
-            "organization_id": "12345",
-            "full_refresh": "hourly",
-        },
-    )
-    assert form.is_valid() and form.public_settings()["full_refresh"] == "hourly"
-    assert not IntegrationForm(
-        "parishsoft",
-        {"base_digest": "a" * 64, "organization_id": "1", "full_refresh": "weekly"},
-    ).is_valid()
+def schedule_patch(base, **settings):
+    """A complete ParishSoft settings replacement with the given schedule keys."""
+    patch = cadence_patch(base, "02:00")
+    patch[0]["values"]["settings"] = {"organization_id": "12345"} | settings
+    return patch
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"full_refresh_times": ["02:00"]},
+        {"nightly_time": "02:00", "full_refresh_times": ["02:00", "12:00", "17:30"]},
+        {"nightly_time": "08:00", "full_refresh_times": ["08:00", "20:00"]},
+        {"full_refresh_times": [f"{hour:02d}:00" for hour in range(2, 10)]},
+        {"delta_refresh": "quarter_hour"},
+        {"delta_refresh": "hourly"},
+        {"delta_refresh": "off", "full_refresh_times": ["02:00", "14:00"]},
+    ],
+)
+def test_full_refresh_times_and_delta_cadence_are_public_cadence(settings):
+    """The new optional settings select the cadence schema and are never key scope."""
+    base = base_version()
+    patch = schedule_patch(base, **settings)
+    assert default_schema(base, patch) == REQUEST_SCHEMA
+    candidate = build_candidate(base, patch, candidate_id=uuid4()).candidate
+    assert schema_for(candidate.document()) == SCHEMA
+    stored = candidate.document()["sections"]["integrations"][0]["values"]["settings"]
+    assert stored == {"organization_id": "12345"} | settings
+    assert authentication_scope(
+        "parishsoft", integration_records(candidate.document())
+    ) == {"organization_id": 12345}
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"full_refresh_times": []},
+        {"full_refresh_times": "02:00"},
+        {"full_refresh_times": ["12:00", "02:00"]},
+        {"full_refresh_times": ["02:00", "02:00"]},
+        {"full_refresh_times": ["02:00", "2:30"]},
+        {"full_refresh_times": ["02:00", 1230]},
+        {"full_refresh_times": [f"{hour:02d}:00" for hour in range(2, 11)]},
+        # The nightly time (02:00 by default) must be the earliest listed time.
+        {"full_refresh_times": ["03:00"]},
+        {"nightly_time": "04:00", "full_refresh_times": ["02:00", "12:00"]},
+        {"nightly_time": "12:00", "full_refresh_times": ["02:00", "12:00"]},
+        {"full_refresh_times": ["01:00", "02:00"]},
+        {"delta_refresh": "weekly"},
+        {"delta_refresh": ""},
+        {"delta_refresh": None},
+        {"delta_refresh": "Hourly"},
+    ],
+)
+def test_malformed_time_lists_and_delta_cadences_fail_before_persistence(settings):
+    """Only sorted unique canonical lists naming the nightly time are stored."""
+    base = base_version()
+    with pytest.raises(ConfigError):
+        build_candidate(base, schedule_patch(base, **settings), candidate_id=uuid4())

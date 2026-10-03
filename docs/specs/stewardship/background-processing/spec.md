@@ -564,9 +564,23 @@ database lock while fetching data or awaiting human confirmation.
 
 ### Delta cycle
 
-Every 15 minutes, the system calls the supported v2 Family changes feed using a
-durable watermark. Because that feed is not a complete Member/Ministry/giving
-change stream, it is an optimization, not the sole correctness path.
+Every 15 minutes (or once an hour, or not at all, as the ParishSoft
+integration's quick-update setting says; see the [full cycle](#full-cycle)),
+the system calls the supported v2 Family changes feed using a durable
+watermark. Because that feed is not a complete Member/Ministry/giving change
+stream, it is an optimization, not the sole correctness path.
+
+That feed, `families/change/list` (FamilyChangeList), logs changes to a fixed
+set of Family-level contact and registration fields only: address, phone,
+email, registration status and registered parish. It does not report Family
+creation, Family group or participation status, Send No Mail, Members or
+Member emails, ministries or giving, so those reach the application only
+through a full refresh. In the first week of production every delta came back
+empty while such edits were made in ParishSoft
+([#465](https://github.com/epiphany40223/parishkit/issues/465); the
+[API analysis](../../../parishsoft-api-analysis.md) records the endpoint's
+contract). Administrators are told that ParishSoft changes appear after the
+next full refresh or **Refresh now**.
 
 For each delta indication, reload every affected Family and related Members/
 contacts available through supported endpoints. If the feed/cursor is
@@ -580,18 +594,20 @@ delta loader can prove a complete replacement.
 Under send load a delta takes about five minutes and halves the Family send
 rate, because its promotion and population rebuild compete with the send for
 the global work-order lock (#440). So while an initial invitation or reminder
-is being sent, the scheduler skips the 15-minute slots. A send is in progress
+is being sent, the scheduler skips the delta slots, and likewise a
+[scheduled full refresh](#full-cycle) at any configured time other than the
+nightly one (#465), which competes for the same lock. A send is in progress
 while at least 10 pieces of its work remain, counting messages pending (not
 paused), waiting to retry or being submitted and preparation tasks queued,
 running or waiting to retry, read from durable state with no lock taken.
 While Production delivery is paused only messages count, so a paused send
 keeps its deltas.
-The scheduled [full refresh](#full-cycle) and every
+The nightly full refresh, an hourly or quarter-hour full refresh and every
 [manual request](#manual-request) still run.
 
 A skipped slot creates nothing: no command, task or failure. Each scheduler
 loop decides again, so the first loop after the send creates the current
-slot's delta, which catches up. The scheduler logs `source_refresh_held` at
+slots' refreshes, which catch up. The scheduler logs `source_refresh_held` at
 INFO once per skipped slot, correlated to the slot's command identity.
 
 Skipping is bounded. While a send is in progress and deltas are actually
@@ -609,17 +625,34 @@ unchanged.
 
 ### Full cycle
 
-A scheduled full refresh runs at an Admin-selected frequency: once a day at an
-Admin-configurable local time (the default, at 2:00 a.m.), once an hour on the
-UTC hour, or every 15 minutes on UTC quarter hours, when it replaces the delta
-cycle. It also runs on initial setup and manual request. Scheduled refreshes
+A scheduled full refresh runs at an Admin-selected frequency: at one to eight
+Admin-configurable parish-local times a day (the default, 2:00 a.m. alone),
+once an hour on the UTC hour, or every 15 minutes on UTC quarter hours, when
+it replaces the delta cycle. The integration's `full_refresh_times` lists the
+daily times, sorted and unique; the earliest, also stored as `nightly_time`,
+is the nightly refresh, and the others are daytime refreshes that
+[wait for a bulk Family send](#deltas-wait-for-a-bulk-family-send). The
+scheduler always chooses the latest configured time that has fallen due,
+today or yesterday, resolved through the shared daylight-saving rules; a
+scheduled full tick records that time, and the database's refresh-tick guard
+accepts only a listed time (#465). The delta cycle's own cadence,
+`delta_refresh`, is every 15 minutes (the default), hourly or off; the
+settings page refuses a cadence whose longest gap between refreshes exceeds
+the deployment's source-staleness window (30 minutes by default), since the
+[staleness alarm](#critical-errors-and-notification) would otherwise sound
+between refreshes, and recommends keeping the default. A held daytime full
+refresh still runs mid-send once the send outlasts the hold, which ends 30
+minutes before the staleness allowance runs out (about two hours after the
+current source was read, with the default window). A full refresh also runs
+on initial setup and manual request. Scheduled refreshes
 never overlap: the mutation lease serializes execution and a waiting full load
 absorbs later requests. The Admin home page, the ParishSoft settings page and
 the manual refresh page show the last successful full refresh, a newer failed
-one, whether one is running, the last 15-minute update and when the next
+one, whether one is running, the last incremental update and when the next
 scheduled full refresh is due. A failure notice links to the failed run's task
-details, says whether the 15-minute updates are still succeeding, says that
-Ministry rosters, Ministries and giving wait for the next full refresh, and
+details, says whether the incremental updates are still succeeding, says that
+new Families, status and Send No Mail changes, Members, Ministry rosters,
+Ministries and giving wait for the next full refresh, and
 disappears once a later full refresh succeeds. Admins who may change the
 configuration also get a "Run a full refresh now" button there, which submits
 the [manual refresh](../admin-portal/spec.md#manual-parishsoft-refresh). A scan that shifted between

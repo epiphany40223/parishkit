@@ -773,6 +773,18 @@ JSON line with the counts and records them in the System logs. It can be
 repeated: a second run writes nothing but its log entry. Form progress before
 the upgrade was never retained and is not reconstructed.
 
+### Full refresh times (#465)
+
+The release that lets Administrators list the ParishSoft full refresh times
+is a schema change without a grant change: with the
+[scripted upgrade](#scripted-upgrade) set `STEWARDSHIP_SCHEMA_CHANGE=1`; the
+upgrade check reports `f` and step 4 runs migration
+(`stewardship_source.0002_refresh_tick_times` replaces the refresh-tick guard
+and refuses to commit unless the new body is installed) and then
+`database-grants`, which changes nothing. No other step is needed: the
+nightly refresh keeps its time until an Administrator lists more on the
+ParishSoft integration page.
+
 ### Worker connection limit (#339)
 
 The release that runs ParishSoft source work on the worker's second process
@@ -883,7 +895,13 @@ What to watch after deploying it:
 ## Rollback
 
 An application-only rollback is possible only when the new release changed
-neither the schema nor any runtime grant:
+neither the schema nor any runtime grant. Every release that carries a
+forward migration (the first was v1.2.0 with
+`stewardship_campaigns.0002_family_engagement`, #477; the next,
+`stewardship_source.0002_refresh_tick_times`, #465) rules it out: the
+previous image refuses a database whose applied migrations it does not know,
+so roll back by database restore (below) or roll forward with a fix. For a
+release that qualifies:
 stop the online services, run `retarget-image` with the previous digest (in
 that previous image), pull, put the previous release's static tree back
 *in place*, as step 5 refreshes it (empty `cache/static` and copy the kept
