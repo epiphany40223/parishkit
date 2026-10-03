@@ -69,7 +69,7 @@ def test_admin_integration_and_schedule_hints():
     """Regular Admin forms shorten their longest help the same way."""
     refresh = IntegrationForm("parishsoft").fields["full_refresh"]
     assert "never overlap" in str(refresh.tip)
-    assert "every 15 minutes" in str(refresh.help_text)
+    assert "few minutes" in str(refresh.help_text)
     key = InlineCredentialForm("slack").fields["candidate"]
     assert "xoxb-" in str(key.tip)
     assert str(key.help_text) == "Leave blank to keep the current key."

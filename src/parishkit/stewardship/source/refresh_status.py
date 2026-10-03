@@ -4,9 +4,9 @@ A successful full load is a promoted full snapshot; this includes the load that
 finished setup. A failed full refresh leaves its task failed or cancelled,
 often before any snapshot exists, so failures come from the refresh tasks.
 
-The 15-minute incremental ("delta") refreshes are reported beside it: a failed
-nightly full reload is far less alarming when the incremental updates are
-still arriving, and the banner says which data waits for the next full reload.
+The incremental ("delta") refreshes are reported beside it: a failed full
+reload is far less alarming when the incremental updates are still arriving,
+and the banner says which data waits for the next full reload.
 """
 
 from dataclasses import dataclass
@@ -15,7 +15,13 @@ from uuid import UUID
 
 from django.db import connection
 
-from .cadence import FREQUENCIES, next_full_at
+from .cadence import (
+    DELTA_REFRESHES,
+    FREQUENCIES,
+    covered_by_full,
+    next_full_at,
+    refresh_settings,
+)
 
 
 @dataclass(frozen=True)
@@ -33,12 +39,32 @@ class FullRefreshStatus:
     # The configured schedule, when known: "daily", "hourly" or "quarter_hour".
     frequency: str | None = None
     next_full_at: datetime | None = None
+    # The configured local full-refresh times (daily frequency) and the
+    # incremental cadence: "quarter_hour", "hourly" or "off" (#465).
+    full_refresh_times: tuple | None = None
+    delta_refresh: str | None = None
+
+    @property
+    def has_deltas(self):
+        """Whether separate incremental updates run under this schedule.
+
+        "off" turns them off; otherwise the scheduler's own rule says when
+        full refreshes cover every delta slot.
+        """
+        return self.delta_refresh != "off" and not covered_by_full(
+            self.frequency, self.delta_refresh
+        )
+
+    @property
+    def nightly_only(self):
+        """Whether the schedule is one full refresh a day, at the nightly time."""
+        return self.frequency == "daily" and len(self.full_refresh_times or ()) <= 1
 
     @property
     def deltas_healthy(self):
         """Incremental updates arrive; unknown (None) before any has run."""
-        if self.frequency == "quarter_hour":
-            # Every run is full, so there are no separate incremental updates.
+        if not self.has_deltas:
+            # Every run is full, or deltas are off: no incremental updates.
             return None
         if self.delta_failed_at is not None:
             return False
@@ -46,7 +72,7 @@ class FullRefreshStatus:
 
 
 def refresh_schedule(configuration):
-    """Read the full-refresh frequency, time and zone from applied settings.
+    """Read the full-refresh schedule and zone from applied settings.
 
     Uses only the in-memory canonical document plus the already-loaded current
     campaign, so the Admin home page's query budget is unchanged. Returns None
@@ -64,21 +90,19 @@ def refresh_schedule(configuration):
     )
     if record is None:
         return None
-    settings = record.get("settings", {})
+    settings = refresh_settings(record.get("settings", {}))
     campaign = configuration.current_campaign
     timezone = (
         campaign.active_configuration.timezone
         if campaign is not None
         else sections["parish"][0]["values"]["timezone"]
     )
-    frequency = settings.get("full_refresh", "daily")
-    if frequency not in FREQUENCIES:
+    if (
+        settings["frequency"] not in FREQUENCIES
+        or settings["delta_refresh"] not in DELTA_REFRESHES
+    ):
         return None
-    return {
-        "timezone": timezone,
-        "nightly_time": settings.get("nightly_time", "02:00"),
-        "frequency": frequency,
-    }
+    return {"timezone": timezone, **settings}
 
 
 def full_refresh_status(schedule=None, now=None):
@@ -119,10 +143,18 @@ def full_refresh_status(schedule=None, now=None):
     latest = max((t for t in (delta_succeeded_at, succeeded_at) if t), default=None)
     if delta_failed_at is not None and latest is not None and delta_failed_at < latest:
         delta_failed_at = None
-    frequency = next_due = None
+    frequency = next_due = times = delta_refresh = None
     if schedule is not None and now is not None:
         frequency = schedule["frequency"]
-        next_due = next_full_at(now=now, **schedule)
+        times = tuple(schedule["full_refresh_times"])
+        delta_refresh = schedule["delta_refresh"]
+        next_due = next_full_at(
+            now=now,
+            timezone=schedule["timezone"],
+            nightly_time=schedule["nightly_time"],
+            frequency=frequency,
+            full_refresh_times=times,
+        )
     return FullRefreshStatus(
         succeeded_at,
         failed_at,
@@ -132,4 +164,6 @@ def full_refresh_status(schedule=None, now=None):
         delta_failed_at,
         frequency,
         next_due,
+        times,
+        delta_refresh,
     )
