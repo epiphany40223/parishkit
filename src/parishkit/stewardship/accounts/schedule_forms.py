@@ -315,12 +315,38 @@ class ScheduleForm(forms.Form):
         return json.dumps(FIELDS)
 
 
+def schedule_order(row):
+    """Sort key showing saved schedules in the order they send (#448).
+
+    Dated schedules come first by local date and time; at the same moment the
+    Initial invitation leads. Schedules without a date (a weekday cadence)
+    follow, by weekday and time. The saved ID breaks any remaining tie, so
+    the order never changes between page loads.
+    """
+    values = row["values"]
+    dated = bool(values.get("date"))
+    return (
+        not dated,
+        values.get("date") or "",
+        "" if dated else str(values.get("weekday") or ""),
+        values.get("time") or "",
+        values.get("kind") != "initial",
+        str(row["id"]),
+    )
+
+
 class ScheduleSet(BaseFormSet):
     """The server owns saved IDs; missing rows never imply schedule removal."""
 
     def __init__(self, *args, previous, templates, campaign_id, campaign, **kwargs):
-        """Retain complete saved records for identity and legacy-template comparison."""
-        self.previous, self.templates = list(previous), list(templates)
+        """Retain complete saved records for identity and legacy-template comparison.
+
+        Saved rows are shown in sending order. Each form carries its saved ID,
+        and the same deterministic order is used for the GET and the POST, so
+        sorting never mixes up which form edits which schedule.
+        """
+        self.previous = sorted(previous, key=schedule_order)
+        self.templates = list(templates)
         self.campaign_id, self.campaign = str(campaign_id), campaign
         initial = [row["values"] | {"id": row["id"]} for row in self.previous]
         super().__init__(*args, initial=initial, **kwargs)

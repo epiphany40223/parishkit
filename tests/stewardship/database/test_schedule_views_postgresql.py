@@ -9,6 +9,7 @@ from django.db import connection
 from parishkit.stewardship.accounts import schedule_views
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.accounts.schedule_forms import schedule_order
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 from parishkit.stewardship.deployment import ServiceRole
@@ -51,13 +52,20 @@ def setup(store):
 
 
 def fields(store, campaign, *, editable=True):
-    """Post every server-selected logical ID, preserving explicit row order."""
+    """Post every server-selected logical ID in the order the page shows them.
+
+    The page lists saved schedules in sending order (#448), and a browser
+    posts its rows in that order, so the test does the same.
+    """
     document = store.active().document()
-    rows = [
-        row
-        for row in document["sections"].get("schedules", [])
-        if row["values"]["campaign_id"] == str(campaign.pk)
-    ]
+    rows = sorted(
+        (
+            row
+            for row in document["sections"].get("schedules", [])
+            if row["values"]["campaign_id"] == str(campaign.pk)
+        ),
+        key=schedule_order,
+    )
     values = data_for(rows) | {"base_digest": store.active().digest}
     if editable:
         values.update(
