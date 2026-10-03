@@ -5,7 +5,7 @@ import socket
 import sys
 from urllib.parse import urlsplit
 
-from .deployment import DeploymentProfile, _origin
+from .deployment import LOCAL_PUBLIC_ORIGIN, DeploymentProfile, _origin
 
 
 def resolve(payload):
@@ -13,10 +13,13 @@ def resolve(payload):
     if type(payload) is not dict or set(payload) != {"origin", "profile"}:
         raise ValueError("Invalid origin check.")
     profile = DeploymentProfile(payload["profile"])
+    canonical = _origin(payload["origin"], profile)
     if profile is DeploymentProfile.LOCAL:
-        # Refused here as well as in the parent (OPS-10.04 adds the rule).
-        raise ValueError("Local origin verification is not yet supported.")
-    origin = urlsplit(_origin(payload["origin"], profile))
+        # The parent does not run the helper for LOCAL; should one ever be
+        # asked, the same rule applies here on its own: exactly the one local
+        # origin, with no resolver call for a name that is not public.
+        return canonical == LOCAL_PUBLIC_ORIGIN
+    origin = urlsplit(canonical)
     return bool(
         socket.getaddrinfo(
             origin.hostname,
