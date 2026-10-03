@@ -138,6 +138,10 @@ def test_reload_and_cancel_never_restore_a_private_draft(page, component_origin)
     prepare(
         page, component_origin, submit=lambda route: submissions.append(route.request)
     )
+    # Firefox shows the beforeunload warning only after a real user gesture.
+    # The "Begin reviewing" click used to provide it; since the form opens by
+    # itself (#466), click the field as a Family would before typing.
+    show(page, page.get_by_label("First name (required)")).click()
     show(page, page.get_by_label("First name (required)")).fill(
         "Unsubmitted private edit"
     )
