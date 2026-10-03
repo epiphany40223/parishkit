@@ -276,6 +276,7 @@ def test_public_lifecycle_content_uses_only_public_substitutions(
         "<p>Lifecycle instructions for <strong>{{ parish_name }}</strong>.</p>"
         "<p>{{ campaign_name }}: {{ campaign_start }} – {{ campaign_end }}</p>"
         "<p>Private [{{ family_name }}][{{ family_member_names }}]"
+        "[{{ head_salutation }}][{{ all_family_member_names }}]"
         "[{{ family_code }}][{{ family_url }}]</p>"
     )
     select_content(harness, slot, html)
@@ -290,7 +291,7 @@ def test_public_lifecycle_content_uses_only_public_substitutions(
         assert result.status_code == 200, result.content
         body = result.content.decode()
         assert "Lifecycle instructions for <strong>" in body
-        assert "Private [][][][]" in body
+        assert "Private [][][][][][]" in body
         assert "valid@example.org" not in body and "family-code" not in body
         assert ("starts on" if slot == "pre_start" else "has ended") in body
     select_content(harness, slot, "<p>Replacement lifecycle instructions</p>")
@@ -322,6 +323,26 @@ def remove_content(harness, slot):
         },
     ]
     assert change(store, version, uuid4(), patch).state == "applied"
+
+
+def test_family_pages_name_the_heads_and_every_member(response_service):
+    """A Family page fills the name placeholders from the source Members (#471).
+
+    The fixture household has one listed Member, its head, so every name
+    placeholder names that Member; the older name equals head_salutation.
+    """
+    harness = response_service
+    select_content(
+        harness,
+        "welcome",
+        "<p>[{{ head_salutation }}][{{ family_member_names }}]"
+        "[{{ all_family_member_names }}][{{ family_name }}]</p>",
+    )
+    with web_login():
+        form = load_form(harness)
+    assert form["content"]["welcome"] == (
+        "<p>[Member Example][Member Example][Member Example][Example]</p>"
+    )
 
 
 def test_closing_page_shows_only_with_visible_content(response_service):

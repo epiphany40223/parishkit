@@ -118,9 +118,9 @@ def request_sample(
             ),
             {
                 "subject": "{{ parish_name }} readiness test",
-                "html": "<p>{{ family_member_names }}, this is a readiness sample "
+                "html": "<p>{{ head_salutation }}, this is a readiness sample "
                 "for {{ campaign_name }}.</p>",
-                "text": "{{ family_member_names }}, this is a readiness sample "
+                "text": "{{ head_salutation }}, this is a readiness sample "
                 "for {{ campaign_name }}.",
             },
         )

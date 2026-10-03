@@ -282,6 +282,15 @@ def test_mail_source_is_current_and_household_scoped(response_service):
     assert result.recipients.deliverable == ("valid@example.org",)
     assert result.active_members >= 1
     assert "valid@example.org" not in repr(result)
+    # The fixture household's one listed Member is its head, so every name
+    # placeholder names that Member, as the Family page does (#471).
+    assert result.names == {
+        "family_name": "Example",
+        "head_salutation": "Member Example",
+        "family_member_names": "Member Example",
+        "all_family_member_names": "Member Example",
+    }
+    assert "Member Example" not in repr(result)
 
 
 def claim(ticket, owner):

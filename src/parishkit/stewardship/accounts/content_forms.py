@@ -352,7 +352,11 @@ def default_content(campaign_id, campaign):
 SAMPLE_ORIGIN = "https://stewardship.example.invalid"
 SAMPLE_FAMILY = {
     "family_name": "Sample",
+    # Two heads and one more Member, as the name placeholders distinguish them
+    # (family_member_names is the older name of head_salutation; #471).
+    "head_salutation": "Alex and Sam Sample",
     "family_member_names": "Alex and Sam Sample",
+    "all_family_member_names": "Alex, Sam and Jordan Sample",
     "family_code": "ABCDEFGH",
     "family_url": SAMPLE_ORIGIN + "/access/sample-household-link",
     "generic_family_url": SAMPLE_ORIGIN + "/",

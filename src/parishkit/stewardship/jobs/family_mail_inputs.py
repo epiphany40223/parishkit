@@ -12,7 +12,7 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.families import FamilyRecipients, family_recipients
 from parishkit.stewardship.source.family_names import (
     family_display_name,
-    heads_salutation_name,
+    name_placeholders,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshots import read_snapshot
@@ -34,14 +34,36 @@ class FamilyMailSource:
     snapshot_id: UUID
     generation: int
     recipients: FamilyRecipients = field(repr=False)
-    family_name: str = field(repr=False)
-    member_names: str = field(repr=False)
+    # The name placeholders (family_names.name_placeholders): family_name,
+    # head_salutation, family_member_names and all_family_member_names.
+    names: dict[str, str] = field(repr=False)
     active_members: int
 
 
-def _head(values):
-    """A head as ``heads_salutation_name`` reads one: stable source names only."""
+def _name(values):
+    """A Member as ``heads_salutation_name`` reads one: stable source names only."""
     return {"first": values.get("firstName"), "last": values.get("lastName")}
+
+
+def household_names(family, members):
+    """The name placeholders of one Family from its snapshot payloads (#471).
+
+    ``members`` maps each of the Family's Member source keys to its payload.
+    The heads are the Family's ``active_head_duids``, every one of them, not
+    only those with an eligible email address, so an email greets the same
+    people a Family page does. Every active, listed (not deceased) Member is
+    named in DUID order, exactly the Members the Family form lists
+    (``responses.source_inputs``). A missing name falls back to the Family's
+    display name, as the Testing banner and receipts always did.
+    """
+    family_name = family_display_name(family, "Family")
+    heads = [_name(members[str(head)]) for head in sorted(family["active_head_duids"])]
+    listed = [
+        _name(member)
+        for key, member in sorted(members.items(), key=lambda item: int(item[0]))
+        if member["active"] is True and not member["deceased"]
+    ]
+    return name_placeholders(family_name, heads, listed)
 
 
 def load_family_mail_source(family):
@@ -95,23 +117,13 @@ def load_family_mail_source(family):
             {"family": {key: value}, "member": members, "contact": contacts},
             suppressed_addresses=suppressed,
         )
-        # Names describe the heads who actually have eligible addresses, not
-        # unrelated adults/minors or a proposed replacement census contact.
-        heads = [
-            _head(members[str(head)])
-            for head in sorted(value["active_head_duids"])
-            if any(
-                item["valid"] and item["value"] in projection.eligible
-                for item in contacts.get(f"member:{head}", {}).get("emails", [])
-            )
-        ]
+        # Names come from the source snapshot only, never from a proposed
+        # replacement census value.
         return FamilyMailSource(
             current.snapshot_id,
             current.generation,
             projection,
-            family_display_name(value, "Family"),
-            # "Andrew and Betty Test", as every salutation names the heads (#468).
-            heads_salutation_name(heads),
+            household_names(value, members),
             sum(member["active"] is True for member in members.values()),
         )
 
@@ -124,8 +136,7 @@ def public_values(source, *, parish, campaign, public_origin):
     """
     return {
         **campaign_values(parish=parish, campaign=campaign),
-        "family_name": source.family_name,
-        "family_member_names": source.member_names,
+        **source.names,
         "generic_family_url": public_origin + "/",
         "pronoun": "I" if source.active_members == 1 else "We",
     }

@@ -36,7 +36,11 @@ PLACEHOLDERS = frozenset(
         "parish_email",
         "online_giving_url",
         "family_name",
+        # The heads of household, and its older name, which stored templates
+        # still use; every active Member (#471). See family_names.
+        "head_salutation",
         "family_member_names",
+        "all_family_member_names",
         "family_code",
         "family_url",
         "generic_family_url",
@@ -63,14 +67,21 @@ UNAVAILABLE_FILE_PATH = "/files/unavailable"
 MAX_ALT = 250
 MAX_IMAGE_WIDTH = 2048
 FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
-ADMIN_DIGEST_PLACEHOLDERS = PLACEHOLDERS - {
-    "family_name",
-    "family_member_names",
-    "family_code",
-    "family_url",
-    "generic_family_url",
-    "pronoun",
-}
+# What names one Family's people; never an Admin digest value.
+FAMILY_NAME_PLACEHOLDERS = frozenset(
+    {
+        "family_name",
+        "head_salutation",
+        "family_member_names",
+        "all_family_member_names",
+    }
+)
+ADMIN_DIGEST_PLACEHOLDERS = (
+    PLACEHOLDERS
+    - FAMILY_NAME_PLACEHOLDERS
+    - FAMILY_CREDENTIAL_PLACEHOLDERS
+    - {"generic_family_url", "pronoun"}
+)
 FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
 FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
 # Keep identical to the non-sendable seed in stewardship_receipt_seed_v1.

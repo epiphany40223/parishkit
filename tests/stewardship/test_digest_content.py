@@ -83,6 +83,8 @@ def test_testing_subject_prefix_cannot_be_cropped_off():
         "{{ family_url }}",
         "{{ family_name }}",
         "{{ family_member_names }}",
+        "{{ head_salutation }}",
+        "{{ all_family_member_names }}",
         "{{ pronoun }}",
         "{{ generic_family_url }}",
         "PARISHKIT_REDACTED_FAMILY_CODE",

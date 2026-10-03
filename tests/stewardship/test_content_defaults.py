@@ -192,7 +192,7 @@ def test_invitation_renders_through_the_family_mail_renderer():
             "parish_email": "office@parish.example.org",
             "campaign_year": "2027",
             "financial_start": "January 1, 2027",
-            "family_member_names": "Alex and Sam Sample",
+            "head_salutation": "Alex and Sam Sample",
             "generic_family_url": "https://parish.example.org/",
         },
         sender="parish@example.org",
@@ -200,6 +200,40 @@ def test_invitation_renders_through_the_family_mail_renderer():
     )
     assert rendered.subject == "Sample Parish 2027 Stewardship Renewal"
     assert "office@parish.example.org" in rendered.text
+    assert "Dear Alex and Sam Sample:" in rendered.text
+
+
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+def test_family_emails_greet_the_heads_by_the_current_placeholder_name(slot):
+    """Defaults greet {{ head_salutation }}; the older name is a retired default.
+
+    Content a parish saved from the earlier default, which greeted
+    {{ family_member_names }}, still counts as the default (#471).
+    """
+    from parishkit.stewardship.accounts.content_defaults import (
+        RETIRED_EMAILS,
+        retired_data,
+    )
+    from parishkit.stewardship.accounts.content_forms import (
+        _DefaultForm,
+        default_values,
+        matches_default,
+    )
+
+    assert "<p>Dear {{ head_salutation }}:</p>" in EMAILS[slot].html
+    assert "family_member_names" not in EMAILS[slot].html
+    (older,) = RETIRED_EMAILS[slot]
+    assert "<p>Dear {{ family_member_names }}:</p>" in older.html
+    assert older.html.replace("family_member_names", "head_salutation") == (
+        EMAILS[slot].html
+    )
+    owner = str(uuid4())
+    (data,) = retired_data("email", slot)
+    form = _DefaultForm(data, kind="email", slot=slot)
+    assert form.is_valid()
+    retired = form.values(campaign_id=owner, slot=slot)
+    assert retired != default_values("email", slot, campaign_id=owner)
+    assert matches_default(retired)
 
 
 def test_ministry_instructions_match_the_family_form_controls():

@@ -1665,17 +1665,20 @@ def family_is_parishioner(family: dict[str, Any], org_id: int | str | None) -> b
     return int(family["registeredOrganizationID"]) == int(org_id)
 
 
+# The ``memberType`` values that make a member a head of household.
+HEAD_MEMBER_TYPES = frozenset({"Head", "Husband", "Wife"})
+
+
 def get_family_heads(family: dict[str, Any]) -> dict[int, dict[str, Any]]:
     """Return the family's head members keyed by member DUID.
 
-    Heads are members whose ``memberType`` is Head, Husband, or Wife. Returns
-    an empty dict when the family has no such members.
+    Heads are members whose ``memberType`` is in ``HEAD_MEMBER_TYPES``.
+    Returns an empty dict when the family has no such members.
     """
-    target_roles = {"Head", "Husband", "Wife"}
     return {
         int(member["memberDUID"]): member
         for member in family.get("py members", [])
-        if member.get("memberType") in target_roles
+        if member.get("memberType") in HEAD_MEMBER_TYPES
     }
 
 

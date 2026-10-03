@@ -11,6 +11,7 @@ from parishkit.stewardship.source.family_names import (
     family_display_name,
     family_heads_name,
     heads_salutation_name,
+    name_placeholders,
     name_series,
 )
 
@@ -193,6 +194,38 @@ def test_heads_salutation_name_default_names_a_headless_family():
     """Callers that need a non-empty salutation supply the Family's name."""
     assert heads_salutation_name([], "Family") == "Family"
     assert heads_salutation_name([{"name": " "}], "Lee") == "Lee"
+
+
+HEADS = [{"first": "Andrew", "last": "Test"}, {"first": "Betty", "last": "Test"}]
+MEMBERS = HEADS + [{"first": "Cy", "last": "Test"}]
+
+
+def test_name_placeholders_distinguish_heads_from_every_member():
+    """head_salutation names the heads, all_family_member_names everyone (#471).
+
+    family_member_names is the older name of head_salutation and always
+    carries the same value, so stored templates keep greeting the heads.
+    """
+    assert name_placeholders("Test", HEADS, MEMBERS) == {
+        "family_name": "Test",
+        "head_salutation": "Andrew and Betty Test",
+        "family_member_names": "Andrew and Betty Test",
+        "all_family_member_names": "Andrew, Betty and Cy Test",
+    }
+
+
+def test_name_placeholders_fall_back_to_the_family_name():
+    """Without usable head (or Member) names the Family is addressed by name."""
+    values = name_placeholders("Example", [], [])
+    assert values["head_salutation"] == values["family_member_names"] == "Example"
+    assert values["all_family_member_names"] == "Example"
+    # Heads without names still leave the Members named, and the reverse.
+    assert name_placeholders("Example", [{"first": " "}], MEMBERS) == {
+        "family_name": "Example",
+        "head_salutation": "Example",
+        "family_member_names": "Example",
+        "all_family_member_names": "Andrew, Betty and Cy Test",
+    }
 
 
 def test_directory_sql_trims_exactly_what_python_strips():

@@ -10,6 +10,8 @@ directory_reports.sql builds the same surname-and-heads string as
 
 The salutation order (``heads_salutation_name``: "Andrew and Betty Test") has
 no SQL counterpart: nothing searches or sorts by it, so only Python builds it.
+``name_placeholders`` turns it into the name placeholders of Family email and
+Family pages, so both name the same people (#471).
 """
 
 
@@ -76,6 +78,26 @@ def heads_salutation_name(heads, default=""):
             alone.append(full)
     parts = [f"{name_series(firsts)} {last}".strip() for last, firsts in groups]
     return name_series(parts + alone) or default
+
+
+def name_placeholders(family_name, heads, members):
+    """The Family name placeholders, built one way for email and Family pages.
+
+    ``heads`` are the Family's active heads of household and ``members`` every
+    active, listed (not deceased) Member, each as ``{"first", "last"}`` in
+    DUID order. ``head_salutation`` addresses the heads ("Andrew and Betty
+    Test"); ``family_member_names`` is its older name, kept for stored
+    templates; ``all_family_member_names`` names every Member ("Andrew, Betty
+    and Cy Test"). A Family without usable head (or Member) names is addressed
+    by ``family_name`` instead, so no greeting is ever blank (#471).
+    """
+    salutation = heads_salutation_name(heads, family_name)
+    return {
+        "family_name": family_name,
+        "head_salutation": salutation,
+        "family_member_names": salutation,
+        "all_family_member_names": heads_salutation_name(members, family_name),
+    }
 
 
 def family_heads_name(surname, heads, *, surname_first=True):
