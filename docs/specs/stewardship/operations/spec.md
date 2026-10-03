@@ -696,7 +696,10 @@ read-only web-container diagnostic that lists, by Family DUID, Member DUID and
 field name only, each ParishSoft Member or contact value or record that would
 refuse a current Family's form; the
 [deployment runbook](../../../guides/stewardship-deployment-runbook.md#staff-validation-checklist)
-says when to run it.
+says when to run it. `pk-stewardship engagement-backfill` is admitted the same
+way and fills the
+[Family engagement record](../data/spec.md#family-engagement) once after the
+release that introduces it.
 
 The application exposes Prometheus-compatible metrics only at `/metrics` on its
 internal Compose interface. The route requires an `Authorization: Bearer`
