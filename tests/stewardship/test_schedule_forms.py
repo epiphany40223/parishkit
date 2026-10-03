@@ -514,3 +514,35 @@ def test_several_new_rows_save_together_and_are_validated_together():
     formset = new_rows(owner, saved, templates, rows)
     assert not formset.is_valid()
     assert "weekday" in formset.forms[2].errors
+
+
+def test_saved_schedules_are_shown_in_sending_order():
+    """Rows appear by send date and time, Initial first on ties, stably (#448)."""
+    owner = campaign()
+    initial = schedule(owner["id"], date="2026-10-01", time="09:00:00")
+    later = schedule(owner["id"], kind="reminder", date="2026-10-15", time="08:00:00")
+    early = schedule(owner["id"], kind="reminder", date="2026-10-06", time="08:00:00")
+    morning = schedule(owner["id"], kind="reminder", date="2026-10-06", time="07:00:00")
+    saved = [later, early, initial, morning]
+    expected = [initial["id"], morning["id"], early["id"], later["id"]]
+    for previous in (saved, list(reversed(saved))):
+        formset = Schedules(
+            prefix="schedules",
+            previous=previous,
+            templates=[],
+            campaign_id=owner["id"],
+            campaign=owner["values"],
+        )
+        assert [form.initial["id"] for form in formset.initial_forms] == expected
+    # A post in the displayed order is unchanged and saves nothing.
+    data = data_for([initial, morning, early, later])
+    formset = Schedules(
+        data,
+        prefix="schedules",
+        previous=saved,
+        templates=[],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert formset.is_valid(), formset.errors
+    assert formset.patch() == []
