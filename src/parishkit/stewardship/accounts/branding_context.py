@@ -1,10 +1,12 @@
 """Public parish chrome references only selected normalized media, never staging."""
 
+from django.conf import settings
 from django.db import DatabaseError
 from django.db.models import Subquery
 from django.urls import reverse
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.web import dates
 
 from .authentication import runtime
@@ -110,6 +112,22 @@ def parish_branding(request):
 def date_format(request):
     """Feed ``<body data-date-format>`` so date-format-v1.js matches the server."""
     return {"date_format": dates.current()}
+
+
+def local_environment(request):
+    """Flag the LOCAL deployment (#476) so base.html shows its standing banner.
+
+    The banner tells a developer, on every Admin and Family page, that this is
+    the local laptop environment with synthetic data. The flag is set only
+    when the running profile is LOCAL (never for development, test or
+    production), and emails are untouched, so what the mail catcher shows is
+    exactly what a Family would receive. ``configure_web`` records the
+    profile; a process without it (tests, management commands) shows nothing.
+    """
+    value = getattr(settings, "STEWARDSHIP_DEPLOYMENT_PROFILE", None)
+    if value is not None and DeploymentProfile(value) is DeploymentProfile.LOCAL:
+        return {"local_environment": True}
+    return {}
 
 
 def active_date_format():

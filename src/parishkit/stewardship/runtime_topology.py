@@ -263,13 +263,6 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         "configured-slack",
     }:
         raise ConfigError("Unknown runtime provider mount mode.")
-    if configuration.profile is DeploymentProfile.LOCAL:
-        # The web-networking and Caddy branches below still choose between
-        # production and "everything else", and that else is the development
-        # shape (web's port published on loopback, no proxy). LOCAL must never
-        # take it, so until the local ingress and topology renderer lands
-        # (OPS-10.03) the whole rendering is refused rather than half-right.
-        raise ConfigError("The local topology is not yet supported (OPS-10.03).")
     configuration = resolve_database_files(configuration)
     configuration = resolve_valkey_files(configuration)
     RuntimeLayout(configuration).validate()
@@ -400,7 +393,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 for path, ro in backup_targets(selected).items()
             ]
             # The off-site copy uploads the sealed set to Google Drive.
-            service["networks"]["application-egress"] = {}
+            _join_egress(service, configuration)
         else:
             service["command"] = [
                 "runtime",
@@ -421,7 +414,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 role is ServiceRole.CREDENTIAL_INSTALLER
                 and target in {"parishsoft", "google_workspace", "slack"}
             ):
-                service["networks"]["application-egress"] = {}
+                _join_egress(service, configuration)
             if role is ServiceRole.WEB:
                 service["healthcheck"] = {
                     "test": PROBE + ["web"],
@@ -434,7 +427,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     web = services.pop("web")
     for replica in range(budget.replicas):
         selected = deepcopy(web)
-        if configuration.profile is DeploymentProfile.PRODUCTION:
+        if configuration.profile.behind_proxy:
             selected["networks"]["proxy"] = {"ipv4_address": network.web(replica)}
         elif replica == 0:
             origin = urlsplit(configuration.public_origin)
@@ -442,12 +435,12 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             selected["ports"] = [f"{host}:{origin.port or 80}:8000"]
         services["web" if replica == 0 else f"web-{replica}"] = selected
     services.update(_infrastructure(configuration))
-    if configuration.profile is DeploymentProfile.PRODUCTION:
-        from .runtime_ingress import render_caddy
+    if configuration.profile.behind_proxy:
+        from .runtime_ingress import render_ingress
 
         services["caddy"] = _caddy(configuration)
         documents[RuntimeLayout(configuration).service_directory / "Caddyfile"] = (
-            render_caddy(configuration)
+            render_ingress(configuration)
         )
         for service in services.values():
             if "profiles" not in service:
@@ -455,21 +448,60 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     for service in services.values():
         service["logging"] = deepcopy(CONTAINER_LOGGING)
     return {
-        "name": "parishkit-stewardship",
+        "name": _project_name(configuration),
         "services": services,
-        "networks": {
-            "backend": {
-                "internal": True,
-                "ipam": {"config": [{"subnet": network.backend}]},
-            },
-            "proxy": {
-                "internal": True,
-                "ipam": {"config": [{"subnet": network.proxy}]},
-            },
-            "application-egress": {},
-            "ingress": {},
-        },
+        "networks": _networks(configuration),
     }, documents
+
+
+def _join_egress(service, configuration):
+    """Give a service its route out; LOCAL has none, so it stays internal-only.
+
+    LOCAL (#476) omits the ``application-egress`` network entirely: only the
+    ingress services (Caddy, and the mail catcher's UI) sit on a non-internal
+    network, and that one does no source NAT, so even a mistaken real
+    credential has no route to Google, ParishSoft or Slack.
+    """
+    if configuration.profile is not DeploymentProfile.LOCAL:
+        service["networks"]["application-egress"] = {}
+
+
+def _project_name(configuration):
+    """Production's Compose project keeps its name; LOCAL is ``parishkit-local``."""
+    if configuration.profile is DeploymentProfile.LOCAL:
+        return "parishkit-local"
+    return "parishkit-stewardship"
+
+
+def _networks(configuration):
+    """The Compose networks: two internal everywhere; egress and ingress by profile.
+
+    ``backend`` and ``proxy`` are internal in every profile. Outbound traffic
+    leaves through the non-internal ``application-egress`` network, and Caddy
+    publishes through ``ingress``. LOCAL has no ``application-egress`` and
+    creates ``ingress`` without IP masquerade: Docker still forwards inbound
+    connections to the published loopback ports, but a container on
+    ``ingress`` gets no source NAT and so no route to the internet.
+    """
+    network = configuration.runtime_network
+    result = {
+        "backend": {
+            "internal": True,
+            "ipam": {"config": [{"subnet": network.backend}]},
+        },
+        "proxy": {
+            "internal": True,
+            "ipam": {"config": [{"subnet": network.proxy}]},
+        },
+    }
+    if configuration.profile is DeploymentProfile.LOCAL:
+        result["ingress"] = {
+            "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
+        }
+    else:
+        result["application-egress"] = {}
+        result["ingress"] = {}
+    return result
 
 
 def resolve_database_files(configuration):
@@ -610,23 +642,29 @@ def _caddy(configuration):
     """
     layout = RuntimeLayout(configuration)
     result = _application(CADDY_IMAGE, configuration.runtime_budget)
+    if configuration.profile is DeploymentProfile.LOCAL:
+        # The local Caddyfile has no HTTP listener (runtime_ingress), and the
+        # one HTTPS port is published on the VM's loopback only; nothing in
+        # LOCAL binds 0.0.0.0.
+        listening = "nc -z -w 2 127.0.0.1 8443"
+        ports = ["127.0.0.1:8443:8443"]
+    else:
+        listening = "nc -z -w 2 127.0.0.1 8080 && nc -z -w 2 127.0.0.1 8443"
+        ports = ["80:8080", "443:8443"]
     result.update(
         # Stock Caddy carries a NET_BIND_SERVICE file capability. Linux refuses
         # exec when that capability is absent from the bounding set, even when
         # this deployment uses high internal ports. Retain only that capability.
         cap_add=["NET_BIND_SERVICE"],
         healthcheck={
-            "test": [
-                "CMD-SHELL",
-                "nc -z -w 2 127.0.0.1 8080 && nc -z -w 2 127.0.0.1 8443",
-            ],
+            "test": ["CMD-SHELL", listening],
             "interval": "10s",
             "timeout": "5s",
             "retries": 3,
         },
         entrypoint=["/bin/sh", "-c"],
         command=["exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"],
-        ports=["80:8080", "443:8443"],
+        ports=ports,
         networks={
             "proxy": {"ipv4_address": configuration.runtime_network.caddy},
             "ingress": {},

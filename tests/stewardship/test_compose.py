@@ -24,6 +24,7 @@ from parishkit.stewardship.urls import internal_patterns
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy/stewardship"
+FIXTURES = Path(__file__).with_name("fixtures")
 
 
 def collection_manifest(output):
@@ -321,6 +322,64 @@ def test_caddy_template_denies_internal_paths_before_proxy():
     assert server["routes"] == [
         {"match": [{"host": [hostname]}], "handle": [site], "terminal": True}
     ]
+
+
+@pytest.mark.skipif(
+    os.environ.get("PARISHKIT_RUN_COMPOSE_TESTS") != "1",
+    reason="explicit opt-in required for pinned Caddy validation",
+)
+def test_local_caddyfile_golden_adapts_and_validates():
+    """The LOCAL golden Caddyfile (#476) is valid for the pinned Caddy image.
+
+    Adapt and validate the committed fixture only: no host configuration,
+    credentials, ports or networks, as the production template check above.
+    The adapted JSON must show what the local environment specification
+    requires: one HTTPS server on 8443 and nothing else listening, the
+    ``localhost`` site, redirects (and so the HTTP listener) disabled, and an
+    internal issuer in place of ACME. Caddy writes its own log lines to
+    stdout here (the Caddyfile says ``output stdout``), so only the first line
+    is the adapted document.
+    """
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--interactive",
+            "--network",
+            "none",
+            "--read-only",
+            "--tmpfs",
+            "/config",
+            "--tmpfs",
+            "/data",
+            runtime_topology.CADDY_IMAGE,
+            "caddy",
+            "adapt",
+            "--config",
+            "-",
+            "--adapter",
+            "caddyfile",
+            "--validate",
+        ],
+        input=(FIXTURES / "local-Caddyfile.golden").read_text(),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    config = json.loads(result.stdout.splitlines()[0])
+    assert config["admin"] == {"disabled": True}
+    http = config["apps"]["http"]
+    assert http["https_port"] == 8443
+    (server,) = http["servers"].values()
+    assert server["listen"] == [":8443"]
+    assert server["automatic_https"] == {"disable_redirects": True}
+    assert server["routes"][0]["match"] == [{"host": ["localhost"]}]
+    (policy,) = config["apps"]["tls"]["automation"]["policies"]
+    assert policy["subjects"] == ["localhost"]
+    assert policy["issuers"] == [{"module": "internal"}]
+    assert "acme" not in json.dumps(config)
 
 
 @pytest.mark.skipif(

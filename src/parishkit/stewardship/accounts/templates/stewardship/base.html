@@ -12,6 +12,7 @@
 </head>
 <body{% if admin_chrome %} class="admin-body"{% endif %} data-date-format="{{ date_format|default:'us_long' }}">
   <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
+  {% if local_environment %}<div class="local-environment" role="note" aria-label="{% translate 'Local environment' %}"><strong>{% translate "LOCAL" %}</strong> {% translate "This is the local laptop environment: synthetic data, no real email and no real ParishSoft." %}</div>{% endif %}
   <header class="site-header">
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}
     {% block navigation %}{% if admin_chrome %}{% include 'stewardship/admin-status.html' %}{% endif %}{% endblock %}

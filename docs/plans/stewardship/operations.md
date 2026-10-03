@@ -269,10 +269,10 @@ scripted Production upgrade (#460, #461).
    takes a development or test result and other profiles are unchanged;
    Production rejecting a local tag and LOCAL rejecting a GHCR reference.
 3. **PR 2, ingress and topology.** Render the LOCAL Compose and Caddyfile: Caddy
-   `tls internal` on `127.0.0.1:8443` only, the Mailpit UI on `127.0.0.1:8025`
-   only, no `application-egress` network, an `ingress` network without IP
-   masquerade joined only by Caddy and Mailpit, Compose `name`
-   `parishkit-local`, HSTS off, secure cookies on, and the LOCAL banner.
+   `tls internal` on `127.0.0.1:8443` only, no `application-egress` network,
+   an `ingress` network without IP masquerade joined only by Caddy (item 5
+   adds Mailpit to it), Compose `name` `parishkit-local`, HSTS off, secure
+   cookies on, and the LOCAL banner.
    Tests: golden files proving the rendered Production Compose and Caddyfile are
    byte-identical before and after; grants and Valkey ACL identical across
    profiles; CI rendering checks of the local topology.
@@ -285,9 +285,11 @@ scripted Production upgrade (#460, #461).
    or after item 5).
 5. **PR 4, mail catcher.** Add the mail-catcher credential document, the
    `LOCAL_SMTP_ENDPOINT` transport at every Gmail call site, the helper
-   `profile` field for SMTP helpers, the Mailpit service, and refusals in both
-   directions at the Workspace installer and setup-wizard intake, plus the
-   sentinel OAuth client, Slack and Drive refusals. Tests: fake-SMTP tests;
+   `profile` field for SMTP helpers, the Mailpit service (on `backend` and
+   `ingress`, publishing its UI on `127.0.0.1:8025` only, and widening the
+   ingress membership that item 3's rendering tests pin), and refusals in
+   both directions at the Workspace installer and setup-wizard intake, plus
+   the sentinel OAuth client, Slack and Drive refusals. Tests: fake-SMTP tests;
    helper refusal of the local endpoint for non-local requests; the Gmail
    endpoint and transport unchanged.
 6. **PR 5a, fake ParishSoft and synthetic parish.** Add the generator (default

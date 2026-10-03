@@ -290,6 +290,10 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
 .notice h2 { margin-top: 0; font-size: 1.1rem; }
 .notice ul { margin-bottom: 0; }
+/* The LOCAL deployment's standing banner (#476): the "LOCAL" label and
+   hatched edge make it recognizable without relying on color alone. */
+.local-environment { padding: .5rem var(--gutter); background: var(--warning-bg); color: var(--warning-ink); border-bottom: .35rem solid; border-image: repeating-linear-gradient(135deg, var(--warning-border) 0 .75rem, var(--warning-bg) .75rem 1.5rem) 1; text-align: center; font-size: .95rem; }
+.local-environment strong { letter-spacing: .08em; margin-inline-end: .5rem; }
 .testing-indicator { display: inline-block; margin-block: 0 1rem; padding: .35rem .9rem; border: 1px solid var(--warning-border); border-radius: 999px; background: var(--warning-bg); color: var(--warning-ink); font-size: .9rem; }
 .changed { border-inline-start: .3rem solid var(--accent); padding-inline-start: .75rem; background: var(--accent-soft); border-radius: 0 var(--radius-small) var(--radius-small) 0; }
 

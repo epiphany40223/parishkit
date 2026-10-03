@@ -28,9 +28,14 @@ from parishkit.stewardship.deployment import (
     load_deployment,
 )
 from parishkit.stewardship.deployment_documents import deployment_document
-from parishkit.stewardship.runtime_ingress import production_hostname, render_caddy
+from parishkit.stewardship.runtime_ingress import (
+    production_hostname,
+    render_caddy,
+    render_local_caddy,
+)
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import (
+    CADDY_IMAGE,
     DEVELOPMENT_IMAGE,
     _image,
     render_runtime,
@@ -51,7 +56,8 @@ PROXIED = (DeploymentProfile.PRODUCTION, DeploymentProfile.LOCAL)
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 LOCAL_IMAGE = f"parishkit-stewardship-local:{COMMIT}-1700000000"
 LOCAL_DIRTY_IMAGE = f"parishkit-stewardship-local:{COMMIT}-dirty-1700000000"
-# Production renders at this fixed root so the golden files hold no test path.
+# Production and LOCAL render at this fixed root so the golden files (theirs
+# and test_local_topology's) hold no test path.
 GOLDEN_ROOT = Path("/opt/parishkit")
 # SHA-256 of the canonical JSON (see ``canonical``) of each Production
 # rendering on main at cbea35b2 (2026-10-03), before the LOCAL profile existed.
@@ -305,21 +311,45 @@ def test_production_and_direct_image_rules_are_unchanged():
             _image(PRODUCTION_IMAGE, profile)
 
 
-# Rows: source mounts, web replica networking, and Caddy with its restart policy.
-def test_local_rendering_is_refused_until_the_local_topology_lands(tmp_path):
-    """LOCAL never renders the development shape (published web port, no Caddy).
+# Row: source mounts.
+@pytest.mark.parametrize("profile", PROFILES)
+def test_source_mounts_are_rendered_only_for_development(tmp_path, profile):
+    """The existing ``is not DEVELOPMENT`` refusal still covers LOCAL (and test)."""
+    images = {
+        DeploymentProfile.PRODUCTION: PRODUCTION_IMAGE,
+        DeploymentProfile.LOCAL: LOCAL_IMAGE,
+    }
+    configuration = configuration_for(profile, tmp_path)
+    image = images.get(profile, DEVELOPMENT_IMAGE)
+    if profile is DeploymentProfile.DEVELOPMENT:
+        compose, _ = render_runtime(configuration, image=image, checkout=tmp_path)
+        assert any(
+            mount["target"] == "/app/src"
+            for mount in compose["services"]["web"]["volumes"]
+        )
+    else:
+        with pytest.raises(ConfigError, match="explicit development checkout"):
+            render_runtime(configuration, image=image, checkout=tmp_path)
 
-    Until OPS-10.03 the whole rendering is refused, so the source-mount,
-    web-networking and Caddy rows are all covered by that one refusal; the
-    source-mount request below is refused by it, not by the checkout rule.
-    """
+
+# Rows: web replica networking, and Caddy with its restart policy.
+def test_local_web_joins_the_proxy_network_behind_caddy_like_production(tmp_path):
+    """LOCAL never renders the development shape (published web port, no Caddy)."""
     configuration = configuration_for(DeploymentProfile.LOCAL, tmp_path)
-    with pytest.raises(ConfigError, match="OPS-10.03"):
-        render_runtime(configuration, image=LOCAL_IMAGE)
-    # The source-mount, web-networking and Caddy rows are covered by the
-    # whole-render refusal until OPS-10.03 replaces it with the local renderer.
-    with pytest.raises(ConfigError, match="OPS-10.03"):
-        render_runtime(configuration, image=LOCAL_IMAGE, checkout=tmp_path)
+    compose, documents = render_runtime(configuration, image=LOCAL_IMAGE)
+    web = compose["services"]["web"]
+    assert web["networks"]["proxy"] == {
+        "ipv4_address": configuration.runtime_network.web(0)
+    }
+    assert "ports" not in web
+    caddy = compose["services"]["caddy"]
+    assert caddy["image"] == CADDY_IMAGE
+    assert set(caddy["networks"]) == {"proxy", "ingress"}
+    caddyfile = RuntimeLayout(configuration).service_directory / "Caddyfile"
+    assert documents[caddyfile] == render_local_caddy(configuration)
+    for name, service in compose["services"].items():
+        expected = "no" if "profiles" in service else "unless-stopped"
+        assert service["restart"] == expected, name
 
 
 @pytest.mark.parametrize("profile", DIRECT)
