@@ -31,9 +31,7 @@ def ministry_form(*, census=True):
 
 def begin(page, origin, form, submit):
     """Override only the complete authorized form, preserving actual browser JS."""
-    prepare(page, origin, submit=submit)
-    page.route("**/family/form", lambda route: route.fulfill(json={"form": form}))
-    page.get_by_role("button", name="Begin reviewing").click()
+    prepare(page, origin, form=form, submit=submit)
 
 
 @pytest.mark.parametrize("census", [True, False])
