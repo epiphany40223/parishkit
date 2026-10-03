@@ -1435,7 +1435,12 @@ The total counts them from the start. A Family is owed the send when the
 rules in
 [Family invitations and reminders](../background-processing/spec.md#family-invitations-and-reminders)
 would have planning create its email, and it has no occurrence of the
-revision yet. Planning creates the send's emails only while its revision is
+revision yet. A Family whose earlier-revision email was cancelled by a
+schedule edit (`schedule_replaced`, see
+[Schedule replacement and removal](../background-processing/spec.md#schedule-replacement-and-removal))
+with no fulfillment for its slot is owed the new revision. (An edit is
+refused while an earlier delivery is still uncertain, so no Family is
+owed twice.) Planning creates the send's emails only while its revision is
 the schedule's current one and is due, the campaign has not closed, and, in
 Testing, a rehearsal is active. Otherwise no Family is owed. Due times and
 the close are read on the campaign clock, as planning reads them. Families
