@@ -1,0 +1,3015 @@
+{
+ "name": "parishkit-stewardship",
+ "networks": {
+  "application-egress": {},
+  "backend": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "subnet": "172.29.240.0/24"
+     }
+    ]
+   }
+  },
+  "ingress": {},
+  "proxy": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "subnet": "172.29.241.0/24"
+     }
+    ]
+   }
+  }
+ },
+ "services": {
+  "admin-recovery": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "recover-admin",
+    "--config",
+    "/opt/parishkit/config/services/admin-recovery.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "profiles": [
+    "admin-recovery"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/admin-recovery.yaml",
+     "target": "/opt/parishkit/config/services/admin-recovery.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/admin-recovery",
+     "target": "/opt/parishkit/credentials/database/admin-recovery",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "backup-worker": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "backup",
+    "--config",
+    "/opt/parishkit/config/services/backup-worker.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "profiles": [
+    "backup-worker"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/.stewardship-provisioned.json",
+     "target": "/opt/parishkit/.stewardship-provisioned.json",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/backups",
+     "target": "/opt/parishkit/backups",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config",
+     "target": "/opt/parishkit/config",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials",
+     "target": "/opt/parishkit/credentials",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/persistent/media",
+     "target": "/opt/parishkit/run/persistent/media",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "bootstrap": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "bootstrap",
+    "--config",
+    "/opt/parishkit/config/services/bootstrap.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "profiles": [
+    "bootstrap"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/config/deployment",
+     "target": "/opt/parishkit/config/deployment",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/bootstrap.yaml",
+     "target": "/opt/parishkit/config/services/bootstrap.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/bootstrap",
+     "target": "/opt/parishkit/credentials/database/bootstrap",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/django_signing",
+     "target": "/opt/parishkit/credentials/django_signing",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/family_code_mac",
+     "target": "/opt/parishkit/credentials/family_code_mac",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/general_encryption",
+     "target": "/opt/parishkit/credentials/general_encryption",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/google_oauth/credential",
+     "target": "/opt/parishkit/credentials/google_oauth/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/backup_data",
+     "target": "/opt/parishkit/credentials/handoff/backup_data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/backup_target",
+     "target": "/opt/parishkit/credentials/handoff/backup_target",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/django_signing",
+     "target": "/opt/parishkit/credentials/handoff/django_signing",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/family_code_mac",
+     "target": "/opt/parishkit/credentials/handoff/family_code_mac",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/general_encryption",
+     "target": "/opt/parishkit/credentials/handoff/general_encryption",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/google_oauth",
+     "target": "/opt/parishkit/credentials/handoff/google_oauth",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/google_workspace",
+     "target": "/opt/parishkit/credentials/handoff/google_workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/metrics",
+     "target": "/opt/parishkit/credentials/handoff/metrics",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/parishsoft",
+     "target": "/opt/parishkit/credentials/handoff/parishsoft",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/slack",
+     "target": "/opt/parishkit/credentials/handoff/slack",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/token_private",
+     "target": "/opt/parishkit/credentials/handoff/token_private",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/handoff/token_public",
+     "target": "/opt/parishkit/credentials/handoff/token_public",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/metrics",
+     "target": "/opt/parishkit/credentials/metrics",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/token_private",
+     "target": "/opt/parishkit/credentials/token_private",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/token_public",
+     "target": "/opt/parishkit/credentials/token_public",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "caddy": {
+   "cap_add": [
+    "NET_BIND_SERVICE"
+   ],
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
+   ],
+   "entrypoint": [
+    "/bin/sh",
+    "-c"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 3,
+    "test": [
+     "CMD-SHELL",
+     "nc -z -w 2 127.0.0.1 8080 && nc -z -w 2 127.0.0.1 8443"
+    ],
+    "timeout": "5s"
+   },
+   "image": "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "ingress": {},
+    "proxy": {
+     "ipv4_address": "172.29.241.2"
+    }
+   },
+   "ports": [
+    "80:8080",
+    "443:8443"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/caddy/config",
+     "target": "/config",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/caddy/data",
+     "target": "/data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/Caddyfile",
+     "target": "/etc/caddy/Caddyfile",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/cache/static",
+     "target": "/srv/static",
+     "type": "bind"
+    }
+   ]
+  },
+  "config-installer": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/config-installer.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/config-installer.yaml",
+     "target": "/opt/parishkit/config/services/config-installer.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/config-installer",
+     "target": "/opt/parishkit/credentials/database/config-installer",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-backup-data": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-backup-data.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-backup-data.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-backup-data.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/backup_data",
+     "target": "/opt/parishkit/credentials/backup_data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-backup-data",
+     "target": "/opt/parishkit/credentials/database/credential-installer-backup-data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/backup_data/credential",
+     "target": "/opt/parishkit/credentials/handoff/backup_data/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-backup-target": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-backup-target.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-backup-target.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-backup-target.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/backup_target",
+     "target": "/opt/parishkit/credentials/backup_target",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-backup-target",
+     "target": "/opt/parishkit/credentials/database/credential-installer-backup-target",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/backup_target/credential",
+     "target": "/opt/parishkit/credentials/handoff/backup_target/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-django-signing": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-django-signing.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-django-signing.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-django-signing.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-django-signing",
+     "target": "/opt/parishkit/credentials/database/credential-installer-django-signing",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/django_signing",
+     "target": "/opt/parishkit/credentials/django_signing",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/django_signing/credential",
+     "target": "/opt/parishkit/credentials/handoff/django_signing/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-family-code-mac": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-family-code-mac.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-family-code-mac.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-family-code-mac.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-family-code-mac",
+     "target": "/opt/parishkit/credentials/database/credential-installer-family-code-mac",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/family_code_mac",
+     "target": "/opt/parishkit/credentials/family_code_mac",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/family_code_mac/credential",
+     "target": "/opt/parishkit/credentials/handoff/family_code_mac/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-general-encryption": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-general-encryption.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-general-encryption.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-general-encryption.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-general-encryption",
+     "target": "/opt/parishkit/credentials/database/credential-installer-general-encryption",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/general_encryption",
+     "target": "/opt/parishkit/credentials/general_encryption",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/general_encryption/credential",
+     "target": "/opt/parishkit/credentials/handoff/general_encryption/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-google-oauth": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-google-oauth.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-google-oauth.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-google-oauth.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-google-oauth",
+     "target": "/opt/parishkit/credentials/database/credential-installer-google-oauth",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/google_oauth",
+     "target": "/opt/parishkit/credentials/google_oauth",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/google_oauth/credential",
+     "target": "/opt/parishkit/credentials/handoff/google_oauth/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-google-workspace": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-google-workspace.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-google-workspace.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-google-workspace.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-google-workspace",
+     "target": "/opt/parishkit/credentials/database/credential-installer-google-workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/google_workspace",
+     "target": "/opt/parishkit/credentials/google_workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/google_workspace/credential",
+     "target": "/opt/parishkit/credentials/handoff/google_workspace/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-metrics": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-metrics.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-metrics.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-metrics.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-metrics",
+     "target": "/opt/parishkit/credentials/database/credential-installer-metrics",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/metrics/credential",
+     "target": "/opt/parishkit/credentials/handoff/metrics/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/metrics",
+     "target": "/opt/parishkit/credentials/metrics",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-parishsoft": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-parishsoft.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-parishsoft.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-parishsoft.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-parishsoft",
+     "target": "/opt/parishkit/credentials/database/credential-installer-parishsoft",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/parishsoft/credential",
+     "target": "/opt/parishkit/credentials/handoff/parishsoft/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/parishsoft",
+     "target": "/opt/parishkit/credentials/parishsoft",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-slack": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-slack.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-slack.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-slack.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-slack",
+     "target": "/opt/parishkit/credentials/database/credential-installer-slack",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/slack/credential",
+     "target": "/opt/parishkit/credentials/handoff/slack/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/slack",
+     "target": "/opt/parishkit/credentials/slack",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-token-private": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-token-private.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-token-private.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-token-private.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-token-private",
+     "target": "/opt/parishkit/credentials/database/credential-installer-token-private",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/token_private/credential",
+     "target": "/opt/parishkit/credentials/handoff/token_private/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/token_private",
+     "target": "/opt/parishkit/credentials/token_private",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-token-public": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/credential-installer-token-public.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/credential-installer-token-public.yaml",
+     "target": "/opt/parishkit/config/services/credential-installer-token-public.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-token-public",
+     "target": "/opt/parishkit/credentials/database/credential-installer-token-public",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/handoff/token_public/credential",
+     "target": "/opt/parishkit/credentials/handoff/token_public/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/credentials/token_public",
+     "target": "/opt/parishkit/credentials/token_public",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "database-provision": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "database-roles",
+    "--config",
+    "/opt/parishkit/config/services/database-provision.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "profiles": [
+    "database-provision"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/database-provision.yaml",
+     "target": "/opt/parishkit/config/services/database-provision.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/admin-recovery",
+     "target": "/opt/parishkit/credentials/database/admin-recovery",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/backup-worker",
+     "target": "/opt/parishkit/credentials/database/backup-worker",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/bootstrap",
+     "target": "/opt/parishkit/credentials/database/bootstrap",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/config-installer",
+     "target": "/opt/parishkit/credentials/database/config-installer",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-backup-data",
+     "target": "/opt/parishkit/credentials/database/credential-installer-backup-data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-backup-target",
+     "target": "/opt/parishkit/credentials/database/credential-installer-backup-target",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-django-signing",
+     "target": "/opt/parishkit/credentials/database/credential-installer-django-signing",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-family-code-mac",
+     "target": "/opt/parishkit/credentials/database/credential-installer-family-code-mac",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-general-encryption",
+     "target": "/opt/parishkit/credentials/database/credential-installer-general-encryption",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-google-oauth",
+     "target": "/opt/parishkit/credentials/database/credential-installer-google-oauth",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-google-workspace",
+     "target": "/opt/parishkit/credentials/database/credential-installer-google-workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-metrics",
+     "target": "/opt/parishkit/credentials/database/credential-installer-metrics",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-parishsoft",
+     "target": "/opt/parishkit/credentials/database/credential-installer-parishsoft",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-slack",
+     "target": "/opt/parishkit/credentials/database/credential-installer-slack",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-token-private",
+     "target": "/opt/parishkit/credentials/database/credential-installer-token-private",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/credential-installer-token-public",
+     "target": "/opt/parishkit/credentials/database/credential-installer-token-public",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/download",
+     "target": "/opt/parishkit/credentials/database/download",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/mail-dispatch",
+     "target": "/opt/parishkit/credentials/database/mail-dispatch",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/migration",
+     "target": "/opt/parishkit/credentials/database/migration",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/operator",
+     "target": "/opt/parishkit/credentials/database/operator",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/scheduler",
+     "target": "/opt/parishkit/credentials/database/scheduler",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/web",
+     "target": "/opt/parishkit/credentials/database/web",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/worker",
+     "target": "/opt/parishkit/credentials/database/worker",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "mail-dispatch": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/mail-dispatch.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT": "${PARISHKIT_STEWARDSHIP_FAMILY_MAIL_TRANSPORT:-}",
+    "PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS": "${PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/mail-dispatch.yaml",
+     "target": "/opt/parishkit/config/services/mail-dispatch.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/mail-dispatch",
+     "target": "/opt/parishkit/credentials/database/mail-dispatch",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/google_workspace",
+     "target": "/opt/parishkit/credentials/google_workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/token_private/credential",
+     "target": "/opt/parishkit/credentials/token_private/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/token_public/credential",
+     "target": "/opt/parishkit/credentials/token_public/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/valkey/mail-dispatch",
+     "target": "/opt/parishkit/credentials/valkey/mail-dispatch",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "migration": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "migrate",
+    "--config",
+    "/opt/parishkit/config/services/migration.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "profiles": [
+    "migration"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/migration.yaml",
+     "target": "/opt/parishkit/config/services/migration.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/migration",
+     "target": "/opt/parishkit/credentials/database/migration",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "postgres": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "postgres",
+    "-c",
+    "max_connections=100",
+    "-c",
+    "log_statement=none",
+    "-c",
+    "log_min_error_statement=panic",
+    "-c",
+    "log_parameter_max_length_on_error=0"
+   ],
+   "environment": {
+    "POSTGRES_DB": "stewardship",
+    "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres-password",
+    "POSTGRES_USER": "pk_stewardship_operator"
+   },
+   "healthcheck": {
+    "interval": "5s",
+    "retries": 12,
+    "test": [
+     "CMD",
+     "pg_isready",
+     "-U",
+     "pk_stewardship_operator",
+     "-d",
+     "stewardship"
+    ],
+    "timeout": "3s"
+   },
+   "image": "postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777",
+    "/var/run/postgresql:rw,nosuid,nodev,noexec,uid=10001,gid=10001,mode=0700"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/operator",
+     "target": "/run/secrets/postgres-password",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/postgresql",
+     "target": "/var/lib/postgresql",
+     "type": "bind"
+    }
+   ]
+  },
+  "scheduler": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/scheduler.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/scheduler.yaml",
+     "target": "/opt/parishkit/config/services/scheduler.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/scheduler",
+     "target": "/opt/parishkit/credentials/database/scheduler",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/token_public/credential",
+     "target": "/opt/parishkit/credentials/token_public/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/valkey/scheduler",
+     "target": "/opt/parishkit/credentials/valkey/scheduler",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "valkey": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "valkey-server",
+    "--appendonly",
+    "yes",
+    "--protected-mode",
+    "yes",
+    "--aclfile",
+    "/run/secrets/valkey.acl"
+   ],
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 3,
+    "test": [
+     "CMD-SHELL",
+     "valkey-cli ping | grep -qx 'NOAUTH Authentication required.'"
+    ],
+    "timeout": "3s"
+   },
+   "image": "valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/valkey",
+     "target": "/data",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/valkey/server.acl",
+     "target": "/run/secrets/valkey.acl",
+     "type": "bind"
+    }
+   ]
+  },
+  "web": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/web.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "web"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {},
+    "proxy": {
+     "ipv4_address": "172.29.241.10"
+    }
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/broker-password",
+     "target": "/opt/parishkit/broker-password",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/web.yaml",
+     "target": "/opt/parishkit/config/services/web.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/download",
+     "target": "/opt/parishkit/credentials/database/download",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/web",
+     "target": "/opt/parishkit/credentials/database/web",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/django_signing/credential",
+     "target": "/opt/parishkit/credentials/django_signing/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/family_code_mac/credential",
+     "target": "/opt/parishkit/credentials/family_code_mac/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/general_encryption/credential",
+     "target": "/opt/parishkit/credentials/general_encryption/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/google_oauth/credential",
+     "target": "/opt/parishkit/credentials/google_oauth/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/metrics/credential",
+     "target": "/opt/parishkit/credentials/metrics/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/token_public/credential",
+     "target": "/opt/parishkit/credentials/token_public/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/reports",
+     "target": "/opt/parishkit/reports",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/media",
+     "target": "/opt/parishkit/run/persistent/media",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "worker": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "runtime",
+    "--config",
+    "/opt/parishkit/config/services/worker.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "60s",
+    "retries": 3,
+    "start_interval": "2s",
+    "start_period": "120s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "parishkit.stewardship.probe",
+     "installer"
+    ],
+    "timeout": "15s"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/worker.yaml",
+     "target": "/opt/parishkit/config/services/worker.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/stewardship",
+     "target": "/opt/parishkit/config/stewardship",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/worker",
+     "target": "/opt/parishkit/credentials/database/worker",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/family_code_mac/credential",
+     "target": "/opt/parishkit/credentials/family_code_mac/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/general_encryption/credential",
+     "target": "/opt/parishkit/credentials/general_encryption/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/parishsoft",
+     "target": "/opt/parishkit/credentials/parishsoft",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/slack",
+     "target": "/opt/parishkit/credentials/slack",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/token_public/credential",
+     "target": "/opt/parishkit/credentials/token_public/credential",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/valkey/worker",
+     "target": "/opt/parishkit/credentials/valkey/worker",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/reports",
+     "target": "/opt/parishkit/reports",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/media",
+     "target": "/opt/parishkit/run/persistent/media",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  }
+ }
+}

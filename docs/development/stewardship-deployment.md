@@ -72,10 +72,10 @@ the CLI exposes the profile, role, origin, and root options initially.
 | YAML key within deployment | Environment suffix | Default / validation |
 | --- | --- | --- |
 | `schema_version` | None | Integer `1`; bool and unknown versions rejected |
-| `profile` | `PROFILE` | `development`, `test`, or `production`; default development |
+| `profile` | `PROFILE` | `development`, `test`, `local`, or `production`; default development |
 | `service_role` | `SERVICE_ROLE` | Default `web`; process identities below |
-| `public_origin` | `PUBLIC_ORIGIN` | Local default `http://localhost:8000`; production requires explicit HTTPS origin |
-| `trusted_proxy_hops` | `TRUSTED_PROXY_HOPS` | Exactly zero locally and one in production |
+| `public_origin` | `PUBLIC_ORIGIN` | Development and test default `http://localhost:8000`; `local` is exactly `https://localhost:8443`; production requires an explicit HTTPS origin |
+| `trusted_proxy_hops` | `TRUSTED_PROXY_HOPS` | Exactly one in production and `local`, zero in development and test |
 | `postgres.host` | `POSTGRES_HOST` | `postgres`; IP or DNS hostname, never a connection URL |
 | `postgres.port` | `POSTGRES_PORT` | `5,432`; integer 1–65,535 |
 | `postgres.name` | `POSTGRES_NAME` | `stewardship`; nonempty string |
@@ -92,9 +92,14 @@ the CLI exposes the profile, role, origin, and root options initially.
 | `family_mail_transport` | `FAMILY_MAIL_TRANSPORT` | `batched` (default) or `per_message`; see [Family mail dispatch](../guides/stewardship-family-mail-dispatch.md#implementation-checkpoints) |
 
 Public origins cannot include user information, paths other than `/`, queries,
-fragments, whitespace, or invalid ports/hosts. Local profiles use loopback HTTP;
-production uses HTTPS. Deployment profile does not set Testing/Production
-campaign mode; that remains database-authoritative.
+fragments, whitespace, or invalid ports/hosts. Development and test use loopback
+HTTP; production uses HTTPS; the `local` profile accepts only
+`https://localhost:8443`, as the
+[local environment specification](../specs/stewardship/local-environment/spec.md#origin-proxy-and-image)
+requires. `DeploymentProfile.behind_proxy` is true for production and `local`,
+the two profiles whose web service sits behind the deployment's own Caddy hop.
+Deployment profile does not set Testing/Production campaign mode; that remains
+database-authoritative.
 
 Valkey file-map identities are `web`, `worker`, `scheduler`, `mail-dispatch`
 and `backup-worker`. The scalar reference belongs only to the input profile's

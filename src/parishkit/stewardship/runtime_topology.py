@@ -84,25 +84,28 @@ PYTHON_HEALTHCHECK = {
 }
 
 
+PRODUCTION_IMAGE_PATTERN = (
+    r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/stewardship@sha256:[0-9a-f]{64}"
+)
+# The LOCAL build tag (#476): the checkout's commit, "-dirty" when it has
+# uncommitted edits, and the build time in Unix seconds. Production rejects
+# it, and LOCAL rejects GHCR references and the development tag.
+LOCAL_IMAGE_PATTERN = r"parishkit-stewardship-local:[0-9a-f]{40}(-dirty)?-[0-9]{10}"
+DEVELOPMENT_IMAGE = "parishkit-stewardship:development"
+
+
 def _image(value, profile):
-    """Production must select an immutable repository-registry application digest."""
-    if (
-        type(value) is not str
-        or (
-            profile is DeploymentProfile.PRODUCTION
-            and re.fullmatch(
-                r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+/stewardship@sha256:[0-9a-f]{64}",
-                value,
-            )
-            is None
-        )
-        or (
-            profile is not DeploymentProfile.PRODUCTION
-            and value != "parishkit-stewardship:development"
-        )
-    ):
-        raise ConfigError("An approved immutable application image is required.")
-    return value
+    """Each profile admits exactly one image shape; production's is a GHCR digest."""
+    if type(value) is str:
+        if profile is DeploymentProfile.PRODUCTION:
+            admitted = re.fullmatch(PRODUCTION_IMAGE_PATTERN, value) is not None
+        elif profile is DeploymentProfile.LOCAL:
+            admitted = re.fullmatch(LOCAL_IMAGE_PATTERN, value) is not None
+        else:
+            admitted = value == DEVELOPMENT_IMAGE
+        if admitted:
+            return value
+    raise ConfigError("An approved immutable application image is required.")
 
 
 def _service_config(configuration, role, *, target=None, provider_mode="configured"):
@@ -260,6 +263,13 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         "configured-slack",
     }:
         raise ConfigError("Unknown runtime provider mount mode.")
+    if configuration.profile is DeploymentProfile.LOCAL:
+        # The web-networking and Caddy branches below still choose between
+        # production and "everything else", and that else is the development
+        # shape (web's port published on loopback, no proxy). LOCAL must never
+        # take it, so until the local ingress and topology renderer lands
+        # (OPS-10.03) the whole rendering is refused rather than half-right.
+        raise ConfigError("The local topology is not yet supported (OPS-10.03).")
     configuration = resolve_database_files(configuration)
     configuration = resolve_valkey_files(configuration)
     RuntimeLayout(configuration).validate()
@@ -290,6 +300,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     # well inside the 36 this check reserves for them.
     budget.validate_topology(background_processes=1 + len(targets) + 5)
     image = _image(image, configuration.profile)
+    # Deliberately `is not DEVELOPMENT`: LOCAL and test are refused here too.
     if checkout is not None and (
         configuration.profile is not DeploymentProfile.DEVELOPMENT
         or not Path(checkout).is_absolute()
