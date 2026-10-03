@@ -54,7 +54,12 @@ def browser_settings(deployment):
     """
     if not isinstance(deployment.profile, DeploymentProfile):
         raise ValueError("A canonical deployment profile is required.")
+    # Behind Caddy (production and LOCAL) every browser connection is HTTPS, so
+    # cookies are secure and HTTP redirects. Only production pins HTTPS with
+    # HSTS: a LOCAL developer runs other plain-HTTP services on localhost and
+    # must not have the browser pin that whole host (#476).
     production = deployment.profile is DeploymentProfile.PRODUCTION
+    https = deployment.profile.behind_proxy
     origin = urlsplit(deployment.public_origin)
     if (
         not origin.hostname
@@ -64,8 +69,10 @@ def browser_settings(deployment):
         or origin.fragment
         or origin.path not in {"", "/"}
         or origin.scheme not in {"https", "http"}
-        or (production and origin.scheme != "https")
+        or (https and origin.scheme != "https")
     ):
+        if deployment.profile is DeploymentProfile.LOCAL:
+            raise ValueError("A valid HTTPS origin behind the proxy is required.")
         raise ValueError("A valid secure canonical production origin is required.")
     return {
         "STEWARDSHIP_CANONICAL_HOST": origin.hostname,
@@ -73,9 +80,9 @@ def browser_settings(deployment):
             f"[{origin.hostname}]" if ":" in origin.hostname else origin.hostname
         ],
         "CSRF_TRUSTED_ORIGINS": [deployment.public_origin.rstrip("/")],
-        "SESSION_COOKIE_SECURE": production,
-        "CSRF_COOKIE_SECURE": production,
-        "SECURE_SSL_REDIRECT": production,
+        "SESSION_COOKIE_SECURE": https,
+        "CSRF_COOKIE_SECURE": https,
+        "SECURE_SSL_REDIRECT": https,
         "SECURE_HSTS_SECONDS": 31536000 if production else 0,
         "SECURE_HSTS_INCLUDE_SUBDOMAINS": False,
         "SECURE_HSTS_PRELOAD": False,

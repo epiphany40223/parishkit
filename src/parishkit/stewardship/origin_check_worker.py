@@ -13,6 +13,9 @@ def resolve(payload):
     if type(payload) is not dict or set(payload) != {"origin", "profile"}:
         raise ValueError("Invalid origin check.")
     profile = DeploymentProfile(payload["profile"])
+    if profile is DeploymentProfile.LOCAL:
+        # Refused here as well as in the parent (OPS-10.04 adds the rule).
+        raise ValueError("Local origin verification is not yet supported.")
     origin = urlsplit(_origin(payload["origin"], profile))
     return bool(
         socket.getaddrinfo(

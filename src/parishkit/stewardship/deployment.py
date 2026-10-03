@@ -25,11 +25,31 @@ from .runtime_network import RuntimeNetwork, parse_network
 
 
 class DeploymentProfile(StrEnum):
-    """Execution environment, independent of database-authoritative system mode."""
+    """Execution environment, independent of database-authoritative system mode.
+
+    Development and test are plain HTTP on loopback with no proxy. LOCAL is the
+    production-shaped laptop environment (#476): HTTPS through one Caddy hop,
+    synthetic data, no real provider. New code that distinguishes LOCAL must
+    test ``is LOCAL`` or ``behind_proxy``, never ``!= DEVELOPMENT``, which
+    would silently change meaning as profiles are added.
+    """
 
     DEVELOPMENT = "development"
     TEST = "test"
     PRODUCTION = "production"
+    LOCAL = "local"
+
+    @property
+    def behind_proxy(self) -> bool:
+        """Whether web is reached only through the deployment's own Caddy hop."""
+        return self in PROXIED_PROFILES
+
+
+# The profiles whose web service sits behind the deployment's own Caddy.
+PROXIED_PROFILES = frozenset({DeploymentProfile.PRODUCTION, DeploymentProfile.LOCAL})
+# The one public origin the LOCAL profile admits: the Caddy publication, the
+# VM port forward and every printed link use exactly this value.
+LOCAL_PUBLIC_ORIGIN = "https://localhost:8443"
 
 
 class ServiceRole(StrEnum):
@@ -233,7 +253,11 @@ def _host(value: object, label: str) -> str:
 
 
 def _origin(value: object, profile: DeploymentProfile) -> str:
-    """Allow only a bare origin, HTTPS in production and loopback HTTP locally."""
+    """Allow only a bare origin, with one scheme and host rule per profile.
+
+    Production requires HTTPS; LOCAL requires exactly LOCAL_PUBLIC_ORIGIN;
+    development and test require loopback HTTP.
+    """
     origin = _text(value, "public_origin")
     if any(char.isspace() or ord(char) < 32 for char in origin):
         raise ConfigError(
@@ -257,19 +281,28 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
     if invalid:
         raise ConfigError("public_origin must be a bare HTTP(S) origin")
     hostname = _host(parsed.hostname, "public_origin host").lower()
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None:
+        authority += f":{port}"
+    normalized = f"{parsed.scheme}://{authority}"
     if profile is DeploymentProfile.PRODUCTION:
         if parsed.scheme != "https":
             raise ConfigError("production public_origin requires HTTPS")
+    elif profile is DeploymentProfile.LOCAL:
+        # The normalized form is compared, so a trailing slash or upper-case
+        # host is still the one origin; any other host (127.0.0.1 and ::1
+        # included), scheme or port is refused. The go-live origin check
+        # (origin_check) refuses LOCAL outright until its own LOCAL rule lands
+        # (OPS-10.04); that rule will not live here.
+        if normalized != LOCAL_PUBLIC_ORIGIN:
+            raise ConfigError(f"local public_origin must be {LOCAL_PUBLIC_ORIGIN}")
     elif parsed.scheme != "http" or parsed.hostname not in {
         "localhost",
         "127.0.0.1",
         "::1",
     }:
         raise ConfigError("development/test public_origin requires loopback HTTP")
-    authority = f"[{hostname}]" if ":" in hostname else hostname
-    if port is not None:
-        authority += f":{port}"
-    return f"{parsed.scheme}://{authority}"
+    return normalized
 
 
 def load_deployment(
@@ -528,28 +561,34 @@ def load_deployment(
         raise ConfigError("unknown credential installer target")
     if (role is ServiceRole.CREDENTIAL_INSTALLER) != (target is not None):
         raise ConfigError("credential_target is required only for credential-installer")
+    # Production has no implicit origin; LOCAL has exactly one; development
+    # and test default to the scaffold's loopback HTTP port.
+    if profile is DeploymentProfile.PRODUCTION:
+        default_origin = None
+    elif profile is DeploymentProfile.LOCAL:
+        default_origin = LOCAL_PUBLIC_ORIGIN
+    else:
+        default_origin = "http://localhost:8000"
     origin = _origin(
-        select(
-            "PUBLIC_ORIGIN",
-            deployment.get("public_origin"),
-            None
-            if profile is DeploymentProfile.PRODUCTION
-            else "http://localhost:8000",
-        ),
+        select("PUBLIC_ORIGIN", deployment.get("public_origin"), default_origin),
         profile,
     )
+    # Exactly one trusted hop behind Caddy (production and local), none when
+    # web is reached directly (development and test).
+    expected_hops = 1 if profile.behind_proxy else 0
     hops = _integer(
         select(
-            "TRUSTED_PROXY_HOPS",
-            deployment.get("trusted_proxy_hops"),
-            1 if profile is DeploymentProfile.PRODUCTION else 0,
+            "TRUSTED_PROXY_HOPS", deployment.get("trusted_proxy_hops"), expected_hops
         ),
         "trusted_proxy_hops",
         0,
         1,
     )
-    if hops != (1 if profile is DeploymentProfile.PRODUCTION else 0):
-        raise ConfigError("proxy hops must be one in production and zero locally")
+    if hops != expected_hops:
+        raise ConfigError(
+            "proxy hops must be one in production and local, "
+            "zero in development and test"
+        )
     limit_fields = fields(AuthenticationLimits)
     limit_config = _mapping(
         deployment.get("authentication_limits", {}),
@@ -625,6 +664,8 @@ def load_deployment(
     }
     if supplied_keys - consumed_keys:
         raise ConfigError("unknown deployment environment or CLI override")
+    # Production only: LOCAL holds synthetic data, so weaker limits there are
+    # a developer's choice, not an operational warning.
     if profile is DeploymentProfile.PRODUCTION:
         limits.warn_if_weaker()
     return DeploymentConfiguration(

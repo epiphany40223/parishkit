@@ -129,6 +129,35 @@ def _download_settings(configuration, ordinary):
     return result
 
 
+def trusted_proxy_networks(configuration):
+    """Only the deployment's own Caddy address may forward a client identity.
+
+    Production and LOCAL sit behind that one hop; development and test have no
+    proxy at all, so no peer is trusted to forward anything.
+    """
+    if configuration.profile.behind_proxy:
+        return (configuration.runtime_network.caddy + "/32",)
+    return ()
+
+
+def template_settings(templates, configuration):
+    """Development alone reloads templates from disk on every request.
+
+    Template edits then show without Django's private debug pages or a Python
+    change to wake the worker reloader. Every other profile, LOCAL included,
+    keeps the cached loaders of the given settings, which are returned as is.
+    """
+    if configuration.profile is DeploymentProfile.DEVELOPMENT:
+        templates = deepcopy(templates)
+        for template in templates:
+            template["APP_DIRS"] = False
+            template["OPTIONS"]["loaders"] = [
+                "django.template.loaders.filesystem.Loader",
+                "django.template.loaders.app_directories.Loader",
+            ]
+    return templates
+
+
 def configure_web(configuration):
     """Admit mounts, key purposes, SQL roles and coherent authority before serving."""
     import django
@@ -174,11 +203,7 @@ def configure_web(configuration):
     values["SOCIALACCOUNT_PROVIDERS"] = google_provider_settings(oauth)
     values["STEWARDSHIP_PROXY_HOPS"] = configuration.trusted_proxy_hops
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
-    values["STEWARDSHIP_TRUSTED_PROXY_NETWORKS"] = (
-        (configuration.runtime_network.caddy + "/32",)
-        if configuration.profile is DeploymentProfile.PRODUCTION
-        else ()
-    )
+    values["STEWARDSHIP_TRUSTED_PROXY_NETWORKS"] = trusted_proxy_networks(configuration)
     values["STEWARDSHIP_INTERNAL_NETWORKS"] = (
         "127.0.0.0/8",
         "::1/128",
@@ -188,16 +213,7 @@ def configure_web(configuration):
         "parishkit.stewardship.runtime_health.HttpMetricsMiddleware",
         *values["MIDDLEWARE"],
     ]
-    if configuration.profile is DeploymentProfile.DEVELOPMENT:
-        # Keep template edits visible without enabling Django's private debug
-        # pages or requiring Python module changes to wake the worker reloader.
-        values["TEMPLATES"] = deepcopy(values["TEMPLATES"])
-        for template in values["TEMPLATES"]:
-            template["APP_DIRS"] = False
-            template["OPTIONS"]["loaders"] = [
-                "django.template.loaders.filesystem.Loader",
-                "django.template.loaders.app_directories.Loader",
-            ]
+    values["TEMPLATES"] = template_settings(values["TEMPLATES"], configuration)
     settings.configure(**values)
     django.setup()
     from django.db import connections

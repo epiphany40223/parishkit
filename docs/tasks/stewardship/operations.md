@@ -279,7 +279,7 @@ merge-group CI `34820311292`; its protected merge
 Scope and dependencies: [OPS-10 work package](../../plans/stewardship/operations.md#ops-10-local-laptop-environment).
 Specification: [local laptop environment](../../specs/stewardship/local-environment/spec.md).
 
-- [ ] OPS-10.01 — PR 0: specify the local environment and record the Lima VM spike.
+- [x] OPS-10.01 — PR 0: specify the local environment and record the Lima VM spike.
 - [ ] OPS-10.02 — PR 1: add the LOCAL profile and LOCAL behaviour at every existing profile branch.
 - [ ] OPS-10.03 — PR 2: render the local ingress and topology with Production golden files unchanged.
 - [ ] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
@@ -290,4 +290,13 @@ Specification: [local laptop environment](../../specs/stewardship/local-environm
 - [ ] OPS-10.09 — PR 7a: add the Lima VM operator script, seeded snapshots and developer guide.
 - [ ] OPS-10.10 — PR 7b: add the local deploy mode of the scripted upgrade.
 
-Evidence: Not started.
+Evidence: OPS-10.01 is complete in
+[PR #479](https://github.com/epiphany40223/parishkit/pull/479), which added the
+[local environment specification](../../specs/stewardship/local-environment/spec.md),
+this package and its checklist, and recorded the Lima VM spike. On its final
+head `ef458b25` the CI `validate` job (Ruff, Markdown lint and the fast
+contracts including `test_traceability.py`) passed in
+[run 37156380899](https://github.com/epiphany40223/parishkit/actions/runs/37156380899/job/111300525759);
+the previous head `5b455860` passed every job in
+[run 37153822037](https://github.com/epiphany40223/parishkit/actions/runs/37153822037).
+OPS-10.02 through OPS-10.10 remain open.

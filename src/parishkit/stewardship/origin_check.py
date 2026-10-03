@@ -10,6 +10,8 @@ import json
 import subprocess
 import sys
 
+from parishkit.config import ConfigError
+
 from .deployment import DeploymentProfile, _origin
 
 
@@ -22,6 +24,13 @@ def check_public_origin(origin, profile):
     """
     if not isinstance(profile, DeploymentProfile):
         raise ValueError("An explicit deployment profile is required.")
+    if profile is DeploymentProfile.LOCAL:
+        # localhost resolves, so without this the LOCAL origin would verify
+        # as a public one. The LOCAL rule for go-live is OPS-10.04's.
+        raise ConfigError(
+            "Go-live origin verification in the local profile is not yet "
+            "supported (OPS-10.04)."
+        )
     canonical = _origin(origin, profile)
     payload = json.dumps({"origin": canonical, "profile": profile.value}).encode()
     try:
