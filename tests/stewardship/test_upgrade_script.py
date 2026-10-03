@@ -1,0 +1,691 @@
+"""The scripted release-digest upgrade and rollback (#460).
+
+`tools/stewardship-upgrade.sh` has no harness that could run it against a
+host, so these tests run its two halves with stand-ins: the local half with
+a recording `ssh`, to show that a bad digest or option never reaches a host,
+and the host half (the heredoc the local half uploads) with a `docker` that
+answers as a healthy, set-up deployment would, to pin the order of the
+runbook's steps, the abandon paths and the rollback's refusals.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
+REPO = "ghcr.io/example/stewardship"
+OFFICIAL_REPO = "ghcr.io/epiphany40223/parishkit/stewardship"
+UUID = "00000000-0000-4000-8000-000000000000"
+CURRENT = f"{REPO}@sha256:" + "a" * 64
+TARGET = f"{REPO}@sha256:" + "b" * 64
+
+
+def host_script():
+    """The host half: everything between the heredoc's markers."""
+    text = SCRIPT.read_text()
+    begin = text.index("<<'REMOTE'\n") + len("<<'REMOTE'\n")
+    return text[begin : text.rindex("REMOTE")]
+
+
+def executable_stub(bin_dir, name, body):
+    """Write a bash stand-in into a directory that can run it."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    probe = bin_dir / "probe"
+    if not probe.exists():
+        probe.write_text("#!/usr/bin/env bash\nexit 0\n")
+        probe.chmod(0o755)
+        # The Compose test container mounts /tmp noexec, so the stand-ins
+        # could not run there; the other CI jobs still run these tests.
+        try:
+            subprocess.run([str(probe)])
+        except PermissionError:
+            pytest.skip("the temporary directory cannot run the stand-in programs")
+    path = bin_dir / name
+    path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+    path.chmod(0o755)
+
+
+def test_both_halves_parse():
+    """`bash -n` accepts the local script and the uploaded host script."""
+    assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
+    assert (
+        subprocess.run(["bash", "-n"], input=host_script(), text=True).returncode == 0
+    )
+    assert os.access(SCRIPT, os.X_OK)
+    assert SCRIPT.read_text().startswith("#!/usr/bin/env bash\n")
+
+
+# ---------------------------------------------------------------------------
+# The local half: validation before ssh.
+
+
+def run_local(tmp_path, *args, env=None, unset=()):
+    """Run the local half with a recording ssh; return (result, calls, stdin)."""
+    bin_dir = tmp_path / "bin"
+    calls = tmp_path / "ssh.calls"
+    stdin = tmp_path / "ssh.stdin"
+    executable_stub(
+        bin_dir, "ssh", f'echo "ssh $*" >>"{calls}"; cat >>"{stdin}"; exit 0'
+    )
+    base = {k: v for k, v in os.environ.items() if not k.startswith("STEWARDSHIP_")}
+    full = {
+        **base,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "STEWARDSHIP_HOST": "host.invalid",
+        "STEWARDSHIP_UUID": UUID,
+        "STEWARDSHIP_IMAGE": f"{OFFICIAL_REPO}@sha256:" + "d" * 64,
+        **(env or {}),
+    }
+    for name in unset:
+        full.pop(name, None)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        env=full,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    recorded = calls.read_text().splitlines() if calls.exists() else []
+    return result, recorded, (stdin.read_text() if stdin.exists() else "")
+
+
+@pytest.mark.parametrize("args", [(), ("--rollback",)])
+def test_a_bad_digest_is_refused_before_ssh(tmp_path, args):
+    """Anything but repo@sha256:<64 lowercase hex> never reaches the host."""
+    for n, bad in enumerate(
+        (
+            "ghcr.io/other/stewardship@sha256:" + "d" * 64,
+            f"{OFFICIAL_REPO}:v1.1.0",
+            f"{OFFICIAL_REPO}@sha256:" + "D" * 64,
+            f"{OFFICIAL_REPO}@sha256:" + "d" * 63,
+            f"{OFFICIAL_REPO}@sha256:" + "d" * 65,
+            "sha256:" + "d" * 64,
+        )
+    ):
+        result, calls, _ = run_local(
+            tmp_path / str(n), *args, env={"STEWARDSHIP_IMAGE": bad}
+        )
+        assert result.returncode == 1, bad
+        assert "STEWARDSHIP_IMAGE must be" in result.stderr, bad
+        assert calls == [], bad
+
+
+@pytest.mark.parametrize(
+    "missing", ["STEWARDSHIP_HOST", "STEWARDSHIP_UUID", "STEWARDSHIP_IMAGE"]
+)
+def test_a_missing_variable_is_refused_before_ssh(tmp_path, missing):
+    """Each required variable is named when it is unset or empty."""
+    for n, env in enumerate(({}, {missing: ""})):
+        result, calls, _ = run_local(
+            tmp_path / str(n), env=env, unset=(missing,) if not env else ()
+        )
+        assert result.returncode == 1
+        assert missing in result.stderr
+        assert calls == []
+
+
+def test_an_unknown_option_is_refused_before_ssh(tmp_path):
+    """Only --rollback is an option; anything else prints the usage line."""
+    for n, args in enumerate((("--upgrade",), ("--rollback", "x"), ("extra",))):
+        result, calls, _ = run_local(tmp_path / str(n), *args)
+        assert result.returncode == 2, args
+        assert "usage:" in result.stderr and "[--rollback]" in result.stderr
+        assert calls == []
+
+
+def test_a_rollback_refuses_the_schema_change_override(tmp_path):
+    """A rollback never migrates, so the override is refused, not ignored."""
+    result, calls, _ = run_local(
+        tmp_path, "--rollback", env={"STEWARDSHIP_SCHEMA_CHANGE": "1"}
+    )
+    assert result.returncode == 1
+    assert "never migrates" in result.stderr
+    assert "database-restore" in result.stderr
+    assert calls == []
+    # Only the explicit default is accepted.
+    result, calls, _ = run_local(
+        tmp_path / "zero", "--rollback", env={"STEWARDSHIP_SCHEMA_CHANGE": "0"}
+    )
+    assert result.returncode == 0 and len(calls) == 1
+
+
+def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
+    """One ssh call, the arguments in order, the host half on its stdin."""
+    image = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
+    result, calls, stdin = run_local(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1 and calls[0].startswith("ssh host.invalid ")
+    # repo image root project yaml uuid schema_change mode, %q-quoted.
+    expected = (
+        f"{OFFICIAL_REPO} {image} /opt/parishkit stewardship "
+        f"/etc/parishkit/stewardship-deployment.yaml {UUID} 0 upgrade ; rc="
+    )
+    assert expected in calls[0]
+    assert stdin == host_script()
+    # The uploaded half is itself valid bash.
+    assert subprocess.run(["bash", "-n"], input=stdin, text=True).returncode == 0
+    result, calls, _ = run_local(tmp_path / "rollback", "--rollback")
+    assert result.returncode == 0, result.stderr
+    assert f" {UUID} 0 rollback ; rc=" in calls[0]
+
+
+def test_the_optional_variables_reach_the_host(tmp_path):
+    """Root, project, YAML path and repository override the defaults."""
+    repo = "ghcr.io/example/other"
+    image = f"{repo}@sha256:" + "e" * 64
+    result, calls, _ = run_local(
+        tmp_path,
+        env={
+            "STEWARDSHIP_IMAGE": image,
+            "STEWARDSHIP_IMAGE_REPO": repo,
+            "STEWARDSHIP_ROOT": "/srv/pk",
+            "STEWARDSHIP_PROJECT": "proj",
+            "STEWARDSHIP_YAML": "/etc/pk/d.yaml",
+            "STEWARDSHIP_SCHEMA_CHANGE": "1",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    expected = f"{repo} {image} /srv/pk proj /etc/pk/d.yaml {UUID} 1 upgrade ; rc="
+    assert expected in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# The host half: a stand-in docker that behaves like a set-up deployment.
+
+# The stand-in records every call and keeps the set of stopped services in
+# FAKE_STATE so `ps --services --status running` answers truthfully after a
+# `stop` or an `up`. Switches: FAKE_NOOP is what the upgrade check answers
+# (FAKE_NOOP_LATER, when set, is what every run after the first answers);
+# FAKE_RENDER_FAIL makes rendering it fail; FAKE_BACKUP_FAIL makes the
+# backup report no off-host copy; FAKE_STOP_FAIL makes `stop web` fail;
+# FAKE_WEB_FAIL makes web never turn healthy; FAKE_DEBUG_ON gives one
+# container debug logging; FAKE_DIGESTS is what a RepoDigests inspect
+# answers; FAKE_RETARGET_FAIL makes `retarget-image` fail with nothing
+# written; FAKE_RESTART_WORKER brings the worker back the moment web stops
+# (the runbook's "restarted meanwhile" case); FAKE_SERVICES_AFTER is the
+# service list the re-rendered Compose file has after a retarget.
+# `retarget-image` rewrites compose.json and the three role documents as
+# the real command would, so the final checks read what the run itself
+# wrote. Limits: the upgrade check's SQL is never executed (the stand-in
+# answers FAKE_NOOP), `install -o` ownership is not exercised, and no
+# container runs, so the images' own refusals are out of scope.
+FAKE_DOCKER = r"""
+echo "$*" >>"$FAKE_LOG"
+stopped="$FAKE_STATE/stopped"
+touch "$stopped"
+all=(postgres valkey web worker scheduler mail-dispatch caddy)
+if [ -e "$FAKE_STATE/retargeted" ] && [ -n "$FAKE_SERVICES_AFTER" ]; then
+    read -r -a all <<<"$FAKE_SERVICES_AFTER"
+fi
+last=${*: -1}
+json() { echo '{"backup_recorded": true, "offsite": {"state": "'"$1"'"}}'; }
+case "$*" in
+    *" stop "*)
+        if [ -n "$FAKE_STOP_FAIL" ] && [[ "$*" == *" stop web"* ]]; then
+            echo "stop refused by the stand-in" >&2
+            exit 1
+        fi
+        for s in "$@"; do [[ "$s" = -* ]] || echo "$s" >>"$stopped"; done
+        if [ -n "$FAKE_RESTART_WORKER" ] && [ "$last" = web ]; then
+            grep -vxF worker "$stopped" >"$stopped.new" || true
+            mv "$stopped.new" "$stopped"
+        fi ;;
+    *" up --detach "*)
+        if [ -n "$FAKE_WEB_FAIL" ] && [[ " $* " == *" web "* ]]; then exit 1; fi
+        for s in "$@"; do
+            grep -vxF "$s" "$stopped" >"$stopped.new" || true
+            mv "$stopped.new" "$stopped"
+        done ;;
+    *" ps --services --status running")
+        printf '%s\n' "${all[@]}" | grep -vxF -f "$stopped" || true ;;
+    *" config --services") printf '%s\n' "${all[@]}" ;;
+    *" ps -q "*) ;;
+    *" ps --quiet") printf '%s\n' id-web id-worker ;;
+    "compose ls"*)
+        echo '[{"Name":"stewardship","ConfigFiles":"'"$FAKE_COMPOSE"'"}]' ;;
+    *"RepoDigests"*) echo "${FAKE_DIGESTS:-$last}" ;;
+    *"{{.Name}}"*) echo "/stewardship-$last" ;;
+    *"Config.Env"*)
+        on=0
+        [ -z "$FAKE_DEBUG_ON" ] || [ "$last" != id-worker ] || on=1
+        echo "PARISHKIT_DEBUG_LOGGING=$on" ;;
+    *" collect-static --destination "*)
+        echo "collected" >"$last/new.js"
+        echo "collected 1 file" ;;
+    *" upgrade-check "*)
+        [ -z "$FAKE_RENDER_FAIL" ] || exit 2
+        echo "SELECT true;" ;;
+    *"PGOPTIONS"*)
+        cat >/dev/null
+        echo x >>"$FAKE_STATE/checks"
+        if [ -n "$FAKE_NOOP_LATER" ] && [ "$(wc -l <"$FAKE_STATE/checks")" -gt 1 ]
+        then echo "$FAKE_NOOP_LATER"; else echo "$FAKE_NOOP"; fi ;;
+    *" run --rm -T backup-worker")
+        echo '{"level":"DEBUG"}'
+        if [ -n "$FAKE_BACKUP_FAIL" ]; then json failed; else json uploaded; fi ;;
+    *" retarget-image --config "*)
+        [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
+        bulk=false batch=20
+        for arg in "$@"; do
+            case "$arg" in
+                PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
+                PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=*) batch=${arg#*=} ;;
+            esac
+        done
+        echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        for role in worker mail-dispatch scheduler; do
+            doc='{"deployment": {"bulk_family_send": '"$bulk"','
+            echo "$doc"' "bulk_send_batch": '"$batch"'}}' \
+                >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
+        done
+        touch "$FAKE_STATE/retargeted" ;;
+    *" run --rm -T migration") echo "migrated" ;;
+    *"database-grants"*) echo "granted" ;;
+    *"exec -T caddy sha256sum"*) sha256sum "$FAKE_CADDYFILE" ;;
+    *"pk-stewardship health"*) [ -z "$FAKE_WEB_FAIL" ] || exit 1 ;;
+    *"ps --all --format json")
+        for s in $(printf '%s\n' "${all[@]}" | grep -vxE 'postgres|valkey'); do
+            health=healthy
+            [ -z "$FAKE_WEB_FAIL" ] || [ "$s" != web ] || health=unhealthy
+            echo '{"Service":"'$s'","State":"running","Health":"'$health'"}'
+        done ;;
+    *"import parishkit"*) echo 1.1.0 ;;
+    *" top "*) printf '%s\n' "runtime --queue a" "runtime --queue b" ;;
+esac
+exit 0
+"""
+
+
+def run_host(
+    tmp_path, mode, *, noop="t", status=0, kept=None, bulk=True, prepare=None, **fake
+):
+    """Run the host half against the stand-ins.
+
+    Returns the recorded docker calls, the combined output and the runtime
+    root. `noop` is the upgrade check's answer; `status` the exit status
+    the script must end with; `kept` is the content of a kept static tree
+    for the target digest, when there is one; `bulk` sets the deployment's
+    bulk Family send switch; `prepare(root)` may alter the runtime root
+    before the run; `fake` sets the stand-in's FAKE_* switches.
+    """
+    if shutil.which("jq") is None or shutil.which("sha256sum") is None:
+        # The runner has both; only the in-image run (which does not see
+        # this variable) may skip, as the dev deploy tests do.
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail(
+                "the CI runner lacks jq or sha256sum; host-half tests cannot run"
+            )
+        pytest.skip("the host-side script needs jq and sha256sum")
+    root = tmp_path / "root"
+    services = root / "config" / "services"
+    services.mkdir(parents=True)
+    (services / "Caddyfile").write_text("caddy\n")
+    (services / "compose.json").write_text(
+        json.dumps({"services": {"web": {"image": CURRENT}}})
+    )
+    (services / "web.yaml").write_text(
+        json.dumps(
+            {
+                "deployment": {
+                    "postgres": {"name": "stewardship"},
+                    "public_origin": "https://stewardship.example.test",
+                }
+            }
+        )
+    )
+    for role in ("worker", "mail-dispatch", "scheduler"):
+        (services / f"{role}.yaml").write_text(
+            json.dumps(
+                {"deployment": {"bulk_family_send": bulk, "bulk_send_batch": 25}}
+            )
+        )
+    (root / "cache" / "static").mkdir(parents=True)
+    (root / "cache" / "static" / "old.js").write_text("old")
+    if kept is not None:
+        hex_ = TARGET.rsplit(":", 1)[1]
+        (root / "cache" / f"static.{hex_}").mkdir()
+        (root / "cache" / f"static.{hex_}" / "kept.js").write_text(kept)
+    if prepare is not None:
+        prepare(root)
+    bin_dir = tmp_path / "bin"
+    executable_stub(bin_dir, "docker", FAKE_DOCKER)
+    # Root-only `install -o`, real waiting and the public-origin probe are
+    # replaced; FAKE_ORIGIN_FAIL makes the origin unreachable.
+    executable_stub(bin_dir, "install", 'mkdir -p "${@: -1}"')
+    executable_stub(bin_dir, "sleep", "exit 0")
+    executable_stub(
+        bin_dir,
+        "curl",
+        'echo "curl $*" >>"$FAKE_LOG"; [ -z "$FAKE_ORIGIN_FAIL" ] || exit 7',
+    )
+    state = tmp_path / "state"
+    state.mkdir()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    log = tmp_path / "docker.log"
+    log.touch()
+    script = tmp_path / "remote.sh"
+    script.write_text(host_script())
+    result = subprocess.run(
+        [
+            "bash",
+            str(script),
+            REPO,
+            TARGET,
+            str(root),
+            "stewardship",
+            str(tmp_path / "deployment.yaml"),
+            UUID,
+            fake.pop("schema_change", "0"),
+            mode,
+        ],
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FAKE_LOG": str(log),
+            "FAKE_STATE": str(state),
+            "FAKE_NOOP": noop,
+            "FAKE_COMPOSE": str(services / "compose.json"),
+            "FAKE_CADDYFILE": str(services / "Caddyfile"),
+            "STEWARDSHIP_LOG_DIR": str(logs),
+            **{"FAKE_" + name.upper(): str(value) for name, value in fake.items()},
+        },
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == status, output
+    # The whole log is also kept on the host, named after the mode.
+    kept_logs = list(logs.glob(f"stewardship-{mode}-*.log"))
+    assert len(kept_logs) == 1 and "Log: " in kept_logs[0].read_text()
+    return log.read_text().splitlines(), output, root
+
+
+def first(calls, fragment):
+    """Index of the first recorded call containing the fragment."""
+    return next(i for i, call in enumerate(calls) if fragment in call)
+
+
+def test_an_upgrade_follows_the_runbook_order(tmp_path):
+    """Image-only work first, backup before web stops, web starts first."""
+    calls, output, root = run_host(tmp_path, "upgrade")
+    stop_background = first(calls, " stop worker scheduler mail-dispatch")
+    stop_web = first(calls, " stop web")
+    early = (
+        f"pull --quiet {TARGET}",
+        " collect-static ",
+        " upgrade-check ",
+        "PGOPTIONS",
+    )
+    for fragment in early:
+        assert first(calls, fragment) < stop_background, fragment
+    backup = first(calls, "backup-worker")
+    retarget = first(calls, " retarget-image ")
+    assert stop_background < backup < stop_web < retarget
+    # caddy keeps serving its maintenance page; it is never stopped.
+    assert not any(" stop " in call and "caddy" in call for call in calls)
+    # Step 4's decisive check runs after the retarget, and t skips both commands.
+    assert retarget < [i for i, c in enumerate(calls) if "PGOPTIONS" in c][1]
+    assert not any(" migration" in call for call in calls)
+    assert not any("database-grants" in call for call in calls)
+    start_web = first(calls, "up --detach --wait web")
+    start_rest = first(calls, "up --detach --wait worker scheduler mail-dispatch")
+    assert retarget < start_web < first(calls, "up --detach --wait caddy") < start_rest
+    assert "skipped: the upgrade check answered t" in output
+    assert "web was down for" in output
+    # The bulk switch is carried into the retarget, and the new documents
+    # show it on; debug logging is off in the environment the retarget sees.
+    assert "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1" in calls[retarget]
+    assert "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=25" in calls[retarget]
+    assert "bulk Family send is on (batch 25); keeping it on" in output
+    # Static: refreshed in place from static.next, previous tree kept by digest.
+    cache = root / "cache"
+    assert not (cache / "static.next").exists()
+    assert (cache / "static" / "new.js").exists()
+    assert not (cache / "static" / "old.js").exists()
+    assert (cache / f"static.{'a' * 64}" / "old.js").exists()
+    origin = "https://stewardship.example.test"
+    assert f"curl -fsS -o /dev/null --max-time 20 {origin}/" in calls
+    assert f"Upgraded to {TARGET} in" in output
+    assert f"Replaced release: {CURRENT}" in output
+
+
+def test_an_upgrade_with_a_schema_change_refuses_without_the_override(tmp_path):
+    """Anything but t before the stops needs STEWARDSHIP_SCHEMA_CHANGE=1."""
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", status=1)
+    assert "set STEWARDSHIP_SCHEMA_CHANGE=1" in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
+    """With the override, both commands run after the retarget, before web."""
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
+    retarget = first(calls, " retarget-image ")
+    migration = first(calls, "run --rm -T migration")
+    assert retarget < migration < first(calls, "database-grants")
+    assert migration < first(calls, "up --detach --wait web")
+    assert "running migration and grants: the check answered: f" in output
+
+
+def test_a_failed_backup_abandons_before_web_stops(tmp_path):
+    """No off-host copy: the background services come back, web never stops."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, backup_fail=True)
+    assert "did not complete with its off-host copy" in output
+    assert "restarting the background services" in output
+    assert not any(" stop web" in call for call in calls)
+    restart = first(calls, "up --detach --wait worker scheduler mail-dispatch")
+    assert first(calls, "backup-worker") < restart
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_a_failed_stop_of_web_starts_everything_again(tmp_path):
+    """With nothing retargeted, a failure after the stop restarts the services."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, stop_fail=True)
+    assert "stop refused by the stand-in" in output
+    assert "nothing retargeted; starting everything again" in output
+    assert not any(" retarget-image " in call for call in calls)
+    # One `up` for every online service of the current file, and nothing after.
+    restart = first(
+        calls, "up --detach --wait web worker scheduler mail-dispatch caddy"
+    )
+    assert first(calls, " stop web") < restart == len(calls) - 1
+
+
+def test_an_unreadable_render_refuses_before_anything_stops(tmp_path):
+    """Without a rendered check there is no proof, so nothing is touched."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, render_fail=True)
+    assert "Could not render the upgrade check" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_rollback_restores_the_kept_tree_without_migrating(tmp_path):
+    """The rollback checks before retargeting, never migrates, reuses the tree."""
+    calls, output, root = run_host(tmp_path, "rollback", kept="kept")
+    assert not any(" collect-static " in call for call in calls)
+    kept = root / "cache" / f"static.{'b' * 64}"
+    assert f"Using the kept static tree {kept}" in output
+    checks = [i for i, c in enumerate(calls) if "PGOPTIONS" in c]
+    stop_web = first(calls, " stop web")
+    retarget = first(calls, " retarget-image ")
+    # Advisory before anything stops; decisive after web stops, before retarget.
+    assert len(checks) == 2 and checks[0] < stop_web < checks[1] < retarget
+    assert first(calls, "backup-worker") < stop_web
+    assert "a rollback never migrates" in output
+    assert "Migration: not repeated by a rollback" in output
+    assert not any(" migration" in call or "database-grants" in call for call in calls)
+    # Retargeted in the previous image, to the previous digest, bulk kept on.
+    retarget_call = (
+        f" {TARGET} retarget-image --config /run/operator.yaml --image {TARGET}"
+    )
+    assert retarget_call in calls[retarget]
+    assert "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1" in calls[retarget]
+    cache = root / "cache"
+    assert (cache / "static" / "kept.js").read_text() == "kept"
+    assert not (cache / "static" / "old.js").exists()
+    assert (cache / f"static.{'a' * 64}" / "old.js").exists()
+    assert (cache / f"static.{'b' * 64}" / "kept.js").exists()
+    start_web = first(calls, "up --detach --wait web")
+    assert retarget < start_web < first(calls, "up --detach --wait worker")
+    assert f"Rolled back to {TARGET} in" in output
+    assert f"Replaced release: {CURRENT}" in output
+
+
+def test_a_rollback_without_a_kept_tree_collects_in_the_previous_image(tmp_path):
+    """No cache/static.<digest>: the previous image collects into static.next."""
+    calls, output, root = run_host(tmp_path, "rollback")
+    collect = first(calls, " collect-static ")
+    assert f" {TARGET} collect-static --destination " in calls[collect]
+    assert collect < first(calls, " stop ")
+    assert (root / "cache" / "static" / "new.js").exists()
+    assert not (root / "cache" / "static.next").exists()
+
+
+def test_a_rollback_refuses_a_changed_schema_before_anything_stops(tmp_path):
+    """The previous image's check not answering t means a database restore."""
+    calls, output, _ = run_host(tmp_path, "rollback", noop="f", status=1)
+    assert "image-only" in output and "never restores a database" in output
+    assert "stewardship-deployment-runbook.md#rollback" in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_a_rollback_whose_decisive_check_fails_starts_everything_again(tmp_path):
+    """A refusal after web stopped, before the retarget, restarts the services."""
+    calls, output, _ = run_host(
+        tmp_path, "rollback", noop="t", noop_later="f", status=1
+    )
+    assert "never restores a database" in output
+    assert "nothing retargeted; starting everything again" in output
+    assert not any(" retarget-image " in call for call in calls)
+    stop_web = first(calls, " stop web")
+    restart = first(
+        calls, "up --detach --wait web worker scheduler mail-dispatch caddy"
+    )
+    assert stop_web < restart == len(calls) - 1
+
+
+def test_a_rollback_carries_a_switched_off_bulk_send_too(tmp_path):
+    """With the switch off, no variable is passed and no check expects it."""
+    calls, output, _ = run_host(tmp_path, "rollback", bulk=False)
+    retarget = first(calls, " retarget-image ")
+    assert "BULK_FAMILY_SEND" not in calls[retarget]
+    assert "keeping it on" not in output
+    assert f"Rolled back to {TARGET}" in output
+
+
+@pytest.mark.parametrize("mode", ["upgrade", "rollback"])
+def test_a_pulled_image_without_the_reference_is_refused(tmp_path, mode):
+    """A pull that does not carry exactly the named digest stops the run."""
+    calls, output, _ = run_host(
+        tmp_path, mode, status=1, digests=f"{REPO}@sha256:" + "c" * 64
+    )
+    assert "does not carry" in output
+    assert not any(" stop " in call for call in calls)
+
+
+@pytest.mark.parametrize("mode", ["upgrade", "rollback"])
+def test_problems_after_the_start_fail_the_run_and_name_them(tmp_path, mode):
+    """Unhealthy web, debug logging on and a silent origin are each named."""
+    calls, output, _ = run_host(
+        tmp_path, mode, status=1, web_fail=True, debug_on=True, origin_fail=True
+    )
+    assert "NOT healthy" in output
+    assert "web health check failing" in output
+    assert "web: web running unhealthy" in output
+    assert "/stewardship-id-worker: PARISHKIT_DEBUG_LOGGING=1" in output
+    assert "public origin https://stewardship.example.test does not answer" in output
+    # The other services were still started.
+    assert any("up --detach --wait worker" in call for call in calls)
+
+
+@pytest.mark.parametrize("mode", ["upgrade", "rollback"])
+def test_a_failed_retarget_leaves_the_maintenance_page_up(tmp_path, mode):
+    """After the retarget began nothing is restarted; the message says why."""
+    calls, output, _ = run_host(tmp_path, mode, status=1, retarget_fail=True)
+    assert "retarget refused" in output
+    assert "caddy serves the maintenance page" in output
+    assert "starting everything again" not in output
+    assert not any("up --detach" in call for call in calls)
+    if mode == "rollback":
+        assert "see the runbook's Rollback section" in output
+    else:
+        assert "Re-run with the same digest, or roll back" in output
+
+
+def test_services_restarted_during_the_stop_come_back_on_abandon(tmp_path):
+    """A worker that came back and was stopped again is started with the rest."""
+    calls, output, _ = run_host(
+        tmp_path, "rollback", noop_later="f", status=1, restart_worker=True
+    )
+    assert "Online services restarted meanwhile (worker); stopping them too." in output
+    stop_web = first(calls, " stop web")
+    assert any(call.endswith(" stop worker") for call in calls[stop_web:])
+    assert "starting everything again" in output
+    assert "up --detach --wait web worker scheduler mail-dispatch caddy" in calls[-1]
+
+
+def test_an_upgrade_starts_and_checks_a_service_the_new_release_adds(tmp_path):
+    """Step 6 reads the re-rendered file: a new service is started and checked."""
+    after = "postgres valkey web worker scheduler mail-dispatch caddy digests"
+    calls, output, _ = run_host(tmp_path, "upgrade", services_after=after)
+    retarget = first(calls, " retarget-image ")
+    start_rest = first(
+        calls, "up --detach --wait worker scheduler mail-dispatch digests"
+    )
+    assert retarget < start_rest
+    assert "all 6 online services healthy" in output
+
+
+def test_a_rollback_does_not_name_a_service_the_old_release_lacks(tmp_path):
+    """A service only the newer release has is neither started nor a problem."""
+    after = "postgres valkey web worker scheduler caddy"
+    calls, output, _ = run_host(tmp_path, "rollback", services_after=after)
+    assert any(call.endswith("up --detach --wait worker scheduler") for call in calls)
+    assert not any("up --detach" in call and "mail-dispatch" in call for call in calls)
+    assert "mail-dispatch: missing" not in output
+    assert "all 4 online services healthy" in output
+
+
+def test_a_changed_batch_size_is_a_named_problem(tmp_path):
+    """The rendered worker document must carry the batch size that was read."""
+    calls, output, _ = run_host(tmp_path, "upgrade")
+    assert (
+        "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=25"
+        in calls[first(calls, " retarget-image ")]
+    )
+    assert "bulk send batch is" not in output
+
+
+def test_a_partial_static_refresh_says_how_to_restore(tmp_path):
+    """The ERR trap around the in-place refresh names the kept tree to copy back."""
+    if os.geteuid() == 0:
+        pytest.skip("root can delete from a read-only directory")
+    locked = tmp_path / "root" / "cache" / "static" / "locked"
+
+    def lock(root):
+        # A file in a read-only directory makes the in-place delete fail.
+        locked.mkdir()
+        (locked / "file.js").write_text("x")
+        locked.chmod(0o500)
+
+    try:
+        _, output, root = run_host(tmp_path, "upgrade", status=1, prepare=lock)
+    finally:
+        # run_host skips before prepare runs where jq is missing (the compose
+        # image), so the directory may not exist.
+        if locked.exists():
+            locked.chmod(0o700)
+    aside = root / "cache" / f"static.{'a' * 64}"
+    assert "Static refresh failed partway" in output
+    assert f"cp -a {aside}/. {root / 'cache' / 'static'}/" in output
+    assert (aside / "locked" / "file.js").exists()
+    assert "caddy serves the maintenance page" in output

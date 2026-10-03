@@ -9,7 +9,11 @@ withdrawal, a mail-provider outage, a ParishSoft outage, pausing and resuming
 delivery, and messages whose delivery is unknown. It also covers watching the
 HTTPS certificate and withdrawing published campaign artwork.
 Deployment, upgrade and rollback are the
-[deployment runbook](stewardship-deployment-runbook.md); backup and restore are
+[deployment runbook](stewardship-deployment-runbook.md), whose
+[scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade) and
+[scripted rollback](stewardship-deployment-runbook.md#scripted-rollback)
+are the normal way to move a live deployment between release digests;
+backup and restore are
 the [backup runbook](stewardship-backup-runbook.md); checking a credential
 against its provider is the [smoke tools guide](stewardship-smoke-tools.md).
 Each procedure below says what you will see, what the system does by itself,
@@ -736,7 +740,7 @@ repeat step 3 after any restore.
 
 | Situation | Where |
 | --- | --- |
-| Install, upgrade, roll back | [Deployment runbook](stewardship-deployment-runbook.md) |
+| Install, upgrade, roll back | [Deployment runbook](stewardship-deployment-runbook.md) ([scripted](stewardship-deployment-runbook.md#scripted-upgrade)) |
 | Nightly backup, off-host copy, restore drill, real restore | [Backup runbook](stewardship-backup-runbook.md) |
 | Check a credential against its provider | [Smoke tools guide](stewardship-smoke-tools.md) |
 | Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |

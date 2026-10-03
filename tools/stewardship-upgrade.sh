@@ -1,21 +1,35 @@
 #!/usr/bin/env bash
 # Upgrade a stewardship deployment to a published release digest, following
 # the deployment runbook's Upgrade steps 1-6 one for one
-# (docs/guides/stewardship-deployment-runbook.md#upgrade). Unlike
-# tools/stewardship-dev-deploy.sh it builds nothing, accepts only a release
-# digest, requires a completed backup with its off-host copy before web
-# stops, and runs on a deployment in Production as well as in Testing.
+# (docs/guides/stewardship-deployment-runbook.md#upgrade), or with
+# --rollback move it back to a previous release digest following the
+# runbook's Rollback section. Unlike tools/stewardship-dev-deploy.sh it
+# builds nothing, accepts only a release digest, requires a completed backup
+# with its off-host copy before web stops, and runs on a deployment in
+# Production as well as in Testing.
 #
-# It carries the deployment's current bulk Family send switch and batch size
-# over into the re-rendered documents, so an upgrade never silently turns
-# the bulk send off, and it starts every application service with debug
+# Both modes carry the deployment's current bulk Family send switch and
+# batch size over into the re-rendered documents, so neither silently turns
+# the bulk send off, and both start every application service with debug
 # logging off. Each step prints a UTC timestamp and how long the previous
 # step took; the whole log is also kept on the host under /var/log.
+#
+# A rollback is image-only: it renders the previous image's upgrade check
+# and refuses, before anything stops, unless the check proves that the
+# schema and every runtime grant already match that image. Anything else
+# (a release that migrated or added a grant) needs the runbook's
+# database-restore rollback, which this script never attempts. The previous
+# release's static tree comes from the copy an upgrade kept at
+# cache/static.<digest>, or is collected again in the previous image.
+#
+# Usage: tools/stewardship-upgrade.sh [--rollback]
 #
 # Configuration (environment variables):
 #   STEWARDSHIP_HOST        ssh destination (required)
 #   STEWARDSHIP_UUID        deployment UUID (required)
-#   STEWARDSHIP_IMAGE       release image, ${STEWARDSHIP_IMAGE_REPO}@sha256:<hex> (required)
+#   STEWARDSHIP_IMAGE       release image to move to,
+#                           ${STEWARDSHIP_IMAGE_REPO}@sha256:<hex> (required);
+#                           with --rollback, the previous release's digest
 #   STEWARDSHIP_ROOT        runtime root (default /opt/parishkit)
 #   STEWARDSHIP_PROJECT     Compose project name (default stewardship)
 #   STEWARDSHIP_YAML        deployment YAML on the host
@@ -23,11 +37,20 @@
 #   STEWARDSHIP_IMAGE_REPO  image repository
 #                           (default ghcr.io/epiphany40223/parishkit/stewardship)
 #   STEWARDSHIP_SCHEMA_CHANGE  1 when the release notes announce a schema or
-#                           grant change; otherwise the script refuses, before
-#                           anything stops, unless the advisory upgrade check
-#                           proves migration and grants would change nothing.
+#                           grant change; otherwise the upgrade refuses,
+#                           before anything stops, unless the advisory
+#                           upgrade check proves migration and grants would
+#                           change nothing. Refused with --rollback: a
+#                           rollback never migrates.
 
 set -euo pipefail
+
+mode=upgrade
+case "$#:${1-}" in
+    0:) ;;
+    1:--rollback) mode=rollback ;;
+    *) echo "usage: $0 [--rollback]" >&2; exit 2 ;;
+esac
 
 host=${STEWARDSHIP_HOST:?set STEWARDSHIP_HOST to the ssh destination}
 uuid=${STEWARDSHIP_UUID:?set STEWARDSHIP_UUID to the deployment UUID}
@@ -36,28 +59,40 @@ root=${STEWARDSHIP_ROOT:-/opt/parishkit}
 project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
+schema_change=${STEWARDSHIP_SCHEMA_CHANGE:-0}
 
 hex=${image#"${repo}@sha256:"}
 if [ "$hex" = "$image" ] || ! [[ $hex =~ ^[0-9a-f]{64}$ ]]; then
     echo "STEWARDSHIP_IMAGE must be ${repo}@sha256:<64 lowercase hex>; refusing." >&2
     exit 1
 fi
+if [ "$mode" = rollback ] && [ "$schema_change" != 0 ]; then
+    echo "A rollback never migrates; unset STEWARDSHIP_SCHEMA_CHANGE. Refusing." >&2
+    echo "A release that changed the schema needs the runbook's database-restore rollback." >&2
+    exit 1
+fi
 
 # As in the dev deploy tool: upload the host script to a file and run it from
 # there, because `docker compose run` would otherwise read the rest of the
 # script from ssh's stdin.
-args=$(printf '%q ' "$repo" "$image" "$root" "$project" "$yaml" "$uuid" "${STEWARDSHIP_SCHEMA_CHANGE:-0}")
+args=$(printf '%q ' "$repo" "$image" "$root" "$project" "$yaml" "$uuid" "$schema_change" "$mode")
 ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <<'REMOTE'
 set -euo pipefail
-repo=$1 image=$2 root=$3 project=$4 yaml=$5 uuid=$6 schema_change=$7
-log=/var/log/stewardship-upgrade-$(date -u +%Y%m%dT%H%M%SZ).log
+repo=$1 image=$2 root=$3 project=$4 yaml=$5 uuid=$6 schema_change=$7 mode=$8
+# STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log. ssh
+# does not forward environment variables by default, so a real run logs
+# under /var/log unless the operator deliberately set it on the host.
+logdir=${STEWARDSHIP_LOG_DIR:-/var/log}
+log=$logdir/stewardship-$mode-$(date -u +%Y%m%dT%H%M%SZ).log
 exec > >(tee -a "$log") 2>&1
 tee_pid=$!
 echo "Log: $log"
 
-# What a failure means depends on how far the upgrade got: before web
-# stops, the old release is put back as it was; after, the maintenance page
-# stays up until the upgrade is re-run or rolled back (runbook, step 6).
+# What a failure means depends on how far the run got: before web stops,
+# the current release is put back as it was; with web stopped but nothing
+# retargeted yet, every service is simply started again; after the retarget,
+# the maintenance page stays up until the run is repeated or the other
+# direction is taken (runbook, step 6 and Rollback).
 phase=prepare
 work=$(mktemp -d)
 finish() {
@@ -69,9 +104,20 @@ finish() {
             background)
                 echo "==> Failed before web stopped; restarting the background services."
                 restart_background ;;
+            stopped)
+                # Nothing was retargeted, so the current release's documents
+                # are intact: start every online service of the file again,
+                # including any that restarted meanwhile and was stopped too.
+                echo "==> Failed with web stopped but nothing retargeted; starting everything again."
+                "${dc[@]}" up --detach --wait "${wanted[@]}" 2>&1 | quiet || true ;;
             offline)
                 echo "==> Failed with web stopped: caddy serves the maintenance page."
-                echo "    Re-run with the same digest, or roll back (runbook, Rollback)." ;;
+                if [ "$mode" = rollback ]; then
+                    echo "    Re-run the rollback with the same digest, or upgrade again; if retarget-image"
+                    echo "    refused, see the runbook's Rollback section (a field the newer release added)."
+                else
+                    echo "    Re-run with the same digest, or roll back (runbook, Rollback)."
+                fi ;;
         esac
     fi
     # Let tee flush the last lines before ssh exits.
@@ -87,6 +133,7 @@ services="$root/config/services"
 isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
     --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777)
+runbook=docs/guides/stewardship-deployment-runbook.md
 
 began=$(date -u +%s)
 last=$began
@@ -102,14 +149,24 @@ quiet() {
 }
 
 # The project keeps whichever Compose file it already runs under; an upgrade
-# changes images, not topology.
+# or a rollback changes images, not topology.
 compose=$(docker compose ls --all --format json |
     jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles | split(",")[0]')
 [ -n "$compose" ] && [ -f "$compose" ] || { echo "Project $project not found; refusing." >&2; exit 1; }
 dc=(docker compose -f "$compose" -p "$project")
 previous=$(jq -r '.services.web.image // empty' "$compose")
-step "Upgrading $project ($(basename "$compose")) from ${previous:-unknown} to $image"
-[ "$previous" != "$image" ] || echo "    (same digest: re-running the upgrade)"
+case "$mode" in
+    upgrade) step "Upgrading $project ($(basename "$compose")) from ${previous:-unknown} to $image" ;;
+    rollback) step "Rolling $project ($(basename "$compose")) back from ${previous:-unknown} to $image" ;;
+esac
+[ "$previous" != "$image" ] || echo "    (same digest: re-running the $mode)"
+# The current file's online services: what the stopped-phase trap starts
+# again. Step 6 re-reads the list from the re-rendered file, since the
+# target release may add or remove a service. grep's `|| true` on an empty
+# list is caught by the non-empty check that follows.
+# shellcheck disable=SC2207 # service names hold no whitespace
+wanted=($("${dc[@]}" config --services | grep -vxE 'postgres|valkey' || true))
+[ "${#wanted[@]}" -gt 0 ] || { echo "$(basename "$compose") lists no online services; refusing." >&2; exit 1; }
 
 database=$(jq -er '.deployment.postgres.name' "$services/web.yaml")
 origin=$(jq -er '.deployment.public_origin' "$services/web.yaml")
@@ -123,7 +180,7 @@ for role in mail-dispatch worker scheduler; do
     [ -n "$id" ] || continue
     if docker inspect --format '{{join .Config.Env "\n"}}' "$id" |
         grep -E '^PARISHKIT_STEWARDSHIP_(FAMILY_MAIL_TRANSPORT|MAIL_CONSUMERS|BULK_FAMILY_SEND)=.' ; then
-        echo "$role runs with a runtime fallback (above); upgrade by hand per the runbook." >&2
+        echo "$role runs with a runtime fallback (above); $mode by hand per the runbook." >&2
         exit 1
     fi
 done
@@ -140,43 +197,70 @@ if [ "$bulk" = true ]; then
     echo "    bulk Family send is on (batch $batch); keeping it on"
 fi
 
-# Step 1: everything that needs only the new image, while the site is up.
-step "1. Pulling the release"
+# Step 1: everything that needs only the target image, while the site is up.
+step "1. Pulling $([ "$mode" = upgrade ] && echo the release || echo the previous release)"
 docker pull --quiet "$image" >/dev/null
 docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" | grep -xF "$image" >/dev/null ||
     { echo "The pulled image does not carry $image; refusing." >&2; exit 1; }
 
-step "1. Collecting static files into cache/static.next"
-rm -rf "$root/cache/static.next"
-install -d -o 10001 -g 10001 -m 0700 "$root/cache/static.next"
-"${isolated[@]}" \
-    --mount "type=bind,source=$root/cache/static.next,target=$root/cache/static.next" \
-    "$image" collect-static --destination "$root/cache/static.next" | tail -1
+# An upgrade collects the new release's static tree; a rollback reuses the
+# tree the upgrade kept for the previous release when it is still there and
+# holds files (the static storage keeps no manifest to verify against, so
+# an empty or missing tree is the cue to collect again).
+kept="$root/cache/static.${image##*sha256:}"
+if [ "$mode" = rollback ] && [ -n "$(find "$kept" -type f -print -quit 2>/dev/null)" ]; then
+    step "1. Using the kept static tree $kept"
+    static_src=$kept
+else
+    step "1. Collecting static files into cache/static.next"
+    rm -rf "$root/cache/static.next"
+    install -d -o 10001 -g 10001 -m 0700 "$root/cache/static.next"
+    "${isolated[@]}" \
+        --mount "type=bind,source=$root/cache/static.next,target=$root/cache/static.next" \
+        "$image" collect-static --destination "$root/cache/static.next" | tail -1
+    static_src="$root/cache/static.next"
+fi
 
 step "1. Rendering the upgrade check"
 "${isolated[@]}" \
     --mount "type=bind,source=$root,target=$root,readonly" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
-    "$image" upgrade-check --config /run/operator.yaml --confirm-deployment "$uuid" >"$work/upgrade-check.sql"
+    "$image" upgrade-check --config /run/operator.yaml --confirm-deployment "$uuid" >"$work/upgrade-check.sql" ||
+    { echo "Could not render the upgrade check in $image; refusing." >&2; exit 1; }
 check() {
     # Run the rendered upgrade check in a read-only session; prints t or f.
     "${dc[@]}" exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres \
         psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 <"$work/upgrade-check.sql" 2>&1 || true
 }
+refuse_rollback() {
+    # An image-only rollback is possible only when the schema and every
+    # runtime grant already match the previous image (runbook, Rollback).
+    echo "The previous image's upgrade check answered: $(head -3 <<<"$1")" >&2
+    echo "The schema or a grant differs from what $image expects, so an image-only" >&2
+    echo "rollback is not possible; this script never restores a database." >&2
+    echo "Follow the database-restore rollback in $runbook#rollback." >&2
+    exit 1
+}
 advisory=$(check)
 echo "    advisory answer: $(head -3 <<<"$advisory")"
-# Runbook step 1: for a release whose notes promise no schema or grant
-# change, anything but t is the cue to stop before anything stops.
-if [ "$advisory" != t ] && [ "$schema_change" != 1 ]; then
-    echo "The upgrade check expects migration or grants to change something." >&2
-    echo "Read the release notes; set STEWARDSHIP_SCHEMA_CHANGE=1 only if they announce it." >&2
-    exit 1
+if [ "$advisory" != t ]; then
+    if [ "$mode" = rollback ]; then
+        refuse_rollback "$advisory"
+    elif [ "$schema_change" != 1 ]; then
+        # Runbook step 1: for a release whose notes promise no schema or
+        # grant change, anything but t is the cue to stop before anything
+        # stops.
+        echo "The upgrade check expects migration or grants to change something." >&2
+        echo "Read the release notes; set STEWARDSHIP_SCHEMA_CHANGE=1 only if they announce it." >&2
+        exit 1
+    fi
 fi
 
 step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
-    # Abandon the upgrade before web stopped: bring the old services back.
+    # Abandon the run before anything was retargeted: bring the services
+    # that were stopped back.
     # shellcheck disable=SC2086
     [ -z "$background" ] || "${dc[@]}" up --detach --wait $background 2>&1 | quiet || true
 }
@@ -187,18 +271,18 @@ phase=background
 step "1. Backup (required) and its off-host copy"
 backup=$("${dc[@]}" run --rm -T backup-worker 2>&1 | grep -v '"DEBUG"' | tail -1 || true)
 echo "    $backup"
-echo "$(date -u +%FT%TZ) $backup" >>/var/log/stewardship-backup.log
+echo "$(date -u +%FT%TZ) $backup" >>"$logdir/stewardship-backup.log"
 if [ "$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null)" != true ] ||
     [ "$(jq -r '.offsite.state' <<<"$backup" 2>/dev/null)" != uploaded ]; then
     # The EXIT trap restarts the background services (phase background).
-    echo "The backup did not complete with its off-host copy; abandoning the upgrade." >&2
+    echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
     exit 1
 fi
 
 # Step 2: the site is down from here; caddy serves its maintenance page.
 step "2. Stopping web"
 stopped_at=$(date -u +%s)
-phase=offline
+phase=stopped
 "${dc[@]}" stop web 2>&1 | quiet
 still=$("${dc[@]}" ps --services --status running | grep -vxE 'caddy|postgres|valkey' || true)
 if [ -n "$still" ]; then
@@ -207,33 +291,58 @@ if [ -n "$still" ]; then
     "${dc[@]}" stop $still 2>&1 | quiet
 fi
 
+if [ "$mode" = rollback ]; then
+    # The decisive run of the check, now that nothing online can change the
+    # answer, comes before the retarget: a refusal here still has every
+    # document pointing at the current release, so the EXIT trap simply
+    # starts it again (phase stopped).
+    step "2. Confirming the schema and grants match $image (a rollback never migrates)"
+    answer=$(check)
+    [ "$answer" = t ] || refuse_rollback "$answer"
+    echo "    answer: t"
+fi
+
 step "3. Retargeting the image"
+phase=offline
 "${isolated[@]}" \
     --mount "type=bind,source=$root,target=$root" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
-    "${switches[@]}" "$image" retarget-image --config /run/operator.yaml --image "$image"
+    ${switches[@]+"${switches[@]}"} "$image" retarget-image --config /run/operator.yaml --image "$image"
 
-step "4. Migration"
-answer=$(check)
-if [ "$answer" = t ]; then
-    echo "    skipped: the upgrade check answered t (schema and grants already match)"
+if [ "$mode" = upgrade ]; then
+    step "4. Migration"
+    answer=$(check)
+    if [ "$answer" = t ]; then
+        echo "    skipped: the upgrade check answered t (schema and grants already match)"
+    else
+        echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
+        "${dc[@]}" run --rm -T migration 2>&1 | tail -1
+        "${dc[@]}" run --rm -T database-provision database-grants \
+            --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+    fi
 else
-    echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
-    "${dc[@]}" run --rm -T migration 2>&1 | tail -1
-    "${dc[@]}" run --rm -T database-provision database-grants \
-        --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+    step "4. Migration: not repeated by a rollback"
 fi
 
 step "5. Refreshing the static files in place"
 aside="$root/cache/static.${previous:+${previous##*sha256:}}"
 [ -n "$previous" ] || aside="$root/cache/static.previous"
-[ -e "$aside" ] || cp -a "$root/cache/static" "$aside"
+# Copy to a temporary name first, so an interrupted copy never leaves a
+# half-kept tree under the digest's name for a later rollback to trust.
+if ! [ -e "$aside" ]; then
+    rm -rf "$aside.tmp"
+    cp -a "$root/cache/static" "$aside.tmp"
+    mv "$aside.tmp" "$aside"
+fi
 trap 'echo "Static refresh failed partway. Restore with: find $root/cache/static -mindepth 1 -delete && cp -a $aside/. $root/cache/static/" >&2' ERR
 find "$root/cache/static" -mindepth 1 -delete
-cp -a "$root/cache/static.next/." "$root/cache/static/"
+# BSD find only warns when a delete fails; GNU find exits nonzero. Check the
+# tree is really empty before copying over whatever is left.
+[ -z "$(find "$root/cache/static" -mindepth 1 -print -quit)" ]
+cp -a "$static_src/." "$root/cache/static/"
 trap - ERR
 rm -rf "$root/cache/static.next"
-echo "    previous tree kept at $aside"
+echo "    replaced tree kept at $aside"
 
 step "6. Starting web"
 web_ok=0
@@ -248,8 +357,14 @@ fi
 echo "    web was down for $(( $(date -u +%s) - stopped_at ))s (healthy: $web_ok)"
 
 step "6. Starting the other online services"
-mapfile -t wanted < <("${dc[@]}" config --services | grep -vxE 'postgres|valkey')
-mapfile -t rest < <(printf '%s\n' "${wanted[@]}" | grep -vxE 'web|caddy' || true)
+# Re-read the list from the re-rendered file: the target release may have
+# added or removed a service, and `up` would fail wholesale for a name the
+# file no longer has. Checked for emptiness like the first list.
+# shellcheck disable=SC2207 # service names hold no whitespace
+online=($("${dc[@]}" config --services | grep -vxE 'postgres|valkey' || true))
+[ "${#online[@]}" -gt 0 ] || { echo "$(basename "$compose") now lists no online services." >&2; exit 1; }
+# shellcheck disable=SC2207
+rest=($(printf '%s\n' "${online[@]}" | grep -vxE 'web|caddy' || true))
 [ "${#rest[@]}" -eq 0 ] || "${dc[@]}" up --detach --wait "${rest[@]}" 2>&1 | quiet || true
 
 step "6. Checking"
@@ -264,7 +379,7 @@ problems=()
 [ "$healthy" -eq 1 ] || problems+=("web health check failing")
 states=$("${dc[@]}" ps --all --format json | jq -rs 'flatten | .[] |
     "\(.Service) \(.State) \(if .Health == "" then "none" else .Health end)"')
-for service in "${wanted[@]}"; do
+for service in "${online[@]}"; do
     line=$(awk -v s="$service" '$1 == s' <<<"$states" | head -1)
     case "$line" in
         "$service running healthy" | "$service running none") ;;
@@ -283,6 +398,8 @@ if [ "${#switches[@]}" -gt 0 ]; then
         [ "$(jq -r '.deployment.bulk_family_send // false' "$services/$role.yaml")" = true ] ||
             problems+=("$role: bulk Family send is off")
     done
+    rendered=$(jq -r '.deployment.bulk_send_batch // 20' "$services/worker.yaml")
+    [ "$rendered" = "$batch" ] || problems+=("worker: bulk send batch is $rendered, not $batch")
 fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"
@@ -291,11 +408,12 @@ echo "    application version: $version"
 curl -fsS -o /dev/null --max-time 20 "$origin/" || problems+=("public origin $origin does not answer")
 echo "    worker processes: $("${dc[@]}" top worker 2>/dev/null | grep -c 'runtime' || true)," \
     "mail-dispatch processes: $("${dc[@]}" top mail-dispatch 2>/dev/null | grep -c 'runtime' || true)"
+done_word=$([ "$mode" = upgrade ] && echo Upgraded || echo "Rolled back")
 if [ "${#problems[@]}" -gt 0 ]; then
-    echo "==> Upgraded to $image, but NOT healthy:" >&2
+    echo "==> $done_word to $image, but NOT healthy:" >&2
     printf '    %s\n' "${problems[@]}" >&2
     exit 1
 fi
-step "Upgraded to $image in $(( $(date -u +%s) - began ))s; all ${#wanted[@]} online services healthy"
-echo "    Record in the operators' notes. Previous release: $previous"
+step "$done_word to $image in $(( $(date -u +%s) - began ))s; all ${#online[@]} online services healthy"
+echo "    Record in the operators' notes. Replaced release: $previous"
 REMOTE

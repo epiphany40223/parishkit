@@ -9,7 +9,9 @@
 # setting STEWARDSHIP_IMAGE to that release's digest is the right way to put
 # a release on a pre-launch host; debug logging then defaults to off. Either way, the host-side script refuses, before building,
 # pulling or stopping anything, once the campaign has been activated to
-# Production; from then on, follow the deployment runbook's Upgrade steps.
+# Production; from then on, deploy release digests with
+# tools/stewardship-upgrade.sh, which follows the deployment runbook's
+# Upgrade steps.
 #
 # What it does:
 #   1. Packs the checkout's tracked files, including uncommitted edits, and
@@ -148,7 +150,8 @@ activated=$(docker compose -f "$services/compose-initial.json" -p "$project" \
 if [ "$activated" != f ]; then
     if [ "$activated" = t ]; then
         echo "This deployment's campaign is in Production; refusing a dev deploy." >&2
-        echo "Deploy a release digest with the deployment runbook's Upgrade steps:" >&2
+        echo "Deploy a release digest with tools/stewardship-upgrade.sh, which follows" >&2
+        echo "the deployment runbook's Upgrade steps:" >&2
         echo "  docs/guides/stewardship-deployment-runbook.md#upgrade" >&2
     else
         # Most likely the database is simply down; that is no reason to

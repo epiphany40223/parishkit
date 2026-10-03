@@ -151,6 +151,9 @@ services:
         source: ../../tools/stewardship-dev-deploy.sh
         target: /app/tools/stewardship-dev-deploy.sh
       - <<: *test-bind
+        source: ../../tools/stewardship-upgrade.sh
+        target: /app/tools/stewardship-upgrade.sh
+      - <<: *test-bind
         source: ../../install.py
         target: /app/install.py
       - <<: *test-bind
