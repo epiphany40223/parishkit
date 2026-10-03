@@ -36,7 +36,7 @@ class FamilyMailSource:
     recipients: FamilyRecipients = field(repr=False)
     # The name placeholders (family_names.name_placeholders): family_name,
     # head_salutation, family_member_names and all_family_member_names.
-    names: dict = field(repr=False)
+    names: dict[str, str] = field(repr=False)
     active_members: int
 
 

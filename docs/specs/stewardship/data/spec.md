@@ -878,7 +878,8 @@ grouped by surname as a salutation ("Andrew and Betty Test");
 way ("Andrew, Betty and Cy Test"); `family_member_names` is the older name
 for `head_salutation`, kept because stored templates use it; and
 `family_name` is the Family's display name, which the other three fall back
-to when no usable Member name exists. The email worker reads these names from
+to when they have no usable name (for the salutations, no usable head
+name). The email worker reads these names from
 the current source snapshot, never from a proposed census value; a Family
 page fills them from the same effective projection as the rest of the page.
 `parish_email` is the configured outgoing-mail Reply-to
