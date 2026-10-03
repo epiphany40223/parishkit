@@ -1007,6 +1007,12 @@ Source scope: [Phase 7: Release completion](../../plans/stewardship/overall.md#p
 2. Finish [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks) and [OPS-09](operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline), including all acceptance and release checks.
 3. Complete M7 evidence and G5, then perform only the separately authorized PR/release actions.
 
+## Post-launch packages
+
+Source scope: [post-launch work packages](../../plans/stewardship/overall.md#post-launch-work-packages).
+
+1. [OPS-10](operations.md#ops-10-local-laptop-environment) local laptop environment, in its own dependency order.
+
 ## Packages that span phases
 
 | Package or task group | Initial delivery | Required later completion |
@@ -1024,7 +1030,7 @@ Source scope: [Phase 7: Release completion](../../plans/stewardship/overall.md#p
 
 ## Completion
 
-Completion requires all 371 implementation tasks, all linked package definitions
+Completion requires all 381 implementation tasks, all linked package definitions
 of done, M0 through M7 demonstrations, and G1 through G5 review evidence. A
 passing unit suite or a completed portal alone does not close the project.
 Keep the task index, this navigation map, and the controlling plan synchronized

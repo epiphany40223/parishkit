@@ -257,7 +257,9 @@ authorization code flow, state, nonce, and PKCE. Only a Google-verified email is
 accepted. The stable Google `sub` identifies the external account; normalized
 email is re-evaluated against current login rules on every login and privileged
 request. Password, recovery, signup, and non-Google authentication endpoints
-are disabled.
+are disabled. The only exception is the
+[local test sign-in](../local-environment/spec.md#local-test-sign-in), which
+exists only in the LOCAL deployment profile.
 
 If an external account rename/deactivation leaves no usable Admin login, an
 authorized host operator may use the separate
