@@ -342,7 +342,11 @@ def test_every_placeholder_has_a_realistic_fictional_sample():
     )
     assert samples.keys() == PLACEHOLDERS
     assert all(value.strip() for value in samples.values()), samples
-    assert samples["family_member_names"] == "Alex and Sam Sample"
+    # The sample heads and one more Member, so a preview shows the difference
+    # between the name placeholders; the older name equals head_salutation.
+    assert samples["head_salutation"] == "Alex and Sam Sample"
+    assert samples["family_member_names"] == samples["head_salutation"]
+    assert samples["all_family_member_names"] == "Alex, Sam and Jordan Sample"
     assert samples["family_name"] == "Sample"
     code = samples["family_code"]
     assert canonical_code(code) == code and set(code) <= set(ALPHABET)

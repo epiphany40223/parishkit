@@ -158,7 +158,11 @@ def render_receipt(
         reply_to=reply_to,
         intended_recipients=intended_recipients,
         testing_recipient=testing_recipient,
-        family_name=values.get("family_member_names") or values["family_name"],
+        # The Testing banner names the heads (or, by its older name, the same
+        # value) and otherwise the household.
+        family_name=values.get("head_salutation")
+        or values.get("family_member_names")
+        or values["family_name"],
         subject=subject,
         html=html,
         text=text,

@@ -869,8 +869,19 @@ receipt facts always appear independently of the optional authored body. The
 receipt template accepts no access-code or secure-link placeholders. Scheduled email templates retain
 their explicit per-schedule revision selection.
 Family templates support only documented placeholders, including
-eligible names, code, secure link, generic URL, parish fields, dates, and
-campaign fields. `parish_email` is the configured outgoing-mail Reply-to
+Family names, code, secure link, generic URL, parish fields, dates, and
+campaign fields. A name placeholder means the same people in a Family email
+and on a Family page: `head_salutation` is the Family's active heads of
+household (every one of them, not only those with an eligible email address),
+grouped by surname as a salutation ("Andrew and Betty Test");
+`all_family_member_names` is every active, listed Member, grouped the same
+way ("Andrew, Betty and Cy Test"); `family_member_names` is the older name
+for `head_salutation`, kept because stored templates use it; and
+`family_name` is the Family's display name, which the other three fall back
+to when no usable Member name exists. The email worker reads these names from
+the current source snapshot, never from a proposed census value; a Family
+page fills them from the same effective projection as the rest of the page.
+`parish_email` is the configured outgoing-mail Reply-to
 address, and `online_giving_url` is the Parish profile's optional HTTPS online
 giving page, falling back to the parish website when none is configured.
 Unknown placeholders are validation failures, not empty text.

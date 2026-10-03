@@ -6,8 +6,11 @@ import pytest
 from PIL import Image
 
 from parishkit.stewardship.web.content import (
+    ADMIN_DIGEST_PLACEHOLDERS,
+    FAMILY_NAME_PLACEHOLDERS,
     MAX_IMAGE_BYTES,
     MAX_TEXT_BYTES,
+    PLACEHOLDERS,
     prepare_content,
     prepare_graphics,
     render_template,
@@ -15,6 +18,35 @@ from parishkit.stewardship.web.content import (
     validate_template,
 )
 from parishkit.stewardship.web.exports import csv_cell, download_headers
+
+
+def test_name_placeholders_are_family_values_never_digest_values():
+    """Both name placeholders and the older name validate; no digest carries one."""
+    names = {
+        "family_name",
+        "head_salutation",
+        "family_member_names",
+        "all_family_member_names",
+    }
+    assert names == FAMILY_NAME_PLACEHOLDERS
+    assert names <= PLACEHOLDERS
+    assert not names & ADMIN_DIGEST_PLACEHOLDERS
+    template = "".join("{{ " + name + " }}" for name in sorted(names))
+    assert validate_template(template) == names
+    rendered = render_template(
+        "<p>Dear {{ head_salutation }} ({{ family_member_names }}); "
+        "{{ all_family_member_names }}</p>",
+        {
+            "head_salutation": "Andrew and Betty Test",
+            "family_member_names": "Andrew and Betty Test",
+            "all_family_member_names": "Andrew, Betty and Cy Test",
+        },
+        html=True,
+    )
+    assert rendered == (
+        "<p>Dear Andrew and Betty Test (Andrew and Betty Test); "
+        "Andrew, Betty and Cy Test</p>"
+    )
 
 
 @pytest.mark.parametrize(

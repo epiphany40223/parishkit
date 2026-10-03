@@ -229,7 +229,7 @@ class DefaultEmail:
 EMAILS = {
     "initial": DefaultEmail(
         "{{ parish_name }} {{ campaign_year }} Stewardship Renewal",
-        "<p>Dear {{ family_member_names }}:</p>"
+        "<p>Dear {{ head_salutation }}:</p>"
         "<p>Stewardship is acknowledging God as Creator and Giver of all gifts "
         "and living each day in gratitude and with generosity of those gifts. It "
         "is making God’s love visible by imitating Jesus. We do this when we "
@@ -257,7 +257,7 @@ EMAILS = {
     ),
     "reminder": DefaultEmail(
         "Reminder: {{ parish_name }} {{ campaign_year }} Stewardship Renewal",
-        "<p>Dear {{ family_member_names }}:</p>"
+        "<p>Dear {{ head_salutation }}:</p>"
         "<p><strong>Reminder!</strong> We have not yet received your household’s "
         "{{ campaign_year }} Stewardship Renewal. After {{ campaign_end }}, the "
         "online renewal will no longer be available. Please help us by "
@@ -299,7 +299,17 @@ EMAILS = {
 # only changes content created or reset afterwards; a parish's saved content
 # keeps its text. matches_default() accepts these too, so a slot saved from an
 # earlier default still shows as the default rather than as customized.
+def _older_salutation(email):
+    """The same email greeting the heads by the placeholder's older name (#471)."""
+    return DefaultEmail(
+        email.subject,
+        email.html.replace("{{ head_salutation }}", "{{ family_member_names }}"),
+    )
+
+
 RETIRED_EMAILS = {
+    "initial": (_older_salutation(EMAILS["initial"]),),
+    "reminder": (_older_salutation(EMAILS["reminder"]),),
     "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
 }
 

@@ -4,13 +4,14 @@ import re
 from html import unescape
 from zoneinfo import ZoneInfo
 
+from parishkit.parishsoft import HEAD_MEMBER_TYPES
 from parishkit.stewardship.accounts.branding_context import campaign_artwork
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.family_names import (
     family_display_name,
-    heads_salutation_name,
+    name_placeholders,
 )
 from parishkit.stewardship.web.presentation import parish_date, parish_instant
 
@@ -122,8 +123,17 @@ def form_presentation(form):
             else (context.get((identifier, name)) or "")
             for name in ("first_name", "last_name")
         )
-        # Separate names for the salutation, so the browser payload does not grow.
-        names.append({"first": first, "last": last})
+        # Separate names for the salutation, so the browser payload does not
+        # grow. A listed Member whose source relationship is a head role is one
+        # of the Family's active heads (the source's active_head_duids are its
+        # head-role Members who are active, and only active Members are listed).
+        names.append(
+            {
+                "first": first,
+                "last": last,
+                "head": relationships.get(identifier) in HEAD_MEMBER_TYPES,
+            }
+        )
         members.append(
             {
                 "id": str(identifier),
@@ -346,14 +356,17 @@ def _page_content(baseline, campaign, family, names, member_count, financial):
     Email-only credential substitutions are empty in the authenticated flow;
     rendering a page must never mint or decrypt a link/code. All Family names
     come from the effective projection, not a second, competing source read;
-    ``names`` holds each listed Member's first and last name, in page order.
+    ``names`` holds each listed Member's first and last name, in page order,
+    and whether the Member is a head of household. The name placeholders are
+    built by the rule the Family email uses, so both name the same people.
     """
     substitutions = public_substitutions(baseline.configuration.parish, campaign)
     substitutions.update(
-        family_name=family_display_name(family),
-        # Every listed Member, grouped by last name with the same rule the
-        # email uses for its heads ("Andrew, Betty and Cy Test", #468).
-        family_member_names=heads_salutation_name(names),
+        name_placeholders(
+            family_display_name(family),
+            [name for name in names if name["head"]],
+            names,
+        ),
         family_url="/family/",
         pronoun=household_pronoun(member_count),
     )

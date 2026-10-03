@@ -311,6 +311,21 @@ def test_empty_head_names_use_family_name_in_testing_banner():
     assert "instead of Example (" in result.text
 
 
+def test_testing_banner_names_the_heads_by_either_placeholder_name():
+    """The banner prefers head_salutation, then its older name, then the Family."""
+    values = {
+        "parish_name": "Parish",
+        "family_name": "Example",
+        "family_member_names": "Older Name",
+        "head_salutation": "Andrew and Betty Example",
+    }
+    result = render(identity(testing=True), values=values)
+    assert "instead of Andrew and Betty Example (" in result.text
+    del values["head_salutation"]
+    result = render(identity(testing=True), values=values)
+    assert "instead of Older Name (" in result.text
+
+
 @pytest.mark.parametrize("token_id", [123, [], {}, None])
 def test_malformed_sealed_token_reference_has_uniform_error(token_id):
     """A public-key holder can seal arbitrary JSON, but cannot crash the parser."""
