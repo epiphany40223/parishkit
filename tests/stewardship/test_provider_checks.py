@@ -591,15 +591,30 @@ def test_deadline_kill_is_logged_after_the_helper_is_killed(monkeypatch):
         raise subprocess.TimeoutExpired("synthetic", timeout)
 
     process.communicate = communicate
-    killed_first = []
-    recorded = Mock(side_effect=lambda *a, **k: killed_first.append(process.killed))
+    # The patch is process-wide, so a daemon thread left by an earlier test
+    # (a family mail reaper, a lease renewal) can record its own timeout into
+    # it (#542). Note each call's kind and whether this test's helper was
+    # already killed, and judge only the provider-check calls.
+    seen = []
+    recorded = Mock(
+        side_effect=lambda *a, **k: seen.append((k.get("what"), process.killed))
+    )
+
+    def own_calls():
+        """The recorded provider-check calls, ignoring any stray thread's."""
+        return [
+            c
+            for c in recorded.call_args_list
+            if c.kwargs.get("what") == "provider_check"
+        ]
+
     monkeypatch.setattr(timeouts, "record_timeout", recorded)
     monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
     with pytest.raises(CredentialValidationUnavailable):
         invoke(seconds=0.3)
-    assert process.killed and killed_first == [True]
-    call = recorded.call_args
-    assert call.kwargs["what"] == "provider_check"
+    assert process.killed
+    assert [killed for what, killed in seen if what == "provider_check"] == [True]
+    (call,) = own_calls()
     assert call.kwargs["helper"] == "provider_check_worker"
     assert call.kwargs["limit_seconds"] == 0.3
     assert call.kwargs["elapsed_seconds"] >= 0.3
@@ -607,7 +622,7 @@ def test_deadline_kill_is_logged_after_the_helper_is_killed(monkeypatch):
     recorded.reset_mock()
     with pytest.raises(parent.ProviderCheckOwnershipLost):
         invoke(check=Mock(side_effect=PermissionError("lost")))
-    recorded.assert_not_called()
+    assert own_calls() == []
 
 
 def test_a_credential_verdict_still_needs_ownership_after_it_finishes(monkeypatch):
