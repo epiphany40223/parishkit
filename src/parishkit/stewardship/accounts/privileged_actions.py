@@ -10,6 +10,7 @@ from django.db import connection
 from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .admin_caller import as_caller
 from .authentication import runtime
 from .configuration_requests import record_request
 from .models import PortalSession, PortalUser, SystemConfiguration
@@ -17,12 +18,16 @@ from .secret_requests import stage_secret_request
 from .sessions import authenticated_admin, require_fresh
 
 
-def admit_admin_action(request, *, actor_id, action):
+def admit_admin_action(caller, *, actor_id, action):
     """Freeze configuration/user/session admission until the intent commits.
 
-    The receiving view must run normal Django CSRF middleware/decorators. Setup
-    and restore workflow owners require their own specialized admission; this
-    normal-operation helper deliberately cannot bypass those gates.
+    ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
+    request is still converted). A web caller must come from the
+    CSRF-processed POST that the receiving view's normal Django CSRF
+    middleware/decorators produce; a read-only automation caller is refused.
+    Setup and restore workflow owners require their own specialized
+    admission; this normal-operation helper deliberately cannot bypass those
+    gates.
     """
     if not connection.in_atomic_block:
         raise StorageInvariantError(
@@ -34,12 +39,9 @@ def admit_admin_action(request, *, actor_id, action):
         Action.DESTRUCTIVE_CONFIRMATION,
     } or not isinstance(action, Action):
         raise ValueError("Unknown privileged operation.")
-    if (
-        request.method != "POST"
-        or not request.path_info.startswith("/admin/")
-        or getattr(request, "csrf_processing_done", False) is not True
-        or getattr(request, "_dont_enforce_csrf_checks", False)
-    ):
+    # The web constructor asserts the CSRF-protected Admin POST.
+    caller = as_caller(caller, state_changing=True)
+    if caller.read_only:
         raise PermissionError("Access is unavailable.")
     service = runtime()
     # Configuration activation/offline recovery takes the conflicting root lock.
@@ -59,7 +61,7 @@ def admit_admin_action(request, *, actor_id, action):
     if (
         not PortalSession.objects.select_for_update()
         .filter(
-            session_id=request.session.session_key,
+            session_id=caller.session.session_key,
             principal_id=actor_id,
             revoked_at__isnull=True,
         )
@@ -69,7 +71,7 @@ def admit_admin_action(request, *, actor_id, action):
     # Authorization cannot rotate a cookie inside an intent transaction that may
     # subsequently roll back. Normal page admission owns that session mutation;
     # a stale privilege fingerprint is denied here without dangling session state.
-    principal = authenticated_admin(request, store=service.store, read_only=True)
+    principal = authenticated_admin(caller, store=service.store, read_only=True)
     if (
         principal is None
         or principal.identity != actor_id
@@ -77,15 +79,20 @@ def admit_admin_action(request, *, actor_id, action):
     ):
         raise PermissionError("Access is unavailable.")
     if action in {Action.SECRET_REPLACEMENT, Action.DESTRUCTIVE_CONFIRMATION}:
-        require_fresh(request)
+        require_fresh(caller)
     return True
 
 
-def _actor(request):
-    """Identify the session's actor without accepting an identifier from form data."""
+def _actor(caller):
+    """Identify the session's actor without accepting an identifier from form data.
+
+    ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
+    request is still converted).
+    """
+    caller = as_caller(caller)
     actor = (
         PortalSession.objects.filter(
-            session_id=request.session.session_key, revoked_at__isnull=True
+            session_id=caller.session.session_key, revoked_at__isnull=True
         )
         .values_list("principal_id", flat=True)
         .first()

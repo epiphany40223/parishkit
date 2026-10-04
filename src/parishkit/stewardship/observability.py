@@ -181,6 +181,11 @@ def current_correlation() -> UUID:
     return _correlation.get() or uuid4()
 
 
+def bound_correlation() -> UUID | None:
+    """The bound request/task ID, or None outside any correlation scope."""
+    return _correlation.get()
+
+
 _task: ContextVar[UUID | None] = ContextVar("stewardship_task", default=None)
 
 
