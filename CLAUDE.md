@@ -43,12 +43,12 @@ ParishKit contains reusable Python automation for Catholic parishes.
   behavior unless the intentional change is documented.
 - Preserve existing tool behavior unless an intentional behavior change is
   requested or documented.
-- Stewardship is pre-production. Follow its
-  [pre-production development policy](docs/specs/stewardship/operations/spec.md#pre-production-development-policy):
-  maintain a fresh-install schema baseline; do not add historical database or
-  application upgrade/downgrade compatibility or tests until the human
-  explicitly activates production-readiness work. Never infer permission to
-  delete existing development databases from this policy.
+- Stewardship is in production (since October 3, 2026). Every schema change
+  follows the
+  [post-launch schema policy](docs/specs/stewardship/operations/spec.md#post-launch-schema-policy):
+  a new forward migration with a frozen SQL file, never an edit to an applied
+  migration. Never infer permission to delete existing databases from this
+  policy.
 - Stewardship v1 launches October 3, 2026. Until then, follow the
   [v1 launch scope](docs/plans/stewardship/v1-launch.md) for work selection,
   deferred scope, the schema freeze and the reduced review process.

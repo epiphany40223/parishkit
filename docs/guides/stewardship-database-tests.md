@@ -94,7 +94,9 @@ authorization and concurrency tests remain mandatory.
 tag's schema in a second database on the same cluster, migrates it with the
 current tree and compares the result with a fresh install of the current tree
 in a third database (both named after the test database and dropped by the
-test). It needs `git` with the release tags reachable from the checkout.
+test), as the
+[post-launch schema policy](../specs/stewardship/operations/spec.md#post-launch-schema-policy)
+requires. It needs `git` with the release tags reachable from the checkout.
 
 ## Isolated parallel local coverage
 

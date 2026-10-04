@@ -65,7 +65,10 @@ All remaining phases follow the standing
 Database/application upgrade compatibility and upgrade/downgrade tests are
 deferred until the human explicitly activates production-readiness work,
 including where older package/gate wording lists those deliverables. Fresh
-installation and current-functionality checks remain required.
+installation and current-functionality checks remain required. Since the
+October 3, 2026 launch, schema changes follow the
+[post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy)
+instead.
 
 Human-approved workflow, updated September 13, 2026: finish PR #22 as-is, then
 prefer smaller coherent, independently testable increments to reduce review

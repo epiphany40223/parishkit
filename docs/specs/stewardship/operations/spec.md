@@ -236,6 +236,11 @@ Documented first deployment order is:
 
 ### Pre-production development policy
 
+This policy ended for the live deployment when Production went live on
+October 3, 2026; the [post-launch schema policy](#post-launch-schema-policy)
+now governs schema changes. It stays here as the record of how the
+fresh-install baseline was built and of what it never authorized.
+
 Human decision, September 13, 2026: all remaining stewardship implementation is
 pre-production until the human explicitly activates production-readiness work.
 Maintain a current fresh-install schema baseline. Do not build or test database
@@ -266,11 +271,94 @@ an unsupported schema or missing credential file and reports a sanitized,
 actionable error. These fresh-install and restart protections remain required
 throughout pre-production.
 
+### Post-launch schema policy
+
+Production went live on October 3, 2026. From then on every schema change
+reaches the live database through a forward Django migration, while CI, the
+local environment and a restore-drill host install the current tree from
+scratch. A fresh install runs the baseline and then every forward migration,
+so the baseline plus all migrations *is* the current schema, and both paths
+must end in the same catalog. The rules:
+
+- **Applied migrations are never edited.** A migration a release has shipped,
+  and the SQL it installs, is immutable; a correction is a new numbered
+  migration. Never `--fake` a migration or edit `django_migrations`.
+- **Each forward migration installs one frozen SQL file**, under
+  `src/parishkit/stewardship/schema/migrations/`, that the migration reads
+  whole through `Path(__file__)` and never parses; inline SQL is not used. A
+  forward migration (any migration after the baseline) must not read the
+  `schema/*.sql` baseline files, whose later edits would change what it
+  installs. The file starts with a `--` header comment, then
+  `SET LOCAL check_function_bodies = false;` (so a body naming an object a
+  later migration owns cannot break it) and `SET LOCAL search_path = public;`,
+  and ends with a `DO` block that raises unless everything the file installs
+  is present, so a partial install fails the migration instead of surfacing
+  later. `tests/stewardship/test_schema_migration_files.py` pins each frozen
+  file's digest. `campaigns/migrations/0002_family_engagement.py` and its
+  `0002_family_engagement.sql` are the model.
+- **File names form one repository-wide sequence.** Django numbers migrations
+  per app, so two apps can both have a `0002`; the frozen files must not. Name
+  each file `NNNN_topic.sql` with the next unused four-digit prefix across the
+  directory, whatever the Django migration's own number, so the files sort in
+  apply order; make the new Django migration depend on the migration that
+  installed the previous frozen file so the database applies them in that
+  order too. `0002_family_engagement.sql` (campaigns' `0002`) is already
+  applied and keeps its name; the next file, for example
+  `stewardship_source.0002_refresh_tick_times`, is `0003_refresh_tick_times.sql`.
+- **New objects live only in their migration's frozen file.** A table, index,
+  constraint, trigger or function that a migration creates is not added to the
+  `schema/*.sql` baseline files (`stewardship_family_engagement` is not in
+  `tables.sql`): a fresh install creates it by running the migration. A new
+  function uses plain `CREATE FUNCTION`.
+- **Objects a migration alters get their final definition in the baseline.**
+  When a migration changes a function, view, constraint or column the baseline
+  installs, the `schema/*.sql` file is edited to the final definition and the
+  migration re-creates the object idempotently (`CREATE OR REPLACE FUNCTION`,
+  drop-and-add constraint), copied verbatim. For functions, the generic test in
+  `test_schema_migration_files.py` checks that the latest frozen file's
+  `CREATE OR REPLACE FUNCTION` copy equals the baseline's definition, and that
+  a replaced function exists in the baseline or was created by an earlier
+  frozen file (a migration-owned function is replaced freely, as every path
+  runs its migrations). Views and constraints have no such text check; only
+  the upgrade-parity test catches their drift.
+- **Upgrade parity is tested.** `tests/stewardship/database/test_upgrade_parity_postgresql.py`
+  installs the previous release tag's tree (the latest annotated `v*` tag
+  reachable from HEAD) in a second database, migrates it with the current
+  tree and compares the schema inventory with a fresh install of the current
+  tree built in a third database; any difference fails CI, whose database
+  shards therefore check out the full history. Downgrade remains by database
+  restore only.
+
+Adding a forward migration, in order:
+
+1. Write the frozen file with the header, `SET LOCAL` lines and closing `DO`
+   block described above, named by the sequence rule.
+2. Pin its digest in `tests/stewardship/test_schema_migration_files.py` and
+   add its allowlist line to both `.dockerignore` and
+   `deploy/stewardship/Dockerfile.dockerignore`.
+3. Write the Django migration after `0002_family_engagement.py`: `RunSQL` of
+   the file read through `Path(__file__)`, and the model-state operations.
+   Its `dependencies` name its own app's latest migration *and* the Django
+   migration that installed the previous frozen file, so the files apply in
+   prefix order; for example `stewardship_source.0002_refresh_tick_times`
+   depends on `("stewardship_source", "0001_initial")` and
+   `("stewardship_campaigns", "0002_family_engagement")`. A test in
+   `test_schema_migration_files.py` checks that chain.
+4. Edit the `schema/*.sql` baseline files only for objects the migration
+   alters, as above.
+5. Run `python -m django makemigrations --check --dry-run` (as CI does) to
+   prove the model state matches the models.
+6. Regenerate `tests/stewardship/database/schema-baseline.json`; the
+   [schema baseline guide](../../../guides/stewardship-schema.md#equivalence-and-regression-evidence)
+   describes that fingerprint.
+7. Announce the change in the release notes, which tells operators to run the
+   [scripted upgrade](../../../guides/stewardship-deployment-runbook.md#scripted-upgrade)
+   with `STEWARDSHIP_SCHEMA_CHANGE=1`.
+
 ### Production upgrades (deferred)
 
-The following requirements become implementation/acceptance work only when the
-human explicitly activates production-readiness work. At that point declare the
-supported baseline and compatibility policy before adding forward upgrades.
+Launch put the [post-launch schema policy](#post-launch-schema-policy) in
+force; the remaining items here stay deferred until the human activates them.
 
 A production upgrade requires a successful recent backup, pulls pinned images, runs migration checks
 and migrations, then restarts services. The image of a provisioned deployment
@@ -281,9 +369,9 @@ grants command, or skips both when the new image's upgrade check proves from
 the live database that neither would change anything, and starts the
 services, as the
 [release image guide](../../../guides/stewardship-release-image.md) and the
-runtime guide describe. That upgrade check is the only automated
-upgrade check in v1; broader migration checks, upgrade readiness checks and
-upgrade-path tests remain deferred. Migrations must be forward-safe for the
+runtime guide describe. That upgrade check and the upgrade-parity test are the
+automated upgrade checks in v1; broader migration checks and upgrade readiness
+checks remain deferred. Migrations must be forward-safe for the
 declared rollout; destructive column removal follows expand/migrate/contract
 across releases.
 

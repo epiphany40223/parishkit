@@ -9,15 +9,12 @@ validation is never sufficient.
 
 ## Migration policy
 
-- Follow the standing
-  [pre-production policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy).
-  Update the [fresh-install baseline](../../guides/stewardship-schema.md) and
-  Django model state together; do not accumulate historical development
-  upgrade/downgrade paths or tests. Retain constraints and indexes in the same
-  work package as the functionality that depends on them.
-- Only after production-readiness work is explicitly activated, add reviewed
-  forward migrations and prove supported upgrade/reverse behavior, documenting
-  intentional irreversibility. This is not a current phase-delivery requirement.
+- Every schema change follows the
+  [post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy),
+  which says how a forward migration, its frozen SQL file and the
+  [fresh-install baseline](../../guides/stewardship-schema.md) fit together.
+  Retain constraints and indexes in the same work package as the
+  functionality that depends on them.
 - Run migration drift checks and PostgreSQL integration tests for every package.
 - Use factories/builders instead of shared mutable fixture dumps.
 

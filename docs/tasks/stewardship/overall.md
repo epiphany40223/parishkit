@@ -11,7 +11,10 @@ Standing scope override: follow the
 for all remaining work. Historical upgrade/downgrade implementation and tests
 are not dependency-ready requirements until production-readiness work is
 explicitly activated; older evidence describes what was tested then, not work
-to recreate after baseline consolidation.
+to recreate after baseline consolidation. Since the October 3, 2026 launch,
+schema changes follow the
+[post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy)
+instead.
 
 V1 launch override (September 21, 2026): select work from the
 [v1 launch scope](../../plans/stewardship/v1-launch.md) first. It lists the
