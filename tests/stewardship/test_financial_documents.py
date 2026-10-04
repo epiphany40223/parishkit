@@ -137,20 +137,20 @@ def test_rows_word_money_status_shares_and_local_instants():
     # Typed display-zone values; each renderer formats them (see #221).
     assert metadata["Source as of"] == datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK)
     # The money's own read time is stated apart from the source promotion time.
-    assert metadata["Source giving read as of"] == datetime(
+    assert metadata["ParishSoft giving read as of"] == datetime(
         2026, 9, 10, 11, 4, tzinfo=NEW_YORK
     )
     assert metadata["Captured at"] == metadata["Source as of"]
     assert metadata["Requested at"] == metadata["Source as of"]
     assert metadata["Display timezone"] == "America/New_York"
     assert metadata["Campaign date-filter timezone"] == "America/Chicago"
-    assert metadata["Source comparison period"] == Span(
+    assert metadata["ParishSoft comparison period"] == Span(
         date(2025, 7, 1), date(2026, 6, 30)
     )
-    assert csv_text(metadata["Source comparison period"]) == (
+    assert csv_text(metadata["ParishSoft comparison period"]) == (
         "2025-07-01 through 2026-06-30"
     )
-    assert metadata["Source contributions through"] == date(2026, 6, 30)
+    assert metadata["ParishSoft contributions through"] == date(2026, 6, 30)
     assert metadata["Matching Families"] == "3"
     assert metadata["Total annual pledges"] == MoneyAmount(246900)
     # Counts are wrapped values, never keys, so a long label cannot break a PDF.
@@ -164,8 +164,8 @@ def test_an_unproven_capture_says_unavailable_never_zero():
     """Without a proven giving read the file explains, and no total reads as zero."""
     built = document([row(source_pledge=MoneyAmount(None))], proven=False)
     metadata = dict(built.metadata)
-    assert metadata["Source contributions through"] == UNPROVEN
-    assert metadata["Source giving read as of"] == "Unavailable"
+    assert metadata["ParishSoft contributions through"] == UNPROVEN
+    assert metadata["ParishSoft giving read as of"] == "Unavailable"
     assert built.rows[0][7] == MoneyAmount(None)
 
 
@@ -257,6 +257,40 @@ def test_every_format_renders_from_one_document(format):
         assert "Financial stewardship detail" in text and "$1,200.00" in text
 
 
+def test_comparison_headings_match_the_page():
+    """CSV and XLSX head the ParishSoft columns with the page's labels (#404)."""
+    from pathlib import Path
+
+    from openpyxl import load_workbook
+
+    import parishkit.stewardship.accounts as accounts
+
+    expected = ["ParishSoft pledged", "ParishSoft contributed"]
+    assert list(HEADINGS[7:9]) == expected
+    assert not any(heading.startswith("Source") for heading in HEADINGS)
+    output = io.BytesIO()
+    render_information(document([row()]), output, format="csv")
+    header = next(csv.reader(io.StringIO(output.getvalue().decode())))
+    assert header[7:9] == expected
+    output = io.BytesIO()
+    render_information(document([row()]), output, format="xlsx")
+    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
+    assert [sheet["H1"].value, sheet["I1"].value] == expected
+    template = (
+        Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
+    ).read_text(encoding="utf-8")
+    for heading in expected:
+        assert f'{{% translate "{heading}"' in template
+    # The stopgap About sentence mapping the old export names is gone.
+    assert "Source pledged" not in template
+    # The unavailable-giving note says what the page's notice says.
+    shared = (
+        "the latest giving data read from ParishSoft is not confirmed complete "
+        "for this campaign's comparison period. Unavailable does not mean zero."
+    )
+    assert shared in template and shared in UNPROVEN
+
+
 def money_document():
     """Ordinary, zero, one-cent, negative, unavailable and oversized amounts."""
     return document(
@@ -290,7 +324,7 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
     render_information(money_document(), output, format="xlsx")
     book = load_workbook(io.BytesIO(output.getvalue()))
     sheet = book["Financial detail"]
-    # Columns D, F, H and I: annual, installment, source pledged, contributed.
+    # Columns D, F, H and I: annual, installment, ParishSoft pledged, contributed.
     for reference, expected in {
         "D2": "1234.50",
         "F2": "102.88",
@@ -352,7 +386,7 @@ def test_csv_and_pdf_money_keep_the_page_text():
     assert records[0].index("Total annual pledges") == first.index("$1,234.51")
     lines = list(information_lines(built))
     assert "Annual pledge: $1,234.50" in lines
-    assert "Source pledged: -$50.00" in lines
+    assert "ParishSoft pledged: -$50.00" in lines
     assert "Total annual pledges: $1,234.51" in lines
 
 

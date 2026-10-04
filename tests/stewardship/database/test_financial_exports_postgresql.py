@@ -258,9 +258,12 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             if format == "csv":
                 assert name in body and b"$1,234.50" in body and b"$1,200.00" in body
                 assert b"Financial stewardship detail" in body
+                # The comparison columns carry the page's labels (#404).
+                assert b"ParishSoft pledged,ParishSoft contributed" in body
             elif format == "xlsx":
                 # The real worker's file holds summable dollar-formatted numbers.
                 sheet = load_workbook(BytesIO(body))["Financial detail"]
+                assert sheet.cell(1, 8).value == "ParishSoft pledged"
                 for column, expected in ((4, 1234.5), (8, 1200)):
                     cell = sheet.cell(2, column)
                     assert (cell.data_type, cell.value) == ("n", expected)
