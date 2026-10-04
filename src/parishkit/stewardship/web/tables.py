@@ -263,6 +263,12 @@ class TablePage:
         return urlencode(self.page_fields(number))
 
     @property
+    def current_query(self):
+        """Query string for this same page, for a Refresh link that keeps the
+        reader's filters, sort, page size and page (#519)."""
+        return self.query(self.number)
+
+    @property
     def previous_number(self):
         """The previous page's number, or None on the first page."""
         return self.number - 1 if self.number > 1 else None

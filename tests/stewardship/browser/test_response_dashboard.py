@@ -4,6 +4,7 @@ import pytest
 
 from .response_dashboard_components import PATH
 from .test_charts import assert_clean, watch
+from .waits import has_text
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -106,7 +107,8 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
 
     The page's own marker survives (no navigation), the scroll position is
     kept, the chart is drawn again at the other grain, the address follows
-    the choice, and keyboard focus stays on the chosen switch.
+    the choice (and the region's fragment), keyboard focus stays on the
+    chosen switch, and the live region names the view now shown (#519).
     """
     from playwright.sync_api import expect
 
@@ -116,23 +118,24 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     page.wait_for_function(FITTED)
     page.evaluate("window.__dashboardMarker = 1")
-    day = page.locator('[data-region-link="grain-day"]')
+    day = page.locator('[data-in-place="grain-day"]')
     day.scroll_into_view_if_needed()
     page.evaluate("window.scrollBy(0, 100)")
     before = page.evaluate("window.scrollY")
     assert before > 0
     day.focus()
     page.keyboard.press("Enter")
-    page.wait_for_url("**?grain=day")
+    page.wait_for_url("**?grain=day#response-dashboard")
     heading = page.locator("#activity-heading")
     expect(heading).to_have_text("Response activity by day")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     page.wait_for_function(FITTED)
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
-    assert page.evaluate("document.activeElement.dataset.regionLink") == "grain-day"
+    assert page.evaluate("document.activeElement.dataset.inPlace") == "grain-day"
+    has_text(page.get_by_role("status").filter(has_text="By day"), "By day")
     assert (
-        page.locator('[data-region-link="grain-day"]').get_attribute("aria-current")
+        page.locator('[data-in-place="grain-day"]').get_attribute("aria-current")
         == "page"
     )
     # The redrawn chart is the daily one: one day, three points.
@@ -140,25 +143,31 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     assert activity.locator("svg g.mark-symbol.role-mark path").count() == 3
     assert_clean(page, errors)
     # The mode switch works the same way; the empty Testing view replaces it.
-    page.locator('[data-region-link="mode-testing"]').click()
-    page.wait_for_url("**mode=testing*")
+    page.locator('[data-in-place="mode-testing"]').click()
+    page.wait_for_url("**mode=testing*#response-dashboard")
     expect(page.locator("main")).to_contain_text("no Testing responses to show")
     assert page.evaluate("window.__dashboardMarker") == 1
-    assert page.evaluate("document.activeElement.dataset.regionLink") == "mode-testing"
+    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
 
 
 def test_switches_are_plain_links_without_scripts(browser_engine, component_origin):
-    """With no JavaScript a switch loads the other view as an ordinary page."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    """With no JavaScript a switch loads the other view as an ordinary page,
+    landing on the dashboard region rather than at the top (#519)."""
+    context = browser_engine.new_context(
+        java_script_enabled=False, viewport={"width": 1000, "height": 400}
+    )
     try:
         page = context.new_page()
         page.goto(component_origin + PATH)
-        page.locator('[data-region-link="grain-day"]').click()
-        page.wait_for_url("**?grain=day")
+        page.locator('[data-in-place="grain-day"]').click()
+        page.wait_for_url("**?grain=day#response-dashboard")
         assert page.locator("#activity-heading").inner_text() == (
             "Response activity by day"
         )
+        assert page.evaluate("window.scrollY") > 0
+        region = "document.getElementById('response-dashboard')"
+        assert -2 < page.evaluate(region + ".getBoundingClientRect().top") < 100
     finally:
         context.close()

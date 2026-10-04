@@ -1,6 +1,7 @@
 """Serve actual shared templates/assets locally; never contact a real provider."""
 
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
@@ -72,6 +73,10 @@ from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import components as hosted_file_components
+from .in_place_components import FORM as IN_PLACE_FORM
+from .in_place_components import POSTS as IN_PLACE_POSTS
+from .in_place_components import SLOW as IN_PLACE_SLOW
+from .in_place_components import components as in_place_components
 from .information_components import components as information_components
 from .log_components import components as log_components
 from .ministry_components import components as ministry_components
@@ -1594,6 +1599,14 @@ def component_origin():
     responses.update(send_history_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
+    responses.update(in_place_components(context, admin))
+    # The in-place form page's POST answers (#519): a refusal answers 400
+    # with the page the view would render, and "plain" answers 200 with a
+    # page that lacks the form's region, without a redirect.
+    posts = IN_PLACE_POSTS | {
+        f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
+        f"{IN_PLACE_FORM}/plain": (200, None, responses["/in-place-plain"][1]),
+    }
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
@@ -1675,12 +1688,28 @@ def component_origin():
             One path answers as an expired session does, with a redirect to
             the sign-in page, so the in-place table tests (#478) can see a
             real redirect, which Playwright cannot fulfil from a route on
-            every engine.
+            every engine. The in-place form page's paths (#519) answer as
+            ``in_place_components.POSTS`` lists.
             """
+            # Read the body before answering: closing the connection with
+            # an unread request body can reset it before the answer arrives.
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
             if self.path == "/redirect-to-login":
                 self.send_response(303)
                 self.send_header("Location", "/login")
                 self.end_headers()
+                return
+            if self.path in posts:
+                status, location, body = posts[self.path]
+                if self.path in IN_PLACE_SLOW:
+                    time.sleep(1.5)
+                self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
+                self.end_headers()
+                self.wfile.write(body.encode())
                 return
             self.send_response(405)
             self.end_headers()

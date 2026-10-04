@@ -585,7 +585,7 @@ th[aria-sort] .sort-link { color: var(--ink); }
 .sort-indicator { font-size: .75em; }
 th:not([aria-sort]) .sort-indicator { opacity: .45; }
 /* While ui-v1.js re-sorts or re-pages a table in place (#478), the rows dim but stay readable. */
-[data-table-region][aria-busy="true"] { cursor: progress; }
+[data-table-region][aria-busy="true"], [data-in-place-region][aria-busy="true"] { cursor: progress; }
 [data-table-region][aria-busy="true"] table { opacity: .55; }
 
 /* Compact Admin pages (#227): the page's data should start within a laptop

@@ -64,6 +64,7 @@ sections:
     "Breadcrumbs and flows": [ADM-03]
     "Navigation decisions": [ADM-03]
     "Admin tables": [ADM-03]
+    "In-place controls": [ADM-03]
     "Page help": [ADM-03]
     "Background indicators": [ADM-03]
     "Parish and integration configuration": [ADM-03, ARC-06]

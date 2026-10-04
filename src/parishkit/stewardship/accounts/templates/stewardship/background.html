@@ -5,7 +5,7 @@
 {% aboutpage "background-work" %}<p>{% translate "Work the system does behind the scenes, such as ParishSoft refreshes, email preparation and report exports. Select a task to see what it is doing, or why it failed." %}</p>
 <p>{% translate "Most tasks start and finish on their own. A task waiting to try again hit a temporary problem, such as ParishSoft or the email provider not answering, and retries automatically. A task that stopped unexpectedly lost its background process, for example when the server restarted; the system recovers it on its own." %}</p>
 <p>{% translate "Last activity is the last time a running task reported that it was still working. Opening or refreshing this page does not extend your sign-in." %}</p>{% endaboutpage %}
-<p>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Waiting to start:" %} {{ work.counts.queued|number }} · {% translate "Waiting to try again:" %} {{ work.counts.retry_wait|number }} · {% translate "Stopped unexpectedly:" %} {{ work.counts.abandoned|number }}</p>
+<p id="background-counts" data-table-sync>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Waiting to start:" %} {{ work.counts.queued|number }} · {% translate "Waiting to try again:" %} {{ work.counts.retry_wait|number }} · {% translate "Stopped unexpectedly:" %} {{ work.counts.abandoned|number }}</p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="task-state">{% translate "Task state" %}</label>
   <select id="task-state" name="state">
@@ -42,5 +42,6 @@
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a href="{% url 'admin:background' %}">{% translate "Refresh current work" %}</a></p>
+{# Refresh keeps the table's filters, sort, size and page, follows later table choices (data-table-sync), and refreshes the table and counts in place (ui-v1.js, a[data-in-place], #519). #}
+<p><a id="background-refresh" data-table-sync data-in-place data-in-place-message="{% translate 'List refreshed.' %}" href="{% url 'admin:background' %}?{{ table.current_query }}#{{ table.anchor }}">{% translate "Refresh current work" %}</a></p>
 {% endblock %}
