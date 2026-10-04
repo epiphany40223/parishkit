@@ -114,6 +114,11 @@ serving and worker commands remain container entry points that import package
 code. There is no console campaign purge; purge is intentionally a guarded
 Admin web workflow.
 
+The host-only [Admin automation interface](../admin-automation/spec.md)
+(`pk-stewardship admin`) reaches Admin portal actions from inside the web
+container through the same service layer, authorization and audit as the
+pages. It is neither a public API nor a network listener.
+
 ## Configuration and secrets
 
 Configuration and runtime state are intentionally distinct:
@@ -259,7 +264,13 @@ email is re-evaluated against current login rules on every login and privileged
 request. Password, recovery, signup, and non-Google authentication endpoints
 are disabled. The only exception is the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), which
-exists only in the LOCAL deployment profile.
+exists only in the LOCAL deployment profile. An
+[automation session](../admin-automation/spec.md#automation-sessions) is not
+an authentication exception: an Administrator approves it from an Admin
+session that signed in with Google within five minutes, and it then acts as
+that Administrator, including for
+[fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
+until it expires (at most 30 days) or is revoked.
 
 If an external account rename/deactivation leaves no usable Admin login, an
 authorized host operator may use the separate
@@ -369,7 +380,10 @@ deadline passes the dialog reports that the Admin was signed out and links to
 sign-in. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
-five minutes.
+five minutes. The one exception is a full-scope
+[automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
+which an Administrator approved with a fresh sign-in and which stands in for it
+for the actions listed there.
 
 Fresh authentication is a step-up of the current session, not a new login.
 When a privileged action finds the session's verified Google instant too old,

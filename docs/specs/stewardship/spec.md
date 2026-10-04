@@ -60,6 +60,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   images, backup/restore, observability, CI, and test expectations.
 - [Hosted files](hosted-files/spec.md): the Admin-managed library of PDF,
   Office and image files that content links with `{{ file.<slug> }}`.
+- [Admin automation interface](admin-automation/spec.md): the host
+  `pk-stewardship admin` command line that reaches every Admin portal action
+  and read under the same authorization, previews and audit as the pages.
 - [Local laptop environment](local-environment/spec.md): the
   production-shaped `local` profile in a Lima VM, with a mail catcher, fake
   ParishSoft, synthetic parish, seeded campaign and local test sign-in.

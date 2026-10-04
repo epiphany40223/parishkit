@@ -228,6 +228,59 @@ remain below `/admin/` and apply server-side authorization.
    by same-backup revalidation, independently expired recovery evidence, and
    expiry at claim or after reader drain before the first deletion batch.
 
+### ADM-11: Admin automation interface
+
+Implements the [Admin automation interface
+specification](../../specs/stewardship/admin-automation/spec.md) for
+[#463](https://github.com/epiphany40223/parishkit/issues/463). It is
+post-launch work outside the phase and gate sequence. Each item is one pull
+request with independent review and full CI; normal CI stays credential-free.
+PR 2 and PR 5 (items 3 and 6) change the schema through forward migrations
+under the [post-launch schema
+policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy),
+as the specification's [schema
+impact](../../specs/stewardship/admin-automation/spec.md#schema-impact) states;
+any other schema need amends the specification first. The specification's
+[delivery plan](../../specs/stewardship/admin-automation/spec.md#delivery-plan)
+owns each PR's scope and dependencies, its [extractions by
+PR](../../specs/stewardship/admin-automation/spec.md#extractions-by-pr) the
+view-to-service moves, and its [testing
+requirements](../../specs/stewardship/admin-automation/spec.md#testing-requirements)
+the tests; items here only name them.
+
+1. **PR 0, specification.** The specification, this package and its
+   checklist; the Administrator's decisions recorded on #463. Tests: Markdown
+   lint and the traceability test.
+2. **PR 1, seam only.** `AdminCaller` and its web constructor; no behavior
+   change.
+3. **PR 2, automation sessions.** The migration for the session and notice
+   tables, the automation incident kinds and the maintenance task type;
+   pairing, the host wrapper and session file, approval and access pages,
+   notices, the maintenance task, `revoke-automation-sessions` and its restore
+   step, session commands, refusals, lifecycle and audit.
+   Security-focused review.
+4. **PR 3, read-only status.** Read models, status commands including
+   `schedule show`, `--watch` and the route-parity test.
+5. **PR 4, schedules.** Schedule preview and confirm, and configuration
+   request status.
+6. **PR 5, fresh-gate acceptance.** The guard migration letting six SQL
+   guards (four session-bound fresh-gate guards and two secret request
+   guards) accept a full-scope automation session, caller-aware freshness
+   checks, the confirmation prompt and `--yes`. Security-focused review.
+7. **PR 6, refresh and Testing sends.** Refresh, sample and chosen-Family
+   tests.
+8. **PR 7, delivery controls.** Pause, resume, closed-campaign resolution and
+   Family portal maintenance.
+9. **PR 8, reports and exports.** Report reads, exports, digests and logs.
+10. **PR 9, operations.** Task retries, deliveries and refusals.
+11. **PR 10, other configuration.** Campaign, content, Ministries, parish,
+    hosted files, artwork, integration settings, and secret replacement
+    (integration keys, finish switching and the backup key) with the
+    wrapper's secret input. Follows PR 5. Security-focused review.
+12. **PR 11, users and follow-up.** Users, rules (including the high-impact
+    changes), assignments, chairpersons, acknowledgements and follow-up.
+13. **PR 12, go-live and withdrawal.** The go-live sequence and withdrawal.
+
 ## Review handoffs
 
 - Review Gate 1 covers ADM-01.
@@ -237,6 +290,9 @@ remain below `/admin/` and apply server-side authorization.
 - Review Gate 4 is mandatory before merging the remaining restore-release/
   reopen/archive subset of ADM-06, ADM-09, or ADM-10 destructive/external-write
   workflows.
+- ADM-11 is outside the review gates: each of its pull requests gets an
+  independent review, and PR 2, PR 5 and PR 10 (items 3, 6 and 11)
+  security-focused ones.
 
 ## Completion criteria
 

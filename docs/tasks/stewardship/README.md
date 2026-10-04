@@ -4,7 +4,7 @@ Start with the [top-level task execution plan](overall.md) for coordinated
 execution across the checklists. It links to the controlling
 [overall implementation plan](../../plans/stewardship/overall.md) for full phase
 scope and dependencies. The eight
-lists contain 381 implementation tasks across all 70 planned work packages.
+lists contain 394 implementation tasks across all 71 planned work packages.
 The [milestone checklist](milestones.md) tracks integrated demonstrations and
 the five required review-and-correction gates separately.
 
@@ -13,7 +13,7 @@ the five required review-and-correction gates separately.
 | [Campaign domain](campaign-domain.md) | [Root specification](../../specs/stewardship/spec.md) | DOM-01 through DOM-05 | 24 |
 | [Architecture](architecture.md) | [Architecture](../../specs/stewardship/architecture/spec.md) | ARC-01 through ARC-08 | 48 |
 | [Data and reconciliation](data.md) | [Data](../../specs/stewardship/data/spec.md) | DAT-01 through DAT-09 | 48 |
-| [Administration portal](admin-portal.md) | [Admin portal](../../specs/stewardship/admin-portal/spec.md) | ADM-01 through ADM-10 | 55 |
+| [Administration portal](admin-portal.md) | [Admin portal](../../specs/stewardship/admin-portal/spec.md) | ADM-01 through ADM-11 | 68 |
 | [Parishioner portal](parishioner-portal.md) | [Family portal](../../specs/stewardship/parishioner-portal/spec.md) | FAM-01 through FAM-08 | 44 |
 | [Background processing](background-processing.md) | [Background processing](../../specs/stewardship/background-processing/spec.md) | BG-01 through BG-11 | 59 |
 | [Reports and exports](reports.md) | [Reports](../../specs/stewardship/reports/spec.md) | RPT-01 through RPT-09 | 45 |
