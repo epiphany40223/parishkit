@@ -11,7 +11,8 @@ from pathlib import Path
 
 from parishkit.config import ConfigError
 
-from .deployment import ServiceRole
+from .deployment import DeploymentProfile, ServiceRole
+from .local.clock import CLOCK_MOUNT_TARGET
 from .runtime_paths import RuntimeLayout
 from .service_boundaries import _kernel_pseudo_mount, kernel_mounts
 
@@ -120,6 +121,15 @@ def validate_offline_mounts(configuration, mounts):
             and mount.target == Path("/app/src")
             and mount.read_only
         ):
+            continue
+        if (
+            configuration.profile is DeploymentProfile.LOCAL
+            and mount.target == CLOCK_MOUNT_TARGET
+            and mount.read_only
+        ):
+            # The fake-clock override's one mount (#476), read-only, LOCAL
+            # only: the install steps and one-shot profiles run under the
+            # same clock as the services. Refused for every other profile.
             continue
         raise ConfigError("Offline service has an unrelated mount.")
     return configuration.service_role

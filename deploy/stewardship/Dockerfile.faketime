@@ -1,0 +1,36 @@
+# The LOCAL fake-clock image layer (#476; "Fake clock" in
+# docs/specs/stewardship/local-environment/spec.md). The operator script builds
+# it inside the VM FROM each image it extends: the locally built application
+# image, and the pinned PostgreSQL and Valkey images from runtime_topology.py.
+# The derived images are tagged by parishkit.stewardship.local.clock.faketime_image
+# and are referenced only by the LOCAL compose.faketime.json override, so no
+# Production image, digest or Dockerfile output changes.
+#
+#   docker build -f deploy/stewardship/Dockerfile.faketime \
+#       --build-arg BASE=<base image> -t <derived tag> deploy/stewardship
+#
+# libfaketime is inert unless it is preloaded. The override sets LD_PRELOAD to
+# FAKETIME_LIBRARY (local.clock.FAKETIME_LIBRARY), which links to the Debian
+# package's architecture-specific library so the override needs no multiarch
+# triplet. The layer also lists the library in /etc/ld.so.preload, which the
+# dynamic loader honours for every process in the container regardless of its
+# environment: PostgreSQL's entrypoint, run as a uid without a passwd entry,
+# replaces LD_PRELOAD with its nss_wrapper and later unsets it, which would
+# otherwise leave the server on real time while every other process is faked.
+# The FAKETIME_* variables from the override still decide what the library
+# does, so a container of a derived image without them runs on real time.
+# Every base is Debian-derived (trixie or bookworm) and the Compose files set
+# the container user, so the layer only has to restore the unprivileged user
+# it switched away from to install the package.
+ARG BASE
+FROM ${BASE}
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends faketime \
+    && mkdir -p /usr/local/lib/parishkit-faketime \
+    && ln -s /usr/lib/*-linux-gnu/faketime/libfaketime.so.1 \
+        /usr/local/lib/parishkit-faketime/libfaketime.so.1 \
+    && test -e /usr/local/lib/parishkit-faketime/libfaketime.so.1 \
+    && echo /usr/local/lib/parishkit-faketime/libfaketime.so.1 > /etc/ld.so.preload \
+    && rm -rf /var/lib/apt/lists/*
+USER 10001:10001

@@ -101,6 +101,11 @@ PRODUCTION_IMAGE_PATTERN = (
 # uncommitted edits, and the build time in Unix seconds. Production rejects
 # it, and LOCAL rejects GHCR references and the development tag.
 LOCAL_IMAGE_PATTERN = r"parishkit-stewardship-local:[0-9a-f]{40}(-dirty)?-[0-9]{10}"
+# The fake-clock image derived from a local build (local.clock.faketime_image);
+# LOCAL admits it too, so a deployment can be re-rendered from either tag.
+LOCAL_FAKETIME_IMAGE_PATTERN = (
+    r"parishkit-stewardship-local-faketime-stewardship:[0-9a-f]{40}(-dirty)?-[0-9]{10}"
+)
 DEVELOPMENT_IMAGE = "parishkit-stewardship:development"
 
 
@@ -110,7 +115,10 @@ def _image(value, profile):
         if profile is DeploymentProfile.PRODUCTION:
             admitted = re.fullmatch(PRODUCTION_IMAGE_PATTERN, value) is not None
         elif profile is DeploymentProfile.LOCAL:
-            admitted = re.fullmatch(LOCAL_IMAGE_PATTERN, value) is not None
+            admitted = (
+                re.fullmatch(LOCAL_IMAGE_PATTERN, value) is not None
+                or re.fullmatch(LOCAL_FAKETIME_IMAGE_PATTERN, value) is not None
+            )
         else:
             admitted = value == DEVELOPMENT_IMAGE
         if admitted:
@@ -477,6 +485,51 @@ def _join_egress(service, configuration):
     """
     if configuration.profile is not DeploymentProfile.LOCAL:
         service["networks"]["application-egress"] = {}
+
+
+def render_faketime_override(configuration, compose):
+    """The LOCAL fake-clock Compose override (#476, "Fake clock").
+
+    Rendered beside the three topologies as ``compose.faketime.json`` and
+    applied by the operator script as a second ``-f`` file when the clock-mode
+    marker says ``fake``. For every service that runs the application image,
+    and for ``postgres`` and ``valkey``, it swaps in the libfaketime-derived
+    local image, sets the four libfaketime variables and adds exactly one
+    mount: the clock directory, read-only, at the target the mount policy
+    admits only for LOCAL. Caddy, Mailpit and the fake ParishSoft are left on
+    real time. Compose merges ``environment`` by key and ``volumes`` by target,
+    so the base topology is otherwise unchanged; normal mode is the base
+    topology alone. Every other profile is refused: libfaketime is never
+    rendered, and so never loaded, outside LOCAL.
+    """
+    from .local.clock import (
+        CLOCK_MOUNT_TARGET,
+        FAKE_PARISHSOFT_SERVICE,
+        FAKETIME_ENVIRONMENT,
+        FAKETIME_STORES,
+        clock_directory,
+        faketime_image,
+    )
+
+    if configuration.profile is not DeploymentProfile.LOCAL:
+        raise ConfigError("The fake clock is rendered only for the local profile.")
+    application = _image(compose["services"]["web"]["image"], configuration.profile)
+    services = {}
+    for name, service in compose["services"].items():
+        if service["image"] != application and name not in FAKETIME_STORES:
+            continue
+        if name == FAKE_PARISHSOFT_SERVICE:
+            # Runs the application image but stays on real time: it compares
+            # release_at against the real clock (specification, "Not faked").
+            continue
+        services[name] = {
+            "image": faketime_image(service["image"]),
+            "environment": dict(FAKETIME_ENVIRONMENT),
+            "volumes": [
+                bind(clock_directory(configuration), target=CLOCK_MOUNT_TARGET)
+            ],
+        }
+    return {"services": services}
 
 
 def _project_name(configuration):

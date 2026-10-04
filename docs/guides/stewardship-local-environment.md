@@ -11,14 +11,13 @@ lists the pieces that are still landing; where this guide says "not yet", that
 plan says which pull request brings it.
 
 **What works today (2026-10-04).** `vm`, `up`, `start`, `down`, `status`,
-`snapshot`, `reset` (including `--reinstall`) and `ca` are complete and were
-run end to end in the VM. The site answers at `https://localhost:8443` with
-the LOCAL banner. Not yet: Mailpit and the mail-catcher credential
-(OPS-10.05), the Admin sign-in link (OPS-10.08; without it the setup wizard
-cannot be entered), the fake clock and seeder (OPS-10.07; `seed` and `reseed`
-refuse), and `deploy` (OPS-10.10; use `reset --reinstall`). The fake
-ParishSoft service and its key are in the image (OPS-10.06) but not yet a
-Compose service.
+`snapshot`, `reset` (including `--reinstall` and `--seeded`), `sign-in`,
+`wizard`, `seed`, `reseed` and `ca` are complete and were run end to end in
+the VM: the site answers at `https://localhost:8443` with the LOCAL banner,
+Mailpit catches every message at `http://localhost:8025`, the fake
+ParishSoft serves the synthetic parish, an unseeded deployment runs under the
+fake clock, and `seed` gives it a campaign in progress in about 17 minutes.
+Not yet: `deploy` (OPS-10.10; use `reset --reinstall`).
 
 ## What you get
 
@@ -29,8 +28,8 @@ scheduler, mail-dispatch and installer services, PostgreSQL and Valkey, all
 under `/opt/parishkit` with real Linux ownership. The image is built inside the
 VM from your checkout, including uncommitted edits to tracked files. Nothing in
 the VM can reach the Internet from the application networks, and nothing can
-email a real person: mail goes to Mailpit on `http://localhost:8025` (once
-OPS-10.05 lands) and ParishSoft is a fake service with a synthetic parish.
+email a real person: mail goes to Mailpit on `http://localhost:8025` and
+ParishSoft is a fake service with a synthetic parish.
 
 ## Prerequisites
 
@@ -148,14 +147,17 @@ the exact name.)
 
 ### Clock mode
 
-The specification runs an unseeded deployment under the
+An unseeded deployment runs under the
 [fake clock](../specs/stewardship/local-environment/spec.md#fake-clock), 17
-days behind real time, so that a later seed can start forward of every row.
-The fake clock is OPS-10.07. Until that image carries the faketime override
-(`config/services/compose.faketime.json`), `up` records `normal` in the
-clock-mode marker; once it does, `up` records `fake` with the 17-day offset.
-Every command that starts services reads the marker and applies the override
-when it says `fake`; a missing or unknown marker is an error.
+days behind real time, so that a later seed can start forward of every row:
+`up` builds three libfaketime-derived images (application, PostgreSQL,
+Valkey), writes `fake` and the offset `-1468800` under `run/local/clock/`,
+and runs the install steps and the services with the override
+`config/services/compose.faketime.json`. Pages then show dates about 17 days
+in the past; browser cookies still work (they carry `Max-Age`). Every command
+that starts services reads the marker and applies the override when it says
+`fake`; a missing or unknown marker is an error. A seeded deployment runs in
+normal mode (offset zero, no preload).
 
 ### The setup wizard
 
@@ -169,11 +171,60 @@ credential (OPS-10.05). Those two credentials are installed by the real
 credential installers, exactly as in production, which is part of what the
 environment tests.
 
+For an unattended install, `tools/stewardship-local.sh wizard` completes the
+wizard through the wizard pages' own service layer with the fake ParishSoft
+key, the mail-catcher document, a first campaign with every module, default
+pages and emails and a generated logo, then follows the runbook's post-wizard
+step (recreating `worker` and `mail-dispatch` from `compose.json` and
+acknowledging each credential inside them) until setup is complete. The
+browser wizard remains the developer-facing path.
+
 After the wizard completes, take the post-setup snapshot:
 `tools/stewardship-local.sh snapshot`. `reset` then returns to that state in
 about half a minute. (A snapshot taken before the wizard is allowed and noted
 as a pre-wizard snapshot; it is still useful for a fast return to a clean
 install.)
+
+### Seeding a campaign
+
+The recipe for a seeded environment, from a checkout, is:
+
+1. `tools/stewardship-local.sh reset --reinstall` (or `up` on a VM with no
+   deployment): about two minutes, ends in fake-clock mode.
+2. The setup wizard: in the browser (`sign-in --email admin@example.test`,
+   then the values the summary printed), or unattended with
+   `tools/stewardship-local.sh wizard` (about 90 seconds).
+3. `tools/stewardship-local.sh snapshot`: the post-setup snapshot `reseed`
+   returns to.
+4. `tools/stewardship-local.sh seed`: about 17 minutes at 100 Families.
+5. `tools/stewardship-local.sh snapshot --seeded`: the seeded snapshot
+   `reset --seeded` restores in about half a minute.
+
+If `seed` fails, run `reseed` (it restores the post-setup snapshot and seeds
+again). Until `deploy` exists (OPS-10.10), testing a pull request on seeded
+data means reinstalling from that checkout and seeding again, since the
+snapshots belong to the image that made them.
+
+`tools/stewardship-local.sh seed [--response-scale M]` gives the deployment a
+campaign in progress with realistic Family activity, as the
+[specification](../specs/stewardship/local-environment/spec.md#seeded-campaign-and-responses)
+describes: it refuses unless the clock-mode marker says `fake` (an unseeded
+deployment) and the wizard has completed, clears Mailpit, and runs the
+seeder's phases as one-shot containers under the web identity (`prepare`:
+the real dates and schedules, readiness and the real go-live; `drive`: every
+event before now, with the clock stepped forward and the real scheduler,
+worker and mail-dispatch doing the work), the invariant `check` under the
+migration profile with the services stopped, the switch to normal clock
+mode, and `finish` (the real refresh that promotes the late-added Family).
+Every message the seed sent is tagged `seed-history` in Mailpit. Each step
+prints its JSON answer, its duration and the fake instant; the whole log is
+also kept in `~/.parishkit-local/seed.log`. A seeded deployment runs in
+normal clock mode and cannot be seeded again; `reseed [--response-scale M]`
+restores the post-setup snapshot (fake-clock mode) and seeds afresh. A seed
+that fails before the switch to normal mode leaves the deployment unseeded in
+fake-clock mode with its services running; one that fails after it (the
+finish phase) leaves seeded data whose late-added Family may not be promoted.
+In both cases run `reseed`.
 
 ## Testing a pull request
 
@@ -194,8 +245,10 @@ testing a pull request means running it from that pull request's checkout:
 5. `tools/stewardship-local.sh ca`, then trust the new certificate.
 6. `tools/stewardship-local.sh sign-in --email admin@example.test` and open
    the link; run the setup wizard with the fake ParishSoft key and
-   organization and the mail-catcher document from the summary, then exercise
-   the change.
+   organization and the mail-catcher document from the summary (or
+   `wizard`), then exercise the change. For a campaign in progress, follow
+   the [seeding recipe](#seeding-a-campaign): the pull request's image seeds
+   its own data, because snapshots belong to the image that made them.
 
 ## Day-to-day
 
@@ -233,6 +286,11 @@ changes the environment. The run is:
    fake-configuration files are `0600` owned by `10001`.
 5. `snapshot`, `down`, `start`, `reset`, `reset --reinstall` and `status`
    round-trip.
+6. The seed: `wizard` (or the browser wizard), `snapshot`, `seed` at 20 and
+   at 100 Families (`PARISHKIT_LOCAL_FAMILIES` for `reset --reinstall`),
+   `snapshot --seeded` and `reset --seeded`, with the
+   [seed tests](../specs/stewardship/local-environment/spec.md#seeder-tests)'
+   assertions read off the database and Mailpit.
 
 The record of the first such run (2026-10-04) is the
 [OPS-10.09 VM run record](https://github.com/epiphany40223/parishkit/issues/476#issuecomment-5976332758)

@@ -30,6 +30,7 @@ from .runtime_paths import (
 )
 from .runtime_topology import (
     mailpit_store,
+    render_faketime_override,
     render_runtime,
     resolve_database_files,
     resolve_valkey_files,
@@ -151,6 +152,13 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
             if path in documents and documents[path] != value:
                 raise ConfigError("Runtime mount variants have conflicting documents.")
             documents[path] = value
+        if mode == "configured" and configuration.profile is DeploymentProfile.LOCAL:
+            # The fake-clock override (#476) names the same services in every
+            # provider mode, so one document serves all three topologies.
+            # Production renders no such document; its output is unchanged.
+            topologies[layout.service_directory / "compose.faketime.json"] = _json(
+                render_faketime_override(configuration, compose)
+            )
         if bind_source_root is not None:
             source_root = explicit_path(bind_source_root)
             for service in compose["services"].values():
