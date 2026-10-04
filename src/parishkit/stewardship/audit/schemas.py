@@ -81,6 +81,8 @@ class Action(StrEnum):
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"
     PRESENCE_VIEWED = "family_presence_viewed"
+    # The operator's one-time engagement backfill (#477), with its counts.
+    FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
     USERS_VIEWED = "portal_users_viewed"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"

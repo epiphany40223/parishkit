@@ -449,6 +449,12 @@ LANGUAGE sql STABLE AS $$
     UNION ALL SELECT 'prior_inventory_targets',i.id FROM public.stewardship_production_target i
         JOIN public.stewardship_production_request r ON r.id=i.request_id
         WHERE r.campaign_id=campaign_uuid AND r.state='cancelled'
+    -- Testing Family engagement (#477; the table arrives in campaigns 0002,
+    -- after this file, which function-body deferral allows at installation).
+    UNION ALL SELECT 'engagement',e.id FROM public.stewardship_family_engagement e
+        JOIN public.stewardship_family_campaign f ON f.id=e.family_id
+        WHERE f.campaign_id=campaign_uuid AND e.mode='test'
+          AND e.rehearsal_epoch_id IN (SELECT id FROM epochs)
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_inventory_v1(uuid) FROM PUBLIC;
 

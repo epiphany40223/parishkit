@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.family_authentication import (
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.engagement import record_engagement_best_effort
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
@@ -58,7 +59,10 @@ def admitted_family(request, service):
     if current is None:
         raise FamilyAdmissionDenied("Family access is unavailable.")
     configuration, campaign, _, _ = current
-    family = FamilyCampaign.objects.select_for_update().get(
+    # NO KEY UPDATE, as every FamilyCampaign row lock in this project: it does
+    # not conflict with the KEY SHARE a concurrent engagement insert (#477)
+    # takes on this Family, so the two cannot deadlock.
+    family = FamilyCampaign.objects.select_for_update(no_key=True).get(
         pk=request.family_session.family_id
     )
     return configuration, campaign, family, request.family_session
@@ -188,4 +192,16 @@ def issue_baseline(request, service):
         )
         for previous in owned.filter(state="open").exclude(pk=baseline.pk):
             end_baseline(previous, state="replaced")
+        # "Form opened" for the response funnel (#477). Baselines are durable
+        # themselves, but the engagement row gives reporting one place to read
+        # and lets the backfill fill rows written before this hook existed; the
+        # backfill reads the baseline's created_at, so this writes the same.
+        record_engagement_best_effort(
+            family_id=family.pk,
+            mode=mode,
+            rehearsal_epoch_id=session.rehearsal_epoch_id,
+            actor_id=family.pk,
+            seen_at=baseline.created_at,
+            form_at=baseline.created_at,
+        )
         return FormBaseline(baseline, inputs)

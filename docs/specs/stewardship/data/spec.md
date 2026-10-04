@@ -617,6 +617,60 @@ set-based collision query, and bounded batch-level retry, so all Family
 identities promote atomically without creating one subtransaction per Family.
 No view performs decryption scans.
 
+### Family engagement
+
+`FamilyEngagement` keeps, per FamilyCampaign and mode (`live` or `test`, as a
+[Submission](#submission) spells it), the response-funnel instants that no
+retained record otherwise preserves. Family session rows are deleted 60
+minutes after their last activity, or four hours after sign-in, under the
+[session policy](../architecture/spec.md#identity-and-session-security), and
+their presence column is the current form step, not the furthest one reached.
+The row stores:
+
+- the first sign-in instant (`first_link_at`, "link followed"; this includes a
+  mail scanner following a personal link);
+- the first form issuance instant (`first_form_at`, "form opened");
+- the first instant a form step past the first one was reported
+  (`first_progress_at`);
+- the furthest form step reached and when it was first reached
+  (`furthest_section`, `furthest_at`), ranked by the presence section order of
+  the [parishioner portal](../parishioner-portal/spec.md#form-state-and-navigation);
+- the latest instant any of these paths saw the Family (`last_seen_at`); and
+- for a `test` row, the rehearsal epoch it belongs to; a `live` row has none.
+  One row exists per Family, mode and epoch.
+
+Three existing paths maintain it inside their own transaction with one
+monotonic upsert: Family sign-in, form issuance, and the presence heartbeat,
+which is already bounded to one per 30 seconds per session. A write may move a
+`first_*` instant only earlier (never later and never back to unknown), the
+furthest step only forward, and `last_seen_at` only later; every `first_*`
+instant and `furthest_at` is at or before `last_seen_at`; an update that would
+change nothing is skipped. SQL guards refuse anything else, refuse an instant
+in the future, and admit writes only from the Family web login (the schema
+owner, which migrations and the disposable test schema use, is exempt, as it
+is for the cleanup command guard). Reporting data never costs a Family its
+access: sign-in and form issuance write the record in a savepoint with its
+foreign key checked immediately, so a refusal is rolled back alone, kept as a
+durable `family_engagement_failed` operational event, and the request goes
+ahead. The heartbeat, which carries nothing but presence, writes directly and
+a refusal is its ordinary temporary denial. Rows hold no answers, names or
+credentials; they are behavioural evidence about a Family, read only by the
+Admin and Staff [response funnel](../reports/spec.md#response-funnel).
+
+Retention follows the mode. `test` rows are Testing detail: the
+Production-transition cleanup inventories and deletes them with the other
+[Testing records](#retention-and-deletion), and invalidated-epoch response
+cleanup deletes the rest of a rehearsal's rows. `live` rows are retained with
+their campaign; no other path deletes a row today, and the campaign purge,
+when it lands, must inventory and delete them as campaign-owned detail, which
+means widening the record's SQL retention function to admit the purge worker.
+A one-time backfill, `pk-stewardship engagement-backfill`, fills
+`first_link_at` from the retained `family_login` audit events since Production
+activation and `first_form_at` from live form baselines through the same
+upsert, in bounded batches, writing one audit event with its counts; repeating
+it writes nothing but that event. Progress before the record existed is not
+recoverable and is not invented.
+
 ### Administration user and policy
 
 `PortalUser` links a Google `sub` and current normalized verified email to the
@@ -1457,8 +1511,9 @@ operations.
 
 The three exceptions are:
 
-- test responses and their sensitive audit payloads are deleted in bounded
-  batches during the gated Production-transition cleanup phase;
+- test responses, Testing [Family engagement](#family-engagement) rows and
+  their sensitive audit payloads are deleted in bounded batches during the
+  gated Production-transition cleanup phase;
 - `testing_override` outbox rows and sensitive delivery audit payloads are
   deleted during that cleanup together with their Testing-only
   ScheduleOccurrence and ScheduleFulfillment rows after producing the non-

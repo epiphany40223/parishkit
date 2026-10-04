@@ -44,6 +44,7 @@ from .credential_models import (
     RehearsalCredential,
     RehearsalEpoch,
 )
+from .engagement_models import FamilyEngagement
 from .production_models import ProductionCleanupTarget
 from .production_storage import CleanupInventory
 from .schedule_models import (
@@ -185,6 +186,9 @@ def inventory_queries(campaign_id):
         CleanupCategory.WEEKLY_SNAPSHOT: weekly,
         CleanupCategory.WEEKLY_RECIPIENT: WeeklyDigestRecipient.objects.filter(
             snapshot_id__in=weekly.values("pk")
+        ),
+        CleanupCategory.ENGAGEMENT: FamilyEngagement.objects.filter(
+            family__campaign_id=campaign_id, mode="test", rehearsal_epoch_id__in=epochs
         ),
     }
     return MappingProxyType(queries)

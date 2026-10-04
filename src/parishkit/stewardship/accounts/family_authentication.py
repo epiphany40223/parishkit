@@ -32,6 +32,10 @@ from parishkit.stewardship.campaigns.credential_models import (
     RehearsalCodeFingerprint,
     RehearsalCredential,
 )
+from parishkit.stewardship.campaigns.engagement import (
+    engagement_mode,
+    record_engagement_best_effort,
+)
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -347,6 +351,16 @@ def _issue_family(request, service, identity, *, code=None, token=None):
             raise _SessionRefused
         AuditEvent.objects.create(
             event_type="family_login", subject_id=row_id, actor_id=family_id
+        )
+        # "Link followed" for the response funnel (#477): durable, unlike the
+        # session row, which cleanup removes an hour after the last activity.
+        record_engagement_best_effort(
+            family_id=family_id,
+            mode=engagement_mode(mode),
+            rehearsal_epoch_id=epoch if mode == "testing" else None,
+            actor_id=family_id,
+            seen_at=now,
+            link_at=now,
         )
         rotate_token(request)
         return True

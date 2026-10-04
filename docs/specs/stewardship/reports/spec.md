@@ -247,6 +247,20 @@ Cards show:
 Giving cards include mapped funds/period and source as-of. Missing/incomplete
 source displays Unavailable, not zero.
 
+## Response funnel
+
+**Access:** Admin and Staff.
+
+The response funnel counts distinct Families per campaign and mode, Production
+by default, at an explicit as-of cutoff: invited (delivered `initial`
+messages), link followed, form opened, progressed past the first step, and
+submitted. Link followed, form opened and progressed read the durable
+[Family engagement record](../data/spec.md#family-engagement), never Family
+session rows, so the counts are reproducible later and can satisfy
+[daily email report parity](#daily-email-report-parity). The dashboard, its
+lists, the per-Family timeline and the chart engine are specified with the
+next increment of this report.
+
 ## Additional information
 
 **Access:** Admin and Staff; both may edit its workflow.

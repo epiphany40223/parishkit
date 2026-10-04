@@ -6,6 +6,7 @@ from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
     RehearsalEpoch,
 )
+from parishkit.stewardship.campaigns.engagement_models import FamilyEngagement
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
@@ -64,6 +65,14 @@ def cleanup_test_responses(epoch_id, *, batch_size):
         if baseline.state == "open":
             end_baseline(baseline, state="cancelled")
         count += FamilyFormBaseline.objects.filter(pk=baseline.pk).delete()[0]
+    # Testing engagement rows (#477) reference nothing and nothing references
+    # them; the SQL retention guard admits exactly this invalidated epoch.
+    engagement = list(
+        FamilyEngagement.objects.filter(mode="test", rehearsal_epoch_id=epoch.pk)
+        .order_by("pk")
+        .values_list("pk", flat=True)[:batch_size]
+    )
+    count += FamilyEngagement.objects.filter(pk__in=engagement).delete()[0]
     responses = Submission.objects.filter(mode="test", rehearsal_epoch_id=epoch.pk)
     pins = list(
         SourceSnapshotPin.objects.filter(
