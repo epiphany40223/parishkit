@@ -154,6 +154,15 @@ services:
         source: ../../tools/stewardship-upgrade.sh
         target: /app/tools/stewardship-upgrade.sh
       - <<: *test-bind
+        source: ../../tools/stewardship-local.sh
+        target: /app/tools/stewardship-local.sh
+      - <<: *test-bind
+        source: ../../tools/stewardship-local-vm.sh
+        target: /app/tools/stewardship-local-vm.sh
+      - <<: *test-bind
+        source: ../../docs/guides/stewardship-local-environment.md
+        target: /app/docs/guides/stewardship-local-environment.md
+      - <<: *test-bind
         source: ../../install.py
         target: /app/install.py
       - <<: *test-bind
