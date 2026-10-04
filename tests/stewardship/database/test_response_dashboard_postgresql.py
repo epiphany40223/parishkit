@@ -59,7 +59,9 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         # Production has nothing yet: the Family responded in the rehearsal.
         assert tiles(body) == [0, 0, 0, 0, 0]
         assert b"Production" in body
-        assert (b'href="' + route.encode() + b'?mode=testing"') in body
+        # The mode link names the dashboard region as its fragment (#519).
+        testing = route + "?mode=testing#response-dashboard"
+        assert b'href="' + testing.encode() + b'"' in body
         assert b'id="response-funnel-spec"' in body
         assert b'id="response-activity-spec"' in body
         # The rehearsal's sign-in, form and submission are Testing evidence.

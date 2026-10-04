@@ -33,6 +33,8 @@ CAMPAIGN = SimpleNamespace(
     pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
 )
 PATH = f"/admin/reports/{CAMPAIGN.pk}/responses/"
+# The dashboard region its switches refresh in place and land on (#519).
+REGION = "response-dashboard"
 
 
 def test_query_accepts_only_its_closed_vocabulary():
@@ -125,15 +127,17 @@ def test_page_shows_tiles_figures_and_both_charts():
     assert not re.search(r"<script(?![^>]*\bsrc=)(?![^>]*application/json)", page)
     assert " style=" not in page and "<style" not in page
     # The grain choice marks the one shown; the Admin sees the mode switch.
-    # Each is a region link the page refreshes in place (ui-v1.js).
-    hour = f'<a href="{PATH}?grain=hour" data-region-link="grain-hour"'
+    # Each is an in-place link that refreshes the dashboard region (ui-v1.js,
+    # #519); its fragment lands an ordinary load there too.
+    hour = f'<a href="{PATH}?grain=hour#{REGION}" data-in-place="grain-hour"'
     assert hour + ' aria-current="page">By hour' in page
-    assert f'<a href="{PATH}?grain=day" data-region-link="grain-day">By day' in page
-    production = f'<a href="{PATH}" data-region-link="mode-production"'
+    day = f'<a href="{PATH}?grain=day#{REGION}" data-in-place="grain-day">By day'
+    assert day in page
+    production = f'<a href="{PATH}#{REGION}" data-in-place="mode-production"'
     assert production + ' aria-current="page">Production' in page
-    testing = f'<a href="{PATH}?mode=testing" data-region-link="mode-testing"'
+    testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
     assert testing + ">Testing rehearsal" in page
-    assert '<div id="response-dashboard" data-table-region>' in page
+    assert f'<div id="{REGION}" data-in-place-region>' in page
     # No Family name or DUID reaches the page: counts only.
     assert "family_duid" not in page
 
@@ -150,7 +154,7 @@ def test_testing_page_says_so_and_handles_no_rehearsal():
     page = render(query, metrics())
     assert "Sample campaign — Testing rehearsal" in page
     assert 'class="notice"' in page and "never counted in Production" in page
-    testing = f'<a href="{PATH}?mode=testing" data-region-link="mode-testing"'
+    testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
     assert testing + ' aria-current="page">Testing' in page
     empty = render(query, None)
     assert "no Testing responses to show" in empty

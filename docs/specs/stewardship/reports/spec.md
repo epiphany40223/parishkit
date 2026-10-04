@@ -446,11 +446,10 @@ With no active rehearsal, the Testing view says there is nothing to show.
 everything it shows (the first link follow, form open or submission, or the
 first marked send) lies within three days of the cutoff, and daily after
 that. Both grains come from the one read, so switching never changes a
-total. Both choices are links that refresh the dashboard in place, as the
-[Admin tables](../admin-portal/spec.md#admin-tables) do: no reload, the
-reader's scroll position and focus on the chosen link kept, the charts drawn
-again, and the address replaced (so Back does not step through the choices);
-without script they load the page.
+total. Both choices are [in-place controls](../admin-portal/spec.md#in-place-controls):
+no reload, the reader's scroll position and focus on the chosen link kept,
+the charts drawn again, and the address replaced (so Back does not step
+through the choices); without script they load the page at the dashboard.
 
 Each view reads the funnel once, with the report's
 [campaign read guard](../data/spec.md#campaign-read-guards) and role recheck,

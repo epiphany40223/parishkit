@@ -936,10 +936,10 @@ script, or when the fetch fails or returns another page (a sign-in), the
 ordinary page load happens and its fragment lands on the table rather than at
 the top. Portal users, whose domain and address tables carry role forms bound
 once at load, and the link preparation history keep only the fragment and
-always load in full. A report region can also carry links that choose another
-view of it (the [response dashboard](../reports/spec.md#response-dashboard)'s
-mode and grain); they refresh that region the same way, with focus returned
-to the chosen link and any charts in it drawn again.
+always load in full. A table region is one kind of region that
+[in-place controls](#in-place-controls) refresh; that section states the
+shared rules (one request at a time, when a POST may be sent again, the
+fallback, focus and announcements).
 
 Lists read straight from a growing database table page on the server with one
 extra row to learn whether a next page exists, and count matching rows only up
@@ -953,6 +953,74 @@ Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only
 while at least one is. The server validates every submitted selection, so the
 controls also work without script.
+
+### In-place controls
+
+An Admin control acts where the reader is: it never reloads the page or sends
+the reader back to its top (#519). The table controls above are one case;
+the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
+
+- **Regions.** A page marks each part a control can change as a region, an
+  element with a stable id (a table's region, or `data-in-place-region`). The
+  id is also the control's URL fragment, which is required: the script finds
+  the region by it, and an ordinary load lands on the region instead of at
+  the top. The fragment must name a region in the same template as the
+  control (not one a base or included template draws); a template test
+  refuses an in-place control whose fragment names no region there.
+- **Controls.** A link that shows another view of the page (`a[data-in-place]`:
+  the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
+  grain, "Refresh current work" on "Background work", "Refresh list" on
+  "Families on the form now") or a form whose answer is the page again
+  (`form[data-in-place]`, such as a POST whose server redirects back to the
+  page) names its region by its URL's fragment. "Refresh current work" keeps
+  the reader's state filter, sort, rows per page and page; "Refresh list"
+  keeps sort and rows per page and returns to the first page. A form's
+  submit button belongs to its form even outside it (`form="…"`); a table's
+  sort heading or navigator inside a `form[data-in-place]` (a selection form
+  around its table) is still a table control. A POST form should carry a
+  `data-in-place-message` ("Saved.") for the live region; without one the
+  clicked button's text is announced.
+- **Request.** The browser fetches exactly the request the control would have
+  made, follows the server's Post/Redirect/Get redirect, and replaces every
+  region the fetched page shares with this one, plus the counts, summaries,
+  links and form state outside them that follow the view; views keep
+  rendering whole pages, so no partial-page endpoint exists. One request is
+  in flight at a time: a newer choice cancels an older read, but a POST that
+  saves a change is never cancelled, and other in-place controls and repeats
+  are ignored (the live region says "Still saving…") until it settles.
+- **Place, focus and announcement.** The reader keeps their scroll position;
+  focus returns to the control (or its fresh copy, or the region); the region
+  is marked busy while the request runs, and a polite live region says what
+  happened ("By day", "List refreshed." and the rows now shown). A view
+  choice replaces the address, and a followed redirect sets it to the
+  redirect's page, so reload, bookmarks and Back never re-send a POST and do
+  not step through choices.
+- **Errors and fallback.** A POST that got an answer is never sent again; a
+  saving POST is never re-sent at all; a read-only table POST with no answer
+  falls back to the ordinary submission. An error answer to a POST, and a
+  POST's own answer that is not this page, are shown as the page, as a native
+  submission would show them. So a refused save answered without a redirect
+  (a form re-rendered with its errors) currently replaces the whole page: the
+  reader is sent to its top, and the old page's timers keep running;
+  [#562](https://github.com/epiphany40223/parishkit/issues/562) tracks
+  swapping it into its region instead. A saving POST that got no answer at all may
+  have been saved, so an alert at the top of its form says the server could
+  not be reached and to reload the page to check. A redirect to another page
+  (elsewhere, or the sign-in page) is followed by loading that page's
+  address. A read (a GET) that fails falls back to the ordinary load.
+- **Without script** every control is a plain link or form, and its fragment
+  (kept across a fragment-less redirect) lands the load on the region. The
+  Admin portal requires JavaScript
+  ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so this
+  existing native fallback is kept but not extended: controls keep real
+  `href` and `action` attributes, and later in-place work (#519 PRs 2–8)
+  needs no no-script fallback or no-script tests of its own.
+- **Policy.** The mechanism runs under the strict content security policy:
+  first-party script and same-origin requests only; it changes attributes and
+  classes and creates elements with text content, never inline script or
+  style, and never uses `eval`. Swapped content is enhanced
+  again as the page's own was (dates, selections, copy buttons, charts), and
+  a `parishkit:swap` event on it lets any other script do the same.
 
 ### Page help
 

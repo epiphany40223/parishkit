@@ -7,10 +7,10 @@
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
 <p>{% translate "The activity chart counts each Family the first time it followed its link, opened the form or submitted, in the campaign's time zone. The dashed lines mark when each invitation and reminder was scheduled." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:participation' campaign.pk %}">{% translate "Campaign reports and selection" %}</a></p>
-{# The mode and grain links refresh this region in place (ui-v1.js, data-region-link); without script they load the page. #}
-<div id="response-dashboard" data-table-region>
+{# The mode and grain links refresh this region in place (ui-v1.js, a[data-in-place]); without script they load the page at the region. #}
+<div id="response-dashboard" data-in-place-region>
 <p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
-{% if can_test %}<nav class="choice-links" aria-label="{% translate 'Responses shown' %}"><a href="{{ production_url }}" data-region-link="mode-production"{% if not testing %} aria-current="page"{% endif %}>{% translate "Production" %}</a> <a href="{{ testing_url }}" data-region-link="mode-testing"{% if testing %} aria-current="page"{% endif %}>{% translate "Testing rehearsal" %}</a></nav>{% endif %}
+{% if can_test %}<nav class="choice-links" aria-label="{% translate 'Responses shown' %}"><a href="{{ production_url }}#response-dashboard" data-in-place="mode-production"{% if not testing %} aria-current="page"{% endif %}>{% translate "Production" %}</a> <a href="{{ testing_url }}#response-dashboard" data-in-place="mode-testing"{% if testing %} aria-current="page"{% endif %}>{% translate "Testing rehearsal" %}</a></nav>{% endif %}
 {% if testing and metrics %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
 {% if metrics %}
 <p>{% translate "Counted at" %} <time datetime="{{ metrics.as_of|instant }}" data-local-instant>{{ metrics.as_of|instant }}</time></p>
@@ -27,7 +27,7 @@
 </section>
 <section class="panel" aria-labelledby="activity-heading">
 <h2 id="activity-heading">{{ charts.1.title }}</h2>
-<nav class="choice-links" aria-label="{% translate 'Activity grouped by' %}"><a href="{{ hour_url }}" data-region-link="grain-hour"{% if metrics.grain == 'hour' %} aria-current="page"{% endif %}>{% translate "By hour" %}</a> <a href="{{ day_url }}" data-region-link="grain-day"{% if metrics.grain == 'day' %} aria-current="page"{% endif %}>{% translate "By day" %}</a></nav>
+<nav class="choice-links" aria-label="{% translate 'Activity grouped by' %}"><a href="{{ hour_url }}#response-dashboard" data-in-place="grain-hour"{% if metrics.grain == 'hour' %} aria-current="page"{% endif %}>{% translate "By hour" %}</a> <a href="{{ day_url }}#response-dashboard" data-in-place="grain-day"{% if metrics.grain == 'day' %} aria-current="page"{% endif %}>{% translate "By day" %}</a></nav>
 {% include 'stewardship/components/chart.html' with chart=charts.1 %}
 </section>
 {% else %}

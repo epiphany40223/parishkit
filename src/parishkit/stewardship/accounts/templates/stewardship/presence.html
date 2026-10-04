@@ -2,10 +2,10 @@
 {% block title %}{% translate "Families on the form now" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Families on the form now" %}</h1>
-<p>{% translate "Families with the Family form open in their browser within the last 90 seconds:" %} {{ presence.count|number }}</p>
+<p id="presence-count" data-table-sync>{% translate "Families with the Family form open in their browser within the last 90 seconds:" %} {{ presence.count|number }}</p>
 <p>{% translate "A Family that signed in earlier but closed the form, or left it idle in a background tab, is not counted." %}</p>
 <p>{% translate "Presence does not extend a login. Closed, expired, or ineligible sessions are excluded. Multiple sessions may belong to one Family." %}</p>
-<p>{% translate "As of:" %} <time datetime="{{ presence.as_of|instant }}" data-local-instant>{{ presence.as_of|instant }} UTC</time></p>
+<p id="presence-as-of" data-table-sync>{% translate "As of:" %} <time datetime="{{ presence.as_of|instant }}" data-local-instant>{{ presence.as_of|instant }} UTC</time></p>
 {% translate "Pages of Families on the form" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
@@ -14,5 +14,6 @@
 <tbody>{% for row in table.rows %}<tr><th scope="row">{{ row.name }}</th><td class="numeric">{{ row.duid|duid }}</td><td><time datetime="{{ row.started_at|instant }}" data-local-instant>{{ row.started_at|instant }} UTC</time></td><td><time datetime="{{ row.last_activity_at|instant }}" data-local-instant>{{ row.last_activity_at|instant }} UTC</time></td><td><time datetime="{{ row.presence_at|instant }}" data-local-instant>{{ row.presence_at|instant }} UTC</time></td><td>{{ row.section|capfirst }}</td></tr>{% empty %}<tr><td colspan="6">{% translate "No Families are currently visible." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a id="table-refresh" data-table-sync href="{% url 'admin:presence' %}?{{ table.size_name }}={{ table.size_value }}&amp;{{ table.sort_name }}={{ table.sort|urlencode }}">{% translate "Refresh list" %}</a></p>
+{# Refresh list keeps size and sort, returns to page 1, and refreshes the table, count and time in place (ui-v1.js, a[data-in-place], #519). #}
+<p><a id="table-refresh" data-table-sync data-in-place data-in-place-message="{% translate 'List refreshed.' %}" href="{% url 'admin:presence' %}?{{ table.size_name }}={{ table.size_value }}&amp;{{ table.sort_name }}={{ table.sort|urlencode }}#{{ table.anchor }}">{% translate "Refresh list" %}</a></p>
 {% endblock %}

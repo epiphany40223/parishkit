@@ -1,0 +1,131 @@
+"""Admin controls that act in place (#519): markup the shared mechanism in
+ui-v1.js relies on, and the no-script landing every such control keeps."""
+
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID
+
+from django.template.loader import render_to_string
+
+from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
+from parishkit.stewardship.jobs.views import TASK_SORTING
+from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.tables import paginate, window_table
+
+TEMPLATES = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
+NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
+# An opening <a> or <form> tag that opts into the in-place mechanism.
+IN_PLACE_TAG = re.compile(r"<(a|form)\b[^>]*\bdata-in-place\b(?!-)[^>]*>")
+# The marker that makes an element a region the mechanism can swap.
+REGION_MARK = re.compile(r"\bdata-(?:in-place|table)-region\b")
+
+
+def names_region(text, fragment):
+    """Whether ``text`` has an opening tag with ``id="fragment"`` that is
+    marked as a region, whichever order the two attributes are written in."""
+    tags = re.findall(rf'<[^>]*(?<![\w-])id="{re.escape(fragment)}"[^>]*>', text)
+    return any(REGION_MARK.search(tag) for tag in tags)
+
+
+def test_names_region_accepts_either_attribute_order():
+    """The id and the region marker can come in either order, but must share
+    one tag, and a plain element with that id is not a region."""
+    assert names_region('<div id="t" data-table-region>', "t")
+    assert names_region('<section data-in-place-region id="t">', "t")
+    assert not names_region('<div id="t"></div><p data-in-place-region>', "t")
+    assert not names_region('<div id="other" data-in-place-region>', "t")
+    assert not names_region('<div data-id="t" data-in-place-region>', "t")
+
+
+def test_current_query_keeps_filters_sort_size_and_page():
+    """A Refresh link reloads the very page the reader is on."""
+    table = paginate(list(range(130)), {"page": "2", "size": "25"}, carry=(("q", "x"),))
+    assert table.current_query == "q=x&size=25&page=2"
+    assert table.current_query == table.query(table.number)
+
+
+def test_background_refresh_keeps_the_view_and_refreshes_in_place():
+    """Refresh current work carries the state filter, sort, size and page,
+    names the table region as its fragment, and is a sync node, so a later
+    sort or page change updates it; the work counts follow it too."""
+    task = {
+        "id": str(UUID(int=1)),
+        "type": "source_refresh",
+        "name": "Refresh",
+        "state": "running",
+        "heartbeat_at": NOW.isoformat(),
+        "created_at": NOW.isoformat(),
+        "progress": {"phase": "", "current": 0, "total": 0},
+    }
+    table = window_table(
+        PageWindow(2, 25),
+        [task],
+        True,
+        carry=[("state", "all")],
+        total=(60, False),
+        sorting=TASK_SORTING,
+        sort="-created",
+    )
+    page = render_to_string(
+        "stewardship/background.html",
+        {
+            "work": {
+                "counts": {"active": 1, "queued": 0, "retry_wait": 0, "abandoned": 0}
+            },
+            "states": ("nonterminal", "all"),
+            "selected_state": "all",
+            "table": table,
+        },
+    )
+    link = re.search(r'<a id="background-refresh"[^>]*>', page).group(0)
+    assert "data-table-sync" in link and "data-in-place" in link
+    assert 'data-in-place-message="List refreshed."' in link
+    assert 'href="/admin/background?state=all&amp;sort=-created' in link
+    assert "size=25&amp;page=2#table" in link
+    assert '<p id="background-counts" data-table-sync>' in page
+
+
+def test_presence_refresh_refreshes_the_list_in_place():
+    """Refresh list keeps size and sort (page 1, as before), lands on the
+    table, and the count and time outside the table follow it."""
+    table = window_table(
+        PageWindow(1, 50),
+        [],
+        False,
+        total=(0, False),
+        sorting=PRESENCE_SORTING,
+        sort="-heartbeat",
+    )
+    page = render_to_string(
+        "stewardship/presence.html",
+        {"presence": {"count": 0, "as_of": NOW}, "table": table},
+    )
+    link = re.search(r'<a id="table-refresh"[^>]*>', page).group(0)
+    assert "data-table-sync" in link and "data-in-place" in link
+    assert link.endswith('?size=50&amp;sort=-heartbeat#table">')
+    assert '<p id="presence-count" data-table-sync>' in page
+    assert '<p id="presence-as-of" data-table-sync>' in page
+
+
+def test_every_in_place_control_names_its_region_as_a_fragment():
+    """The fragment is required: without script (or when the fetch fails) the
+    ordinary load must land on the region, not at the top, and the script
+    finds the region by it. So every data-in-place link or form ends its href
+    or action in a #fragment that names a region (data-in-place-region or
+    data-table-region, literally or as {{ table.anchor }}) in the same
+    template. The earlier data-region-link name is gone."""
+    found = 0
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        text = path.read_text()
+        assert "data-region-link" not in text, path.name
+        for tag in IN_PLACE_TAG.finditer(text):
+            found += 1
+            target = re.search(r'\b(?:href|action)="([^"]*)"', tag.group(0))
+            assert target and "#" in target.group(1), (path.name, tag.group(0))
+            fragment = target.group(1).split("#", 1)[1]
+            assert names_region(text, fragment), (path.name, fragment)
+    assert found >= 6
