@@ -2,10 +2,10 @@
 {% block title %}{% translate "Refresh from ParishSoft" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Refresh from ParishSoft" %}</h1>
-<p>{% translate "Re-read every Family, Member and Ministry from ParishSoft now, instead of waiting for the next scheduled refresh." %}</p>
 {% aboutpage "source-refresh" %}<p>{% translate "A full refresh reads every Family, Member and Ministry from ParishSoft again and uses the result once it completes. It runs in the background; you will be taken to its progress page." %}</p>
 <p>{% translate "A full refresh re-downloads everything, including Ministry rosters and giving, so it usually takes a few minutes. The automatic quick updates read only the Families whose address, phone, email or registration ParishSoft reports as changed, so they finish much sooner; new Families, status changes, Members, ministries and giving arrive only with a full refresh. Either way, the progress counts every record checked; when the refresh finishes, its page also says how many records changed." %}</p>
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail. Submitting this page again before the run finishes returns the same run." %}</p>{% endaboutpage %}
+<p>{% translate "Re-read every Family, Member and Ministry from ParishSoft now, instead of waiting for the next scheduled refresh." %}</p>
 <section class="panel">
   <p>{% translate "ParishSoft data last updated:" %}
     {% if refreshed_at %}<time datetime="{{ refreshed_at|instant }}" data-local-instant>{{ refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}

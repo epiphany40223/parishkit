@@ -1633,6 +1633,21 @@ def component_origin():
         )
     # A hosted image (#346) served from the same origin, like /files/<token>.
     responses[f"/files/{IMAGE_TOKEN}"] = ("image/png", logo.getvalue())
+    # Every fixture page with an "About this page" panel (#227), so a browser
+    # test can check the panel's placement on all of them, including fixtures
+    # added later.
+    responses["/about-page-index"] = (
+        "text/plain",
+        "\n".join(
+            sorted(
+                path
+                for path, (kind, body) in responses.items()
+                if kind == "text/html"
+                and isinstance(body, str)
+                and "data-about-page=" in body
+            )
+        ),
+    )
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""

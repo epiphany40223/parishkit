@@ -2,8 +2,7 @@
 {% block title %}{% translate "Hosted files" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Hosted files" %}</h1>
-<p>{% translate "Files you can link from Family pages and emails. Anyone with a file's link can open it." %}</p>
-{% aboutpage "hosted-files" %}
+{% aboutpage "hosted-files" %}<p>{% translate "Files you can link from Family pages and emails." %}</p>
 <p>{% translate "To link a file, copy its placeholder into a page or email and write your own link text, for example:" %} <code>{{ example_link }}</code></p>
 <p>{% translate "To show an image, copy its image tag and describe the image in alt, or leave alt empty if the image is only decoration." %} <code>{{ example_image }}</code></p>
 <p>{% translate "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PNG, JPEG and still GIF files are accepted, up to 10 MB each, 100 files and 200 MB in all. Older Office files (.doc, .xls, .ppt), files with macros and animated images are not. Images are copied without their hidden details (such as location) and fitted within 2,048 pixels. A large upload needs a reasonably fast connection." %}</p>
@@ -11,6 +10,7 @@
 <p>{% translate "A file can't be deleted, or have its placeholder name changed, while a page or email still uses it. Deleting a file breaks its link everywhere, including in emails already sent, which then show a “no longer available” page. To replace a file, upload the new one, change the pages and emails to use it, then delete the old one. Anyone with a link can open the file, so never upload anything private." %}</p>
 <p>{% translate "A file marked Missing is still listed, but its stored copy is gone from the server, usually after a backup was restored; its link shows the “no longer available” page. Upload the file again, change the pages and emails to use the new one, then delete the missing entry." %}</p>
 {% endaboutpage %}
+<p class="notice">{% translate "Anyone with a file's link can open it, so never upload anything private." %}</p>
 {% if uploaded %}<p class="notice" role="status">{% blocktranslate with name=uploaded.original_name placeholder=uploaded_placeholder %}Uploaded {{ name }} as <code>{{ placeholder }}</code>.{% endblocktranslate %}</p>{% endif %}
 <div id="hosted-file-notice" data-table-sync>{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}</div>
 <form method="post" action="{% url 'admin:hosted_file_upload' %}" enctype="multipart/form-data" class="panel">{% csrf_token %}

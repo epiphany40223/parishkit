@@ -2,10 +2,10 @@
 {% block title %}{% translate "Ministry follow-up" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministry follow-up" %}</h1>
-<p>{{ metadata.name }}</p>
-<p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
-{% aboutpage "ministry-followup" %}<p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
+{% aboutpage "ministry-followup" %}<p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
+<p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
+<p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
@@ -19,8 +19,9 @@
 <form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
+<p class="help" id="followup-state-help">{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself." %}</p>
 <p>{% translate "New and Assigned follow the assignee below: choosing someone makes a request Assigned, and clearing them makes it New." %}</p>
-<label for="followup-state">{% translate "Status" %}</label><select id="followup-state" name="state">{% for key,label in staff_states %}<option value="{{ key }}"{% if item.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="followup-state">{% translate "Status" %}</label><select id="followup-state" name="state" aria-describedby="followup-state-help">{% for key,label in staff_states %}<option value="{{ key }}"{% if item.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <label for="followup-outcome">{% translate "Outcome, required when resolving or closing" %}</label><select id="followup-outcome" name="outcome"><option value="">{% translate "No outcome yet" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
 {% if stale_assignee %}<p class="notice">{% blocktranslate with person=item.assignee_label %}{{ person }} can no longer follow up this Ministry. Choose another assignee, or save with nobody assigned; the request cannot stay assigned to them.{% endblocktranslate %}</p>{% endif %}
 <label for="followup-assignee">{% translate "Assigned to" %}</label><select id="followup-assignee" name="assignee"><option value="">{% translate "Unassigned" %}</option>{% for person in assignees %}<option value="{{ person.id }}"{% if item.assignee_id == person.id|stringformat:'s' %} selected{% endif %}>{{ person.email }}</option>{% endfor %}</select>

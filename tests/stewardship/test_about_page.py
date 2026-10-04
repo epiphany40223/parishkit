@@ -9,15 +9,15 @@ def render(source, **context):
     return Template("{% load stewardship %}" + source).render(Context(context))
 
 
-def test_panel_wraps_content_open_with_its_key():
-    """The panel starts open, carries its key and keeps escaping intact."""
+def test_panel_wraps_content_closed_with_its_key():
+    """The panel starts closed (#227), carries its key and keeps escaping intact."""
     html = render(
         '{% aboutpage "setup-"|add:step %}<p>{{ note }}</p>{% endaboutpage %}',
         step="mail",
         note="<b>x</b>",
     )
     assert html.startswith(
-        '<details class="about-page" data-about-page="setup-mail" open>'
+        '<details class="about-page" data-about-page="setup-mail">'
         "<summary>About this page</summary>"
     )
     assert "<p>&lt;b&gt;x&lt;/b&gt;</p>" in html

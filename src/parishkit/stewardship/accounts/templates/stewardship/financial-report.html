@@ -2,10 +2,10 @@
 {% block title %}{% translate "Financial stewardship detail" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Financial stewardship detail" %}</h1>
-<p>{{ metadata.name }}</p>
-<p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
-{% aboutpage "financial-report" %}<p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
+{% aboutpage "financial-report" %}<p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
+<p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
 <p>{% translate "ParishSoft pledged and ParishSoft contributed are each Family's pledges and gifts recorded in ParishSoft for the comparison period, for side-by-side review." %}</p>{% endaboutpage %}
+<p>{{ metadata.name }}</p>
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>

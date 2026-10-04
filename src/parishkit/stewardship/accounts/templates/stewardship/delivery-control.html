@@ -2,11 +2,11 @@
 {% block title %}{% translate "Campaign delivery controls" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign delivery controls" %}</h1>
+{% aboutpage "delivery-control" %}<p>{% translate "Pausing does not close the campaign: Families can still respond, and their confirmation emails wait until you resume. Nothing is sent to the Testing recipient instead. Alerts to administrators and test emails you send yourself still go out." %}</p>
+<p>{% translate "An email whose result is uncertain is resolved on the Outgoing mail page, not here." %}</p>
+<p>{% translate "Every pause, resume or resolution asks for a reason and shows a preview first. Nothing changes until you confirm it." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "Pause stops this campaign's email to Families and Admin digests; resume sends it again. Use it when something is wrong with the campaign's email." %}</p>
-{% aboutpage "delivery-control" %}<p>{% translate "Pausing does not close the campaign: Families can still respond, and their confirmation emails wait until you resume. Nothing is sent to the Testing recipient instead. Alerts to administrators and test emails you send yourself still go out." %}</p>
-<p>{% translate "Email that is already being handed to the mail service when you pause may still go out; pausing cannot recall it. An email whose result is uncertain is resolved on the Outgoing mail page, not here." %}</p>
-<p>{% translate "Every pause, resume or resolution asks for a reason and shows a preview first. Nothing changes until you confirm it." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a></p>
 <section class="panel"><h2>{% translate "Current live-mail inventory" %}</h2>
 <dl><dt>{% translate "Queued messages" %} {% translate "Waiting for their send time or for the mail worker to pick them up." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-queued-tip" tip_text=tip %}</dt><dd>{{ inventory.queued|number }}</dd>
@@ -74,7 +74,8 @@
 <p>{% translate "These counts are checked again when you confirm. Other held types and uncertain deliveries stay as they are. The pause ends only when no held or uncertain email remains." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm held-message resolution" %}</button></form>{% endif %}</section>{% endif %}</section>{% endif %}
 {% else %}
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
+<p class="help" id="pause-reason-help">{% translate "Families can still respond while email is paused. Email already being handed to the mail service when you pause may still go out; pausing cannot recall it." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024" aria-describedby="pause-reason-help">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
 {% if preview %}<section class="panel"><h2>{% translate "Pause preview" %}</h2><p>{{ preview.reason }}</p>
 <p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Already submitting" %}: {{ preview.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ preview.inventory.unknown|number }}.</p>
 <p>{% translate "Email may keep going out while you read this. Confirming holds every unsent live email at that moment and records the counts. If the campaign settings or your permissions change first, you need a new preview." %}</p>

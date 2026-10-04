@@ -2,6 +2,8 @@
 {% block title %}{% translate "Production activation progress" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Production activation progress" %}</h1>
+{% aboutpage "production-progress" %}<p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes." %}</p>
+<p>{% translate "If preparation was restarted, its counts use the settings in effect for that run." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <h2>{% if campaign.state == 'active' %}{% translate "Campaign active" %}{% elif campaign.state == 'scheduled' %}{% translate "Campaign scheduled" %}{% elif campaign.state == 'closed' %}{% translate "Campaign closed" %}{% else %}{{ campaign.state }}{% endif %}</h2>
 <p>{% translate "Production confirmed" %}: <time data-local-instant datetime="{{ receipt.created_at|instant }}">{{ receipt.created_at|instant }}</time></p>
@@ -13,8 +15,7 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl></details>
 <p>{% translate "Items processed counts work done so far, not messages sent, and the total can change while preparation runs." %}</p>
 <h3>{% translate "Preview compared with preparation outcomes" %}</h3>
-{% aboutpage "production-progress" %}<p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes." %}</p>
-<p>{% translate "None of these counts shows that email was delivered; see Outgoing mail for that. If preparation was restarted, its counts use the settings in effect for that run." %}</p>{% endaboutpage %}
+<p class="help">{% translate "None of these counts shows that email was delivered; see Outgoing mail for that." %}</p>
 {% if not complete %}<p>{% translate "Partial results: unfinished groups are not counted yet. Differences so far are not final reductions." %}</p>{% endif %}
 {% for row in outcomes %}<section><h4>{{ row.label }}</h4><dl>
 <dt>{% translate "Confirmed preview" %}</dt><dd>{{ row.preview|number }}</dd>

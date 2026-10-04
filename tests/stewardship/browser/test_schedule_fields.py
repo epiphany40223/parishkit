@@ -50,6 +50,8 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-schedules-mail")
+    # The page's explanation waits in its closed About panel (#227).
+    page.locator("details[data-about-page] > summary").click()
     visible(page.get_by_role("heading", name="How mail schedules work"))
     assert "October 1, 2054 – October 31, 2054" in page.inner_text("main")
     # The saved initial invitation keeps its fixed type and its own fields.

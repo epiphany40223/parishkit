@@ -1,7 +1,9 @@
 """Guards that keep Admin pages to the layered-help pattern (#227).
 
 The Admin portal spec's Page help section asks that longer explanation sit in
-an "About this page" panel or a click-to-open field tip, and that internal
+an "About this page" panel or a click-to-open field tip, that a page's
+introduction (the text between its heading and its data) be help hidden in
+that closed panel rather than paragraphs above the data, and that internal
 identifiers and bookkeeping fields sit in a closed "Technical details"
 disclosure. These tests read the Admin templates as text, so they need no
 database: they check each translatable message against where it is placed.
@@ -67,6 +69,77 @@ LONG_PARAGRAPH_ALLOWED = {
     "users.html": 99,
 }
 
+# The page's introduction: everything between its heading and the first
+# block of data or controls (a form, table, list, section, panel or included
+# component). Help there must sit in the closed About panel; only a one-line
+# hint that prevents a likely mistake may stay visible.
+HEADER_END = re.compile(
+    r"<(?:form|table|section|dl|ul|ol|div|fieldset|aside)\b|{% include "
+)
+NOTICE = re.compile(r'<p\b[^>]*\bclass="[^"]*\bnotice\b[^"]*"[^>]*>.*?</p>', re.S)
+LINK = re.compile(r"<a\b.*?</a>", re.S)
+# About one line of visible introductory help.
+INTRO_WORDS = 15
+# Pages whose introduction is not yet converted (#227 follow-up PRs: the setup
+# wizard and go-live pages, then the remaining settings, preview and error
+# pages), with the visible introductory words each may keep. Lower or remove
+# an entry when its page is converted; never raise one or add a page.
+INTRO_ALLOWED = {
+    "setup-step.html": 214,
+    "user-rule-error.html": 164,
+    "chair-review-error.html": 155,
+    "assignment-error.html": 142,
+    "setup-confirmation.html": 132,
+    "setup-credential.html": 111,
+    "chair-confirmation-error.html": 104,
+    "setup-cancel.html": 100,
+    "logs-error.html": 74,
+    "campaign-mail-families.html": 64,
+    "setup-schedules.html": 63,
+    "setup-source.html": 61,
+    "ministry-followup-error.html": 61,
+    "setup-content.html": 60,
+    "error.html": 56,
+    "setup-preview.html": 52,
+    "setup-mail.html": 50,
+    "setup.html": 46,
+    "delivery-refusal.html": 43,
+    "schedule-preview.html": 42,
+    "campaign-preview.html": 42,
+    "presence.html": 41,
+    "credential-selection.html": 41,
+    "backup-key.html": 39,
+    "setup-notification.html": 38,
+    "ministries.html": 38,
+    "clone-settings.html": 36,
+    "production-confirmation.html": 35,
+    "setup-campaign.html": 34,
+    "setup-shares.html": 33,
+    "export-cleanup-error.html": 32,
+    "denied.html": 31,
+    "content-catalog.html": 30,
+    "clone-preview.html": 30,
+    "report-empty.html": 26,
+    "go-live-families.html": 26,
+    "login.html": 25,
+    "hosted-file-delete.html": 24,
+    "go-live-readiness.html": 24,
+    "delivery-control.html": 24,
+    "hosted-file-unavailable.html": 22,
+    "setup-content-edit.html": 21,
+    "family-maintenance.html": 21,
+    "campaign-mail.html": 21,
+    "availability.html": 21,
+    "go-live-links.html": 20,
+    "campaign-ministries.html": 19,
+    "credential-status.html": 18,
+    "source-refresh.html": 17,
+    "artwork-remove.html": 17,
+    "talents-report-error.html": 16,
+    "setup-branding.html": 16,
+    "delivery-error.html": 16,
+}
+
 # Labels for internal identifiers and worker bookkeeping. They may appear
 # only inside a Technical details disclosure.
 INTERNAL_TERMS = (
@@ -109,6 +182,7 @@ def test_the_scan_finds_the_admin_templates():
     assert len(ADMIN_TEMPLATES) > 100
     assert "background-task.html" in ADMIN_TEMPLATES
     assert set(LONG_PARAGRAPH_ALLOWED) <= set(ADMIN_TEMPLATES)
+    assert set(INTRO_ALLOWED) <= set(ADMIN_TEMPLATES)
     assert {name for name, _ in INTERNAL_ALLOWED} <= set(ADMIN_TEMPLATES)
 
 
@@ -140,6 +214,84 @@ def test_long_help_allowances_are_still_needed(name):
     """An allowance shrinks with its page, so the list cannot hide new text."""
     assert longest_visible_message(name) == LONG_PARAGRAPH_ALLOWED[name], (
         f"{name}: update or remove its LONG_PARAGRAPH_ALLOWED entry"
+    )
+
+
+VALUE = re.compile(r"{{.*?}}", re.S)
+
+
+def visible_intro_words(name):
+    """Words of help sentences shown between a page's heading and its data.
+
+    The About panel and any other disclosure are one deliberate click away,
+    so they are left out, as are safety notices (``<p class="notice">``) and
+    link text. Only messages that read as sentences (ending in ``.``, ``!``
+    or ``?``) count, so labels such as "Status:" do not; inside a counted
+    message, the values it shows (``{{ ... }}``) are not words of help.
+
+    Limits, by design of a text scan: the introduction ends at the first
+    form, table, list, section, panel, ``<div>`` or ``{% include %}``, so help
+    placed after that, or inside an included template, is not checked here
+    (the long-paragraph guard still applies); help in a ``<p class="help">``
+    hint counts like any paragraph; and text outside ``<p>`` elements, or not
+    marked for translation, is not seen.
+    """
+    source = read(name)
+    if "</h1>" not in source:
+        return 0
+    after = DETAILS.sub("", ABOUT.sub("", source.split("</h1>", 1)[1]))
+    end = HEADER_END.search(after)
+    intro = LINK.sub("", NOTICE.sub("", after[: end.start()] if end else after))
+    return sum(
+        # A token left as bare punctuation (" — ", "." after a value) is not a word.
+        sum(1 for token in VALUE.sub("", message).split() if re.search(r"\w", token))
+        for paragraph in PARAGRAPH.findall(intro)
+        for message in messages(paragraph)
+        if message.strip()[-1:] in ".!?"
+    )
+
+
+# The "About this page" control sits beside the page heading (ui-v1.css puts
+# a closed panel that directly follows an h1 on the heading's line). The
+# guarantee is structural: the tag comes right after </h1>, optionally inside
+# one {% if %} that holds only the panel, so nothing can be drawn between them.
+ABOUT_AFTER_HEADING = re.compile(r"</h1>\s*(?:{% if [^%]*%}\s*)?{% aboutpage ", re.S)
+ABOUT_PAGES = sorted(name for name in ADMIN_TEMPLATES if "{% aboutpage " in read(name))
+
+
+def test_the_about_scan_finds_the_panels():
+    """A renamed tag must not make the placement guard pass vacuously."""
+    assert len(ABOUT_PAGES) > 30
+
+
+@pytest.mark.parametrize("name", ABOUT_PAGES)
+def test_about_panel_directly_follows_the_page_heading(name):
+    """One panel per page, placed right after the h1 so it sits beside it."""
+    source = read(name)
+    assert source.count("{% aboutpage ") == 1, f"{name}: one About panel per page"
+    assert ABOUT_AFTER_HEADING.search(source), (
+        f"{name}: put {{% aboutpage %}} directly after the page's </h1>, so "
+        "its control sits beside the heading; included templates may not "
+        "hold the panel"
+    )
+
+
+@pytest.mark.parametrize("name", ADMIN_TEMPLATES)
+def test_page_introduction_is_in_the_about_panel(name):
+    """A page's data comes first; its introductory help waits in the panel."""
+    words = visible_intro_words(name)
+    assert words <= INTRO_ALLOWED.get(name, INTRO_WORDS), (
+        f"{name}: {words} words of help show between the heading and the "
+        "page's data; move them into the page's About panel ({% aboutpage %}) "
+        "and keep at most a one-line hint that prevents a likely mistake"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(INTRO_ALLOWED))
+def test_intro_allowances_are_still_needed(name):
+    """An introduction allowance shrinks with its page."""
+    assert visible_intro_words(name) == INTRO_ALLOWED[name], (
+        f"{name}: update or remove its INTRO_ALLOWED entry"
     )
 
 
@@ -184,3 +336,28 @@ def test_the_guards_catch_what_they_describe():
     assert not messages(TECHNICAL.sub("", hidden))
     tagged = '<details data-x class="compact technical-details">' + internal
     assert not messages(TECHNICAL.sub("", tagged + "</details>"))
+
+
+def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
+    """Intro help is flagged above the data, and passes in the panel or below."""
+    lead = '<p>{% translate "' + "word " * 20 + 'end." %}</p>'
+    pages = {
+        "flagged.html": "<h1>T</h1>" + lead + "<form></form>",
+        "in-panel.html": '<h1>T</h1>{% aboutpage "t" %}'
+        + lead
+        + "{% endaboutpage %}<form></form>",
+        "below-data.html": "<h1>T</h1><table></table>" + lead,
+        "data-line.html": "<h1>T</h1><p>{% blocktranslate %}Data through "
+        + "{{ day }}.{% endblocktranslate %}</p>",
+        "notice.html": '<h1>T</h1><p class="notice">'
+        + lead[3:-4]
+        + "</p><form></form>",
+    }
+    for page, source in pages.items():
+        (tmp_path / page).write_text(source)
+    monkeypatch.setitem(globals(), "TEMPLATES", tmp_path)
+    assert visible_intro_words("flagged.html") > INTRO_WORDS
+    for page in ("in-panel.html", "below-data.html", "notice.html"):
+        assert visible_intro_words(page) == 0, page
+    # A value is not words of help; the words around it still count.
+    assert visible_intro_words("data-line.html") == 2

@@ -450,7 +450,12 @@ def test_get_filter_applies_in_place(page, component_origin):
     visible(page.get_by_text("Showing 1–1 of 1").first)
     assert ministry_names(page) == ["Lectors"]
     assert page.evaluate(MARKED) == "kept"
-    assert abs(page.evaluate("window.scrollY") - offset) < 40
+    # The one-row result can make the page too short to keep the full offset;
+    # the browser then stops at the bottom, which still keeps the reader's place.
+    bottom = page.evaluate("document.documentElement.scrollHeight - innerHeight")
+    # Still meaningful: the page stays scrollable, so a jump to the top fails.
+    assert bottom > 40
+    assert abs(page.evaluate("window.scrollY") - min(offset, bottom)) < 40
     assert page.url == (
         component_origin + "/ministries?q=Lectors&state=all&size=50&sort=name"
     )

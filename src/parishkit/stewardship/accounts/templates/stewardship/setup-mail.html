@@ -4,13 +4,14 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup email test" %}</h1>
+{% aboutpage "setup-mail" %}<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used." %}</p>
+<p>{% translate "This page checks status without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="setup-intro">{% translate "Send one fictional sample email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test. Once Google accepts it, Continue takes you to the next step." %}</p>
 <p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
-{% aboutpage "setup-mail" %}<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>
-<p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>{% endaboutpage %}
 <div data-setup-mail data-mail-status-url="{% url 'admin:setup_mail_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
+<p class="help">{% translate "Provider acceptance does not guarantee inbox delivery; check the Testing mailbox. A missing result is never automatically resent." %}</p>
 <form method="post" id="setup-test">{% csrf_token %}
 {{ form.preview_token }}{{ form.request_key }}
 {{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}

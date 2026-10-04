@@ -3,10 +3,10 @@
 {% block content %}
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 <h1>{% translate "Refused addresses" %}</h1>
-<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
-<form id="table-filters" data-table-sync method="get" class="panel">
-  <label for="family-duid">{% translate "Exact Family DUID" %}</label>
-  <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
+{% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>{% endaboutpage %}
+<form id="table-filters" data-table-sync method="get" class="filter-bar">
+  <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
+  <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25"></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show refusals" %}</button>
 </form>
