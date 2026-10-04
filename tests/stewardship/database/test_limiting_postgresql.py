@@ -1,6 +1,8 @@
 """Atomic Valkey limiter boundaries, bounded fallback and durable outage signals."""
 
 from concurrent.futures import ThreadPoolExecutor
+from ipaddress import ip_address
+from types import SimpleNamespace
 
 import pytest
 from django.test import Client
@@ -89,6 +91,47 @@ def test_admin_and_link_token_bursts_are_independent(auth_service):
     assert [limiter.bucket("access", "127.0.0.1") for _ in range(30)] == [0] * 30
     assert limiter.bucket("access", "127.0.0.1") > 0
     assert limiter.bucket("admin", "127.0.0.2") == 0
+
+
+def test_ipv6_sources_in_one_64_share_every_per_source_limit(auth_service):
+    """#383: rotating addresses inside one IPv6 /64 never earns a new budget.
+
+    The bucket, the Family-code IP window and the detector's source count all
+    key on the same grouped fingerprint; another /64 is a separate source.
+    """
+    from parishkit.stewardship.accounts.family_authentication import _ip_counter
+
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(
+        access_burst=3, family_ip=2, aggregate_attempts=2, family_sources=2
+    )
+    site = [ip_address(f"2001:db8:1:2::{index:x}") for index in range(1, 5)]
+    other = ip_address("2001:db8:1:3::1")
+    assert [limiter.bucket("access", address) for address in site[:3]] == [0] * 3
+    assert limiter.bucket("access", site[3]) > 0
+    assert limiter.bucket("access", other) == 0
+    service = SimpleNamespace(limiter=limiter)
+    assert limiter.counters([_ip_counter(service, site[0])], failure=True) == 0
+    assert limiter.counters([_ip_counter(service, site[1])], failure=True) > 0
+    assert limiter.counters([_ip_counter(service, other)]) == 0
+    # Two attempts reach the attempt threshold, but from one /64 they are one
+    # source, short of the two-source detector threshold.
+    assert not limiter.failed("family", site[0])
+    assert not limiter.failed("family", site[1])
+    assert not AuthenticationIncident.objects.exists()
+    assert limiter.failed("family", other)
+    incident = AuthenticationIncident.objects.get()
+    assert (incident.attempts, incident.sources) == (3, 2)
+
+
+def test_ipv4_mapped_ipv6_source_is_the_ipv4_host(auth_service):
+    """A dual-stack socket's ::ffff: form cannot double an IPv4 host's budget."""
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(admin_burst=2)
+    assert limiter.bucket("admin", ip_address("192.0.2.9")) == 0
+    assert limiter.bucket("admin", ip_address("::ffff:192.0.2.9")) == 0
+    assert limiter.bucket("admin", ip_address("192.0.2.9")) > 0
+    assert limiter.bucket("admin", ip_address("192.0.2.10")) == 0
 
 
 @pytest.mark.parametrize(("kind", "sources"), [("admin", 10), ("family", 20)])

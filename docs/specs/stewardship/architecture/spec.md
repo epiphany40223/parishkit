@@ -296,6 +296,16 @@ without clearing per-IP abuse counters. Counter keys and logs never store raw
 callback tokens or an email solely for throttling. Deployment YAML may tune
 thresholds, but production startup warns about values weaker than the defaults.
 
+Every per-source limit and source count in this specification (the token
+buckets, the per-IP and IP/code-pair windows, and the distinct-source counts of
+the deployment-wide detectors) keys on the source's network, not its exact
+address: an IPv4 address as is, an IPv6 address by its /64 prefix, and an
+IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) as the IPv4 address it names. One
+IPv6 end site normally holds a whole /64, so keying each address separately
+would give one attacker a new budget per address. Hosts sharing a /64, like
+hosts behind one IPv4 NAT, share its budget. The resolved client address itself
+stays exact everywhere else.
+
 Early Django middleware applies a coarse token bucket to `/admin/login` and the
 OAuth callback after trusted-client-address resolution but before OAuth
 state/session allocation or django-allauth handling: 60 requests per source IP
@@ -534,9 +544,10 @@ and complete report/export audit defined by the
 from application logs, operational notifications, and unprivileged reports.
 
 Failed Family-code attempts use Valkey sliding-window limits keyed by source IP
-and by source-IP/code-fingerprint pair. Defaults are five failures per pair per
-15 minutes and 100 failures per IP per 10 minutes, followed by `429` responses
-with increasing retry intervals. There is no limiter or lock keyed only by a
+and by source-IP/code-fingerprint pair, where "source IP" is the source network
+defined under [identity and session security](#identity-and-session-security).
+Defaults are five failures per pair per 15 minutes and 100 failures per IP per
+10 minutes, followed by `429` responses with increasing retry intervals. There is no limiter or lock keyed only by a
 code fingerprint: failures from one or more other source addresses cannot
 disable a valid Family credential. A successful request remains usable unless
 its own source IP is limited and clears only that IP/code-pair failure counter.
