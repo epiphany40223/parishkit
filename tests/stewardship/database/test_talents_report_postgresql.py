@@ -10,7 +10,6 @@ from openpyxl import load_workbook
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.talents import TalentQuery, talents_report
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
@@ -18,6 +17,7 @@ from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 from .auth_builders import signed_in
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
+from .test_export_views_postgresql import restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_responses_postgresql import respond, start
@@ -97,8 +97,14 @@ def test_report_lists_talents_limitations_and_filters(response_service):
 
 
 def test_native_page_and_downloads(response_service, google, settings):
-    """The page filters by CSRF POST; CSV and XLSX carry the same rows."""
-    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
+    """The page filters by CSRF POST; CSV and XLSX carry the same rows.
+
+    Read with the real restricted web and download logins
+    (``restricted_download_pool``): the download pool's login reads no
+    campaign or source data, so a download must be read on the web
+    connection, never there (#557).
+    """
+    settings.STEWARDSHIP_DOWNLOAD_POOL = None  # restricted_download_pool sets it
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
@@ -106,7 +112,7 @@ def test_native_page_and_downloads(response_service, google, settings):
     route = f"/admin/reports/{harness.campaign.pk}/talents/"
     browser, login = signed_in()
     assert login.status_code == 302
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+    with restricted_download_pool(settings):
         response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"Other: Organ" in body and b"Painter" in body
@@ -138,9 +144,12 @@ def test_native_page_and_downloads(response_service, google, settings):
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
+        assert response["Cache-Control"] == "no-store"
+        assert "stewardship-talents-" in response["Content-Disposition"]
         assert b"Other: Organ" in body and b"Cannot attend Mass" in body
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
         assert response.status_code == 200
+        assert response["Content-Disposition"].endswith(".xlsx")
         book = load_workbook(io.BytesIO(body))
         assert book.sheetnames == ["Members", "Families"]
         assert book["Members"]["D2"].value == "Painter; Other: Organ"

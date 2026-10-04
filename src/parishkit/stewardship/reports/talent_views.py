@@ -21,6 +21,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.exports import download_headers
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -163,6 +164,13 @@ def _respond(request, campaign_id, *, export, render):
 
     ``render(result, query, extra)`` returns the bytes; for a download,
     ``extra`` holds the format and display timezone chosen on the page.
+
+    Both the page and a download read on the web connection under the
+    interactive campaign read guard. A download is not a stored export file:
+    it is the report rendered in memory, as the System logs download is, so
+    it does not use the dedicated download pool, whose login
+    (``DOWNLOAD_READ_TABLES``) cannot read the campaign and source tables the
+    report needs (#557). Its response carries the shared download headers.
     """
     finish, handed_off = None, False
     action = Action.TALENTS_REPORT_EXPORTED if export else Action.TALENTS_REPORT_VIEWED
@@ -236,25 +244,25 @@ def _respond(request, campaign_id, *, export, render):
             count = len(result["members"]) + len(result["families"])
             return iter((render(result, shown, extra),))
 
-        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
         response = campaign_response(
             request,
             [campaign_id],
             authorize=authorize,
             open_content=content,
             on_close=finish,
-            **(
-                {
-                    "filename": f"stewardship-talents-{stamp}.{extra['format']}",
-                    "content_type": FORMATS[extra["format"]],
-                }
-                if export
-                else {}
-            ),
+            # No filename: that would route the read through the download pool.
+            **({"content_type": FORMATS[extra["format"]]} if export else {}),
         )
         if response.status_code == 503 and not response.streaming:
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
+        if export and handed_off:
+            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
+            for name, value in download_headers(
+                f"stewardship-talents-{stamp}.{extra['format']}",
+                content_type=FORMATS[extra["format"]],
+            ).items():
+                response[name] = value
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

@@ -708,8 +708,11 @@ Testing responses are excluded. Filters are a name or Family DUID search and
 one choice of everything, cannot participate, cannot attend, or a single
 talent; a summary counts each. The filtered result downloads immediately as CSV
 (Members, then Families) or XLSX (one sheet each), in a chosen display
-timezone. Viewing and downloading are audited with a count only. These answers
-are never written to ParishSoft. When the campaign offers no talents, the
+timezone. A download is rendered in memory on the web connection under the
+interactive campaign read guard, not through the dedicated download pool, whose
+login cannot read the response and source data the report needs. Viewing and
+downloading are audited with a count only. These answers are never written to
+ParishSoft. When the campaign offers no talents, the
 page says so plainly and lists only the limitations: no Talents column, talent
 counts or talent filters appear on the page or in the downloads, and Members
 listed only for talents an earlier response chose are left out. The Ministry
