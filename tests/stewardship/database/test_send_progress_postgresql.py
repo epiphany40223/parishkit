@@ -17,7 +17,7 @@ the launch-scale copies, which add Families with no occurrence yet.
 import json
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import date, timedelta
 from queue import Queue
 from uuid import UUID, uuid4
 
@@ -57,9 +57,12 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import send_progress
 from parishkit.stewardship.jobs.dispatch import execute_hint
+from parishkit.stewardship.jobs.family_mail_tasks import enqueue_preparation
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.jobs.storage import _status
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -83,6 +86,7 @@ from .test_family_auth_postgresql import family_service  # noqa: F401
 from .test_family_mail_dispatch_postgresql import prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_family_schedule_planning_postgresql import add_reminders
+from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -982,20 +986,7 @@ def test_in_progress_is_a_moment_in_time_across_a_moved_schedule(
         running = read_current()
         assert running.in_progress
         assert (running.remaining, running.unprepared, running.unplanned) == (3, 3, 2)
-        moved = change(
-            auth_service.store,
-            auth_service.store.active(),
-            actor,
-            [
-                {
-                    "operation": "update",
-                    "section": "schedules",
-                    "id": str(definition.pk),
-                    "values": {"date": "2026-10-02"},
-                }
-            ],
-        )
-        assert moved.state == "applied"
+        move_schedule(auth_service.store, actor, definition)
         assert ScheduleOccurrence.objects.get().reason == "schedule_replaced"
         cancelled = read_current()
         assert not cancelled.in_progress
@@ -1203,21 +1194,21 @@ def check_owed_matches_planning(kind, plan, *, owed=None, sent=None):
     )
 
 
-@pytest.mark.parametrize("kind", ["initial", "reminder"])
-def test_owed_families_match_testing_planning_rule_by_rule(
-    family_service,  # noqa: F811
-    auth_service,
-    kind,
-):
-    """Testing: the count before the real planner equals what it creates."""
-    harness, actor = family_service, uuid4()
+def rules_send(harness, store, actor, kind):
+    """The RULES Families in Testing, ready for the ``kind`` send.
+
+    Returns the Families by DUID, the invitation schedule and the send's
+    schedule (the invitation itself, or the first reminder, added here).
+    The invitations the send's rules assume delivered are delivered, and
+    Family 6 is under its restore hold.
+    """
     populate(harness.campaign, harness.rings, RULES, generation=2)
     families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
     initial = ScheduleDefinition.objects.select_related("current_revision").get()
     send = initial
     delivered = (8,)
     if kind == "reminder":
-        rows = add_reminders(auth_service.store, harness.campaign, actor)
+        rows = add_reminders(store, harness.campaign, actor)
         send = ScheduleDefinition.objects.get(pk=UUID(rows[0]["id"]))
         delivered = INVITED
     with campaign_clock(initial.current_revision.due_at):
@@ -1228,8 +1219,97 @@ def test_owed_families_match_testing_planning_rule_by_rule(
             )
     restore_hold(harness.campaign, send, "testing", families[6], actor)
     send.refresh_from_db()
+    return families, initial, send
+
+
+@pytest.mark.parametrize("kind", ["initial", "reminder"])
+def test_owed_families_match_testing_planning_rule_by_rule(
+    family_service,  # noqa: F811
+    auth_service,
+    kind,
+):
+    """Testing: the count before the real planner equals what it creates."""
+    harness, actor = family_service, uuid4()
+    _, _, send = rules_send(harness, auth_service.store, actor, kind)
     with campaign_clock(send.current_revision.due_at):
         check_owed_matches_planning(kind, lambda: sweep(actor))
+
+
+def fail_preparation(occurrence_id):
+    """Fail one planned occurrence's preparation for good.
+
+    The scheduler allocates the real preparation ticket; its one attempt
+    loses its lease and recovery gives the task up. How many attempts it
+    took does not matter here (the retry budget is covered in
+    test_family_mail_recovery_postgresql.py): a failed task and an
+    occurrence without an email are all this shape needs.
+    """
+    with scheduler_session() as guard:
+        ticket = enqueue_preparation(guard, occurrence_id)
+    status = _status(TaskRun.objects.get(pk=ticket.task_id))
+    failed = act(expire(act(status, "claim", lease_seconds=1)), "recovery_fail")
+    assert failed.state == "failed"
+    assert not OutboxMessage.objects.filter(semantic_key=occurrence_id).exists()
+    return ticket
+
+
+def move_schedule(store, actor, definition, days=1):
+    """Move ``definition`` ``days`` later through the real configuration edit.
+
+    The edit makes a new revision; the old revision's planned emails are
+    cancelled (``schedule_replaced``). ``definition`` must carry its current
+    revision; the caller reloads it afterwards.
+    """
+    moved = date.fromisoformat(definition.current_revision.values["date"])
+    result = change(
+        store,
+        store.active(),
+        actor,
+        [
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": str(definition.pk),
+                "values": {"date": (moved + timedelta(days=days)).isoformat()},
+            }
+        ],
+    )
+    assert result.state == "applied"
+
+
+def test_a_family_whose_preparation_failed_is_owed_an_edited_schedule(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """Nothing was delivered, so an edited schedule plans the Family again (#445).
+
+    Family 1's invitation is planned and its preparation fails for good. The
+    schedule then moves a day later, which cancels that occurrence
+    (``schedule_replaced``). At the new time Family 1 is owed the new
+    revision like the two Families never planned, and the sweep creates its
+    new pending occurrence; the Families whose invitation was delivered or
+    is under a restore hold are still not owed.
+    """
+    harness, actor = family_service, uuid4()
+    families, initial, _ = rules_send(harness, auth_service.store, actor, "initial")
+    with campaign_clock(initial.current_revision.due_at):
+        with scheduler_session() as guard:
+            planned = plan_family(guard, family_id=families[1], worker_id=actor)
+        fail_preparation(planned.selected)
+        assert ScheduleOccurrence.objects.get(pk=planned.selected).state == "pending"
+        move_schedule(auth_service.store, actor, initial)
+    cancelled = ScheduleOccurrence.objects.get(pk=planned.selected)
+    assert (cancelled.state, cancelled.reason) == ("skipped", "schedule_replaced")
+    initial.refresh_from_db()
+    with campaign_clock(initial.current_revision.due_at):
+        # The new revision has sent nothing yet: Family 8's delivery belongs
+        # to the replaced revision (its fulfillment still excludes it).
+        check_owed_matches_planning("initial", lambda: sweep(actor), sent=0)
+    assert ScheduleOccurrence.objects.filter(
+        revision_id=initial.current_revision_id,
+        target=f"family:{families[1]}",
+        state="pending",
+    ).exists()
 
 
 @pytest.mark.parametrize("kind", ["initial", "reminder"])
