@@ -940,9 +940,15 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
 ## Operator script
 
 `tools/stewardship-local.sh` drives the environment from the laptop. It
-requires Lima (`brew install lima`) and bash 4 or newer (macOS ships 3.2), uses
-`shasum` when `sha256sum` is absent, and runs everything else inside the VM over
-ssh with `-p parishkit-local`.
+requires Lima (`brew install lima`), git, tar and ssh, and runs under macOS's
+own bash 3.2. It packs the checkout, uploads its VM half
+(`tools/stewardship-local-vm.sh`) over ssh and runs it inside the VM as
+root; that half does everything else, with `-p parishkit-local` on every
+Compose command. The Lima instance name defaults to `parishkit-local` and
+`PARISHKIT_LOCAL_VM` selects another existing instance. The
+[developer guide](../../../guides/stewardship-local-environment.md) walks
+through the commands, the first bring-up and the documented VM run; this
+section is the contract.
 
 | Command | Effect |
 | --- | --- |
@@ -952,20 +958,32 @@ ssh with `-p parishkit-local`.
 | `deploy` | Rebuild from the checkout and upgrade the running deployment (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart |
 | `reset [--seeded]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
+| `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept); the stand-in for `deploy` until it lands |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `status` | Show the VM, service health, Docker disk use and VM disk use |
 | `down` | Stop the services; never removes data |
+| `start` | Start a stopped deployment's services in the recorded clock mode |
 | `sign-in --email E` | Print a [test sign-in](#local-test-sign-in) link |
 | `ca` | Copy Caddy's local root certificate to the laptop and print how to trust it |
 
-**`up`.** It creates `/opt/parishkit` with the marker file, writes the LOCAL
-deployment YAML and the [fake configuration](#fake-configuration), packs the
-checkout's `git ls-files` (including uncommitted edits), builds the `arm64`
-image inside the VM under a [local tag](#origin-proxy-and-image), provisions,
-installs the mail-catcher, sentinel OAuth and fake ParishSoft credentials, runs
-bootstrap, migration and grants, starts the services, and prints a sign-in link
-plus the values to enter in the setup wizard. The developer then completes the
+**`up`.** It installs a LOCAL deployment from the checkout by the
+[deployment runbook](../../../guides/stewardship-deployment-runbook.md#first-installation)'s
+first-installation steps, with the `arm64` image built inside the VM under a
+[local tag](#origin-proxy-and-image), the LOCAL deployment YAML and a
+deployment record beside it (UUID, Administrator, image, synthetic-parish
+inputs), the marker file (written as soon as provisioning, which requires an
+empty root, has completed), the sentinel OAuth client and the
+[fake configuration](#fake-configuration). It ends with the services healthy
+and the application answering the public origin through Caddy, and prints the
+sign-in command and the values the setup wizard asks for: the fake ParishSoft
+key and organization and the mail-catcher document, which the wizard's
+credential step installs through the real installers. The services start with
+debug logging on by default (`PARISHKIT_LOCAL_DEBUG_LOGGING=0` turns it off),
+as pre-launch dev deploys did. Until the image carries the
+[fake-clock](#fake-clock) override, `up` records `normal` clock mode; with it,
+`fake` at 17 days behind real time. The step-by-step account is in the
+[developer guide](../../../guides/stewardship-local-environment.md). The developer then completes the
 real setup wizard, since that is part of what the environment tests. `up` also
 builds the [fake-clock](#fake-clock) images and does all of this in fake-clock
 mode, with the clock 17 days behind real time, so that a later seed can start
@@ -993,7 +1011,9 @@ restores the post-setup snapshot (which also restores the fake configuration)
 and then runs `seed`.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
-root inside the VM. `reset --seeded` stops the services, restores the seeded
+root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
+deployment YAML and record, so a restore is self-contained. `reset --seeded`
+stops the services, restores the seeded
 snapshot with `rsync --delete` preserving numeric ownership, modes and hard
 links, and restarts them; it SHOULD take seconds plus service start-up. Because
 the seed is anchored to the time it was generated, a restored seeded snapshot
@@ -1002,10 +1022,13 @@ keeps its original dates and grows older each day. Re-seed (`reseed`, then
 seeded snapshot.
 
 **Trusting Caddy's CA.** The browser sees a certificate from Caddy's internal
-CA. `ca` copies `/data/caddy/pki/authorities/local/root.crt` from the Caddy
-container to `~/.parishkit-local/caddy-root.crt` and prints the macOS command to
-trust it in the login keychain. The script never changes trust settings
-itself; accepting the browser's certificate warning also works.
+CA. `ca` copies the root certificate from Caddy's data store in the runtime
+root (`run/persistent/caddy/data/caddy/pki/authorities/local/root.crt`, the
+container's `/data/caddy/pki/authorities/local/root.crt`) to
+`~/.parishkit-local/caddy-root.crt`, after checking that it is a certificate,
+and prints the macOS command to trust it in the login keychain. The script
+never changes trust settings itself; accepting the browser's certificate
+warning also works. A reinstall creates a new CA, which must be trusted again.
 
 **`deploy`.** It depends on the scripted Production upgrade work (#460, #461):
 that upgrade script's host part moves into a host script with a `production`
