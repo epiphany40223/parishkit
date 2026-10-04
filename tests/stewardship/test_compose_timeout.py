@@ -91,8 +91,8 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         assert command[0:2] == ["docker", "compose"]
         assert "--collection-manifest" in command and "--ci-progress" in command
-        assert kwargs["timeout"] == 300
-        raise subprocess.TimeoutExpired(command, 300, output=output)
+        assert kwargs["timeout"] == 600
+        raise subprocess.TimeoutExpired(command, 600, output=output)
 
     runner = Mock(side_effect=run)
     monkeypatch.setattr(compose_tests.subprocess, "run", runner)
@@ -103,7 +103,7 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
     )
     with (
         warning,
-        pytest.raises(pytest.fail.Exception, match="exceeded 300s") as failure,
+        pytest.raises(pytest.fail.Exception, match="exceeded 600s") as failure,
     ):
         compose_tests.test_development_container_lifecycle(tmp_path)
     assert len(str(failure.value)) < 8500

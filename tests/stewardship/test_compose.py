@@ -927,9 +927,10 @@ def test_development_container_lifecycle(tmp_path):
             "-p",
             "no:cacheprovider",
             # This executes the whole default suite, not just a startup probe.
-            # The host suite alone took 98s in CI; keep a finite margin for the
-            # container's process/filesystem overhead without delaying success.
-            timeout=300,
+            # The in-image run took 197-282s in CI by October 2026 (98s when
+            # first sized), so keep a finite guard against a hung container
+            # with room for slower runners (#500).
+            timeout=600,
             diagnose_timeout=True,
         )
         assert_collection_parity(host_collection.stdout, baseline.stdout)
