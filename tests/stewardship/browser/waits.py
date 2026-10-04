@@ -31,6 +31,28 @@ def hidden(locator):
     expect(locator).to_be_hidden()
 
 
+def has_attribute(locator, name, value):
+    """Assert that ``locator`` gets attribute ``name`` equal to ``value``, waiting.
+
+    Used for state a script sets after a fetch, such as a swapped-in table's
+    ``aria-sort``; an immediate ``get_attribute`` would race the swap.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_have_attribute(name, value)
+
+
+def has_text(locator, text):
+    """Assert that ``locator`` comes to have exactly ``text``, waiting.
+
+    A live region is written a moment after the event it announces, so an
+    immediate ``inner_text`` races it.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_have_text(text)
+
+
 def recorded(page, requests, count, *, timeout=10000):
     """Wait until a route handler has appended ``count`` requests to ``requests``.
 

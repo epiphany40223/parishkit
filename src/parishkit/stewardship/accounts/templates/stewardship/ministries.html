@@ -5,7 +5,7 @@
 <p>{% translate "This page turns Ministries on or off for parishioners." %} {% if campaign_url %}{% translate "To choose which Ministries are in this campaign, use" %} <a href="{{ campaign_url }}">{% translate "Campaign settings → Ministry selections" %}</a>.{% else %}{% translate "To choose which Ministries are in a campaign, use Campaign settings → Ministry selections." %}{% endif %}</p>
 <p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved." %}</p>
 {% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}
-<form method="get" class="filter-bar">
+<form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>
   <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
   <div class="short"><label for="ministry-state">{% translate "Activity" %}</label>
@@ -18,6 +18,7 @@
   <button type="submit">{% translate "Filter" %}</button>
 </form>
 {% translate "Ministry pages" as navigator_label %}
+<div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <form method="post" data-select-table>
   {% csrf_token %}<input type="hidden" name="action" value="preview">
@@ -49,4 +50,5 @@
   </div>
 </form>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 {% endblock %}

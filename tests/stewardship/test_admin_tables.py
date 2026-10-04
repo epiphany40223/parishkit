@@ -312,10 +312,50 @@ def test_get_heading_is_a_labelled_link():
         '{% load stewardship %}{% sort_heading table "name" "Name" "numeric" %}'
         '{% sort_heading table "when" "When" %}'
     ).render(Context({"table": table}))
-    assert '<th scope="col" class="numeric" aria-sort="descending">' in html
-    assert 'href="?size=50&amp;sort=name"' in html
-    assert 'href="?size=50&amp;sort=-when"' in html
+    assert (
+        '<th scope="col" class="numeric" aria-sort="descending" '
+        'data-sort-column="name">' in html
+    )
+    assert 'href="?size=50&amp;sort=name#table"' in html
+    assert 'href="?size=50&amp;sort=-when#table"' in html
     assert html.count("aria-sort") == 1 and "(sort ascending)" in html
+
+
+def test_table_anchors_are_unique_per_prefix():
+    """Each table's region id comes from its prefix, so two tables on one page
+    never share an id and a prefix-less table keeps the short "table"."""
+    assert paginate(ROWS, {}).anchor == "table"
+    assert paginate(ROWS, {}, prefix="members_").anchor == "members-table"
+    assert paginate(ROWS, {}, prefix="b-").anchor == "b-table"
+
+
+def test_every_control_ends_in_the_table_anchor():
+    """Navigator links and forms, like headings, name the table's region, so a
+    full page load (no script, or a failed in-place fetch) lands on the table;
+    the controls ui-v1.js refocuses after an in-place swap are marked (#478)."""
+    from dataclasses import replace
+
+    from django.template.loader import render_to_string
+
+    table = paginate(ROWS, {"b_page": "2", "b_size": "25"}, prefix="b_")
+    html = render_to_string(
+        "stewardship/table-navigator.html", {"table": table, "label": "Pages"}
+    )
+    previous = 'href="?b_size=25&amp;b_page=1#b-table" rel="prev" data-table-previous'
+    assert previous in html
+    assert 'href="?b_size=25&amp;b_page=3#b-table" rel="next" data-table-next' in html
+    assert '<form method="get" action="#b-table" class="table-nav-form"' in html
+    post = render_to_string(
+        "stewardship/table-navigator.html",
+        {
+            "table": replace(table, method="post", action="/admin/report/"),
+            "label": "Pages",
+            "csrf_token": "t0ken",
+        },
+    )
+    assert post.count('action="/admin/report/#b-table"') == 3
+    assert "data-table-previous>" in post and "data-table-next>" in post
+    assert "href=" not in post
 
 
 def test_never_signed_in_users_sort_after_the_latest_sign_in():

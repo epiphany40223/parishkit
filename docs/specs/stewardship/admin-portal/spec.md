@@ -442,6 +442,28 @@ lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families, and link
 preparation history (panels, not columns) have no sortable columns.
 
+A table's navigators and rows sit in one region with a stable id (the table's
+anchor, derived from its parameter prefix so two tables on one page differ),
+and every heading and navigator control names that id as its URL fragment.
+With script, choosing a heading, Previous, Next, a page number or a
+rows-per-page value re-sorts or re-pages the table in place (#478): the
+browser fetches the page the control would have loaded, requested as the
+control would have requested it (a GET table's link or query, a POST table's
+CSRF form with its private filters), and replaces that region, every other
+table region on the page and the values of the page's filter and export
+controls from the fetched page, so no control is left carrying a choice the
+table no longer shows. The reader keeps their scroll position, rows still
+shown keep their selection, focus returns to the chosen heading or control,
+the heading's `aria-sort` and a polite live region announce the new order or
+the rows now shown, and a GET table's choice replaces the address so reload,
+bookmarks and returning to the page keep it; a POST table's address never
+changes. Filter changes themselves still load the page in full (#484). Without
+script, or when the fetch fails or returns another page (a sign-in), the
+ordinary page load happens and its fragment lands on the table rather than
+at the top. Portal users, whose domain and address tables carry role forms
+bound once at load, and the link preparation history keep only the fragment
+and always load in full.
+
 Lists read straight from a growing database table page on the server with one
 extra row to learn whether a next page exists, and count matching rows only up
 to 10,000. Past that the navigator says "more than 10,000", omits the page

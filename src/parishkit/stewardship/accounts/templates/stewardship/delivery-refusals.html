@@ -4,13 +4,14 @@
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 <h1>{% translate "Refused addresses" %}</h1>
 <p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
-<form method="get" class="panel">
+<form id="table-filters" data-table-sync method="get" class="panel">
   <label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show refusals" %}</button>
 </form>
 {% translate "Refused address pages" as navigator_label %}
+<div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="refusal-table-caption">
 <table class="data-table">
@@ -32,4 +33,5 @@
 </table>
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 {% endblock %}

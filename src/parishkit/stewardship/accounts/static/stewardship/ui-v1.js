@@ -42,8 +42,11 @@
   // be selected by hand. Choosing a file fills an empty placeholder-name
   // field from the file's base name, as the server would derive it (the
   // server still derives and validates it when the field is left blank).
-  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-    document.querySelectorAll("button[data-copy]").forEach((button) => {
+  // The buttons sit in table rows, so a re-sorted table wires them again
+  // (enhanceTable below).
+  const wireCopyButtons = (root) => {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+    root.querySelectorAll("button[data-copy]").forEach((button) => {
       const field = document.getElementById(button.dataset.copy);
       if (!field) return;
       button.hidden = false;
@@ -55,7 +58,7 @@
         );
       });
     });
-  }
+  };
   const slugSource = document.querySelector("input[data-slug-from]");
   const slugTarget = document.querySelector("input[data-slug-to]");
   if (slugSource && slugTarget) {
@@ -76,13 +79,17 @@
   if (window.ParishDates) window.ParishDates.localize(document);
 
   // A download's timezone choice offers the browser's own zone, chosen by
-  // default; without script the choice stays UTC.
-  document.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
-    const zone = typeof Intl === "undefined"
-      ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!zone || zone === "UTC") return;
-    select.append(new Option(`${zone} (this browser)`, zone, true, true));
-  });
+  // default; without script the choice stays UTC. Also run for markup a table
+  // swap brings in (enhanceTable below).
+  const wireBrowserTimezone = (root) => {
+    root.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
+      const zone = typeof Intl === "undefined"
+        ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (!zone || zone === "UTC") return;
+      select.append(new Option(`${zone} (this browser)`, zone, true, true));
+    });
+  };
+  wireBrowserTimezone(document);
 
   const summary = document.querySelector("[data-error-summary]");
   if (summary) {
@@ -94,20 +101,22 @@
       });
     });
   }
-  document.querySelectorAll("input, select, textarea").forEach((field) => {
-    field.addEventListener("blur", () => {
-      if (field.willValidate) {
-        field.setAttribute("aria-invalid", String(!field.validity.valid));
-      }
+  const wireValidity = (root) => {
+    root.querySelectorAll("input, select, textarea").forEach((field) => {
+      field.addEventListener("blur", () => {
+        if (field.willValidate) {
+          field.setAttribute("aria-invalid", String(!field.validity.valid));
+        }
+      });
     });
-  });
+  };
 
   // Shared Admin tables (web/tables.py, table-navigator.html and
   // table-selection.html). Row selection is per page: Select all and the
   // header checkbox choose every enabled row checkbox shown, and bulk action
   // buttons stay disabled until something is chosen. The server still
   // validates every submitted selection.
-  document.querySelectorAll("[data-select-table]").forEach((scope) => {
+  const wireSelection = (scope) => {
     const rows = () => [...scope.querySelectorAll("input[data-select-row]")]
       .filter((node) => !node.disabled);
     const header = scope.querySelector("input[data-select-all]");
@@ -143,15 +152,253 @@
           && event.target.matches("[data-select-row]")) update();
     });
     update();
-  });
+  };
   // A new rows-per-page choice applies at once and starts again at page 1.
-  document.querySelectorAll("select[data-page-size]").forEach((select) => {
-    select.addEventListener("change", () => {
-      const page = select.form?.querySelector("[data-page-number]");
-      if (page) page.value = "1";
-      select.form?.requestSubmit();
+  // The submission has no submitter, so the select is noted for the in-place
+  // handler below, which puts focus back on its replacement.
+  const pendingControls = new WeakMap(); // form → control that submitted it
+  const wirePageSize = (root) => {
+    root.querySelectorAll("select[data-page-size]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const page = select.form?.querySelector("[data-page-number]");
+        if (page) page.value = "1";
+        if (select.form) pendingControls.set(select.form, select);
+        select.form?.requestSubmit();
+      });
     });
+  };
+  // Everything above that binds to elements inside a table, so a table
+  // swapped in by the in-place re-sort below behaves like one the page
+  // loaded with.
+  const enhanceTable = (root) => {
+    wireCopyButtons(root);
+    wireValidity(root);
+    root.querySelectorAll("[data-select-table]").forEach(wireSelection);
+    wirePageSize(root);
+    if (root === document) return;
+    wireBrowserTimezone(root);
+    if (window.ParishDates) window.ParishDates.localize(root);
+  };
+  enhanceTable(document);
+
+  // In-place re-sorting and paging of shared Admin tables (#478). A page
+  // wraps each table, with the navigator above and below it, in
+  // <div id="…" data-table-region> whose id is the TablePage's anchor.
+  // Activating a sort heading or a navigator control inside one fetches the
+  // page the control would have loaded, finds the same region in the fetched
+  // HTML and swaps it in, so the reader keeps their scroll position instead
+  // of landing at the top of a new page. The request is exactly the control's
+  // own: a GET table's link or query form, a POST table's small CSRF form
+  // with its private filters as hidden fields, so the server sees an ordinary
+  // page request and no special response path exists. Anything unexpected (a
+  // network error, a sign-in redirect, a response without the region) falls
+  // back to the ordinary navigation, whose #fragment still lands on the table.
+  // Without script the controls work as before, for the same reason.
+  const tableStatus = document.createElement("div");
+  tableStatus.className = "visually-hidden";
+  tableStatus.setAttribute("role", "status");
+  (document.querySelector("main") || document.body).append(tableStatus);
+  const announce = (text) => {
+    // Clearing first makes a repeated message (the same count after a
+    // re-sort) read again.
+    tableStatus.textContent = "";
+    window.setTimeout(() => { tableStatus.textContent = text; }, 50);
+  };
+  // One request in flight for the whole page: every response rewrites every
+  // region, so a newer choice on any table supersedes an older one anywhere,
+  // and an older response can never overwrite a newer swap.
+  let tableRequest = null; // the AbortController of the request in flight
+  // The region a control belongs to, or null when the control is not inside
+  // one (a page that keeps full loads) or the region has no id to match by;
+  // either way the control keeps its ordinary meaning.
+  const tableRegion = (node) => {
+    const region = node.closest("[data-table-region]");
+    return region && region.id ? region : null;
+  };
+  const withFragment = (url, id) => {
+    const target = new URL(url, document.baseURI);
+    target.hash = id;
+    return target.href;
+  };
+  // Where focus goes after the swap: the same heading (by column) or the
+  // matching control of the same navigator. Previous and Next become plain
+  // text on the first or last page, so each falls back to the other, and
+  // anything still missing to the region itself.
+  const focusAfter = (region, control) => {
+    const heading = control.closest("th[data-sort-column]");
+    if (heading) {
+      const column = CSS.escape(heading.dataset.sortColumn);
+      return (fresh) => fresh.querySelector(`th[data-sort-column="${column}"] .sort-link`);
+    }
+    const navs = [...region.querySelectorAll(".table-nav")];
+    const index = navs.indexOf(control.closest(".table-nav"));
+    const choices = control.matches("[data-table-previous]") ? ["[data-table-previous]", "[data-table-next]"]
+      : control.matches("[data-table-next]") ? ["[data-table-next]", "[data-table-previous]"]
+      : control.matches("[data-page-size]") ? ["[data-page-size]"]
+      : control.matches("[data-page-number]") ? ["[data-page-number]"]
+      : [".table-nav-form [type=submit]"];
+    return (fresh) => {
+      const nav = fresh.querySelectorAll(".table-nav")[index];
+      return choices.map((selector) => nav?.querySelector(selector)).find(Boolean);
+    };
+  };
+  // What the live region says: the sorted column and its direction after a
+  // heading, otherwise the navigator's own "Showing 26–50 of 120 · Page 2 of 5".
+  const describeTable = (fresh, control) => {
+    const column = control.closest("th[data-sort-column]")?.dataset.sortColumn;
+    if (column === undefined) {
+      return (fresh.querySelector(".table-count")?.textContent || "").replace(/\s+/g, " ").trim();
+    }
+    const heading = fresh.querySelector(`th[data-sort-column="${CSS.escape(column)}"]`);
+    const label = [...(heading?.querySelector(".sort-link")?.childNodes || [])]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent).join("").trim();
+    const state = heading?.getAttribute("aria-sort");
+    return state ? `Sorted by ${label}, ${state}` : `Sorted by ${label}`;
+  };
+  // Swap one region for its fresh copy. Selections are restored on the copy
+  // before it enters the document, so wireSelection's first update already
+  // counts them and no change event fires for a tick the reader did not make.
+  const swapRegion = (region, fresh) => {
+    const chosen = new Set([...region.querySelectorAll("input[data-select-row]:checked")]
+      .map((box) => box.value));
+    fresh.querySelectorAll("input[data-select-row]").forEach((box) => {
+      if (chosen.has(box.value)) box.checked = true;
+    });
+    region.replaceWith(fresh);
+    enhanceTable(fresh);
+  };
+  // Controls outside the regions that carry a table's page, size or sort are
+  // marked data-table-sync with a stable id. A form keeps its element, and so
+  // every script bound to it, and takes from the fetched page only the fields
+  // that carry table state: its hidden fields (a filter form's size and sort,
+  // an export's query) and the selects marked data-table-sync-field (a "Sort
+  // order" menu, whose option list is replaced since a heading's sort can add
+  // an option). Every other control is the reader's own choice (an export's
+  // format or timezone, a packet's history tick) and is never touched. A
+  // non-form node (a refresh link, a list of choices drawn from the rows) is
+  // replaced whole and enhanced again; its ticks are lost, as a full load
+  // would lose them.
+  const syncControls = (parsed) => {
+    document.querySelectorAll("[data-table-sync][id]").forEach((node) => {
+      const fresh = parsed.getElementById(node.id);
+      if (!fresh) return;
+      if (!(node instanceof HTMLFormElement)) {
+        node.replaceWith(fresh);
+        enhanceTable(fresh);
+        return;
+      }
+      fresh.querySelectorAll('input[type="hidden"][name], select[data-table-sync-field][name]')
+        .forEach((source) => {
+          const name = source.getAttribute("name");
+          const target = [...node.elements].find((field) => field.name === name
+            && field.tagName === source.tagName && field.getAttribute("type") === source.getAttribute("type"));
+          if (!target) return;
+          if (target instanceof HTMLSelectElement) target.innerHTML = source.innerHTML;
+          else target.value = source.value;
+        });
+    });
+  };
+  // Load the page a control leads to and bring this page up to date from it.
+  // Success: every table region present in both pages is swapped (the one
+  // the control belongs to and any other on the page, so they never
+  // disagree), the sync controls take their values, the address bar follows
+  // for a GET table, and focus and the live region report the result. A
+  // response that is not a page with this region (a sign-in page after the
+  // session ended, an error page) is shown by navigating to its URL rather
+  // than by re-sending the request, which for a POST would record a second
+  // access-audit row. A failed fetch falls back to the control's ordinary
+  // navigation. A newer choice on any table aborts an older request.
+  const refreshTable = async (region, control, url, init, fallback) => {
+    tableRequest?.abort();
+    const controller = new AbortController();
+    tableRequest = controller;
+    const focus = focusAfter(region, control);
+    const id = region.id;
+    region.setAttribute("aria-busy", "true");
+    let response, parsed;
+    try {
+      response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        credentials: "same-origin",
+        headers: {"X-Requested-With": "fetch"},
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      region.removeAttribute("aria-busy");
+      fallback();
+      return;
+    }
+    const fresh = parsed.getElementById(id);
+    if (!fresh || !fresh.hasAttribute("data-table-region")) {
+      window.location.assign(withFragment(response.url, id));
+      return;
+    }
+    document.querySelectorAll("[data-table-region][id]").forEach((other) => {
+      const copy = other === region ? fresh : parsed.getElementById(other.id);
+      if (copy && copy.hasAttribute("data-table-region")) swapRegion(other, copy);
+    });
+    syncControls(parsed);
+    // A GET table's choice belongs in the address bar, so reload, bookmarks
+    // and returning to the page keep it; a POST table's private filters never
+    // reach a URL. A server redirect chose the address itself.
+    if (response.redirected) {
+      window.history.replaceState(window.history.state, "", withFragment(response.url, id));
+    } else if (init.method !== "POST") {
+      window.history.replaceState(window.history.state, "", url);
+    }
+    let target = focus(fresh);
+    if (!target) {
+      fresh.setAttribute("tabindex", "-1");
+      target = fresh;
+    }
+    target.focus({preventScroll: true});
+    // Focus without scrolling kept the reader's place; if the control itself
+    // is just outside the viewport, bring it (and nothing more) into view.
+    target.scrollIntoView({block: "nearest"});
+    announce(describeTable(fresh, control));
+  };
+  // GET tables: sort headings and the navigator's Previous and Next are
+  // links. A modified click (new tab, new window) keeps its ordinary meaning.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
+        || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+    const link = event.target.closest("a.sort-link, .table-nav a[href]");
+    const region = link && tableRegion(link);
+    if (!region) return;
+    event.preventDefault();
+    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(link.href));
   });
+  // Forms: a POST table's headings, Previous and Next, and every table's
+  // page-number form. Capture phase, so this runs before the busy-state
+  // handler below, which leaves a submission script already took over alone.
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)
+        || !form.matches(".sort-form, .table-nav form")) return;
+    const region = tableRegion(form);
+    if (!region) return;
+    event.preventDefault();
+    // A rows-per-page change submits its form from script, with no
+    // submitter; wirePageSize noted the select. Failing both, the Go button.
+    const control = event.submitter || pendingControls.get(form) || form;
+    pendingControls.delete(form);
+    // Attributes, not properties: a hidden field named "action" or "method"
+    // (a report's own filter) would shadow the form's property of that name.
+    const action = new URL(form.getAttribute("action") || "", document.baseURI);
+    // The same urlencoded body the browser would send, submitter included.
+    const data = new URLSearchParams(new FormData(form, event.submitter || undefined));
+    const fallback = () => HTMLFormElement.prototype.submit.call(form);
+    if ((form.getAttribute("method") || "get").toLowerCase() === "post") {
+      refreshTable(region, control, action.href, {method: "POST", body: data}, fallback);
+    } else {
+      action.search = data.toString();
+      refreshTable(region, control, action.href, {method: "GET"}, fallback);
+    }
+  }, true);
 
   // Ordinary form submissions: show at once that the click registered, and
   // ignore repeats (double clicks, Enter pressed twice) until the browser

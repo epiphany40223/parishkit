@@ -7,6 +7,9 @@
 <p class="notice">{% translate "Each Family gets a new link for the live campaign. The links stay inactive until you give the final go-live confirmation. Preparing them sends no email and does not change Family codes." %}</p>
 {% if inputs_unavailable %}<p role="status">{% translate "Links can't be prepared yet. Finish Testing cleanup and wait for any running ParishSoft refresh to finish, then try again." %}</p>{% endif %}
 {% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}"><button type="submit">{% translate "Prepare inactive Family links" %}</button></form>{% endif %}
+{% comment %}Anchor id only, no data-table-region: live-status-v1.js owns the
+history panels below, so paging stays a full load that lands here.{% endcomment %}
+<div id="{{ table.anchor }}">
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div data-live-status="links" aria-live="polite"{% if live_pending %} data-live-pending{% endif %}>
 {% if live_pending %}{% translate "Preparing Family links…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}
@@ -27,5 +30,6 @@
 {% empty %}<p>{% translate "No links have been prepared yet. Select Prepare inactive Family links to start." %}</p>{% endfor %}
 </div>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 <p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' campaign.pk transition.pk %}">{% translate "Return to cleanup" %}</a></p>
 {% endblock %}
