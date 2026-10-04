@@ -166,6 +166,7 @@ sections:
     "Fake ParishSoft service": [OPS-10]
     "Fake configuration": [OPS-10]
     "Endpoint contract": [OPS-10]
+    "Change feed": [OPS-10]
     "Synthetic parish": [OPS-10]
     "Fake clock": [OPS-10]
     "Seeded campaign and responses": [OPS-10]
