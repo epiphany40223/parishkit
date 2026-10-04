@@ -1,23 +1,28 @@
-"""The rendered LOCAL ingress and topology (#476, OPS-10.03).
+"""The rendered LOCAL ingress and topology (#476, OPS-10.03, OPS-10.05).
 
 Golden files pin the LOCAL Compose document and Caddyfile, and each property
 the local environment specification's "topology and web differences" section
 names is asserted directly: loopback-only publication, no application-egress,
-an ingress network without IP masquerade joined only by Caddy, ``tls
-internal`` on ``localhost``, the local image tag with no GHCR reference, the
-``parishkit-local`` project name, and the LOCAL banner shown only in LOCAL.
+an ingress network without IP masquerade joined only by Caddy and Mailpit,
+``tls internal`` on ``localhost``, the local image tag with no GHCR reference,
+the ``parishkit-local`` project name, the Mailpit mail catcher with its UI on
+``127.0.0.1:8025`` only, the fake ParishSoft on ``backend`` alone, and the
+LOCAL banner shown only in LOCAL.
 """
 
 import hashlib
 import inspect
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
+from parishkit.stewardship import runtime_provisioning as provisioning
 from parishkit.stewardship.accounts import branding_context
 from parishkit.stewardship.deployment import (
     LOCAL_PUBLIC_ORIGIN,
@@ -26,6 +31,7 @@ from parishkit.stewardship.deployment import (
     load_deployment,
 )
 from parishkit.stewardship.jobs.queues import ROLE_QUEUES
+from parishkit.stewardship.mail_catcher import LOCAL_SMTP_ENDPOINT
 from parishkit.stewardship.runtime_database import offline_grants
 from parishkit.stewardship.runtime_grants import runtime_grants
 from parishkit.stewardship.runtime_identities import database_identities
@@ -36,7 +42,14 @@ from parishkit.stewardship.runtime_ingress import (
     render_local_caddy,
 )
 from parishkit.stewardship.runtime_paths import RuntimeLayout
-from parishkit.stewardship.runtime_topology import DEVELOPMENT_IMAGE, render_runtime
+from parishkit.stewardship.runtime_topology import (
+    DEVELOPMENT_IMAGE,
+    MAILPIT_IMAGE,
+    MAILPIT_MAX_MESSAGES,
+    fake_parishsoft_configuration,
+    mailpit_store,
+    render_runtime,
+)
 from parishkit.stewardship.runtime_valkey import broker_acl, server_acl, web_acl
 
 from .test_local_profile import (
@@ -55,9 +68,11 @@ IMAGES = {
     DeploymentProfile.LOCAL: LOCAL_IMAGE,
 }
 
-# The services LOCAL adds later (OPS-10.05 Mailpit, OPS-10.06 fake ParishSoft)
-# are not part of this rendering; Caddy is the only service on ingress today.
-INGRESS_SERVICES = {"caddy"}
+# The services on the non-internal ingress network: Caddy and the mail
+# catcher's UI (OPS-10.05). The fake ParishSoft (OPS-10.06) joins backend only.
+INGRESS_SERVICES = {"caddy", "mailpit"}
+# The stock images LOCAL runs beside the application containers.
+STOCK_SERVICES = {"postgres", "valkey", "caddy", "mailpit"}
 
 
 def local_rendering(root, **options):
@@ -99,7 +114,7 @@ def test_local_rendering_matches_the_golden_files():
 
 @pytest.mark.parametrize("mode", PROVIDER_MODES)
 def test_local_topology_has_no_egress_and_a_loopback_only_ingress(tmp_path, mode):
-    """No application-egress at all; ingress without masquerade, Caddy only.
+    """No application-egress at all; ingress without masquerade, Caddy and Mailpit.
 
     In every provider mount mode: the egress joins are per service and mode
     independent, but a mode must not be able to bring one back.
@@ -130,19 +145,160 @@ def test_local_topology_has_no_egress_and_a_loopback_only_ingress(tmp_path, mode
     assert services["caddy"]["networks"]["proxy"] == {
         "ipv4_address": configuration.runtime_network.caddy
     }
-    # Only Caddy publishes anything; web is reached through the proxy network.
-    assert [name for name, s in services.items() if "ports" in s] == ["caddy"]
+    # Only Caddy and the mail catcher's UI publish anything, each on the VM's
+    # loopback; web is reached through the proxy network.
+    assert {name for name, s in services.items() if "ports" in s} == INGRESS_SERVICES
+    assert services["mailpit"]["ports"] == ["127.0.0.1:8025:8025"]
 
 
 def test_local_application_services_use_the_local_tag_and_no_registry(tmp_path):
     """Every application container runs the local build; nothing names GHCR."""
     _, compose, documents, caddyfile = local_rendering(tmp_path)
     for name, service in compose["services"].items():
-        if name not in {"postgres", "valkey", "caddy"}:
+        if name not in STOCK_SERVICES:
             assert service["image"] == LOCAL_IMAGE, name
         assert "ghcr.io" not in service["image"], name
     assert "ghcr.io" not in canonical(compose)
     assert "ghcr.io" not in documents[caddyfile]
+
+
+# The mail catcher (OPS-10.05).
+@pytest.mark.parametrize("mode", PROVIDER_MODES)
+def test_mailpit_receives_on_backend_and_publishes_its_ui_on_loopback_only(
+    tmp_path, mode
+):
+    """Mailpit: pinned digest, backend and ingress, one loopback port, no relay.
+
+    The application reaches it at ``LOCAL_SMTP_ENDPOINT`` over the backend
+    network; its UI is published on the VM's loopback alone. No relay setting
+    is rendered, so Mailpit keeps every message it receives, and its Host
+    allowlist stops a page in the developer's browser from reading them.
+    """
+    configuration, compose, _, _ = local_rendering(tmp_path, provider_mode=mode)
+    mailpit = compose["services"]["mailpit"]
+    assert mailpit["image"] == MAILPIT_IMAGE
+    assert mailpit["image"].startswith("axllent/mailpit:v")
+    assert "@sha256:" in mailpit["image"] and "ghcr.io" not in mailpit["image"]
+    assert set(mailpit["networks"]) == {"backend", "ingress"}
+    assert mailpit["ports"] == ["127.0.0.1:8025:8025"]
+    host, port = LOCAL_SMTP_ENDPOINT
+    assert host == "mailpit"
+    environment = mailpit["environment"]
+    assert environment["MP_SMTP_BIND_ADDR"] == f"0.0.0.0:{port}"
+    assert environment["MP_UI_BIND_ADDR"] == "0.0.0.0:8025"
+    assert environment["MP_DATABASE"] == "/data/mailpit.db"
+    assert environment["MP_MAX_MESSAGES"] == str(MAILPIT_MAX_MESSAGES) == "50000"
+    assert environment["MP_ALLOWED_HOSTS"] == "localhost,127.0.0.1"
+    # Mailpit can only send mail onward through a relay, a forward, a webhook
+    # or POP3 release; none of those is rendered, and relaying is off by name.
+    assert environment["MP_SMTP_RELAY_ALL"] == "false"
+    for name in environment:
+        assert not (name.startswith("MP_SMTP_RELAY") and name != "MP_SMTP_RELAY_ALL")
+        assert not name.startswith("MP_SMTP_FORWARD")
+        assert name not in {"MP_WEBHOOK_URL", "MP_POP3_AUTH_FILE"}
+    assert mailpit["stop_grace_period"] == "10s"
+    # Run like the other stock images: unprivileged, read-only, one store.
+    assert mailpit["user"] == "10001:10001"
+    assert mailpit["read_only"] is True and mailpit["cap_drop"] == ["ALL"]
+    assert mailpit["restart"] == "unless-stopped"
+    assert mailpit["healthcheck"]["test"] == ["CMD", "/mailpit", "readyz"]
+    assert mailpit["volumes"] == [
+        {
+            "type": "bind",
+            "source": str(mailpit_store(configuration)),
+            "target": "/data",
+            "read_only": False,
+            "bind": {"create_host_path": False},
+        }
+    ]
+    assert mailpit_store(configuration) == (
+        configuration.paths["persistent_root"] / "mailpit"
+    )
+    assert "command" not in mailpit and "entrypoint" not in mailpit
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [profile for profile in PROFILES if profile is not DeploymentProfile.LOCAL],
+)
+def test_no_other_profile_renders_the_local_services(profile):
+    """Development, test and Production have no Mailpit or fake ParishSoft."""
+    configuration = configuration_for(profile, GOLDEN_ROOT)
+    compose, _ = render_runtime(
+        configuration, image=IMAGES.get(profile, DEVELOPMENT_IMAGE)
+    )
+    assert "mailpit" not in compose["services"]
+    assert "fake-parishsoft" not in compose["services"]
+    rendered = canonical(compose)
+    assert "mailpit" not in rendered and "axllent" not in rendered
+    assert MAILPIT_IMAGE not in rendered
+    assert "fake-parishsoft" not in rendered and "fake_parishsoft" not in rendered
+
+
+# The fake ParishSoft service (OPS-10.05, command from OPS-10.06).
+@pytest.mark.parametrize("mode", PROVIDER_MODES)
+def test_fake_parishsoft_serves_backend_only_from_its_one_mount(tmp_path, mode):
+    """The fake: local image, backend only, no port, one read-only config mount.
+
+    It answers at ``LOCAL_SOURCE_BASE_URL``, so its service name and port are
+    that URL's; the worker and the ParishSoft credential installer, which
+    call ParishSoft, share the ``backend`` network with it.
+    """
+    configuration, compose, _, _ = local_rendering(tmp_path, provider_mode=mode)
+    services = compose["services"]
+    fake = services["fake-parishsoft"]
+    target = urlsplit(LOCAL_SOURCE_BASE_URL)
+    assert target.hostname == "fake-parishsoft" and target.port == 8080
+    assert fake["image"] == LOCAL_IMAGE
+    assert set(fake["networks"]) == {"backend"}
+    assert "ports" not in fake
+    for name in ("worker", "credential-installer-parishsoft"):
+        assert "backend" in services[name]["networks"]
+    path = fake_parishsoft_configuration(configuration)
+    assert path == configuration.paths["run"] / "local" / "fake-parishsoft.json"
+    assert fake["command"] == [
+        "fake-parishsoft",
+        "--profile",
+        "local",
+        "--fake-config",
+        str(path),
+        "--port",
+        "8080",
+    ]
+    assert fake["volumes"] == [
+        {
+            "type": "bind",
+            "source": str(path),
+            "target": str(path),
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        }
+    ]
+    assert fake["user"] == "10001:10001"
+    assert fake["read_only"] is True and fake["cap_drop"] == ["ALL"]
+    assert fake["restart"] == "unless-stopped"
+    assert fake["healthcheck"]["test"][:3] == ["CMD", "python", "-c"]
+    assert "8080" in fake["healthcheck"]["test"][3]
+    # No credential of any kind reaches the fake.
+    assert not any("credential" in mount["source"] for mount in fake["volumes"])
+    assert set(fake["environment"]) == set(services["scheduler"]["environment"])
+
+
+@pytest.mark.parametrize(
+    "profile", [DeploymentProfile.LOCAL, DeploymentProfile.PRODUCTION]
+)
+def test_only_local_provisions_the_mail_catcher_store(tmp_path, profile):
+    """Provisioning creates ``run/persistent/mailpit`` for LOCAL and nothing else."""
+    root = tmp_path / "runtime"
+    configuration = configuration_for(profile, root)
+    result = provisioning.provision_runtime(configuration, image=IMAGES[profile])
+    assert result["runtime_storage_provisioned"] is True
+    store = root / "run" / "persistent" / "mailpit"
+    assert store == mailpit_store(configuration)
+    if profile is DeploymentProfile.LOCAL:
+        assert store.is_dir() and (store.stat().st_mode & 0o777) == 0o700
+    else:
+        assert not store.exists()
 
 
 def test_local_caddyfile_serves_localhost_with_an_internal_certificate(tmp_path):

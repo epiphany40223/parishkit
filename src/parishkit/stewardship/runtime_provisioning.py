@@ -19,6 +19,7 @@ from parishkit.config import ConfigError
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private, write_private
 from .bootstrap import HANDOFF_TARGETS
+from .deployment import DeploymentProfile
 from .deployment_documents import deployment_document
 from .runtime_identities import database_identities
 from .runtime_paths import (
@@ -28,6 +29,7 @@ from .runtime_paths import (
     private_directory,
 )
 from .runtime_topology import (
+    mailpit_store,
     render_runtime,
     resolve_database_files,
     resolve_valkey_files,
@@ -169,6 +171,9 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
         configuration.paths["caddy"] / "config",
         configuration.paths["cache"] / "static",
     }
+    if configuration.profile is DeploymentProfile.LOCAL:
+        # The mail catcher's store (#476); no other profile renders Mailpit.
+        directories.add(mailpit_store(configuration))
     passwords = {
         layout.database_password(name)
         for name in ("operator", *(entry[0] for entry in database_identities()))
