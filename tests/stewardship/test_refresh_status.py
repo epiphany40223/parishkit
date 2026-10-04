@@ -83,6 +83,8 @@ SCHEDULE = {
     "timezone": "America/New_York",
     "nightly_time": "02:00",
     "frequency": "daily",
+    "full_refresh_times": ("02:00",),
+    "delta_refresh": "quarter_hour",
 }
 
 # A page-issued manual refresh request key.
@@ -145,6 +147,12 @@ def test_next_scheduled_full_reload_uses_the_parish_time(monkeypatch):
     # 02:00 EDT on 9/29 is 06:00 UTC.
     assert status.next_full_at == datetime(2026, 9, 29, 6, 0, tzinfo=UTC)
     assert status.frequency == "daily"
+    assert status.nightly_only and status.has_deltas
+    # With several times a day the next one is the next listed time (#465).
+    several = SCHEDULE | {"full_refresh_times": ("02:00", "14:00")}
+    status = module.full_refresh_status(several, NOW)
+    assert status.next_full_at == datetime(2026, 9, 28, 18, 0, tzinfo=UTC)
+    assert not status.nightly_only
 
 
 def test_next_full_for_hourly_and_quarter_hour():
@@ -225,3 +233,36 @@ def test_home_page_offers_the_button_only_beside_a_failure():
         },
     )
     assert "Run a full refresh now" not in html
+
+
+def test_several_daily_times_name_the_most_recent_reload():
+    """With more than one full refresh a day the notice is not "the nightly" one."""
+    status = FullRefreshStatus(
+        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00", "14:00")
+    )
+    html = render_to_string(
+        "stewardship/full-refresh-status.html", {"status": status, "can_refresh": True}
+    )
+    assert "The most recent full ParishSoft reload" in html
+    assert "The nightly full ParishSoft reload" not in html
+
+
+def test_hourly_deltas_are_named_and_off_deltas_are_not_reported():
+    """The incremental line follows the configured delta cadence (#465)."""
+    hourly = FullRefreshStatus(
+        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "hourly"
+    )
+    assert hourly.deltas_healthy is True
+    html = render_to_string(
+        "stewardship/full-refresh-status.html", {"status": hourly, "can_refresh": True}
+    )
+    assert "Last hourly update:" in html and "hourly updates are working" in html
+    assert "15-minute" not in html
+    off = FullRefreshStatus(
+        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "off"
+    )
+    assert off.deltas_healthy is None and not off.has_deltas
+    html = render_to_string(
+        "stewardship/full-refresh-status.html", {"status": off, "can_refresh": True}
+    )
+    assert "update" not in html.split("notice-error")[0]

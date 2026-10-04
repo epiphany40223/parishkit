@@ -28,7 +28,15 @@ TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
 # Integration settings a key is never checked against: refresh timing is
 # scheduling and the From name is presentation. Everything else in an
 # integration's settings is its key scope (see authentication_scope).
-NOT_KEY_SCOPE = frozenset({"nightly_time", "full_refresh", "sender_name"})
+NOT_KEY_SCOPE = frozenset(
+    {
+        "nightly_time",
+        "full_refresh",
+        "full_refresh_times",
+        "delta_refresh",
+        "sender_name",
+    }
+)
 
 
 class OrganizationLocked(ConfigError):

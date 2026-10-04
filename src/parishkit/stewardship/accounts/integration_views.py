@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.service_boundaries import ROTATING_TARGETS
+from parishkit.stewardship.source.cadence import refresh_settings
 from parishkit.stewardship.source.refresh_status import (
     full_refresh_status,
     refresh_schedule,
@@ -135,9 +136,12 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     configured = record is not None
     record = record or _unset(target)
     backup = _backup_context(request, configuration) if target == "backup" else {}
-    initial = record["values"]["settings"] | {
-        "base_digest": configuration.active_configuration.digest
-    }
+    settings = record["values"]["settings"]
+    if target == "parishsoft":
+        # Show the schedule the scheduler uses: an older document with a
+        # nightly time and no time list must list that time, not 02:00.
+        settings = _with_defaults(settings)
+    initial = settings | {"base_digest": configuration.active_configuration.digest}
     probe = backup.get("probe")
     if (
         probe is not None
@@ -305,14 +309,35 @@ def _inline_credential_form(configuration, request, target):
     return InlineCredentialForm(target, initial={"intent": intent})
 
 
-def _retain_unused_time(target, settings, before):
-    """Keep the stored daily time when the refresh is hourly or every 15 minutes.
+def _with_defaults(settings):
+    """ParishSoft settings with the schedule defaults filled in.
 
-    The page hides (and the browser does not send) the daily time for those
+    Older documents imply a setting they do not store (a time list is the
+    stored nightly time alone), so the page shows, and a save compares,
+    what the scheduler actually uses: ``cadence.refresh_settings`` is the one
+    home of those defaults.
+    """
+    schedule = refresh_settings(settings)
+    return {
+        "full_refresh": schedule["frequency"],
+        "nightly_time": schedule["nightly_time"],
+        "full_refresh_times": list(schedule["full_refresh_times"]),
+        "delta_refresh": schedule["delta_refresh"],
+    } | settings
+
+
+def _retain_unused_time(target, settings, before):
+    """Keep the stored times when the refresh is hourly or every 15 minutes.
+
+    The page hides (and the browser does not send) the time list for those
     frequencies, so an empty or stale value there is never a change to review.
     """
     if target == "parishsoft" and settings.get("full_refresh", "daily") != "daily":
-        settings = settings | {"nightly_time": before.get("nightly_time", "02:00")}
+        before = _with_defaults(before)
+        settings = settings | {
+            "nightly_time": before["nightly_time"],
+            "full_refresh_times": before["full_refresh_times"],
+        }
     return settings
 
 
@@ -355,8 +380,8 @@ def _save(request, service, configuration, actor, target):
     if target == "parishsoft":
         # Refresh defaults are implied, not stored, in older settings. A key
         # save never upgrades the settings schema: change the schedule first.
-        for name, default in (("nightly_time", "02:00"), ("full_refresh", "daily")):
-            if name in before:
+        for name, default in _with_defaults(before).items():
+            if name in before or name not in settings:
                 continue
             if settings.get(name) != default:
                 raise UserFacingError(
@@ -404,7 +429,7 @@ def _preview(request, service, actor, target):
         raise StaleRecordError("Reload integration settings.")
     before = record["values"]["settings"]
     if target == "parishsoft":
-        before = {"full_refresh": "daily", "nightly_time": "02:00"} | before
+        before = _with_defaults(before)
     settings = _retain_unused_time(target, form.public_settings(), before)
     if settings == before:
         form.add_error(None, _("No settings have changed."))
@@ -447,14 +472,8 @@ def _preview(request, service, actor, target):
             "changes": [
                 {
                     "label": form.fields[name].label,
-                    # Show a choice's label ("Once an hour"), not its stored
-                    # value. Optional settings (the From name) may be absent.
-                    "before": dict(getattr(form.fields[name], "choices", ())).get(
-                        before.get(name, ""), before.get(name, "")
-                    ),
-                    "after": dict(getattr(form.fields[name], "choices", ())).get(
-                        settings.get(name, ""), settings.get(name, "")
-                    ),
+                    "before": _shown(form.fields[name], before.get(name, "")),
+                    "after": _shown(form.fields[name], settings.get(name, "")),
                 }
                 for name in form.fields
                 if name != "base_digest"
@@ -468,6 +487,18 @@ def _preview(request, service, actor, target):
             ),
         },
     )
+
+
+def _shown(field, value):
+    """A setting's value as the review page shows it.
+
+    A choice shows its label ("Once an hour"), not its stored value; a time
+    list shows as typed ("02:00, 12:00"). Optional settings (the From name)
+    may be absent.
+    """
+    if isinstance(value, (list, tuple)):
+        return ", ".join(value)
+    return dict(getattr(field, "choices", ())).get(value, value)
 
 
 def _remove(request, service, configuration, actor, target):
