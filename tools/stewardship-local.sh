@@ -26,7 +26,7 @@
 #   wizard                           complete the setup wizard unattended
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
-#   sign-in --email E                print a local test sign-in link (OPS-10.08)
+#   sign-in --email E                print a local test sign-in link
 #   ca                               fetch Caddy's root certificate and say how to trust it
 #
 # Configuration (environment variables):

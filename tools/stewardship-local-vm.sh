@@ -504,7 +504,7 @@ Local deployment is up (installed in $(( $(date -u +%s) - began ))s).
   Site:       https://localhost:8443   (Caddy's own CA: run 'ca' to trust it)
   Mail:       http://localhost:8025    (Mailpit)
   Admin:      $ADMIN_EMAIL
-  Sign in:    tools/stewardship-local.sh sign-in --email $ADMIN_EMAIL   (OPS-10.08)
+  Sign in:    tools/stewardship-local.sh sign-in --email $ADMIN_EMAIL
   Image:      $IMAGE
   Deployment: $UUID, project $project, root $root
   Clock mode: $mode

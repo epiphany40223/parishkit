@@ -71,11 +71,11 @@ never needs a copy of the repository.
 | `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. |
 | `reset [--seeded]` | Stop, restore that snapshot with `rsync --delete`, recreate and start the services. With no post-setup snapshot: type the instance name, and the root is removed and `up` runs again. |
 | `reset --reinstall` | Type the instance name; the new image is built from this checkout first, then the root is removed and `up` runs again from that image. Snapshots are kept. |
-| `seed [--response-scale M]` | Not yet: OPS-10.07 brings the time-travel seeder. The command takes its lock, keeps `~/.parishkit-local/seed.log`, and refuses until the image carries `local-seed`. |
+| `seed [--response-scale M]` | Seed a campaign in progress under the fake clock ([below](#seeding-a-campaign)); refuses on a seeded deployment. Takes a lock and keeps `~/.parishkit-local/seed.log`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
-| `sign-in --email E` | Print a local test sign-in link (OPS-10.08; until then the command inside the image refuses). |
+| `sign-in --email E` | Print a one-time local test sign-in link for an Administrator address. |
 | `ca` | Save Caddy's local root certificate to `~/.parishkit-local/caddy-root.crt` and print the `security add-trusted-cert` command. The script never changes trust itself. |
 
 Environment variables: `PARISHKIT_LOCAL_VM` (instance name),
