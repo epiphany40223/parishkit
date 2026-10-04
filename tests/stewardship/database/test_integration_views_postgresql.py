@@ -148,7 +148,9 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     assert record["settings"] == {
         "organization_id": "54321",
         "full_refresh": "daily",
+        "full_refresh_times": ["02:00"],
         "nightly_time": "02:00",
+        "delta_refresh": "quarter_hour",
     }
     assert record["credential_fingerprint"] == "a" * 64
     assert (
@@ -178,7 +180,9 @@ def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
         post(
             browser,
             URL,
-            edit(auth_service.store, organization_id="12345", nightly_time="03:15"),
+            edit(
+                auth_service.store, organization_id="12345", full_refresh_times="03:15"
+            ),
         ),
         "preview",
     )
@@ -198,6 +202,11 @@ def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
         pk=request.candidate_version_id
     )
     assert configuration.validation_schema == "source-cadence-v8"
+    settings = configuration.canonical_document["sections"]["integrations"][0][
+        "values"
+    ]["settings"]
+    assert settings["nightly_time"] == "03:15"
+    assert settings["full_refresh_times"] == ["03:15"]
     with scheduler_session() as guard:
         assert len(produce_refreshes(guard)) == 2
     tick = SourceRefreshTick.objects.get(command__cause="nightly")
@@ -206,6 +215,111 @@ def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
     local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
     assert (local.hour, local.minute) == (3, 15)
     assert browser.get(URL).status_code == 200
+
+
+def test_several_daily_times_reach_yaml_and_the_scheduler(auth_service, google):
+    """A typed time list is stored sorted; the scheduler's full tick names one (#465).
+
+    The earliest time becomes the nightly time; the review page shows the
+    list as typed. Which time is due depends on the clock, so the tick is
+    checked against the list and its own local wall time.
+    """
+    from zoneinfo import ZoneInfo
+
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedConfigurationVersion,
+    )
+    from parishkit.stewardship.jobs.scheduler import scheduler_session
+    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+    from parishkit.stewardship.source.production import produce_refreshes
+    from parishkit.stewardship.source.refresh_models import SourceRefreshTick
+
+    SourceCurrent.objects.get_or_create(singleton=True)
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    browser, _ = signed_in()
+    review = post(
+        browser,
+        URL,
+        edit(
+            auth_service.store,
+            organization_id="12345",
+            full_refresh_times="15:00, 03:15",
+            delta_refresh="quarter_hour",
+        ),
+    )
+    assert b"03:15, 15:00" in review.content
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    request = ConfigurationChangeRequest.objects.get(
+        pk=response["Location"].rsplit("/", 1)[-1]
+    )
+    assert (
+        install_request(
+            auth_service.store, request_id=request.pk, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+    configuration = AppliedConfigurationVersion.objects.get(
+        pk=request.candidate_version_id
+    )
+    settings = configuration.canonical_document["sections"]["integrations"][0][
+        "values"
+    ]["settings"]
+    assert settings["full_refresh_times"] == ["03:15", "15:00"]
+    assert settings["nightly_time"] == "03:15"
+    with scheduler_session() as guard:
+        assert len(produce_refreshes(guard)) == 2
+    tick = SourceRefreshTick.objects.get(command__cause="nightly")
+    assert tick.nightly_time in ("03:15", "15:00")
+    local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
+    assert f"{local.hour:02d}:{local.minute:02d}" == tick.nightly_time
+    page = browser.get(URL).content
+    assert b"03:15, 15:00" in page
+
+
+def test_older_document_shows_its_nightly_time_as_the_time_list(auth_service, google):
+    """A document with a nightly time and no list shows that time, not 02:00 (#465).
+
+    Saving the page unchanged is then no change, and a key save with the
+    shown schedule is not mistaken for a schedule change.
+    """
+    base = auth_service.store.active()
+    integration = base.document()["sections"]["integrations"][0]
+    change(
+        auth_service.store,
+        base,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "integrations",
+                "id": integration["id"],
+                "values": {
+                    "settings": integration["values"]["settings"]
+                    | {"nightly_time": "03:00"}
+                },
+            }
+        ],
+    )
+    settings = auth_service.store.active().document()["sections"]["integrations"][0][
+        "values"
+    ]["settings"]
+    assert settings["nightly_time"] == "03:00" and "full_refresh_times" not in settings
+    # The schedule change above is the only request; the page adds none.
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    page = browser.get(URL)
+    assert page.status_code == 200
+    assert 'name="full_refresh_times" value="03:00"' in page.content.decode()
+    unchanged = post(
+        browser,
+        URL,
+        edit(auth_service.store, organization_id="12345", full_refresh_times="03:00"),
+    )
+    assert unchanged.status_code == 400
+    assert b"No settings have changed." in unchanged.content
+    assert ConfigurationChangeRequest.objects.count() == requests
 
 
 @pytest.mark.parametrize("direct_insert", [False, True])

@@ -4927,6 +4927,8 @@ DECLARE runtime stewardship_system_configuration%ROWTYPE;
         zone text;
         nightly text;
         frequency text;
+        times jsonb;
+        deltas text;
         scope_digest text;
         expected_key text;
         local_day date;
@@ -4973,20 +4975,35 @@ BEGIN
                 ON cfg.id=c.active_configuration_id
             WHERE c.id=runtime.current_campaign_id;
     END IF;
+    -- The applied schedule: the nightly time, the full-refresh frequency,
+    -- the configured local full-refresh times (the nightly time alone when
+    -- an older document names no list) and the delta cadence (#465).
     SELECT coalesce(settings->>'nightly_time','02:00'),
-           coalesce(settings->>'full_refresh','daily') INTO nightly, frequency
+           coalesce(settings->>'full_refresh','daily'),
+           coalesce(settings->'full_refresh_times',
+                    jsonb_build_array(coalesce(settings->>'nightly_time','02:00'))),
+           coalesce(settings->>'delta_refresh','quarter_hour')
+        INTO nightly, frequency, times, deltas
         FROM stewardship_applied_integration
         WHERE configuration_id=NEW.configuration_id AND kind='parishsoft';
-    IF NEW.timezone IS DISTINCT FROM zone OR NEW.nightly_time IS DISTINCT FROM nightly
+    -- A full tick names the configured time it fell due at, which must be
+    -- the nightly time or one of the listed times; a delta tick carries the
+    -- nightly time, as it always has.
+    IF NEW.timezone IS DISTINCT FROM zone
+       OR (command.cause='delta' AND NEW.nightly_time IS DISTINCT FROM nightly)
+       OR (command.cause='nightly' AND NEW.nightly_time IS DISTINCT FROM nightly
+           AND NOT (jsonb_typeof(times)='array' AND times ? NEW.nightly_time::text))
        OR NEW.due_at > clock_timestamp()
        OR NEW.due_at <> date_trunc('second',NEW.due_at) THEN
         RAISE EXCEPTION 'Refresh tick is not due under its applied cadence'
             USING ERRCODE='23514';
     END IF;
     IF command.cause='delta' THEN
-        IF extract(second FROM NEW.due_at) <> 0
-           OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,15) <> 0 THEN
-            RAISE EXCEPTION 'Delta tick must be a quarter-hour UTC slot'
+        -- Deltas fall on UTC quarter hours or hours, or not at all.
+        IF deltas='off' OR extract(second FROM NEW.due_at) <> 0
+           OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,
+                  CASE deltas WHEN 'hourly' THEN 60 ELSE 15 END) <> 0 THEN
+            RAISE EXCEPTION 'Delta tick must match its applied delta cadence'
                 USING ERRCODE='23514';
         END IF;
     ELSIF frequency IN ('hourly','quarter_hour') THEN
@@ -4998,10 +5015,12 @@ BEGIN
                 USING ERRCODE='23514';
         END IF;
     ELSE
-        local_day := (NEW.due_at AT TIME ZONE public.stewardship_timezone_name_v1(zone))::date;
-        IF NEW.due_at <> stewardship_resolve_local_v1(local_day+nightly::time,zone)
+        local_day := (NEW.due_at AT TIME ZONE
+                      public.stewardship_timezone_name_v1(zone))::date;
+        IF NEW.due_at <> stewardship_resolve_local_v1(
+               local_day+NEW.nightly_time::time,zone)
            AND NEW.due_at <> stewardship_resolve_local_v1(
-               (local_day-1)+nightly::time,zone) THEN
+               (local_day-1)+NEW.nightly_time::time,zone) THEN
             RAISE EXCEPTION 'Nightly tick must use canonical local-time resolution'
                 USING ERRCODE='23514';
         END IF;
@@ -5012,7 +5031,8 @@ BEGIN
     expected_key := encode(sha256(convert_to(stewardship_source_canonical(
         jsonb_build_object('schema','source-refresh-slot-v1',
             'scope_fingerprint',scope_digest,'timezone',zone,
-            'nightly_time',CASE WHEN command.cause='nightly' THEN nightly ELSE NULL END,
+            'nightly_time',CASE WHEN command.cause='nightly'
+                                THEN NEW.nightly_time::text ELSE NULL END,
             'cause',command.cause,'due_at',
             to_char(NEW.due_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS')||'+00:00')
         ),'UTF8')),'hex');

@@ -639,10 +639,17 @@ until it is resolved; the Admin home page shows it too. Mail meanwhile waits
 without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 The history
-stays on the change's details page and in the audit log. The ParishSoft daily
-refresh time is shown only for the once-a-day frequency; for hourly and
-15-minute refreshes the stored time is kept unchanged and is not a change to
-review.
+stays on the change's details page and in the audit log. The ParishSoft
+settings page lists the full refresh's parish-local times ("At these times",
+one to eight, typed comma-separated and stored sorted; the earliest is the
+nightly refresh) and offers the quick-update cadence (every 15 minutes,
+hourly or off). The time list is shown only for the set-times frequency; for
+hourly and 15-minute refreshes the stored times are kept unchanged and are
+not a change to review. A quick-update choice whose gap exceeds the server's
+freshness window is refused with the gap and the window named, per the
+[full cycle](../background-processing/spec.md#full-cycle). Both fields keep
+their long help behind the field tip; the visible hints are the time format
+and "Family contact changes only; keep 15 minutes".
 
 **Off-site backups (Google Drive)** is an optional integration with no key of
 its own: its one setting is a Google Drive folder link, stored in canonical

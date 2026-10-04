@@ -1,18 +1,30 @@
 """Versioned nightly source cadence; retained configuration schemas stay frozen."""
 
-import re
-
 from parishkit.stewardship.schema_primitives import invalid
+from parishkit.stewardship.source.cadence import (
+    DEFAULT_TIME,
+    DELTA_REFRESHES,
+    FREQUENCIES,
+    canonical_time,
+    canonical_times,
+)
 
 SCHEMA = "source-cadence-v8"
 REQUEST_SCHEMA = "source-cadence-patch-v8"
 RECOVERY_SCHEMA = "operator-recovery-cadence-v8"
 CREDENTIAL_SCHEMA = "integration-credential-cadence-v8"
-DEFAULT_TIME = "02:00"
 
 
-# Settings this schema adds to the ParishSoft integration, over v5.
-CADENCE_SETTINGS = ("nightly_time", "full_refresh")
+# Settings this schema adds to the ParishSoft integration, over v5. Every one
+# is optional, so documents written before a setting existed stay valid:
+# ``full_refresh_times`` (1–8 sorted unique local HH:MM times, including the
+# nightly time) and ``delta_refresh`` arrived with #465.
+CADENCE_SETTINGS = (
+    "nightly_time",
+    "full_refresh",
+    "full_refresh_times",
+    "delta_refresh",
+)
 
 
 def uses_cadence(document):
@@ -26,8 +38,22 @@ def uses_cadence(document):
     )
 
 
+def _validate_cadence(settings):
+    """Refuse a malformed refresh time, time list, frequency or delta cadence."""
+    if "nightly_time" in settings and not canonical_time(settings["nightly_time"]):
+        invalid()
+    if "full_refresh" in settings and settings["full_refresh"] not in FREQUENCIES:
+        invalid()
+    if "full_refresh_times" in settings and not canonical_times(
+        settings.get("nightly_time", DEFAULT_TIME), settings["full_refresh_times"]
+    ):
+        invalid()
+    if "delta_refresh" in settings and settings["delta_refresh"] not in DELTA_REFRESHES:
+        invalid()
+
+
 def validate_sections(document):
-    """Validate the refresh time and frequency, then all retained v5 rules."""
+    """Validate the refresh schedule settings, then all retained v5 rules."""
     from .configuration_schema import _validate_v5_sections
 
     rows = []
@@ -37,19 +63,7 @@ def validate_sections(document):
             settings = values.get("settings")
             if not isinstance(settings, dict):
                 invalid()
-            if "nightly_time" in settings:
-                time = settings["nightly_time"]
-                if (
-                    type(time) is not str
-                    or re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", time) is None
-                ):
-                    invalid()
-            if "full_refresh" in settings and settings["full_refresh"] not in (
-                "daily",
-                "hourly",
-                "quarter_hour",
-            ):
-                invalid()
+            _validate_cadence(settings)
             row = row | {
                 "values": values
                 | {

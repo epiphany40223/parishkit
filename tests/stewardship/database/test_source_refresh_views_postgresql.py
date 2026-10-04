@@ -75,12 +75,12 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         assert run_of(post(browser, uuid4())) == root
         assert "already waiting" in browser.get(URL).content.decode()
         # The run's page and the task list both say which kind of refresh
-        # this is, and the refresh page explains full vs 15-minute.
+        # this is, and the refresh page explains full vs quick updates.
         task_page = browser.get(f"/admin/background/task/{root}").content.decode()
         assert "Full refresh" in task_page
         assert "records checked, not records changed" in task_page
         assert "(Full refresh)" in browser.get("/admin/background").content.decode()
-        assert "15-minute updates" in browser.get(URL).content.decode()
+        assert "automatic quick updates" in browser.get(URL).content.decode()
     assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 1
     request = SourceRefreshRequest.objects.get()
     assert (request.kind, str(request.task_root_id)) == ("full", root)
