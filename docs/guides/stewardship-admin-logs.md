@@ -13,10 +13,13 @@ increments and branches from main, not from either.
 ## Scope and acceptance
 
 An Administrator opens **System logs** from the Admin navigation and sees both
-sources together, newest first, fifty entries a page: time, source, severity,
-type, actor, the correlation, campaign and subject identifiers, and the recorded
-detail. The five levels are distinguished by a word and a symbol, never by
-color alone. DEBUG is excluded until chosen.
+sources together, newest first, fifty entries a page: time, severity (an icon
+for an operational entry, "Audit record" for an audit one, so the source is
+implied), type, actor, the correlation, campaign and subject identifiers, and
+the recorded detail. The five levels are distinguished by an icon's shape, never by color
+alone: the level filter shows each icon beside its word, and the table's Level
+column (second, after Time) shows the icon with its word as screen-reader text
+and a tooltip. DEBUG is excluded until chosen.
 
 Filters cover level, source, type, actor, task or request correlation, campaign
 and a date range. The specification's text and JSONL export, its full-text

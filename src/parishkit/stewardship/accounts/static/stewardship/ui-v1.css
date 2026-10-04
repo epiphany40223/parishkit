@@ -378,11 +378,17 @@ progress::-webkit-progress-bar { background: #e3e8e7; border-radius: 999px; }
 progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
 progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
-/* Log levels: the word and icon carry meaning; color only reinforces it. The
+/* Log levels: the icon's shape carries meaning; color only reinforces it. The
    icons are one matched set (components/level-icon.html): a blue "i", an amber
    warning triangle, a red cross and, for CRITICAL, a dark red stop sign on a
-   highlighted row. */
-.log-level { display: inline-flex; align-items: center; gap: .3rem; margin-top: .25rem; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); font-size: .8125rem; font-weight: 600; }
+   highlighted row. The level choices show each icon beside its word; the
+   table's Level column shows the icon alone (its word is screen-reader text
+   and a tooltip), shrunk to its content so it stays a narrow column. main's
+   overflow-wrap: anywhere would then let "Level" and "Audit record" break
+   mid-word, so the column wraps only between words. */
+.log-level-cell { width: 1%; overflow-wrap: normal; }
+.log-level { display: inline-flex; padding-top: .15rem; }
+.log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
 .level-icon-debug { color: var(--muted); }
 .level-icon-info { color: #1d5fbf; }
@@ -403,9 +409,6 @@ details.log-more-filters > .filter-bar { margin-top: .5rem; }
 details.technical-details { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
 details.technical-details[open] { padding-bottom: 0; }
 details.technical-details dd { overflow-wrap: anywhere; }
-.log-level-info { background: var(--accent-soft); color: var(--accent-strong); }
-.log-level-warning { background: var(--warning-bg); color: var(--warning-ink); }
-.log-level-error, .log-level-critical { background: var(--error-bg); color: var(--error-ink); }
 
 [hidden] { display: none !important; }
 .content-editor { min-height: 12rem; overflow-wrap: anywhere; }
