@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, timedelta
 from queue import Queue
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,6 +33,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
     FamilyCampaign,
+    RehearsalEpoch,
 )
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
@@ -57,7 +59,11 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import send_progress
 from parishkit.stewardship.jobs.dispatch import execute_hint
-from parishkit.stewardship.jobs.family_mail_tasks import enqueue_preparation
+from parishkit.stewardship.jobs.family_mail_models import FamilyMailPreparation
+from parishkit.stewardship.jobs.family_mail_tasks import (
+    enqueue_preparation,
+    retry_preparation,
+)
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.ownership import database_now
@@ -74,18 +80,27 @@ from .campaign_builders import (
     change,
     claimed_task,
     command,
+    complete_empty_catchup,
     occurrence,
     restored_runtime,
 )
 from .credential_builders import family_campaign, populate
+from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
 from .test_delivery_views_postgresql import uncertain
 from .test_export_campaign_lock_postgresql import contender
 from .test_family_auth_postgresql import family_service  # noqa: F401
 from .test_family_mail_dispatch_postgresql import prepare
-from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
+from .test_family_mail_preparation_postgresql import (
+    allocate,
+    claim,
+    family_mail,  # noqa: F401
+    handler,
+)
 from .test_family_schedule_planning_postgresql import add_reminders
+from .test_policy_postgresql import user
+from .test_runtime_auth_grants_postgresql import web_login
 from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -97,7 +112,20 @@ SHADOWED = (
     "stewardship_schedule_occurrence",
     "stewardship_outbox_message",
     "stewardship_family_campaign",
+    "stewardship_family_mail_preparation",
+    "stewardship_task_run",
 )
+# The preparation chains of the launch send's not-yet-prepared emails, in
+# plan order: (how many, each run's state in retry order). A Family whose
+# newest run failed counts as failed before preparation (#482).
+CHAINS = (
+    (20, ("queued",)),
+    (10, ("retry_wait",)),
+    (10, ("failed",)),
+    (5, ("failed", "failed")),
+    (5, ("failed", "queued")),
+)
+PREPARATION_TABLES = ("stewardship_family_mail_preparation", "stewardship_task_run")
 # Launch-scale Families planning has not reached yet: eligible ones the send
 # will still email, and ineligible ones it never will.
 UNPLANNED = range(9001, 9021)
@@ -274,10 +302,11 @@ def plan():
 
     Each is (family, occurrence state, message state or None, minutes since
     it settled or None, recovery generation, occurrence reason). Expected
-    per-Family counts: sent 605, failed 15 (5 before preparation), uncertain
-    5, remaining 455 (10 of them submitting and 10 waiting to retry, 50 not
-    yet prepared), could not be emailed 8, not needed 15, and 215 settled in
-    the last five minutes.
+    per-Family counts: sent 605, failed 30 (20 before preparation: 5 by
+    occurrence state and 15 by their failed preparation task, see
+    ``CHAINS``), uncertain 5, remaining 440 (10 of them submitting and 10
+    waiting to retry, 35 not yet prepared), could not be emailed 8, not
+    needed 15, and 215 settled in the last five minutes.
     """
     rows = []
 
@@ -296,7 +325,7 @@ def plan():
     add(10, "pending", "submitting")
     add(10, "pending", "retry_wait")
     add(10, "skipped", "cancelled", 10, reason="family_responded")
-    add(50, "pending", None)
+    add(sum(count for count, _ in CHAINS), "pending", None)
     add(5, "failed", None, reason="preparation_failed")
     add(5, "skipped", None, reason="no_deliverable_recipient")
     add(3, "skipped", None, reason="family_ineligible")
@@ -412,6 +441,95 @@ def clone_rows(rows, *, source, definition, due_minutes, label, cycle):
         cursor.execute("DROP TABLE pk413_plan")
 
 
+def clone_preparations(rows, *, source, label):
+    """Give each not-yet-prepared row of ``rows`` its preparation, per ``CHAINS``.
+
+    Copies the real ``source`` occurrence's preparation ticket (so its
+    rehearsal is the current one) and that ticket's root task run, once per
+    row and run, with identifiers derived from ``label`` and the row number
+    as ``clone_rows`` derives the occurrence's.
+    """
+    chains = [chain for count, chain in CHAINS for _ in range(count)]
+    numbers = [
+        n
+        for n, row in enumerate(rows, start=1)
+        if row[1] == "pending" and row[2] is None
+    ]
+    runs = [
+        (n, sequence, state)
+        for n, chain in zip(numbers, chains, strict=True)
+        for sequence, state in enumerate(chain)
+    ]
+    # The real ticket, read from public: the shadow copies start empty.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, task_id FROM public.stewardship_family_mail_preparation "
+            "WHERE occurrence_id=%s",
+            [source],
+        )
+        (ticket, task), *_ = cursor.fetchall()
+    root = "md5(%(label)s||'t'||c.n)::uuid"
+    copies = (
+        (
+            FamilyMailPreparation,
+            {
+                "id": "md5(%(label)s||'p'||c.n)::uuid",
+                "occurrence_id": "md5(%(label)s||'o'||c.n)::uuid",
+                "task_id": root,
+            },
+            ticket,
+            " AND c.seq=0",
+        ),
+        (
+            TaskRun,
+            {
+                "id": f"CASE WHEN c.seq=0 THEN {root} "
+                "ELSE md5(%(label)s||'t'||c.n||'-'||c.seq)::uuid END",
+                "root_id": root,
+                "parent_id": f"CASE WHEN c.seq>0 THEN {root} END",
+                "retry_sequence": "c.seq",
+                "retry_command_id": "CASE WHEN c.seq>0 "
+                "THEN md5(%(label)s||'c'||c.n)::uuid END",
+                "idempotency_key": "CASE WHEN c.seq=0 "
+                "THEN md5(%(label)s||'k'||c.n) END",
+                "domain_request_id": "md5(%(label)s||'p'||c.n)::uuid",
+                "state": "c.state",
+                "lease_expires_at": "NULL",
+            },
+            task,
+            "",
+        ),
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "CREATE TEMP TABLE pk482_chain AS SELECT * FROM unnest("
+            "%s::int[],%s::int[],%s::text[]) AS c(n,seq,state)",
+            list(map(list, zip(*runs, strict=True))),
+        )
+        for model, overrides, identifier, only in copies:
+            table = sql.Identifier(model._meta.db_table)
+            columns = [field.column for field in model._meta.concrete_fields]
+            cursor.execute(
+                sql.SQL(
+                    "INSERT INTO pg_temp.{} ({}) SELECT {} FROM public.{} r, "
+                    "pk482_chain c WHERE r.id=%(source)s{}"
+                ).format(
+                    table,
+                    sql.SQL(",").join(map(sql.Identifier, columns)),
+                    sql.SQL(",").join(
+                        sql.SQL(overrides[name])
+                        if name in overrides
+                        else sql.Identifier("r", name)
+                        for name in columns
+                    ),
+                    table,
+                    sql.SQL(only),
+                ),
+                {"label": label, "source": identifier},
+            )
+        cursor.execute("DROP TABLE pk482_chain")
+
+
 def clone_families(family, numbers, *, label, eligible=True):
     """Copy the real Family row once per number, as the Family ``clone_rows`` targets.
 
@@ -442,8 +560,12 @@ def clone_families(family, numbers, *, label, eligible=True):
         )
 
 
-def add_noise(first, count, models=(ScheduleOccurrence, OutboxMessage)):
-    """Other schedules' occurrences and other mail, which the panel never reads.
+def add_noise(
+    first,
+    count,
+    models=(ScheduleOccurrence, OutboxMessage, FamilyMailPreparation, TaskRun),
+):
+    """Other schedules' occurrences, mail and tasks, which the panel never reads.
 
     Rows ``first`` to ``first + count - 1`` are added, then the copies are
     analyzed, as autovacuum would analyze the real tables.
@@ -466,6 +588,30 @@ def add_noise(first, count, models=(ScheduleOccurrence, OutboxMessage)):
                 "semantic_key": "md5('pk413-noise-s'||n)::uuid",
                 "task_id": "md5('pk413-noise-t'||n)::uuid",
                 "purpose": "'receipt'",
+            },
+        ),
+        (
+            FamilyMailPreparation,
+            {
+                "id": "md5('pk413-noise-p'||n)::uuid",
+                "occurrence_id": "md5('pk413-noise-o'||n)::uuid",
+                "task_id": "md5('pk413-noise-r'||n)::uuid",
+            },
+        ),
+        (
+            # Settled roots of other work (delivery, reports and so on).
+            TaskRun,
+            {
+                "id": "md5('pk413-noise-r'||n)::uuid",
+                "root_id": "md5('pk413-noise-r'||n)::uuid",
+                "parent_id": "NULL",
+                "retry_sequence": "0",
+                "retry_command_id": "NULL",
+                "idempotency_key": "NULL",
+                "domain_request_id": "md5('pk413-noise-q'||n)::uuid",
+                "task_type": "'outbox_delivery'",
+                "state": "'succeeded'",
+                "lease_expires_at": "NULL",
             },
         ),
     ):
@@ -532,6 +678,10 @@ def measure(values):
         assert "stewardship_schedule_occurrence" not in relations(
             plan_["Plan"], "Seq Scan"
         ), json.dumps(plan_)
+        # Preparation tickets and task runs are looked up by unique index.
+        assert not relations(plan_["Plan"], "Seq Scan") & set(PREPARATION_TABLES), (
+            json.dumps(plan_)
+        )
         assert plan_["Execution Time"] < 100, json.dumps(plan_)
     return plans
 
@@ -565,6 +715,7 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             due_minutes=20,
             label="pk413-i",
         )
+        clone_preparations(rows, source=real[1], label="pk413-i")
         planned = sorted({row[0] for row in rows})
         clone_families(family, [*planned, *UNPLANNED], label="pk413-i")
         clone_families(family, INELIGIBLE, label="pk413-i", eligible=False)
@@ -589,17 +740,17 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             counts.unreachable,
             counts.not_needed,
             counts.recent,
-        ) == (605, 15, 5, 5, 475, 0, 8, 15, 215)
+        ) == (605, 30, 20, 5, 460, 0, 8, 15, 215)
         # The 20 eligible Families planning has not reached are remaining
         # and not prepared; the ineligible ones are in no count.
-        assert (counts.unplanned, counts.unprepared) == (20, 70)
+        assert (counts.unplanned, counts.unprepared) == (20, 55)
         shown = send_progress.progress(counts)
-        assert (shown.total, shown.done, shown.percent) == (1100, 625, 56)
-        # 215 settled in five minutes is 43 a minute; 475 left is 12 minutes.
-        assert shown.rate == 43 and shown.minutes_left == 12
+        assert (shown.total, shown.done, shown.percent) == (1100, 640, 58)
+        # 215 settled in five minutes is 43 a minute; 460 left is 11 minutes.
+        assert shown.rate == 43 and shown.minutes_left == 11
         # The page renders the same read for the Admin.
         body = signed_in()[0].get(STATUS).content.decode()
-        assert "625 of 1,100 emails finished (56%)" in body
+        assert "640 of 1,100 emails finished (58%)" in body
         assert "43.0 emails per minute" in body
 
         values = {
@@ -612,9 +763,10 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             "unreachable": list(send_progress.UNREACHABLE_REASONS),
         }
         launch = measure(values)
-        # With several years of other mail, the send's own messages are
-        # found by primary key rather than by reading the whole outbox.
-        add_noise(NOISE + 1, YEARS, models=(OutboxMessage,))
+        # With several years of other mail and its delivery tasks, the
+        # send's own messages are found by primary key rather than by
+        # reading the whole outbox (measure checks the task runs too).
+        add_noise(NOISE + 1, YEARS, models=(OutboxMessage, TaskRun))
         years = measure(values)
         for counted in years[1:]:
             assert "stewardship_outbox_message" not in relations(
@@ -838,6 +990,149 @@ def test_a_reminder_held_behind_an_uncertain_invitation_lets_the_send_finish(
     assert counts.kind == "reminder"
     assert (counts.waiting, counts.remaining) == (1, 0)
     assert send_progress.progress(counts).active is False
+
+
+def test_a_preparation_that_failed_for_good_counts_as_failed(
+    family_mail,  # noqa: F811
+    google,
+):
+    """A failed preparation task, not the occurrence, shows the failure (#482).
+
+    The invitation's real preparation task is given up by recovery, so its
+    occurrence stays pending with no email (the occurrence guard has no
+    pending-to-failed change without a live claim). The Family counts as
+    failed before preparation, not remaining, so the send can finish and the
+    page links to the failed preparation. An Admin retry makes it remaining
+    again, and once prepared it counts by its email.
+    """
+    admin = user("admin@example.org")
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        ticket, owner = allocate(), handler(family_mail)
+        give_up(ticket)
+        row = ScheduleOccurrence.objects.get(pk=ticket.occurrence_id)
+        assert (row.state, row.outbox_id) == ("pending", None)
+        counts = read_current()
+        assert (counts.failed, counts.prepare_failed) == (1, 1)
+        assert (counts.remaining, counts.unprepared, counts.unplanned) == (0, 0, 0)
+        assert send_progress.progress(counts).active is False
+        with task_login(ServiceRole.WEB, exact=True):
+            body = signed_in()[0].get(STATUS).content.decode()
+        assert "No Family email send is in progress right now" in body
+        assert "0 sent, 1 failed, 0 uncertain, 0 not sent." in body
+
+        with web_login():
+            retry = retry_preparation(
+                family_mail.service.store, admin.pk, ticket.pk, command_id=uuid4()
+            )
+        counts = read_current()
+        assert (counts.failed, counts.prepare_failed) == (0, 0)
+        assert (counts.remaining, counts.unprepared) == (1, 1)
+
+        with task_login(ServiceRole.WORKER, exact=True):
+            owner.execute(claim(SimpleNamespace(task_id=retry.run_id), owner))
+        counts = read_current()
+        assert (counts.failed, counts.remaining, counts.unprepared) == (0, 1, 0)
+
+
+def give_up(ticket):
+    """Fail ``ticket``'s preparation for good: its one attempt loses its lease."""
+    status = _status(TaskRun.objects.get(pk=ticket.task_id))
+    failed = act(expire(act(status, "claim", lease_seconds=1)), "recovery_fail")
+    assert failed.state == "failed"
+
+
+def test_a_superseded_rehearsals_failed_preparation_is_not_counted(
+    family_mail,  # noqa: F811
+):
+    """Testing counts only the current rehearsal's preparation (#482).
+
+    The invitation's preparation fails for good in the first rehearsal,
+    which go-live then invalidates; while the go-live gate is set there is
+    no current rehearsal at all. In a new rehearsal the occurrence is still
+    pending: with no preparation of its own yet, and then with a queued
+    one, it is remaining; once that preparation fails too, it is failed.
+    """
+    from parishkit.stewardship.campaigns.rehearsals import (
+        invalidate_rehearsal,
+        release_rehearsal_gate,
+    )
+
+    campaign = family_mail.campaign
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        first = allocate()
+        give_up(first)
+        assert read_current().failed == 1
+        invalidate_rehearsal(campaign_id=campaign.pk, admit=lambda _: True)
+        counts = read_current()
+        assert (counts.failed, counts.remaining) == (0, 1)
+        release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda _: True)
+        epoch = RehearsalEpoch.objects.create(campaign=campaign)
+        CampaignCredentialState.objects.update(
+            rehearsal_epoch=epoch, version=F("version") + 1
+        )
+        counts = read_current()
+        assert (counts.failed, counts.prepare_failed, counts.remaining) == (0, 0, 1)
+        with scheduler_session() as guard:
+            second = enqueue_preparation(guard, first.occurrence_id)
+        assert second.pk != first.pk and second.rehearsal_epoch_id == epoch.pk
+        counts = read_current()
+        assert (counts.failed, counts.remaining, counts.unprepared) == (0, 1, 1)
+        give_up(second)
+        counts = read_current()
+        assert (counts.failed, counts.prepare_failed, counts.remaining) == (1, 1, 0)
+
+
+def test_a_failed_production_preparation_ignores_a_stale_rehearsal(
+    family_mail,  # noqa: F811
+):
+    """A Production ticket has no rehearsal, whatever the credentials name (#482).
+
+    The Production invitation's preparation fails for good. It counts as
+    failed even with the campaign's credentials naming a rehearsal: only
+    Testing reads the current rehearsal.
+    """
+    family_mail = activate_response_service(family_mail)
+    complete_empty_catchup(family_mail.campaign, uuid4())
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        ticket = allocate()
+        assert (ticket.mode, ticket.rehearsal_epoch_id) == ("production", None)
+        give_up(ticket)
+        # The go-live invalidated the Testing rehearsal; the credential guard
+        # admits only an active one, so the leftover pointer names a new one.
+        stale = RehearsalEpoch.objects.create(campaign=family_mail.campaign)
+        CampaignCredentialState.objects.update(
+            rehearsal_epoch=stale, version=F("version") + 1
+        )
+        counts = read_current()
+    assert (counts.failed, counts.prepare_failed, counts.remaining) == (1, 1, 0)
+
+
+def test_a_held_reminder_whose_preparation_failed_counts_once(
+    family_mail,  # noqa: F811
+):
+    """A failed reminder preparation is failed, not also held (#482).
+
+    The reminder is held behind an uncertain invitation, as in the test
+    above, and its own preparation then fails for good. It counts once, as
+    failed before preparation; counting it as held as well would take it
+    out of a remaining count it is not in.
+    """
+    harness = family_mail
+    message = uncertain(harness)
+    reminders = add_reminders(harness.service.store, harness.campaign, uuid4())
+    last = ScheduleDefinition.objects.get(pk=UUID(reminders[-1]["id"]))
+    with campaign_clock(last.current_revision.due_at):
+        with (
+            task_login(ServiceRole.SCHEDULER, exact=True),
+            scheduler_session() as guard,
+        ):
+            held = plan_family(guard, family_id=message.family_id, worker_id=uuid4())
+        assert held.held
+        fail_preparation(ScheduleOccurrence.objects.get(definition=last).pk)
+    counts = read_current()
+    assert counts.kind == "reminder"
+    assert (counts.failed, counts.prepare_failed, counts.waiting) == (1, 1, 0)
+    assert (counts.remaining, counts.unprepared) == (0, 0)
 
 
 def read_current():
