@@ -19,11 +19,7 @@ from google.auth.exceptions import RefreshError
 
 from parishkit.config import ConfigError
 from parishkit.email.google_workspace import xoauth2_string
-from parishkit.parishsoft import (
-    DEFAULT_API_BASE_URL,
-    ParishSoftAPIError,
-    ParishSoftConfig,
-)
+from parishkit.parishsoft import ParishSoftAPIError, ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.parishsoft_transport import ExactSourceResponse
 from parishkit.retry import RetryError, RetryPolicy
@@ -37,30 +33,59 @@ from .accounts.integration_candidates import (
 )
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
+from .deployment import DeploymentProfile
+from .local import source_base_url
 from .source.credentials import SourceCredential
 
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
 MAX_RESPONSE = 65536
 OUTCOMES = frozenset({"valid", "invalid", "unavailable"})
-ENDPOINTS = frozenset(
+REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile"})
+FIXED_ENDPOINTS = frozenset(
     {
         ("POST", GOOGLE_TOKEN_URI),
         ("POST", "https://slack.com/api/auth.test"),
-        ("POST", DEFAULT_API_BASE_URL + "/organizations/search"),
     }
 )
 
 
-class CheckSession(requests.Session):
-    """Restrict private HTTP calls to fixed provider endpoints and bounded bodies."""
+def endpoints(profile=None):
+    """The exact endpoints a check may contact under one deployment profile.
 
-    def __init__(self):
+    Without a profile (the mail deliverers' token exchanges) only the Google
+    and Slack endpoints are reachable and no ParishSoft URL at all. With one,
+    the ParishSoft organization search is reachable at exactly the profile's
+    one base URL: the fake's for a ``local`` request, the real API's for every
+    other. The helper has no environment and learns the profile only from its
+    request.
+    """
+    if profile is None:
+        return FIXED_ENDPOINTS
+    return FIXED_ENDPOINTS | {
+        ("POST", source_base_url(profile) + "/organizations/search")
+    }
+
+
+class CheckSession(requests.Session):
+    """Restrict private HTTP calls to fixed provider endpoints and bounded bodies.
+
+    Delivery modules construct it with no arguments as their default session
+    factory for Google token exchanges; only the provider-check and smoke
+    paths, which may reach ParishSoft, bind a deployment profile.
+    """
+
+    def __init__(self, profile=None):
+        """Bind the session to the request's profile and its endpoint allowlist."""
         super().__init__()
+        if profile is not None and not isinstance(profile, DeploymentProfile):
+            raise ValueError("A provider check requires a deployment profile.")
         self.trust_env = False
+        self.profile = profile
+        self.endpoints = endpoints(profile)
 
     def request(self, method, url, **kwargs):
         """Forbid redirects/proxies; the subprocess parent supplies a hard timeout."""
-        if (method, url) not in ENDPOINTS or set(kwargs) - {
+        if (method, url) not in self.endpoints or set(kwargs) - {
             "headers",
             "data",
             "json",
@@ -90,10 +115,16 @@ class CheckSession(requests.Session):
 
 def _parishsoft(value, settings, session):
     """Reuse ParishKit's uncached exact-tenant validation, with no disk cache."""
+    if session.profile is None:
+        raise ValueError("A ParishSoft check requires a deployment profile.")
     credential = SourceCredential(value)
     client = CoherentParishSoftClient(
         ParishSoftConfig(
-            credential.api_key, Path("."), cache_enabled=False, timeout=10
+            credential.api_key,
+            Path("."),
+            cache_enabled=False,
+            api_base_url=source_base_url(session.profile),
+            timeout=10,
         ),
         organization_id=settings["organization_id"],
         session=session,
@@ -190,32 +221,35 @@ def decode_request(raw):
     if type(raw) is not bytes or len(raw) > MAX_INPUT:
         raise ValueError("Invalid provider check request.")
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
-    if type(request) is not dict or set(request) != {"target", "settings", "candidate"}:
+    if type(request) is not dict or set(request) != REQUEST_FIELDS:
         raise ValueError("Invalid provider check request.")
     settings = validated_context(request["target"], request["settings"])
     value = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(value) <= MAX_FILE_BYTES:
         raise ValueError("Invalid provider check candidate.")
-    return request["target"], settings, value
+    if type(request["profile"]) is not str:
+        raise ValueError("Invalid provider check profile.")
+    return request["target"], settings, value, DeploymentProfile(request["profile"])
 
 
 def check_request(raw):
     """Return a fixed classification; transport outages are not rejected credentials."""
     try:
-        target, settings, value = decode_request(raw)
+        target, settings, value, profile = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return "invalid"
-    return classify(target, value, settings)
+    return classify(target, value, settings, profile=profile)
 
 
-def classify(target, value, settings):
+def classify(target, value, settings, *, profile):
     """Run one provider check in the restricted session and name its outcome.
 
     The installer's helper and the human-run smoke command share this
     ladder, so "valid", "invalid" and "unavailable" mean the same in both.
+    ``profile`` selects the endpoints the check may reach.
     """
     try:
-        with CheckSession() as session:
+        with CheckSession(profile) as session:
             check = {
                 "parishsoft": _parishsoft,
                 "google_workspace": _workspace,

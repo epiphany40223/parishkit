@@ -96,3 +96,7 @@ SOCIALACCOUNT_PROVIDERS = {
 # OPS-04 supplies a validated Runtime; missing means unavailable, never a bypass.
 STEWARDSHIP_AUTH_RUNTIME = None
 STEWARDSHIP_FAMILY_RUNTIME = None
+# STEWARDSHIP_DEPLOYMENT_PROFILE has no default here: runtime assembly (web
+# and background) records the admitted deployment's profile, and the
+# development and test settings modules name theirs. A role that was not
+# assembled has no profile, and source reads fail closed without one.

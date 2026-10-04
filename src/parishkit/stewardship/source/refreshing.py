@@ -18,6 +18,7 @@ from parishkit.parishsoft import ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.jobs.phases import TaskPhase
+from parishkit.stewardship.local import source_base_url
 from parishkit.stewardship.observability import Event, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -36,7 +37,7 @@ from .loading import (
 from .requests import _window
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import finish_snapshot, reconstruct_snapshot, stage_entities
-from .transport import source_session
+from .transport import runtime_profile, source_session
 from .windows import RefreshWindow
 
 # Each staging batch is one execution.effect(): a transaction that holds the
@@ -157,7 +158,12 @@ def load_and_stage_attempt(execution, claim, credential):
         # Cache is disabled by both config and the coherent client. Its required
         # compatibility Path is never created/read/written by this pipeline.
         client = CoherentParishSoftClient(
-            ParishSoftConfig(credential.api_key, Path("."), cache_enabled=False),
+            ParishSoftConfig(
+                credential.api_key,
+                Path("."),
+                cache_enabled=False,
+                api_base_url=source_base_url(runtime_profile()),
+            ),
             organization_id=attempt.request.organization_id,
             session=session,
         )

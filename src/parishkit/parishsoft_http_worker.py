@@ -24,7 +24,26 @@ from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-REQUEST_FIELDS = frozenset({"method", "url", "parameters", "timeout"})
+# Every request names the deployment profile it was made under. The helper
+# starts with an empty environment and cannot learn the profile itself; the
+# field decides the one base URL the allowlist admits.
+REQUEST_FIELDS = frozenset({"method", "url", "parameters", "timeout", "profile"})
+# The profiles a request may name (the stewardship DeploymentProfile values; a
+# test keeps the two aligned) and the one base URL each may reach. The local
+# laptop environment's fake ParishSoft is reachable only from a ``local``
+# request, and a ``local`` request reaches nothing else; every other profile
+# reaches only the real API. This shared module owns the mapping so the helper
+# stays independent of the application's deployment code.
+PROFILES = frozenset({"development", "test", "production", "local"})
+LOCAL_PROFILE = "local"
+LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"
+
+
+def admitted_base_url(profile):
+    """The one base URL a request made under ``profile`` may contact."""
+    if type(profile) is not str or profile not in PROFILES:
+        raise ValueError("Invalid bounded source profile.")
+    return LOCAL_SOURCE_BASE_URL if profile == LOCAL_PROFILE else DEFAULT_API_BASE_URL
 
 
 class InvalidSourceResponse(ValueError):
@@ -53,7 +72,7 @@ def validate_request(value):
     if type(value) is not dict or set(value) != REQUEST_FIELDS | {"api_key"}:
         raise ValueError("Invalid bounded source request.")
     method, url = value["method"], value["url"]
-    prefix = DEFAULT_API_BASE_URL + "/"
+    prefix = admitted_base_url(value["profile"]) + "/"
     if type(url) is not str or not url.startswith(prefix):
         raise ValueError("Invalid bounded source endpoint.")
     endpoint = url[len(prefix) :]

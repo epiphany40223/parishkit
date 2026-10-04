@@ -2,9 +2,12 @@
 
 from uuid import UUID
 
+from django.conf import settings
 from django.db import connection, connections
 
+from parishkit.config import ConfigError
 from parishkit.parishsoft_transport import BoundedSourceSession
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.jobs.dispatch import Execution
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -12,6 +15,19 @@ from .attempts import verify_refresh_attempt
 from .credentials import SourceCredential
 from .errors import SourceCredentialChanged, SourceScopeChanged, local_read_admission
 from .leases import SourceClaim, reserve_source_request
+
+
+def runtime_profile():
+    """The deployment profile this process was admitted under.
+
+    Runtime assembly records it in settings; source reads use it to choose
+    the ParishSoft base URL (the fake in LOCAL) and to label every helper
+    request, so the environment-free helper can apply the same rule.
+    """
+    try:
+        return DeploymentProfile(settings.STEWARDSHIP_DEPLOYMENT_PROFILE)
+    except (AttributeError, ValueError):
+        raise ConfigError("The deployment profile is unavailable.") from None
 
 
 def source_session(execution, claim, *, attempt_id, credential):
@@ -65,6 +81,7 @@ def source_session(execution, claim, *, attempt_id, credential):
     session = BoundedSourceSession(
         before_request=before_request,
         check=execution.check,
+        profile=runtime_profile().value,
         on_timeout=source_timeout_recorder(execution),
     )
     session.headers["x-api-key"] = credential.api_key

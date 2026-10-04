@@ -2,10 +2,15 @@
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
+import json
+from datetime import date
+from urllib.parse import urlencode
+
 import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models.query import QuerySet
 
+from parishkit import parishsoft_transport
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_exchange_models import SetupSourceResult
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
@@ -18,6 +23,13 @@ from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
 from parishkit.stewardship.jobs.ownership import TaskClaim
 from parishkit.stewardship.jobs.queues import WorkQueue
+from parishkit.stewardship.local import LOCAL_PARISHSOFT_KEY
+from parishkit.stewardship.local.fake_parishsoft import (
+    BASE_PATH,
+    FakeConfiguration,
+    FakeParishSoft,
+)
+from parishkit.stewardship.local.synthetic_parish import generate, is_child
 from parishkit.stewardship.source.credentials import SourceCredential
 from parishkit.stewardship.source.load_progress import collections
 from parishkit.stewardship.source.models import SourceMutationLease
@@ -396,3 +408,65 @@ def test_web_intake_requires_profile_before_queueing(setup_service):
         )
     assert not TaskRun.objects.exists()
     assert SetupAttempt.objects.get().source_task_id is None
+
+
+def fake_parishsoft_exchange(monkeypatch, fake):
+    """Route the real transport's private pipe exchange to an in-process fake.
+
+    Only the helper subprocess is replaced: every request still passes the
+    bounded transport's validation, admission and closed-SQL checks, and the
+    fake answers exactly as its HTTP server would. The key travels to the real
+    helper in its start frame, not per request, so the adapter supplies it.
+    """
+    calls = []
+
+    def exchange(payload, **kwargs):
+        """Answer one validated frame from the fake's own request handler."""
+        assert connection.connection is None and not connection.in_atomic_block
+        request = json.loads(payload)
+        calls.append(request["url"])
+        path = BASE_PATH + request["url"].split("/api/v2/", 1)[1]
+        body = None
+        if request["method"] == "POST":
+            body = request["parameters"]
+        elif request["parameters"]:
+            path += "?" + urlencode(request["parameters"])
+        status, content = fake.handle(
+            request["method"], path, body, {"x-api-key": LOCAL_PARISHSOFT_KEY}
+        )
+        return f"{status}\n".encode() + content
+
+    monkeypatch.setattr(parishsoft_transport, "_exchange", exchange)
+    return calls
+
+
+def test_setup_load_reads_the_synthetic_parish_from_the_fake(
+    setup_service, monkeypatch
+):
+    """The whole setup-loading pipeline stages the fake ParishSoft's parish (#476)."""
+    anchor = date(2026, 9, 16)
+    configuration = FakeConfiguration.parse(
+        {"seed": 1, "families": 20, "anchor_date": "2026-09-16", "release_at": None}
+    )
+    # The staged setup credential names organization 1, so the parish does too.
+    fake = FakeParishSoft(
+        configuration, parish=generate(1, 20, anchor, organization_id=1)
+    )
+    prepared_values = prepared(setup_service)
+    calls = fake_parishsoft_exchange(monkeypatch, fake)
+    snapshot = run(*prepared_values)
+    late = fake.parish.late_family_id
+    members = [m for m in fake.parish.members if m["familyDUID"] != late]
+    assert snapshot.state == "ready"
+    assert snapshot.counts["family"] == 20
+    assert snapshot.counts["member"] == len(members)
+    assert snapshot.counts["ministry"] == 25 and snapshot.counts["fund"] == 4
+    assert snapshot.counts["roster"] == sum(
+        len(rows) for rows in fake.parish.ministry_rosters.values()
+    )
+    assert snapshot.counts["pledge"] == snapshot.counts["contribution"] == 0
+    assert snapshot.cursor["load"]["derived_counts"]["active_head_families"] >= 15
+    assert len(calls) > 30 and all("/api/v2/" in url for url in calls)
+    assert SetupSourceResult.objects.get().snapshot_id == snapshot.pk
+    assert SourceCurrent.objects.get().snapshot_id is None
+    assert any(is_child(m, anchor) for m in members)
