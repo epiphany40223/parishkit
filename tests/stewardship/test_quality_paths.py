@@ -141,6 +141,7 @@ def test_compose_mounts_come_from_the_development_tests_service():
         "tools/prepare-release.py",
         "tools/ci-pip-install.sh",
         "tools/stewardship-dev-deploy.sh",
+        "tools/stewardship-upgrade.sh",
     ):
         assert mount in MOUNTS
     assert all(not mount.startswith(("/", "..")) for mount in MOUNTS)

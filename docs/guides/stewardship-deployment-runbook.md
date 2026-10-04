@@ -407,7 +407,8 @@ this on the host: before it builds, pushes or stops anything, it refuses
 once the deployment's campaign has been activated to Production (a
 `stewardship_production_request` row has `activated_at` set), and it also
 refuses when it cannot read that answer. From then on, deploy only a
-release digest through [upgrade](#upgrade).
+release digest through [upgrade](#upgrade), normally with the
+[scripted upgrade](#scripted-upgrade), which the refusal names.
 
 By default it also starts the services with debug logging
 (`PARISHKIT_DEBUG_LOGGING=1`, which the generated Compose files pass to every
@@ -655,6 +656,91 @@ operators' notes, and keep the previous ones: a restore onto a new host
 pulls the image a set was taken under by that reference. The old image
 stays in the registry; nothing here deletes it.
 
+### Scripted upgrade
+
+[`tools/stewardship-upgrade.sh`](../../tools/stewardship-upgrade.sh) runs
+steps 1–6 above one for one, over ssh from a checkout, on a deployment in
+Testing or in Production (issue #460). The manual steps remain the
+reference: where the script and this runbook differ, the runbook is right;
+fix the script. Run it from the checkout with the release's complete
+digest reference:
+
+```sh
+STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
+STEWARDSHIP_IMAGE=IMAGE@sha256:DIGEST tools/stewardship-upgrade.sh
+```
+
+It reads its settings from the environment: `STEWARDSHIP_HOST`,
+`STEWARDSHIP_UUID` and `STEWARDSHIP_IMAGE` are required;
+`STEWARDSHIP_ROOT` (default `/opt/parishkit`), `STEWARDSHIP_PROJECT`
+(`stewardship`), `STEWARDSHIP_YAML`
+(`/etc/parishkit/stewardship-deployment.yaml`) and
+`STEWARDSHIP_IMAGE_REPO` (the official repository) override the
+defaults; `STEWARDSHIP_SCHEMA_CHANGE=1` says the release notes announce a
+schema or grant change. The script's header comment is the authoritative
+list.
+
+Before anything stops it refuses: an image reference that is not
+`REPOSITORY@sha256:` with 64 lowercase hex digits (locally, before ssh); a
+host without the Compose project; a `worker`, `scheduler` or
+`mail-dispatch` running under a runtime fallback (per-message transport,
+one mail consumer or the bulk send quick-stop), which a recreate would
+silently undo; a pulled image that does not carry the named digest; and,
+unless `STEWARDSHIP_SCHEMA_CHANGE=1`, an advisory upgrade check that
+answers anything but `t`, which is step 1's cue to read the release notes.
+It then stops the background services and takes the required backup; a
+backup without a recorded off-host copy abandons the upgrade and restarts
+those services. There is no separate drain step: as in step 1, stopping
+the background services is the drain (each finishes within its stop grace
+period) while `web` keeps serving. Only then does it stop `web`, and from
+there it follows
+steps 3–6: `retarget-image` in the new image with the deployment's current
+bulk Family send switch and batch size carried over, so an upgrade never
+turns the bulk send off; migration and grants only when step 4's check
+answers anything but `t`; the static tree refreshed in place with the
+replaced tree kept at `cache/static.PREVIOUS_DIGEST`; `web`, then `caddy`
+(recreated only when its loaded Caddyfile differs), then the remaining
+online services; and the checks: health, every online service running and
+healthy, `PARISHKIT_DEBUG_LOGGING=0` in every container, the Compose file
+naming the new digest, the bulk switch still on in the worker,
+mail-dispatch and scheduler documents when it was on, the application
+version, the public origin answering, and the worker and mail-dispatch
+process counts; step 6 reads the service list from the re-rendered
+Compose file, so a service the new release adds is started and checked. A
+failure before `web` stops brings only the background services back; a
+failure after `web` stops but before the retarget starts every online
+service of the current file again; a failure from the retarget on leaves
+`caddy`'s maintenance page up and says to re-run with the same digest or
+roll back. Every step is timed, and the log is also kept on the host as
+`/var/log/stewardship-upgrade-TIMESTAMP.log`, with the backup's result
+appended to `/var/log/stewardship-backup.log`.
+
+It does not do everything an upgrade may need. The one-time steps a
+release may require before its grants run, the
+[worker connection limit](#worker-connection-limit-339) and the
+[mail dispatch connection limit](#mail-dispatch-connection-limit)
+`ALTER ROLE`s, are the operator's: run them by hand first, because the
+advisory check answers `f` for such a release and `database-grants` would
+refuse after `web` stopped. It does not read the release notes for you,
+check the host's disk space or registry login, or repeat a runtime
+fallback (it refuses one instead). The operational log writer guard is
+among the things the upgrade check itself verifies.
+
+Two recorded runs, both without a schema change (#460): the validation
+deployment from v0.3.9 to v1.0.0 took 126 s with `web` down for 18 s (pull
+19 s, static collection 5 s, render and advisory check 5 s, background stop
+6 s, backup and off-host copy 28 s, `web` stop 2 s, retarget 3 s, static
+refresh under 1 s, `web` and `caddy` start 12 s, the other 16 online
+services 36 s, checks 8 s); the Production deployment from v1.0.0 to
+v1.1.0 took 137 s with `web` down for 22 s. The migration and grants path
+and the abandon paths (a refused backup, a failed stop) are exercised only
+by the script's stand-in tests so far; their rehearsal is tracked in #460
+and belongs on the
+[local laptop environment](../specs/stewardship/local-environment/spec.md)
+(#476), whose `deploy` command reuses these steps. Until then, take a
+release that announces a schema or grant change by the manual steps above,
+or run the script with `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4.
+
 ### Worker connection limit (#339)
 
 The release that runs ParishSoft source work on the worker's second process
@@ -799,6 +885,44 @@ the mail provider's own logs; v1 cannot prevent a second copy of mail sent
 after the backup, as its
 [restore limitations](stewardship-backup-runbook.md#restore-limitations-in-v1)
 explain.
+
+### Scripted rollback
+
+`tools/stewardship-upgrade.sh --rollback` performs the application-only
+rollback above, with the same settings, safety structure, logging and checks
+as the [scripted upgrade](#scripted-upgrade); `STEWARDSHIP_IMAGE` names the
+previous release's digest, as the operators' notes record it:
+
+```sh
+STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
+STEWARDSHIP_IMAGE=IMAGE@sha256:PREVIOUS_DIGEST tools/stewardship-upgrade.sh --rollback
+```
+
+It never restores a database, and it decides which case it is in the way
+this section does: it renders the *previous* image's upgrade check and
+runs it as the advisory preflight before anything stops, and again,
+decisively, once `web` has stopped and before anything is retargeted.
+Only `t` (the schema and every runtime grant already match the previous
+image) lets it continue; on anything else it refuses and names this
+section's database-restore rollback. The first refusal, before anything
+stops, changes nothing; only the second, after `web` stopped, starts every
+online service again, since nothing was retargeted.
+`STEWARDSHIP_SCHEMA_CHANGE` is refused rather than ignored. It then runs
+`retarget-image` with the previous digest in the previous image, with the
+bulk Family send switch carried over, skips step 4, puts the previous
+release's static tree back in place from the copy the upgrade kept at
+`cache/static.PREVIOUS_DIGEST` (collecting it again in the previous image
+when that copy is missing or empty, as above), keeps the replaced tree
+under the replaced digest's name, and starts and checks as step 6 does,
+reading the service list from the re-rendered file so a service only the
+newer release had is neither started nor reported. The required backup
+before `web` stops runs in the current image, whose schema it matches. If
+the previous image's `retarget-image` refuses, the cause is the deployment
+field case above; the script leaves the maintenance page up and says so.
+The rollback has not yet been rehearsed on a host; that is tracked in
+issue #460 and belongs on the
+[local laptop environment](../specs/stewardship/local-environment/spec.md)
+(#476).
 
 ## Known v1 limitations
 
