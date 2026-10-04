@@ -405,8 +405,8 @@ def bucket_start(instant, zone, grain):
 def activity_series(families, zone, grain="hour"):
     """First links, forms and submissions per local bucket, in time order.
 
-    Only buckets with something in them are returned; the chart fills the
-    rest of its axis itself.
+    Only buckets with something in them are returned; the chart draws the
+    quiet ones between them as zero (``chart_specs.quiet_slots``).
     """
     buckets = {}
     for family in families:

@@ -6,6 +6,7 @@ counts, and times are the campaign's wall clock whatever zone renders them.
 """
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -19,10 +20,12 @@ from parishkit.stewardship.reports.chart_specs import (
     ChartDocument,
     activity_chart,
     funnel_chart,
+    quiet_slots,
     share,
     stage_label,
 )
 from parishkit.stewardship.reports.response_metrics import (
+    ActivityBucket,
     ResponseMetrics,
     ResponseScope,
     SendMarker,
@@ -233,3 +236,90 @@ def test_wall_time_follows_the_campaign_zone_not_the_instant_zone():
     bucket = chart.spec["layer"][0]["data"]["values"][0]
     assert bucket["time"] == "2026-10-03T10:00:00Z"
     assert datetime(2026, 10, 3, 14, tzinfo=UTC) == START
+
+
+def test_quiet_hours_between_busy_ones_are_drawn_as_zero():
+    """A line never runs straight across hours in which nothing happened.
+
+    The chart's data gains a zero row per series for each quiet bucket
+    between the first and the last busy one; the exact-values table still
+    lists only the busy buckets.
+    """
+    later = replace(
+        ROWS[2], link_at=START + timedelta(hours=3), family_id=uuid4(), family_duid=9
+    )
+    with using("us_long"):
+        chart = activity_chart(metrics(families=(ROWS[0], later)))
+    values = chart.spec["layer"][0]["data"]["values"]
+    times = sorted({row["time"] for row in values})
+    assert times == [f"2026-10-03T{hour}:00:00Z" for hour in (10, 11, 12, 13)]
+    quiet = [row for row in values if row["time"] == "2026-10-03T11:00:00Z"]
+    assert [row["families"] for row in quiet] == [0, 0, 0]
+    assert quiet[0]["label"] == "Oct 3, 2026 11:00 AM"
+    assert [row[0] for row in chart.table.rows] == [
+        "Oct 3, 2026 10:00 AM",
+        "Oct 3, 2026 1:00 PM",
+    ]
+    # Rows are in time order, so both renderers draw the same polyline.
+    assert [row["time"] for row in values] == sorted(row["time"] for row in values)
+
+
+def test_quiet_slots_skip_the_missing_spring_hour_and_fill_days():
+    """The hour the clocks skip is not a slot; quiet days are slots."""
+    zone = ZoneInfo(NEW_YORK)
+    # 2027-03-14: New York skips from 02:00 to 03:00 local time.
+    busy = (
+        ActivityBucket(datetime(2027, 3, 14, 1, tzinfo=zone), 1, 0, 0),
+        ActivityBucket(datetime(2027, 3, 14, 4, tzinfo=zone), 1, 0, 0),
+    )
+    hours = [slot.hour for slot in quiet_slots(busy, zone, "hour")]
+    assert hours == [3]
+    days = (
+        ActivityBucket(datetime(2026, 10, 3, tzinfo=zone), 1, 0, 0),
+        ActivityBucket(datetime(2026, 10, 6, tzinfo=zone), 1, 0, 0),
+    )
+    assert [slot.day for slot in quiet_slots(days, zone, "day")] == [4, 5]
+    assert quiet_slots((), zone, "hour") == ()
+    assert quiet_slots(busy[:1], zone, "hour") == ()
+
+
+def test_quiet_slots_keep_the_repeated_autumn_hour_once():
+    """On 2026-11-01 New York repeats 01:00; on the wall clock it is one slot."""
+    zone = ZoneInfo(NEW_YORK)
+    busy = (
+        ActivityBucket(datetime(2026, 11, 1, 0, tzinfo=zone), 1, 0, 0),
+        ActivityBucket(datetime(2026, 11, 1, 3, tzinfo=zone), 1, 0, 0),
+    )
+    assert [slot.hour for slot in quiet_slots(busy, zone, "hour")] == [1, 2]
+    # A busy second reading of 01:00 fills that wall hour.
+    repeated = (
+        busy[0],
+        ActivityBucket(datetime(2026, 11, 1, 1, fold=1, tzinfo=zone), 1, 0, 0),
+        busy[1],
+    )
+    assert [slot.hour for slot in quiet_slots(repeated, zone, "hour")] == [2]
+
+
+def test_quiet_days_count_even_where_midnight_is_skipped():
+    """A zone that changes its clocks at midnight still has the date as a slot."""
+    # Santiago skipped 2026-09-06 00:00 (to 01:00) at the spring change.
+    zone = ZoneInfo("America/Santiago")
+    days = (
+        ActivityBucket(datetime(2026, 9, 5, tzinfo=zone), 1, 0, 0),
+        ActivityBucket(datetime(2026, 9, 7, tzinfo=zone), 1, 0, 0),
+    )
+    assert [slot.day for slot in quiet_slots(days, zone, "day")] == [6]
+
+
+def test_empty_activity_layers_stay_out_of_the_accessibility_tree():
+    """A layer with no data is hidden from assistive technology; others are not."""
+    with using("us_long"):
+        empty = activity_chart(metrics(families=(), sends=False))
+        markers = activity_chart(metrics(families=()))
+        full = activity_chart(metrics())
+    lines, rules, labels = empty.spec["layer"]
+    assert lines["mark"]["aria"] is False and lines["mark"]["point"] == {"aria": False}
+    assert rules["mark"]["aria"] is False and labels["mark"]["aria"] is False
+    lines, rules, _labels = markers.spec["layer"]
+    assert lines["mark"]["aria"] is False and "aria" not in rules["mark"]
+    assert all("aria" not in layer["mark"] for layer in full.spec["layer"])

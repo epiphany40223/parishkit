@@ -129,7 +129,9 @@ caption. A pointer shows exact values in tooltips; the view takes keyboard
 focus so a keyboard or screen-reader user hears its name and summary, and
 gets the exact values from the table, not the tooltips. A browser without
 JavaScript sees the summary and the table. Series are told apart by dash
-pattern as well as color. In an email the PNG carries the summary as its alt
+pattern as well as color. A layer with nothing to draw (no activity yet, or no
+send to mark) is hidden from assistive technology rather than announced as an
+unnamed graphic. In an email the PNG carries the summary as its alt
 text and the table follows it.
 Times on an axis are the campaign's wall clock whatever time zone draws the
 chart, and the axis names the campaign's zone.
@@ -386,7 +388,10 @@ opened (as the funnel counts it, so including the first submission) and
 submitted, by campaign-local hour or day, using the Campaign's
 immutable timezone snapshot as the [participation graph](#participation-graph)
 does; a repeated autumn hour is two buckets. Over every bucket each series
-sums to its funnel total. Send markers name each invitation and reminder send
+sums to its funnel total. The chart draws each quiet bucket between the first
+and the last busy one as zero, so a line never suggests activity across a
+silent hour or day; its exact-values table lists only the busy buckets. Send
+markers name each invitation and reminder send
 of the mode that had planned an email by the as-of instant (a *send* as the
 [Family email sends](../admin-portal/spec.md#family-email-sends) page defines
 and names it: one revision of one Family schedule in one mode and Production

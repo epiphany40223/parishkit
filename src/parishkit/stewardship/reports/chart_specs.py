@@ -17,13 +17,14 @@ parish-formatted label.
 """
 
 from dataclasses import dataclass
+from datetime import UTC, timedelta
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.web.dates import format_date, format_instant
 from parishkit.stewardship.web.presentation import number
 
 from .chart_assets import VEGA_LITE_SCHEMA
-from .response_metrics import STAGES
+from .response_metrics import STAGES, ActivityBucket
 
 # The email image's CSS width; the browser replaces it with the panel's width
 # and the PNG is rendered at twice this many pixels.
@@ -183,6 +184,35 @@ def bucket_label(bucket, zone, grain):
     return format_instant(bucket.start, zone, compact=True)
 
 
+def quiet_slots(activity, zone, grain):
+    """Wall times between the first and last bucket in which nothing happened.
+
+    The series leaves empty buckets out, and a line drawn straight between
+    two busy hours would suggest activity in the quiet ones, so the chart
+    plots these slots as zero (the table still lists only busy buckets). On
+    the wall-clock axis every hour or day is one equal step; an hour that
+    does not exist (the spring change) is not a slot, and a repeated autumn
+    hour is one slot.
+    """
+    if not activity:
+        return ()
+    step = timedelta(hours=1) if grain == "hour" else timedelta(days=1)
+    busy = {bucket.start.astimezone(zone).replace(tzinfo=None) for bucket in activity}
+    slots, at, last = [], min(busy), max(busy)
+    while (at := at + step) < last:
+        aware = at.replace(tzinfo=zone)
+        # An hour that does not survive a round trip through UTC is the
+        # skipped spring hour. A day is a slot even where its midnight is
+        # skipped (zones that change at midnight): the date still exists.
+        skipped = (
+            grain == "hour"
+            and aware.astimezone(UTC).astimezone(zone).replace(tzinfo=None) != at
+        )
+        if at not in busy and not skipped:
+            slots.append(aware)
+    return tuple(slots)
+
+
 def send_note(send, zone):
     """One line about a send marker for the notes under the table."""
     scheduled = format_instant(send.scheduled, zone)
@@ -226,6 +256,17 @@ def activity_chart(metrics):
         for bucket, label in zip(metrics.activity, labels, strict=True)
         for field, series, _color, _dash in SERIES
     ]
+    rows += [
+        {
+            "time": wall_time(slot, zone),
+            "label": bucket_label(ActivityBucket(slot, 0, 0, 0), zone, metrics.grain),
+            "series": series,
+            "families": 0,
+        }
+        for slot in quiet_slots(metrics.activity, zone, metrics.grain)
+        for _field, series, _color, _dash in SERIES
+    ]
+    rows.sort(key=lambda row: row["time"])
     markers = [
         {
             "time": wall_time(send.scheduled, zone),
@@ -319,6 +360,16 @@ def activity_chart(metrics):
             },
         ],
     }
+    # Vega leaves an empty layer's mark container in the accessibility tree
+    # with a graphics role and no name, which assistive technology announces
+    # as an unnamed image. A layer with no data shows nothing (the summary
+    # and the table say so), so it is hidden from that tree.
+    for layer in spec["layer"]:
+        if not layer["data"]["values"]:
+            layer["mark"]["aria"] = False
+            # The line's point overlay is a mark of its own.
+            if layer["mark"].get("point"):
+                layer["mark"]["point"] = {"aria": False}
     table = ChartTable(
         ("Campaign time", *series_names),
         tuple(
