@@ -339,15 +339,28 @@ A Family counts once in a stage when, by the as-of instant:
   mail-scanner prefetches": a scanner that follows the personal link signs in
   exactly as the Family would.
 - **Form opened:** the engagement record's `first_form_at`, which the
-  backfill filled from live form baselines.
+  backfill filled from live form baselines, or its `first_progress_at` or the
+  first submission if either is earlier or the record has no form open.
 - **Progressed past the first step:** the engagement record's
-  `first_progress_at`.
+  `first_progress_at`, or the first submission if that is earlier or the
+  record has none.
 - **Submitted:** its first [Submission](../data/spec.md#submission) in the
   mode was submitted.
 
+A submission is made from the form and passes every step of it, so a Family
+that submitted had opened the form and progressed past the first step, even
+when the engagement record does not say so: progress was not recorded before
+the record's release (1.2.0), so Families that submitted earlier have none,
+and a form open can go unrecorded. Progress is made on the form too (a
+presence heartbeat can record it without a form open), so it implies Form
+opened. Form opened, Progressed and Submitted are therefore nested, each at
+most the one before it. Link followed stays as
+recorded: a Family can sign in by typing its code instead of following its
+link, so a submission says nothing about the link.
+
 Each stage's share ("Compared with invited") is of the Invited count and can
-exceed 100%: the stages are not nested, so a Family can follow its link or
-submit without a delivered invitation.
+exceed 100%: the stages are not all nested, so a Family can follow its link
+or submit without a delivered invitation.
 
 Three figures are reported beside the funnel, not as stages of it:
 
@@ -362,14 +375,15 @@ Three figures are reported beside the funnel, not as stages of it:
 - **Submitted more than once:** Families with more than one submission in the
   mode by the as-of instant.
 
-Stages are not nested: a Family may submit without a delivered invitation,
+Stages are not all nested: a Family may submit without a delivered invitation,
 and a Family whose planned invitation was skipped because it had responded is
 counted as submitted and as skipped rather than as invited.
 
 ### Response activity over time
 
 The activity series buckets the same first instants, link followed, form
-opened and submitted, by campaign-local hour or day, using the Campaign's
+opened (as the funnel counts it, so including the first submission) and
+submitted, by campaign-local hour or day, using the Campaign's
 immutable timezone snapshot as the [participation graph](#participation-graph)
 does; a repeated autumn hour is two buckets. Over every bucket each series
 sums to its funnel total. Send markers name each invitation and reminder send

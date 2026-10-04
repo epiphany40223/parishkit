@@ -95,14 +95,14 @@ def test_funnel_chart_carries_the_stage_counts_everywhere():
         "Submitted",
     ]
     counts = [row["families"] for row in spec["data"]["values"]]
-    assert counts == [stage.count for stage in metrics().stages] == [4, 5, 4, 2, 3]
-    # Stages are not nested: a Family may follow its link or submit without
-    # a delivered invitation, so a share can pass 100%.
+    assert counts == [stage.count for stage in metrics().stages] == [4, 5, 4, 3, 3]
+    # Stages are not all nested: a Family may follow its link or submit
+    # without a delivered invitation, so a share can pass 100%.
     assert [row["share"] for row in spec["data"]["values"]] == [
         "100%",
         "125%",
         "100%",
-        "50%",
+        "75%",
         "75%",
     ]
     assert chart.table.headings == ("Stage", "Families", "Compared with invited")
@@ -113,7 +113,7 @@ def test_funnel_chart_carries_the_stage_counts_everywhere():
     )
     assert chart.summary == (
         "Families by stage: 4 invited, 5 followed their link (includes "
-        "mail-scanner prefetches), 4 opened the form, 2 progressed past the "
+        "mail-scanner prefetches), 4 opened the form, 3 progressed past the "
         "first step, 3 submitted."
     )
     assert [layer["mark"]["type"] for layer in spec["layer"]] == ["bar", "text"]
