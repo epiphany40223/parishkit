@@ -1,4 +1,4 @@
-"""The Admin "About this page" panel starts open and remembers being closed."""
+"""The Admin "About this page" panel starts closed and remembers being opened."""
 
 import pytest
 
@@ -9,8 +9,8 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
-def test_about_panel_remembers_closed_and_reopened(page, component_origin):
-    """Closing the panel survives a reload; reopening clears the stored choice."""
+def test_about_panel_remembers_opened_and_closed(page, component_origin):
+    """Opening the panel survives a reload; closing clears the stored choice."""
     from playwright.sync_api import expect
 
     failures = []
@@ -19,21 +19,107 @@ def test_about_panel_remembers_closed_and_reopened(page, component_origin):
     panel = page.locator("details[data-about-page]")
     summary = panel.locator("summary")
     placeholders = panel.get_by_text("Use a placeholder name")
-    visible(placeholders)
-    # Opening the page must not write anything; only closing a panel does.
+    # Help is hidden by default (#227), and opening the page writes nothing.
+    expect(panel).not_to_have_attribute("open", "")
+    expect(placeholders).to_be_hidden()
     assert page.evaluate("localStorage.length") == 0
 
     summary.click()
-    expect(placeholders).to_be_hidden()
+    visible(placeholders)
     # The choice is saved from the asynchronous "toggle" event.
     eventually(page, "() => localStorage.length", 1)
     page.reload()
-    expect(panel).not_to_have_attribute("open", "")
-    expect(placeholders).to_be_hidden()
+    expect(panel).to_have_attribute("open", "")
+    visible(placeholders)
 
     summary.click()
-    visible(placeholders)
+    expect(placeholders).to_be_hidden()
     eventually(page, "() => localStorage.length", 0)
     page.reload()
-    visible(placeholders)
+    expect(placeholders).to_be_hidden()
     assert not failures
+
+
+def test_about_panel_clears_the_old_closed_marker(page, component_origin):
+    """A "closed" choice stored when panels started open is simply forgotten."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/content-settings")
+    key = page.locator("details[data-about-page]").get_attribute("data-about-page")
+    page.evaluate(f"localStorage.setItem('pk-about-page:{key}', 'closed')")
+    page.reload()
+    expect(page.locator("details[data-about-page]")).not_to_have_attribute("open", "")
+    eventually(page, "() => localStorage.length", 0)
+
+
+# Converted Admin pages with a data table, rendered with the Admin chrome
+# (sidebar, breadcrumbs, the Testing banner and the delivery warning) by the
+# component fixtures. The report pages with long filter and export forms join
+# this list when their filters are collapsed (#227 follow-up).
+LAPTOP_PAGES = ["/background", "/deliveries", "/delivery-refusals"]
+# A typical laptop browser viewport: a 1366x768 screen less the browser's
+# own toolbars. Fonts differ between platforms (Linux CI's are wider), so the
+# check asks only that the first row's top edge, with some room, is on screen.
+LAPTOP_VIEWPORT = {"width": 1366, "height": 650}
+
+
+@pytest.mark.parametrize("path", LAPTOP_PAGES)
+def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
+    """With help collapsed, a converted page's first table row starts on screen."""
+    page.set_viewport_size(LAPTOP_VIEWPORT)
+    page.goto(component_origin + path)
+    page.evaluate("document.fonts.ready.then(() => true)")
+    box = page.locator("main table tbody tr").first.bounding_box()
+    assert box is not None
+    assert box["y"] + 40 <= LAPTOP_VIEWPORT["height"], (path, box)
+
+
+def test_every_about_control_sits_beside_its_heading(page, component_origin):
+    """On every fixture page with an About panel, the closed control is in the
+    heading row: the panel directly follows the page's h1, and its summary is
+    drawn on the same line as the heading, to the right of it (#227)."""
+    page.set_viewport_size({"width": 1366, "height": 768})
+    page.goto(component_origin + "/about-page-index")
+    paths = page.inner_text("body").split()
+    assert len(paths) >= 20, paths
+    misplaced = []
+    for path in paths:
+        page.goto(component_origin + path)
+        placement = placement_on(page)
+        if placement:
+            misplaced.append(f"{path}: {placement}")
+    assert not misplaced, misplaced
+
+
+def placement_on(page):
+    """Why the page's About control is not beside its heading, or "".
+
+    A live-status page may reload itself just after loading; the check then
+    runs again on the reloaded page.
+    """
+    from playwright.sync_api import Error
+
+    for _ in range(3):
+        try:
+            return page.evaluate(PLACEMENT)
+        except Error as error:
+            if "context was destroyed" not in str(error):
+                raise
+            page.wait_for_load_state()
+    return page.evaluate(PLACEMENT)
+
+
+# The placement rule in the page: the panel directly follows the h1, and the
+# closed summary's middle lies within the heading's line box, to its right.
+PLACEMENT = """() => {
+  const panel = document.querySelector("details[data-about-page]");
+  if (!panel) return "no About panel after loading";
+  const heading = panel.previousElementSibling;
+  if (!heading || heading.tagName !== "H1") return "not after the h1";
+  const h = heading.getBoundingClientRect();
+  const s = panel.querySelector("summary").getBoundingClientRect();
+  const middle = (s.top + s.bottom) / 2;
+  if (middle < h.top || middle > h.bottom) return "not on the heading line";
+  if (s.left < h.right) return "not beside the heading";
+  return "";
+}"""

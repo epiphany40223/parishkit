@@ -1,5 +1,4 @@
 {% load i18n stewardship %}
-{% aboutpage "talent-settings" %}<p>{% translate "On each Member's ministry page, the Family form asks: “If you have a special talent that you would like to share with your parish family, please select it below.” These are the checkboxes it offers. Turn on the free-text response for an option such as “Other” so the Member can describe it." %}</p>
-<p>{% translate "Edit labels, set their order, or explicitly delete options. The blank last row adds an option. Up to 100 options are supported. Talents lock when the campaign goes live." %}</p>{% endaboutpage %}
+<p class="help">{% translate "Talents lock when the campaign goes live." %}</p>
 {{ formset.management_form }}{{ formset.non_form_errors }}
 {% for form in formset %}<fieldset class="panel"><legend>{% translate "Talent" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

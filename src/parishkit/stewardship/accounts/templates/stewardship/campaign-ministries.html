@@ -2,14 +2,15 @@
 {% block title %}{% translate "Change campaign Ministries" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Change campaign Ministries" %}</h1>
-<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
-<p>{% translate "This campaign is live, so its other settings are locked. Its Ministries can still change while it is open." %}</p>
-{% aboutpage "campaign-ministries" %}<p>{% translate "Adding a Ministry shows it on the Family form at each Family's next visit. Families who already submitted are not asked again and get no email. Only Ministries in the latest ParishSoft data and marked active on Ministry activity can be added." %}</p>
+{% aboutpage "campaign-ministries" %}<p>{% translate "Adding a Ministry shows it on the Family form at each Family's next visit. Only Ministries in the latest ParishSoft data and marked active on Ministry activity can be added." %}</p>
 <p>{% translate "Removing a Ministry takes it off the Family form. Nothing Families already answered is deleted: their join and stop requests stay in Ministry follow-up until staff close them, and reports keep showing them, marked No longer in this campaign. Adding the Ministry back shows them again." %}</p>
 <p>{% translate "To hide a Ministry without removing it, mark it inactive on Ministry activity instead." %} <a href="{% url 'admin:ministries' %}">{% translate "Ministry activity" %}</a></p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
+<p>{% translate "This campaign is live, so its other settings are locked. Its Ministries can still change while it is open." %}</p>
 <form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="preview">
 {{ form.non_field_errors }}{{ form.base_digest }}{{ form.base_digest.errors }}
 <fieldset id="ministry-selections"><legend>{% translate "Ministry selections" %}</legend>
+<p class="help">{% translate "Families who already submitted are not asked about an added Ministry and get no email. Removing a Ministry deletes none of their answers." %}</p>
 {{ form.ministry_duids.as_field_group }}</fieldset>
 <button type="submit">{% translate "Preview changes" %}</button>
 </form>

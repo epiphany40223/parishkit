@@ -17,22 +17,24 @@
   }
 
   // "About this page" panels ({% aboutpage %} in templatetags/stewardship.py)
-  // start open. Each browser remembers, per page type, whether an Admin
-  // closed one, so returning Admins see the task first. Only a "closed"
-  // marker is stored, and only after an Admin closes a panel: open is the
-  // default, so reopening removes the marker. (Browsers also fire "toggle"
-  // for panels that are open when parsed, which must not write anything.)
-  // Storage can be unavailable (private windows, blocked site data); the
-  // panel then just stays open.
+  // start closed so the page's data comes first (#227). Each browser
+  // remembers, per page type, whether an Admin opened one. Only an "open"
+  // marker is stored, and only after an Admin opens a panel: closed is the
+  // default, so closing removes the marker. Earlier versions stored a
+  // "closed" marker instead (panels then started open); that value now means
+  // the default and is cleared. Storage can be unavailable (private windows,
+  // blocked site data); the panel then just starts closed.
   document.querySelectorAll("details[data-about-page]").forEach((panel) => {
     const key = `pk-about-page:${panel.dataset.aboutPage}`;
     try {
-      if (window.localStorage.getItem(key) === "closed") panel.open = false;
-    } catch (error) { /* Keep the panel open. */ }
+      const stored = window.localStorage.getItem(key);
+      if (stored === "open") panel.open = true;
+      else if (stored !== null) window.localStorage.removeItem(key);
+    } catch (error) { /* Keep the panel closed. */ }
     panel.addEventListener("toggle", () => {
       try {
-        if (panel.open) window.localStorage.removeItem(key);
-        else window.localStorage.setItem(key, "closed");
+        if (panel.open) window.localStorage.setItem(key, "open");
+        else window.localStorage.removeItem(key);
       } catch (error) { /* Nothing to remember without storage. */ }
     });
   });

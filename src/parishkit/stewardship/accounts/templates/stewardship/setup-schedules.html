@@ -3,10 +3,11 @@
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "First-campaign mail schedules" %}</h1><p>{{ campaign_name }}</p>
+<h1>{% translate "First-campaign mail schedules" %}</h1>
+{% aboutpage "setup-schedules" %}{% include 'stewardship/schedule-guide.html' %}{% endaboutpage %}
+<p>{{ campaign_name }}</p>
 <p class="setup-intro">{% translate "When the system sends each email: one initial invitation, any reminders, and optional daily or weekly summary emails for administrators. You can also adjust the campaign dates here together with the schedules." %}</p>
 <p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft. No email is sent or queued." %}</p>
-{% aboutpage "setup-schedules" %}{% include 'stewardship/schedule-guide.html' %}{% endaboutpage %}
 <p><a href="{% url 'admin:setup_content' %}">{% translate "Prepare email templates and subjects" %}</a></p>
 {% if collection_error %}<p class="error" role="alert">{% translate "Check the complete schedule collection: one initial invitation before all reminders, distinct mailing times, at most one digest of each kind, and saved templates matching each mail type. Nothing was saved." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">

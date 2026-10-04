@@ -4,12 +4,13 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Setup Slack test" %}</h1>
+{% aboutpage "setup-notification" %}<p>{% translate "This page checks status without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="setup-intro">{% translate "Post one fixed test message to the Slack channel to prove the Slack connection works. A successful test of the current settings is required before setup can finish. Once it succeeds, Continue takes you to the next step." %}</p>
 <p class="notice">{% translate "Testing mode. This sends a fixed fictional notification to the configured Slack channel. It contains no parishioner data and does not activate the campaign." %}</p>
 <p>{% translate "Slack channel" %}: {{ channel_id }}</p>
-{% aboutpage "setup-notification" %}<p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>{% endaboutpage %}
 <div data-setup-mail data-mail-status-url="{% url 'admin:setup_notification_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
+<p class="help">{% translate "A missing result is never automatically resent." %}</p>
 <form method="post" id="setup-test">{% csrf_token %}
 {{ form.preview_token }}{{ form.request_key }}
 {{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}

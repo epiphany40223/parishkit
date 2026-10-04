@@ -456,8 +456,10 @@ section, after Parish logos, at `/admin/files/`. It is registered in the
 form-action routes classified as non-pages. Page text uses plain words: the
 slug is labelled **Placeholder name**.
 
-The page leads with a one-line introduction ("Files you can link from Family
-pages and emails. Anyone with a file's link can open it."), then:
+The page leads with a one-line notice ("Anyone with a file's link can open it,
+so never upload anything private."); its introduction ("Files you can link
+from Family pages and emails.") opens the About panel, following the Admin
+[page help](../admin-portal/spec.md#page-help) rules. Then:
 
 - **Upload form**: a file field (`accept` lists the permitted extensions, as a
   hint only) and a **Placeholder name** field with the hint "Lowercase letters,

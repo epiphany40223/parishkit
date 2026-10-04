@@ -2,8 +2,8 @@
 {% block title %}{% translate "Family email sends" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Family email sends" %}</h1>
-<p>{% translate "Each invitation and reminder email this campaign has sent to Families, newest first, and how it turned out. Select a count to see those emails on the Outgoing mail page." %}</p>
-{% aboutpage "family-email-sends" %}<p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family email progress page, so the two always agree." %}</p>
+{% aboutpage "family-email-sends" %}<p>{% translate "Each invitation and reminder email this campaign has sent to Families, newest first, and how it turned out. Select a count to see those emails on the Outgoing mail page." %}</p>
+<p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family email progress page, so the two always agree." %}</p>
 <dl><dt>{% translate "Scheduled" %}</dt><dd>{% translate "When the send was due. A send appears here once its first email is planned." %}</dd>
 <dt>{% translate "First email and latest result" %}</dt><dd>{% translate "When the first email was prepared, and when the last one got its result. A later fix, such as retrying a failed email, moves the latest result and the duration." %}</dd>
 <dt>{% translate "Total" %}</dt><dd>{% translate "Sent, failed and uncertain emails, plus any still to send. The other columns are not part of the total." %}</dd>

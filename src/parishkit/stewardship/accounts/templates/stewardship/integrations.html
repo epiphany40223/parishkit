@@ -2,8 +2,8 @@
 {% block title %}{% translate "Integrations" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Integrations" %}</h1>
-<p>{% translate "The outside services this system connects to: ParishSoft for parish data, Google Workspace for email, Slack for alerts and Google Drive for off-site backups. Select one to change its settings or replace its key." %}</p>
-{% aboutpage "integrations" %}<p>{% translate "The settings shown are the ones in use now. When you save a new key, it is checked with the service before it is used, but that check does not prove that email or Slack alerts will be delivered. To check email, send a test email from the campaign's email tests page." %}</p>{% endaboutpage %}
+{% aboutpage "integrations" %}<p>{% translate "The outside services this system connects to: ParishSoft for parish data, Google Workspace for email, Slack for alerts and Google Drive for off-site backups. Select one to change its settings or replace its key." %}</p>
+<p>{% translate "The settings shown are the ones in use now. When you save a new key, it is checked with the service before it is used, but that check does not prove that email or Slack alerts will be delivered. To check email, send a test email from the campaign's email tests page." %}</p>{% endaboutpage %}
 <ul>{% for integration in integrations %}<li>
 {% if integration.target == 'backup' %}{% url 'admin:integration_settings' integration.target as backup_url %}{% if integration.configured %}<a href="{{ backup_url }}">{{ integration.label }}</a> — {% translate "Configured." %} <a href="{{ backup_url }}">{% translate "Change" %}</a>{% else %}{{ integration.label }} — {% translate "Not set up." %} <a href="{{ backup_url }}">{% translate "Set up off-site backups" %}</a>{% endif %}
 {% elif integration.target == 'backup_key' %}<a href="{% url 'admin:integration_settings' integration.target %}">{{ integration.label }}</a> — {% if integration.configured %}{% translate "Set in this portal." %}{% else %}{% translate "Installed on the server." %}{% endif %} <a href="{% url 'admin:integration_settings' integration.target %}">{% translate "View or replace" %}</a>
@@ -11,4 +11,5 @@
 {% elif integration.target == 'slack' %}{{ integration.label }} — {% translate "Not set up." %} <a href="{% url 'admin:integration_settings' integration.target %}">{% translate "Set up Slack" %}</a>
 {% else %}{{ integration.label }} — {% translate "Not set up yet. It is normally set up during initial setup." %}{% endif %}
 </li>{% endfor %}</ul>
+<p class="help">{% translate "A new key is checked with its service before use, but that check does not prove email or Slack alerts will be delivered; send a test to be sure." %}</p>
 {% endblock %}

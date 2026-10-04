@@ -2,15 +2,15 @@
 {% block title %}{% translate "Background work" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Background work" %}</h1>
-<p>{% translate "Work the system does behind the scenes, such as ParishSoft refreshes, email preparation and report exports. Select a task to see what it is doing, or why it failed." %}</p>
-{% aboutpage "background-work" %}<p>{% translate "Most tasks start and finish on their own. A task waiting to try again hit a temporary problem, such as ParishSoft or the email provider not answering, and retries automatically. A task that stopped unexpectedly lost its background process, for example when the server restarted; the system recovers it on its own." %}</p>
+{% aboutpage "background-work" %}<p>{% translate "Work the system does behind the scenes, such as ParishSoft refreshes, email preparation and report exports. Select a task to see what it is doing, or why it failed." %}</p>
+<p>{% translate "Most tasks start and finish on their own. A task waiting to try again hit a temporary problem, such as ParishSoft or the email provider not answering, and retries automatically. A task that stopped unexpectedly lost its background process, for example when the server restarted; the system recovers it on its own." %}</p>
 <p>{% translate "Last activity is the last time a running task reported that it was still working. Opening or refreshing this page does not extend your sign-in." %}</p>{% endaboutpage %}
 <p>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Waiting to start:" %} {{ work.counts.queued|number }} · {% translate "Waiting to try again:" %} {{ work.counts.retry_wait|number }} · {% translate "Stopped unexpectedly:" %} {{ work.counts.abandoned|number }}</p>
-<form id="table-filters" data-table-sync method="get" class="panel">
-  <label for="task-state">{% translate "Task state" %}</label>
+<form id="table-filters" data-table-sync method="get" class="filter-bar">
+  <div><label for="task-state">{% translate "Task state" %}</label>
   <select id="task-state" name="state">
     {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{% include "stewardship/task-state.html" %}</option>{% endfor %}
-  </select>
+  </select></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <button type="submit">{% translate "Show tasks" %}</button>
 </form>

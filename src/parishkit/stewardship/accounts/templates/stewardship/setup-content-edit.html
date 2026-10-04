@@ -5,10 +5,10 @@
 {% include 'stewardship/setup-wizard.html' %}
 <p><a href="{% url 'admin:setup_content' %}">{% translate "First-campaign content" %}</a></p>
 <h1>{{ label }}</h1>
-<p class="setup-intro">{% translate "Write this text once; placeholders in double braces are filled in for each Family. The preview below uses a fictional Family." %}</p>
-<p class="notice">{% translate "Testing mode. Saving here changes only this temporary wizard draft. No email is sent." %}</p>
 {% aboutpage "setup-content-editor" %}<p>{% translate "Use a placeholder name inside double braces. Supported names:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
 {% include 'stewardship/placeholder-names.html' %}{% endaboutpage %}
+<p class="setup-intro">{% translate "Write this text once; placeholders in double braces are filled in for each Family. The preview below uses a fictional Family." %}</p>
+<p class="notice">{% translate "Testing mode. Saving here changes only this temporary wizard draft. No email is sent." %}</p>
 {% if default_url %}<p><a href="{{ default_url }}">{% if saved %}{% translate "Reset to the default text" %}{% else %}{% translate "Start from the default text" %}{% endif %}</a></p>{% endif %}
 {% if started_from_default %}<p class="notice" role="status">{% if saved %}{% translate "The default text is filled in below but not saved yet. Saving will replace the current text; to keep it, go back without saving." %}{% else %}{% translate "The default text is filled in below but not saved yet. Edit it as needed, then save." %}{% endif %}</p>{% endif %}
 {% if refusal %}<div class="notice notice-error" role="alert"><p>{{ refusal.message }}</p>{% if refusal.fix %}<p>{{ refusal.fix }}</p>{% endif %}{% if refusal.link %}<p><a href="{{ refusal.link }}">{{ refusal.link_label }}</a></p>{% endif %}</div>{% endif %}

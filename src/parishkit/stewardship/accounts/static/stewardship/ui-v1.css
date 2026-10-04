@@ -302,9 +302,10 @@ details { border: 1px solid var(--border); border-radius: var(--radius-small); b
 details[open] { padding-bottom: 1rem; }
 summary { display: list-item; min-height: 44px; padding-block: .6rem; color: var(--accent); font-weight: 600; cursor: pointer; }
 summary:hover { color: var(--accent-strong); }
-/* "About this page": a page's longer explanation, open by default and
-   remembered closed per page type (ui-v1.js). A soft accent surface keeps it
-   visibly secondary to the page's task. */
+/* "About this page": a page's longer explanation, closed by default and
+   remembered open per page type (ui-v1.js). Closed, it is one quiet control
+   beside the page heading; open, a soft accent surface keeps it visibly
+   secondary to the page's task. */
 details.about-page { background: var(--accent-soft); border-color: #bcd8d3; }
 details.about-page > summary::after { content: " \24D8" / ""; font-weight: 400; }
 .about-page-body > :first-child { margin-top: 0; }
@@ -576,3 +577,49 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 /* While ui-v1.js re-sorts or re-pages a table in place (#478), the rows dim but stay readable. */
 [data-table-region][aria-busy="true"] { cursor: progress; }
 [data-table-region][aria-busy="true"] table { opacity: .55; }
+
+/* Compact Admin pages (#227): the page's data should start within a laptop
+   screen (about 768px tall) with help collapsed. Scoped to Admin pages, so
+   the Family portal keeps its roomier, phone-first spacing. :where() keeps
+   these rules at element-level specificity, so they tighten only the shared
+   defaults and every more specific rule above (technical details, data
+   tables, filter bars, .flow panels) still wins. */
+:where(.admin-body) main { padding-top: 1rem; }
+:where(.admin-body) main nav.breadcrumbs { margin-bottom: .5rem; }
+:where(.admin-body) .flow-steps { margin-bottom: .75rem; }
+:where(.admin-body) h1 { font-size: clamp(1.5rem, 2.5vw, 1.9rem); margin-block: 0 .5rem; }
+:where(.admin-body) h2 { margin-block: 1.25rem .5rem; }
+:where(.admin-body) .panel { padding: clamp(.85rem, 2vw, 1.25rem); margin-block: .85rem; }
+:where(.admin-body main) details { margin-block: .75rem; }
+:where(.admin-body main) details[open] { padding-bottom: .75rem; }
+:where(.admin-body) .table-scroll { margin-block: .75rem; }
+:where(.admin-body) caption { padding: .6rem 1rem; }
+:where(.admin-body) th, :where(.admin-body) td { padding: .5rem .85rem; }
+/* Narrower filter fields, so a short filter form fits on one row. */
+:where(.admin-body) .filter-bar > div { flex-basis: 18rem; }
+/* Keep the phone-width cell padding from the narrow-screen rules above,
+   which the compact rule just before would otherwise override. */
+@media (max-width: 36rem) {
+  :where(.admin-body) th, :where(.admin-body) td { padding: .6rem .7rem; }
+  :where(.admin-body) caption { padding: .85rem .7rem; }
+}
+/* The closed About panel is a bare control on the heading's line, without a
+   box; the summary keeps its 44px touch target. */
+details.about-page { margin-block: 0 .75rem; }
+details.about-page:not([open]) { padding-inline: 0; border-color: transparent; background: none; }
+/* Standing notices stay prominent but shorter; the Testing banner reads as
+   one line: its label, then the recipient and the configuration link. */
+:where(.admin-body) .notice { padding: .6rem 1rem; margin-block: .75rem; }
+.testing-banner > strong { margin-inline-end: .5rem; }
+.testing-banner > p { display: inline; }
+/* With help closed, the About control sits beside the page heading rather
+   than on its own line. Opened, the panel (control included) drops to the
+   line below the heading at full width, since a block after an inline-block
+   starts a new line; focus stays on the control. Keeping the control beside
+   the heading while the panel opens below would need different markup, and
+   the saved line is worth the move. */
+/* Not scoped to .admin-body: the setup wizard has no Admin chrome, and the
+   About panel exists only on staff pages. Templates keep the panel directly
+   after the h1 (test_admin_help_guards checks it). */
+h1:has(+ details.about-page:not([open])) { display: inline-block; margin-inline-end: 1.25rem; }
+h1 + details.about-page:not([open]) { display: inline-block; vertical-align: baseline; }

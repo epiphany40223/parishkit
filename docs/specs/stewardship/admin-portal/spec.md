@@ -494,17 +494,34 @@ controls also work without script.
 
 ### Page help
 
-Admin pages put the task first and keep explanation one deliberate click
-away, without removing any of it. A page leads with its heading, at most a
-short introduction, safety notices (such as Testing mode) and the form.
-Longer explanation of how the page behaves (how a credential is kept, how
-mail schedules work, the placeholder reference) sits in an "About this page"
-panel: a disclosure that starts open, and that each browser remembers closed,
-per page type, once an Admin closes it. Only that open or closed choice is
-stored in the browser; without script or browser storage the panel stays
-open. Help under a field is a short hint; longer field explanations belong in
-the About panel or a click-to-open field tip, never in hover-only tooltips,
-which touch and keyboard users cannot reach.
+Admin pages put the page's data first and keep explanation one deliberate
+click away, without removing any of it. A page leads with its heading, its
+own data line (such as the campaign name or counts), safety notices (such as
+Testing mode) and then its data or form; at most a one-line hint that
+prevents a likely mistake stays visible above the data. A caution that
+prevents a likely mistake (what an action cannot undo or stop, or a lasting
+consequence it has) is never only in the panel: it stays visible beside its
+control as a one-line hint or a notice. The page's
+introduction and longer explanation of how it behaves (how a credential is
+kept, how mail schedules work, the placeholder reference) sit in an "About
+this page" panel beside the heading: a native disclosure that starts closed,
+and that each browser remembers open, per page type, once an Admin opens it.
+Every page with a panel has exactly one, placed directly after its heading, so
+the closed control always sits on the heading's line; opened, the panel and
+its control continue on the line below at full width.
+Only that open choice is stored in the browser, and closing the panel removes
+it; without script or browser storage the panel starts closed and still opens
+with a click or the keyboard. Help under a field is a short hint; longer field
+explanations belong in the About panel or a click-to-open field tip, never in
+hover-only tooltips, which touch and keyboard users cannot reach.
+
+Admin pages are laid out for a laptop screen: compact headings, panels,
+notices and table cells, and short filter forms in one row. The target is that,
+with help closed, a page's first data starts inside the browser window of a
+typical laptop (a 1366×768 screen, about 650 pixels of page after the
+browser's own toolbars). Pages with short filters meet it now; report pages
+with long filter and export forms meet it once those forms are collapsed by
+default (a #227 follow-up). The Family portal keeps its own spacing.
 
 Field help longer than about one line opens from an "i" button beside the
 field's label (the shared toggletip). Only a one-line hint stays visible under
@@ -522,13 +539,18 @@ disclosure, closed by default, instead of in the page's main text. Nothing
 is removed, and exports keep every field. An empty list says what to do
 next rather than only that it is empty.
 
-Two template tests guard these rules: one fails when a paragraph shown
-without a click holds a message longer than about two sentences (50 words),
-and one fails when a label for an internal identifier or worker field (such
-as a heartbeat, lease, data-load number or request ID) appears outside a
-Technical details disclosure. Each keeps a short, reviewed list of
-exceptions, and the long-paragraph exceptions must shrink as their pages are
-converted.
+Template tests guard these rules: one fails when a paragraph shown without a
+click holds a message longer than about two sentences (50 words), one fails
+when more than about one line (15 words) of help sentences shows between a
+page's heading and its data outside the About panel, notices and links, one
+fails unless each page's single About panel directly follows its heading, and
+one fails when a label for an internal identifier or worker field (such as a
+heartbeat, lease, data-load number or request ID) appears outside a Technical
+details disclosure. The long-paragraph, introduction and internal-field
+checks each keep a short, reviewed list of exceptions, and the long-paragraph
+and introduction exceptions must shrink as their pages are converted. A
+browser test checks on every component fixture with an About panel that the
+closed control is drawn on the heading's line, to its right.
 
 ## Background indicators
 

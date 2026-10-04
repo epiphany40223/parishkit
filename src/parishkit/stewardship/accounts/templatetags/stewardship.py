@@ -80,9 +80,10 @@ def aboutpage(parser, token):
     """Wrap a page's longer explanation in a collapsible "About this page" panel.
 
     Usage: ``{% aboutpage "setup-credential" %}…{% endaboutpage %}``. The key
-    names the page type; ui-v1.js remembers, per browser, whether an Admin
-    closed that page type's panel. Without script the panel simply starts
-    open, so no explanation is ever hidden from someone who needs it.
+    names the page type. The panel starts closed so the page's data comes
+    first (#227); it is a native disclosure, so it opens with a click or the
+    keyboard even without script. ui-v1.js remembers, per browser, which page
+    types an Admin left open.
     """
     bits = token.split_contents()
     if len(bits) != 2:
@@ -104,7 +105,7 @@ class AboutPageNode(template.Node):
         if not ABOUT_PAGE_KEY.fullmatch(key):
             raise template.TemplateSyntaxError(f"Invalid aboutpage key: {key!r}")
         return format_html(
-            '<details class="about-page" data-about-page="{}" open>'
+            '<details class="about-page" data-about-page="{}">'
             '<summary>{}</summary><div class="about-page-body">{}</div></details>',
             key,
             _("About this page"),

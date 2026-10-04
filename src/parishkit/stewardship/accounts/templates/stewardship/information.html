@@ -2,11 +2,11 @@
 {% block title %}{% translate "Additional information and follow-up" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Additional information and follow-up" %}</h1>
-<p>{{ metadata.name }}</p>
-<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
-{% aboutpage "information-followup" %}<p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
+{% aboutpage "information-followup" %}<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
+<p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
 <p>{% translate "Date filters use whole days in the campaign's time zone," %} {{ metadata.timezone }}. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>{% endaboutpage %}
+<p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and campaign selection" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
