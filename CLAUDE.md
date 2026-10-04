@@ -49,9 +49,11 @@ ParishKit contains reusable Python automation for Catholic parishes.
   a new forward migration with a frozen SQL file, never an edit to an applied
   migration. Never infer permission to delete existing databases from this
   policy.
-- Stewardship v1 launches October 3, 2026. Until then, follow the
-  [v1 launch scope](docs/plans/stewardship/v1-launch.md) for work selection,
-  deferred scope, the schema freeze and the reduced review process.
+- Stewardship v1 launched on October 3, 2026. Choose post-launch work from the
+  tiers in the [roadmap issue](https://github.com/epiphany40223/parishkit/issues/146);
+  the [v1 launch scope](docs/plans/stewardship/v1-launch.md) records what
+  launched and what was deferred. Production deploys happen only when the
+  Administrator approves them.
 - Stewardship implementation follows its
   [automated delivery cycle](docs/plans/stewardship/overall.md#automated-phase-delivery-cycle),
   including smaller coherent PRs, correction-focused review rounds, and the
