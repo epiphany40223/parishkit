@@ -52,7 +52,7 @@ from .cryptography import (
     canonical_code,
     token_digest,
 )
-from .limiting import Counter, Limiter, LimiterUnavailable
+from .limiting import Counter, Limiter, LimiterUnavailable, source_network
 from .policy import Principal
 from .sessions import FAMILY_ABSOLUTE, FAMILY_IDLE, database_now, revoke_family_sessions
 
@@ -481,7 +481,8 @@ def entry(request):
             pair = Counter(
                 "family_pair",
                 service.limiter.fingerprint(
-                    "family_pair", str(request.client_address) + ":" + fingerprint
+                    "family_pair",
+                    source_network(request.client_address) + ":" + fingerprint,
                 ),
                 service.limiter.limits.family_pair,
                 900,

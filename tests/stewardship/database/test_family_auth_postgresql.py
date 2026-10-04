@@ -401,6 +401,27 @@ def test_pair_failures_do_not_lock_reactivated_valid_code(family_service):
     assert response.status_code == 302
 
 
+def test_pair_counter_groups_ipv6_sources_by_64(family_service):
+    """#383: alternating addresses in one /64 share one code/source pair budget.
+
+    Three failures from each of two addresses would stay under the five-failure
+    pair limit if keyed per address; grouped, the sixth is limited. The same
+    candidate from another /64 is still only an ordinary failure.
+    """
+    first = Client(enforce_csrf_checks=True, REMOTE_ADDR="2001:db8:1:2::a")
+    second = Client(enforce_csrf_checks=True, REMOTE_ADDR="2001:db8:1:2::b")
+    for index in range(6):
+        _, response = login("ILOOOOOO", (first, second)[index % 2])
+    assert response.status_code == 429
+    elsewhere = Client(enforce_csrf_checks=True, REMOTE_ADDR="2001:db8:1:3::a")
+    assert login("ILOOOOOO", elsewhere)[1].status_code == 403
+    limiter = family_service.service.limiter
+    assert (
+        len(list(limiter.client.scan_iter(limiter.namespace + ":window:family_pair:*")))
+        == 2
+    )
+
+
 def test_invalid_length_counts_only_ip_and_ascii_ilo_counts_pair(family_service):
     client = Client(enforce_csrf_checks=True)
     assert login("bad", client)[1].status_code == 403

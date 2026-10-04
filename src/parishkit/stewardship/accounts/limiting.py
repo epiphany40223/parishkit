@@ -12,7 +12,7 @@ import re
 from collections import OrderedDict
 from contextlib import suppress
 from dataclasses import dataclass
-from ipaddress import IPv4Address, IPv6Address
+from ipaddress import IPv4Address, IPv6Address, IPv6Network, ip_address
 from threading import Lock
 from time import monotonic
 from uuid import uuid4
@@ -92,6 +92,32 @@ if meets then
 end
 return {severity, math.floor(now/300), counts[1], counts[2], counts[3], counts[4]}
 """
+
+
+def source_network(address):
+    """The limiter's subject for a source address: IPv4 exact, IPv6 by /64.
+
+    One IPv6 end site normally holds a whole /64, so keying each address
+    separately would hand an attacker a fresh budget per address (#383).
+    An IPv4-mapped IPv6 source (``::ffff:192.0.2.1``) is the IPv4 host it
+    names. A zone ID never reaches the key. Only an address object or its
+    text form is accepted; anything else (including an int, bytes or a
+    bool, which ``ip_address`` would otherwise interpret) raises
+    ValueError, so a malformed source fails closed.
+
+    Translated or tunnelled IPv6 (NAT64/SIIT-DC prefixes, 6to4, Teredo)
+    embeds many IPv4 hosts in one /64, so those hosts share one budget,
+    just as hosts behind one IPv4 NAT already do.
+    """
+    if not isinstance(address, (str, IPv4Address, IPv6Address)):
+        raise ValueError("A source address is required.")
+    address = ip_address(address)
+    if isinstance(address, IPv6Address):
+        if address.ipv4_mapped is not None:
+            return str(address.ipv4_mapped)
+        # int() drops any zone ID; strict=False keeps only the /64 prefix.
+        return str(IPv6Network((int(address), 64), strict=False))
+    return str(address)
 
 
 class LimiterUnavailable(RuntimeError):
@@ -288,8 +314,16 @@ class Limiter:
             ) from None
 
     def fingerprint(self, kind, value):
-        """Domain-separated short-lived fingerprints are not reversible identifiers."""
-        if isinstance(value, (IPv4Address, IPv6Address)):
+        """Domain-separated short-lived fingerprints are not reversible identifiers.
+
+        A source address ("ip") is first reduced to its source network, so
+        every per-source limit and the detector's source count treat one
+        IPv6 /64 as one source.
+        """
+        if kind == "ip":
+            value = source_network(value)
+        elif isinstance(value, (IPv4Address, IPv6Address)):
+            # Only the "ip" kind is grouped; any other kind keeps its exact value.
             value = str(value)
         return hmac.new(
             self.key,
