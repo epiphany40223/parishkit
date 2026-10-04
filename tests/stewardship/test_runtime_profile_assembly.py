@@ -25,7 +25,12 @@ from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
 
 from .test_runtime_topology import configuration_at
 
-ASSEMBLIES = (runtime_web.configure_web, operator_commands.configure_operator_database)
+# configure_web admits mounts, then configure_web_runtime assembles the settings
+# (the LOCAL seeder calls the latter directly, #476).
+ASSEMBLIES = (
+    runtime_web.configure_web_runtime,
+    operator_commands.configure_operator_database,
+)
 
 
 def test_profile_settings_name_the_admitted_profile(tmp_path):

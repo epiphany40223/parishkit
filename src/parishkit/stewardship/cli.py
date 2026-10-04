@@ -67,6 +67,20 @@ _COMMAND_OPTIONS = {
     # The local environment's fake ParishSoft service (#476); LOCAL only.
     "fake-parishsoft": {"config", "profile", "fake_config", "port"},
     "local-sign-in": {"config", "email"},
+    # The local environment's campaign seeder (#476); LOCAL only.
+    "local-seed": {
+        "config",
+        "profile",
+        "step",
+        "seed",
+        "families",
+        "anchor_date",
+        "now",
+        "response_scale",
+        "clock_dir",
+        "admin_email",
+        "seeded_now",
+    },
 }
 
 
@@ -136,6 +150,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "fake-config",
         "port",
         "email",
+        "step",
+        "seed",
+        "families",
+        "anchor-date",
+        "now",
+        "response-scale",
+        "clock-dir",
+        "seeded-now",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -229,6 +251,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(args, name) is None:
                 parser.usage_error(f"local-sign-in requires --{name}")
         return execute_local_sign_in(args)
+    if args.command == "local-seed":
+        from .local.seeder import execute_local_seed
+
+        return execute_local_seed(args)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

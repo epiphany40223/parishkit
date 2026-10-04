@@ -192,7 +192,6 @@ def url_configuration(profile):
 
 def configure_web(configuration):
     """Admit mounts, key purposes, SQL roles and coherent authority before serving."""
-    import django
     from django.conf import settings
 
     if settings.configured:
@@ -200,6 +199,23 @@ def configure_web(configuration):
     if admit_online_service(configuration) is not ServiceRole.WEB:
         raise ConfigError("Web startup requires its isolated service profile.")
     admit_lifecycle_mounts(configuration)
+    return configure_web_runtime(configuration)
+
+
+def configure_web_runtime(configuration):
+    """Everything ``configure_web`` does after the mount admission.
+
+    The web service calls this through ``configure_web``. The LOCAL seeder
+    (#476) calls it directly from a one-shot container that runs under the
+    web identity with web's mounts plus the writable clock directory, which
+    the online mount policy would refuse; the key, SQL-role and coherent-
+    authority admissions below still apply in full.
+    """
+    import django
+    from django.conf import settings
+
+    if settings.configured:
+        raise ConfigError("Operational web startup requires a fresh process.")
     required = {
         "django_signing",
         "general_encryption",
