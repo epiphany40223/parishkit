@@ -115,7 +115,12 @@ def test_real_failures_classify_as_installation_does(
     # A check that did not pass never sends.
     assert result == {"credential": expected}
     # The installer's own helper classifies the same failure the same way.
-    assert provider_check_worker.classify(target, b"credential\n", {}) == expected
+    assert (
+        provider_check_worker.classify(
+            target, b"credential\n", {}, profile=configuration.profile
+        )
+        == expected
+    )
 
 
 def test_mailbox_sends_one_fixed_message_only_after_a_valid_check(
@@ -534,3 +539,41 @@ def test_backup_drive_runs_only_in_the_backup_profile(tmp_path, monkeypatch, cap
     args.config = str(path)
     assert smoke.execute_smoke(args) == 2
     assert "smoke check refused" in capsys.readouterr().err
+
+
+def test_local_profile_is_refused(tmp_path, monkeypatch, capsys):
+    """LOCAL has no real provider to smoke-test; the check refuses before any IO."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.deployment import DeploymentProfile
+
+    configuration = consumer(tmp_path, ServiceRole.WORKER, parishsoft=b"key-bytes")
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        smoke,
+        "load_deployment",
+        lambda path: replace(configuration, profile=DeploymentProfile.LOCAL),
+    )
+    called = []
+    monkeypatch.setattr(smoke, "check_parishsoft", lambda *a, **k: called.append(a))
+    args = SimpleNamespace(
+        config=str(tmp_path / "service.yaml"),
+        target="parishsoft",
+        organization_id="7",
+        delegated_email=None,
+        send_to=None,
+        channel_id=None,
+        send=None,
+    )
+    assert smoke.execute_smoke(args) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and "smoke check refused" in captured.err
+    assert called == []
+    # Production is unchanged: the same consumer, outside LOCAL, runs the check.
+    monkeypatch.setattr(smoke, "load_deployment", lambda path: configuration)
+    monkeypatch.setattr(
+        smoke,
+        "check_parishsoft",
+        lambda *a, **k: called.append(a) or {"credential": "valid"},
+    )
+    assert smoke.execute_smoke(args) == 0 and len(called) == 1

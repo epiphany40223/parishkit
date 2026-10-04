@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.key_files import file_fingerprint
 from parishkit.stewardship.accounts.provider_models import ProviderValidationContext
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.accounts.secret_requests import stage_secret_request
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.provider_checks import request_validator
 
 from .test_credential_isolation_postgresql import (  # noqa: F401
@@ -191,7 +192,7 @@ def test_request_validator_closes_sql_before_provider_io(monkeypatch):
         "django.db.connections.close_all", lambda: events.append("close")
     )
 
-    def external(target, settings, value, *, seconds, check):
+    def external(target, settings, value, *, seconds, check, profile):
         """No provider call before SQL close or beyond the request's deadline."""
         assert events == ["check", "close"]
         assert (target, settings, value) == (
@@ -199,13 +200,15 @@ def test_request_validator_closes_sql_before_provider_io(monkeypatch):
             arguments["provider_settings"],
             b"synthetic-candidate",
         )
-        assert 0 < seconds <= 30
+        assert 0 < seconds <= 30 and profile is DeploymentProfile.TEST
         return True
 
     monkeypatch.setattr(
         "parishkit.stewardship.provider_checks.check_candidate", external
     )
-    validator = request_validator("slack", check=lambda: events.append("check"))
+    validator = request_validator(
+        "slack", check=lambda: events.append("check"), profile=DeploymentProfile.TEST
+    )
     with identity("pk_stewardship_credential_slack"):
         advance(arguments["request_id"], "testing")
         assert validator(arguments["request_id"], b"synthetic-candidate") is True
@@ -236,7 +239,7 @@ def test_request_validator_denies_unavailable_scope(monkeypatch, scenario):
         identity("pk_stewardship_credential_slack"),
         pytest.raises(CredentialValidationUnavailable),
     ):
-        request_validator("slack", check=lambda: None)(
+        request_validator("slack", check=lambda: None, profile=DeploymentProfile.TEST)(
             arguments["request_id"], b"synthetic"
         )
     assert calls == ["close"]

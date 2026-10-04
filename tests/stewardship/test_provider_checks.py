@@ -15,11 +15,14 @@ import requests
 from google.oauth2 import _client as google_client
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import provider_check_worker as worker
 from parishkit.stewardship import provider_checks as parent
 from parishkit.stewardship.accounts.credential_errors import (
     CredentialValidationUnavailable,
 )
+from parishkit.stewardship.deployment import DeploymentProfile
 
 WORKSPACE = {
     "delegated_email": "mail@example.org",
@@ -41,6 +44,7 @@ def payload(target="slack", **overrides):
             target=target,
             settings=settings,
             candidate=base64.b64encode(b"synthetic-private").decode(),
+            profile="production",
         )
         | overrides
     ).encode()
@@ -143,16 +147,60 @@ def test_response_size_bound_and_no_arbitrary_origins(monkeypatch):
     response = Response(body=b"x" * (worker.MAX_RESPONSE + 1))
     calls = http(monkeypatch, response)
     assert worker.check_request(payload()) == "unavailable" and response.closed
-    with worker.CheckSession() as session:
+    with worker.CheckSession(DeploymentProfile.PRODUCTION) as session:
         for method, url, options in [
             ("GET", "https://slack.com/api/auth.test", {}),
             ("POST", "https://evil.example", {}),
             ("POST", "https://slack.com/api/chat.postMessage", {}),
             ("POST", "https://slack.com/api/auth.test", {"proxies": {}}),
+            ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search", {}),
         ]:
             with pytest.raises(ValueError):
                 session.request(method, url, **options)
     assert len(calls) == 1
+    with pytest.raises(ValueError):
+        worker.CheckSession("production")
+
+
+@pytest.mark.parametrize("profile", list(DeploymentProfile))
+def test_local_fake_endpoint_is_admitted_only_for_a_local_request(
+    monkeypatch, tmp_path, profile
+):
+    """The helper's allowlist and ParishSoft base URL follow the request's profile."""
+    monkeypatch.chdir(tmp_path)
+    calls = http(monkeypatch, Response(body=b'[{"organizationID":123}]'))
+    assert worker.check_request(payload("parishsoft", profile=profile.value)) == "valid"
+    base = (
+        LOCAL_SOURCE_BASE_URL
+        if profile is DeploymentProfile.LOCAL
+        else DEFAULT_API_BASE_URL
+    )
+    assert calls[0][1] == base + "/organizations/search"
+    # Exactly one ParishSoft endpoint per profile: the fake's for LOCAL, the
+    # real API's for every other, never both.
+    local = ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")
+    real = ("POST", DEFAULT_API_BASE_URL + "/organizations/search")
+    assert (local in worker.endpoints(profile)) is (profile is DeploymentProfile.LOCAL)
+    assert (real in worker.endpoints(profile)) is (
+        profile is not DeploymentProfile.LOCAL
+    )
+    with worker.CheckSession(profile) as session, pytest.raises(ValueError):
+        session.request(*(real if profile is DeploymentProfile.LOCAL else local))
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "overrides", [{"profile": None}, {"profile": "LOCAL"}, {"profile": "private"}]
+)
+def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
+    """A helper request must say which profile it was made under."""
+    network = Mock(side_effect=AssertionError("network must not run"))
+    monkeypatch.setattr(worker, "CheckSession", network)
+    assert worker.check_request(payload(**overrides)) == "invalid"
+    raw = json.loads(payload())
+    del raw["profile"]
+    assert worker.check_request(json.dumps(raw).encode()) == "invalid"
+    network.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -173,7 +221,7 @@ def test_shared_parishsoft_client_checks_exact_uncached_tenant(
     calls = http(monkeypatch, Response(body=body))
     assert worker.check_request(payload("parishsoft")) == expected
     assert len(calls) == 1
-    assert calls[0][1] == worker.DEFAULT_API_BASE_URL + "/organizations/search"
+    assert calls[0][1] == DEFAULT_API_BASE_URL + "/organizations/search"
     assert calls[0][3]["x-api-key"] == "synthetic-private"
     assert list(tmp_path.iterdir()) == []
 
@@ -353,7 +401,10 @@ def invoke(**changes):
         "slack",
         {"channel_id": "C123"},
         b"synthetic-private",
-        **(dict(seconds=30, check=lambda: None) | changes),
+        **(
+            dict(seconds=30, check=lambda: None, profile=DeploymentProfile.PRODUCTION)
+            | changes
+        ),
     )
 
 
@@ -388,7 +439,9 @@ def test_request_local_failures_cannot_reject_a_credential(monkeypatch, stage, e
     owner, name = targets[stage]
     monkeypatch.setattr(owner, name, Mock(side_effect=error("synthetic-private")))
     with pytest.raises(CredentialValidationUnavailable) as raised:
-        parent.request_validator("slack", check=lambda: None)(object(), b"synthetic")
+        parent.request_validator(
+            "slack", check=lambda: None, profile=DeploymentProfile.PRODUCTION
+        )(object(), b"synthetic")
     assert "synthetic-private" not in str(raised.value)
     if stage != "close":
         close.assert_called_once()
@@ -475,7 +528,12 @@ def test_large_input_survives_slow_child_startup(monkeypatch):
     monkeypatch.setattr(parent.subprocess, "Popen", launch)
     check = Mock()
     assert parent.check_candidate(
-        "slack", {"channel_id": "C123"}, candidate, seconds=5, check=check
+        "slack",
+        {"channel_id": "C123"},
+        candidate,
+        seconds=5,
+        check=check,
+        profile=DeploymentProfile.PRODUCTION,
     )
     assert check.call_count >= 3
     assert processes[0].poll() == 0
@@ -564,3 +622,51 @@ def test_a_credential_verdict_still_needs_ownership_after_it_finishes(monkeypatc
     check = blocked_check(release, done, then=PermissionError("private"))
     with pytest.raises(parent.ProviderCheckOwnershipLost):
         invoke(check=check)
+
+
+DELIVERY_MODULES = (
+    "parishkit.stewardship.family_delivery",
+    "parishkit.stewardship.readiness_delivery",
+    "parishkit.stewardship.operational_delivery",
+    "parishkit.stewardship.digest_delivery",
+    "parishkit.stewardship.weekly_delivery",
+    "parishkit.stewardship.security_delivery",
+)
+
+
+def test_profile_free_session_reaches_google_and_slack_but_never_parishsoft():
+    """The mail deliverers' default factory needs no profile and no ParishSoft."""
+    with worker.CheckSession() as session:
+        assert session.profile is None
+        assert session.endpoints == worker.FIXED_ENDPOINTS == worker.endpoints()
+        assert ("POST", worker.GOOGLE_TOKEN_URI) in session.endpoints
+        for base in (DEFAULT_API_BASE_URL, LOCAL_SOURCE_BASE_URL):
+            with pytest.raises(ValueError):
+                session.request("POST", base + "/organizations/search")
+        with pytest.raises(ValueError, match="profile"):
+            worker._parishsoft(b"synthetic-private", {"organization_id": 123}, session)
+
+
+def test_every_delivery_default_session_factory_constructs_without_arguments():
+    """Each deliverer's Google token exchange must still get a session (#476)."""
+    import importlib
+    import inspect
+
+    seen = 0
+    for name in DELIVERY_MODULES:
+        module = importlib.import_module(name)
+        for member in vars(module).values():
+            if not (inspect.isfunction(member) or inspect.isclass(member)):
+                continue
+            try:
+                parameters = inspect.signature(member).parameters
+            except (TypeError, ValueError):
+                continue
+            factory = parameters.get("session_factory")
+            if factory is None or factory.default is inspect.Parameter.empty:
+                continue
+            seen += 1
+            with factory.default() as session:
+                assert isinstance(session, requests.Session)
+                assert session.trust_env is False
+    assert seen >= 7

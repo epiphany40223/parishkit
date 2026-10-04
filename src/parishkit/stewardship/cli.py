@@ -64,6 +64,8 @@ _COMMAND_OPTIONS = {
         "reason",
     },
     "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
+    # The local environment's fake ParishSoft service (#476); LOCAL only.
+    "fake-parishsoft": {"config", "profile", "fake_config", "port"},
 }
 
 
@@ -129,6 +131,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "folder-link",
         "samples",
         "concurrency",
+        "fake-config",
+        "port",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -211,6 +215,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .smoke import execute_smoke
 
         return execute_smoke(args)
+    if args.command == "fake-parishsoft":
+        from .local.fake_parishsoft import execute_fake_parishsoft
+
+        return execute_fake_parishsoft(args)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

@@ -12,6 +12,7 @@ from threading import Event, Thread
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
+from .deployment import DeploymentProfile
 
 
 class ProviderCheckDrainFailure(BaseException):
@@ -151,11 +152,13 @@ def _exchange(
                 )
 
 
-def check_candidate(target, settings, value, *, seconds, check):
+def check_candidate(target, settings, value, *, seconds, check, profile):
     """Run only the compiled helper; no secret arguments, environment or temp files.
 
     This internal function has no authorization of its own. The request validator
     below admits the actual target login, closes SQL and reserves a deadline first.
+    ``profile`` travels in the request so the environment-free helper admits
+    the local fake's endpoint only for a LOCAL deployment.
     """
     settings = validated_context(target, settings)
     if (
@@ -165,6 +168,7 @@ def check_candidate(target, settings, value, *, seconds, check):
         or not math.isfinite(seconds)
         or not 0 < seconds <= 30
         or not callable(check)
+        or not isinstance(profile, DeploymentProfile)
     ):
         raise ValueError("Invalid provider check invocation.")
     payload = json.dumps(
@@ -172,6 +176,7 @@ def check_candidate(target, settings, value, *, seconds, check):
             "target": target,
             "settings": settings,
             "candidate": base64.b64encode(value).decode("ascii"),
+            "profile": profile.value,
         }
     ).encode()
     process = None
@@ -220,9 +225,13 @@ def check_candidate(target, settings, value, *, seconds, check):
                     stream.close()
 
 
-def request_validator(target, *, check):
+def request_validator(target, *, check, profile):
     """Bind an isolated runtime to immutable intake scope, not current YAML guesses."""
-    if target not in {"parishsoft", "google_workspace", "slack"} or not callable(check):
+    if (
+        target not in {"parishsoft", "google_workspace", "slack"}
+        or not callable(check)
+        or not isinstance(profile, DeploymentProfile)
+    ):
         raise ValueError("Unsupported provider validation target.")
 
     def validate(identifier, value):
@@ -256,7 +265,7 @@ def request_validator(target, *, check):
             finally:
                 connections.close_all()
             return check_candidate(
-                target, settings, value, seconds=seconds, check=check
+                target, settings, value, seconds=seconds, check=check, profile=profile
             )
         except CredentialValidationUnavailable:
             raise
