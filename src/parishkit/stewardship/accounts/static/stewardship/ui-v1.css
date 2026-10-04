@@ -162,6 +162,16 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
+/* Report stat tiles (the response dashboard): a count per tile, wrapping. */
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
+.stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
+.stat-label { font-weight: 600; }
+.stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat-detail { color: var(--muted); font-size: .875rem; }
+/* A small set of links choosing one view of a page; the current one is marked. */
+.choice-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
+.choice-links a { padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; }
+.choice-links a[aria-current=page] { background: var(--accent); color: var(--paper); font-weight: 650; text-decoration: none; }
 
 /* Key/value lists become two columns once there is room for them. */
 dt { font-weight: 600; }

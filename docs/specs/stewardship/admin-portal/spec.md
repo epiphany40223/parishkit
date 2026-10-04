@@ -326,7 +326,7 @@ viewer may open:
   codes and, with its mailing columns, postal outreach) and the Manual
   information report. The campaign reports page also
   links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
-  report.
+  report and the [Response dashboard](../reports/spec.md#response-dashboard).
 - **Parish and integrations**: Parish settings, Parish logos, Hosted files,
   Integrations, ParishSoft refresh and Ministry activity.
 - **Users**: Portal users.
@@ -477,7 +477,10 @@ script, or when the fetch fails or returns another page (a sign-in), the
 ordinary page load happens and its fragment lands on the table rather than at
 the top. Portal users, whose domain and address tables carry role forms bound
 once at load, and the link preparation history keep only the fragment and
-always load in full.
+always load in full. A report region can also carry links that choose another
+view of it (the [response dashboard](../reports/spec.md#response-dashboard)'s
+mode and grain); they refresh that region the same way, with focus returned
+to the chosen link and any charts in it drawn again.
 
 Lists read straight from a growing database table page on the server with one
 extra row to learn whether a next page exists, and count matching rows only up

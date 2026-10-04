@@ -75,6 +75,7 @@ from .reports import (
     information_views,
     ministry_export_views,
     ministry_followup_views,
+    response_dashboard,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -167,6 +168,11 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/financial/export",
         financial_export_views.create,
         name="financial_export",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/responses/",
+        response_dashboard.dashboard,
+        name="response_dashboard",
     ),
     path(
         "reports/<uuid:campaign_id>/talents/",

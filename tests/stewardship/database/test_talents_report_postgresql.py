@@ -160,6 +160,8 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response.status_code == 200 and b"Other: Organ" in body
         _, body = get(browser, route.replace("talents", "participation"))
         assert route.encode() in body
+        # The campaign reports page links the response dashboard too (#477).
+        assert route.replace("talents", "responses").encode() in body
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()
     assert AuditEvent.objects.filter(event_type="talents_report_exported").exists()
 

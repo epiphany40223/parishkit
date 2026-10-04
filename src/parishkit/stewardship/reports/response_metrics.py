@@ -20,8 +20,11 @@ it stood at ``as_of`` (``FamilyResponse``); the stage totals, the separate
 figures ("skipped: already responded", "submitted without a delivered
 invitation" and "submitted more than once") and the activity series are pure
 functions over those rows, so they are unit tested without a database and a
-later page can list the Families behind any count. Each source is aggregated
-once per campaign, never per Family. The series buckets the first instants by
+later page can list the Families behind any count. A submission implies
+that the Family had opened the form and got past its first step, and progress
+implies the form was open, so those two stages count the earliest instant that
+implies them (``FamilyResponse.form_opened_at`` and ``progressed_at``). Each source is
+aggregated once per campaign, never per Family. The series buckets the first instants by
 campaign-local hour or day, using the campaign's immutable timezone snapshot
 like the participation graph; ``activity_series(metrics.families,
 ZoneInfo(metrics.timezone), "day")`` re-buckets a result at the other grain
@@ -166,6 +169,12 @@ ORDER BY r.due_at, d.id, x.revision_id, x.production_cycle
 )
 
 
+def _earliest(*instants):
+    """The earliest of the instants that are known, or None when none is."""
+    known = [at for at in instants if at is not None]
+    return min(known) if known else None
+
+
 def _instant(value, name):
     """Require a timezone-aware instant; a naive datetime is a programming error."""
     if not isinstance(value, datetime) or value.utcoffset() is None:
@@ -220,8 +229,9 @@ class FamilyResponse:
     already responded (a Family that responded before any invitation was
     planned has no occurrence to skip, and is seen in ``submitted_uninvited``);
     ``link_at``, ``form_at`` and ``progress_at`` are the engagement record's
-    first instants; ``submitted_at`` is the Family's first submission and
-    ``submissions`` how many it had made.
+    first instants as recorded; ``submitted_at`` is the Family's first
+    submission and ``submissions`` how many it had made. The funnel counts
+    ``form_opened_at`` and ``progressed_at``, which a submission implies.
     """
 
     family_id: UUID
@@ -235,13 +245,43 @@ class FamilyResponse:
     submissions: int
 
     @property
+    def form_opened_at(self):
+        """When the Family first opened the form, as the funnel counts it.
+
+        Progress and a submission both happen on the form, so either implies
+        it was open: the earliest of the recorded open, the recorded progress
+        and the first submission. This counts Families whose form opens
+        predate the engagement record or were never recorded (a presence
+        heartbeat can record progress without a form open), so Form opened
+        always contains Progressed.
+        """
+        return _earliest(self.form_at, self.progress_at, self.submitted_at)
+
+    @property
+    def progressed_at(self):
+        """When the Family first got past the form's first step, as counted.
+
+        A submission passes every step, so it implies progress: the earlier
+        of the recorded instant and the first submission. Progress was not
+        recorded before the engagement record's release (1.2.0), so without
+        this a Family that submitted earlier would count as submitted but
+        never progressed.
+        """
+        return _earliest(self.progress_at, self.submitted_at)
+
+    @property
     def stages(self):
-        """The funnel stages this Family had reached, in funnel order."""
+        """The funnel stages this Family had reached, in funnel order.
+
+        Link followed stays as recorded: a Family can sign in by typing its
+        code instead of following its link, so a submission implies nothing
+        about the link.
+        """
         reached = (
             self.invited_at,
             self.link_at,
-            self.form_at,
-            self.progress_at,
+            self.form_opened_at,
+            self.progressed_at,
             self.submitted_at,
         )
         return tuple(
@@ -365,14 +405,14 @@ def bucket_start(instant, zone, grain):
 def activity_series(families, zone, grain="hour"):
     """First links, forms and submissions per local bucket, in time order.
 
-    Only buckets with something in them are returned; the chart fills the
-    rest of its axis itself.
+    Only buckets with something in them are returned; the chart draws the
+    quiet ones between them as zero (``chart_specs.quiet_slots``).
     """
     buckets = {}
     for family in families:
         for field, at in (
             ("links", family.link_at),
-            ("forms", family.form_at),
+            ("forms", family.form_opened_at),
             ("submissions", family.submitted_at),
         ):
             if at is None:

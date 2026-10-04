@@ -67,14 +67,68 @@ def test_stage_counts_are_distinct_families_in_funnel_order():
     """Each row is one Family; a stage counts the rows that reached it."""
     stages = stage_counts(ROWS)
     assert tuple(stage.key for stage in stages) == STAGES
-    assert tuple(stage.count for stage in stages) == (4, 5, 4, 2, 3)
+    # Family 5 submitted with no progress recorded: it counts as progressed.
+    assert tuple(stage.count for stage in stages) == (4, 5, 4, 3, 3)
     assert [stage.note for stage in stages] == ["", LINK_FOLLOWED_NOTE, "", "", ""]
     # A Family's own stages are the prefix of the funnel it reached, except
     # that a Family may submit without a delivered invitation.
     assert ROWS[0].stages == STAGES
     assert ROWS[2].stages == ("invited", "link_followed")
-    assert ROWS[4].stages == ("link_followed", "form_opened", "submitted")
+    assert ROWS[4].stages == (
+        "link_followed",
+        "form_opened",
+        "progressed",
+        "submitted",
+    )
     assert ROWS[5].stages == ()
+
+
+def test_a_submission_implies_the_form_was_opened_and_progressed():
+    """Submitting counts as opening the form and progressing, not as a link;
+    progressing counts as opening the form.
+
+    Progress was not recorded before the engagement record's release and a
+    form open can go unrecorded, so a Family that submitted counts in Form
+    opened and Progressed at the earlier of the recorded instant and its
+    first submission. A Family can sign in with its code instead of its
+    link, so Link followed stays as recorded.
+    """
+    bare = family(8, "submitted")
+    assert (bare.link_at, bare.form_at, bare.progress_at) == (None, None, None)
+    assert bare.form_opened_at == bare.progressed_at == bare.submitted_at
+    assert bare.stages == ("invited", "form_opened", "progressed", "submitted")
+    # A recorded instant earlier than the submission is kept.
+    early = family(9, "form", "progress", "submitted")
+    assert early.form_opened_at == early.form_at < early.submitted_at
+    assert early.progressed_at == early.progress_at
+    # A recorded instant later than the first submission (a later edit) is not.
+    late = replace(early, progress_at=early.submitted_at + timedelta(hours=1))
+    assert late.progressed_at == late.submitted_at
+    # Without a submission nothing is implied about progress.
+    assert family(10, "link", "form").progressed_at is None
+    # A heartbeat can record progress with no form open recorded: progress
+    # happens on the form, so it counts as Form opened too.
+    stepped = family(11, "progress")
+    assert stepped.form_at is None and stepped.submitted_at is None
+    assert stepped.form_opened_at == stepped.progressed_at == stepped.progress_at
+    assert stepped.stages == ("invited", "form_opened", "progressed")
+    # From Form opened on, the funnel can only narrow.
+    for rows in (ROWS, (*ROWS, bare, early, late, stepped)):
+        counts = {stage.key: stage.count for stage in stage_counts(rows)}
+        assert counts["form_opened"] >= counts["progressed"] >= counts["submitted"]
+    totals = {stage.key: stage.count for stage in stage_counts((bare,))}
+    assert totals == {
+        "invited": 1,
+        "link_followed": 0,
+        "form_opened": 1,
+        "progressed": 1,
+        "submitted": 1,
+    }
+    # The forms series uses the same instant, so it still adds up.
+    (bucket,) = activity_series((bare,), NEW_YORK, "hour")
+    assert (bucket.links, bucket.forms, bucket.submissions) == (0, 1, 1)
+    (bucket,) = activity_series((stepped,), NEW_YORK, "hour")
+    assert (bucket.links, bucket.forms, bucket.submissions) == (0, 1, 0)
 
 
 def test_series_counts_first_instants_and_adds_up_to_the_totals():

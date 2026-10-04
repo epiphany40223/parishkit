@@ -1,11 +1,11 @@
 """A page with the real chart component and engine, from synthetic metrics (#477).
 
-No Admin page carries a chart yet (the response dashboard follows), so this
-fixture wraps the shared ``components/chart.html`` include and the
-``components/chart-scripts.html`` head include in the real base template, as
-a report page will. The charts are the funnel and activity documents built
-from the response-metrics test rows, so what the browser draws is what the
-unit tests pin.
+The response dashboard (``response_dashboard_components``) is the first Admin
+page with charts; this fixture isolates the engine, wrapping the shared
+``components/chart.html`` include and the ``components/chart-scripts.html``
+head include in the real base template. The charts are the funnel and
+activity documents built from the response-metrics test rows, so what the
+browser draws is what the unit tests pin.
 """
 
 from dataclasses import replace

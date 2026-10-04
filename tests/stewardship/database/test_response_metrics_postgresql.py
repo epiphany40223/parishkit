@@ -434,7 +434,7 @@ def test_funnel_from_real_paths_as_of_cutoffs_modes_and_parity(funnel):
     }
     assert skipped_for(rehearsal[families[1]])
     testing = read(harness, database_now(), "testing", epoch)
-    assert counts(testing) == (4, 1, 1, 0, 1, 1, 1, 0)
+    assert counts(testing) == (4, 1, 1, 1, 1, 1, 1, 0)
     assert marks(testing) == [("initial", "Invitation", 4)]
     assert (testing.sends[0].key.mode, testing.sends[0].key.cycle) == ("testing", 0)
     assert [stage.key for stage in testing.stages] == list(STAGES)
@@ -493,14 +493,23 @@ def test_funnel_from_real_paths_as_of_cutoffs_modes_and_parity(funnel):
     settled = database_now()
 
     metrics = read(harness, settled)
-    assert counts(metrics) == (4, 5, 4, 2, 3, 1, 1, 0)
+    # Family 14 submitted without a recorded step: its submission implies it
+    # progressed (see FamilyResponse.progressed_at).
+    assert counts(metrics) == (4, 5, 4, 3, 3, 1, 1, 0)
     rows = by_duid(metrics)
     assert sorted(rows) == [1, 2, 11, 12, 13, 14]
     assert rows[1].stages == STAGES and rows[1].submissions == 1
     assert rows[11].stages == STAGES
     assert rows[12].stages == ("invited", "link_followed")
     assert rows[13].stages == ("invited", "link_followed", "form_opened")
-    assert rows[14].stages == ("link_followed", "form_opened", "submitted")
+    assert rows[14].stages == (
+        "link_followed",
+        "form_opened",
+        "progressed",
+        "submitted",
+    )
+    assert rows[14].progress_at is None
+    assert rows[14].progressed_at == rows[14].submitted_at
     assert rows[14].skipped_responded and rows[14].submitted_uninvited
     assert rows[2].stages == () and rows[2].submissions == 0
     assert rows[1].invited_at <= rows[1].form_at <= rows[1].progress_at
@@ -539,11 +548,11 @@ def test_funnel_from_real_paths_as_of_cutoffs_modes_and_parity(funnel):
     # Family had responded and the invitation send had delivered nothing;
     # after dispatch but before the fourth Family signed in, three Families
     # had followed their link.
-    assert counts(read(harness, before_dispatch)) == (0, 2, 1, 0, 1, 0, 1, 0)
+    assert counts(read(harness, before_dispatch)) == (0, 2, 1, 1, 1, 0, 1, 0)
     assert marks(read(harness, before_dispatch)) == [("initial", "Invitation", 0)]
-    assert counts(read(harness, after_dispatch)) == (4, 2, 1, 0, 1, 1, 1, 0)
+    assert counts(read(harness, after_dispatch)) == (4, 2, 1, 1, 1, 1, 1, 0)
     assert read(harness, after_dispatch).sends == metrics.sends
-    assert counts(read(harness, before_fourth)) == (4, 4, 3, 2, 1, 1, 1, 0)
+    assert counts(read(harness, before_fourth)) == (4, 4, 3, 3, 1, 1, 1, 0)
     # A cutoff before anything happened: no evidence at all.
     assert counts(read(harness, settled - timedelta(days=7))) == (0,) * 8
 
@@ -556,7 +565,7 @@ def test_funnel_from_real_paths_as_of_cutoffs_modes_and_parity(funnel):
     open_form(twelfth)
     assert read(harness, settled) == metrics
     later = read(harness, database_now())
-    assert counts(later) == (4, 5, 5, 2, 3, 1, 1, 1)
+    assert counts(later) == (4, 5, 5, 3, 3, 1, 1, 1)
     assert by_duid(later)[1].submissions == 2
     assert by_duid(later)[1].submitted_at == rows[1].submitted_at
     assert by_duid(later)[12].stages == ("invited", "link_followed", "form_opened")

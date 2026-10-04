@@ -145,6 +145,7 @@ PAGES = {
     "participation": Page("reports", _("Participation"), "reports"),
     "financial_report": Page("reports", _("Financial report"), "reports"),
     "talents_report": Page("reports", _("Talents and limitations"), "reports"),
+    "response_dashboard": Page("reports", _("Response dashboard"), "reports"),
     "information_queue": Page("reports", _("Additional information"), "reports"),
     "information_item": Page("reports", _("Information item"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
