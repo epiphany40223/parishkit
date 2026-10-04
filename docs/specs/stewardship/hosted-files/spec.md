@@ -450,8 +450,8 @@ blocks the others.
 
 ## Admin page
 
-**Hosted files** is a page in the Admin sidebar's **Parish and integrations**
-section, after Parish logos, at `/admin/files/`. It is registered in the
+**Hosted files** is a page in the Admin menu's **Parish data** group, after
+Ministries, at `/admin/files/`. It is registered in the
 [navigation registry](../admin-portal/spec.md#admin-navigation), with its
 form-action routes classified as non-pages. Page text uses plain words: the
 slug is labelled **Placeholder name**.
