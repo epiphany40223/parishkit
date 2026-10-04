@@ -284,15 +284,26 @@ giving and household reads all run through their real code.
 - **Code.** `stewardship/local/fake_parishsoft.py` is a standard-library HTTP
   server (no new dependency); `stewardship/local/synthetic_parish.py` is the
   generator. The `fake-parishsoft` command, run from the application image as
-  its own Compose service, refuses unless the profile is LOCAL.
+  its own Compose service, refuses unless the profile is LOCAL, before binding
+  any socket. The profile is the admitted deployment configuration's, resolved
+  as every other service resolves it (`--config`, `PARISHKIT_STEWARDSHIP_PROFILE`,
+  an explicit `--profile` override), and anything but a valid LOCAL deployment
+  is refused; its own configuration file path is an explicit `--fake-config`,
+  and `--port` (default 8080) is the listening port on every interface of its
+  container.
 - **Mounts and credentials.** The service receives no credential and exactly
   one mount: its own configuration file (below), read-only. It runs as the
   application uid, which owns that file, and joins only `backend`.
 - **Base URL.** `LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"`.
   It is threaded through every `ParishSoftConfig` call site and both helper
-  subprocesses. Each allowlist admits exactly the real base URL and this one
-  constant, the latter only for a `local` request (see
-  [helper subprocesses](#safety-guarantees)).
+  subprocesses. Each allowlist admits exactly the profile's one base URL: this
+  constant for a `local` request and the real base URL for every other, never
+  both (see [helper subprocesses](#safety-guarantees)). The shared
+  `parishkit.parishsoft_http_worker` owns the profile-to-URL rule and the
+  profile names, so the helper applies it without importing application code;
+  a stewardship test keeps those names aligned with `DeploymentProfile`. A
+  process whose runtime assembly recorded no profile cannot read the source at
+  all.
 - **Authentication.** Requests MUST carry `x-api-key` equal to the code
   constant `LOCAL_PARISHSOFT_KEY`, which `up` installs as the `parishsoft`
   credential; any other or missing key gets HTTP 401 with an empty body.
@@ -312,7 +323,9 @@ containing:
   real date; see [fake clock](#fake-clock)), fixed for the life of the
   deployment; and
 - `release_at`: the instant from which the
-  [late-added Family](#response-pattern) is served, or `null` (held back).
+  [late-added Family](#response-pattern) is served, or `null` (held back); and
+- `change_feed` (optional): `empty` (the default) or `synthetic`, the
+  [change feed's](#change-feed) behaviour.
 
 The fake reads the file once at start, so restarts and deploys keep the same
 data. `up` writes `release_at: null`, so the setup wizard's initial load does
@@ -352,7 +365,7 @@ envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
 | `GET offering/{organization}/funds` | none | bare array | `fundId` |
 | `GET offering/pledge/list` | `PageSize`, `PageNumber` | envelope | `pledgeID` |
 | `GET offering/contributiondetail/list` | `PageSize`, `PageNumber` | envelope | `contributionID` |
-| `GET families/change/list` | `StartDate`, `EndDate` (no paging) | bare array, fewer rows than the caller's ceiling | `family_DUID` with `currentParishID`, `previousParishID`, `logDate` |
+| `GET families/change/list` | `StartDate`, `EndDate` (no paging) | bare array, fewer rows than the caller's ceiling; see [change feed](#change-feed) | `family_DUID` with `currentParishID`, `previousParishID`, `logDate` |
 | `GET families/{id}` | none | one Family object | `familyDUID` |
 | `GET families/{id}/member/list` | none | bare array | `memberDUID` |
 | `GET members/{id}` | none | one Member object | `memberDUID` |
@@ -368,6 +381,36 @@ Further rules:
   Family's member list returns exactly the Members whose `familyDUID` matches.
 - Tenant parameters are validated: an organization ID in a search body or path
   other than the synthetic organization's gets 404.
+- Malformed parameters get 400: a page size outside 1 to 500, a page position
+  below the first page, a non-numeric paging field, a change-feed request
+  missing either date or with `StartDate` after `EndDate`, or a POST body that
+  is not a JSON object.
+- A Family's member list uses Member-object field names (`birthdate`, `sex`)
+  plus `cellPhone`, as the household reader copies them; the contact list uses
+  its own (`dateOfBirth`, `gender`, `cellPhone`).
+
+### Change feed
+
+The real `FamilyChangeList` has returned an empty array for every query made
+from Production so far (494 of 494; a bug report to ParishSoft is pending, see
+[#465](https://github.com/epiphany40223/parishkit/issues/465) and the
+[API analysis](../../../parishsoft-api-analysis.md)), so the fake matches
+reality by default. The configuration file's `change_feed` selects:
+
+- `empty` (default): `families/change/list` always returns `[]`. Delta
+  refreshes therefore reload nothing, and the late-added Family reaches the
+  application through the next full refresh, as it would in Production.
+- `synthetic`: the feed holds exactly one row, the late-added Family's, with
+  `logDate` equal to `release_at`, served only once that instant has passed.
+  A delta refresh whose window covers the release picks the Family up; the
+  seeder can use this mode to exercise the delta path. There is no other
+  history: the generator writes no change rows.
+
+In both modes the fake validates `StartDate` and `EndDate` as the client's
+rules require (both present, ISO dates, not inverted) and filters by the
+request's window alone; the clock decides only whether the late Family's row
+exists (`synthetic`), never which rows a window selects. It enforces no
+server-side window limit, since the real API documents none.
 
 ## Synthetic parish
 
@@ -422,12 +465,16 @@ and other adults, never a child.
 - These proportions hold at any `--families` size.
 
 The parish also includes heads with several semicolon-separated addresses, a
-few data-quality cases such as a blank mailing name or envelope number 0, a
-small change-feed history consistent with these records (the fake answers a
-change-feed request from the request's `StartDate` and `EndDate` window alone,
-returning rows whose `logDate` falls inside it, and never consults its own
-clock), and exactly one
-held-back late-added Family at every size.
+few data-quality cases such as a blank mailing name or envelope number 0, and
+exactly one held-back late-added Family at every size. That Family is in
+addition to `families`, so the initial load sees exactly `families` Families.
+It is a couple with one child, new to the parish: it has no giving, workgroup
+or Ministry rows, and it is the only record the fake's
+[change feed](#change-feed) can ever report. The generator writes no
+change-feed history (see that section for why).
+At very small sizes (fewer volunteers than Ministries) the first roster round,
+which gives every Ministry a leader, puts more volunteers on two or more
+Ministries than the stated share.
 
 ## Fake clock
 
