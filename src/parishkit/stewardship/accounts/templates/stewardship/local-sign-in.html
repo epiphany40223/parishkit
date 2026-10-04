@@ -1,0 +1,19 @@
+{% extends 'stewardship/base.html' %}{% load i18n static %}
+{% comment %}
+  The LOCAL test sign-in (#476). The operator command prints a link whose
+  fragment carries a one-time token; the static script moves it into the
+  hidden field (inline script is not allowed by the content security policy).
+  A GET never consumes the token: the developer presses Sign in.
+{% endcomment %}
+{% block title %}{% translate "Local test sign-in" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/local-sign-in-v1.js' %}" defer></script>{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Local test sign-in" %}</h1>
+  <p>{% translate "This signs you into the local laptop environment with the one-time link that" %} <code>tools/stewardship-local.sh sign-in --email E</code> {% translate "printed. The link works once, within two minutes of being printed." %}</p>
+  <form method="post" action="/admin/local/sign-in">
+    {% csrf_token %}
+    <input id="local-sign-in-token" name="token" type="hidden" value="">
+    <button id="local-sign-in-submit" type="submit" disabled>{% translate "Sign in" %}</button>
+  </form>
+  <p id="local-sign-in-missing">{% translate "Open this page through the printed link; its address carries the one-time token." %}</p>
+</section>{% endblock %}

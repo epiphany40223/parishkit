@@ -877,10 +877,12 @@ under [production invariants](#production-invariants).
 
 Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
 
-- **Minting.** `pk-stewardship local-sign-in --email E`, run with
-  `docker compose exec web`, refuses unless the profile is LOCAL and the
-  configured origin's host is `localhost`; it checks both before contacting
-  Valkey. It creates a random 256-bit token and stores, under
+- **Minting.** `pk-stewardship local-sign-in --config
+  /opt/parishkit/config/services/web.yaml --email E`, run with
+  `docker compose exec web` (the web service's own configuration, as the
+  other in-container operator commands take), refuses unless the profile is
+  LOCAL and the configured origin's host is `localhost`; it checks both
+  before contacting Valkey. A missing option is a usage error naming it. It creates a random 256-bit token and stores, under
   `stewardship:auth:v1:local-sign-in:<sha256 of token>` with a 120-second
   expiry, the email and the current revocation epoch (no schema change). It
   prints `https://localhost:8443/admin/local/sign-in#<token>`. The token is in
@@ -908,7 +910,14 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
   - The subject stored in `PortalUser.google_subject` is
     `local-test:<normalized email>`, which cannot collide with Google's
     numeric subjects. The email must still satisfy the deployment's login
-    rules.
+    rules. A local sign-in carries no hosted-domain evidence (there is no
+    Google `hd` claim), so only email rules admit it; domain rules do not.
+  - The route is one of the access gate's authentication routes, so it
+    works before setup completes and during restore review, when the
+    developer needs it to reach the setup wizard. In LOCAL the login page
+    and the fresh-authentication prompt describe the operator command
+    instead of offering Google; a new link opened in a signed-in browser
+    is a step-up of that session in place.
 - **Where the protection comes from.** The real guard is reachability: Caddy
   publishes only on the VM's loopback and Lima forwards only to the laptop's
   loopback. The `Host` check is defence in depth; behind Docker's published

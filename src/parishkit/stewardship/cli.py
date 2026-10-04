@@ -66,6 +66,7 @@ _COMMAND_OPTIONS = {
     "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
     # The local environment's fake ParishSoft service (#476); LOCAL only.
     "fake-parishsoft": {"config", "profile", "fake_config", "port"},
+    "local-sign-in": {"config", "email"},
 }
 
 
@@ -88,6 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--config": "--config requires a configuration file path (value redacted)",
             "--public-origin": "--public-origin requires a URL (value redacted)",
             "--runtime-root": "--runtime-root requires a path (value redacted)",
+            "--email": "--email requires an email address (value redacted)",
             "--version": "--version does not accept a value",
             "--bind-all-interfaces": "--bind-all-interfaces does not accept a value",
         },
@@ -133,6 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "concurrency",
         "fake-config",
         "port",
+        "email",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -219,6 +222,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .local.fake_parishsoft import execute_fake_parishsoft
 
         return execute_fake_parishsoft(args)
+    if args.command == "local-sign-in":
+        from .accounts.local_sign_in import execute_local_sign_in
+
+        for name in ("config", "email"):
+            if getattr(args, name) is None:
+                parser.usage_error(f"local-sign-in requires --{name}")
+        return execute_local_sign_in(args)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

@@ -2,7 +2,9 @@
   Step-up for fresh-authentication actions. The ordinary sign-in refreshes the
   current session in place and returns to `next`, a same-origin Admin path the
   server revalidates. Include with: next=<current Admin page path>.
-{% endcomment %}<form method="post" action="{% url 'admin:login' %}">
+  In LOCAL (#476) there is no Google: a new test sign-in link, opened in this
+  browser, steps the current session up in place and returns to /admin/.
+{% endcomment %}{% if local_environment %}<p class="local-environment-step-up">{% translate "To confirm, run" %} <code>tools/stewardship-local.sh sign-in --email E</code> {% translate "on the laptop again and open the printed link in this browser; it refreshes this sign-in in place. Then return to this page." %}</p>{% else %}<form method="post" action="{% url 'admin:login' %}">
   {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
   <button type="submit">{% translate "Confirm with Google" %}</button>
-</form>
+</form>{% endif %}
