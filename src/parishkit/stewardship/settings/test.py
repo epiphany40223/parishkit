@@ -4,3 +4,4 @@ from .base import *  # noqa: F403
 
 SECRET_KEY = "test-scaffold-only-not-a-production-secret"
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1", "[::1]"]
+STEWARDSHIP_DEPLOYMENT_PROFILE = "test"

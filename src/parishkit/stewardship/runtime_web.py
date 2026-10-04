@@ -12,7 +12,7 @@ from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import _unique_object, parse_keyring, read_private
 from .accounts.metrics_credentials import MetricsCredential, credential_receipt
 from .deployment import DeploymentProfile, ServiceRole
-from .runtime_database import database_settings
+from .runtime_database import database_settings, profile_settings
 from .runtime_health import RuntimeHealth
 from .runtime_paths import RuntimeLayout, private_directory
 from .service_boundaries import admit_online_service, kernel_mounts
@@ -214,6 +214,7 @@ def configure_web(configuration):
         *values["MIDDLEWARE"],
     ]
     values["TEMPLATES"] = template_settings(values["TEMPLATES"], configuration)
+    values.update(profile_settings(configuration))
     settings.configure(**values)
     django.setup()
     from django.db import connections
@@ -258,7 +259,6 @@ def configure_web(configuration):
     settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]
     settings.STEWARDSHIP_REPORTS_ROOT = configuration.paths["reports"]
     settings.STEWARDSHIP_PUBLIC_ORIGIN = configuration.public_origin
-    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = configuration.profile.value
     client = valkey_client(configuration)
     limiter_key = hmac.digest(
         rings["django_signing"].active.material,

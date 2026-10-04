@@ -54,6 +54,18 @@ def database_settings(configuration):
     }
 
 
+def profile_settings(configuration):
+    """The Django settings that record the admitted deployment profile.
+
+    Every settings assembly (``configure_web`` and the operator assembly every
+    other role uses) spreads this into ``settings.configure``. Source reads
+    choose their ParishSoft base URL and helper profile from it, and the LOCAL
+    banner reads it too; there is no default anywhere else, so a role whose
+    assembly skipped this would fail closed rather than reach the real API.
+    """
+    return {"STEWARDSHIP_DEPLOYMENT_PROFILE": configuration.profile.value}
+
+
 def require_current_schema():
     """Reject pending, inconsistent or newer schemas before starting any service."""
     from django.db import connection

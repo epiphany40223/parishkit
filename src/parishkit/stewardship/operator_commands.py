@@ -19,7 +19,7 @@ def configure_operator_database(configuration):
     import django
     from django.conf import settings
 
-    from .runtime_database import database_settings
+    from .runtime_database import database_settings, profile_settings
 
     if settings.configured:
         raise ConfigError("Operator startup requires a fresh process.")
@@ -29,6 +29,7 @@ def configure_operator_database(configuration):
         SECRET_KEY=secrets.token_urlsafe(48),
         DATABASES={"default": database_settings(configuration)},
         STEWARDSHIP_OPERATIONAL_POLICY=configuration.operational_alerts,
+        **profile_settings(configuration),
     )
     settings.configure(**values)
     django.setup()

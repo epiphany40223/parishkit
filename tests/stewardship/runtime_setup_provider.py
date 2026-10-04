@@ -55,11 +55,14 @@ def main():
         check()
         return b"200\n" + json.dumps(result).encode()
 
-    def validate(target, settings, value, *, seconds, check):
+    def validate(target, settings, value, *, seconds, check, profile):
         """The installed target owner still admits its exact candidate and context."""
+        from parishkit.stewardship.deployment import DeploymentProfile
+
         check()
         assert target in {"parishsoft", "google_workspace"}
         assert value and seconds > 0
+        assert isinstance(profile, DeploymentProfile)
         return True
 
     def send(value, settings, mail, *, seconds, check):

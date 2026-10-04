@@ -19,6 +19,7 @@ from parishkit.parishsoft import (
     ParishSoftClient,
     ParishSoftConfig,
 )
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.parishsoft_transport import (
     BoundedSourceSession,
     ExactSourceResponse,
@@ -27,6 +28,7 @@ from parishkit.parishsoft_transport import (
     SourceTransportError,
 )
 from parishkit.retry import RetryError, RetryPolicy
+from parishkit.stewardship.deployment import DeploymentProfile
 
 
 def request(**overrides):
@@ -38,6 +40,7 @@ def request(**overrides):
             parameters={"StartDate": "2026-09-10"},
             api_key="SYNTHETIC-PRIVATE-KEY",
             timeout=30,
+            profile="production",
         )
         | overrides
     )
@@ -46,7 +49,12 @@ def request(**overrides):
 def session(**overrides):
     """Default owning callbacks are explicit in this isolated transport fixture."""
     result = BoundedSourceSession(
-        **dict(before_request=lambda seconds: None, check=lambda: None) | overrides
+        **dict(
+            before_request=lambda seconds: None,
+            check=lambda: None,
+            profile="production",
+        )
+        | overrides
     )
     result.headers["x-api-key"] = "SYNTHETIC-PRIVATE-KEY"
     return result
@@ -100,6 +108,10 @@ def test_search_post_vocabulary_does_not_enable_provider_writes(path):
         {"timeout": float("nan")},
         {"parameters": []},
         {"extra": "private"},
+        {"profile": None},
+        {"profile": "private-profile"},
+        {"profile": "LOCAL"},
+        {"url": LOCAL_SOURCE_BASE_URL + "/families/change/list"},
     ],
 )
 def test_invalid_or_nonread_request_is_rejected_without_private_diagnostics(overrides):
@@ -107,6 +119,70 @@ def test_invalid_or_nonread_request_is_rejected_without_private_diagnostics(over
     with pytest.raises(ValueError) as error:
         helper.validate_request(request(**overrides))
     assert "private" not in str(error.value)
+
+
+@pytest.mark.parametrize("profile", ["development", "test", "production"])
+def test_local_fake_base_url_is_refused_for_every_non_local_profile(profile):
+    """A production helper refuses the local endpoint even if its parent passed it."""
+    assert helper.validate_request(request(profile=profile))
+    with pytest.raises(ValueError, match="endpoint"):
+        helper.validate_request(
+            request(
+                profile=profile, url=LOCAL_SOURCE_BASE_URL + "/families/change/list"
+            )
+        )
+
+
+def test_helper_profiles_match_the_deployment_profiles():
+    """The shared helper names the profiles itself; the application's enum agrees."""
+    assert {profile.value for profile in DeploymentProfile} == helper.PROFILES
+    assert helper.admitted_base_url("local") == LOCAL_SOURCE_BASE_URL
+    assert helper.admitted_base_url("production") == DEFAULT_API_BASE_URL
+    with pytest.raises(ValueError):
+        helper.admitted_base_url(DeploymentProfile.LOCAL)
+
+
+@pytest.mark.parametrize("path", ["families/change/list", "families/5", "members/5"])
+def test_local_request_admits_only_the_fake_base_url(path):
+    """A local request may reach the fake and nothing else, not even the real API."""
+    assert helper.validate_request(
+        request(profile="local", url=LOCAL_SOURCE_BASE_URL + "/" + path)
+    )
+    with pytest.raises(ValueError, match="endpoint"):
+        helper.validate_request(
+            request(profile="local", url=DEFAULT_API_BASE_URL + "/" + path)
+        )
+    with pytest.raises(ValueError, match="endpoint"):
+        helper.validate_request(
+            request(profile="local", url="http://fake-parishsoft:8081/api/v2/" + path)
+        )
+    with pytest.raises(ValueError, match="operation"):
+        helper.validate_request(
+            request(profile="local", url=LOCAL_SOURCE_BASE_URL + "/families/search")
+        )
+
+
+def test_session_requires_a_profile_and_sends_it_in_every_frame(monkeypatch):
+    """The parent labels each request; the helper cannot read the profile itself."""
+    with pytest.raises(TypeError):
+        BoundedSourceSession(before_request=lambda s: None, check=lambda: None)
+    for profile in ("LOCAL", None, DeploymentProfile.LOCAL):
+        with pytest.raises(TypeError):
+            session(profile=profile)
+    frames = []
+
+    def exchange(payload, **options):
+        frames.append(json.loads(payload))
+        return b"200\n[]"
+
+    monkeypatch.setattr(transport, "_exchange", exchange)
+    current = session(profile="local")
+    current.get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
+    assert frames[0]["profile"] == "local"
+    assert frames[0]["url"].startswith(LOCAL_SOURCE_BASE_URL)
+    with pytest.raises(ValueError):
+        session().get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
+    assert len(frames) == 1
 
 
 class HTTPResponse:

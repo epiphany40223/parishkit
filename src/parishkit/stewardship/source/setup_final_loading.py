@@ -15,6 +15,7 @@ from parishkit.parishsoft_transport import BoundedSourceSession
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.local import source_base_url
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credentials import SourceCredential
@@ -24,7 +25,7 @@ from .leases import reserve_source_request, verify_source
 from .loading import load_full_source
 from .setup_final_tasks import require_final_task
 from .snapshots import begin_snapshot, finish_snapshot, stage_entities
-from .transport import source_timeout_recorder
+from .transport import runtime_profile, source_timeout_recorder
 
 
 def load_final_setup_source(execution, claim, *, store, credential_path):
@@ -89,15 +90,22 @@ def load_final_setup_source(execution, claim, *, store, credential_path):
         finally:
             connections.close_all()
 
+    deployment_profile = runtime_profile()
     session = BoundedSourceSession(
         before_request=before_request,
         check=execution.check,
+        profile=deployment_profile.value,
         on_timeout=source_timeout_recorder(execution),
     )
     session.headers["x-api-key"] = credential.api_key
     try:
         client = CoherentParishSoftClient(
-            ParishSoftConfig(credential.api_key, Path("."), cache_enabled=False),
+            ParishSoftConfig(
+                credential.api_key,
+                Path("."),
+                cache_enabled=False,
+                api_base_url=source_base_url(deployment_profile),
+            ),
             organization_id=scope.organization_id,
             session=session,
         )

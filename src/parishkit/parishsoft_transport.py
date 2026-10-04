@@ -26,6 +26,7 @@ import requests
 from parishkit.parishsoft_http_worker import (
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    PROFILES,
     REQUEST_FIELDS,
     InvalidSourceResponse,
     validate_request,
@@ -303,16 +304,23 @@ class BoundedSourceSession:
     Neither callback can be provided by an HTTP request or broker payload.
     """
 
-    def __init__(self, *, before_request, check, on_timeout=None):
+    def __init__(self, *, before_request, check, profile, on_timeout=None):
         """Require concrete owning hooks; an absent fence must not default to allow.
 
+        ``profile`` is the deployment profile name (one of the helper's
+        ``PROFILES``) every request frame carries, so the helper, which cannot
+        read the profile itself, admits exactly that profile's base URL.
         ``on_timeout(seconds, elapsed)`` is told, just after the helper is
-        killed, that a request exceeded its deadline, so the owner can record it.
+        killed, that a request exceeded its deadline, so the owner can record
+        it.
         """
         if not callable(before_request) or not callable(check):
             raise TypeError("Bounded source transport requires owning callbacks.")
+        if type(profile) is not str or profile not in PROFILES:
+            raise TypeError("Bounded source transport requires a deployment profile.")
         if on_timeout is not None and not callable(on_timeout):
             raise TypeError("A source timeout observer must be callable.")
+        self.profile = profile
         self.on_timeout = on_timeout
         self.headers = requests.structures.CaseInsensitiveDict()
         self.before_request = before_request
@@ -348,6 +356,7 @@ class BoundedSourceSession:
                     "parameters": {} if parameters is None else parameters,
                     "api_key": self.headers.get("x-api-key"),
                     "timeout": timeout,
+                    "profile": self.profile,
                 }
             )
             # The key reaches the helper only in its start frame, not per request.
