@@ -20,6 +20,9 @@
 #   has-snapshot NAME                   exit 0 when SNAPSHOTS/NAME exists
 #   reset NAME                          stop, restore SNAPSHOTS/NAME over the root, restart
 #   wipe                                remove the containers and the root (marker required)
+#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT upgrade the running deployment to TAG with the
+#                                       scripted upgrade's host half in local mode (OPS-10.10)
+#   rollback HOST_SCRIPT                its image-only rollback to the image deploy replaced
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
 #   wizard                              complete the setup wizard unattended through
@@ -334,6 +337,27 @@ private_file() {
     rm -f "$tmp"
 }
 
+ensure_backup_key() {
+    # The backup recipient key, installed as the deployment runbook's first
+    # installation and the backup runbook ("The key") have the operator do
+    # it: a key pair from the image's backup-keygen, and only the public key,
+    # the bare base64 line, as the backup_data credential. The private key
+    # stays in the runtime root under run/local (a backup archives config,
+    # credentials and media, never run/), so the pair travels with snapshots
+    # and a local backup can be opened for a restore drill. A deployment
+    # installed before this step gets its key the first time `deploy` runs,
+    # since the upgrade's required backup needs one.
+    local credential="$root/credentials/backup_data/credential" key="$root/run/local/backup-key" answer
+    [ ! -f "$credential" ] || return 0
+    step "Installing the backup recipient key"
+    install -d -o 10001 -g 10001 -m 0700 "$root/run/local" "$(dirname "$credential")"
+    rm -f "$key"
+    answer=$("${isolated[@]}" --mount "type=bind,source=$root/run/local,target=/keys" \
+        "$IMAGE" backup-keygen --destination /keys/backup-key | tail -1)
+    jq -er .public_key <<<"$answer" | private_file "$credential"
+    echo "    recipient fingerprint $(jq -r .recipient_fingerprint <<<"$answer"); private key $key"
+}
+
 # ---------------------------------------------------------------------------
 
 cmd_build() {
@@ -424,6 +448,7 @@ ENV
     # release_at stays null until the seeder's final phase.
     printf '{"seed": %s, "families": %s, "anchor_date": "%s", "release_at": null}\n' \
         "$seed" "$families" "$anchor" | private_file "$root/run/local/fake-parishsoft.json"
+    ensure_backup_key
     # Clock mode. An unseeded deployment runs in fake-clock mode, 17 days
     # behind real time, so a later seed can start forward of every row; an
     # image without the override (an older build) runs in normal mode.
@@ -479,7 +504,7 @@ Local deployment is up (installed in $(( $(date -u +%s) - began ))s).
   Site:       https://localhost:8443   (Caddy's own CA: run 'ca' to trust it)
   Mail:       http://localhost:8025    (Mailpit)
   Admin:      $ADMIN_EMAIL
-  Sign in:    tools/stewardship-local.sh sign-in --email $ADMIN_EMAIL   (OPS-10.08)
+  Sign in:    tools/stewardship-local.sh sign-in --email $ADMIN_EMAIL
   Image:      $IMAGE
   Deployment: $UUID, project $project, root $root
   Clock mode: $mode
@@ -512,6 +537,7 @@ cmd_status() {
     if [ -f "$marker" ]; then
         load_env
         echo "Deployment $UUID ($IMAGE), clock mode $(cat "$clock_dir/mode" 2>/dev/null || echo missing)"
+        [ -z "${PREVIOUS_IMAGE-}" ] || echo "Previous image ('deploy --rollback' returns to it): $PREVIOUS_IMAGE"
         echo "Services (state, health):"
         service_states | awk '{ print "    " $1, $2, ($3 == "none" ? "-" : $3) }'
         for name in post-setup seeded; do
@@ -570,6 +596,99 @@ cmd_reset() {
     load_env
     # The snapshot carries its own clock-mode marker; start_services reads it.
     start_services --force-recreate
+}
+
+compose_image() {
+    # The image the deployment's Compose file names for web: what the host
+    # half retargets, and so what the deployment runs or will run.
+    jq -r '.services.web.image // empty' "$services/compose.json"
+}
+
+record_images() {
+    # record_images IMAGE PREVIOUS: the deployment record follows a deploy
+    # or a rollback, so `status` names the running image and `rollback`
+    # knows which one it replaced. Private, as `up` wrote it.
+    local tmp
+    tmp=$(mktemp)
+    grep -vE '^(IMAGE|PREVIOUS_IMAGE)=' "$envfile" >"$tmp" || true
+    printf 'IMAGE=%s\nPREVIOUS_IMAGE=%s\n' "$1" "$2" >>"$tmp"
+    install -m 0600 "$tmp" "$envfile"
+    rm -f "$tmp"
+}
+
+run_host_half() {
+    # run_host_half HOST_SCRIPT IMAGE SCHEMA_CHANGE MODE: the scripted
+    # upgrade's host half in local mode, then the record. The host half may
+    # fail after it retargeted (its "maintenance page stays up" phase), so
+    # the record follows what the Compose file names once it returns,
+    # success or failure, and the failure is then passed on: a later
+    # 'deploy --rollback' or re-run finds the record truthful either way.
+    local host_script=$1 target=$2 schema_change=$3 mode=$4 rc=0 now
+    bash "$host_script" - "$target" "$root" "$project" "$yaml" "$UUID" "$schema_change" "$mode" local "$build" || rc=$?
+    now=$(compose_image)
+    if [ -n "$now" ] && [ "$now" != "$IMAGE" ]; then
+        record_images "$now" "$IMAGE"
+        [ "$rc" -eq 0 ] || echo "The Compose file now names $now; recorded it (previous $IMAGE)." >&2
+    fi
+    return "$rc"
+}
+
+return_points() {
+    # Name the snapshots `reset` can restore after a deploy. A deploy
+    # changes the root (documents, static tree) and may migrate the
+    # database, so without any snapshot there is no return point: refuse.
+    local name option found=0
+    for name in seeded post-setup; do
+        cmd_has_snapshot "$name" || continue
+        option=""
+        [ "$name" = post-setup ] || option=" --$name"
+        echo "    return point: 'reset$option' restores the $name snapshot (taken $(cat "$snapshots/$name/taken" 2>/dev/null || echo unknown))"
+        found=1
+    done
+    [ "$found" = 1 ] || refuse "No snapshot to return to after a deploy; take one first: 'snapshot' (or 'snapshot --seeded' on a seeded deployment)."
+}
+
+cmd_deploy() {
+    # deploy TAG SCHEMA_CHANGE HOST_SCRIPT: upgrade the running deployment to
+    # the image the laptop half just built, through the scripted upgrade's
+    # host half in local mode, which is the Production upgrade's steps with
+    # the local differences the host half's header lists (specification,
+    # "Operator script"). load_env exported the deployment's debug-logging
+    # setting, which the host half keeps.
+    local tag=$1 schema_change=$2 host_script=$3 previous
+    require_marker
+    load_env
+    [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
+    docker image inspect "$tag" >/dev/null 2>&1 || refuse "The image $tag is not built; refusing."
+    return_points
+    ensure_backup_key
+    previous=$IMAGE
+    step "Deploying $tag over $previous with the scripted upgrade's host half (local mode)"
+    run_host_half "$host_script" "$tag" "$schema_change" upgrade
+    echo "Deployed $tag in $(( $(date -u +%s) - began ))s; it replaced $previous."
+    echo "  Back to the previous image only (as Production's --rollback): deploy --rollback"
+    echo "  Back to a snapshot, image and data together: reset --seeded (or reset)"
+}
+
+cmd_rollback() {
+    # rollback HOST_SCRIPT: the scripted upgrade's image-only rollback to the
+    # image the last deploy replaced. The host half refuses, before anything
+    # stops, unless the schema and grants already match that image; after a
+    # deploy that migrated, the return path is a snapshot (`reset`).
+    local host_script=$1 current
+    require_marker
+    load_env
+    [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
+    [ -n "${PREVIOUS_IMAGE-}" ] ||
+        refuse "No previous image is recorded (no deploy since the install or the last reset); restore a snapshot instead: 'reset --seeded' or 'reset'."
+    current=$(compose_image)
+    # The record and the Compose file must agree on what runs now; if they
+    # do not (a hand-edited root), the rollback target cannot be trusted.
+    [ "$current" = "$IMAGE" ] ||
+        refuse "The Compose file names $current but the deployment record says $IMAGE; refusing. Restore a snapshot instead ('reset --seeded' or 'reset')."
+    step "Rolling back from $current to $PREVIOUS_IMAGE with the scripted upgrade's host half (local mode)"
+    run_host_half "$host_script" "$PREVIOUS_IMAGE" 0 rollback
+    echo "Rolled back to $PREVIOUS_IMAGE in $(( $(date -u +%s) - began ))s; a second 'deploy --rollback' returns to $current."
 }
 
 cmd_wipe() {
@@ -869,7 +988,7 @@ cmd_ca() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down)
+    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -886,6 +1005,8 @@ case "$command" in
     has-snapshot) cmd_has_snapshot "${1:?has-snapshot needs NAME}" ;;
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
+    deploy) [ $# -eq 3 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT"; cmd_deploy "$@" ;;
+    rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
     wizard) cmd_wizard ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;

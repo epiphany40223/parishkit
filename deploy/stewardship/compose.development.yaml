@@ -154,6 +154,9 @@ services:
         source: ../../tools/stewardship-upgrade.sh
         target: /app/tools/stewardship-upgrade.sh
       - <<: *test-bind
+        source: ../../tools/stewardship-upgrade-host.sh
+        target: /app/tools/stewardship-upgrade-host.sh
+      - <<: *test-bind
         source: ../../tools/stewardship-local.sh
         target: /app/tools/stewardship-local.sh
       - <<: *test-bind

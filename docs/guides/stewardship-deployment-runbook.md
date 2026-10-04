@@ -660,10 +660,15 @@ stays in the registry; nothing here deletes it.
 
 [`tools/stewardship-upgrade.sh`](../../tools/stewardship-upgrade.sh) runs
 steps 1–6 above one for one, over ssh from a checkout, on a deployment in
-Testing or in Production (issue #460). The manual steps remain the
-reference: where the script and this runbook differ, the runbook is right;
-fix the script. Run it from the checkout with the release's complete
-digest reference:
+Testing or in Production (issue #460). The steps themselves are its host
+half, [`tools/stewardship-upgrade-host.sh`](../../tools/stewardship-upgrade-host.sh),
+which it uploads and runs on the host; the
+[local laptop environment](stewardship-local-environment.md)'s `deploy`
+runs the same file in its `local` mode, so a local deploy rehearses these
+steps on a seeded local deployment. The manual steps remain the reference:
+where the script and this runbook differ, the runbook is right; fix the
+script. Run it from the checkout with the release's complete digest
+reference:
 
 ```sh
 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
@@ -733,13 +738,20 @@ deployment from v0.3.9 to v1.0.0 took 126 s with `web` down for 18 s (pull
 refresh under 1 s, `web` and `caddy` start 12 s, the other 16 online
 services 36 s, checks 8 s); the Production deployment from v1.0.0 to
 v1.1.0 took 137 s with `web` down for 22 s. The migration and grants path
-and the abandon paths (a refused backup, a failed stop) are exercised only
-by the script's stand-in tests so far; their rehearsal is tracked in #460
-and belongs on the
-[local laptop environment](../specs/stewardship/local-environment/spec.md)
-(#476), whose `deploy` command reuses these steps. Until then, take a
-release that announces a schema or grant change by the manual steps above,
-or run the script with `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4.
+was rehearsed on the
+[local laptop environment](stewardship-local-environment.md) on 2026-10-04,
+whose `deploy` runs this host half in local mode on a seeded deployment: a
+build carrying a migration was refused before anything stopped without the
+override, and with it step 4 ran `migration` then `database-grants` in 3 s
+(30 s in all, `web` down 8 s); the image-only rollback attempted afterwards
+was refused before anything stopped, as [Rollback](#rollback) says; and a
+backup the backup worker refused abandoned the upgrade with the background
+services restarted and `web` never stopped. The remaining abandon paths (a
+failed stop, a failed retarget, a partial static refresh) are exercised only
+by the script's stand-in tests so far; #460 tracks their rehearsal. For a
+release that announces a schema or grant change, run the script with
+`STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4, or take the manual steps
+above.
 
 ### Family engagement backfill (#477)
 

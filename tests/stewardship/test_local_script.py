@@ -8,8 +8,11 @@ typed; and the VM half (`tools/stewardship-local-vm.sh`) with a `docker`
 that answers as a healthy local deployment would, to pin the runbook's
 first-installation order, the marker-file guard on every destructive
 command, the snapshot and restore steps, and the clock-mode marker rule.
-The real bring-up in the VM is the documented human run in the developer
-guide; no Docker runs here.
+`deploy` and its rollback run the scripted upgrade's host half
+(`tools/stewardship-upgrade-host.sh`, OPS-10.10) in local mode; here a
+recording stand-in takes its place, since the host half's own behaviour is
+pinned in test_upgrade_script.py. The real bring-up in the VM is the
+documented human run in the developer guide; no Docker runs here.
 """
 
 import json
@@ -24,6 +27,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-local.sh"
 VM_SCRIPT = ROOT / "tools" / "stewardship-local-vm.sh"
+HOST_SCRIPT = ROOT / "tools" / "stewardship-upgrade-host.sh"
+# Where the laptop half puts the host half in the VM for deploy and rollback.
+HOST_REMOTE = "/var/tmp/parishkit-local-upgrade-host.sh"
 LIMA_YAML = ROOT / "deploy" / "stewardship" / "lima-local.yaml"
 GUIDE = ROOT / "docs" / "guides" / "stewardship-local-environment.md"
 SPEC = ROOT / "docs" / "specs" / "stewardship" / "local-environment" / "spec.md"
@@ -74,7 +80,7 @@ def test_shellcheck_is_clean():
             pytest.fail("the CI runner lacks shellcheck")
         pytest.skip("shellcheck is not installed")
     result = subprocess.run(
-        ["shellcheck", "-s", "bash", str(SCRIPT), str(VM_SCRIPT)],
+        ["shellcheck", "-s", "bash", str(SCRIPT), str(VM_SCRIPT), str(HOST_SCRIPT)],
         capture_output=True,
         text=True,
     )
@@ -103,6 +109,8 @@ def test_the_guide_and_specification_are_cross_linked():
         "vm create",
         "up",
         "start",
+        "deploy",
+        "deploy --rollback",
         "snapshot",
         "reset",
         "reset --reinstall",
@@ -112,7 +120,14 @@ def test_the_guide_and_specification_are_cross_linked():
     ):
         assert f"`{command}" in GUIDE.read_text(), command
     # The spec's command table names every laptop command the script accepts.
-    for command in ("`start`", "`reset --reinstall`", "`down`", "`ca`"):
+    for command in (
+        "`start`",
+        "`deploy [--schema-change]`",
+        "`deploy --rollback`",
+        "`reset --reinstall`",
+        "`down`",
+        "`ca`",
+    ):
         assert command in SPEC.read_text(), command
 
 
@@ -249,6 +264,9 @@ def vm_commands(calls):
         ("snapshot", "--reinstall"),
         ("down", "x"),
         ("status", "x"),
+        ("deploy", "--bogus"),
+        ("deploy", "--rollback", "--schema-change"),
+        ("deploy", "--rollback", "x"),
     ],
 )
 def test_bad_usage_is_refused_before_the_vm(tmp_path, args):
@@ -356,12 +374,38 @@ def test_up_takes_the_options_and_marks_a_dirty_checkout(tmp_path):
     assert ssh_calls(calls) == []
 
 
-def test_deploy_is_not_available_yet(tmp_path):
-    """`deploy` is OPS-10.10; it refuses and names `reset --reinstall`."""
-    result, calls, _ = run_local(tmp_path, "deploy")
-    assert result.returncode == 1 and "OPS-10.10" in result.stderr
-    assert "reset --reinstall" in result.stderr
-    assert ssh_calls(calls) == []
+def test_deploy_builds_then_uploads_the_host_half_and_runs_it(tmp_path):
+    """Pack, build, upload the shared host half, then the VM half's deploy."""
+    result, calls, stdins = run_local(tmp_path, "deploy")
+    assert result.returncode == 0, result.stderr
+    ssh = ssh_calls(calls)
+    assert len(ssh) == 4
+    assert "sudo tar -xzf" in ssh[0]
+    tag = re.search(rf"{PREFIX} build (\S+) ; rc=", ssh[1]).group(1)
+    assert re.fullmatch(LOCAL_IMAGE_PATTERN, tag)
+    # The host half is the file Production's upgrade script uploads, byte for
+    # byte, installed at the fixed path the VM half is then told about.
+    assert ssh[2].endswith(f"sudo install -m 0644 /dev/stdin '{HOST_REMOTE}'")
+    assert stdins[2] == HOST_SCRIPT.read_bytes()
+    assert vm_commands(calls) == [f"build {tag}", f"deploy {tag} 0 {HOST_REMOTE}"]
+    # --schema-change is Production's STEWARDSHIP_SCHEMA_CHANGE=1.
+    _, calls, _ = run_local(tmp_path / "schema", "deploy", "--schema-change")
+    assert vm_commands(calls)[-1].startswith("deploy parishkit-stewardship-local:")
+    assert vm_commands(calls)[-1].endswith(f" 1 {HOST_REMOTE}")
+    # A stopped VM refuses before anything is packed.
+    result, calls, _ = run_local(tmp_path / "stopped", "deploy", status="Stopped")
+    assert result.returncode == 1 and ssh_calls(calls) == []
+
+
+def test_deploy_rollback_uploads_the_host_half_without_building(tmp_path):
+    """--rollback needs no checkout: upload, then the VM half's rollback."""
+    result, calls, stdins = run_local(tmp_path, "deploy", "--rollback")
+    assert result.returncode == 0, result.stderr
+    ssh = ssh_calls(calls)
+    assert len(ssh) == 2 and "tar" not in ssh[0]
+    assert ssh[0].endswith(f"sudo install -m 0644 /dev/stdin '{HOST_REMOTE}'")
+    assert stdins[0] == HOST_SCRIPT.read_bytes()
+    assert vm_commands(calls) == [f"rollback {HOST_REMOTE}"]
 
 
 def test_snapshot_and_reset_name_the_right_snapshot(tmp_path):
@@ -498,12 +542,16 @@ case "$*" in
     "image inspect "*) [ -n "$FAKE_IMAGE_EXISTS" ] || exit 1 ;;
     *" provision-runtime --config "*)
         mkdir -p "$FAKE_ROOT/config/services" "$FAKE_ROOT/cache/static" \
-            "$FAKE_ROOT/credentials/google_oauth" "$FAKE_ROOT/run"
+            "$FAKE_ROOT/run" "$FAKE_ROOT/credentials/google_oauth" \
+            "$FAKE_ROOT/credentials/backup_data"
         for f in compose-initial.json compose.json compose-slack.json; do
             echo '{"services": {"web": {}}}' >"$FAKE_ROOT/config/services/$f"
         done
         echo '{"provisioned": true}' ;;
     *" collect-static --destination "*) echo '{"collected": 1}' ;;
+    *" backup-keygen --destination "*)
+        echo '{"public_key": "age1fakepublickey",' \
+            '"recipient_fingerprint": "SHA256:fake"}' ;;
     *"--entrypoint python"*)
         name=$(printf '%s' "$last" | sed -n 's/.*import \([A-Z_]*\) as value.*/\1/p')
         printf "constant-%s" "$name" ;;
@@ -704,6 +752,16 @@ def test_up_follows_the_runbook_first_installation_order(tmp_path):
     )
     fake = json.loads((root / "run/local/fake-parishsoft.json").read_text())
     assert fake["families"] == 100 and fake["release_at"] is None
+    # The backup recipient key, as the runbook's first installation installs
+    # it: the bare public key line as the backup_data credential, generated
+    # by the image into run/local (never archived by a backup).
+    keygen = first(calls, " backup-keygen --destination /keys/backup-key")
+    assert f"source={root}/run/local,target=/keys" in calls[keygen]
+    assert keygen < order[3]
+    assert (
+        root / "credentials/backup_data/credential"
+    ).read_text() == "age1fakepublickey\n"
+    assert "recipient fingerprint SHA256:fake" in output
     assert (
         fake["seed"] == int(env["SEED"]) and fake["anchor_date"] == env["ANCHOR_DATE"]
     )
@@ -783,6 +841,8 @@ def test_a_failed_dependency_start_is_reported_with_its_limit(tmp_path):
         ("sign-in", "a@example.test"),
         ("ca",),
         ("start",),
+        ("deploy", IMAGE, "0", "/x/host.sh"),
+        ("rollback", "/x/host.sh"),
     ],
 )
 def test_every_destructive_or_deployment_command_needs_the_marker(tmp_path, args):
@@ -998,3 +1058,232 @@ def test_sign_in_and_ca_read_the_deployment(tmp_path):
     assert output == "CERT\n"
     _, output, _ = run_vm(tmp_path / "noca", "ca", status=1, prepare=installed)
     assert "not written its local root certificate" in output
+
+
+# The stand-in for the scripted upgrade's host half: it records its arguments
+# and the debug-logging setting it inherits, and retargets the Compose file
+# to the image it was given as the real one does; FAKE_HOST_FAIL makes it
+# fail as an abandoned upgrade would (before the retarget, unless
+# FAKE_HOST_RETARGETED says it got that far first).
+FAKE_HOST = r"""
+echo "host $* debug=$PARISHKIT_DEBUG_LOGGING" >>"$FAKE_LOG"
+retarget() {
+    echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
+}
+if [ -n "$FAKE_HOST_FAIL" ]; then
+    [ -z "$FAKE_HOST_RETARGETED" ] || retarget "$@"
+    echo "the host half refused" >&2
+    exit 1
+fi
+retarget "$@"
+"""
+NEW_IMAGE = f"parishkit-stewardship-local:{'e' * 40}-1700000600"
+
+
+def with_host_script(tmp_path, *, snapshot=True, previous=None):
+    """A prepare function: an installed root, the seeded snapshot, the stand-in."""
+
+    def prepare(root, etc, snapshots):
+        installed(root, etc, snapshots)
+        # The Compose file names the recorded image, as after a real install.
+        (root / "config" / "services" / "compose.json").write_text(
+            json.dumps({"services": {"web": {"image": IMAGE}}})
+        )
+        if previous is not None:
+            with (etc / "local.env").open("a") as record:
+                record.write(f"PREVIOUS_IMAGE={previous}\n")
+        if snapshot:
+            (snapshots / "seeded" / "root").mkdir(parents=True)
+            (snapshots / "seeded" / "taken").write_text("2026-10-04T07:49:38Z\n")
+        host = tmp_path / "host.sh"
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        host.chmod(0o755)
+
+    return prepare
+
+
+def record(tmp_path):
+    """The deployment record as a dict."""
+    return dict(
+        line.split("=", 1)
+        for line in (tmp_path / "etc" / "local.env").read_text().splitlines()
+        if "=" in line
+    )
+
+
+def test_deploy_runs_the_host_half_in_local_mode_and_records_the_images(tmp_path):
+    """The host half gets the Production argument order plus `local BUILD`."""
+    host = tmp_path / "host.sh"
+    calls, output, root = run_vm(
+        tmp_path,
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(host),
+        prepare=with_host_script(tmp_path),
+        env={"FAKE_IMAGE_EXISTS": "1"},
+    )
+    etc = tmp_path / "etc"
+    # A deployment installed before the backup key step gets its key here,
+    # before the host half's required backup; one with a key is left alone.
+    assert calls[0] == f"image inspect {NEW_IMAGE}"
+    assert " backup-keygen --destination /keys/backup-key" in calls[1]
+    assert calls[2] == (
+        f"host - {NEW_IMAGE} {root} parishkit-local {etc / 'deployment.yaml'} u 0 "
+        f"upgrade local {tmp_path / 'build'} debug=1"
+    )
+    assert len(calls) == 3
+    assert (
+        root / "credentials/backup_data/credential"
+    ).read_text() == "age1fakepublickey\n"
+    # The return point is named before the upgrade starts; the record follows.
+    assert "return point: 'reset --seeded' restores the seeded snapshot" in output
+    assert output.index("return point") < output.index("Deploying")
+    assert record(tmp_path)["IMAGE"] == NEW_IMAGE
+    assert record(tmp_path)["PREVIOUS_IMAGE"] == IMAGE
+    assert "deploy --rollback" in output and "reset --seeded" in output
+
+    # --schema-change travels as the seventh argument; an installed key is kept.
+    def keyed(root, etc, snapshots):
+        with_host_script(tmp_path / "schema")(root, etc, snapshots)
+        (root / "credentials" / "backup_data").mkdir(parents=True)
+        (root / "credentials" / "backup_data" / "credential").write_text("age1kept\n")
+
+    calls, _, root = run_vm(
+        tmp_path / "schema",
+        "deploy",
+        NEW_IMAGE,
+        "1",
+        str(tmp_path / "schema" / "host.sh"),
+        prepare=keyed,
+        env={"FAKE_IMAGE_EXISTS": "1"},
+    )
+    assert " u 1 upgrade local " in calls[-1]
+    assert not any("backup-keygen" in c for c in calls)
+    assert (root / "credentials/backup_data/credential").read_text() == "age1kept\n"
+
+
+def test_deploy_refuses_without_a_return_point_an_image_or_a_host_half(tmp_path):
+    """No snapshot, an unbuilt image or a missing upload: the host half never runs."""
+    calls, output, _ = run_vm(
+        tmp_path / "nosnap",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "nosnap" / "host.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "nosnap", snapshot=False),
+        env={"FAKE_IMAGE_EXISTS": "1"},
+    )
+    assert "No snapshot to return to" in output and "'snapshot'" in output
+    assert not any(c.startswith("host ") for c in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "noimage",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "noimage" / "host.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "noimage"),
+    )
+    assert "is not built" in output and not any(c.startswith("host ") for c in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "nohost",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "nohost" / "elsewhere.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "nohost"),
+        env={"FAKE_IMAGE_EXISTS": "1"},
+    )
+    assert "No uploaded upgrade host script" in output
+    # A host half that abandons leaves the record as it was.
+    _, output, _ = run_vm(
+        tmp_path / "fail",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "fail" / "host.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "fail"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_FAIL": "1"},
+    )
+    assert "the host half refused" in output
+    assert record(tmp_path / "fail")["IMAGE"] == IMAGE
+    assert "PREVIOUS_IMAGE" not in record(tmp_path / "fail")
+    # One that failed after the retarget leaves the record truthful: the
+    # Compose file's image is recorded, and the failure is still reported.
+    _, output, _ = run_vm(
+        tmp_path / "late",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "late" / "host.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "late"),
+        env={
+            "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_FAIL": "1",
+            "FAKE_HOST_RETARGETED": "1",
+        },
+    )
+    assert "the host half refused" in output
+    assert f"The Compose file now names {NEW_IMAGE}; recorded it" in output
+    assert record(tmp_path / "late")["IMAGE"] == NEW_IMAGE
+    assert record(tmp_path / "late")["PREVIOUS_IMAGE"] == IMAGE
+
+
+def test_rollback_needs_a_recorded_previous_image_and_swaps_the_record(tmp_path):
+    """Without a deploy there is nothing to roll back to; with one, the images swap."""
+    calls, output, _ = run_vm(
+        tmp_path / "none",
+        "rollback",
+        str(tmp_path / "none" / "host.sh"),
+        status=1,
+        prepare=with_host_script(tmp_path / "none"),
+    )
+    assert "No previous image is recorded" in output and "'reset --seeded'" in output
+    assert calls == []
+
+    # The Compose file and the record disagreeing means the target cannot be
+    # trusted: refused before the host half runs.
+    def mismatched(root, etc, snapshots):
+        with_host_script(tmp_path / "mismatch", previous=NEW_IMAGE)(
+            root, etc, snapshots
+        )
+        (root / "config" / "services" / "compose.json").write_text(
+            json.dumps(
+                {"services": {"web": {"image": "parishkit-stewardship-local:x"}}}
+            )
+        )
+
+    calls, output, _ = run_vm(
+        tmp_path / "mismatch",
+        "rollback",
+        str(tmp_path / "mismatch" / "host.sh"),
+        status=1,
+        prepare=mismatched,
+    )
+    assert "but the deployment record says" in output and calls == []
+    calls, output, root = run_vm(
+        tmp_path / "some",
+        "rollback",
+        str(tmp_path / "some" / "host.sh"),
+        prepare=with_host_script(tmp_path / "some", previous=NEW_IMAGE),
+    )
+    etc = tmp_path / "some" / "etc"
+    assert calls == [
+        f"host - {NEW_IMAGE} {root} parishkit-local {etc / 'deployment.yaml'} u 0 "
+        f"rollback local {tmp_path / 'some' / 'build'} debug=1",
+    ]
+    assert record(tmp_path / "some")["IMAGE"] == NEW_IMAGE
+    assert record(tmp_path / "some")["PREVIOUS_IMAGE"] == IMAGE
+    assert f"Rolled back to {NEW_IMAGE}" in output
+    # status names the image a rollback would return to.
+    _, output, _ = run_vm(
+        tmp_path / "status",
+        "status",
+        prepare=with_host_script(tmp_path / "status", previous=NEW_IMAGE),
+    )
+    assert f"Previous image ('deploy --rollback' returns to it): {NEW_IMAGE}" in output

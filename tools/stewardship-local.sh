@@ -13,7 +13,9 @@
 #   vm create | vm start | vm stop   create (and start), start or stop the VM
 #   up [--families N]                first-time install from this checkout
 #   start                            start a stopped deployment's services
-#   deploy                           rebuild and upgrade (OPS-10.10; not yet)
+#   deploy [--schema-change]         build this checkout and upgrade the running
+#                                    deployment to it by the Production upgrade's steps
+#   deploy --rollback                image-only rollback to the image the last deploy replaced
 #   snapshot [--seeded]              save the root as the post-setup or seeded snapshot
 #   reset [--seeded]                 restore that snapshot; with no post-setup
 #                                    snapshot, wipe the root and run `up` again
@@ -24,7 +26,7 @@
 #   wizard                           complete the setup wizard unattended
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
-#   sign-in --email E                print a local test sign-in link (OPS-10.08)
+#   sign-in --email E                print a local test sign-in link
 #   ca                               fetch Caddy's root certificate and say how to trust it
 #
 # Configuration (environment variables):
@@ -58,6 +60,10 @@ snapshots=/opt/parishkit-snapshots
 state=$HOME/.parishkit-local
 here=$(cd "$(dirname "$0")" && pwd)
 remote=$here/stewardship-local-vm.sh
+# The scripted upgrade's host half (shared with Production), which `deploy`
+# uploads to a fixed path in the VM and the VM half runs in local mode.
+host_script=$here/stewardship-upgrade-host.sh
+host_remote=/var/tmp/parishkit-local-upgrade-host.sh
 vm_yaml=$here/../deploy/stewardship/lima-local.yaml
 
 usage() {
@@ -133,6 +139,13 @@ pack_checkout() {
         ssh_vm "sudo rm -rf '$build' && sudo mkdir -p '$build' && sudo tar -xzf - -C '$build'"
 }
 
+upload_host_script() {
+    # Put the scripted upgrade's host half where the VM half's deploy and
+    # rollback commands run it (rewritten on every call, so the VM never
+    # keeps a stale copy).
+    ssh_vm "sudo install -m 0644 /dev/stdin '$host_remote'" <"$host_script"
+}
+
 confirm_instance_name() {
     # Deleting the root needs the operator to type the instance name.
     local typed
@@ -174,6 +187,7 @@ case "${1-}" in -h|--help|help) usage 0 ;; esac
 need limactl "brew install lima"
 need git "install Xcode's command-line tools"
 [ -f "$remote" ] || refuse "Missing $remote"
+[ -f "$host_script" ] || refuse "Missing $host_script"
 
 command=${1-}
 [ $# -ge 1 ] && shift
@@ -202,8 +216,31 @@ case "$command" in
         require_running
         run_remote start ;;
     deploy)
-        refuse "deploy is OPS-10.10 (the scripted upgrade's local mode) and is not available yet." \
-            "Until then: $0 reset --reinstall (wipe and install again from this checkout)." ;;
+        # The scripted upgrade in local mode (specification, "Operator
+        # script"): build the image from this checkout while the deployment
+        # still runs, then the VM half runs the same host half Production's
+        # tools/stewardship-upgrade.sh runs. --schema-change is Production's
+        # STEWARDSHIP_SCHEMA_CHANGE=1; --rollback is its --rollback.
+        schema_change=0 rollback=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --schema-change) schema_change=1 ;;
+                --rollback) rollback=1 ;;
+                *) usage ;;
+            esac
+            shift
+        done
+        [ "$schema_change$rollback" != 11 ] || usage
+        require_running
+        if [ "$rollback" = 1 ]; then
+            upload_host_script
+            run_remote rollback "$host_remote"
+        else
+            pack_checkout
+            run_remote build "$tag"
+            upload_host_script
+            run_remote deploy "$tag" "$schema_change" "$host_remote"
+        fi ;;
     snapshot|reset)
         name=post-setup
         case "$command:$#:${1-}" in
