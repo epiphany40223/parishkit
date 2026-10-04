@@ -135,7 +135,10 @@ DRIVE_FAILURES = frozenset(
 # ``family_sweep_budget``: the scheduler's Family schedule sweep ended a page
 # at its time budget (pacing only; it resumes on the next loop, #394). And
 # ``configuration_activation``: work that stopped waiting for a configuration
-# change to finish activating (activation_hold, #429).
+# change to finish activating (activation_hold, #429). And
+# ``startup_database_wait``: an online service that stopped waiting at startup
+# for its database to accept a connection (runtime_database.await_database,
+# #453); process log only, since the database is what is unavailable.
 TIMEOUT_LIMITS = frozenset(
     {
         "drive_copy_budget",
@@ -158,6 +161,7 @@ TIMEOUT_LIMITS = frozenset(
         "timeout_log_slot",
         "family_sweep_budget",
         "configuration_activation",
+        "startup_database_wait",
     }
 )
 

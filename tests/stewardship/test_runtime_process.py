@@ -102,6 +102,20 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
     monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
     called = []
 
+    def wait(config):
+        """The database wait runs first, already under the online lease (#453)."""
+        from parishkit.stewardship.runtime_paths import RuntimeLayout
+
+        assert called == []
+        called.append("waited")
+        with (
+            pytest.raises(ConfigError),
+            StartupLease(RuntimeLayout(config).interlock, offline=True),
+        ):
+            pass
+
+    monkeypatch.setattr("parishkit.stewardship.runtime_database.await_database", wait)
+
     def runner(config, lease, **options):
         """The lifecycle inode is real; only the process body is substituted."""
         if role is ServiceRole.WORKER:
@@ -114,7 +128,7 @@ def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(
 
     monkeypatch.setattr(runtime_process, entry, runner)
     assert main(["runtime", "--config", "operator-input.yaml"]) == 0
-    assert called == [configuration]
+    assert called == ["waited", configuration]
     from parishkit.stewardship.runtime_paths import RuntimeLayout
 
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
@@ -143,9 +157,13 @@ def test_runtime_queue_option_selects_only_its_own_sibling_consumer(
     configuration = replace(configuration, service_role=role)
     monkeypatch.setattr(runtime_process, "load_deployment", lambda path: configuration)
     monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
+    wait = Mock()
+    monkeypatch.setattr("parishkit.stewardship.runtime_database.await_database", wait)
     runner = Mock(return_value=0)
     monkeypatch.setattr(runtime_process, "serve_background", runner)
     result = main(["runtime", "--config", "operator-input.yaml", "--queue", queue])
+    # A refused pairing is refused before waiting for anything.
+    assert wait.called is (selected is not None)
     if selected is None:
         assert result == 2
         runner.assert_not_called()
@@ -169,6 +187,54 @@ def test_runtime_errors_never_print_private_input(configured, monkeypatch, capsy
     assert main(arguments) == 2
     output = capsys.readouterr()
     assert "private-input" not in output.out + output.err
+    assert "runtime unavailable" in output.err
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        ("database", "database_unavailable"),
+        (ConfigError("private-input-token"), "configuration_unavailable"),
+        (OSError("private-input-token"), "filesystem_unavailable"),
+        (ValueError("private-input-token"), "unexpected_failure"),
+    ],
+)
+def test_startup_rejected_names_its_category_at_error(
+    tmp_path, monkeypatch, capsys, caplog, error, kind
+):
+    """The rejection says which kind of check refused, never its text (#453)."""
+    import json
+
+    from django.db.utils import OperationalError
+
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    if error == "database":
+        error = OperationalError("private-input-token")
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.SCHEDULER)
+    monkeypatch.setattr(runtime_process, "load_deployment", lambda path: configuration)
+    monkeypatch.setattr(runtime_process, "configure_logging", lambda: None)
+
+    def wait(config):
+        """The database wait refused, or the runner failed after it."""
+        if isinstance(error, OperationalError):
+            raise error
+
+    def runner(config, lease, **options):
+        """Only reached when the wait succeeded."""
+        raise error
+
+    monkeypatch.setattr("parishkit.stewardship.runtime_database.await_database", wait)
+    monkeypatch.setattr(runtime_process, "serve_background", runner)
+    with caplog.at_level("ERROR", logger="parishkit.stewardship"):
+        assert main(["runtime", "--config", "operator-input.yaml"]) == 2
+    events = [json.loads(SafeJsonFormatter().format(r)) for r in caplog.records]
+    assert [(e["message"], e["level"], e["extra"]) for e in events] == [
+        ("startup_rejected", "ERROR", {"failure_kind": kind})
+    ]
+    output = capsys.readouterr()
+    assert "private-input" not in output.out + output.err + caplog.text
     assert "runtime unavailable" in output.err
 
 
