@@ -245,7 +245,7 @@ def provision_initial_files(configuration, identity):
             )
         from .runtime_web import parse_google_client
 
-        parse_google_client(read_private(oauth))
+        parse_google_client(read_private(oauth), profile=configuration.profile)
         read_private(password)
         _marker(layout, identity)
         deployment_file = layout.deployment_directory / "deployment.yaml"

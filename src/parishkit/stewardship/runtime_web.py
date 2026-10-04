@@ -32,18 +32,29 @@ def admit_lifecycle_mounts(configuration):
             )
 
 
-def google_client(path):
-    """Load a local OAuth application, never reuse Workspace mail credentials.
+# The LOCAL ``google_oauth`` sentinel (#476). It has the client document's
+# shape but no real client ID or secret. LOCAL accepts only this document and
+# every other profile refuses it, so a real Google client can never be
+# installed locally and the sentinel can never reach Production. Admin sign-in
+# in LOCAL is the local test sign-in (OPS-10.08), which hides Google sign-in.
+LOCAL_OAUTH_SENTINEL = {
+    "client_id": "local-environment-sentinel.invalid",
+    "client_secret": "local-environment-sentinel-not-a-secret",
+}
+LOCAL_OAUTH_DOCUMENT = json.dumps(LOCAL_OAUTH_SENTINEL).encode() + b"\n"
+
+
+def parse_google_client(raw, *, profile):
+    """Parse the operator's OAuth client document; never reuse Workspace credentials.
 
     The compact operator file has only client_id/client_secret. The application
     never returns this document in diagnostics or persists a SocialApp secret.
-    Ownership of the Google account itself is established only during Google login.
+    Ownership of the Google account itself is established only during Google
+    login. ``profile`` applies the sentinel rule in both directions: LOCAL
+    admits only ``LOCAL_OAUTH_SENTINEL`` and every other profile refuses it.
     """
-    return parse_google_client(read_private(path))
-
-
-def parse_google_client(raw):
-    """Parse the same admitted bytes later identified by the consumer receipt."""
+    if not isinstance(profile, DeploymentProfile):
+        raise ConfigError("The OAuth client check requires a deployment profile.")
     try:
         value = json.loads(raw, object_pairs_hook=_unique_object)
         if type(value) is not dict or set(value) != {"client_id", "client_secret"}:
@@ -56,9 +67,19 @@ def parse_google_client(raw):
             for item in value.values()
         ):
             raise ValueError
-        return value
     except (ValueError, UnicodeError, RecursionError):
         raise ConfigError("The OAuth client file is invalid.") from None
+    if profile is DeploymentProfile.LOCAL:
+        if value != LOCAL_OAUTH_SENTINEL:
+            raise ConfigError(
+                "The local profile admits only the sentinel OAuth client, never a "
+                "real Google client."
+            )
+    elif value == LOCAL_OAUTH_SENTINEL:
+        raise ConfigError(
+            "The sentinel OAuth client is admitted only in the local profile."
+        )
+    return value
 
 
 def valkey_client(configuration, *, telemetry=False):
@@ -197,7 +218,7 @@ def configure_web(configuration):
         for name in required - {"google_oauth", "metrics"}
     }
     independent_keyrings(*rings.values())
-    oauth = parse_google_client(loaded["google_oauth"])
+    oauth = parse_google_client(loaded["google_oauth"], profile=configuration.profile)
     metrics_token = MetricsCredential.parse(loaded["metrics"]).token
     base = import_module("parishkit.stewardship.settings.base")
     values = {name: getattr(base, name) for name in dir(base) if name.isupper()}

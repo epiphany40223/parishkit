@@ -160,7 +160,9 @@ def check_google_oauth(configuration):
     """Validate the client document's shape and name the redirect URI to register."""
     from .runtime_web import parse_google_client
 
-    parse_google_client(_credential(configuration, "google_oauth"))
+    parse_google_client(
+        _credential(configuration, "google_oauth"), profile=configuration.profile
+    )
     return {
         "credential": "valid",
         "redirect_uri": configuration.public_origin.rstrip("/")
