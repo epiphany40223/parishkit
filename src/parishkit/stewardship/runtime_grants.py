@@ -578,7 +578,19 @@ def login_name(role, *, target=None):
 
 
 def admit_runtime_database(configuration):
-    """Validate actual login/table/column authority before any online operation."""
+    """Validate actual login/table/column authority before any online operation.
+
+    During an online service's startup window the whole admission is retried
+    while the database is not ready yet (runtime_database.during_startup,
+    #453); elsewhere it runs once.
+    """
+    from .runtime_database import during_startup
+
+    return during_startup(lambda: _admit_runtime_database(configuration))
+
+
+def _admit_runtime_database(configuration):
+    """One admission pass: actual login, grants, schema and capacity."""
     from .accounts.configuration_service import admit_configuration_database
     from .accounts.credential_database import (
         _identity,

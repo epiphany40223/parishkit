@@ -108,9 +108,12 @@ def admitted_worker_exited(server, worker):
 def serve_web(configuration, lease):
     """Fork workers that admit settings before handling any HTTP request.
 
-    The master never loads Django application modules or opens dependency sockets.
-    Development worker replacement therefore imports changed source afresh instead
-    of inheriting stale preloaded code. Every child retains the lifecycle lease.
+    The master never loads Django application modules. Development worker
+    replacement therefore imports changed source afresh instead of inheriting
+    stale preloaded code. Every child retains the lifecycle lease. The
+    master's only dependency socket is the one short connection
+    execute_runtime's startup wait opens and closes before this runs
+    (runtime_database.await_database, #453).
     """
     from gunicorn.app.base import BaseApplication
     from gunicorn.errors import HaltServer
@@ -856,9 +859,18 @@ def execute_runtime(args):
         with StartupLease(
             RuntimeLayout(configuration).interlock, offline=False
         ) as lease:
+            # Every runner starts by admitting its SQL login; wait, boundedly,
+            # for a database that is not accepting connections yet instead of
+            # exiting at once (#453). It runs under the lease, so offline work
+            # still cannot start while a service is waiting.
+            from .runtime_database import await_database
+
+            await_database(configuration)
             return runner(configuration, lease, **options)
-    except Exception:
-        emit(Event.STARTUP_REJECTED, level=logging.ERROR)
+    except Exception as error:
+        # The category (never exception text) says which kind of check
+        # refused; the detail reaches the log only with debug logging on.
+        emit_failure(error, event=Event.STARTUP_REJECTED)
         print(
             "ERROR: runtime unavailable; verify isolated mounts, credentials, "
             "database roles, migration state and offline exclusion",

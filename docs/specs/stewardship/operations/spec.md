@@ -234,6 +234,43 @@ Documented first deployment order is:
 5. Start web/worker/scheduler/installers/proxy.
 6. Complete the first-Admin wizard.
 
+### Online service startup
+
+Every online service's refusal is one ERROR `startup_rejected` line whose
+`failure_kind` names the kind of check that refused (for example
+`database_unavailable` or `configuration_unavailable`), never exception text;
+the detail reaches the log only with debug logging on. The web service is the
+exception: a Gunicorn worker that fails admission is wrapped as a
+configuration failure, so web reports `configuration_unavailable` whatever
+the worker's cause.
+
+The rendered topology has no start ordering, so after a host reboot (and
+possibly under load after a deploy or a restore) services can start while
+PostgreSQL is still starting or too busy to answer (#453). Each online
+service therefore waits for its database for about 60 seconds in all, with a
+short growing pause between attempts and no ERROR while it waits: first for
+its own login to connect and answer `SELECT 1`, then, within the same budget,
+through its SQL admission. It waits only while the failure is on a closed
+list meaning "not available yet": no server reply (refused, unreachable, not
+yet resolvable or timed out), or the server's reply that it is starting up,
+shutting down, restarting or out of connection slots (SQLSTATE `53300`
+only; disk full or out of memory refuse). libpq gives a failed
+connection no SQLSTATE, so the reply text decides, and any text not on the
+list (a wrong password, a missing role or database, or a reply in another
+language) is refused at once. A waiting service holds the online startup
+lease, so offline work still cannot start meanwhile. A wait that runs out
+logs an ERROR `task_timed_out` (`startup_database_wait`, its limit and the
+elapsed seconds), then the refusal. A wrong password and a database that
+stays down therefore both end as `failure_kind` `database_unavailable`; the
+preceding `task_timed_out` line is what marks the database that stayed down.
+The connection wait comes before the service's cheaper mount and credential
+checks, so such a problem met while the database is also down reports
+`database_unavailable` after about 60 seconds, and the problem itself only
+once the database answers.
+The wait closes the reboot race; for the burst of starts after a deploy or a
+restore it is a partial mitigation, since a database that becomes too busy
+after admission is not covered.
+
 ### Pre-production development policy
 
 This policy ended for the live deployment when Production went live on
@@ -757,7 +794,10 @@ connection; an entry that waits more than five seconds for its turn is not
 written durably, and only the process log records it, with that first
 line and a WARNING `task_timed_out` for `timeout_log_slot` giving that
 limit and the wait (see the
-[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)). An online
+service's `startup_database_wait` timeout is the exception to the durable
+entry: it goes to the process log only, because the database is what is
+unavailable (see [online service startup](#online-service-startup)).
 
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
 database, migrations, Valkey limiter store, and configuration needed for the

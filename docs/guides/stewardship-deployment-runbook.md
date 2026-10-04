@@ -620,7 +620,12 @@ sequence with the commands that exist.
    the application and runs its health probes at the same time, so starting
    them together makes `web` take several times longer to turn healthy. Then
    `caddy`, then, once the site answers again, the remaining online services
-   with `up --detach --wait`. Caddy reads its
+   with `up --detach --wait`. A service whose database is not ready yet
+   waits for it for about 60 seconds before refusing, and holds the online
+   startup lease while it waits, so stop every online service before
+   offline work even when one is still starting (see
+   [online service startup](../specs/stewardship/operations/spec.md#online-service-startup)).
+   Caddy reads its
    Caddyfile only when it starts, so compare what the running `caddy`
    loaded (`exec -T caddy sha256sum /etc/caddy/Caddyfile`) with the host's
    `Caddyfile`; when they differ, use `up --detach --force-recreate caddy`,
