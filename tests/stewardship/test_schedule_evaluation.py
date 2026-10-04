@@ -12,7 +12,7 @@ from parishkit.stewardship.campaigns.schedule_evaluation import (
 
 from .campaign_factory import campaign, schedule
 
-FUTURE = datetime(2030, 1, 1, tzinfo=UTC)
+FUTURE = datetime(2058, 1, 1, tzinfo=UTC)
 
 
 def plan(kind="daily_digest", *, campaign_options=None, **options):
@@ -21,7 +21,7 @@ def plan(kind="daily_digest", *, campaign_options=None, **options):
     values = schedule(
         owner["id"],
         kind=kind,
-        date="2026-10-01" if kind in {"initial", "reminder"} else None,
+        date="2054-10-01" if kind in {"initial", "reminder"} else None,
         **({"weekday": 0} if kind == "weekly_digest" else {}),
     )["values"]
     values.update(options)
@@ -32,13 +32,13 @@ def plan(kind="daily_digest", *, campaign_options=None, **options):
 def test_one_time_slot_has_exact_due_boundary_and_revision_independent_key(kind):
     """No early execution, and a changed civil time retains semantic identity."""
     rule = plan(kind)
-    due = datetime(2026, 10, 1, 13, tzinfo=UTC)
+    due = datetime(2054, 10, 1, 13, tzinfo=UTC)
     before = rule.page(through=due - timedelta(microseconds=1))
     assert before.slots == () and before.cursor is None and before.exhausted
     page = rule.page(through=due)
     assert len(page.slots) == 1
     assert (page.slots[0].key, page.slots[0].due_at) == ("once", due)
-    assert page.cursor == date(2026, 10, 1) and page.exhausted
+    assert page.cursor == date(2054, 10, 1) and page.exhausted
     assert rule.page(through=FUTURE, after=page.cursor).slots == ()
     assert plan(kind, time="10:00:00").page(through=FUTURE).slots[0].key == "once"
 
@@ -50,12 +50,12 @@ def test_daily_slots_name_the_reported_day_and_include_the_final_day_after_close
     assert len(page.slots) == 31 and page.exhausted
     first, last = page.slots[0], page.slots[-1]
     assert (first.key, first.due_at) == (
-        "2026-10-01",
-        datetime(2026, 10, 2, 4, 15, tzinfo=UTC),
+        "2054-10-01",
+        datetime(2054, 10, 2, 4, 15, tzinfo=UTC),
     )
     assert (last.key, last.due_at) == (
-        "2026-10-31",
-        datetime(2026, 11, 1, 4, 15, tzinfo=UTC),
+        "2054-10-31",
+        datetime(2054, 11, 1, 4, 15, tzinfo=UTC),
     )
     assert not any(slot.final_weekly for slot in page.slots)
 
@@ -82,13 +82,13 @@ def test_stable_cursor_partitions_equal_whole_result_and_replay_is_pure(limit):
 def test_later_cutoff_resumes_after_only_previously_due_slots():
     """A no-more-due result must not advance the cursor across a future slot."""
     rule = plan()
-    first_due = datetime(2026, 10, 2, 13, tzinfo=UTC)
+    first_due = datetime(2054, 10, 2, 13, tzinfo=UTC)
     early = rule.page(through=first_due - timedelta(seconds=1))
     assert early.slots == () and early.cursor is None
     first = rule.page(through=first_due)
-    assert first.cursor == date(2026, 10, 1) and len(first.slots) == 1
+    assert first.cursor == date(2054, 10, 1) and len(first.slots) == 1
     second = rule.page(through=first_due + timedelta(days=1), after=first.cursor)
-    assert [slot.key for slot in second.slots] == ["2026-10-02"]
+    assert [slot.key for slot in second.slots] == ["2054-10-02"]
 
 
 @pytest.mark.parametrize(
@@ -110,7 +110,7 @@ def test_next_slot_matches_complete_evaluation_at_each_due_boundary(kind):
     assert rule.next_slot(after=FUTURE) is None
 
 
-@pytest.mark.parametrize("clock", [None, date(2026, 10, 1), datetime(2026, 10, 1)])
+@pytest.mark.parametrize("clock", [None, date(2054, 10, 1), datetime(2054, 10, 1)])
 def test_next_slot_rejects_ambiguous_clock(clock):
     """No browser timezone or naive clock may select a different next occurrence."""
     with pytest.raises(ValueError, match="UTC cutoff"):
@@ -121,26 +121,26 @@ def test_next_slot_rejects_ambiguous_clock(clock):
     "campaign_options,clock,day,due",
     [
         (
-            {"start_date": "2026-03-06", "end_date": "2026-03-10"},
+            {"start_date": "2054-03-06", "end_date": "2054-03-10"},
             "02:30:00",
-            "2026-03-07",
-            datetime(2026, 3, 8, 7, tzinfo=UTC),
+            "2054-03-07",
+            datetime(2054, 3, 8, 7, tzinfo=UTC),
         ),
         (
-            {"start_date": "2026-10-30", "end_date": "2026-11-03"},
+            {"start_date": "2054-10-30", "end_date": "2054-11-03"},
             "01:30:00",
-            "2026-10-31",
-            datetime(2026, 11, 1, 5, 30, tzinfo=UTC),
+            "2054-10-31",
+            datetime(2054, 11, 1, 5, 30, tzinfo=UTC),
         ),
         (
             {
-                "start_date": "2026-10-02",
-                "end_date": "2026-10-06",
+                "start_date": "2054-10-02",
+                "end_date": "2054-10-06",
                 "timezone": "Australia/Lord_Howe",
             },
             "02:15:00",
-            "2026-10-03",
-            datetime(2026, 10, 3, 15, 30, tzinfo=UTC),
+            "2054-10-03",
+            datetime(2054, 10, 3, 15, 30, tzinfo=UTC),
         ),
     ],
 )
@@ -180,14 +180,14 @@ def test_weekly_dates_and_optional_final_candidate_are_finite():
     rule = plan("weekly_digest", time="09:00:00")
     ordinary = rule.page(through=FUTURE)
     assert [slot.key for slot in ordinary.slots] == [
-        "2026-10-05",
-        "2026-10-12",
-        "2026-10-19",
-        "2026-10-26",
+        "2054-10-05",
+        "2054-10-12",
+        "2054-10-19",
+        "2054-10-26",
     ]
     final = rule.page(through=FUTURE, include_final_weekly=True)
     assert final.slots[:-1] == ordinary.slots
-    assert final.slots[-1].key == "2026-11-02" and final.slots[-1].final_weekly
+    assert final.slots[-1].key == "2054-11-02" and final.slots[-1].final_weekly
     assert final.exhausted
     assert (
         rule.page(through=FUTURE, after=final.cursor, include_final_weekly=True).slots
@@ -197,11 +197,11 @@ def test_weekly_dates_and_optional_final_candidate_are_finite():
 
 def test_weekly_ending_on_scheduled_day_can_inspect_only_next_weeks_final_slot():
     """The optional candidate follows close rather than duplicating its last date."""
-    rule = plan("weekly_digest", campaign_options={"end_date": "2026-10-26"})
+    rule = plan("weekly_digest", campaign_options={"end_date": "2054-10-26"})
     page = rule.page(
-        through=FUTURE, after=date(2026, 10, 26), include_final_weekly=True
+        through=FUTURE, after=date(2054, 10, 26), include_final_weekly=True
     )
-    assert [slot.key for slot in page.slots] == ["2026-11-02"]
+    assert [slot.key for slot in page.slots] == ["2054-11-02"]
 
 
 @pytest.mark.parametrize("kind", ["daily_digest", "weekly_digest"])
@@ -221,8 +221,8 @@ def test_cursor_before_start_and_after_all_history_does_not_replay(kind):
         {"through": datetime(2026, 1, 1)},
         {"through": date(2026, 1, 1)},
         {"through": datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=1)))},
-        {"after": "2026-10-01"},
-        {"after": datetime(2026, 10, 1)},
+        {"after": "2054-10-01"},
+        {"after": datetime(2054, 10, 1)},
         {"limit": True},
         {"limit": 0},
         {"limit": 1001},
@@ -253,4 +253,4 @@ def test_preview_is_bounded_and_recomputed_from_the_proposed_campaign_zone():
 def test_invalid_schedule_uses_the_existing_configuration_contract():
     """The planner cannot silently repair an invitation outside campaign dates."""
     with pytest.raises(ConfigError):
-        plan("initial", date="2026-09-30")
+        plan("initial", date="2054-09-30")

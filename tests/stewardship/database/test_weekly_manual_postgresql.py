@@ -100,7 +100,7 @@ def test_manual_delivery_does_not_consume_regular_information_or_corrections(
 ):
     """A new manual snapshot is history, not the next scheduled success boundary."""
     harness = live_response_service
-    with campaign_clock(datetime(2026, 10, 8, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 8, tzinfo=UTC)):
         original = allocated(harness)
         accepted(WeeklyDigestRecipient.objects.get(snapshot=original))
         harness, form, answers, _ = revisit(harness)
@@ -117,7 +117,7 @@ def test_manual_delivery_does_not_consume_regular_information_or_corrections(
         regular_history = history(original)
         assert regular_history.watermark == 1
         assert not regular_history.corrected
-    with campaign_clock(datetime(2026, 10, 15, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 15, tzinfo=UTC)):
         claim, regular = replacement()
         publish(claim)
         recipient = WeeklyDigestRecipient.objects.get(snapshot=regular)

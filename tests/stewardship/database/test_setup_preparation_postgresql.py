@@ -112,7 +112,7 @@ def test_dates_and_schedules_save_atomically(setup_service, monkeypatch):
     with web_login():
         original = SetupDraftSection.objects.get(step="campaign").values
         changed = original | {
-            "campaign": original["campaign"] | {"start_date": "2026-10-05"}
+            "campaign": original["campaign"] | {"start_date": "2054-10-05"}
         }
         with pytest.raises(ConfigError):
             save_section(
@@ -124,7 +124,7 @@ def test_dates_and_schedules_save_atomically(setup_service, monkeypatch):
                 expected_version=status.version,
             )
         assert SetupDraftSection.objects.get(step="campaign").values == original
-        corrected = row | {"values": row["values"] | {"date": "2026-10-06"}}
+        corrected = row | {"values": row["values"] | {"date": "2054-10-06"}}
         save_sections(
             request,
             setup_service,
@@ -150,7 +150,7 @@ def test_bad_schedule_collection_keeps_previous_draft(
     elif invalid == "template":
         updated["values"]["template_version"] = str(uuid4())
     elif invalid == "time":
-        updated["values"]["date"] = "2026-09-01"
+        updated["values"]["date"] = "2054-09-01"
     records = [row, updated] if invalid == "duplicate" else [updated]
     with web_login():
         with pytest.raises((ConfigError, ValueError)):
@@ -250,8 +250,8 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
     data.update(
         {
             "version": str(status.version),
-            "window-start_date": "2026-10-01",
-            "window-end_date": "2026-10-31",
+            "window-start_date": "2054-10-01",
+            "window-end_date": "2054-10-31",
         }
     )
     with web_login():
@@ -263,16 +263,16 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
             post(browser, url, data | {"schedules-0-subject": "Unowned"}).status_code
             == 400
         )
-        outside = post(browser, url, data | {"schedules-0-date": "2026-09-01"})
+        outside = post(browser, url, data | {"schedules-0-date": "2054-09-01"})
         # The problem is named on the date field, with the campaign's dates.
         assert outside.status_code == 400
         assert (
-            "Choose a date within the campaign (October 1, 2026 – October 31, 2026)."
+            "Choose a date within the campaign (October 1, 2054 – October 31, 2054)."
             in outside.content.decode()
         )
         duplicate = data | {
             "schedules-1-kind": "initial",
-            "schedules-1-date": "2026-10-02",
+            "schedules-1-date": "2054-10-02",
             "schedules-1-time": "09:00:00",
             "schedules-1-template_version": row["values"]["template_version"],
         }

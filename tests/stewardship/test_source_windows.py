@@ -19,7 +19,7 @@ def test_current_campaign_retains_both_exact_periods_through_reconciliation(stat
     assert window.document() == {
         "campaign_id": str(identifier),
         "periods": [
-            {"start": "2027-01-01", "end": "2027-12-31", "funds": [1]},
+            {"start": "2055-01-01", "end": "2055-12-31", "funds": [1]},
             {"start": "2026-01-01", "end": "2026-12-31", "funds": [2]},
         ],
     }

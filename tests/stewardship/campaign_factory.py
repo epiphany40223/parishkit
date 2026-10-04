@@ -11,10 +11,10 @@ def campaign(**overrides):
         "id": str(uuid4()),
         "values": {
             "name": "Annual campaign",
-            "year_label": "2027",
+            "year_label": "2055",
             "timezone": configuration_factory.PARISH_TIMEZONE,
-            "start_date": "2026-10-01",
-            "end_date": "2026-10-31",
+            "start_date": "2054-10-01",
+            "end_date": "2054-10-31",
             "modules": ["census"],
             "ministry_duids": [],
             "financial": None,
@@ -33,7 +33,7 @@ def schedule(owner_id, **overrides):
         "values": {
             "campaign_id": owner_id,
             "kind": "initial",
-            "date": "2026-10-01",
+            "date": "2054-10-01",
             "time": "09:00:00",
             "weekday": None,
             "subject": "Campaign invitation",
@@ -48,8 +48,8 @@ def financial(**overrides):
     mappings.
     """
     return {
-        "start": "2027-01-01",
-        "end": "2027-12-31",
+        "start": "2055-01-01",
+        "end": "2055-12-31",
         "comparison_start": "2026-01-01",
         "comparison_end": "2026-12-31",
         "fund_duids": [1],

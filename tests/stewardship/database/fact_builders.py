@@ -30,7 +30,7 @@ def fact_fixture(tmp_path):
         snapshot.pk,
         1,
         campaign.active_configuration_id,
-        date(2026, 10, 2),
+        date(2054, 10, 2),
     )
     return inputs, owner, snapshot
 

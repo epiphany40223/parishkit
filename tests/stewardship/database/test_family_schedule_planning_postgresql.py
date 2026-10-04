@@ -46,7 +46,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def add_reminders(store, campaign, actor):
     """Add three reminders through actual configuration selection and revisions."""
     rows = [
-        schedule(str(campaign.pk), kind="reminder", date=f"2026-10-{day:02}")
+        schedule(str(campaign.pk), kind="reminder", date=f"2054-10-{day:02}")
         for day in (3, 4, 20)
     ]
     assert (

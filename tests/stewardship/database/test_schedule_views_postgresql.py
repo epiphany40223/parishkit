@@ -38,7 +38,7 @@ def setup(store):
     """A real current draft with an initial invitation and a later reminder."""
     result, owner, _ = add_draft(store, store.active(), uuid4())
     assert result.state == "applied"
-    reminder = schedule(owner["id"], kind="reminder", date="2026-10-25")
+    reminder = schedule(owner["id"], kind="reminder", date="2054-10-25")
     assert (
         change(
             store,
@@ -96,7 +96,7 @@ def test_shortened_draft_requires_every_stranded_mailing_to_be_reconciled(
     assert page.status_code == 200
     assert flow_steps(page.content) == (STEPS, "Make changes")
     data, indexes = fields(store, campaign)
-    data["window-end_date"] = "2026-10-20"
+    data["window-end_date"] = "2054-10-20"
     before = ConfigurationChangeRequest.objects.count()
     refused = post(browser, path, data)
     assert refused.status_code == 400
@@ -110,7 +110,7 @@ def test_shortened_draft_requires_every_stranded_mailing_to_be_reconciled(
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)
     campaign.refresh_from_db()
-    assert campaign.active_configuration.values["end_date"] == "2026-10-20"
+    assert campaign.active_configuration.values["end_date"] == "2054-10-20"
     assert ScheduleDefinition.objects.get(kind="reminder").current_revision_id is None
     assert (
         post(browser, path, {"action": "confirm", "preview": proposal})["Location"]
@@ -128,7 +128,7 @@ def test_schedule_pending_work_is_counted_then_cancelled_with_replacement(
     row = pending(definition, uuid4())
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    data[f"schedules-{indexes['reminder']}-date"] = "2054-10-19"
     preview = post(browser, path, data)
     assert b"Planned sends not started yet" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
@@ -144,14 +144,14 @@ def test_date_only_digest_change_includes_cancellation_inventory(auth_service, g
     campaign, path = setup(store)
     identifier = add_digest(store, campaign)
     definition = ScheduleDefinition.objects.get(pk=identifier)
-    due = datetime(2026, 10, 3, tzinfo=UTC)
+    due = datetime(2054, 10, 3, tzinfo=UTC)
     with campaign_clock(due):
         row = occurrence(
-            definition, uuid4(), target="admins", slot="2026-10-01", due_at=due
+            definition, uuid4(), target="admins", slot="2054-10-01", due_at=due
         )
     browser, _ = signed_in()
     data, _ = fields(store, campaign)
-    data["window-end_date"] = "2026-10-30"
+    data["window-end_date"] = "2054-10-30"
     preview = post(browser, path, data)
     assert preview.status_code == 200
     assert b"Planned sends not started yet" in preview.content
@@ -172,8 +172,8 @@ def test_preview_resolves_applied_and_proposed_times_in_their_own_campaign_zones
     requests_before = ConfigurationChangeRequest.objects.count()
     response = post(browser, path, data)
     assert response.status_code == 200
-    assert b"2026-10-01T13:00:00+00:00" in response.content
-    assert b"2026-10-01T16:00:00+00:00" in response.content
+    assert b"2054-10-01T13:00:00+00:00" in response.content
+    assert b"2054-10-01T16:00:00+00:00" in response.content
     assert b"America/New_York" in response.content
     assert b"America/Los_Angeles" in response.content
     assert b"data-local-instant" in response.content
@@ -192,7 +192,7 @@ def test_new_occurrence_invalidates_a_previously_exact_schedule_preview(
     campaign, path = setup(store)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    data[f"schedules-{indexes['reminder']}-date"] = "2054-10-19"
     proposal = token(post(browser, path, data))
     pending(ScheduleDefinition.objects.get(kind="reminder"), uuid4())
     assert (
@@ -222,8 +222,8 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     assert response.status_code == 200
     assert b"Only the first five dates are shown" in response.content
     assert b"campaign day the digest reports on" in response.content
-    assert b"2026-10-02T04:15:00+00:00" in response.content
-    assert b"2026-10-02T04:30:00+00:00" in response.content
+    assert b"2054-10-02T04:15:00+00:00" in response.content
+    assert b"2054-10-02T04:30:00+00:00" in response.content
     assert response.content.count(b"data-local-instant") == 10
 
 
@@ -240,7 +240,7 @@ def test_running_work_blocks_confirmation_without_claiming_it_can_be_cancelled(
         row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    data[f"schedules-{indexes['reminder']}-date"] = "2054-10-19"
     response = post(browser, path, data)
     assert response.status_code == 200
     assert b"Sends blocking the change" in response.content
@@ -255,7 +255,7 @@ def test_schedule_preview_works_under_web_grants_and_rejects_hidden_changes(
     campaign, path = setup(store)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    data[f"schedules-{indexes['reminder']}-date"] = "2054-10-19"
     with task_login(ServiceRole.WEB):
         assert browser.get(path).status_code == 200
         proposal = token(post(browser, path, data))
@@ -276,8 +276,8 @@ def test_schedule_preview_works_under_web_grants_and_rejects_hidden_changes(
     "change_field,new_value",
     [
         ("timezone", "America/Los_Angeles"),
-        ("start_date", "2026-09-30"),
-        ("end_date", "2026-10-30"),
+        ("start_date", "2054-09-30"),
+        ("end_date", "2054-10-30"),
     ],
 )
 def test_campaign_window_change_replaces_cadence_even_when_mail_fields_are_unchanged(
@@ -326,11 +326,11 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     store = auth_service.store
     campaign, path = setup(store)
     browser, _ = signed_in()
-    page = browser.get(f"{path}?start_date=2026-09-30")
+    page = browser.get(f"{path}?start_date=2054-09-30")
     assert page.status_code == 200
     assert f'action="{path}"'.encode() in page.content
     data, _ = fields(store, campaign)
-    data["window-start_date"] = "2026-09-30"
+    data["window-start_date"] = "2054-09-30"
     preview = post(browser, path, data)
     assert f'action="{path}"'.encode() in preview.content
     token(preview)
@@ -348,7 +348,7 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
     campaign, path = setup(store)
     browser, _ = signed_in()
     data, indexes = fields(store, campaign)
-    data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
+    data[f"schedules-{indexes['reminder']}-date"] = "2054-10-19"
     with other_session() as holder:
         holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
         with connection.cursor() as cursor:

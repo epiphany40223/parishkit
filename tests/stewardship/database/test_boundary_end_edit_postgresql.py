@@ -102,7 +102,7 @@ def test_end_date_a_b_a_keeps_history_and_allocates_a_fresh_executable_root(tmp_
     with campaign_clock(original.starts_at):
         command(campaign, actor, Action.ACTIVATE)
         a, a_task = future_close(campaign)
-        for date in ("2026-11-10", original.end_date.isoformat()):
+        for date in ("2054-11-10", original.end_date.isoformat()):
             request, _ = end_request(store, campaign, actor, "edit_end", date)
             with task_login(ServiceRole.CONFIG_INSTALLER, exact=True):
                 assert (
@@ -115,7 +115,7 @@ def test_end_date_a_b_a_keeps_history_and_allocates_a_fresh_executable_root(tmp_
                     == "applied"
                 )
             campaign.refresh_from_db()
-            if date == "2026-11-10":
+            if date == "2054-11-10":
                 b, b_task = future_close(campaign)
         rows = list(
             CampaignBoundaryOccurrence.objects.filter(kind="close").order_by(

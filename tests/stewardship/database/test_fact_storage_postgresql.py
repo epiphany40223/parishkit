@@ -106,7 +106,7 @@ def test_empty_pre_campaign_graph_and_midnight_rollover_are_distinct(tmp_path):
     """Date-bound inputs can be empty; unchanged watermarks cannot hide a new day."""
     inputs, owner, _ = fact_fixture(tmp_path)
     empty = begin_fact_set(
-        replace(inputs, through_date=date(2026, 9, 30)), owner, admit=permit
+        replace(inputs, through_date=date(2054, 9, 30)), owner, admit=permit
     )
     assert empty.expected_count == 0
     publish_fact_set(empty.pk, owner, admit=permit)
@@ -133,8 +133,8 @@ def test_recheck_admission_and_exact_task_fence(tmp_path):
     "change",
     [
         "expected_count=1",
-        "first_date='2026-09-30'",
-        "last_date='2026-10-03'",
+        "first_date='2054-09-30'",
+        "last_date='2054-10-03'",
         "source_generation=2",
         "submission_watermark=2",
         "population_scope='historical'",
@@ -181,7 +181,7 @@ def test_completeness_checks_cumulative_math_not_just_number_of_days(tmp_path):
     # Each point obeys individual bounds, but their cumulative series is wrong.
     days = [
         dict(
-            local_date=date(2026, 10, index),
+            local_date=date(2054, 10, index),
             first_responses=0,
             cumulative_responses=1,
             cohort_denominator=10,
@@ -206,7 +206,7 @@ def test_historical_generation_can_record_a_pre_source_unavailable_day(tmp_path)
     )
     days = [
         dict(
-            local_date=date(2026, 10, index),
+            local_date=date(2054, 10, index),
             first_responses=0,
             cumulative_responses=0,
             cohort_denominator=0,

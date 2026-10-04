@@ -206,13 +206,13 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
         render_packet(document, output, format="csv")
     text = output.getvalue().decode()
     assert "Other: OTHER-REFERENCE moved parishes" in text
-    # The harness campaign is labelled 2027 but starts in 2026, so an exact match
+    # The harness campaign is labelled 2055 but starts in 2054, so an exact match
     # proves SQL captured the configured label rather than the application
     # silently falling back to the start year after a lost or misread key.
     captured = complete.ministry_snapshot.document["metadata"]
-    assert captured["year_label"] == "2027" and captured["start_date"][:4] == "2026"
-    assert "Stewardship year,2027\r\n" in text
-    assert "Stewardship year,2026" not in text
+    assert captured["year_label"] == "2055" and captured["start_date"][:4] == "2054"
+    assert "Stewardship year,2055\r\n" in text
+    assert "Stewardship year,2054" not in text
     assert "PRIVATE-JOIN-NOTE" not in text and text.count("Member,Member DUID") == 2
 
 

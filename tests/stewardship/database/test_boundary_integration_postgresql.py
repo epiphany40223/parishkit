@@ -41,7 +41,7 @@ def test_competing_compiled_workers_preserve_single_ordered_history(scheduled, o
 
 @pytest.mark.parametrize(
     "start,end,hours",
-    [("2026-03-07", "2026-03-08", 47), ("2026-10-31", "2026-11-01", 49)],
+    [("2054-03-07", "2054-03-08", 47), ("2054-10-31", "2054-11-01", 49)],
 )
 def test_compiled_dst_boundaries_keep_resolved_utc_instants(
     tmp_path, monkeypatch, start, end, hours

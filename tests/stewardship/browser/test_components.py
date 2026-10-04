@@ -25,7 +25,7 @@ def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + path)
     instant = page.locator("time[data-local-instant]").first
-    assert instant.get_attribute("datetime") == "2026-10-01T13:00:00+00:00"
+    assert instant.get_attribute("datetime") == "2054-10-01T13:00:00+00:00"
     assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()
     text = page.locator("main").inner_text()
     # The parish's intended time uses the parish style's clock (the default

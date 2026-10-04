@@ -92,7 +92,7 @@ def test_family_restore_slots_do_not_block_other_group_preparation(
     store, campaign, actor, _ = family_campaign(tmp_path)
     add_reminders(store, campaign, actor)
     family = FamilyCampaign.objects.get()
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -114,7 +114,7 @@ def test_family_restore_slots_do_not_block_other_group_preparation(
         state="pending"
     )
     assert selected.definition.kind == "reminder"
-    assert selected.definition.current_revision.values["date"] == "2026-10-04"
+    assert selected.definition.current_revision.values["date"] == "2054-10-04"
     assert ScheduleFulfillment.objects.count() == 2 - held_count
     assert (
         RestoreDeliveryHold.objects.filter(
@@ -136,7 +136,7 @@ def test_digest_aggregate_date_excludes_newest_restore_held_slot(tmp_path, monke
         return claim_event(claim)
 
     monkeypatch.setattr(catchup_digest, "claim_event", resolve)
-    with campaign_clock(datetime(2026, 10, 5, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):

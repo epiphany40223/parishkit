@@ -44,7 +44,7 @@ def test_complete_campaign_round_trip():
         content_versions={"thank_you": str(uuid4())},
         year_label=None,
     )["values"]
-    assert campaign_values(values).start == datetime(2026, 10, 1, 4, tzinfo=UTC)
+    assert campaign_values(values).start == datetime(2054, 10, 1, 4, tzinfo=UTC)
     value = document()
     value["sections"]["campaigns"][0]["values"] = values
     assert (
@@ -62,10 +62,10 @@ def test_complete_campaign_round_trip():
         ("timezone", "Unknown/Private"),
         ("timezone", None),
         ("start_date", "20261001"),
-        ("end_date", "2026-10-01"),
+        ("end_date", "2054-10-01"),
         ("end_date", "9999-12-31"),
         ("start_date", None),
-        ("end_date", "2026-09-30"),
+        ("end_date", "2054-09-30"),
         ("modules", []),
         ("modules", ["census", "census"]),
         ("modules", ["ministry", "census"]),
@@ -97,13 +97,13 @@ def test_invalid_campaign_fields(key, value):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"end": "2027-12-30"},
+        {"end": "2055-12-30"},
         {"comparison_end": "2026-12-30"},
         {"fund_duids": [True]},
         {"comparison_fund_duids": [1, 1]},
         {"overlap_confirmed": 1},
         {"start": "9999-01-01", "end": "9999-12-30"},
-        {"start": "2026-01-01", "end": "2026-12-31"},
+        {"start": "2054-01-01", "end": "2054-12-31"},
     ],
 )
 def test_invalid_financial_periods(overrides):
@@ -121,8 +121,8 @@ def test_overlap_and_leap_anniversary():
     values = campaign(
         modules=["financial"],
         financial=financial(
-            start="2026-01-01",
-            end="2026-12-31",
+            start="2054-01-01",
+            end="2054-12-31",
             overlap_confirmed=True,
             comparison_start="2024-02-29",
             comparison_end="2025-02-27",
@@ -139,7 +139,7 @@ def test_overlap_and_leap_anniversary():
         {"campaign_id": "private"},
         {"template_version": "private"},
         {"subject": ""},
-        {"date": "2026-11-01"},
+        {"date": "2054-11-01"},
         {"time": "09:00"},
         {"time": "09:00:00+00:00"},
         {"time": "09:00:00.000001"},
@@ -303,7 +303,7 @@ def test_campaign_interval_is_reused_for_all_schedules(monkeypatch):
     value = document()
     identifier = value["sections"]["campaigns"][0]["id"]
     value["sections"]["schedules"].extend(
-        schedule(identifier, kind="reminder", date=f"2026-10-{day:02}")
+        schedule(identifier, kind="reminder", date=f"2054-10-{day:02}")
         for day in range(2, 20)
     )
     calls, original = [], configuration.campaign_values

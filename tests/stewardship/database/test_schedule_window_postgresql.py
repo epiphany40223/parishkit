@@ -70,10 +70,10 @@ def test_digest_date_change_cannot_bypass_running_work(
     identifier = add_digest(store, campaign)
     definition = ScheduleDefinition.objects.get(pk=identifier)
     prior = definition.current_revision_id
-    due = datetime(2026, 10, 3, tzinfo=UTC)
+    due = datetime(2054, 10, 3, tzinfo=UTC)
     with campaign_clock(due):
         row = occurrence(
-            definition, actor, target="admins", slot="2026-10-01", due_at=due
+            definition, actor, target="admins", slot="2054-10-01", due_at=due
         )
         run = claimed_task("schedule_occurrence", row.pk, actor)
         advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
@@ -94,7 +94,7 @@ def test_digest_date_change_cannot_bypass_running_work(
                     "operation": "update",
                     "section": "campaigns",
                     "id": str(campaign.pk),
-                    "values": {"end_date": "2026-10-30"},
+                    "values": {"end_date": "2054-10-30"},
                 }
             ],
         )

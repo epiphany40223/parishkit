@@ -275,7 +275,7 @@ def test_set_based_family_writes_keep_field_and_row_guards(tmp_path):
     family_campaign(tmp_path)
     row = FamilyCampaign.objects.get()
     row.version += 1
-    row.eligibility_changed_at = datetime(2030, 1, 1)
+    row.eligibility_changed_at = datetime(2058, 1, 1)
     with pytest.raises(ValidationError), transaction.atomic():
         _write_families([row], ["eligibility_changed_at", "version"])
     row.pk = uuid4()

@@ -26,7 +26,7 @@ def example():
             schedule(
                 source["id"],
                 kind=kind,
-                date=None if kind == "weekly_digest" else "2026-10-01",
+                date=None if kind == "weekly_digest" else "2054-10-01",
                 weekday=0 if kind == "weekly_digest" else None,
                 template_version=template["id"],
                 subject=template["values"]["subject"],

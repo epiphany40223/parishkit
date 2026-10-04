@@ -66,7 +66,7 @@ def test_bounded_daily_pages_and_restart_keep_same_persisted_instants(
     identifier = add_digest(auth_service.store, campaign)
     producer = DigestScheduleProducer(uuid4(), limit=2)
     with (
-        campaign_clock(datetime(2026, 10, 10, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 10, tzinfo=UTC)),
         task_login(ServiceRole.SCHEDULER, exact=True),
         scheduler_session() as guard,
     ):
@@ -81,10 +81,10 @@ def test_bounded_daily_pages_and_restart_keep_same_persisted_instants(
         ScheduleOccurrence.objects.filter(definition_id=identifier).order_by("slot")
     )
     assert [row.slot for row in rows] == [
-        "2026-10-01",
-        "2026-10-02",
-        "2026-10-03",
-        "2026-10-04",
+        "2054-10-01",
+        "2054-10-02",
+        "2054-10-03",
+        "2054-10-04",
     ]
     assert all(
         row.target == "admins" and row.state == "pending" and row.task_id is None
@@ -104,7 +104,7 @@ def test_daily_backlog_does_not_starve_weekly_definition(
     }
     producer = DigestScheduleProducer(uuid4(), limit=1)
     with (
-        campaign_clock(datetime(2026, 10, 20, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 20, tzinfo=UTC)),
         scheduler_session() as guard,
     ):
         (first,) = producer(guard)
@@ -121,17 +121,17 @@ def test_exhausted_cursor_resumes_only_new_due_dates(
     add_digest(auth_service.store, family_service.campaign)
     producer = DigestScheduleProducer(uuid4())
     with scheduler_session() as guard:
-        with campaign_clock(datetime(2026, 10, 4, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, 4, tzinfo=UTC)):
             (first,) = producer(guard)
             assert first.created == 2
-            assert list(producer.cursors.values()) == [date(2026, 10, 2)]
+            assert list(producer.cursors.values()) == [date(2054, 10, 2)]
             (repeat,) = producer(guard)
             assert repeat.created == 0 and repeat.occurrences == ()
-        with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
             (later,) = producer(guard)
             assert later.created == 1
             assert ScheduleOccurrence.objects.get(pk=later.occurrences[0]).slot == (
-                "2026-10-03"
+                "2054-10-03"
             )
 
 
@@ -144,7 +144,7 @@ def test_earlier_draft_start_replaces_revision_and_rewinds_cursor(
     identifier = add_digest(auth_service.store, campaign)
     producer = DigestScheduleProducer(uuid4())
     with (
-        campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)),
         scheduler_session() as guard,
     ):
         (first,) = producer(guard)
@@ -164,7 +164,7 @@ def test_earlier_draft_start_replaces_revision_and_rewinds_cursor(
                         "operation": "update",
                         "section": "campaigns",
                         "id": str(campaign.pk),
-                        "values": {"start_date": "2026-09-29"},
+                        "values": {"start_date": "2054-09-29"},
                     }
                 ],
             ).state
@@ -181,14 +181,14 @@ def test_earlier_draft_start_replaces_revision_and_rewinds_cursor(
         ) == {("skipped", "schedule_replaced")}
         assert set(
             ScheduleOccurrence.objects.filter(
-                definition_id=identifier, slot__lt="2026-10-01"
+                definition_id=identifier, slot__lt="2054-10-01"
             ).values_list("slot", "revision_id")
-        ) == {("2026-09-29", current), ("2026-09-30", current)}
+        ) == {("2054-09-29", current), ("2054-09-30", current)}
 
 
 @pytest.mark.parametrize("weekly", [False, True])
 @pytest.mark.parametrize(
-    "field,value", [("start_date", "2026-10-08"), ("end_date", "2026-10-10")]
+    "field,value", [("start_date", "2054-10-08"), ("end_date", "2054-10-10")]
 )
 def test_narrowed_digest_window_cancels_old_work_and_can_return_to_original_dates(
     family_service,  # noqa: F811
@@ -213,7 +213,7 @@ def test_narrowed_digest_window_cancels_old_work_and_can_return_to_original_date
     identifier = add_digest(store, campaign, weekly=weekly)
     producer = DigestScheduleProducer(actor)
     with scheduler_session() as guard:
-        with campaign_clock(datetime(2026, 10, 20, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, 20, tzinfo=UTC)):
             (first,) = producer(guard)
             assert first.created > 0
             old_rows = list(ScheduleOccurrence.objects.filter(pk__in=first.occurrences))
@@ -244,7 +244,7 @@ def test_narrowed_digest_window_cancels_old_work_and_can_return_to_original_date
         # Stay inside the contracted draft window; do not infer post-close
         # Testing permission from production's completed-day reporting policy.
         review_day = 20 if field == "start_date" else 10
-        with campaign_clock(datetime(2026, 10, review_day, 12, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, review_day, 12, tzinfo=UTC)):
             (contracted,) = producer(guard)
             assert contracted.created > 0
             slots = list(
@@ -274,7 +274,7 @@ def test_narrowed_digest_window_cancels_old_work_and_can_return_to_original_date
             )
         restored = ScheduleDefinition.objects.get(pk=identifier).current_revision_id
         assert restored not in {previous, current}
-        with campaign_clock(datetime(2026, 10, 20, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, 20, tzinfo=UTC)):
             (reopened,) = producer(guard)
             assert reopened.created == first.created
         assert set(
@@ -291,7 +291,7 @@ def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
     """Retained coverage excludes mail; changed holds revisit past cursor dates."""
     campaign, actor = family_service.campaign, uuid4()
     identifier = add_digest(auth_service.store, campaign)
-    with campaign_clock(datetime(2026, 10, 3, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 3, tzinfo=UTC)):
         with scheduler_session() as guard:
             (first,) = DigestScheduleProducer(actor)(guard)
         row = ScheduleOccurrence.objects.get(pk=first.occurrences[0])
@@ -312,7 +312,7 @@ def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
             definition_id=identifier,
             mode="testing",
             target="admins",
-            slot="2026-10-02",
+            slot="2054-10-02",
             backup_at=start,
             window_start=start,
             window_end=start + timedelta(days=3),
@@ -322,15 +322,15 @@ def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
         )
     producer = DigestScheduleProducer(actor)
     with (
-        campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)),
         scheduler_session() as guard,
     ):
         (result,) = producer(guard)
         assert result.created == 1 and len(result.occurrences) == 1
         assert ScheduleOccurrence.objects.get(pk=result.occurrences[0]).slot == (
-            "2026-10-03"
+            "2054-10-03"
         )
-        assert not ScheduleOccurrence.objects.filter(slot="2026-10-02").exists()
+        assert not ScheduleOccurrence.objects.filter(slot="2054-10-02").exists()
         (replay,) = DigestScheduleProducer(actor)(guard)
         assert replay.created == 0 and replay.occurrences == result.occurrences
         resolve_restore_hold(
@@ -344,7 +344,7 @@ def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
         )
         (released,) = producer(guard)
         assert released.created == 1
-        assert ScheduleOccurrence.objects.filter(slot="2026-10-02").count() == 1
+        assert ScheduleOccurrence.objects.filter(slot="2054-10-02").count() == 1
         assert row.pk not in released.occurrences
 
 
@@ -356,7 +356,7 @@ def test_revised_digest_restarts_evaluation_without_rewriting_old_slots(
     identifier = add_digest(auth_service.store, campaign)
     producer = DigestScheduleProducer(uuid4(), limit=1)
     with (
-        campaign_clock(datetime(2026, 10, 10, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 10, tzinfo=UTC)),
         scheduler_session() as guard,
     ):
         (first,) = producer(guard)
@@ -402,7 +402,7 @@ def test_activation_catchup_holds_ordinary_materialization(
     activate_response_service(response_service)
     producer = DigestScheduleProducer(uuid4())
     with (
-        campaign_clock(datetime(2026, 10, 10, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 10, tzinfo=UTC)),
         scheduler_session() as guard,
     ):
         assert producer(guard) == ()
@@ -435,7 +435,7 @@ def test_final_daily_slot_after_close_is_finite_and_never_dispatched(
         .last()
     )
     assert (
-        final.slot == "2026-10-31"
+        final.slot == "2054-10-31"
         and final.due_at > campaign.active_configuration.ends_at
     )
     assert not OutboxMessage.objects.exists()

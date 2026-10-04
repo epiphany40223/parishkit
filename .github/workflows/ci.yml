@@ -157,29 +157,6 @@ jobs:
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
       - name: Build development application image
         run: docker build -f deploy/stewardship/Dockerfile -t parishkit-stewardship:development .
-      # The setup wizard here seeds the shared fixture campaign (2026-10-01
-      # through 2026-10-31, initial invitation at 09:00 America/New_York). On
-      # the real clock after that invitation the scheduler materializes an
-      # occurrence the bootstrap proof does not expect. Like the database
-      # shards, run on the fixture calendar (issue #421). Pull every
-      # registry image first so no TLS or registry traffic happens while the
-      # runner VM's clock (shared by all containers) is moved back.
-      - name: Pull runtime service images
-        run: |
-          python -c 'from parishkit.stewardship import runtime_topology as t; print(t.POSTGRES_IMAGE, t.VALKEY_IMAGE, t.CADDY_IMAGE)' \
-            | xargs -n1 docker pull -q
-      - name: Use the fixture calendar
-        run: |
-          target=$(date -u -d "$FIXTURE_NOW" +%s)
-          offset=$(( $(date -u +%s) - target ))
-          echo "FIXTURE_CLOCK_OFFSET=$offset" >> "$GITHUB_ENV"
-          if [ "$offset" -gt 0 ]; then
-            sudo systemctl stop chrony chronyd systemd-timesyncd 2>/dev/null || true
-            sudo date -u -s "@$(( $(date -u +%s) - offset ))"
-          fi
-          date -u
-        env:
-          FIXTURE_NOW: "2026-09-30T12:00:00Z"
       - name: Validate isolated development and production scenarios
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
@@ -194,18 +171,6 @@ jobs:
             done
           done
           python -m pytest "${cases[@]}" --require-no-skips --ci-progress --durations=10 -q
-          if [ "$FIXTURE_CLOCK_OFFSET" -gt 0 ] && [ "$(date -u +%s)" -ge "$(date -u -d 2026-10-01T00:00:00Z +%s)" ]; then
-            echo "Runner clock left the fixture calendar during the scenarios" >&2
-            exit 1
-          fi
-      - name: Restore the real clock
-        if: always()
-        run: |
-          if [ "${FIXTURE_CLOCK_OFFSET:-0}" -gt 0 ]; then
-            sudo date -u -s "@$(( $(date -u +%s) + FIXTURE_CLOCK_OFFSET ))"
-            sudo systemctl start chrony 2>/dev/null || sudo systemctl start systemd-timesyncd 2>/dev/null || true
-          fi
-          date -u
 
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:
@@ -342,44 +307,9 @@ jobs:
         run: |
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
-      # The synthetic database fixtures describe a campaign with fixed dates
-      # (2026-10-01 through 2026-10-31, America/New_York). Many fixtures write
-      # Family population and source promotion on the real clock and then pin
-      # the campaign clock to those dates, which is only monotonic while the
-      # real date precedes them. Run the partition on the fixture calendar by
-      # moving this disposable runner VM's clock (shared by the PostgreSQL and
-      # Valkey service containers) back to a fixed pre-campaign instant, then
-      # restore it before any later network step. Remove this once the
-      # fixtures carry a calendar that does not expire (issue #421).
-      - name: Use the fixture calendar
-        run: |
-          target=$(date -u -d "$FIXTURE_NOW" +%s)
-          offset=$(( $(date -u +%s) - target ))
-          echo "FIXTURE_CLOCK_OFFSET=$offset" >> "$GITHUB_ENV"
-          if [ "$offset" -gt 0 ]; then
-            sudo systemctl stop chrony chronyd systemd-timesyncd 2>/dev/null || true
-            sudo date -u -s "@$(( $(date -u +%s) - offset ))"
-          fi
-          date -u
-        env:
-          FIXTURE_NOW: "2026-09-30T12:00:00Z"
       - name: Measure isolated database partition
         run: |
           python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 14 --output "$RUNNER_TEMP/stewardship-shard"
-          # A time daemon resynchronizing mid-run would silently reintroduce
-          # the real calendar; fail loudly instead of trusting the result.
-          if [ "$FIXTURE_CLOCK_OFFSET" -gt 0 ] && [ "$(date -u +%s)" -ge "$(date -u -d 2026-10-01T00:00:00Z +%s)" ]; then
-            echo "Runner clock left the fixture calendar during the partition" >&2
-            exit 1
-          fi
-      - name: Restore the real clock
-        if: always()
-        run: |
-          if [ "${FIXTURE_CLOCK_OFFSET:-0}" -gt 0 ]; then
-            sudo date -u -s "@$(( $(date -u +%s) + FIXTURE_CLOCK_OFFSET ))"
-            sudo systemctl start chrony 2>/dev/null || sudo systemctl start systemd-timesyncd 2>/dev/null || true
-          fi
-          date -u
       - name: Retain successful shard evidence
         uses: actions/upload-artifact@v4
         with:

@@ -7,11 +7,11 @@ from parishkit.stewardship.accounts.campaign_forms import CampaignForm, overlaps
 FINANCIAL = {
     "name": "Renewal",
     "timezone": "America/New_York",
-    "start_date": "2026-10-01",
-    "end_date": "2026-10-31",
+    "start_date": "2054-10-01",
+    "end_date": "2054-10-31",
     "financial_enabled": "on",
-    "financial_start": "2027-01-01",
-    "financial_end": "2027-12-31",
+    "financial_start": "2055-01-01",
+    "financial_end": "2055-12-31",
     "comparison_start": "2026-01-01",
     "comparison_end": "2026-12-31",
     "fund_duids": ["9"],
@@ -28,12 +28,12 @@ def bound(**changes):
 @pytest.mark.parametrize(
     ("dates", "expected"),
     [
-        (("2026-10-01", "2026-10-31", "2027-01-01", "2027-12-31"), False),
-        (("2026-10-01", "2026-10-31", "2026-10-31", "2027-10-30"), True),
-        (("2026-10-01", "2026-10-31", "2025-10-01", "2026-10-01"), True),
-        (("2026-10-01", "2026-10-31", "2025-10-01", "2026-09-30"), False),
-        (("2026-10-01", "", "2026-10-15", "2027-10-14"), False),
-        (("2026-10-01", "2026-10-31", "not a date", "2027-10-14"), False),
+        (("2054-10-01", "2054-10-31", "2055-01-01", "2055-12-31"), False),
+        (("2054-10-01", "2054-10-31", "2054-10-31", "2055-10-30"), True),
+        (("2054-10-01", "2054-10-31", "2053-10-01", "2054-10-01"), True),
+        (("2054-10-01", "2054-10-31", "2053-10-01", "2054-09-30"), False),
+        (("2054-10-01", "", "2054-10-15", "2055-10-14"), False),
+        (("2054-10-01", "2054-10-31", "not a date", "2055-10-14"), False),
     ],
 )
 def test_overlap_rule_matches_the_inclusive_campaign_check(dates, expected):
@@ -54,13 +54,13 @@ def test_confirmation_is_hidden_until_the_dates_overlap():
 
 def test_unconfirmed_overlap_is_an_inline_error_on_a_visible_checkbox():
     """The re-rendered form shows the checkbox with its own error."""
-    form = bound(financial_start="2026-07-01", financial_end="2027-06-30")
+    form = bound(financial_start="2054-07-01", financial_end="2055-06-30")
     assert form.overlap_needed and not form.is_valid()
     assert "overlaps the campaign" in str(form.errors["overlap_confirmed"])
     html = str(form["overlap_confirmed"].as_field_group())
     assert " hidden>" not in html
     confirmed = bound(
-        financial_start="2026-07-01", financial_end="2027-06-30", overlap_confirmed="on"
+        financial_start="2054-07-01", financial_end="2055-06-30", overlap_confirmed="on"
     )
     assert confirmed.is_valid(), confirmed.errors
 
@@ -87,16 +87,16 @@ def window(**data):
 
 
 def test_schedule_window_asks_for_confirmation_only_when_dates_overlap():
-    """The window's confirmation follows the fixed financial period (2027)."""
+    """The window's confirmation follows the fixed financial period (2055)."""
     assert not window().overlap_needed
     html = str(window()["overlap_confirmed"].as_field_group())
     assert " hidden>" in html
-    assert 'data-period-start-value="2027-01-01"' in html
+    assert 'data-period-start-value="2055-01-01"' in html
     assert 'data-campaign-end-name="window-end_date"' in html
     dates = {
         "timezone": "America/New_York",
-        "start_date": "2026-10-01",
-        "end_date": "2027-01-05",
+        "start_date": "2054-10-01",
+        "end_date": "2055-01-05",
     }
     unconfirmed = window(**dates)
     assert unconfirmed.overlap_needed and not unconfirmed.is_valid()

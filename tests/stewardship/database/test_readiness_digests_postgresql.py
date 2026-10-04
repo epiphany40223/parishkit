@@ -36,7 +36,7 @@ def test_web_preview_coalesces_all_daily_dates_and_omits_empty_weekly(tmp_path):
         with CaptureQueriesContext(connection) as queries:
             result = digest_impact(
                 campaign,
-                cutoff=datetime(2026, 10, 20, 12, tzinfo=UTC),
+                cutoff=datetime(2054, 10, 20, 12, tzinfo=UTC),
                 recipients=ADMINS,
             )
         assert result.daily_messages == 2 and result.weekly_messages == 0
@@ -54,7 +54,7 @@ def test_digest_preview_exact_boundary_changes_binding_even_with_same_mail_count
     store, campaign, _, _ = family_campaign(tmp_path)
     add_digest(store, campaign)
     campaign.refresh_from_db()
-    cutoff = datetime(2026, 10, 20, 4, 15, tzinfo=UTC)
+    cutoff = datetime(2054, 10, 20, 4, 15, tzinfo=UTC)
     with work_transaction():
         before = digest_impact(
             campaign, cutoff=cutoff - timedelta(microseconds=1), recipients=ADMINS
@@ -71,13 +71,13 @@ def test_daily_preview_crosses_date_pages_without_multiplying_messages(tmp_path)
     from .campaign_builders import draft_campaign
 
     store, campaign, _ = draft_campaign(
-        tmp_path, campaign_record(end_date="2027-04-30")
+        tmp_path, campaign_record(end_date="2055-04-30")
     )
     add_digest(store, campaign)
     campaign.refresh_from_db()
     with task_login(ServiceRole.WEB), work_transaction():
         result = digest_impact(
-            campaign, cutoff=datetime(2027, 2, 1, 12, tzinfo=UTC), recipients=ADMINS
+            campaign, cutoff=datetime(2055, 2, 1, 12, tzinfo=UTC), recipients=ADMINS
         )
     assert result.daily_messages == 2 and result.coalesced_slots == 123
     assert result.blocked_groups == 0

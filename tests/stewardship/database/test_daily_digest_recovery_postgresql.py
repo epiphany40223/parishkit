@@ -61,7 +61,7 @@ def test_delayed_first_claim_includes_every_day_then_freezes_its_cutoff(
     monkeypatch.setattr(digest_planning, "LIMIT", 2)
     with campaign_clock(INSTANT):
         claim = allocate()
-    executed = datetime(2026, 10, 20, tzinfo=UTC)
+    executed = datetime(2054, 10, 20, tzinfo=UTC)
     with (
         campaign_clock(executed),
         task_login(ServiceRole.WORKER, exact=True),
@@ -69,7 +69,7 @@ def test_delayed_first_claim_includes_every_day_then_freezes_its_cutoff(
     ):
         assert discover_dates(claim).cutoff == executed
     with (
-        campaign_clock(datetime(2026, 10, 21, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 21, tzinfo=UTC)),
         task_login(ServiceRole.WORKER, exact=True),
     ):
         row = finish_coverage(claim)
@@ -174,7 +174,7 @@ def test_failed_old_generation_does_not_block_new_daily_obligations(response_ser
                 correlation_id=uuid4(),
                 admit=lambda *args: True,
             )
-    with campaign_clock(datetime(2026, 10, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 12, tzinfo=UTC)):
         with (
             task_login(ServiceRole.SCHEDULER, exact=True),
             scheduler_session() as guard,

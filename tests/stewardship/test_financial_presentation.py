@@ -209,4 +209,4 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     assert page["financial"] == preview["html"]
     labels = option_labels(config.options[0], config, parish_name=parish["name"])
     assert set(labels.values()) == {preview["text"]}
-    assert preview["text"].startswith((label or "2027") + ": January 1, 2027")
+    assert preview["text"].startswith((label or "2055") + ": January 1, 2055")

@@ -36,7 +36,7 @@ from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_auth_postgresql import family_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-INSTANT = datetime(2026, 10, 10, tzinfo=UTC)
+INSTANT = datetime(2054, 10, 10, tzinfo=UTC)
 
 
 def allocate(*, claim_task=True):
