@@ -117,9 +117,9 @@ Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations
 
 - [x] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
 - [x] OPS-04.02 — Run migrations once before service rollout.
-- [ ] OPS-04.03 — Deferred until explicitly activated production-readiness work: backup-aware image upgrades and upgrade readiness checks.
+- [ ] OPS-04.03 — Backup-aware image upgrades and upgrade readiness checks; the readiness checks stay deferred under the [post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy).
 - [x] OPS-04.04 — Document schema evolution and recovery procedures.
-- [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch and crash; upgrade-path tests are deferred by the pre-production policy.
+- [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch and crash; the upgrade-parity test the [post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy) requires exists, broader upgrade-path tests remain open.
 
 Current evidence: [runtime startup and recovery](../../guides/stewardship-runtime.md)
 and the [review ledger](../../guides/stewardship-phase-1c-reviews.md). Development
@@ -133,8 +133,8 @@ Under the [v1 launch scope](../../plans/stewardship/v1-launch.md), the
 form of OPS-04.03: the migration profile and `database-grants` admit a
 configured deployment when a backup completed within the last 24 hours is
 recorded, and `retarget-image` re-renders every generated document for the new
-release. Automated upgrade readiness checks and the upgrade-path tests of .05
-remain deferred.
+release. Automated upgrade readiness checks remain deferred; of .05's
+upgrade-path tests, the post-launch policy's upgrade-parity test exists.
 
 ## OPS-05: Backup service and purge-triggered backup
 

@@ -2,12 +2,18 @@
 
 A released forward migration installs ``schema/migrations/NNNN_*.sql`` whole.
 Its text must never change afterwards (a Production database already ran it),
-so each file's digest is pinned here. When such a file re-creates a function
-the fresh-install baseline also defines, the latest migration's copy must be
-the baseline's current body: a fresh install runs the baseline and then the
+so each file's digest is pinned here. The four-digit prefixes form one
+repository-wide sequence, so the files sort in apply order even though Django
+numbers migrations per app. When such a file re-creates a function the
+fresh-install baseline also defines, the latest migration's copy must be the
+baseline's current body: a fresh install runs the baseline and then the
 migrations, so the two texts are what a fresh install and an upgraded database
 each end up with. A later change to a replaced function needs a new numbered
-migration file, which then becomes "latest" here.
+migration file, which then becomes "latest" here. A function an earlier
+migration file created (plain ``CREATE FUNCTION``) is migration-owned: every
+install path runs the migration that replaces it, so no baseline copy exists
+or is compared. Views and constraints have no text check here; the
+upgrade-parity database test catches their drift.
 """
 
 import hashlib
@@ -48,6 +54,12 @@ def function_bodies(text, *, replace):
 def test_every_frozen_migration_file_is_pinned_and_unchanged():
     files = sorted(path.name for path in MIGRATIONS.glob("*.sql"))
     assert files == sorted(FROZEN), "pin every schema/migrations/*.sql digest"
+    prefixes = [name[:4] for name in files]
+    assert all(prefix.isdigit() for prefix in prefixes), files
+    # The baseline is 0001; frozen files continue from 0002 without gaps.
+    assert [int(prefix) for prefix in prefixes] == list(range(2, 2 + len(prefixes))), (
+        "frozen files form one consecutive repository-wide sequence from 0002"
+    )
     for name, digest in FROZEN.items():
         text = (MIGRATIONS / name).read_text(encoding="utf-8")
         assert hashlib.sha256(text.encode()).hexdigest() == digest, name
@@ -73,9 +85,45 @@ def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
             function_bodies(path.read_text(encoding="utf-8"), replace=False)
         )
     latest = {}
+    migration_owned = set()
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        latest.update(function_bodies(path.read_text(encoding="utf-8"), replace=True))
+        text = path.read_text(encoding="utf-8")
+        migration_owned |= function_bodies(text, replace=False).keys()
+        latest.update(function_bodies(text, replace=True))
     assert latest, "no replaced functions found"
     for name, body in latest.items():
-        assert name in baseline, f"{name} is replaced but not in the baseline"
+        if name in migration_owned:
+            # Created by a frozen file, so every install path runs the
+            # migration that replaces it; there is no baseline copy to match.
+            continue
+        assert name in baseline, (
+            f"{name} is replaced but never created: a new function uses plain "
+            "CREATE FUNCTION"
+        )
         assert body == baseline[name], f"{name}: latest migration differs from baseline"
+
+
+def test_frozen_file_migrations_apply_in_file_order():
+    """Each frozen-file migration depends on the one before it, so the database
+    applies the files in prefix order whatever their apps' own numbering.
+
+    Django's loader reads the migration modules from disk without a database;
+    a module that installs a frozen file names it in ``FROZEN_SQL``.
+    """
+    import sys
+
+    from django.db.migrations.loader import MigrationLoader
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    frozen = {}
+    for key, migration in loader.disk_migrations.items():
+        module = sys.modules[migration.__module__]
+        if hasattr(module, "FROZEN_SQL"):
+            frozen[Path(module.FROZEN_SQL).name] = key
+    assert sorted(frozen) == sorted(FROZEN), "every frozen file has one migration"
+    ordered = [frozen[name] for name in sorted(frozen)]
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        # forwards_plan lists every migration that must apply before current.
+        assert previous in loader.graph.forwards_plan(current), (
+            f"{current} must depend on {previous}, directly or transitively"
+        )

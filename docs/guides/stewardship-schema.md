@@ -73,6 +73,13 @@ state together under the
 instead of adding obsolete development upgrade paths. Do not rewrite it after
 production compatibility is explicitly declared.
 
+Production went live on October 3, 2026, and the
+[post-launch schema policy](../specs/stewardship/operations/spec.md#post-launch-schema-policy)
+now applies: a fresh install runs these baseline files and then every forward
+migration. Objects a migration creates live only in its frozen SQL file;
+objects it alters get their final definition here and are re-created by the
+migration; the upgrade-parity test compares the two paths.
+
 ## Equivalence and regression evidence
 
 The reference schema was installed from backed-up commit `5f686e3` into a newly

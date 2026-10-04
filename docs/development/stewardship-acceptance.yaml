@@ -144,6 +144,7 @@ sections:
     "Production ingress and TLS": [OPS-03]
     "Startup and upgrades": [OPS-04]
     "Pre-production development policy": [OPS-04, DAT-01]
+    "Post-launch schema policy": [OPS-04, DAT-01]
     "Production upgrades (deferred)": [OPS-04]
     "Offline bootstrap profile": [OPS-04]
     "Offline Admin-access recovery": [OPS-04]

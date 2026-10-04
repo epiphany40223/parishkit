@@ -92,6 +92,8 @@ MODULE_SECONDS = {
     "test_setup_credential_installation_postgresql.py": 5,
     "test_security_fanout_postgresql.py": 8,
     "test_security_dispatch_postgresql.py": 8,
+    # Three subprocess migrations into two extra databases (issue #487).
+    "test_upgrade_parity_postgresql.py": 40,
 }
 
 # Only the loaded case retains a real source lease. Do not assign the unloaded
