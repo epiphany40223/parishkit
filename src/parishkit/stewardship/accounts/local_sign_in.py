@@ -33,10 +33,12 @@ from parishkit.stewardship.deployment import (
 )
 from parishkit.stewardship.web.security import error_response
 
-from .authentication import denial, establish_identity, record_failure, runtime
 from .limiting import LimiterUnavailable
 from .policy_schema import normalized_email
-from .sessions import database_now, revocation_epoch
+
+# ``.authentication`` and ``.sessions`` load Django models, so they are imported
+# inside the view and the command: the command must be importable before it
+# has configured Django (#508).
 
 # The route path, and the key namespace the web Valkey ACL already grants.
 PATH = "/admin/local/sign-in"
@@ -117,6 +119,9 @@ def sign_in(request):
     and counts failures exactly as the Google callback does, consumes the
     token atomically, and hands the identity to ``establish_identity``.
     """
+    from .authentication import denial, establish_identity, record_failure, runtime
+    from .sessions import database_now
+
     if running_profile() is not DeploymentProfile.LOCAL:
         return error_response(request, status=404)
     if request.method != "POST":
@@ -194,6 +199,8 @@ def local_sign_in_command(configuration, email):
     admit_local_configuration(configuration)
     address = normalized_email(email)
     configure_operator_database(configuration)
+    from .sessions import revocation_epoch
+
     try:
         epoch = revocation_epoch()
         client = valkey_client(configuration)

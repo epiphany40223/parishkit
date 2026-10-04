@@ -11,6 +11,8 @@ PostgreSQL and Valkey lives in the database suite.
 import inspect
 import json
 import re
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
@@ -22,7 +24,7 @@ from django.urls import Resolver404, URLPattern, URLResolver, resolve
 
 from parishkit.config import ConfigError
 from parishkit.stewardship import local_urls, runtime_web, urls
-from parishkit.stewardship.accounts import access_gate, local_sign_in
+from parishkit.stewardship.accounts import access_gate, local_sign_in, sessions
 from parishkit.stewardship.accounts.authentication import AuthRuntime
 from parishkit.stewardship.cli import main
 from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
@@ -285,7 +287,7 @@ def test_command_mints_the_link_for_local(monkeypatch):
         operator_commands, "configure_operator_database", lambda config: None
     )
     monkeypatch.setattr(runtime_web, "valkey_client", lambda config: client)
-    monkeypatch.setattr(local_sign_in, "revocation_epoch", lambda: "epoch-7")
+    monkeypatch.setattr(sessions, "revocation_epoch", lambda: "epoch-7")
     link = local_sign_in.local_sign_in_command(configuration, "Admin@Example.test")
     origin, _, token = link.partition("#")
     assert origin == "https://localhost:8443/admin/local/sign-in"
@@ -396,3 +398,28 @@ def test_production_ingress_documents_carry_no_local_route():
         assert "/admin/local" not in text
         assert "sign-in" not in text
         assert "local-sign-in" not in text
+
+
+def test_the_command_imports_before_django_is_configured(tmp_path):
+    """The console entry point loads the command without Django settings.
+
+    The command configures Django itself after its LOCAL checks, so a
+    module-level import of anything that loads Django models would crash it
+    before the refusal (#508). A fresh interpreter with no settings module
+    must be able to import it.
+    """
+    source = Path(__file__).resolve().parents[2] / "src"
+    environment = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(source)}
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import parishkit.stewardship.accounts.local_sign_in",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stderr
