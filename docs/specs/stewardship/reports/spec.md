@@ -84,6 +84,56 @@ patterns, hover/focus values, and equivalent data tables. They download as PNG
 or PDF. Dollar/count series on one chart use separate labeled axes rather than
 comparing unlike units on one scale.
 
+### Chart engine
+
+Every Admin chart from the [response funnel](#response-funnel) on is one
+Vega-Lite specification, built by a pure function of the report's query
+result (`reports/chart_specs.py`) together with a plain-language summary and
+a table of its exact values. The same JSON is drawn two ways, so the portal
+and the emails cannot disagree (the
+[participation graph](#participation-graph) predates the engine and keeps its
+own renderer):
+
+- **In the browser**, `chart-v1.js` reads the specification embedded in the
+  page and draws it as SVG with the vendored Vega runtime, within the
+  [Content Security Policy](../architecture/spec.md#web-security-and-privacy):
+  Vega runs in its interpreter mode (no `eval`), nothing injects a stylesheet
+  (the tooltip's is served as a static file), there is no actions menu, and
+  no asset comes from a third party; the runtime's data loader refuses every
+  load, since a specification carries its data inline. The Vega, Vega-Lite
+  and vega-embed bundles are vendored under the static files, each pinned by
+  SHA-256 with its version and source URL, with the license notices of
+  everything they bundle (`reports/chart_assets.py`). vl-convert reports the
+  same Vega and vega-embed releases and the same Vega-Lite minor version (no
+  interface reports its patch release; the locked build embeds the vendored
+  6.4.1), so the two renderers run the same code. A browser test on the component
+  asserts that both charts render, take a pointer, open their table and
+  follow a resize with zero policy violations or script errors.
+- **On the server**, vl-convert-python renders the same specification to PNG
+  (at twice its CSS size, for the digests' `cid:` images) and SVG, without
+  Node or a browser, and reports the image's CSS width and height. These are
+  the engine's two formats; how a report page offers the downloads above is
+  specified with the dashboard. Rendering happens only in workers and
+  [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
+  never on a page view, and always in a short-lived helper process isolated
+  like the mail helpers (no environment, no error text back): the worker
+  kills it at its time limit and refuses an oversized specification or
+  image. A kill leaves a `helper_timed_out`
+  [durable timeout entry](../operations/spec.md#observability-and-health)
+  under a timeout name the first task that renders a chart adds.
+
+Each chart is accessible in every rendering. On a page the chart is a figure
+whose view has the chart's name and is described by its summary, and is
+followed by the collapsed exact-values table, a region named by the table's
+caption. A pointer shows exact values in tooltips; the view takes keyboard
+focus so a keyboard or screen-reader user hears its name and summary, and
+gets the exact values from the table, not the tooltips. A browser without
+JavaScript sees the summary and the table. Series are told apart by dash
+pattern as well as color. In an email the PNG carries the summary as its alt
+text and the table follows it.
+Times on an axis are the campaign's wall clock whatever time zone draws the
+chart, and the axis names the campaign's zone.
+
 ## Population and calculation rules
 
 "Active" means current promoted ParishSoft eligibility. Current participation
@@ -271,9 +321,10 @@ deletes, and reports no value that later activity rewrites, such as the
 furthest form step reached or a Family's current eligibility; those belong to
 live views. The query returns one row per Family of the campaign with each
 instant as it stood at the cutoff, so the totals, the series below and the
-lists of Families behind any count all come from the same rows. The dashboard,
-its lists, the per-Family timeline and the chart engine are specified with the
-next increment of this report.
+lists of Families behind any count all come from the same rows. The
+[chart engine](#chart-engine) draws the funnel and the activity series; the
+dashboard, its lists and the per-Family timeline are specified with the next
+increment of this report.
 
 ### Funnel stages
 
@@ -293,6 +344,10 @@ A Family counts once in a stage when, by the as-of instant:
   `first_progress_at`.
 - **Submitted:** its first [Submission](../data/spec.md#submission) in the
   mode was submitted.
+
+Each stage's share ("Compared with invited") is of the Invited count and can
+exceed 100%: the stages are not nested, so a Family can follow its link or
+submit without a delivered invitation.
 
 Three figures are reported beside the funnel, not as stages of it:
 

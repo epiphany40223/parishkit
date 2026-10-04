@@ -54,6 +54,7 @@ from parishkit.stewardship.accounts.share_forms import (
 )
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
+from parishkit.stewardship.reports.chart_assets import VENDORED
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
@@ -62,6 +63,7 @@ from parishkit.stewardship.web.tables import paginate, window_table
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
 from ..test_setup_final_steps import wizard as final_wizard
+from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -1581,6 +1583,7 @@ def component_origin():
     responses.update(followup_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
+    responses.update(chart_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))
@@ -1607,11 +1610,19 @@ def component_origin():
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
+        ("chart-v1.js", "application/javascript"),
+        ("chart-v1.css", "text/css"),
     ):
         asset = f"stewardship/{filename}"
         located = finders.find(asset)
         assert located is not None, f"Required component asset is missing: {asset}"
         responses[f"/static/{asset}"] = (kind, Path(located).read_text())
+    # The chart engine's vendored bundles (#477), served as the page loads them.
+    for asset in VENDORED:
+        responses[f"/static/{asset.static_name}"] = (
+            "application/javascript",
+            asset.path.read_text(),
+        )
 
     logo = BytesIO()
     Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")

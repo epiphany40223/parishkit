@@ -1,0 +1,6 @@
+{% load static %}{# The chart engine (#477): the vendored Vega bundles pinned in reports/chart_assets.py, in load order, then the page script. Include once in a page's head block. #}
+<link rel="stylesheet" href="{% static 'stewardship/chart-v1.css' %}">
+<script src="{% static 'stewardship/vendor/vega-6.2.0.min.js' %}" defer></script>
+<script src="{% static 'stewardship/vendor/vega-lite-6.4.1.min.js' %}" defer></script>
+<script src="{% static 'stewardship/vendor/vega-embed-7.0.2.min.js' %}" defer></script>
+<script src="{% static 'stewardship/chart-v1.js' %}" defer></script>

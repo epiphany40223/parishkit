@@ -122,6 +122,7 @@ sections:
     "Shutdown and upgrade behavior": [BG-10]
   reports/spec.md:
     "Shared report behavior": [RPT-01]
+    "Chart engine": [RPT-01, BG-08]
     "Population and calculation rules": [RPT-02]
     "Participation graph": [RPT-03]
     "Participation fact materialization": [RPT-03]
