@@ -13,10 +13,9 @@ again after later activity at the same cutoff.
 Submissions are dated by the campaign clock, so each is submitted with that
 clock pinned to the database's real instant; every instant the funnel reads
 then lies on one timeline and the cutoffs between steps are exact. For that
-instant to fall inside the campaign on any calendar (CI runs the database
-shards on the 2026-09-30 fixture calendar, issue #421, before the shared
-fixture campaign of 2026-10-01 starts), the campaign's dates are derived from
-the database clock rather than taken from the shared fixture.
+instant to fall inside the campaign (the shared fixture campaign starts on
+2054-10-01, far after the real date; issue #421), the campaign's dates are
+derived from the database clock rather than taken from the shared fixture.
 """
 
 from dataclasses import replace

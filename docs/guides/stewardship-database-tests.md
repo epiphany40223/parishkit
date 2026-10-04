@@ -198,24 +198,23 @@ data to recover; the next run rebuilds the schema from migrations.
 
 ## Fixture calendar
 
-The synthetic campaign fixtures use fixed dates: 2026-10-01 through
-2026-10-31 in America/New_York, with the initial invitation at 09:00. Many
-fixtures populate Families and promote source data on the real database clock,
-then pin the campaign clock to those dates. That is only monotonic while the
-real date is earlier. Later, the database correctly rejects the rewind
-(`Family identity cannot rewind source/cohort/code state`), and statistics
-become unavailable because the source appears to be promoted after the
-observation. Production is unaffected: there the campaign clock and source
-promotion read the same `statement_timestamp()`.
+The synthetic campaign fixtures run from 2054-10-01 through 2054-10-31 in
+America/New_York, with the initial invitation at 09:00. Many fixtures populate
+Families and promote source data on the real database clock, then pin the
+campaign clock to those dates. That is only monotonic while the real date is
+earlier, so the campaign timeline (campaign and schedule dates, the proposed
+financial period, `year_label` and campaign-clock pins) lies far in the future.
+Source history (comparison periods, giving and pledge dates, source `as_of`
+dates and birth dates) stays in the real past, because source refreshes clamp
+giving windows to the real snapshot date. Production is unaffected: there the
+campaign clock and source promotion read the same `statement_timestamp()`.
 
-Until [issue #421](https://github.com/epiphany40223/parishkit/issues/421) moves
-the fixtures to a calendar that does not expire, each CI database shard sets
-its disposable runner clock to 2026-09-30T12:00Z for the partition and restores
-it afterwards. The `stewardship-operational` job does the same around its
-Compose scenarios, after pulling the runtime service images: its setup wizard
-seeds the same campaign, and once the 09:00 invitation is due the scheduler
-creates an occurrence that the bootstrap proof does not expect. Local runs on a real clock after 2026-10-01 fail about 100
-database tests for this reason alone; rely on CI for full database evidence.
+The timeline was moved from 2026 by exactly 28 years, which keeps weekdays,
+leap years and daylight-saving dates unchanged
+([issue #421](https://github.com/epiphany40223/parishkit/issues/421)). The pure
+test `tests/stewardship/test_fixture_calendar.py` fails once the real date is
+within a year of the earliest shifted date; shift the timeline by another 28
+years then, as described in `tests/stewardship/fixture_calendar.py`.
 
 ## Foundation boundaries
 

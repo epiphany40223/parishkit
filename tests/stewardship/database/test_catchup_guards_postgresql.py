@@ -49,7 +49,7 @@ def test_worker_cannot_forge_digest_inventory_receipts(tmp_path, forgery):
     """Knowing every predictable key and the genuine claim cannot prove coverage."""
     store, campaign, actor = draft_campaign(tmp_path)
     definition = add_digest(store, campaign)
-    with campaign_clock(datetime(2026, 10, 20, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 20, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         campaign.refresh_from_db()
@@ -61,8 +61,8 @@ def test_worker_cannot_forge_digest_inventory_receipts(tmp_path, forgery):
             key, cursor = {
                 "digest": (f"digest:{definition}", "digests:"),
                 "page": (
-                    f"page:{definition}:2026-10-19:cover",
-                    f"digests:{definition.hex}:cover:2026-10-19",
+                    f"page:{definition}:2054-10-19:cover",
+                    f"digests:{definition.hex}:cover:2054-10-19",
                 ),
                 "cover": (f"cover:{definition}:2", f"digests:{definition.hex}:cover:"),
                 "complete": ("complete", "complete:"),
@@ -99,7 +99,7 @@ def test_worker_occurrence_writes_require_exact_family_slot_and_claim(
     _, campaign, actor, _ = family_campaign(tmp_path)
     definition = ScheduleDefinition.objects.select_related("current_revision").get()
     family = FamilyCampaign.objects.get()
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -144,7 +144,7 @@ def test_worker_occurrence_writes_require_exact_family_slot_and_claim(
 def test_worker_cannot_skip_an_eligible_family_without_a_real_reason(tmp_path):
     """An authentic preparation claim cannot invent an ineligibility outcome."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -166,7 +166,7 @@ def test_prior_claim_event_cannot_authorize_writes_after_same_worker_reclaims(tm
     _, campaign, actor, _ = family_campaign(tmp_path)
     definition = ScheduleDefinition.objects.select_related("current_revision").get()
     family = FamilyCampaign.objects.get()
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         options = execution_arguments(demand)
@@ -216,7 +216,7 @@ def test_digest_cannot_complete_coalescing_without_semantic_fulfillment(
     """A real planner bug omitting fulfillment rolls back the entire coverage batch."""
     store, campaign, actor = draft_campaign(tmp_path)
     definition = add_digest(store, campaign)
-    with campaign_clock(datetime(2026, 10, 3, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 3, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -244,7 +244,7 @@ def test_digest_cannot_complete_coalescing_without_semantic_fulfillment(
 def test_catchup_family_planner_requires_its_open_ordered_transaction(tmp_path):
     """The pre-existing require_work_order check rejects autocommit before writes."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         execution = claim_hint(
             **execution_arguments(ActivationCatchUpDemand.objects.get())
@@ -267,7 +267,7 @@ def test_two_connections_prepare_distinct_groups_for_the_same_claim(
     initial = ScheduleDefinition.objects.get()
     if replacement:
         add_reminders(store, campaign, actor)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -328,7 +328,7 @@ def test_two_connections_prepare_distinct_groups_for_the_same_claim(
 def test_web_cannot_close_campaign_without_guarded_transition_evidence(tmp_path):
     """Definer token effects do not bypass the independent campaign write guard."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         with (
             task_login(ServiceRole.WEB, exact=True),
@@ -349,7 +349,7 @@ def test_family_receipt_requires_forwarded_predecessor_coverage(tmp_path, monkey
     store, campaign, actor, _ = family_campaign(tmp_path)
     initial = ScheduleDefinition.objects.get()
     add_reminders(store, campaign, actor)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -397,7 +397,7 @@ def test_worker_cannot_checkpoint_inapplicable_pending_family_work(
     """The live Family/close decision is database evidence, not a planner promise."""
     _, campaign, actor, rings = family_campaign(tmp_path)
     family = FamilyCampaign.objects.get()
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -421,7 +421,7 @@ def test_worker_cannot_checkpoint_inapplicable_pending_family_work(
         instant = (
             campaign.active_configuration.ends_at
             if inapplicable == "closed"
-            else datetime(2026, 10, 5, tzinfo=UTC)
+            else datetime(2054, 10, 5, tzinfo=UTC)
         )
         campaign.refresh_from_db()
         prefix = campaign.active_configuration_id.hex + ":"

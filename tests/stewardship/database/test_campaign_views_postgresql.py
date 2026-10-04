@@ -215,7 +215,7 @@ def test_draft_can_change_timezone_without_changing_parish_default(
     "changes",
     [
         {"name": ""},
-        {"end_date": "2026-09-01"},
+        {"end_date": "2054-09-01"},
         {"state": "active"},
         {"timezone": "America/Los_Angeles"},
         {"ministry_duids": ["4"]},
@@ -435,9 +435,9 @@ def test_campaign_edit_cannot_strand_existing_initial_mail(auth_service, google)
     add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
     browser, _ = signed_in()
-    response = post(browser, url(row), fields(store, row, start_date="2026-10-02"))
+    response = post(browser, url(row), fields(store, row, start_date="2054-10-02"))
     assert response.status_code == 302
     assert "/schedules?" in response["Location"]
-    assert "start_date=2026-10-02" in response["Location"]
+    assert "start_date=2054-10-02" in response["Location"]
     row.refresh_from_db()
-    assert row.active_configuration.start_date.isoformat() == "2026-10-01"
+    assert row.active_configuration.start_date.isoformat() == "2054-10-01"

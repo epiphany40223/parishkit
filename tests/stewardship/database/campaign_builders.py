@@ -256,7 +256,7 @@ def complete_empty_catchup(campaign, actor):
     )
 
 
-def end_request(store, campaign, actor, action, end_date="2026-11-10"):
+def end_request(store, campaign, actor, action, end_date="2054-11-10"):
     """Stage the date candidate, then bind reviewed runtime inputs separately."""
     campaign.refresh_from_db()
     runtime = SystemConfiguration.objects.get()

@@ -236,7 +236,7 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         # The retired receipt closing note (#260) can no longer be staged.
         if step != "page_submission_confirmation":
             sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
-    sections["campaign"]["campaign"]["end_date"] = "2027-02-01"
+    sections["campaign"]["campaign"]["end_date"] = "2055-02-01"
     rows = []
     for index in range(100):
         kind = "reminder" if index else "initial"
@@ -245,7 +245,7 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
             schedule(
                 str(args["attempt_id"]),
                 kind=kind,
-                date=(date(2026, 10, 1) + timedelta(days=index)).isoformat(),
+                date=(date(2054, 10, 1) + timedelta(days=index)).isoformat(),
                 template_version=template["id"],
                 subject=template["values"]["subject"],
             )

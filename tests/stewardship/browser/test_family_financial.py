@@ -593,8 +593,8 @@ def test_financial_page_reads_history_checkbox_period_then_pledge(
     order = [
         "As of ",
         "Because of financial limitations",
-        "This pledge is for the stewardship period of January 1, 2027 – "
-        "December 31, 2027. This form records your intention only. It does not "
+        "This pledge is for the stewardship period of January 1, 2055 – "
+        "December 31, 2055. This form records your intention only. It does not "
         "take a payment or request bank or card credentials.",
         "Annual pledge (USD)",
     ]

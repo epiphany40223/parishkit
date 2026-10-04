@@ -50,14 +50,14 @@ def test_census_values_round_trip_and_default_form_are_safe():
         {"name": "bad\x00name"},
         {"timezone": "Invalid/Zone"},
         {"start_date": "not-date"},
-        {"end_date": "2026-10-01"},
-        {"end_date": "2026-09-30"},
+        {"end_date": "2054-10-01"},
+        {"end_date": "2054-09-30"},
         {"census": False},
         {"ministry_duids": ["1"]},
         {"fund_duids": ["1"]},
         {"comparison_fund_duids": ["2"]},
-        {"financial_start": "2027-01-01"},
-        {"financial_end": "2027-12-31"},
+        {"financial_start": "2055-01-01"},
+        {"financial_end": "2055-12-31"},
         {"comparison_start": "2026-01-01"},
         {"comparison_end": "2026-12-31"},
         {"overlap_confirmed": True},
@@ -85,11 +85,11 @@ def test_catalog_selections_are_sorted_and_unknown_ids_are_rejected():
     [
         {},
         {
-            "financial_start": "2026-10-01",
-            "financial_end": "2027-09-30",
+            "financial_start": "2054-10-01",
+            "financial_end": "2055-09-30",
             "overlap_confirmed": True,
         },
-        {"financial_start": "2028-02-29", "financial_end": "2029-02-27"},
+        {"financial_start": "2056-02-29", "financial_end": "2057-02-27"},
     ],
 )
 def test_exact_financial_periods_and_explicit_fund_mappings(changes):
@@ -106,9 +106,9 @@ def test_exact_financial_periods_and_explicit_fund_mappings(changes):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"financial_end": "2027-12-30"},
+        {"financial_end": "2055-12-30"},
         {"comparison_end": "2026-12-30"},
-        {"financial_start": "2026-10-01", "financial_end": "2027-09-30"},
+        {"financial_start": "2054-10-01", "financial_end": "2055-09-30"},
         {"fund_duids": []},
         {"comparison_fund_duids": []},
         {"fund_duids": ["999"]},
@@ -201,7 +201,7 @@ def test_confirmation_values_use_names_not_storage_repr():
     text = display_value(
         "financial", financial(), funds=[("1", "Offertory"), ("2", "Prior year")]
     )
-    assert "Upcoming: 2027-01-01 through 2027-12-31" in text
+    assert "Upcoming: 2055-01-01 through 2055-12-31" in text
     assert "Prior year (DUID 2)" in text and "overlap confirmed: No" in text
     assert "overlap confirmed: Yes" in display_value(
         "financial", financial(overlap_confirmed=True)

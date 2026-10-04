@@ -42,7 +42,7 @@ from .test_weekly_fanout_postgresql import captured, messages
 from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
-INSTANT = datetime(2026, 10, 8, tzinfo=UTC)
+INSTANT = datetime(2054, 10, 8, tzinfo=UTC)
 
 
 def history(snapshot):
@@ -106,7 +106,7 @@ def test_empty_success_advances_sequence_without_losing_later_corrections(
         publish(claim)
         accepted(WeeklyDigestRecipient.objects.get(snapshot=first))
         assert history(first).watermark == 1
-    with campaign_clock(datetime(2026, 10, 15, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 15, tzinfo=UTC)):
         harness, form, answers, _ = revisit(harness)
         respond_form(harness, form, answers)
         claim, empty = replacement()
@@ -125,7 +125,7 @@ def test_empty_success_advances_sequence_without_losing_later_corrections(
         )
         assert history(empty).watermark == 2
         assert messages().count() == 1
-    with campaign_clock(datetime(2026, 10, 22, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 22, tzinfo=UTC)):
         harness, form, answers, _ = revisit(harness)
         answers["additional_information"] = ""
         respond_form(harness, form, answers)

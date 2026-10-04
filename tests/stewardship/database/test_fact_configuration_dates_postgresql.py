@@ -42,7 +42,7 @@ def test_current_configuration_replaces_later_old_local_date(tmp_path, edit):
                 "section": "campaigns",
                 "id": str(inputs.campaign_id),
                 "values": {
-                    edit: "Pacific/Honolulu" if edit == "timezone" else "2026-10-02"
+                    edit: "Pacific/Honolulu" if edit == "timezone" else "2054-10-02"
                 },
             }
         ],

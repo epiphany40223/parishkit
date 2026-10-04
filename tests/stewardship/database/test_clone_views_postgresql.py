@@ -85,12 +85,12 @@ def fields(browser, path, store):
     rows = page.context["schedules"].previous
     values = posted(
         name="Successor campaign",
-        start_date="2027-10-01",
-        end_date="2027-10-31",
+        start_date="2055-10-01",
+        end_date="2055-10-31",
         base_digest=store.active().digest,
     )
     values.update(data_for(rows), clone_seed=page.context["clone_seed"])
-    values["schedules-0-date"] = "2027-10-02"
+    values["schedules-0-date"] = "2055-10-02"
     return values
 
 
@@ -108,7 +108,7 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
     preview = post(browser, path, fields(browser, path, store))
     assert b"Welcome to" in preview.content
     assert flow_steps(preview.content) == (STEPS, "Review")
-    assert b"2027-10-02T13:00:00+00:00" in preview.content
+    assert b"2055-10-02T13:00:00+00:00" in preview.content
     assert b"data-local-instant" in preview.content
     proposal = token(preview)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
@@ -122,10 +122,10 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
     source.refresh_from_db()
     assert source.active_configuration_id == old_version
     assert new.state == "draft" and not new.structural_locked and not new.ever_active
-    assert new.active_configuration.values["start_date"] == "2027-10-01"
+    assert new.active_configuration.values["start_date"] == "2055-10-01"
     mail = ScheduleDefinition.objects.get(campaign=new)
     assert mail.pk != old_schedule.pk
-    assert mail.current_revision.values["date"] == "2027-10-02"
+    assert mail.current_revision.values["date"] == "2055-10-02"
     assert not mail.scheduleoccurrence_set.exists()
     config = SystemConfiguration.objects.get().active_configuration
     assert config.content_versions.filter(campaign_id=new.pk).count() == 1
@@ -193,7 +193,7 @@ def test_clone_folds_a_retired_closing_note_into_a_valid_email(
         {"schedules-0-date": ""},
         {"start_date": ""},
         {"state": "draft"},
-        {"schedules-0-date": ["2027-10-02", "2027-10-03"]},
+        {"schedules-0-date": ["2055-10-02", "2055-10-03"]},
         {"timezone": "America/Chicago"},
         {"clone_seed": "forged"},
     ],

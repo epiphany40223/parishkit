@@ -51,7 +51,7 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-schedules-mail")
     visible(page.get_by_role("heading", name="How mail schedules work"))
-    assert "October 1, 2026 – October 31, 2026" in page.inner_text("main")
+    assert "October 1, 2054 – October 31, 2054" in page.inner_text("main")
     # The saved initial invitation keeps its fixed type and its own fields.
     assert page.locator('[name="schedules-0-kind"]').is_disabled()
     assert shown(page, "schedules-0-") == SHOWN["initial"]
@@ -76,7 +76,7 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     # The email chosen for another type is no longer offered or selected.
     assert template.input_value() == ""
     assert page.locator(f'[name="{NEW}time"]').input_value() == "08:30:00"
-    page.locator(f'[name="{NEW}date"]').fill("2026-10-05")
+    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
     kind.select_option("daily_digest")
     assert page.locator(f'[name="{NEW}date"]').input_value() == ""
     kind.select_option("")

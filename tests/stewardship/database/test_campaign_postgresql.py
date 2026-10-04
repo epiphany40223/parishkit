@@ -212,7 +212,7 @@ def test_draft_edits_and_schedule_removal_are_atomic(tmp_path):
                 "operation": "update",
                 "section": "campaigns",
                 "id": row["id"],
-                "values": {"timezone": "America/Chicago", "end_date": "2026-10-20"},
+                "values": {"timezone": "America/Chicago", "end_date": "2054-10-20"},
             },
             {"operation": "remove", "section": "schedules", "id": mail["id"]},
         ],
@@ -435,7 +435,7 @@ def test_forged_projection_insert_is_rejected(tmp_path, monkeypatch, model, fiel
         elif field == "campaign_id":
             attrs[field] = uuid4()
         elif field == "start_date":
-            attrs[field] = "2026-10-02"
+            attrs[field] = "2054-10-02"
         else:
             attrs[field] = "forged"
         attrs["values"] = Jsonb(attrs["values"])
@@ -536,7 +536,7 @@ def test_direct_concurrent_schedule_identity_is_serialized(tmp_path):
         document = root.document()
         document.update(version_id=str(uuid4()), predecessor_digest=root.digest)
         mail = schedule(
-            row["id"], kind=kind, date=None if kind == "daily_digest" else "2026-10-01"
+            row["id"], kind=kind, date=None if kind == "daily_digest" else "2054-10-01"
         )
         mail["id"] = identifier
         document["sections"].update(campaigns=[row], schedules=[mail])
@@ -705,7 +705,7 @@ def raw_campaign_snapshot(root, row, mails):
 
 
 @pytest.mark.parametrize(
-    "period", [financial(), financial(start="2028-02-29", end="2029-02-27")]
+    "period", [financial(), financial(start="2056-02-29", end="2057-02-27")]
 )
 def test_financial_period_real_installation(tmp_path, period):
     """SQL accepts the same full-year and leap-day convention as Python."""
@@ -733,7 +733,7 @@ def test_raw_financial_period_rejected(tmp_path, field):
 
 
 @pytest.mark.parametrize(
-    "date,time", [("2026-09-30", "23:59:59"), ("2026-11-01", "00:00:00")]
+    "date,time", [("2054-09-30", "23:59:59"), ("2054-11-01", "00:00:00")]
 )
 def test_raw_schedule_outside_interval_rejected(tmp_path, date, time):
     """Even correctly resolved UTC instants must belong to the owning campaign."""
@@ -763,7 +763,7 @@ def test_raw_schedule_relationships(tmp_path, case):
     _, root, _ = initialized(tmp_path)
     row = campaign()
     initial = schedule(row["id"], time="00:00:00" if case == "valid" else "09:00:00")
-    reminder = schedule(row["id"], kind="reminder", date="2026-10-02")
+    reminder = schedule(row["id"], kind="reminder", date="2054-10-02")
     mails = [initial, reminder]
     if case == "duplicate_initial":
         mails.append(schedule(row["id"], time="10:00:00"))
@@ -771,7 +771,7 @@ def test_raw_schedule_relationships(tmp_path, case):
         mails = [reminder]
     elif case in {"early_reminder", "same_due"}:
         reminder["values"].update(
-            date="2026-10-01",
+            date="2054-10-01",
             time="08:00:00" if case == "early_reminder" else "09:00:00",
         )
     elif case in {"daily_digest", "weekly_digest"}:
@@ -785,7 +785,7 @@ def test_raw_schedule_relationships(tmp_path, case):
             for _ in range(2)
         ]
     else:
-        mails.append(schedule(row["id"], kind="reminder", date="2026-10-03"))
+        mails.append(schedule(row["id"], kind="reminder", date="2054-10-03"))
     if case == "valid":
         with transaction.atomic():
             snapshot = raw_campaign_snapshot(root, row, mails)
@@ -883,8 +883,8 @@ def test_raw_financial_overlap_requires_confirmation(tmp_path, confirmed):
     row = campaign(
         modules=["financial"],
         financial=financial(
-            start="2026-01-01",
-            end="2026-12-31",
+            start="2054-01-01",
+            end="2054-12-31",
             overlap_confirmed=confirmed,
         ),
     )
@@ -920,7 +920,7 @@ def test_database_rule_drift_invalidates_retained_lineage(tmp_path, affected):
                 "operation": "update",
                 "section": "campaigns",
                 "id": row["id"],
-                "values": {"end_date": "2026-11-01"},
+                "values": {"end_date": "2054-11-01"},
             },
             {
                 "operation": "update",
@@ -943,7 +943,7 @@ def test_database_rule_drift_invalidates_retained_lineage(tmp_path, affected):
             )
         )
         condition = (
-            "wall = timestamp '2026-11-01 00:00:00'"
+            "wall = timestamp '2054-11-01 00:00:00'"
             if affected == "campaign"
             else "wall::time = time '09:00:00'"
         )

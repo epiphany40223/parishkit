@@ -221,7 +221,7 @@ def invalid_schedules(owner, emails):
             "schedules-TOTAL_FORMS": "1",
             "schedules-INITIAL_FORMS": "0",
             "schedules-0-kind": "initial",
-            "schedules-0-date": "2026-10-01",
+            "schedules-0-date": "2054-10-01",
             "schedules-0-time": "09:00:00",
             "schedules-0-weekday": "0",
             "schedules-0-template_version": emails[0]["id"],
@@ -497,7 +497,7 @@ def component_origin():
                 "changes": [
                     {
                         "label": "Campaign dates",
-                        "after": "2027-10-01 through 2027-10-31",
+                        "after": "2055-10-01 through 2055-10-31",
                     }
                 ],
                 "schedules": [_describe(mail["values"], mail_campaign["values"])],

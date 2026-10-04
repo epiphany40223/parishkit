@@ -104,7 +104,7 @@ def test_exceptional_bind_reports_typed_stale_version(tmp_path):
                     "operation": "update",
                     "section": "campaigns",
                     "id": str(campaign.pk),
-                    "values": {"end_date": "2026-11-11"},
+                    "values": {"end_date": "2054-11-11"},
                 }
             ],
             actor_id=actor,
@@ -146,7 +146,7 @@ def test_live_end_edit_preserves_structural_lock_and_mode(tmp_path):
         campaign.structural_locked
         and campaign.active_configuration.starts_at == original.starts_at
     )
-    assert campaign.active_configuration.end_date.isoformat() == "2026-11-10"
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-10"
     assert SystemConfiguration.objects.get().mode == "production"
     from django.db import IntegrityError
 

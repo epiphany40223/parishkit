@@ -63,10 +63,10 @@ def test_schedule_window_overlap_follows_the_campaign_dates(page, component_orig
     page.goto(component_origin + "/setup-schedules-financial")
     group = page.locator("[data-overlap-confirmation]")
     assert group.is_hidden()
-    page.locator('[name="window-end_date"]').fill("2027-01-05")
+    page.locator('[name="window-end_date"]').fill("2055-01-05")
     visible(group)
     group.locator('input[type="checkbox"]').check()
-    page.locator('[name="window-end_date"]').fill("2026-12-31")
+    page.locator('[name="window-end_date"]').fill("2054-12-31")
     assert group.is_hidden()
     assert not group.locator('input[type="checkbox"]').is_checked()
     # No emails are saved yet: say so instead of offering an empty list.

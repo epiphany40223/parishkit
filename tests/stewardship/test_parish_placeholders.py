@@ -134,7 +134,7 @@ def receipt(values, template=None):
         template=template or ReceiptTemplate(),
         block=SafeContent("", ""),
         values=values,
-        submitted_at=datetime(2026, 10, 2, 12, tzinfo=UTC),
+        submitted_at=datetime(2054, 10, 2, 12, tzinfo=UTC),
         campaign_timezone="America/New_York",
         sender="a@example.org",
         intended_recipients=("family@example.org",),
@@ -157,7 +157,7 @@ def test_receipts_require_parish_email_and_accept_financial_values():
             "{{ campaign_year }} {{ financial_period }} {{ parish_email }}",
         ),
     )
-    assert "2027 January 1, 2027 – December 31, 2027 office@example.org" in (
+    assert "2055 January 1, 2055 – December 31, 2055 office@example.org" in (
         rendered.text
     )
     with pytest.raises(ValueError):

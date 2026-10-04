@@ -46,7 +46,7 @@ def test_worker_cannot_forward_family_coverage_to_a_restore_held_selection(
     family = FamilyCampaign.objects.get()
     initial = ScheduleDefinition.objects.get()
     add_reminders(store, campaign, actor)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -54,7 +54,7 @@ def test_worker_cannot_forward_family_coverage_to_a_restore_held_selection(
             prepare_batch(demand, execution.claim)
         previous = ScheduleOccurrence.objects.get(state="pending")
         extra = schedule(
-            str(campaign.pk), kind="reminder", date="2026-10-04", time="12:00:00"
+            str(campaign.pk), kind="reminder", date="2054-10-04", time="12:00:00"
         )
         assert (
             change(
@@ -134,7 +134,7 @@ def test_coalesced_family_coverage_rejects_inconsistent_semantic_evidence(
         return original(**values)
 
     monkeypatch.setattr(ScheduleFulfillment.objects, "create", corrupt)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -153,7 +153,7 @@ def test_worker_receipt_cannot_leave_mail_pending_for_a_live_responder(
     response_service,
 ):
     """An actual accepted submission must invalidate a stale pending mail decision."""
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         harness = activate_response_service(response_service)
         family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
         demand = ActivationCatchUpDemand.objects.get()
@@ -189,7 +189,7 @@ def test_ownership_loss_before_aggregate_creation_commits_no_effect(
     """The immediate Python fence failure remains typed, not a later SQL error."""
     store, campaign, actor = draft_campaign(tmp_path)
     add_digest(store, campaign)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):

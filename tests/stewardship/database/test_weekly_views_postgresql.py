@@ -95,10 +95,10 @@ def test_weekly_detail_rejects_unselected_item_even_in_same_observation(
 ):
     """A known UUID from an earlier report is not a member of the new empty one."""
     harness = live_response_service
-    with campaign_clock(datetime(2026, 10, 8, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 8, tzinfo=UTC)):
         snapshot = allocated(harness)
         accepted(WeeklyDigestRecipient.objects.get(snapshot=snapshot))
-    with campaign_clock(datetime(2026, 10, 15, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 15, tzinfo=UTC)):
         claim, empty = replacement()
         publish(claim)
         browser, _ = signed_in()
@@ -124,10 +124,10 @@ def test_weekly_detail_rejects_unselected_item_even_in_same_observation(
 def test_weekly_corrections_do_not_repeat_former_text(live_response_service, google):
     """Both report and detail omit withdrawn text, even though its record remains."""
     harness = live_response_service
-    with campaign_clock(datetime(2026, 10, 8, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 8, tzinfo=UTC)):
         snapshot = allocated(harness)
         accepted(WeeklyDigestRecipient.objects.get(snapshot=snapshot))
-    with campaign_clock(datetime(2026, 10, 15, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 15, tzinfo=UTC)):
         harness, form, answers, _ = revisit(harness)
         answers["additional_information"] = ""
         submit(harness, form, answers)

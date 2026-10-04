@@ -159,7 +159,7 @@ def test_competing_reopen_candidates_have_one_atomic_winner(tmp_path):
     with campaign_clock(campaign.active_configuration.ends_at + timedelta(days=1)):
         candidates = [
             end_request(store, campaign, actor, "reopen", date)
-            for date in ("2026-11-10", "2026-11-11")
+            for date in ("2054-11-10", "2054-11-11")
         ]
         callbacks = [
             lambda request=request: install_request(
@@ -190,7 +190,7 @@ def test_competing_reopen_candidates_have_one_atomic_winner(tmp_path):
 @pytest.mark.parametrize(
     "values",
     [
-        {"end_date": "2026-11-11"},
+        {"end_date": "2054-11-11"},
         {"timezone": "America/Los_Angeles"},
     ],
 )

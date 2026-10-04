@@ -39,11 +39,11 @@ OPTIONS = [
         "free_text": True,
     },
 ]
-CONFIGURATION = configuration() | {"year_label": "2027", "share_options": OPTIONS}
+CONFIGURATION = configuration() | {"year_label": "2055", "share_options": OPTIONS}
 # The configuration an earlier Family answered, before the year label was edited.
 EARLIER = CONFIGURATION | {"year_label": "Jubilee"}
 SEEN = str(uuid4())
-PERIOD = f"{parish_date(date(2027, 1, 1))} – {parish_date(date(2027, 12, 31))}"
+PERIOD = f"{parish_date(date(2055, 1, 1))} – {parish_date(date(2055, 12, 31))}"
 PROOF = {"snapshot": str(uuid4()), "configuration": str(uuid4())}
 
 
@@ -133,13 +133,13 @@ def test_share_labels_use_the_neutral_household_wording():
     assert labels == {
         ONLINE: "This household will give online to A <B>",
         # The Family form's own validated upcoming period, not a second rule.
-        OTHER: f"Another way in 2027, {PERIOD}",
+        OTHER: f"Another way in 2055, {PERIOD}",
     }
     # No year label falls back to the upcoming financial period's year.
     unlabeled = CONFIGURATION | {"year_label": None}
     assert (
         share_labels(unlabeled, campaign_id=CAMPAIGN, parish_name="Sample")[OTHER]
-        == f"Another way in 2027, {PERIOD}"
+        == f"Another way in 2055, {PERIOD}"
     )
     # An unusable retained configuration words nothing rather than guessing.
     assert share_labels({}, campaign_id=CAMPAIGN, parish_name="Sample") == {}
@@ -264,14 +264,14 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     # The whole-result summary and the filter use the current wording, and count
     # options no longer offered together rather than guessing their names.
     assert shaped["summary"]["shares"] == [
-        (f"Another way in 2027, {PERIOD}", 1),
+        (f"Another way in 2055, {PERIOD}", 1),
         ("Unavailable share method", 3),
     ]
     # The filter lists current options in the order the parish configured them;
     # their identities are opaque, so sorting by them would read as random.
     assert shaped["share_choices"] == [
         (ONLINE, "This household will give online to Sample Parish"),
-        (OTHER, f"Another way in 2027, {PERIOD}"),
+        (OTHER, f"Another way in 2055, {PERIOD}"),
     ]
     both = result(shares={OTHER: "", ONLINE: ""})
     substitute(monkeypatch, (json.dumps(both),))
@@ -286,8 +286,8 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     }
     substitute(monkeypatch, (json.dumps(result()),))
     assert page(configuration=alike)["summary"]["shares"] == [
-        (f"Another way in 2027, {PERIOD}", 1),
-        (f"Another way in 2027, {PERIOD}", 1),
+        (f"Another way in 2055, {PERIOD}", 1),
+        (f"Another way in 2055, {PERIOD}", 1),
         ("Unavailable share method", 2),
     ]
     # A row whose configuration cannot be found words nothing, never current text.

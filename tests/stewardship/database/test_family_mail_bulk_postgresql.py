@@ -525,12 +525,18 @@ def test_a_transition_mid_batch_sends_nothing_more(families, monkeypatch, change
     """
     harness, path = families
     _one_batch(monkeypatch)
+    # The close moves the campaign clock a day past the campaign's own end,
+    # never relative to today: the fixture campaign lies far in the future
+    # (tests/stewardship/fixture_calendar.py), so a real-clock offset would
+    # still fall before it opens.
+    harness.campaign.refresh_from_db()
+    closed = harness.campaign.active_configuration.ends_at + timedelta(days=1)
     statements = {
         "go_live": ["UPDATE stewardship_campaign_credentials SET go_live_gate=true"],
         "close": [
             "CREATE OR REPLACE FUNCTION stewardship_campaign_now_v1() "
             "RETURNS timestamptz LANGUAGE sql STABLE AS "
-            "$$SELECT now() + interval '400 days'$$"
+            f"$$SELECT '{closed.isoformat()}'::timestamptz$$"
         ],
         "mode": ["UPDATE stewardship_system_configuration SET mode='production'"],
     }[change]

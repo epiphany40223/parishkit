@@ -141,7 +141,7 @@ def test_guard_allows_only_selection_changes_on_a_live_campaign(
         assert "Live structural settings are locked" in str(result)
         return
     assert "structural settings are locked" in str(
-        admission_error(harness, [4], start_date="2026-01-02")
+        admission_error(harness, [4], start_date="2054-01-02")
     )
     result = select(harness, [4, 9], modules=["ministry"])
     assert not applied(result) and selected(harness) == [4, 9]

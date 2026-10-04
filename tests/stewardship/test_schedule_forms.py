@@ -42,14 +42,14 @@ def test_schedule_window_requires_valid_whole_campaign_and_preserves_other_field
     """Dates change without recreating IDs, modules or the Parish default timezone."""
     owner = campaign()
     form = ScheduleWindow(
-        window_data(owner, end_date="2026-10-20"),
+        window_data(owner, end_date="2054-10-20"),
         previous=owner["values"],
         editable=True,
     )
     assert form.is_valid(), form.errors
-    assert form.values() == owner["values"] | {"end_date": "2026-10-20"}
+    assert form.values() == owner["values"] | {"end_date": "2054-10-20"}
     invalid = ScheduleWindow(
-        window_data(owner, end_date="2026-09-20"),
+        window_data(owner, end_date="2054-09-20"),
         previous=owner["values"],
         editable=True,
     )
@@ -61,7 +61,7 @@ def test_schedule_window_requires_valid_whole_campaign_and_preserves_other_field
 def test_schedule_window_financial_overlap_requires_explicit_acknowledgement():
     """A draft date extension cannot silently move into its financial period."""
     owner = campaign(modules=["financial"], financial=financial())
-    data = window_data(owner, end_date="2027-01-20")
+    data = window_data(owner, end_date="2055-01-20")
     form = ScheduleWindow(data, previous=owner["values"], editable=True)
     assert not form.is_valid()
     form = ScheduleWindow(
@@ -88,7 +88,7 @@ def test_existing_legacy_template_is_retained_but_not_offered_to_new_schedule():
     data.update(
         {
             "schedules-1-kind": "reminder",
-            "schedules-1-date": "2026-10-05",
+            "schedules-1-date": "2054-10-05",
             "schedules-1-time": "09:00:00",
             "schedules-1-template_version": row["values"]["template_version"],
         }
@@ -114,7 +114,7 @@ def test_schedule_add_replace_and_explicit_remove():
     data = data_for([old]) | {
         "schedules-0-DELETE": "on",
         "schedules-1-kind": "initial",
-        "schedules-1-date": "2026-10-05",
+        "schedules-1-date": "2054-10-05",
         "schedules-1-time": "09:00",
         "schedules-1-template_version": template["id"],
     }
@@ -140,7 +140,7 @@ def test_schedule_add_replace_and_explicit_remove():
         {"schedules-INITIAL_FORMS": "0"},
         {"schedules-0-id": str(uuid4())},
         {"schedules-0-id": ""},
-        {"schedules-0-date": "2026-11-01"},
+        {"schedules-0-date": "2054-11-01"},
         {"schedules-0-weekday": "0"},
         {"schedules-0-time": "invalid"},
         {"schedules-0-time": "09:00:00.5"},
@@ -199,11 +199,11 @@ def test_schedule_parser_rejects_duplicate_and_unoffered_fields():
     parameters = QueryDict(mutable=True)
     parameters.update(data_for([]))
     assert schedule_action(parameters, window_fields=set()) == "preview"
-    parameters["window-end_date"] = "2026-10-20"
+    parameters["window-end_date"] = "2054-10-20"
     with pytest.raises(ValueError):
         schedule_action(parameters, window_fields=set())
     assert schedule_action(parameters, window_fields={"end_date"}) == "preview"
-    parameters.setlist("window-end_date", ["2026-10-20", "2026-10-21"])
+    parameters.setlist("window-end_date", ["2054-10-20", "2054-10-21"])
     with pytest.raises(ValueError):
         schedule_action(parameters, window_fields={"end_date"})
 
@@ -248,7 +248,7 @@ def with_new_row(owner, saved, templates, **fields):
     return formset, formset.forms[index]
 
 
-WINDOW = "October 1, 2026 – October 31, 2026"
+WINDOW = "October 1, 2054 – October 31, 2054"
 
 
 @pytest.mark.parametrize(
@@ -256,7 +256,7 @@ WINDOW = "October 1, 2026 – October 31, 2026"
     [
         # The owner's case: an initial invitation with a weekday.
         (
-            {"kind": "initial", "date": "2026-10-01", "weekday": "0"},
+            {"kind": "initial", "date": "2054-10-01", "weekday": "0"},
             "weekday",
             "A weekday applies only to weekly digests — leave it at Not weekly.",
         ),
@@ -266,17 +266,17 @@ WINDOW = "October 1, 2026 – October 31, 2026"
             f"Choose the date it is sent, within the campaign ({WINDOW}).",
         ),
         (
-            {"kind": "reminder", "date": "2026-11-05"},
+            {"kind": "reminder", "date": "2054-11-05"},
             "date",
             f"Choose a date within the campaign ({WINDOW}).",
         ),
         (
-            {"kind": "reminder", "date": "2026-09-30"},
+            {"kind": "reminder", "date": "2054-09-30"},
             "date",
             f"Choose a date within the campaign ({WINDOW}).",
         ),
         (
-            {"kind": "daily_digest", "date": "2026-10-05"},
+            {"kind": "daily_digest", "date": "2054-10-05"},
             "date",
             "A date applies only to initial invitations and reminders — leave it "
             "empty. Digests are sent throughout the campaign.",
@@ -317,7 +317,7 @@ def test_each_inapplicable_or_missing_value_is_reported_on_its_field(
     templates = emails(owner)
     saved = [] if fields.get("kind") == "initial" else [saved_row(owner, templates)]
     row = {
-        "date": "2026-10-10",
+        "date": "2054-10-10",
         "time": "10:00:00",
         "template_version": fields.get("kind") or "reminder",
     } | fields
@@ -330,7 +330,7 @@ def test_each_inapplicable_or_missing_value_is_reported_on_its_field(
 @pytest.mark.parametrize(
     "fields",
     [
-        {"kind": "reminder", "date": "2026-10-31", "time": "23:59:59"},
+        {"kind": "reminder", "date": "2054-10-31", "time": "23:59:59"},
         {"kind": "daily_digest", "time": "00:15:00"},
         {"kind": "weekly_digest", "weekday": "6", "time": "08:00:00"},
     ],
@@ -352,16 +352,16 @@ def test_each_mail_type_accepts_exactly_its_own_fields(fields):
     ("fields", "message"),
     [
         (
-            {"kind": "initial", "date": "2026-10-05"},
+            {"kind": "initial", "date": "2054-10-05"},
             "Only one Initial invitation is allowed. Delete the extra one.",
         ),
         (
-            {"kind": "reminder", "date": "2026-10-01", "time": "08:00:00"},
+            {"kind": "reminder", "date": "2054-10-01", "time": "08:00:00"},
             "Every reminder must be sent after the initial invitation. Choose a "
             "later date or time.",
         ),
         (
-            {"kind": "reminder", "date": "2026-10-01", "time": "09:00:00"},
+            {"kind": "reminder", "date": "2054-10-01", "time": "09:00:00"},
             "Every reminder must be sent after the initial invitation. Choose a "
             "later date or time.",
         ),
@@ -397,7 +397,7 @@ def test_reminders_need_an_initial_invitation_and_distinct_times():
     templates = emails(owner)
     saved = [
         saved_row(owner, templates),
-        saved_row(owner, templates, "reminder", date="2026-10-10"),
+        saved_row(owner, templates, "reminder", date="2054-10-10"),
     ]
     data = data_for(saved) | {"schedules-0-DELETE": "on"}
     formset = Schedules(
@@ -417,7 +417,7 @@ def test_reminders_need_an_initial_invitation_and_distinct_times():
         saved,
         templates,
         kind="reminder",
-        date="2026-10-10",
+        date="2054-10-10",
         time="09:00:00",
         template_version="reminder",
     )
@@ -488,8 +488,8 @@ def test_several_new_rows_save_together_and_are_validated_together():
     templates = emails(owner)
     saved = [saved_row(owner, templates)]
     rows = [
-        {"kind": "reminder", "date": "2026-10-10", "time": "09:00:00"},
-        {"kind": "reminder", "date": "2026-10-20", "time": "09:00:00"},
+        {"kind": "reminder", "date": "2054-10-10", "time": "09:00:00"},
+        {"kind": "reminder", "date": "2054-10-20", "time": "09:00:00"},
         {"kind": "weekly_digest", "weekday": "0", "time": "08:00:00"},
         {"kind": "daily_digest", "time": "07:00:00"},
     ]
@@ -502,7 +502,7 @@ def test_several_new_rows_save_together_and_are_validated_together():
     ]
     assert len({change["id"] for change in added}) == 4
     # A rule between the new rows refuses the whole submission.
-    rows[1]["date"] = "2026-10-10"
+    rows[1]["date"] = "2054-10-10"
     formset = new_rows(owner, saved, templates, rows)
     assert not formset.is_valid()
     assert formset.non_form_errors() == [
@@ -519,10 +519,10 @@ def test_several_new_rows_save_together_and_are_validated_together():
 def test_saved_schedules_are_shown_in_sending_order():
     """Rows appear by send date and time, Initial first on ties, stably (#448)."""
     owner = campaign()
-    initial = schedule(owner["id"], date="2026-10-01", time="09:00:00")
-    later = schedule(owner["id"], kind="reminder", date="2026-10-15", time="08:00:00")
-    early = schedule(owner["id"], kind="reminder", date="2026-10-06", time="08:00:00")
-    morning = schedule(owner["id"], kind="reminder", date="2026-10-06", time="07:00:00")
+    initial = schedule(owner["id"], date="2054-10-01", time="09:00:00")
+    later = schedule(owner["id"], kind="reminder", date="2054-10-15", time="08:00:00")
+    early = schedule(owner["id"], kind="reminder", date="2054-10-06", time="08:00:00")
+    morning = schedule(owner["id"], kind="reminder", date="2054-10-06", time="07:00:00")
     saved = [later, early, initial, morning]
     expected = [initial["id"], morning["id"], early["id"], later["id"]]
     for previous in (saved, list(reversed(saved))):

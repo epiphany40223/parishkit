@@ -46,7 +46,7 @@ from .test_taskrun_postgresql import act
 from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
-INSTANT = datetime(2026, 10, 29, tzinfo=UTC)
+INSTANT = datetime(2054, 10, 29, tzinfo=UTC)
 
 
 def allocate(*, claim_task=True):
@@ -108,10 +108,10 @@ def test_bounded_weekly_dates_select_latest_and_preserve_every_missed_slot(
             )
         )
         assert [item.slot for item in occurrences] == [
-            "2026-10-07",
-            "2026-10-14",
-            "2026-10-21",
-            "2026-10-28",
+            "2054-10-07",
+            "2054-10-14",
+            "2054-10-21",
+            "2054-10-28",
         ]
         assert all(item.state == "coalesced" for item in occurrences[:-1])
         assert occurrences[-1].pk == row.occurrence_id
@@ -170,7 +170,7 @@ def test_capture_preserves_fractional_submission_instants(live_response_service)
     """Canonical JSON retention must match SQL for every fractional precision."""
     harness = live_response_service
     for index, micros in enumerate((100000, 120000, 123000, 123400, 123450, 123456)):
-        with campaign_clock(datetime(2026, 10, 8, microsecond=micros, tzinfo=UTC)):
+        with campaign_clock(datetime(2054, 10, 8, microsecond=micros, tzinfo=UTC)):
             if index == 0:
                 respond(harness, f"Request {index}")
             else:
@@ -193,7 +193,7 @@ def test_unresolved_interval_holds_newer_slots_even_after_its_task_fails(
     response_service,
     failed,
 ):
-    with campaign_clock(datetime(2026, 10, 22, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 22, tzinfo=UTC)):
         claim = prepare(response_service)
         with task_login(ServiceRole.WORKER, exact=True), work_transaction():
             snapshot = capture_weekly_snapshot(claim)
@@ -213,7 +213,7 @@ def test_unresolved_interval_holds_newer_slots_even_after_its_task_fails(
     ):
         DigestScheduleProducer(uuid4())(guard)
         assert ScheduleOccurrence.objects.filter(
-            slot="2026-10-28", state="pending"
+            slot="2054-10-28", state="pending"
         ).exists()
         assert WeeklyDigestProducer(uuid4())(guard) == ()
     assert (

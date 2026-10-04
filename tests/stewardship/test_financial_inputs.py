@@ -25,10 +25,10 @@ def definition():
 def test_definition_keeps_explicit_periods_funds_and_noncalendar_year_label():
     """A fiscal-year period stays intact rather than being relabeled calendar-year."""
     values = configuration()
-    values["financial"].update(start="2027-07-01", end="2028-06-30")
+    values["financial"].update(start="2055-07-01", end="2056-06-30")
     result = financial_definition(values, campaign_id=CAMPAIGN)
-    assert result.year_label == "2027–2028"
-    assert result.upcoming.start == date(2027, 7, 1)
+    assert result.year_label == "2055–2056"
+    assert result.upcoming.start == date(2055, 7, 1)
     assert result.comparison.funds == (9,)
     assert result.upcoming.funds == (4,)
     values["year_label"] = "Configured stewardship year"

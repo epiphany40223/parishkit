@@ -42,9 +42,9 @@ def inside_window(campaign):
     """An instant inside the fixture campaign's dates, whatever the real date.
 
     Occurrence creation is admitted only while the campaign clock lies within
-    the campaign; CI runs the PostgreSQL shards on the fixture calendar (the day
-    before the shared fixture campaign, issue #421), so the tests that create
-    occurrences pin the campaign clock here instead of trusting today's date.
+    the campaign; the shared fixture campaign lies in 2054, long after the real
+    date (issue #421), so the tests that create occurrences pin the campaign
+    clock here instead of trusting today's date.
     """
     return campaign.active_configuration.starts_at + timedelta(hours=1)
 
@@ -250,7 +250,7 @@ def test_schedule_patch_installs_through_the_real_configuration_path(tmp_path):
     """The one patch the seeder records is valid and lands as real schedules."""
     store, campaign, actor = draft_campaign(tmp_path)
     cal = seed_timeline.calendar(
-        datetime(2026, 10, 7, 15, 30, tzinfo=UTC),
+        datetime(2054, 10, 7, 15, 30, tzinfo=UTC),
         campaign.active_configuration.timezone,
     )
     active = store.active()

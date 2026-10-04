@@ -79,11 +79,11 @@ def test_family_cutoff_group_is_prepared_and_not_dispatched(tmp_path):
     """Delayed worker startup cannot absorb schedules due after activation."""
     store, campaign, actor, _ = family_campaign(tmp_path)
     add_reminders(store, campaign, actor)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     with (
-        campaign_clock(datetime(2026, 10, 25, tzinfo=UTC)),
+        campaign_clock(datetime(2054, 10, 25, tzinfo=UTC)),
         task_login(ServiceRole.WORKER, exact=True),
     ):
         assert execute_hint(**execution_arguments(demand))
@@ -109,7 +109,7 @@ def test_transient_database_failure_records_sanitized_retry_and_retains_hold(
 ):
     """Only the still-live worker can record failure; no exception text is retained."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
 
@@ -136,14 +136,14 @@ def test_digest_preparation_spans_pages_without_releasing_partial_coverage(
     """More than 100 dates require separate materialization and coverage commits."""
     store, campaign, actor = draft_campaign(
         tmp_path,
-        campaign_record(start_date="2026-01-01", end_date="2026-12-31"),
+        campaign_record(start_date="2054-01-01", end_date="2054-12-31"),
     )
     definition = add_digest(store, campaign)
     if cycle:
         from .production_cycle_checks import withdraw_before_start
 
         withdraw_before_start(campaign, actor)
-    with campaign_clock(datetime(2026, 4, 20, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 4, 20, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -181,7 +181,7 @@ def test_digest_preparation_spans_pages_without_releasing_partial_coverage(
 def test_failed_family_effect_cannot_commit_its_checkpoint(tmp_path, monkeypatch):
     """A failed group leaves both its outcomes and traversal cursor uncommitted."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -204,7 +204,7 @@ def test_failed_family_effect_cannot_commit_its_checkpoint(tmp_path, monkeypatch
 def test_restricted_worker_cannot_forge_empty_completion(tmp_path):
     """A live lease does not replace the cohort and digest receipt requirements."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
@@ -258,7 +258,7 @@ def test_failure_after_family_outcomes_rolls_back_them_and_cursor(
 ):
     """There is no committed gap between materialized outcomes and their receipt."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -283,7 +283,7 @@ def test_stale_fence_cannot_prepare_any_occurrence(tmp_path):
     from dataclasses import replace
 
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -299,7 +299,7 @@ def test_campaign_close_skips_remaining_family_work_without_clearing_other_holds
 ):
     """Closing first still leaves actual preparation responsible for its cutoff."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     run = claimed_task("campaign_boundary", campaign.pk, actor)
@@ -324,7 +324,7 @@ def test_campaign_close_skips_remaining_family_work_without_clearing_other_holds
 def test_restore_blocks_claim_and_post_claim_effect_without_losing_demand(tmp_path):
     """Restored work remains durable; a prior hint cannot bypass maintenance."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with restored_runtime(demand.cutoff), pytest.raises(PermissionError):
@@ -343,7 +343,7 @@ def test_restore_blocks_claim_and_post_claim_effect_without_losing_demand(tmp_pa
 def test_explicit_failed_task_retry_resumes_original_demand_and_receipts(tmp_path):
     """A new canonical execution leaves original failure and first Family intact."""
     _, campaign, actor, _ = family_campaign(tmp_path, count=2)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -383,7 +383,7 @@ def test_live_source_recheck_skips_inactive_family_and_keeps_new_targets_out_of_
 ):
     """Pinned traversal is finite while eligibility comes from current source truth."""
     _, campaign, actor, rings = family_campaign(tmp_path, count=2)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -417,10 +417,10 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
     """Cancelled aggregate lineage preserves dates across another current revision."""
     store, campaign, actor = draft_campaign(
         tmp_path,
-        campaign_record(start_date="2026-01-01", end_date="2026-12-31"),
+        campaign_record(start_date="2054-01-01", end_date="2054-12-31"),
     )
     definition = add_digest(store, campaign)
-    with campaign_clock(datetime(2026, 4, 20, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 4, 20, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -477,14 +477,14 @@ def test_weekly_preparation_selects_latest_and_retains_exact_original_slots(tmp_
     """Weekly coverage uses the latest scheduled identity, not a daily aggregate."""
     store, campaign, actor = draft_campaign(tmp_path)
     definition = add_digest(store, campaign, weekly=True)
-    with campaign_clock(datetime(2026, 10, 25, 12, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 25, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         with task_login(ServiceRole.WORKER, exact=True):
             assert execute_hint(**execution_arguments(demand))
     rows = ScheduleOccurrence.objects.filter(definition_id=definition)
     selected = rows.get(state="pending")
-    assert selected.slot == "2026-10-21"
+    assert selected.slot == "2054-10-21"
     assert rows.filter(state="coalesced").count() == 2
     assert len(covered_dates(selected.pk)) == 3
     demand.refresh_from_db()
@@ -496,7 +496,7 @@ def test_weekly_preparation_selects_latest_and_retains_exact_original_slots(tmp_
 def test_preparation_completes_during_delivery_pause_without_releasing_it(tmp_path):
     """The preparation hold and live-delivery pause have independent lifetimes."""
     _, campaign, actor, _ = family_campaign(tmp_path)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         campaign.refresh_from_db()
         change_control(
@@ -528,7 +528,7 @@ def test_removed_schedule_is_not_revived_when_preparation_restarts(tmp_path):
     """A current revision tombstone outranks activation-time schedule metadata."""
     store, campaign, actor, _ = family_campaign(tmp_path, count=2)
     definition = ScheduleDefinition.objects.get()
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))
@@ -571,7 +571,7 @@ def test_replaced_family_selection_forwards_already_coalesced_reminders(
     store, campaign, actor, _ = family_campaign(tmp_path, count=2)
     initial = ScheduleDefinition.objects.get()
     add_reminders(store, campaign, actor)
-    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+    with campaign_clock(datetime(2054, 10, 5, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()
         execution = claim_hint(**execution_arguments(demand))

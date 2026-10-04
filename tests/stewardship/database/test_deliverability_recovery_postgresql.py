@@ -60,7 +60,7 @@ def test_closed_skip_stays_terminal_after_actual_reopen_and_source_transition(tm
     original = ScheduleOccurrence.objects.get()
     instant = campaign.active_configuration.ends_at + timedelta(days=1)
     with campaign_clock(instant):
-        request, _ = end_request(store, campaign, actor, "reopen", "2026-11-10")
+        request, _ = end_request(store, campaign, actor, "reopen", "2054-11-10")
         assert (
             install_request(
                 store,

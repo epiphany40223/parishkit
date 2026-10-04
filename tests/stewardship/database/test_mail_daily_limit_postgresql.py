@@ -267,7 +267,7 @@ def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
 
     from parishkit.stewardship.jobs.family_mail_dispatch import limit_run
 
-    t = [datetime(2026, 10, 3, hour, tzinfo=UTC) for hour in range(8)]
+    t = [datetime(2054, 10, 3, hour, tzinfo=UTC) for hour in range(8)]
     # Pairs whose Task deferred in RECONCILING: the limit refusals. The last
     # limit refusal (fence 5) gave up and failed, so its Task never deferred.
     limited = {("r", 1), ("r", 2), ("r", 4)}
