@@ -968,13 +968,13 @@ def test_wipe_removes_containers_then_the_root_without_volumes(tmp_path):
     assert "does not carry the marker" in output
 
 
-def test_seed_refuses_until_the_image_has_the_seeder(tmp_path):
-    """OPS-10.07 is not in the image: the refusal names it and nothing else runs."""
+def test_seed_refuses_a_deployment_in_normal_clock_mode(tmp_path):
+    """A normal-clock deployment is seeded already: seed refuses, runs no step."""
     if shutil.which("flock") is None:
         pytest.skip("the seed lock needs flock (Linux)")
     calls, output, _ = run_vm(tmp_path, "seed", "2", status=1, prepare=installed)
-    assert "OPS-10.07" in output
-    assert calls == [f"run --rm --network none {IMAGE} local-seed"]
+    assert "normal clock mode" in output
+    assert not any("local-seed" in call for call in calls)
 
 
 def test_sign_in_and_ca_read_the_deployment(tmp_path):

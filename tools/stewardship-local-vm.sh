@@ -20,8 +20,8 @@
 #   has-snapshot NAME                   exit 0 when SNAPSHOTS/NAME exists
 #   reset NAME                          stop, restore SNAPSHOTS/NAME over the root, restart
 #   wipe                                remove the containers and the root (marker required)
-#   seed RESPONSE_SCALE                 seed the campaign (OPS-10.07; refuses until the
-#                                       image carries the seeder)
+#   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
+#                                       phases under the fake clock (OPS-10.07)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   ca                                  print Caddy's local root certificate
 #
@@ -475,7 +475,7 @@ summary() {
 Local deployment is up (installed in $(( $(date -u +%s) - began ))s).
 
   Site:       https://localhost:8443   (Caddy's own CA: run 'ca' to trust it)
-  Mail:       http://localhost:8025    (Mailpit; rendered once OPS-10.05 lands)
+  Mail:       http://localhost:8025    (Mailpit)
   Admin:      $ADMIN_EMAIL
   Sign in:    tools/stewardship-local.sh sign-in --email $ADMIN_EMAIL   (OPS-10.08)
   Image:      $IMAGE
@@ -588,19 +588,198 @@ cmd_wipe() {
     install -d -m 0755 "$root"
 }
 
+# The seeder (specification, "Seeded campaign and responses"). Each phase is
+# one `pk-stewardship local-seed --step` run as a one-shot container under an
+# existing identity; the clock directory is mounted writable at a second
+# path for the phases that move the clock (the services keep their read-only
+# mount at the standard path). Every step prints one JSON document.
+clock_control=/run/parishkit-clock-control
+mailpit=http://127.0.0.1:8025
+
+seed_arguments() {
+    # The arguments every seeder step takes, from the deployment record.
+    printf '%s\n' --seed "$SEED" --families "$FAMILIES" --anchor-date "$ANCHOR_DATE" \
+        --now "$seed_now" --response-scale "$seed_scale" --admin-email "$ADMIN_EMAIL"
+}
+
+oneoff=()
+web_oneoff_command() {
+    # Fill `oneoff` with the docker command that runs the application image
+    # once under the web identity, with web's own rendered mounts, user,
+    # hardening and environment (read from compose.json, plus the fake-clock
+    # override's when the clock is fake), on the backend network only, and
+    # the clock directory also mounted writable at $clock_control. `docker
+    # compose run web` cannot do this: web holds a fixed address on the proxy
+    # network, which a second container could not share. A command array, not
+    # a function, so `timed` can run it under its limit.
+    local web_image file mode line
+    local -a options=()
+    web_image=$(jq -r '.services.web.image' "$services/compose.json")
+    # Web's own environment, mounts and tmpfs exactly as rendered; Compose
+    # variable references (${NAME:-default}) are resolved from this shell as
+    # Compose would resolve them from the operator's.
+    while IFS= read -r line; do options+=("$line"); done < <(
+        jq -r '.services.web.environment | to_entries[] | "--env", "\(.key)=\(.value)"' \
+            "$services/compose.json" | envsubst_defaults)
+    while IFS= read -r line; do options+=("$line"); done < <(
+        jq -r '.services.web.volumes[] |
+            "--mount", "type=bind,source=\(.source),target=\(.target)\(if .read_only then ",readonly" else "" end)"' \
+            "$services/compose.json")
+    while IFS= read -r line; do options+=("$line"); done < <(
+        jq -r '.services.web.tmpfs[] | "--tmpfs", .' "$services/compose.json")
+    mode=$(clock_mode)
+    if [ "$mode" = fake ]; then
+        file="$services/compose.faketime.json"
+        web_image=$(jq -r '.services.web.image' "$file")
+        while IFS= read -r line; do options+=("$line"); done < <(
+            jq -r '.services.web.environment | to_entries[] | "--env", "\(.key)=\(.value)"' "$file")
+        while IFS= read -r line; do options+=("$line"); done < <(
+            jq -r '.services.web.volumes[] |
+                "--mount", "type=bind,source=\(.source),target=\(.target),readonly"' "$file")
+    fi
+    oneoff=(docker run --rm --init --user 10001:10001 --read-only --cap-drop ALL
+        --security-opt no-new-privileges:true --network "${project}_backend"
+        --mount "type=bind,source=$clock_dir,target=$clock_control"
+        "${options[@]}" "$web_image")
+}
+
+envsubst_defaults() {
+    # Resolve Compose's ${NAME:-default} and ${NAME} references on stdin from
+    # this shell's environment, as `docker compose` does when it starts web.
+    # Built left to right (prefix, value, rest), so a value holding `&` or a
+    # `${…}` of its own is copied literally and never scanned again.
+    local line rest out match name default value
+    while IFS= read -r line; do
+        out="" rest=$line
+        while [[ $rest =~ \$\{([A-Z_][A-Z0-9_]*)(:-([^}]*))?\} ]]; do
+            match=${BASH_REMATCH[0]} name=${BASH_REMATCH[1]} default=${BASH_REMATCH[3]}
+            value=${!name:-$default}
+            out+="${rest%%"$match"*}${value}"
+            rest=${rest#*"$match"}
+        done
+        printf '%s\n' "${out}${rest}"
+    done
+}
+
+seed_step() {
+    # seed_step LIMIT STEP SERVICE CONFIG [EXTRA...]: run one seeder step and
+    # keep its JSON answer in $seed_result. Web steps run the one-off web command;
+    # the offline check runs the migration profile service with Compose.
+    local limit=$1 name=$2 service=$3 config=$4 started
+    shift 4
+    local -a arguments=()
+    while IFS= read -r line; do arguments+=("$line"); done < <(seed_arguments)
+    step "Seeder step $name ($service)"
+    started=$(date -u +%s)
+    if [ "$service" = web ]; then
+        web_oneoff_command
+        seed_result=$(timed "$limit" "the seeder step $name" \
+            "${oneoff[@]}" local-seed --step "$name" --config "$services/$config" \
+            --clock-dir "$clock_control" "${arguments[@]}" "$@" | tail -1)
+    else
+        seed_result=$(timed "$limit" "the seeder step $name" \
+            "${dc[@]}" run --rm -T --no-deps "$service" \
+            local-seed --step "$name" --config "$services/$config" \
+            "${arguments[@]}" "$@" | tail -1)
+    fi
+    echo "    $name finished in $(( $(date -u +%s) - started ))s: $seed_result"
+    echo "    fake now: $(fake_now)"
+}
+
+fake_now() {
+    # The current fake instant, from the offset file.
+    date -u -d "now $(cat "$clock_dir/offset") seconds" +%FT%TZ 2>/dev/null || cat "$clock_dir/offset"
+}
+
+mailpit_clear() {
+    curl -fsS -X DELETE --max-time 20 "$mailpit/api/v1/messages" >/dev/null
+}
+
+mailpit_tag_all() {
+    # Tag every message the catcher holds now: after a seed, that is the
+    # seed's mail history (specification, "Mail history").
+    local ids
+    ids=$(curl -fsS --max-time 20 "$mailpit/api/v1/messages?limit=10000" | jq -c '[.messages[].ID]')
+    if [ "$ids" = "[]" ]; then
+        echo "    no messages to tag"
+        return 0
+    fi
+    curl -fsS -X PUT --max-time 20 -H 'Content-Type: application/json' \
+        -d "{\"IDs\": $ids, \"Tags\": [\"$1\"]}" "$mailpit/api/v1/tags" >/dev/null
+    echo "    tagged $(jq length <<<"$ids") messages $1"
+}
+
+seed_failed() {
+    # The EXIT trap of a seed that did not finish: the specification promises
+    # a failed seed leaves the deployment in fake-clock mode with its services
+    # running. Phases 1 and 2 fail with everything running; the check runs
+    # with the services stopped, so they are started again here. A failure
+    # after the switch to normal mode (the finish phase) cannot be undone
+    # here: the data is seeded but the late Family may not be promoted;
+    # `reseed` restores the post-setup snapshot and seeds afresh.
+    local rc=$1 mode
+    [ "$rc" -ne 0 ] || return 0
+    mode=$(cat "$clock_dir/mode" 2>/dev/null || echo missing)
+    echo "SEED FAILED (exit $rc after $(( $(date -u +%s) - began ))s); clock mode $mode." >&2
+    if [ "$mode" = fake ]; then
+        echo "The deployment is partially seeded in fake-clock mode; run 'reseed' to restore the post-setup snapshot and seed again." >&2
+        # A subshell with errexit: a failure inside start_services ends it
+        # and is reported here, instead of being swallowed by the `if`.
+        if (set -e; start_services) >&2; then
+            echo "The services are running." >&2
+        else
+            echo "Could not restart the services; run 'start' (or 'reseed')." >&2
+        fi
+    else
+        echo "The deployment is partially seeded past the switch to normal mode (the late-added Family may not be promoted); run 'reseed' to restore the post-setup snapshot and seed again." >&2
+    fi
+}
+
 cmd_seed() {
-    # The seeder's phases are OPS-10.07; this command takes the lock, keeps
-    # the log and refuses until the image carries `local-seed`.
-    local scale=$1 lock="$snapshots/.seed.lock"
+    local lock="$snapshots/.seed.lock" mode completed seeded_now
+    seed_scale=$1
     require_marker
     load_env
     install -d -m 0700 "$snapshots"
     exec 9>"$lock"
     flock -n 9 || refuse "Another seed is running (lock $lock); refusing."
-    if docker run --rm --network none "$IMAGE" local-seed 2>&1 | grep -q "invalid command"; then
-        refuse "This image has no 'local-seed' command (OPS-10.07); seeding is not available yet."
-    fi
-    refuse "The seeder phases are not wired yet (OPS-10.07): response scale $scale, families $FAMILIES, seed $SEED, anchor $ANCHOR_DATE."
+    select_compose
+    mode=$(clock_mode)
+    [ "$mode" = fake ] || refuse "The deployment is in normal clock mode; it is seeded already (reseed restores the post-setup snapshot first)."
+    completed=$(setup_completed)
+    [ "$completed" = t ] || refuse "The setup wizard has not completed; run it first."
+    trap 'seed_failed $?' EXIT
+    seed_now=$(date -u +%FT%TZ)
+    step "Seeding at $seed_now (response scale $seed_scale, $FAMILIES Families, seed $SEED)"
+    echo "    fake now: $(fake_now)"
+    step "Clearing the mail catcher"
+    mailpit_clear
+    seed_step 1800 prepare web web.yaml
+    seed_step 3600 drive web web.yaml
+    step "Stopping the services for the invariant check and the clock-mode switch"
+    stop_services
+    # The seeded now: the fake instant once every service has stopped, so no
+    # row written while the services drained is later than it (the drive's
+    # own end instant is a few seconds earlier). Rounded up to the second.
+    seeded_now=$(date -u -d "now $(cat "$clock_dir/offset") seconds 1 seconds" +%FT%TZ)
+    echo "    seeded now: $seeded_now"
+    # Offline work runs against the stores alone, as migration does on an
+    # upgrade: postgres and valkey back up (still faked), nothing else.
+    dependencies_up
+    seed_step 600 check migration migration.yaml --seeded-now "$seeded_now"
+    step "Switching to normal clock mode"
+    printf -- '+0\n' >"$clock_dir/offset"
+    printf 'normal\n' >"$clock_dir/mode"
+    chown 10001:10001 "$clock_dir/mode" "$clock_dir/offset"
+    # The late-added Family is served from now on (specification, "Fake configuration").
+    jq --arg at "$(date -u +%FT%TZ)" '.release_at = $at' "$root/run/local/fake-parishsoft.json" |
+        private_file "$root/run/local/fake-parishsoft.json"
+    start_services --force-recreate
+    seed_step 900 finish web web.yaml
+    step "Tagging the seed's mail in the catcher"
+    mailpit_tag_all seed-history
+    trap - EXIT
+    echo "Seeded at $seeded_now (requested $seed_now) in $(( $(date -u +%s) - began ))s."
 }
 
 cmd_sign_in() {

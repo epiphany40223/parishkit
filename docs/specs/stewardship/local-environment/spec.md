@@ -488,10 +488,17 @@ shared clock that the operator script controls.
 - **Images.** A local-only image layer adds libfaketime. It is built inside the
   VM `FROM` each image it extends: the locally built application image, and the
   pinned PostgreSQL and Valkey digests. The derived images are tagged
-  `parishkit-stewardship-local-faketime-<base>:<base digest or local tag>`.
+  `parishkit-stewardship-local-faketime-<base>:<base digest or local tag>`
+  (`deploy/stewardship/Dockerfile.faketime`, `FROM` a build argument).
   Production images, their digests and the production Dockerfile output are
   unchanged. LOCAL's image rule (see [origin](#origin-proxy-and-image)) also
-  admits these derived tags. libfaketime is inert unless it is preloaded.
+  admits these derived tags. libfaketime is inert unless it is preloaded. The
+  layer registers the library in `/etc/ld.so.preload` as well as the override
+  setting `LD_PRELOAD`: PostgreSQL's entrypoint, run as a uid without a
+  passwd entry, replaces `LD_PRELOAD` with its nss_wrapper and later unsets
+  it, which left the server alone on real time; the loader honours
+  `/etc/ld.so.preload` for every process regardless of its environment, and
+  the `FAKETIME_*` variables still decide what the library does.
 - **Fake-clock mode.** LOCAL renders a Compose override, `compose.faketime.json`,
   that sets these on every application service, `postgres` and `valkey`:
   - `LD_PRELOAD` set to libfaketime;
@@ -500,11 +507,16 @@ shared clock that the operator script controls.
   - `FAKETIME_DONT_FAKE_MONOTONIC=1`.
 
   The override adds exactly one mount to each of those services:
-  `run/local/clock/`, read-only. `service_boundaries.validate_mounts` admits
-  exactly that path, read-only, only when the profile is LOCAL, and refuses it
-  for every other profile; fast tests cover both directions. **Normal mode**
-  renders without the override. Moving between modes is a restart of those
-  services with or without the override.
+  `run/local/clock/`, read-only at `/run/parishkit-clock`.
+  `service_boundaries.validate_mounts`, the offline mount policy and the
+  backup worker's policy admit exactly that path, read-only, only when the
+  profile is LOCAL, and refuse it for every other profile; fast tests cover
+  both directions. The install steps and the one-shot profiles run under the
+  override too, so no row predates the clock. **Normal mode** renders without
+  the override. Moving between modes is a restart of those services with or
+  without the override. The seeder's clock-moving steps mount the same
+  directory a second time, writable, at `/run/parishkit-clock-control`; see
+  [seeder phases](#seeder-phases-and-identities).
 - **Persisted mode.** The current mode is a marker file,
   `run/local/clock/mode`, containing `fake` or `normal`. Every command that
   starts services reads it and applies the override when it says `fake`: `up`,
@@ -516,9 +528,11 @@ shared clock that the operator script controls.
   it. Every faked process reads the same file. After writing the file, the
   operator script waits two seconds, longer than the one-second cache, before
   it acts.
-- **Forward only.** The script computes each new offset as target minus real
-  now, and refuses any offset whose target is earlier than the current fake
-  time. Because fake time never runs ahead of real time, every recorded
+- **Forward only.** Each new offset is target minus real now, and a target
+  earlier than the current fake time is never written. The seeder itself runs
+  in a faked container, so it obtains real now as its own (faked) clock minus
+  the offset the file holds; in normal mode the offset is zero and the two
+  agree. Because fake time never runs ahead of real time, every recorded
   timestamp is at or before real now.
 - **When each mode applies.** An unseeded deployment always runs in fake-clock
   mode, at the offset `up` sets (below). Its pages show dates about 17 days in
@@ -535,15 +549,17 @@ shared clock that the operator script controls.
 - **Jumps.** A forward jump can make a held database lease look expired, so the
   seeder jumps only when work has [settled](#settled) and no task holds one.
   Container health is unaffected: probe heartbeat files record monotonic time,
-  which libfaketime leaves real. After each jump the seeder waits for the
-  scheduler signal described under [settled](#settled) before it acts. A jump
+  which libfaketime leaves real. After a jump to an occurrence instant the
+  seeder waits for that instant's [evidence](#settled) before it acts. A jump
   can also make an in-flight statement with a timeout fail, such as a health
   probe's two-second `statement_timeout`. Settled work does not cover probes,
   so a probe may fail once around a jump; that is expected and is retried.
 - **Browser cookies.** In fake-clock mode Django computes cookie `Expires`
   dates in fake time, about 17 days in the past. Browsers honour `Max-Age`
-  over `Expires`, so sessions still work. PR 5b MUST verify this for the Admin
-  and Family cookies.
+  over `Expires`, so sessions still work. Verified (PR 5b, 2026-10-04): the
+  session middleware and the namespaced CSRF middleware set `Max-Age` on
+  every Admin and Family cookie, and a response from the faked web through
+  Caddy carried `Max-Age=31449600` with a fake-time `Expires`.
 
 ## Seeded campaign and responses
 
@@ -567,20 +583,32 @@ campaign-local dates.
 
 The seeder is `pk-stewardship local-seed <step> [arguments]`. Every step
 refuses unless the profile is LOCAL, and refuses before opening any connection.
-Each step runs as a one-shot container under an existing identity, with exactly
-the mounts that identity's service already has in fake-clock mode. No step adds
-a login, role or grant. The operator script reads `seed`, `families` and
+Each step runs as a one-shot container under an existing identity, with
+exactly the mounts that identity's service already has in fake-clock mode,
+plus, for the clock-moving steps alone, the clock directory a second time,
+writable, at `/run/parishkit-clock-control`. The seeder admits its own mounts
+by setting that one aside and passing every other mount through web's
+ordinary policy, so it can carry no mount web may not; it then configures
+itself exactly as the web service does after its mount admission
+(`runtime_web.configure_web_runtime`: keyrings, SQL-role and
+coherent-authority admissions, limiter, Family and Admin runtimes). No step
+adds a login, role or grant. The operator script reads `seed`, `families` and
 `anchor_date` from the [fake configuration](#fake-configuration) and passes
-them to each step as arguments, together with `now` and `--response-scale`.
-The long-running scheduler, worker and `mail-dispatch` keep running in
-fake-clock mode throughout, so occurrences fall due naturally.
+them to each step as arguments, together with `now`, `--response-scale` and
+the Administrator's email. The web-identity steps are started with `docker
+run` from the rendered web service definition (its image, user, hardening,
+mounts, tmpfs and environment, plus the fake-clock override's when the clock
+is fake), not `docker compose run web`: web holds a fixed address on the proxy
+network, which a second container could not share. The long-running
+scheduler, worker and `mail-dispatch` keep running in fake-clock mode
+throughout, so occurrences fall due naturally.
 
 | Order | Phase | Clock | Identities | Work |
 | --- | --- | --- | --- | --- |
-| 1 | prepare | Friday before the start Saturday, 09:00 | configuration installer, `worker`, `web` | Configure the campaign, meet [go-live readiness](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
+| 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [go-live readiness](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
 | 2 | drive | stepped through the timeline | `web` for Family steps; scheduler, worker and `mail-dispatch` running normally | Carry out every event before `now` in [historical order](#historical-ordering) |
-| 3 | check | (services stopped) | offline `migration` | Run the [invariant check](#post-seed-invariant-check) |
-| 4 | finish | real time, normal mode | `worker` | Restart without the preload, then a real refresh that releases the late-added Family |
+| 3 | check | (services stopped; PostgreSQL and Valkey running) | offline `migration` | Run the [invariant check](#post-seed-invariant-check) |
+| 4 | finish | real time, normal mode | `web` (the Admin's "Refresh now"; the worker runs the refresh) | After the restart without the preload, request the real full refresh that releases the late-added Family |
 
 The clock's starting point must not be earlier than any row already in the
 database. `up` therefore runs the whole install and the setup wizard in
@@ -602,7 +630,9 @@ the future:
 3. Meet the readiness prerequisites with real code:
    - a full refresh against the fake, so the source is current within
      `source_stale_seconds`;
-   - a successful Family test mail to Mailpit;
+   - a successful sample of the Initial email to the Testing recipient at
+     Mailpit (the campaign email page's "send a sample", which is what
+     readiness checks for a Family template);
    - current provider-check receipts for `parishsoft` and `google_workspace`
      (the fake and the mail catcher).
 4. Run the real go-live, in the same order the Admin pages use:
@@ -628,16 +658,23 @@ Reminder. Phase 2 visits them in order of intended instant:
 
 - **Occurrence instants** (start boundary, Initial, each Reminder, and each
   campaign-local midnight for daily facts and digests): wait until work has
-  [settled](#settled), jump to the instant, and wait for the resulting work to
-  settle. The scheduler plans and the worker and `mail-dispatch` prepare and
-  send exactly as in Production, and current state decides eligibility. A
-  Family that submitted before a Reminder is not sent it. A Family that
-  submitted before its invitation was prepared has its invitation skipped.
+  [settled](#settled), jump to the instant (always: an occurrence instant is
+  never run early), wait for that instant's [evidence](#settled), and wait for
+  the resulting work to settle. The scheduler plans and the worker and
+  `mail-dispatch` prepare and send exactly as in Production, and current state
+  decides eligibility. A Family that submitted before a Reminder is not sent
+  it. A Family that submitted before its invitation was prepared has its
+  invitation skipped.
 - **Family events:** wait until work has settled, jump to the instant, and call
   the real web entry point under `web` for that Family's session, form
   baseline, presence step or submission. The seeder settles before every jump,
   including between consecutive Family events, because receipts and other
-  results are asynchronous and their tasks hold leases.
+  results are asynchronous and their tasks hold leases. A Family event within
+  150 seconds ahead of fake time runs without a jump (fake time runs at real
+  speed, and a jump costs the cache wait and a settle), so a Family's presence
+  steps, generated seconds apart, ride on its session's jump: a Family's form
+  costs two jumps, its session and its submission. Such an event's recorded
+  instant leads its intended one by at most those 150 seconds.
 - **Late instants.** Fake time advances at real speed while work runs. If it
   has already passed an event's intended instant, the seeder runs that event
   at once rather than jumping back, so recorded instants may trail the
@@ -648,14 +685,15 @@ Reminder. Phase 2 visits them in order of intended instant:
   [invariant check](#post-seed-invariant-check) uses it. Timeline tests use the
   requested `now`.
 
-PR 5b MUST also verify that Family delivery is not held by source staleness
-across jumps. The scheduled refreshes that fall due at each jump are expected
-to keep the source current. If delivery is held anyway, phase 2 runs a full
-refresh before the affected occurrence instants.
-
-PR 5b MUST verify that occurrences falling due one at a time under the fake
-clock are processed singly, without missed-work coalescing. If not, that is a
-design question for #476.
+Verified (PR 5b, 2026-10-04, 100 Families): Family delivery was not held by
+source staleness across jumps; the scheduled refreshes that fell due at each
+jump kept the source current, every Initial and Reminder occurrence
+succeeded with `smtp_accepted`, and no restore or staleness hold was
+recorded. Occurrences falling due one at a time under the fake clock were
+processed singly: the Initial produced 81 occurrences and the two past
+Reminders 77 and 75, none coalesced; the only coalescing in the whole seed is
+phase 4's `missed_family_recovery`, which folds the promoted late-added
+Family's missed Reminders into one recovery send, as it does in Production.
 
 ### Settled
 
@@ -669,53 +707,83 @@ schema:
 - no outbox message is `pending`, `submitting`, or `retry_wait` with
   `not_before` at or before the current fake time;
 - every schedule occurrence due at or before the current fake time is
-  `succeeded` or `skipped`;
-- **scheduler signal:** the scheduler's probe heartbeat file has been written
-  at least twice after the monotonic instant at which the seeder wrote the
-  jump. The scheduler writes the heartbeat once per loop, at the end, so a
-  loop that began before the jump can write the first one; the second proves a
-  whole planning loop ran under the new time. The monotonic clock is real and
-  shared by every container in the VM.
+  `succeeded` or `skipped`.
 
-The seed fails immediately, without waiting, if any of these appears:
+Settled alone cannot tell that the scheduler has seen a jump: before it plans,
+nothing is queued. So after each jump to an occurrence instant the seeder
+first waits for that instant's **evidence**, the row the real code writes for
+it, read from the real schema: the campaign `active` at the start boundary; at
+the Initial's or a Reminder's instant, production occurrences of this
+campaign's definitions due at exactly that instant for at least every Family
+then active and email-eligible with no effective submission (the scheduler
+plans Families in pages across loops, so one row is not the plan; zero
+expected is met; the planned set may also hold a skipped occurrence for a
+Family that submitted just before, such as the early responder); and, at a
+campaign-local midnight, the daily-fact row for the day that midnight closed. Only then does it wait for the resulting work to settle. (The
+scheduler's probe heartbeat, an earlier design for this signal, lives in the
+scheduler container's private `/tmp` and is unreachable from another
+container.)
 
-- an occurrence in `delivery_unknown`, `coalesced` or `failed`;
+The seed fails immediately, without waiting, if any of these appears among
+rows created since the seed began:
+
+- an occurrence in `delivery_unknown`, `coalesced` or `failed` (phase 4
+  tolerates `coalesced` in both the fatal and the settled checks: the
+  late-added Family's missed Reminders are coalesced into its recovery send
+  by design, and those rows are final, not unfinished);
 - an outbox message in `delivery_unknown` or `permanent_failure`;
 - a `TaskRun` in `failed` or `abandoned`.
 
-Each wait has a limit (10 minutes by default). On expiry the seeder stops, and
-it records which condition was unmet, the limit and the elapsed time in its log
-before it exits.
+Each wait has a limit (10 minutes by default). While it waits the seeder logs
+what it is waiting for every 30 seconds; on expiry it stops, and it records
+which condition was unmet, the limit and the elapsed time in its log before it
+exits.
 
 ### Post-seed invariant check
 
-Phase 3 stops the online services for the mode switch. It then runs, under the
+Phase 3 stops the online services for the mode switch (PostgreSQL and Valkey
+run on). The **seeded now** the check uses is the fake instant once every
+service has stopped, rounded up to the second: the drive's own end instant is
+a few seconds earlier, and the worker and scheduler keep writing (daily facts,
+operational collection) until they have drained. It then runs, under the
 offline `migration` identity, a `DO` block that raises unless:
 
-- parent and child timestamps are monotone: each occurrence is at or before
-  its fulfillment, which is at or before its delivery; each Family session is
-  at or before its form baseline, which is at or before its submission, which
-  is at or before its receipt;
-- one daily-fact row exists for each elapsed campaign-local day;
-- per-table row counts equal the counts the timeline implies;
-- no timestamp is later than the [seeded now](#historical-ordering), except
-  rows written in phase 4 (the late-added Family's promotion and invitation,
-  and anything after it) and the future-by-design columns on an explicit
-  allowlist kept with the seeder: future occurrence and schedule
-  instants, the campaign end date and closing boundary, and expiry and
-  deadline columns (token, session, code and export expiries, and retention
-  due dates).
+- parent and child timestamps are monotone, in the order the real code writes
+  them: each occurrence's due instant is at or before the message it produced,
+  which is at or before the fulfillment that records its delivery; each Family
+  session is at or before its form baseline, which is at or before its
+  submission, which is at or before its receipt;
+- a daily-fact row exists for exactly each elapsed campaign-local day from the
+  start date;
+- the live submission count equals the count the timeline implies (other
+  per-table counts are not pinned: Family session rows are deleted an hour
+  after their last activity by design, and the outbox and occurrence counts
+  depend on eligibility the real code decided; a follow-up tracked from
+  [#476](https://github.com/epiphany40223/parishkit/issues/476) may pin them);
+- no timestamp in the tables the seed writes through (sessions, baselines,
+  submissions, receipts, outbox messages, occurrences, fulfillments, daily
+  facts, Family engagement, task runs and audit events) is later than the
+  seeded now, except the future-by-design columns on an explicit allowlist kept
+  with the seeder: future occurrence and schedule instants, the campaign end
+  date and closing boundary, and expiry and deadline columns (token, session,
+  code and export expiries, retention due dates, `not_before` and provider
+  deadlines). Phase 4's rows are written after the check.
 
 ### Seeding speed
 
-At the default 100 Families, phase 2 dominates. It sends about 260 to 430 past
-messages at the measured rate of about 46 a minute under the global work-order
-lock, about 6 to 9 minutes. It makes about 100 Family-event jumps, each with a
-settle wait, the two-second cache wait and the scheduler signal, at 5 to 8
-seconds each, about 8 to 13 minutes. About 20 occurrence and midnight settle
-points add 10 minutes or less. Phases 1, 3 and 4 add 2 to 3 minutes. The whole
-seed is therefore estimated at 20 to 30 minutes. The earlier 5-minute target no longer
-applies: the seed runs in the background (see [operator script](#operator-script)),
+Measured on the VM (2026-10-04, 100 Families, 81 Portal-eligible with email,
+seed 3489829950): phase 1 took 14 seconds (configuration 2 s, refresh 0 s,
+sample mail 2 s, cleanup 3 s, link preparation 2 s, activation 0 s); phase 2
+took 936 seconds for 155 events, 44 of them clock jumps and 111 run without
+one, 576 seconds of it settle waits; the invariant check 0.3 seconds; phase 4
+(the refresh and the late-added Family's invitation) 37 seconds. The whole
+seed, with its stop and restart cycles, took about 17 minutes and sent 329
+messages to Mailpit (the sample, 81 Initials, 77 and 75 Reminders, 11
+receipts, digests and operational mail). Phase 2 dominates: the message rate
+of about 46 a minute under the global work-order lock, the settle waits
+around each jump and the sends after each occurrence. The earlier 5-minute
+target no longer applies: the seed runs in the background (see
+[operator script](#operator-script)),
 and set-based preparation with a lock-free send loop
 ([#447](https://github.com/epiphany40223/parishkit/issues/447)) would remove
 most of the message time. A programmatic interface
@@ -761,8 +829,10 @@ that no more than 90% of `E` respond.
 - **Monday.** Somewhat lower: 1.5%.
 - **Taper.** 1.0% on Tuesday, declining linearly to 0.4% a day by the end of
   the second week and staying there.
-- **Reminder upticks.** The 24 hours after each past Reminder carry 1.6 times
-  the taper baseline for that window, and the following 24 hours 1.2 times.
+- **Reminder upticks.** A Reminder's calendar day carries 1.6 times the taper
+  baseline, and the following calendar day 1.2 times. (Counting by calendar
+  day, not by 24-hour windows from 09:00, is what reproduces the table below
+  exactly; the Reminder floors below still apply to the 24-hour windows.)
 - **Total by now.** The cumulative share submitted before today, at
   `--response-scale 1`, by days elapsed:
 
@@ -798,7 +868,9 @@ that no more than 90% of `E` respond.
   - re-submissions (later versions) from 3% of submitting Families, with a
     minimum of one;
   - one Family that submitted on the start Saturday before its invitation was
-    prepared, so its invitation occurrence was skipped;
+    prepared, so its invitation occurrence was skipped (the allocation gives
+    the start Saturday at least one submission whenever there is any to
+    give, so every seed with a submission before today has this case);
   - one Portal-eligible Family with no eligible email;
   - one late-added Family that phase 4 promotes, which then receives its
     invitation, live, through the
@@ -869,6 +941,13 @@ assert that:
 - go-live reached `scheduled` with no activation catch-up, and the campaign
   became `active` at its start boundary;
 - the deployment is in normal mode at the end, with an offset of zero.
+
+The first such run (2026-10-04, 100 Families) is recorded on
+[#476](https://github.com/epiphany40223/parishkit/issues/476): the invariant
+check passed; no Reminder went to a Family that had submitted and the early
+responder's invitation was skipped; every message reached Mailpit; go-live
+reached `scheduled` with no catch-up and the campaign became `active` at the
+start boundary; the deployment ended in normal mode at offset zero.
 
 The schema's guard and function SQL contains no LOCAL branch; that test stays
 under [production invariants](#production-invariants).
@@ -1004,11 +1083,16 @@ and `release_at` set for the final refresh. Last, it tags the seed's mail in Mai
 [mail history](#mail-history)). It is safe to run in the background: it takes
 a lock so only one seed runs at a time, prints one progress line per step with
 fake time, elapsed real time and row counts, and appends the same lines to
-`~/.parishkit-local/seed.log`. If any step fails it stops, leaves the
-deployment in fake-clock mode (an unseeded deployment's mode) with services
-running, and exits non-zero. `reseed`
-restores the post-setup snapshot (which also restores the fake configuration)
-and then runs `seed`.
+`~/.parishkit-local/seed.log`. If a step fails before the switch to normal
+mode it stops, leaves the deployment in fake-clock mode (an unseeded
+deployment's mode) with its services running, and exits non-zero; a failure
+after the switch (the finish phase) leaves a seeded deployment in normal mode
+whose late-added Family may not be promoted, and `reseed` is the recovery
+either way. `reseed [--response-scale m]` restores the post-setup snapshot
+(which also restores the fake configuration) and then runs `seed`. A
+deployment set up in normal mode cannot be seeded: its rows are stamped at
+real time and the seed's clock would have to start before them; `seed`
+refuses when the clock-mode marker says `normal`.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the

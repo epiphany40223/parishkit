@@ -19,8 +19,8 @@
 #                                    snapshot, wipe the root and run `up` again
 #   reset --reinstall                build from this checkout, then wipe the root
 #                                    and run `up` again, keeping the snapshots
-#   seed [--response-scale M]        seed the campaign (OPS-10.07; not yet)
-#   reseed                           reset to the post-setup snapshot, then seed
+#   seed [--response-scale M]        seed the campaign (the fake-clock seeder)
+#   reseed [--response-scale M]      reset to the post-setup snapshot, then seed
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link (OPS-10.08)
@@ -237,12 +237,17 @@ case "$command" in
         mkdir -p "$state"
         run_remote seed "$scale" 2>&1 | tee -a "$state/seed.log" ;;
     reseed)
-        [ $# -eq 0 ] || usage
+        scale=1
+        case "$#:${1-}" in
+            0:) ;;
+            2:--response-scale) scale=${2-} ;;
+            *) usage ;;
+        esac
         require_running
         run_remote has-snapshot post-setup || refuse "No post-setup snapshot to restore; run: $0 snapshot"
         run_remote reset post-setup
         mkdir -p "$state"
-        run_remote seed 1 2>&1 | tee -a "$state/seed.log" ;;
+        run_remote seed "$scale" 2>&1 | tee -a "$state/seed.log" ;;
     status)
         [ $# -eq 0 ] || usage
         limactl list "$vm" 2>/dev/null || echo "No Lima instance '$vm'."
