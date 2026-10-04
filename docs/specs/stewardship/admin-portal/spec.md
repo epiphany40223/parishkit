@@ -416,7 +416,10 @@ only its own whitelisted sort tokens, each mapped to server-owned ordering, and
 appends a unique tiebreak so rows with equal values never move between pages.
 Rows with no value in the sorted column (a task without a heartbeat, a user
 who never signed in) sort last in either direction.
-A new sort starts again at page 1.
+A new sort starts again at page 1. The headings are the only sort control: no
+page offers a separate sort menu, and a page's filter and export forms carry
+the heading's current sort as a hidden field, so applying filters or
+exporting keeps the order the table shows.
 
 Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
 prefixed so two tables on one page keep their own place, and every navigator
@@ -441,6 +444,40 @@ controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families, and link
 preparation history (panels, not columns) have no sortable columns.
+
+A table's navigators and rows sit in one region with a stable id (the table's
+anchor, derived from its parameter prefix so two tables on one page differ),
+and every heading and navigator control names that id as its URL fragment.
+With script, choosing a heading, Previous, Next, a page number or a
+rows-per-page value re-sorts or re-pages the table in place (#478): the
+browser fetches the page the control would have loaded, requested as the
+control would have requested it (a GET table's link or query, a POST table's
+CSRF form with its private filters), and replaces that region, every other
+table region on the page and the hidden state fields (sort, size, applied
+filters, request keys) of the page's filter and export forms from the fetched
+page, so no control is left carrying a choice the table no longer shows; the
+reader's visible choices in those forms are kept. The reader keeps their
+scroll position, rows still shown keep their selection, focus returns to the
+chosen heading or control, the heading's `aria-sort` and a polite live region
+announce the new order or the rows now shown, and a GET table's choice
+replaces the address so reload, bookmarks and returning to the page keep it; a
+POST table's address never changes. Applying a page's filters works the same
+way (#484): the filter form is sent as it would have been (a GET query, or a
+CSRF POST body), every table region is replaced, and so are the counts,
+summaries and filter-dependent panels outside the tables (a report's matching
+count and summary, the Family directory's export column list, the follow-up
+queue's bulk assignment); focus stays on the filter button and the live region
+announces the rows now shown in each table, including none. A response the
+server refuses (a malformed filter's 400, a denial, an unavailable report) is
+shown as returned; a POST is never sent twice, since each report read is
+audited. While a request is in flight, repeating the same submission is
+ignored. The participation report's options reshape its statistics, chart and
+exports rather than one table, so they always load the page in full. Without
+script, or when the fetch fails or returns another page (a sign-in), the
+ordinary page load happens and its fragment lands on the table rather than at
+the top. Portal users, whose domain and address tables carry role forms bound
+once at load, and the link preparation history keep only the fragment and
+always load in full.
 
 Lists read straight from a growing database table page on the server with one
 extra row to learn whether a next page exists, and count matching rows only up

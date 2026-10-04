@@ -1,5 +1,6 @@
 """Synthetic staff requests rendered through the actual production templates."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
@@ -36,6 +37,31 @@ def components(context, admin):
         notes="Called; awaiting a response.",
     )
     query = InformationQuery(search="Sample", disposition="all")
+
+    def table(query, rows=(item,), total=51):
+        """The queue's report table under ``query``'s filters and sort."""
+        return report_table(
+            list(rows),
+            number=1,
+            size=50,
+            total=total,
+            carry=[
+                (key, value)
+                for key, value in query.form_values().items()
+                if key != "sort"
+            ],
+            sorting=INFORMATION_SORTING,
+            sort=query.sort,
+            action=f"/admin/reports/{campaign}/information/",
+            sizes=PAGE_SIZES,
+        )
+
+    # What the Family heading's POST form returns: the queue by Family name,
+    # served from a GET path to the in-place re-sort tests (#478).
+    by_name = replace(query, sort="name")
+    withdrawn = replace(query, disposition="withdrawn")
+    nothing = replace(query, search="Nobody")
+    other = item | {"id": UUID(int=84), "family_name": "Other Family"}
     values = dict(
         metadata=dict(
             name="Sample campaign",
@@ -48,21 +74,7 @@ def components(context, admin):
         query_fields=query.form_values(),
         total=51,
         rows=[item],
-        table=report_table(
-            [item],
-            number=1,
-            size=50,
-            total=51,
-            carry=[
-                (key, value)
-                for key, value in query.form_values().items()
-                if key != "sort"
-            ],
-            sorting=INFORMATION_SORTING,
-            sort=query.sort,
-            action=f"/admin/reports/{campaign}/information/",
-            sizes=PAGE_SIZES,
-        ),
+        table=table(query),
         mutable=True,
         export_timezones=("UTC", "America/Detroit"),
         request_key=UUID(int=83),
@@ -82,6 +94,37 @@ def components(context, admin):
     )
     pages = {
         "/information": ("information", values),
+        "/information-by-name": (
+            "information",
+            values
+            | {
+                "query": by_name,
+                "query_fields": by_name.form_values(),
+                "table": table(by_name),
+            },
+        ),
+        # What Apply filters returns for withdrawn requests (#484): another
+        # Family, a smaller matching count, and a search that matches none.
+        "/information-withdrawn": (
+            "information",
+            values
+            | {
+                "query": withdrawn,
+                "query_fields": withdrawn.form_values(),
+                "total": 3,
+                "table": table(withdrawn, [other], 3),
+            },
+        ),
+        "/information-none": (
+            "information",
+            values
+            | {
+                "query": nothing,
+                "query_fields": nothing.form_values(),
+                "total": 0,
+                "table": table(nothing, [], 0),
+            },
+        ),
         "/information-queue-gated": ("information", values | {"mutable": False}),
         "/information-item": ("information", values | {"item": item}),
         "/information-unresolved": (
@@ -91,6 +134,14 @@ def components(context, admin):
         "/information-gated": (
             "information",
             values | {"item": item, "mutable": False},
+        ),
+        "/information-unavailable": (
+            "information-error",
+            {"campaign_id": campaign, "item_id": None, "status": 503},
+        ),
+        "/information-refused": (
+            "information-error",
+            {"campaign_id": campaign, "item_id": None, "status": 400},
         ),
         "/information-conflict": (
             "information-error",

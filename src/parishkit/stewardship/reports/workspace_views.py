@@ -227,9 +227,6 @@ def daily_table(chart, presented, query):
         "table": table,
         "rows": [cells for _day, cells in table.rows],
         "columns": list(zip(keys, presented["headings"], strict=False)),
-        # A heading's sort is not one of the options form's date orders; the
-        # form offers it too, so applying other options keeps it.
-        "heading_sort": query.sort not in {"date_asc", "date_desc"},
     }
 
 

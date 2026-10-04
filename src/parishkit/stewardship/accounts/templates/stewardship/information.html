@@ -36,7 +36,7 @@
 <nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
 <p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}
-<form method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}
 <label for="info-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="info-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="disposition">{% translate "Request history" %}</label><select id="disposition" name="disposition">
 <option value="current_actionable"{% if query.disposition == 'current_actionable' %} selected{% endif %}>{% translate "Current actionable requests" %}</option>
@@ -47,15 +47,14 @@
 <label for="completed">{% translate "Follow-up completed" %}</label><select id="completed" name="completed"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.completed == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.completed == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
 <label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}">
 <label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}">
-<label for="info-sort">{% translate "Sort order" %}</label><select id="info-sort" name="sort"><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Oldest first" %}</option><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option></select>
-<input type="hidden" name="size" value="{{ table.size_value }}">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <button type="submit">{% translate "Apply filters" %}</button></form>
-<p>{% translate "Matching requests:" %} {{ total|number }}.</p>
+<p id="information-matching" data-table-sync>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
-<p>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. The file uses the text as it is when you queue the export; later changes are not included." %}</p>
+<p id="information-export-count" data-table-sync>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. The file uses the text as it is when you queue the export; later changes are not included." %}</p>
 <p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
-<form data-submit-waits method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
@@ -64,6 +63,7 @@
 <label><input type="checkbox" name="history" value="yes"> {% translate "Include complete Staff workflow history" %}</label>
 <button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+<div id="{{ table.anchor }}" data-table-region>
 {% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Additional-information results' %}"><table>
 <caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
@@ -72,5 +72,6 @@
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching requests. Try All history in Request history, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
 {% endif %}
 {% endblock %}
