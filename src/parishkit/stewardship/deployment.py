@@ -292,8 +292,8 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
         # The normalized form is compared, so a trailing slash or upper-case
         # host is still the one origin; any other host (127.0.0.1 and ::1
         # included), scheme or port is refused. The go-live origin check
-        # (origin_check) refuses LOCAL outright until its own LOCAL rule lands
-        # (OPS-10.04); that rule will not live here.
+        # (origin_check) carries its own LOCAL rule, admitting this one origin
+        # without a resolver call; that rule does not live here.
         if normalized != LOCAL_PUBLIC_ORIGIN:
             raise ConfigError(f"local public_origin must be {LOCAL_PUBLIC_ORIGIN}")
     elif parsed.scheme != "http" or parsed.hostname not in {

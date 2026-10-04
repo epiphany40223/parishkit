@@ -7,6 +7,7 @@ document and Caddyfile byte for byte while local-environment work lands.
 """
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -583,32 +584,125 @@ def test_local_is_a_cli_profile_and_round_trips_through_its_document(
     assert reloaded.trusted_proxy_hops == 1
 
 
-# Go-live origin verification: LOCAL is refused until OPS-10.04 adds its rule.
-def test_go_live_origin_check_refuses_local_until_its_rule_lands(monkeypatch):
-    """localhost resolves, so LOCAL must not verify as a public origin yet."""
+# Go-live origin verification: LOCAL admits exactly its one origin, with no
+# resolver call, in both the parent check and the helper; every other profile
+# still goes through the helper exactly as before.
+WRONG_LOCAL_ORIGINS = [
+    "https://localhost:8444",
+    "https://localhost",
+    "https://127.0.0.1:8443",
+    "https://[::1]:8443",
+    "http://localhost:8443",
+    "https://parish.example:8443",
+    "https://localhost:8443/path",
+]
+
+
+def origin_check_doubles(monkeypatch):
+    """Stub the helper subprocess and the resolver so neither can be reached."""
     from parishkit.stewardship import origin_check, origin_check_worker
 
     run = Mock(return_value=SimpleNamespace(returncode=0, stdout=b"ready\n"))
     monkeypatch.setattr(origin_check.subprocess, "run", run)
-    with pytest.raises(ConfigError, match="OPS-10.04"):
-        origin_check.check_public_origin(LOCAL_PUBLIC_ORIGIN, DeploymentProfile.LOCAL)
-    run.assert_not_called()
-    # The other profiles still reach the helper unchanged.
-    for origin, profile in (
-        ("https://parish.example", DeploymentProfile.PRODUCTION),
-        ("http://localhost:8000", DeploymentProfile.DEVELOPMENT),
-        ("http://localhost:8000", DeploymentProfile.TEST),
-    ):
-        assert origin_check.check_public_origin(origin, profile) is True
-    # The helper refuses a LOCAL request of its own accord too.
     lookup = Mock(return_value=[("stub",)])
     monkeypatch.setattr(origin_check_worker.socket, "getaddrinfo", lookup)
-    with pytest.raises(ValueError, match="not yet supported"):
-        origin_check_worker.resolve({"origin": LOCAL_PUBLIC_ORIGIN, "profile": "local"})
+    return run, lookup
+
+
+@pytest.mark.parametrize(
+    "origin", [LOCAL_PUBLIC_ORIGIN, "https://localhost:8443/", "https://LOCALHOST:8443"]
+)
+def test_go_live_origin_check_admits_only_the_local_origin_without_dns(
+    monkeypatch, origin
+):
+    """The one local origin verifies on its own; the helper is never started."""
+    from parishkit.stewardship import origin_check, origin_check_worker
+
+    run, lookup = origin_check_doubles(monkeypatch)
+    assert origin_check.check_public_origin(origin, DeploymentProfile.LOCAL) is True
+    # The helper applies the same rule on its own if it is ever handed LOCAL.
+    assert origin_check_worker.resolve({"origin": origin, "profile": "local"}) is True
+    run.assert_not_called()
     lookup.assert_not_called()
-    assert origin_check_worker.resolve(
-        {"origin": "https://parish.example", "profile": "production"}
+
+
+@pytest.mark.parametrize("origin", WRONG_LOCAL_ORIGINS)
+def test_go_live_origin_check_refuses_every_other_local_origin(monkeypatch, origin):
+    """Wrong port, host, scheme or path is refused before any helper or DNS."""
+    from parishkit.stewardship import origin_check, origin_check_worker
+
+    run, lookup = origin_check_doubles(monkeypatch)
+    with pytest.raises(ConfigError):
+        origin_check.check_public_origin(origin, DeploymentProfile.LOCAL)
+    with pytest.raises(ConfigError):
+        origin_check_worker.resolve({"origin": origin, "profile": "local"})
+    run.assert_not_called()
+    lookup.assert_not_called()
+
+
+def test_go_live_origin_check_is_unchanged_outside_local(monkeypatch):
+    """Production, development and test still reach the helper, verdict and all.
+
+    A production deployment naming localhost:8443 is not given the LOCAL rule:
+    it is sent to the helper like any other production origin, and the helper
+    resolves it rather than admitting it.
+    """
+    from parishkit.stewardship import origin_check, origin_check_worker
+
+    run, lookup = origin_check_doubles(monkeypatch)
+    expected = [
+        ("https://parish.example", DeploymentProfile.PRODUCTION),
+        (LOCAL_PUBLIC_ORIGIN, DeploymentProfile.PRODUCTION),
+        ("http://localhost:8000", DeploymentProfile.DEVELOPMENT),
+        ("http://localhost:8000", DeploymentProfile.TEST),
+    ]
+    for origin, profile in expected:
+        assert origin_check.check_public_origin(origin, profile) is True
+    assert [json.loads(call.kwargs["input"]) for call in run.call_args_list] == [
+        {"origin": origin, "profile": profile.value} for origin, profile in expected
+    ]
+    # The helper's verdict is still the resolver's, including for localhost.
+    for origin, profile in expected:
+        assert origin_check_worker.resolve({"origin": origin, "profile": profile.value})
+    assert [call.args[:2] for call in lookup.call_args_list] == [
+        ("parish.example", 443),
+        ("localhost", 8443),
+        ("localhost", 8000),
+        ("localhost", 8000),
+    ]
+    lookup.return_value = []
+    assert not origin_check_worker.resolve(
+        {"origin": LOCAL_PUBLIC_ORIGIN, "profile": "production"}
     )
+    # Production still refuses a plain-HTTP origin before any resolution.
+    with pytest.raises(ConfigError):
+        origin_check.check_public_origin(
+            "http://parish.example", DeploymentProfile.PRODUCTION
+        )
+
+
+def test_go_live_origin_helper_answers_ready_for_local_without_a_resolver(monkeypatch):
+    """End to end through the helper's protocol: only the fixed verdict is written."""
+    from parishkit.stewardship import origin_check_worker
+
+    _, lookup = origin_check_doubles(monkeypatch)
+    lookup.side_effect = OSError("the resolver must not be consulted")
+    verdicts = []
+    for origin in (LOCAL_PUBLIC_ORIGIN, "https://localhost:8444"):
+        payload = json.dumps({"origin": origin, "profile": "local"}).encode()
+        output = io.BytesIO()
+        monkeypatch.setattr(
+            origin_check_worker.sys,
+            "stdin",
+            SimpleNamespace(buffer=io.BytesIO(payload)),
+        )
+        monkeypatch.setattr(
+            origin_check_worker.sys, "stdout", SimpleNamespace(buffer=output)
+        )
+        origin_check_worker.main()
+        verdicts.append(output.getvalue())
+    assert verdicts == [b"ready\n", b"unavailable\n"]
+    lookup.assert_not_called()
 
 
 # Production invariant: no LOCAL branch in the schema's SQL.

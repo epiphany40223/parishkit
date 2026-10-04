@@ -4,15 +4,19 @@ The configured origin is the only input; no browser-supplied hostname or URL is
 accepted. DNS runs in a killable helper outside all database transactions. This
 checks name resolution and the deployment's URL rules, not external TLS reach,
 which remains an operational smoke-test concern.
+
+The LOCAL profile has no public DNS name: its one origin is LOCAL_PUBLIC_ORIGIN
+behind a Caddy ``tls internal`` certificate, so the local environment
+specification admits exactly that origin without a resolver call. The rule
+lives here and in the helper, not in deployment._origin, and every other
+profile's verdict is unchanged.
 """
 
 import json
 import subprocess
 import sys
 
-from parishkit.config import ConfigError
-
-from .deployment import DeploymentProfile, _origin
+from .deployment import LOCAL_PUBLIC_ORIGIN, DeploymentProfile, _origin
 
 
 def check_public_origin(origin, profile):
@@ -24,14 +28,16 @@ def check_public_origin(origin, profile):
     """
     if not isinstance(profile, DeploymentProfile):
         raise ValueError("An explicit deployment profile is required.")
-    if profile is DeploymentProfile.LOCAL:
-        # localhost resolves, so without this the LOCAL origin would verify
-        # as a public one. The LOCAL rule for go-live is OPS-10.04's.
-        raise ConfigError(
-            "Go-live origin verification in the local profile is not yet "
-            "supported (OPS-10.04)."
-        )
     canonical = _origin(origin, profile)
+    if profile is DeploymentProfile.LOCAL:
+        # LOCAL is served on localhost by Caddy's own local CA, so there is no
+        # public name to resolve and the helper is not run. _origin has already
+        # refused every other host, scheme and port for LOCAL; the comparison
+        # states the admitted origin on its own terms rather than trusting
+        # that. No other profile takes this branch, so a production
+        # deployment configured with a localhost origin is still resolved and
+        # judged exactly as before.
+        return canonical == LOCAL_PUBLIC_ORIGIN
     payload = json.dumps({"origin": canonical, "profile": profile.value}).encode()
     try:
         result = subprocess.run(
