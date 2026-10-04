@@ -312,11 +312,13 @@ case "$*" in
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
-        bulk=false batch=20
+        bulk=false batch=20 latency=""
         for arg in "$@"; do
             case "$arg" in
                 PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
                 PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=*) batch=${arg#*=} ;;
+                PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=*)
+                    latency=', "local_smtp_latency_ms": '"${arg#*=}" ;;
             esac
         done
         echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
@@ -328,7 +330,7 @@ case "$*" in
         fi
         for role in worker mail-dispatch scheduler; do
             doc='{"deployment": {"bulk_family_send": '"$bulk"','
-            echo "$doc"' "bulk_send_batch": '"$batch"'}}' \
+            echo "$doc"' "bulk_send_batch": '"$batch$latency"'}}' \
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
         touch "$FAKE_STATE/retargeted" ;;
@@ -1015,3 +1017,90 @@ def test_a_local_rollback_uses_the_kept_tree_and_refuses_a_changed_schema(tmp_pa
     )
     assert "never restores a database" in output
     assert not any(" stop " in call for call in calls)
+
+
+# BG-12's rehearsal: local mode renders the bulk switch and the modeled SMTP
+# latency the caller chose; Production mode never reads either variable.
+REHEARSAL = {
+    "PARISHKIT_LOCAL_BULK_FAMILY_SEND": "on",
+    "PARISHKIT_LOCAL_SMTP_LATENCY_MS": "600",
+}
+
+
+def test_local_mode_renders_the_chosen_bulk_switch_and_latency(tmp_path):
+    """on and 600 reach retarget-image; the checks find them rendered."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", profile="local", bulk=False, env=REHEARSAL
+    )
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1" in retarget
+    assert "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=600" in retarget
+    assert "modeled SMTP latency 600 ms per message" in output
+    assert "NOT healthy" not in output
+
+
+def test_local_mode_turns_the_bulk_send_off_and_carries_the_latency(tmp_path):
+    """off drops the switch; an unset latency keeps the rendered one."""
+
+    def rendered_latency(root):
+        for role in ("worker", "mail-dispatch", "scheduler"):
+            path = root / "config" / "services" / f"{role}.yaml"
+            document = json.loads(path.read_text())
+            document["deployment"]["local_smtp_latency_ms"] = 450
+            path.write_text(json.dumps(document))
+
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        prepare=rendered_latency,
+        env={"PARISHKIT_LOCAL_BULK_FAMILY_SEND": "off"},
+    )
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "BULK_FAMILY_SEND" not in retarget and "keeping it on" not in output
+    assert "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=450" in retarget
+    assert "NOT healthy" not in output
+
+
+def test_local_latency_is_base_ten_and_never_rendered_into_a_rollback(tmp_path):
+    """0600 is 600 ms; a rollback drops the latency and says so."""
+    calls, _, _ = run_host(
+        tmp_path / "zeros",
+        "upgrade",
+        profile="local",
+        env={"PARISHKIT_LOCAL_SMTP_LATENCY_MS": "0600"},
+    )
+    assert "LOCAL_SMTP_LATENCY_MS=600" in calls[first(calls, " retarget-image ")]
+    calls, output, _ = run_host(
+        tmp_path / "rollback",
+        "rollback",
+        profile="local",
+        env={"PARISHKIT_LOCAL_SMTP_LATENCY_MS": "600"},
+    )
+    assert "LATENCY" not in calls[first(calls, " retarget-image ")]
+    assert "not carried into a rollback" in output and "NOT healthy" not in output
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("PARISHKIT_LOCAL_BULK_FAMILY_SEND", "maybe"),
+        ("PARISHKIT_LOCAL_SMTP_LATENCY_MS", "fast"),
+        ("PARISHKIT_LOCAL_SMTP_LATENCY_MS", "5001"),
+    ],
+)
+def test_local_mode_refuses_an_unclear_rehearsal_choice(tmp_path, name, value):
+    """Refused before anything stops."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", profile="local", status=1, env={name: value}
+    )
+    assert "refusing" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_production_mode_never_reads_the_rehearsal_choices(tmp_path):
+    """Eight arguments: the switch carries over and no latency is rendered."""
+    calls, output, _ = run_host(tmp_path, "upgrade", bulk=False, env=REHEARSAL)
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "BULK_FAMILY_SEND" not in retarget and "LATENCY" not in retarget
+    assert "latency" not in output and f"Upgraded to {TARGET} in" in output

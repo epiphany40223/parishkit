@@ -13,7 +13,7 @@ from threading import Event, Lock, Thread
 
 from .accounts.integration_candidates import _object
 from .accounts.key_files import MAX_FILE_BYTES
-from .deployment import recorded_profile
+from .deployment import DeploymentProfile, recorded_profile
 from .family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
@@ -157,6 +157,12 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
         except (ValueError, TypeError, RecursionError):
             return unknown
 
+    # LOCAL rehearsals only: wait as long as Gmail would take (BG-12). It is
+    # before the helper call, so the wait counts in the caller's submit_ms,
+    # and outside every transaction, as a real provider's latency is.
+    latency = local_smtp_latency(profile)
+    if latency:
+        time.sleep(latency)
     if session is not None:
         # The same size admission as a one-message helper: the combined
         # envelope above bounds both of the session's lines.
@@ -182,6 +188,22 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
     if result is DeliveryOutcome.NOT_SENT:
         return FamilyDeliveryResult(FamilyDeliveryStatus.UNAVAILABLE, count)
     return unknown
+
+
+def local_smtp_latency(profile):
+    """Seconds a LOCAL mail parent waits before each submission, else 0.
+
+    The local rehearsal (BG-12) sends to Mailpit, which answers at once, so
+    the deployment setting ``local_smtp_latency_ms`` (admitted only in the
+    local profile, and carried in this process's settings) models Gmail's
+    per-message latency. Every other profile never waits, whatever the
+    settings say.
+    """
+    if profile is not DeploymentProfile.LOCAL:
+        return 0.0
+    from django.conf import settings
+
+    return getattr(settings, "STEWARDSHIP_LOCAL_SMTP_LATENCY_MS", 0) / 1000
 
 
 # The parent replaces an idle batch helper after this long, well before the

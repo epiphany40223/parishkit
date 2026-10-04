@@ -458,7 +458,16 @@ def test_invariant_sql_is_a_self_verifying_do_block_over_the_real_tables():
 
 def test_constants_match_the_specification():
     assert seeder.DEFAULT_WAIT_SECONDS == 600
-    assert seeder.STEPS == ("timeline", "wizard", "prepare", "drive", "check", "finish")
+    assert seeder.STEPS[:6] == (
+        "timeline",
+        "wizard",
+        "prepare",
+        "drive",
+        "check",
+        "finish",
+    )
+    # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's.
+    assert seeder.STEPS[6:] == ("reminder", "measure")
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",

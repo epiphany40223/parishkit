@@ -8,7 +8,8 @@ def deployment_document(configuration, *, switches=True):
     """Serialize validated metadata only; credential values are never opened.
 
     ``switches=False`` leaves out the operational switches that are not
-    deployment inputs (the bulk Family send, #430): the provisioning record
+    deployment inputs (the bulk Family send, #430, and the local rehearsal's
+    SMTP latency, BG-12): the provisioning record
     keeps only inputs, so turning a switch on or off is never an input
     change, and an earlier release can still read the record.
     """
@@ -60,6 +61,11 @@ def deployment_document(configuration, *, switches=True):
         # did, and that release can load every document (rollback).
         result["bulk_family_send"] = True
         result["bulk_send_batch"] = configuration.bulk_send_batch
+    if configuration.local_smtp_latency_ms and switches:
+        # Likewise written only when set, which the loader admits only in
+        # the local profile (BG-12's rehearsal latency): every other
+        # deployment renders exactly what it rendered before the setting.
+        result["local_smtp_latency_ms"] = configuration.local_smtp_latency_ms
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
     return {"deployment": result}

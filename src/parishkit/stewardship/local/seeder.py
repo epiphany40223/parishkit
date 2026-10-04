@@ -55,7 +55,19 @@ from .clock import CLOCK_CONTROL_TARGET, CLOCK_MOUNT_TARGET, FakeClock
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
-STEPS = ("timeline", "wizard", "prepare", "drive", "check", "finish")
+# The seed's own phases, then the BG-12 rehearsal's two steps (local/rehearsal.py).
+STEPS = (
+    "timeline",
+    "wizard",
+    "prepare",
+    "drive",
+    "check",
+    "finish",
+    "reminder",
+    "measure",
+)
+# The rehearsal steps that need --due-at.
+DUE_STEPS = frozenset({"reminder", "measure"})
 # Each wait's default limit (specification, "Settled"), and how often the
 # seeder re-reads the settled conditions while it waits.
 DEFAULT_WAIT_SECONDS = 600
@@ -97,6 +109,7 @@ class SeedRequest:
     clock_directory: Path
     admin_email: str | None = None
     seeded_now: str | None = None
+    due_at: datetime | None = None
 
     @classmethod
     def parse(cls, args):
@@ -138,6 +151,18 @@ class SeedRequest:
                     raise ValueError
             except (TypeError, ValueError):
                 raise SeedRefused("--seeded-now must be an ISO-8601 instant.") from None
+        due_at = getattr(args, "due_at", None)
+        if args.step in DUE_STEPS or due_at is not None:
+            try:
+                due_at = datetime.fromisoformat(due_at)
+                # Whole minutes: a schedule's time is a wall-clock minute.
+                if due_at.utcoffset() is None or due_at.second or due_at.microsecond:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise SeedRefused(
+                    "--due-at must be an ISO-8601 instant on a whole minute."
+                ) from None
+            due_at = due_at.astimezone(UTC)
         return cls(
             args.step,
             seed,
@@ -148,6 +173,7 @@ class SeedRequest:
             directory,
             getattr(args, "admin_email", None),
             seeded_now,
+            due_at,
         )
 
 
@@ -432,29 +458,10 @@ def schedule_patch(document, campaign_id, calendar):
     when the wizard configured no Reminder). Digest schedules are untouched.
     """
     campaign_id = str(campaign_id)
-    schedules = [
-        row
-        for row in document["sections"].get("schedules", [])
-        if row["values"]["campaign_id"] == campaign_id
-    ]
-    initials = [row for row in schedules if row["values"]["kind"] == "initial"]
-    reminders = [row for row in schedules if row["values"]["kind"] == "reminder"]
-    if len(initials) != 1:
-        raise SeedRefused("The campaign needs exactly one Initial schedule.")
-    # A Reminder schedule must name the campaign's Reminder email revision with
-    # that revision's subject (content_schema.validate_content_records). The
-    # wizard's default content always has one; a configuration without it
-    # falls back to the Initial's reference, which validation then checks.
-    emails = [
-        row
-        for row in document["sections"].get("content", [])
-        if row["values"]["campaign_id"] == campaign_id
-        and row["values"]["kind"] == "email"
-        and row["values"]["slot"] == "reminder"
-    ]
-    source = (emails or reminders or initials)[0]
-    template = source["id"] if emails else source["values"]["template_version"]
-    subject = source["values"]["subject"]
+    initials, reminders = campaign_schedules(document, campaign_id)
+    template, subject = reminder_reference(
+        document, campaign_id, schedules=(initials, reminders)
+    )
     patch = [
         {
             "operation": "update",
@@ -499,6 +506,44 @@ def schedule_patch(document, campaign_id, calendar):
     return patch
 
 
+def campaign_schedules(document, campaign_id):
+    """The campaign's Initial and Reminder schedule rows; exactly one Initial."""
+    schedules = [
+        row
+        for row in document["sections"].get("schedules", [])
+        if row["values"]["campaign_id"] == str(campaign_id)
+    ]
+    initials = [row for row in schedules if row["values"]["kind"] == "initial"]
+    reminders = [row for row in schedules if row["values"]["kind"] == "reminder"]
+    if len(initials) != 1:
+        raise SeedRefused("The campaign needs exactly one Initial schedule.")
+    return initials, reminders
+
+
+def reminder_reference(document, campaign_id, *, schedules=None):
+    """The email revision and subject a new Reminder schedule names.
+
+    A Reminder schedule must name the campaign's Reminder email revision with
+    that revision's subject (content_schema.validate_content_records). The
+    wizard's default content always has one; a configuration without it
+    falls back to an existing Reminder's or the Initial's reference, which
+    validation then checks. ``schedules`` is ``campaign_schedules``' answer
+    when the caller already has it.
+    """
+    campaign_id = str(campaign_id)
+    initials, reminders = schedules or campaign_schedules(document, campaign_id)
+    emails = [
+        row
+        for row in document["sections"].get("content", [])
+        if row["values"]["campaign_id"] == campaign_id
+        and row["values"]["kind"] == "email"
+        and row["values"]["slot"] == "reminder"
+    ]
+    source = (emails or reminders or initials)[0]
+    template = source["id"] if emails else source["values"]["template_version"]
+    return template, source["values"]["subject"]
+
+
 def pending_configuration_requests(since):
     """Configuration change requests recorded since ``since`` that are not final."""
     from parishkit.stewardship.accounts.request_models import (
@@ -524,7 +569,7 @@ def pending_configuration_requests(since):
 # the outbox delivery it produced, then the fulfillment that records it; a
 # Family's session, then its form baseline, then its submission, then the
 # receipt.
-_MONOTONE_CHECKS = (
+MONOTONE_CHECKS = (
     (
         "SELECT count(*) FROM stewardship_schedule_fulfillment f "
         "JOIN stewardship_schedule_occurrence o ON o.id = f.occurrence_id "
@@ -614,7 +659,7 @@ def invariant_sql(seeded_now, counts, *, start=None):
     days = int(counts.get("midnight", 0))
     at = seeded_now.astimezone(UTC).isoformat()
     checks = [
-        _raise_unless(query, "= 0", message) for query, message in _MONOTONE_CHECKS
+        _raise_unless(query, "= 0", message) for query, message in MONOTONE_CHECKS
     ]
     if start is None:
         checks.append(
@@ -763,12 +808,16 @@ def timeline_summary(request):
 
 def run_step(request, configuration):
     """Run one database-backed step."""
+    from .rehearsal import measure_step, reminder_step
+
     return {
         "wizard": wizard_step,
         "prepare": prepare_step,
         "drive": drive_step,
         "check": check_step,
         "finish": finish_step,
+        "reminder": reminder_step,
+        "measure": measure_step,
     }[request.step](request, configuration)
 
 

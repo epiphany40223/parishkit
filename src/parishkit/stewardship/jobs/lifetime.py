@@ -7,6 +7,7 @@ and domain admission still protect each durable effect. A stopped worker may
 finish its current safe unit, but must not start another external operation.
 """
 
+import json
 import logging
 from contextlib import contextmanager
 from threading import Event, RLock, Thread
@@ -149,6 +150,8 @@ def _renewal_loop(execution, done):
                 )
                 pause = ACTIVATION_RETRY_SECONDS
                 continue
+            else:
+                _renewal_timing(started)
             finally:
                 connections.close_all()
             if execution.control.finished.is_set():
@@ -162,6 +165,25 @@ def _renewal_loop(execution, done):
     finally:
         connections.close_all()
         connection.settings_dict = previous
+
+
+def _renewal_timing(started):
+    """Debug-log how long one successful renewal took (BG-12's rehearsal).
+
+    ``wait_ms`` runs from the pulse's start: opening the renewal's
+    disposable connection, then queueing behind the work-order lock's
+    holders. Observation only: built only when DEBUG is enabled, and any
+    failure is swallowed, so it can never affect the lease.
+    """
+    try:
+        debug = logging.getLogger("parishkit.stewardship.debug")
+        if debug.isEnabledFor(logging.DEBUG):
+            debug.debug(
+                "lease renewal timing: %s",
+                json.dumps({"wait_ms": round((monotonic() - started) * 1000)}),
+            )
+    except Exception:  # noqa: S110 - observation must never affect the lease
+        pass
 
 
 # The renewal transaction's own SQL limits (see renew_once), by timeout kind.

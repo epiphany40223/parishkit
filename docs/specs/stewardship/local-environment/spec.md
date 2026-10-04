@@ -187,7 +187,11 @@ LOCAL MUST NOT change Production. Specifically:
 - production images and digests are unchanged; libfaketime exists only in the
   [fake-clock](#fake-clock) derived images;
 - the `fake-parishsoft` and `local-seed` commands ship in the one application
-  image but are inert: each refuses to run unless the profile is LOCAL.
+  image but are inert: each refuses to run unless the profile is LOCAL. The
+  `local-rehearsal-report` command reads only the files it is given and
+  opens no connection;
+- the [modeled SMTP latency](#mail-catcher) is refused outside LOCAL, so a
+  Production mail parent never waits on purpose.
 
 ## Safety guarantees
 
@@ -274,6 +278,16 @@ deployment sends:
 - **Image and storage.** Mailpit's image is pinned by multi-arch digest like
   the other third-party images. Its store persists under
   `run/persistent/mailpit` with a message cap (for example 50,000).
+- **Modeled latency.** Mailpit accepts a message at once, where Gmail takes
+  about 0.6 seconds, so a timing rehearsal sets the deployment setting
+  `local_smtp_latency_ms` (`PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS`,
+  0–5000, default 0). A LOCAL mail parent waits that long before each
+  submission, outside every transaction, so the wait counts in `submit_ms`
+  as Gmail's would. The loader refuses any non-zero value outside LOCAL, and
+  the rendered documents carry it only when it is non-zero (never in the
+  provisioning record), so every other deployment's rendering is unchanged.
+  It is set with `deploy --smtp-latency-ms` (below) for the
+  [bulk-send rehearsal](#operator-script).
 
 ## Fake ParishSoft service
 
@@ -1034,13 +1048,14 @@ section is the contract.
 | `vm create` | Create the `parishkit-local` Lima instance with the [VM settings](#host-virtual-machine) and install Docker Engine |
 | `vm start` / `vm stop` | Start or stop the VM |
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
-| `deploy [--schema-change]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1` |
+| `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off and `--smtp-latency-ms` the [modeled latency](#mail-catcher), each carried over when not given |
 | `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart |
 | `reset [--seeded]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
 | `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept) |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
+| `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Measure one scheduled Family send on a seeded deployment ([bulk-send rehearsal](#operator-script)) |
 | `status` | Show the VM, service health, Docker disk use and VM disk use |
 | `down` | Stop the services; never removes data |
 | `start` | Start a stopped deployment's services in the recorded clock mode |
@@ -1165,7 +1180,14 @@ the upload and that invocation. Local mode differs in exactly these ways:
   Production's unconditional off;
 - it probes the public origin through Caddy's own CA by the `Server` header,
   since before the setup wizard the application answers 503 as Caddy's
-  maintenance page does.
+  maintenance page does;
+- the retarget renders the bulk Family send as `--bulk` chose
+  (`PARISHKIT_LOCAL_BULK_FAMILY_SEND=on|off` to the host half) and the
+  [modeled latency](#mail-catcher) as `--smtp-latency-ms` chose
+  (`PARISHKIT_LOCAL_SMTP_LATENCY_MS`); unset, both carry over. A rollback
+  never renders the latency, since the previous release may not know the
+  setting; before a `deploy` of a build older than the setting, the
+  operator sets it to 0. Production mode never reads either variable.
 
 Everything else is the Production upgrade: the advisory upgrade check (an
 answer other than `t` refuses unless `--schema-change` says the change is
@@ -1185,6 +1207,28 @@ Production, when the schema or a grant changed in between), and
 and data together. Restoring a snapshot restores the images its deployment
 record names (the running image and the one a deploy replaced), since the
 record travels with the snapshot.
+
+**Bulk-send rehearsal.** `rehearse` measures one scheduled Family send for
+the faster bulk Family send's
+[rehearsal protocol](../../../plans/stewardship/background-processing.md#bg-12-faster-bulk-family-send)
+(BG-12); the [developer guide](../../../guides/stewardship-local-environment.md#rehearsing-a-bulk-send)
+is the how-to. The contract:
+
+- it refuses unless the deployment is seeded (normal clock mode), set up,
+  and runs an image with rehearsal support;
+- its only write is one Reminder schedule, added through the seeder's
+  `reminder` step as one configuration change request under the web
+  identity, as an Administrator's edit;
+- every query it makes itself is read-only with a statement limit, and the
+  seeder's `measure` step runs under the offline migration identity (whose
+  grants cover the outcome evidence the web login may not read) in a READ
+  ONLY snapshot;
+- whenever a `--send-only` run stopped `mail-dispatch`, its exit trap
+  restarts it before any output (without errexit, ignoring SIGPIPE, writing
+  its messages to the run's log file), and every wait or kill logs what,
+  the limit and the time taken;
+- it exits non-zero unless the report's correctness check passed and the
+  send settled within `--timeout`.
 
 **Safety rules.**
 

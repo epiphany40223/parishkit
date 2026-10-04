@@ -80,7 +80,10 @@ _COMMAND_OPTIONS = {
         "clock_dir",
         "admin_email",
         "seeded_now",
+        "due_at",
     },
+    # The BG-12 rehearsal's offline report over the files `rehearse` collected.
+    "local-rehearsal-report": {"input"},
 }
 
 
@@ -158,6 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "response-scale",
         "clock-dir",
         "seeded-now",
+        "due-at",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -255,6 +259,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .local.seeder import execute_local_seed
 
         return execute_local_seed(args)
+    if args.command == "local-rehearsal-report":
+        from .local.rehearsal_report import execute_rehearsal_report
+
+        if args.input is None:
+            parser.usage_error("local-rehearsal-report requires --input")
+        return execute_rehearsal_report(args.input)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

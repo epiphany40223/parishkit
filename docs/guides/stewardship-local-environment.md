@@ -21,7 +21,12 @@ gives it a campaign in progress in about 17 minutes, and `deploy` upgrades
 the seeded deployment to a pull request's build in about half a minute after
 the image build, with web down for about five seconds. The fake-clock
 (unseeded) deploy path, with its derived-image build, is covered by the
-stand-in tests only; it has not been run in the VM.
+stand-in tests only; it has not been run in the VM. The BG-12 rehearsal
+(`rehearse`, `deploy --bulk` and `deploy --smtp-latency-ms`) is covered by
+the stand-in tests and a read-only check of its lock sampler and report in
+the VM; its first full run is the baseline run that the
+[Family mail dispatch guide](stewardship-family-mail-dispatch.md#bulk-send-rehearsal-baselines)
+records.
 
 ## What you get
 
@@ -67,12 +72,14 @@ never needs a copy of the repository.
 | `up [--families N]` | First-time install from this checkout (below). `N` is the synthetic parish size, default 100. Refuses if a deployment exists. |
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
 | `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
+| `deploy --bulk on\|off` / `deploy --smtp-latency-ms N` | The same deploy, rendering the bulk Family send on or off, or the modeled Gmail latency of `N` milliseconds (0–5000; 0 turns it off). Each carries over to later deploys until changed. For [rehearsing a bulk send](#rehearsing-a-bulk-send). |
 | `deploy --rollback` | The upgrade's image-only rollback to the image the last `deploy` replaced; refused when the schema or a grant changed in between (then `reset --seeded`). |
 | `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. |
 | `reset [--seeded]` | Stop, restore that snapshot with `rsync --delete`, recreate and start the services. With no post-setup snapshot: type the instance name, and the root is removed and `up` runs again. |
 | `reset --reinstall` | Type the instance name; the new image is built from this checkout first, then the root is removed and `up` runs again from that image. Snapshots are kept. |
 | `seed [--response-scale M]` | Seed a campaign in progress under the fake clock ([below](#seeding-a-campaign)); refuses on a seeded deployment. Takes a lock and keeps `~/.parishkit-local/seed.log`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
+| `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Add a Reminder due in `MIN` minutes (default 5), measure its send and print the report ([below](#rehearsing-a-bulk-send)). Seeded deployments only. Keeps `~/.parishkit-local/rehearse.log`. |
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
 | `sign-in --email E` | Print a one-time local test sign-in link for an Administrator address. |
@@ -296,6 +303,96 @@ the VM half's `stewardship-local-deploy-*.log` and
 For a pull request that changes `up` itself (provisioning, the wizard, the
 seeder), `reset --reinstall` and the seeding recipe remain the way to test
 it, since `deploy` never reinstalls.
+
+## Rehearsing a bulk send
+
+`rehearse` measures one scheduled Family send, for the
+[faster bulk Family send](../plans/stewardship/background-processing.md#bg-12-faster-bulk-family-send)
+(BG-12) and its rehearsal protocol. It runs on a seeded deployment, which is
+in Production mode like the real one, and changes nothing about how mail is
+sent. It schedules one more Reminder, as an Administrator could, so restore
+the snapshot (`reset --seeded`) before the next run.
+
+1. Choose what to measure with `deploy`:
+   - `--bulk off` for the one-at-a-time path, or `--bulk on` for the bulk path.
+   - `--smtp-latency-ms 600`, so each message waits about as long as Gmail
+     takes; Mailpit itself answers at once. The setting is admitted only in
+     the local profile.
+
+   Both settings carry over to later deploys. `deploy --rollback` does not
+   carry the latency into the previous release, which may not know it;
+   deploy `--smtp-latency-ms` again afterwards if you need it. Before you
+   `deploy` a build older than the rehearsal harness, run
+   `deploy --smtp-latency-ms 0` first: an older image refuses the setting,
+   and that refusal would come at the retarget, with web already down.
+2. Run `tools/stewardship-local.sh rehearse --label bulk-100`. It:
+   - adds one Reminder due a whole minute five minutes ahead (`--due-in`),
+     through the seeder's `reminder` step;
+   - samples the work-order lock once a second (read-only queries with a
+     five-second statement limit);
+   - waits until every message has settled, giving up `--timeout` minutes
+     (default 60) after the due time, plus a two-minute margin (a timed-out
+     run is still measured and reported, and fails);
+   - runs the seeder's read-only `measure` step under the offline migration
+     identity, since the web login may not read the outcome evidence;
+   - prints the report, and exits non-zero unless the run passed its
+     correctness check within the timeout.
+
+   With `--send-only`, mail-dispatch is stopped until every occurrence has
+   its message and no preparation task is left, then started again, which
+   gives the send-only rate. If the run fails, its exit trap starts
+   mail-dispatch again before it prints anything or stops the sampler, and
+   writes its messages to the run's log file in the VM
+   (`/var/log/stewardship-local-rehearse-*.log`), since the connection to
+   the laptop may be gone.
+3. Read the report. Its files stay in the VM under
+   `/var/log/stewardship-rehearsal-<label>-<time>/`: `report.txt`,
+   `summary.json`, and the inputs `meta.json`, `measure.json`,
+   `timings.jsonl` and `locks.tsv`.
+4. `reset --seeded`, then the next build or path.
+
+The report shows:
+
+- the time from the due time to the last outcome, and accepted messages a
+  minute;
+- preparation time (due time to the last message created), and for
+  `--send-only`, the send-only time and rate;
+- the [mail send report](stewardship-mail-send-report.md)'s phases (`wait_ms`
+  through `total_ms`; `submit_ms` includes the modeled latency);
+- for the bulk path, each kind of lock transaction (`prepare`, `commit` for
+  the "submitting" commit half, `outcome` for each outcome chunk, whose
+  items include any outcome it could not record) with its batches, items,
+  lock hold and the time per item under the lock;
+- `work`, the render, decrypt or seal part of each item: the work BG-12
+  moves outside the lock;
+- `prebuilt` and `rebuilt` counts (zero until BG-12's later pull requests);
+- lease renewal waits (from the start of each renewal, so they include
+  opening its connection as well as waiting for the lock);
+- the lock samples: the share of seconds the lock was held or waited on, its
+  holders' states and roles, its waiters' roles, CPU busy share and load;
+- correctness: one accepted message per candidate Family (by distinct
+  message, and no message accepted twice), no Family with two messages or
+  two fulfillments, no `delivery_unknown` (one per occurrence), no failure,
+  nothing unfinished, no timeout, the seed's timestamp-ordering invariants,
+  and the deadlock (`40P01`) count from `pg_stat_database`.
+
+The seed's full invariant check is not run: besides the ordering checks it
+compares counts against the seeded now and the seed's timeline, which stop
+holding as soon as time moves on and a rehearsal adds a Reminder.
+
+The timing lines are DEBUG lines, so the deployment needs debug logging,
+which is on by default (`PARISHKIT_LOCAL_DEBUG_LOGGING`). Without it, the
+report shows no lock holds or renewal waits. The one-at-a-time path logs no
+lock holds; there the lock samples and the send statistics are the
+measurements.
+
+**Not yet supported: the 1,100-Family invitation.** The protocol's larger
+size (plan steps 3 and 4) measures a 1,100-Family campaign's initial
+invitation end to end, activated to Production with its Initial due a few
+minutes ahead. `rehearse` measures a Reminder on a seeded deployment, and
+the seeder only activates a campaign under the fake clock, so that run is
+deferred to a later BG-12 pull request, before PR 4's acceptance run. The
+Reminder runs work at any parish size `up --families` gave the deployment.
 
 ## Day-to-day
 

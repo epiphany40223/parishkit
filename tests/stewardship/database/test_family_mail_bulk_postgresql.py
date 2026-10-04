@@ -4,13 +4,14 @@ Each test runs the real restricted logins (scheduler, worker, mail) against
 several synthetic Families, with a fake provider standing in for Gmail.
 """
 
+import json
 from datetime import timedelta
 from threading import Barrier, Thread
 from time import sleep
 from uuid import uuid4
 
 import pytest
-from django.db import connection, connections
+from django.db import connection, connections, transaction
 
 from parishkit.stewardship.campaigns.credential_models import RehearsalCredential
 from parishkit.stewardship.campaigns.schedule_models import (
@@ -732,3 +733,109 @@ def test_a_receipt_hint_does_not_wait_behind_a_drain(families, monkeypatch):
     assert not OutboxMessage.objects.filter(
         purpose="initial", state="delivered"
     ).exists()
+
+
+def _rehearsal_wait(sql, instant):
+    """One rehearsal wait predicate (rehearsal.PREPARED_SQL or SETTLED_SQL).
+
+    The operator script polls it with psql at real time; here the clock is
+    the fixture campaign's, so ``clock_timestamp()`` is bound to two minutes
+    past the due time and only the occurrence, message and task conditions
+    decide the answer.
+    """
+    from parishkit.stewardship.local.rehearsal import bind_due
+
+    query = bind_due(sql).replace("clock_timestamp()", "%(now)s::timestamptz")
+    with connection.cursor() as cursor:
+        cursor.execute(query, {"due": instant, "now": instant + timedelta(minutes=2)})
+        return cursor.fetchone()[0]
+
+
+def test_a_bulk_send_is_measured_by_the_rehearsal(families, monkeypatch, caplog):
+    """BG-12 PR 1: the waits, the timing lines and the measure step on a real send.
+
+    A Production bulk send logs one timing line per lock transaction
+    (preparation, the "submitting" commit and the outcome chunks). The
+    operator script's waits answer at the right moments: prepared once every
+    occurrence has its message (a prepared occurrence stays pending with its
+    outbox id set), settled once every message has its outcome. The measure
+    step reads every message, outcome and send statistic in the real schema
+    under the login it runs as in the VM, the schema owner (the offline
+    migration identity), in a READ ONLY snapshot; the web login could not.
+    """
+    import logging
+
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.local import rehearsal_report as report
+    from parishkit.stewardship.local.rehearsal import (
+        OUTCOMES_SQL,
+        PREPARED_SQL,
+        SETTLED_SQL,
+        measure_snapshot,
+    )
+
+    harness, path = families
+    harness = activate_response_service(harness)
+    complete_empty_catchup(harness.campaign, uuid4())
+    monkeypatch.setattr(family_mail_delivery_tasks, "submit_family", Provider())
+    instant = due()
+    with (
+        caplog.at_level(logging.DEBUG, logger="parishkit.stewardship.debug"),
+        campaign_clock(instant),
+    ):
+        assert _rehearsal_wait(PREPARED_SQL, instant) is False
+        plan()
+        # Planned, not yet prepared: occurrences pending without a message.
+        assert _rehearsal_wait(PREPARED_SQL, instant) is False
+        prepare_all(harness)
+        assert set(
+            ScheduleOccurrence.objects.values_list("state", "reason").distinct()
+        ) == {("pending", "prepared")}
+        assert not ScheduleOccurrence.objects.filter(outbox_id__isnull=True).exists()
+        assert _rehearsal_wait(PREPARED_SQL, instant) is True
+        assert _rehearsal_wait(SETTLED_SQL, instant) is False
+        send_all(harness, path)
+        assert _rehearsal_wait(SETTLED_SQL, instant) is True
+    lines = [
+        json.dumps({"extra": {"debug": {"message": record.getMessage()}}})
+        for record in caplog.records
+    ]
+    bulk, _ = report.parse_timings(lines)
+    holds = report.hold_summary(bulk)
+    assert set(holds) == {"prepare", "commit", "outcome"}
+    assert holds["prepare"]["items"] == holds["commit"]["items"] == EXTRA + 1
+    assert holds["outcome"]["items"] == EXTRA + 1
+    # Every prepared and committed item spent measurable work under the lock.
+    assert holds["prepare"]["work_ms"]["n"] == EXTRA + 1
+    assert holds["commit"]["work_ms"]["n"] == EXTRA + 1
+    # None: the current campaign, read inside the snapshot (the VM's call).
+    document = measure_snapshot(None, instant)
+    assert document == measure_snapshot(harness.campaign.pk, instant)
+    assert document["kinds"] == ["initial"] and document["modes"] == ["production"]
+    assert len(document["messages"]) == len(document["outcomes"]) == EXTRA + 1
+    assert all(row["stats"]["submit_ms"] >= 0 for row in document["outcomes"])
+    assert document["targets_with_two_messages"] == 0
+    assert document["targets_with_two_fulfillments"] == 0
+    # The fixture's campaign clock is decades ahead of the rows' real
+    # created_at, so exactly the two due-time orderings read as broken here;
+    # in the VM the clock is real and they hold. The query ran all the same.
+    assert document["invariant_violations"] == {
+        "messages before their occurrence": EXTRA + 1,
+        "fulfillments before their occurrence": EXTRA + 1,
+    }
+    document["invariant_violations"] = {}
+    send = report.send_summary(
+        {"due_at": instant.isoformat()}, json.loads(json.dumps(document))
+    )
+    assert send["correctness"]["passed"], send["correctness"]
+    # Why the measure step does not run as web: its grants omit the outcome
+    # events' submission instant and evidence.
+    message = OutboxMessage.objects.values_list("pk", flat=True).first()
+    with (
+        task_login(ServiceRole.WEB),
+        pytest.raises(DatabaseError, match="permission denied"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(OUTCOMES_SQL, [[message]])

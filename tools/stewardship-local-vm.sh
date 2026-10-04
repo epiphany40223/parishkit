@@ -20,11 +20,17 @@
 #   has-snapshot NAME                   exit 0 when SNAPSHOTS/NAME exists
 #   reset NAME                          stop, restore SNAPSHOTS/NAME over the root, restart
 #   wipe                                remove the containers and the root (marker required)
-#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT upgrade the running deployment to TAG with the
-#                                       scripted upgrade's host half in local mode (OPS-10.10)
+#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]
+#                                       upgrade the running deployment to TAG with the
+#                                       scripted upgrade's host half in local mode (OPS-10.10);
+#                                       BULK on|off|keep and LATENCY ms|keep choose what it
+#                                       renders for BG-12's rehearsal
 #   rollback HOST_SCRIPT                its image-only rollback to the image deploy replaced
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
+#   rehearse DUE_IN SEND_ONLY TIMEOUT LABEL
+#                                       add a Reminder due in DUE_IN minutes, measure its
+#                                       send (BG-12 rehearsal) and print the report
 #   wizard                              complete the setup wizard unattended through
 #                                       its own service layer (LOCAL convenience)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
@@ -654,8 +660,12 @@ cmd_deploy() {
     # host half in local mode, which is the Production upgrade's steps with
     # the local differences the host half's header lists (specification,
     # "Operator script"). load_env exported the deployment's debug-logging
-    # setting, which the host half keeps.
+    # setting, which the host half keeps. BULK and LATENCY (BG-12's
+    # rehearsal) reach the host half as the two local-mode variables it
+    # reads; "keep" carries the current value over.
     local tag=$1 schema_change=$2 host_script=$3 previous
+    export PARISHKIT_LOCAL_BULK_FAMILY_SEND=${4:-keep}
+    export PARISHKIT_LOCAL_SMTP_LATENCY_MS=${5:-keep}
     require_marker
     load_env
     [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
@@ -803,7 +813,11 @@ seed_step() {
             local-seed --step "$name" --config "$services/$config" \
             "${arguments[@]}" "$@" | tail -1)
     fi
-    echo "    $name finished in $(( $(date -u +%s) - started ))s: $seed_result"
+    # A long answer (the rehearsal's measure step) is kept by its caller;
+    # the log shows its start.
+    local shown=$seed_result
+    [ "${#shown}" -le 1000 ] || shown="${shown:0:1000}... (${#seed_result} characters)"
+    echo "    $name finished in $(( $(date -u +%s) - started ))s: $shown"
     echo "    fake now: $(fake_now)"
 }
 
@@ -838,22 +852,36 @@ seed_failed() {
     # after the switch to normal mode (the finish phase) cannot be undone
     # here: the data is seeded but the late Family may not be promoted;
     # `reseed` restores the post-setup snapshot and seeds afresh.
-    local rc=$1 mode
+    local rc=$1 mode started=1
     [ "$rc" -ne 0 ] || return 0
+    # Nothing may end this trap before the restart: no errexit, SIGPIPE
+    # ignored, the restart before any output, and every message written to
+    # the log file directly (the tee to the laptop may be gone).
+    set +e
+    trap '' PIPE
     mode=$(cat "$clock_dir/mode" 2>/dev/null || echo missing)
-    echo "SEED FAILED (exit $rc after $(( $(date -u +%s) - began ))s); clock mode $mode." >&2
     if [ "$mode" = fake ]; then
-        echo "The deployment is partially seeded in fake-clock mode; run 'reseed' to restore the post-setup snapshot and seed again." >&2
         # A subshell with errexit: a failure inside start_services ends it
-        # and is reported here, instead of being swallowed by the `if`.
-        if (set -e; start_services) >&2; then
-            echo "The services are running." >&2
+        # and is reported below, instead of being swallowed by the `if`.
+        (set -e; start_services) >>"${log:-/dev/null}" 2>&1 || started=0
+    fi
+    trap_note "SEED FAILED (exit $rc after $(( $(date -u +%s) - began ))s); clock mode $mode."
+    if [ "$mode" = fake ]; then
+        trap_note "The deployment is partially seeded in fake-clock mode; run 'reseed' to restore the post-setup snapshot and seed again."
+        if [ "$started" = 1 ]; then
+            trap_note "The services are running."
         else
-            echo "Could not restart the services; run 'start' (or 'reseed')." >&2
+            trap_note "Could not restart the services; run 'start' (or 'reseed')."
         fi
     else
-        echo "The deployment is partially seeded past the switch to normal mode (the late-added Family may not be promoted); run 'reseed' to restore the post-setup snapshot and seed again." >&2
+        trap_note "The deployment is partially seeded past the switch to normal mode (the late-added Family may not be promoted); run 'reseed' to restore the post-setup snapshot and seed again."
     fi
+}
+
+trap_note() {
+    # An EXIT trap's message, written to the run's log file directly: the
+    # tee that copies output to the laptop may already be gone.
+    printf '%s\n' "$*" >>"${log:-/dev/null}" 2>/dev/null || true
 }
 
 cmd_seed() {
@@ -901,6 +929,234 @@ cmd_seed() {
     mailpit_tag_all seed-history
     trap - EXIT
     echo "Seeded at $seeded_now (requested $seed_now) in $(( $(date -u +%s) - began ))s."
+}
+
+# The BG-12 rehearsal (developer guide, "Rehearsing a bulk send"; plan,
+# BG-12 "Rehearsal protocol"). On a seeded deployment it adds one Reminder
+# through the seeder's `reminder` step, samples the work-order lock once a
+# second, optionally holds mail-dispatch until preparation has finished (the
+# send-only rate), waits for the send to settle, then collects the services'
+# DEBUG timing lines, the seeder's read-only `measure` step and the deadlock
+# counter, and prints the offline report; it exits non-zero unless the run
+# passed the report's correctness check. It changes nothing about how mail
+# is sent; it only schedules one more Reminder, as an Administrator could.
+pg_container=""
+rehearsal_out=""
+rehearsal_sampler=""
+# Every query the rehearsal makes is a read: a read-only session with a
+# statement limit, and no psqlrc (-X). `timed` bounds the whole call and
+# logs a kill with its limit and elapsed time.
+rehearsal_pgoptions="-c default_transaction_read_only=on -c statement_timeout=5s"
+
+psql_query() {
+    # psql_query SQL [PSQL OPTIONS...]: one read-only query as the operator
+    # login; prints the unaligned, tab-separated answer. With options (such
+    # as -v due=...), the SQL is fed on stdin so psql interpolates them.
+    local sql=$1
+    shift
+    printf '%s\n' "$sql" | timed 20 "a rehearsal query" \
+        docker exec -i -e PGOPTIONS="$rehearsal_pgoptions" "$pg_container" \
+        psql -X -U pk_stewardship_operator -d stewardship -At -F $'\t' \
+        -v ON_ERROR_STOP=1 "$@" -f -
+}
+
+# The work-order lock (campaigns/work_locks.py WORK_ORDER_LOCK, 736220,1):
+# granted holders and waiters, the holders' role and session state (an
+# "idle in transaction" holder is application work done under the lock),
+# and the waiters' roles.
+LOCK_SAMPLE_SQL="SELECT round(extract(epoch FROM clock_timestamp())::numeric, 3),
+  count(*) FILTER (WHERE l.granted), count(*) FILTER (WHERE NOT l.granted),
+  coalesce(string_agg(coalesce(a.usename, '?') || ':'
+      || replace(coalesce(a.state, '?'), ' ', '_'), ',') FILTER (WHERE l.granted), '-'),
+  coalesce(string_agg(coalesce(a.usename, '?'), ',') FILTER (WHERE NOT l.granted), '-')
+FROM pg_locks l LEFT JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND l.classid = 736220 AND l.objid = 1 AND l.objsubid = 2"
+
+sample_locks() {
+    # sample_locks DIR: one line a second into DIR/locks.tsv until DIR/.stop
+    # exists: the lock sample, the VM's /proc/stat CPU counters and its
+    # one-minute load average (rehearsal_report.parse_samples reads it).
+    local row
+    while [ ! -e "$1/.stop" ]; do
+        # A failed or killed sample is skipped; timed's FAILED or TIMEOUT
+        # line is kept in DIR/sampler-errors.log.
+        if row=$(psql_query "$LOCK_SAMPLE_SQL" 2>>"$1/sampler-errors.log") && [ -n "$row" ]; then
+            printf '%s\t%s\t%s\n' "$row" "$(head -1 /proc/stat | cut -d' ' -f3-)" \
+                "$(cut -d' ' -f1 /proc/loadavg)"
+        fi
+        sleep 1
+    done >>"$1/locks.tsv"
+}
+
+stop_sampler() {
+    # Ask the sampler to stop and wait for it (it notices within a second).
+    [ -n "$rehearsal_sampler" ] || return 0
+    touch "$rehearsal_out/.stop"
+    wait "$rehearsal_sampler" 2>/dev/null || true
+    rehearsal_sampler=""
+}
+
+start_mail_dispatch() {
+    # Start mail-dispatch (a send-only run stops it), bounded and logged.
+    timed 180 "starting mail-dispatch" "${dc[@]}" up --detach mail-dispatch 2>&1 | quiet
+}
+
+rehearse_stopped() {
+    # The EXIT trap of a rehearsal. Restarting mail-dispatch comes first, so
+    # nothing here can stand between a send-only run and its restart.
+    local rc=$1 restarted=""
+    # No errexit and SIGPIPE ignored, the restart before any output, and the
+    # messages written to the log file directly (see trap_note).
+    set +e
+    trap '' PIPE
+    if ! all_healthy mail-dispatch >/dev/null 2>&1; then
+        if start_mail_dispatch >>"${log:-/dev/null}" 2>&1; then
+            restarted="Started mail-dispatch again."
+        else
+            restarted="Could not start mail-dispatch; run 'start'."
+        fi
+    fi
+    stop_sampler
+    [ -z "$restarted" ] || trap_note "$restarted"
+    [ "$rc" -eq 0 ] || trap_note "REHEARSAL FAILED (exit $rc); its files are in $rehearsal_out."
+}
+
+prepared_sql="" settled_sql=""
+quiet_polls=0
+two_polls() {
+    # two_polls SQL DUE: the wait predicate (rehearsal.PREPARED_SQL or
+    # SETTLED_SQL, read from the image) answers true on two polls in a row:
+    # the scheduler plans Families in pages, so one quiet poll may fall
+    # between two pages.
+    local answer
+    answer=$(psql_query "$1" -v "due=$2") || answer=""
+    if [ "$answer" != t ]; then
+        quiet_polls=0
+        return 1
+    fi
+    quiet_polls=$((quiet_polls + 1))
+    [ "$quiet_polls" -ge 2 ]
+}
+prepared() { two_polls "$prepared_sql" "$1"; }
+settled() { two_polls "$settled_sql" "$1"; }
+
+mailpit_total() {
+    # How many messages Mailpit holds, or null when it does not answer; a
+    # timeout or failure is logged (what, limit, elapsed), never hidden.
+    local answer total started rc=0
+    started=$(date -u +%s)
+    answer=$(curl -fsS --max-time 20 "$mailpit/api/v1/messages?limit=1") || rc=$?
+    if [ "$rc" -eq 28 ]; then
+        echo "TIMEOUT: Mailpit's message count after $(( $(date -u +%s) - started ))s (limit 20s); recorded as null" >&2
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: Mailpit's message count (curl exit $rc after $(( $(date -u +%s) - started ))s, limit 20s); recorded as null" >&2
+    fi
+    total=$(jq -er '.total | numbers' <<<"${answer:-null}" 2>/dev/null) || total=null
+    echo "$total"
+}
+
+cmd_rehearse() {
+    local due_in=$1 send_only=$2 limit=$3 label=$4
+    local started due bulk latency consumers before after mail_before mail_after rc=0
+    local stopped_at="" resumed_at="" timed_out=false
+    # The laptop half checks these too; this half is the one that uses them
+    # in a path and in SQL.
+    [[ $due_in =~ ^[0-9]+$ && $send_only =~ ^[01]$ && $limit =~ ^[0-9]+$ ]] ||
+        refuse "rehearse needs whole-number DUE_IN, SEND_ONLY (0 or 1) and TIMEOUT."
+    [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "rehearse LABEL must be 1-40 letters, digits, '.', '_' or '-'."
+    require_marker
+    load_env
+    [ "$(clock_mode)" = normal ] ||
+        refuse "Rehearsals run on a seeded deployment (normal clock mode); seed it first, or 'reset --seeded'."
+    select_compose
+    [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; refusing."
+    pg_container=$("${dc[@]}" ps -q postgres)
+    [ -n "$pg_container" ] || refuse "postgres is not running; 'start' first."
+    # The wait predicates come from the deployed image (rehearsal.py), so the
+    # polls are the queries the PostgreSQL tests run; an image without them
+    # answers image_constant's fallback text instead.
+    prepared_sql=$(image_constant parishkit.stewardship.local.rehearsal PREPARED_SQL)
+    settled_sql=$(image_constant parishkit.stewardship.local.rehearsal SETTLED_SQL)
+    [[ $prepared_sql == *stewardship_schedule_occurrence* && $settled_sql == *stewardship_schedule_occurrence* ]] ||
+        refuse "The deployed image has no rehearsal support; deploy a build that has it."
+    rehearsal_out=/var/log/stewardship-rehearsal-$label-$(date -u +%Y%m%dT%H%M%SZ)
+    install -d -m 0755 "$rehearsal_out"
+    started=$(date -u +%FT%TZ)
+    # Whole minutes: DUE_IN minutes after the next minute boundary, so the
+    # schedule's wall-clock minute is the due instant exactly.
+    due=$(date -u -d "@$(( ($(date -u +%s) / 60 + 1 + due_in) * 60 ))" +%FT%TZ)
+    bulk=$(jq -r '.deployment.bulk_family_send // false' "$services/worker.yaml")
+    latency=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
+    consumers=$(jq -r '.deployment.mail_consumers // 2' "$services/mail-dispatch.yaml")
+    step "Rehearsal $label: Reminder due $due; bulk $bulk, SMTP latency ${latency} ms, $consumers mail consumers, $FAMILIES Families"
+    echo "    files: $rehearsal_out"
+    before=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
+    mail_before=$(mailpit_total)
+    trap 'rehearse_stopped $?' EXIT
+    sample_locks "$rehearsal_out" &
+    rehearsal_sampler=$!
+    seed_now=$(date -u +%FT%TZ)
+    seed_scale=1
+    seed_step 600 reminder web web.yaml --due-at "$due"
+    if [ "$send_only" = 1 ]; then
+        step "Stopping mail-dispatch until preparation has finished (send-only run)"
+        timed 150 "stopping mail-dispatch" "${dc[@]}" stop --timeout 90 mail-dispatch 2>&1 | quiet
+        stopped_at=$(date -u +%FT%TZ)
+        quiet_polls=0
+        wait_until $(( (due_in + 2 + limit) * 60 )) "the Reminder due $due to be prepared" prepared "$due"
+        step "Starting mail-dispatch again"
+        start_mail_dispatch
+        resumed_at=$(date -u +%FT%TZ)
+        wait_until 300 "mail-dispatch to turn healthy" all_healthy mail-dispatch
+    fi
+    step "Waiting for the Reminder due $due to settle (limit $limit minutes after it)"
+    quiet_polls=0
+    wait_until $(( (due_in + 2 + limit) * 60 )) "the Reminder due $due to settle" settled "$due" ||
+        timed_out=true
+    stop_sampler
+    after=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
+    mail_after=$(mailpit_total)
+    step "Collecting the timing lines, the measurements and the run record"
+    # Compose's own stderr goes to a file in the run directory; timed's
+    # TIMEOUT or FAILED line stays on stderr, in the log.
+    timed 120 "collecting the services' logs" \
+        "${dc[@]}" logs --no-color --no-log-prefix --since "$started" worker mail-dispatch scheduler \
+        2>>"$rehearsal_out/logs-errors.log" |
+        grep -F 'timing: ' >"$rehearsal_out/timings.jsonl" || true
+    echo "    $(wc -l <"$rehearsal_out/timings.jsonl") timing lines, $(wc -l <"$rehearsal_out/locks.tsv") lock samples"
+    # Under the offline migration identity, as the seed's invariant check:
+    # the web login cannot read the outcome events' evidence (rehearsal.py).
+    seed_step 600 measure migration migration.yaml --due-at "$due"
+    printf '%s\n' "$seed_result" >"$rehearsal_out/measure.json"
+    jq -n --arg label "$label" --arg image "$IMAGE" --argjson families "$FAMILIES" \
+        --argjson bulk "$bulk" --argjson latency "$latency" --argjson consumers "$consumers" \
+        --argjson send_only "$( [ "$send_only" = 1 ] && echo true || echo false )" \
+        --arg due "$due" --arg started "$started" --arg finished "$(date -u +%FT%TZ)" \
+        --arg stopped "$stopped_at" --arg resumed "$resumed_at" --argjson timed_out "$timed_out" \
+        --argjson before "${before:-null}" --argjson after "${after:-null}" \
+        --argjson mail_before "$mail_before" --argjson mail_after "$mail_after" \
+        '{label: $label, image: $image, families: $families, bulk: $bulk,
+          smtp_latency_ms: $latency, mail_consumers: $consumers, send_only: $send_only,
+          due_at: $due, started_at: $started, finished_at: $finished,
+          dispatch_stopped_at: (if $stopped == "" then null else $stopped end),
+          dispatch_started_at: (if $resumed == "" then null else $resumed end),
+          timed_out: $timed_out, deadlocks_before: $before, deadlocks_after: $after,
+          mailpit_before: $mail_before, mailpit_after: $mail_after}' >"$rehearsal_out/meta.json"
+    # The report runs offline in the image, as the application's uid; it
+    # writes summary.json beside the inputs and exits 1 when the run failed
+    # its correctness check (or timed out).
+    chown -R 10001:10001 "$rehearsal_out"
+    step "Report"
+    "${isolated[@]}" --mount "type=bind,source=$rehearsal_out,target=/rehearsal" \
+        "$IMAGE" local-rehearsal-report --input /rehearsal | tee "$rehearsal_out/report.txt" || rc=$?
+    trap - EXIT
+    rehearse_stopped "$rc"
+    if [ "$rc" -eq 0 ]; then
+        echo "Rehearsal $label passed in $(( $(date -u +%s) - began ))s; files in $rehearsal_out."
+    else
+        echo "Rehearsal $label did NOT pass (report exit $rc); files in $rehearsal_out." >&2
+    fi
+    return "$rc"
 }
 
 dcc=()
@@ -988,7 +1244,7 @@ cmd_ca() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback)
+    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1005,7 +1261,10 @@ case "$command" in
     has-snapshot) cmd_has_snapshot "${1:?has-snapshot needs NAME}" ;;
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
-    deploy) [ $# -eq 3 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT"; cmd_deploy "$@" ;;
+    deploy)
+        [ $# -eq 3 ] || [ $# -eq 5 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]"
+        cmd_deploy "$@" ;;
+    rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
     rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
     wizard) cmd_wizard ;;
