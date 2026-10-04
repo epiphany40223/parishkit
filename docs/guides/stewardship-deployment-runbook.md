@@ -741,6 +741,26 @@ and belongs on the
 release that announces a schema or grant change by the manual steps above,
 or run the script with `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4.
 
+### Family engagement backfill (#477)
+
+The release that adds the durable Family engagement table is a schema and
+grant change: with the [scripted upgrade](#scripted-upgrade) set
+`STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4 runs
+migration and then `database-grants` (or, by hand, run step 4's migration
+then `database-grants`). Right after step 6, fill the table from
+what Production retained, so the response funnel's "link followed" and "form
+opened" counts start from go-live rather than from the upgrade:
+
+```text
+docker compose ... exec -T web pk-stewardship engagement-backfill --config WEB_CONFIG
+```
+
+It runs in the web container under the web database login, needs Production
+mode and a current campaign, writes in batches of 50 Families, prints one
+JSON line with the counts and records them in the System logs. It can be
+repeated: a second run writes nothing but its log entry. Form progress before
+the upgrade was never retained and is not reconstructed.
+
 ### Worker connection limit (#339)
 
 The release that runs ParishSoft source work on the worker's second process

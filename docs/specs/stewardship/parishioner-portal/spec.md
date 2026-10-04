@@ -100,7 +100,10 @@ A deleted file's link shows a friendly "no longer available" page.
 Active form interaction keeps the authenticated session alive without saving
 answers, using the rate-limited
 [activity keepalive](../architecture/spec.md#identity-and-session-security).
-Passive presence polling does not extend the session. The expiry warning offers
+Passive presence polling does not extend the session, though each heartbeat
+does advance the Family's durable
+[engagement record](../data/spec.md#family-engagement) to the furthest form
+step reached. The expiry warning offers
 continued interaction when the idle deadline can still be refreshed and states
 when the absolute four-hour deadline cannot be extended. When the session ends,
 a single red notice says so (and that unsubmitted changes were not saved, or,

@@ -55,6 +55,9 @@ class Event(StrEnum):
     HELPER_TIMED_OUT = "helper_timed_out"
     WORK_BUDGET_REACHED = "work_budget_reached"
     TASK_LEASE_LOST = "task_lease_lost"
+    # A Family sign-in or form issuance could not record its engagement row
+    # (#477); the request itself went ahead and the funnel undercounts it.
+    FAMILY_ENGAGEMENT_FAILED = "family_engagement_failed"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 

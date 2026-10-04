@@ -27,6 +27,7 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_te
         WHEN 'recovery_replacements' THEN 'stewardship_recovery_replacement'
         WHEN 'weekly_digest_recipients' THEN 'stewardship_weekly_digest_recipient'
         WHEN 'weekly_digest_snapshots' THEN 'stewardship_weekly_digest_snapshot'
+        WHEN 'engagement' THEN 'stewardship_family_engagement'
         ELSE NULL END
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_relation_v1(text) FROM PUBLIC;
