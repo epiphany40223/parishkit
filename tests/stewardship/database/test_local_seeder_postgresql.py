@@ -8,6 +8,8 @@ patch (campaign dates, the Initial moved, Reminders replaced) is accepted by
 the real request and installation path and lands as schedules.
 """
 
+# ruff: noqa: F811 -- imported pytest fixtures are injected by name.
+
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -28,6 +30,8 @@ from .campaign_builders import (
     draft_campaign,
     occurrence,
 )
+from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
+from .test_setup_staging_postgresql import setup_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -271,6 +275,62 @@ def test_schedule_patch_installs_through_the_real_configuration_path(tmp_path):
     )
     assert reminder_dates == [r.date().isoformat() for r in cal.reminders]
     assert ScheduleDefinition.objects.filter(campaign=campaign).count() == 9
+
+
+def test_wizard_campaign_values_are_accepted_by_the_real_draft_owner(
+    setup_service, monkeypatch, tmp_path, settings
+):
+    """The unattended wizard's post-load steps save and compile through the owners.
+
+    The load itself, the Workspace credential (LOCAL's mail-catcher document
+    is refused under the test profile) and the sample mail need the running
+    services, so this uses the test suite's completed load and stops after the
+    campaign steps: campaign values, default content, the Initial schedule and
+    the logo are all admitted by the real draft owner.
+    """
+    from parishkit.stewardship.accounts.setup_drafts import save_sections, view_draft
+    from parishkit.stewardship.local import seed_web
+
+    from .test_runtime_auth_grants_postgresql import web_login
+    from .test_setup_campaign_postgresql import completed
+
+    media = tmp_path / "media"
+    media.mkdir(mode=0o700)
+    settings.STEWARDSHIP_MEDIA_ROOT = media
+    request, attempt = completed(setup_service, monkeypatch)
+    # Campaign dates relative to the database's date, never a fixed calendar.
+    with transaction.atomic():
+        today = seeder.database_now().date()
+    with web_login():
+        # The suite's completed load saved only the parish; the preview needs
+        # the other public sections, with the unattended wizard's own values.
+        status = save_sections(
+            request,
+            setup_service,
+            attempt.pk,
+            updates={
+                "access": seed_web.WIZARD_ACCESS,
+                "mail": seed_web.WIZARD_MAIL,
+                "slack": seed_web.WIZARD_SLACK,
+                "testing": seed_web.WIZARD_TESTING,
+            },
+            expected_version=attempt.version,
+        )
+        status = seed_web.wizard_campaign(
+            request,
+            setup_service,
+            attempt.pk,
+            campaign_dates=(today + timedelta(days=6), today + timedelta(days=36)),
+        )
+        draft = view_draft(request, setup_service, attempt.pk)
+        assert draft.status.version == status.version
+        campaign = draft.sections["campaign"]["campaign"]
+        assert campaign["modules"] == ["census", "financial", "ministry"]
+        assert campaign["financial"]["fund_duids"] == [9]
+        assert len(campaign["share_options"]) >= 1
+        assert draft.sections["schedules"]["records"][0]["values"]["kind"] == "initial"
+        assert "email_initial" in draft.sections and "page_welcome" in draft.sections
+        assert draft.sections["branding"]["bundle_id"]
 
 
 def test_invariant_do_block_runs_against_the_real_schema(tmp_path):

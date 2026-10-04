@@ -177,3 +177,31 @@ def _census_inputs(projection):
         parish_name="Synthetic Parish",
         talent_options=(),
     )
+
+
+def test_wizard_campaign_values_pass_the_campaign_validator():
+    """A catalog like the synthetic parish's (25 Ministries by name, 4 funds)."""
+    from datetime import date
+
+    from parishkit.stewardship.campaigns import configuration
+    from parishkit.stewardship.local.seed_web import campaign_values
+
+    names = sorted(f"Ministry {n}" for n in range(25))
+    catalog = SimpleNamespace(
+        timezone="America/New_York",
+        result_id="00000000-0000-0000-0000-000000000001",
+        # Sorted by display name, as the setup catalog sorts them.
+        ministries=tuple((str(9000 + (hash(n) % 97)), n) for n in names),
+        funds=(
+            ("303", "Capital"),
+            ("300", "Offertory"),
+            ("301", "Other"),
+            ("302", "X"),
+        ),
+    )
+    values = campaign_values(catalog, (date(2026, 9, 27), date(2026, 10, 27)))
+    assert values["ministry_duids"] == sorted(set(values["ministry_duids"]))
+    assert values["financial"]["fund_duids"] == [303]
+    assert values["financial"]["comparison_fund_duids"] == [300]
+    # The real validator admits them (it raises ConfigError otherwise).
+    configuration.campaign_values(values)

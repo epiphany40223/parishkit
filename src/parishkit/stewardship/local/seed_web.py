@@ -10,16 +10,24 @@ sign-in. Family sessions are minted by ``issue_family`` from the Family's
 code, the form baseline by ``issue_baseline``, presence by the real heartbeat
 view and submissions by ``submit_family``. No row is written by anything but
 production code.
+
+The module also drives the setup wizard through the same service layer the
+wizard pages call (``begin_setup``, ``save_section``, ``stage_credential``,
+``start_source_load``, ``prepare_preview``, ``request_sample``,
+``freeze_setup``): a LOCAL-only convenience for an unattended install, since
+the environment is otherwise set up by a developer in the browser.
 """
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from importlib import import_module
 from ipaddress import ip_address
 from uuid import UUID, uuid4
 
 from parishkit.config import ConfigError
 
+from . import LOCAL_ORGANIZATION_ID, LOCAL_PARISHSOFT_KEY
 from .seed_timeline import PLEDGE_AMOUNTS
 
 LOGGER = logging.getLogger(__name__)
@@ -29,6 +37,29 @@ LOGGER = logging.getLogger(__name__)
 # minutes apart in real time anyway.
 SEEDER_ADDRESS = "127.0.0.1"
 LOCAL_HOST = "localhost:8443"
+# Wizard values for the unattended LOCAL install; every address is synthetic.
+WIZARD_PARISH = {
+    "name": "Synthetic Parish",
+    "website": "https://parish.example.test/",
+    "timezone": "America/New_York",
+    "phone": "+15025551234",
+    "online_giving_url": "",
+}
+WIZARD_ACCESS = {
+    "staff_domains": ["example.test"],
+    "ministry_domains": [],
+    "staff_addresses": [],
+    "ministry_addresses": [],
+    "admin_addresses": [],
+}
+WIZARD_MAIL = {
+    "delegated_email": "stewardship@example.test",
+    "sender": "stewardship@example.test",
+    "sender_name": "Synthetic Parish Stewardship",
+    "reply_to": "office@example.test",
+}
+WIZARD_SLACK = {"enabled": False, "channel_id": ""}
+WIZARD_TESTING = {"testing_recipient": "testing@example.test"}
 
 
 class SeedWebRefused(ConfigError):
@@ -427,3 +458,308 @@ def build_answers(form, answers):
                 "cannot_give": False,
             }
     return payload
+
+
+# The setup wizard, through its service layer.
+def stage_logo(request, service, attempt_id):
+    """Stage a small generated logo as the wizard's logo page does; return its id."""
+    from io import BytesIO
+
+    from django.conf import settings
+    from PIL import Image
+
+    from parishkit.stewardship.accounts.branding_staging import stage_branding
+    from parishkit.stewardship.web.content import prepare_graphics
+
+    image = BytesIO()
+    Image.new("RGB", (256, 128), (36, 72, 120)).save(image, format="PNG")
+    image.seek(0)
+    return stage_branding(
+        request,
+        service,
+        settings.STEWARDSHIP_MEDIA_ROOT,
+        prepare_graphics(image),
+        base_digest=service.store.active().digest,
+        setup_attempt_id=attempt_id,
+    )
+
+
+def resume_wizard(service, email):
+    """The seeding Admin's unfinished setup attempt and its live session, or None.
+
+    A wizard run that stopped part-way leaves an attempt that only its own
+    session may continue (``begin_setup`` refuses a second attempt). The
+    seeder's Admin is a known identity, so its attempt's Django session is
+    reopened from the PortalSession row and the run continues where it was.
+    """
+    from django.conf import settings
+
+    from parishkit.stewardship.accounts.local_sign_in import SUBJECT_PREFIX
+    from parishkit.stewardship.accounts.models import PortalSession, PortalUser
+    from parishkit.stewardship.accounts.policy_schema import normalized_email
+    from parishkit.stewardship.accounts.setup_models import SetupAttempt
+
+    user = PortalUser.objects.filter(
+        google_subject=SUBJECT_PREFIX + normalized_email(email)
+    ).first()
+    if user is None:
+        return None
+    attempt = (
+        SetupAttempt.objects.filter(
+            owner_id=user.pk, state__in=["collecting", "loading", "frozen"]
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if attempt is None:
+        return None
+    session = PortalSession.objects.filter(
+        pk=attempt.session_id, revoked_at__isnull=True
+    ).first()
+    if session is None:
+        return None
+    store = import_module(settings.SESSION_ENGINE).SessionStore
+    return new_request(session=store(session_key=session.session_id)), attempt.pk
+
+
+def run_wizard(
+    request,
+    service,
+    *,
+    wait,
+    fake_key=LOCAL_PARISHSOFT_KEY,
+    campaign_dates,
+    attempt_id=None,
+):
+    """Complete the initial setup wizard for the LOCAL deployment unattended.
+
+    The steps are the wizard pages' own service calls, in the wizard's order:
+    the parish, access and mail settings, the ParishSoft credential (the
+    fake's key and organization), the source load (the worker loads from the
+    fake; ``wait`` blocks until the attempt collects again), the Workspace
+    credential (the mail-catcher document), the first campaign from the
+    loaded catalog with every module enabled, default pages and emails, the
+    Initial schedule, a generated parish logo through the real branding
+    staging, the preview, the sample mail (sent to Mailpit by mail-dispatch)
+    and the final confirmation. The caller then waits for
+    ``setup_is_complete``. The share options are part of the campaign values;
+    the wizard's shares page only reviews them.
+    """
+    from parishkit.stewardship.accounts.setup_models import SetupAttempt
+
+    def state():
+        """The resumed attempt's state, or None for a fresh run."""
+        if attempt_id is None:
+            return None
+        return SetupAttempt.objects.get(pk=attempt_id)
+
+    row = state()
+    if row is not None and row.state == "frozen":
+        # Confirmed already; only the installer's finish is outstanding.
+        return None
+    if row is None or row.source_task_id is None:
+        attempt_id = wizard_collect(request, service, fake_key=fake_key)
+
+    def loaded():
+        """The attempt collects again once the worker's load has finished."""
+        row = SetupAttempt.objects.get(pk=attempt_id)
+        if row.state == "collecting":
+            return True
+        if row.state not in {"loading", "collecting"}:
+            raise SeedWebRefused(f"The setup source load ended in {row.state}.")
+        return "the setup source load"
+
+    wait("the setup source load", loaded)
+    wizard_campaign(request, service, attempt_id, campaign_dates=campaign_dates)
+    return wizard_confirm(request, service, attempt_id, wait=wait)
+
+
+def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
+    """The wizard up to the source load: public settings and both credentials."""
+    from parishkit.stewardship.accounts.setup_credentials import stage_credential
+    from parishkit.stewardship.accounts.setup_drafts import save_section
+    from parishkit.stewardship.accounts.setup_source import start_source_load
+    from parishkit.stewardship.accounts.setup_staging import begin_setup
+    from parishkit.stewardship.mail_catcher import MAIL_CATCHER_DOCUMENT
+
+    status = begin_setup(request, service)
+    attempt_id = status.attempt_id
+    for step, values in (
+        ("parish", WIZARD_PARISH),
+        ("access", WIZARD_ACCESS),
+        ("mail", WIZARD_MAIL),
+        ("slack", WIZARD_SLACK),
+        ("testing", WIZARD_TESTING),
+    ):
+        status = save_section(
+            request,
+            service,
+            attempt_id,
+            step=step,
+            values=values,
+            expected_version=status.version,
+        )
+    status, _ = stage_credential(
+        request,
+        service,
+        attempt_id,
+        target="parishsoft",
+        candidate=fake_key.encode() + b"\n",
+        expected_version=status.version,
+        organization_id=LOCAL_ORGANIZATION_ID,
+    )
+    status, _ = stage_credential(
+        request,
+        service,
+        attempt_id,
+        target="google_workspace",
+        candidate=MAIL_CATCHER_DOCUMENT,
+        expected_version=status.version,
+    )
+    start_source_load(request, service, attempt_id, expected_version=status.version)
+    return attempt_id
+
+
+def campaign_values(catalog, campaign_dates):
+    """The first campaign: every module, the catalog's Ministries and funds."""
+    from parishkit.stewardship.accounts.share_forms import default_share_options
+
+    funds = [int(key) for key, _ in catalog.funds]
+    start, end = campaign_dates
+    return {
+        "name": "Annual stewardship campaign",
+        "year_label": str(end.year),
+        "timezone": catalog.timezone,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        # The canonical order is alphabetical (EnabledModules.to_list).
+        "modules": ["census", "financial", "ministry"],
+        # Sorted unique DUIDs; the catalog lists Ministries by name.
+        "ministry_duids": sorted({int(key) for key, _ in catalog.ministries}),
+        "financial": {
+            "start": f"{end.year + 1}-01-01",
+            "end": f"{end.year + 1}-12-31",
+            "comparison_start": f"{end.year}-01-01",
+            "comparison_end": f"{end.year}-12-31",
+            "fund_duids": funds[:1],
+            "comparison_fund_duids": funds[1:2] or funds[:1],
+            "overlap_confirmed": False,
+        },
+        "share_options": default_share_options(),
+        "content_versions": {},
+        "additional_information": True,
+    }
+
+
+def wizard_campaign(request, service, attempt_id, *, campaign_dates):
+    """After the load: the first campaign, default content, the Initial, a logo."""
+    from parishkit.stewardship.accounts.content_forms import applicable_slots
+    from parishkit.stewardship.accounts.setup_campaign import campaign_catalog
+    from parishkit.stewardship.accounts.setup_content import (
+        FILL_UNSET,
+        default_updates,
+    )
+    from parishkit.stewardship.accounts.setup_drafts import (
+        save_section,
+        save_sections,
+        view_draft,
+    )
+
+    status = view_draft(request, service, attempt_id).status
+    catalog = campaign_catalog(request, service, attempt_id)
+    campaign = campaign_values(catalog, campaign_dates)
+    status = save_section(
+        request,
+        service,
+        attempt_id,
+        step="campaign",
+        values={"source_result": str(catalog.result_id), "campaign": campaign},
+        expected_version=status.version,
+    )
+    draft = view_draft(request, service, attempt_id)
+    updates = default_updates(
+        draft.sections, campaign, str(attempt_id), which=FILL_UNSET
+    )
+    emails = {
+        f"{kind}_{slot}" for kind, slot in applicable_slots(campaign) if kind == "email"
+    }
+    if not emails <= set(updates):
+        raise SeedWebRefused("The default content left an email template unset.")
+    status = save_sections(
+        request, service, attempt_id, updates=updates, expected_version=status.version
+    )
+    initial = updates["email_initial"]
+    start, _ = campaign_dates
+    status = save_section(
+        request,
+        service,
+        attempt_id,
+        step="schedules",
+        values={
+            "records": [
+                {
+                    "id": str(uuid4()),
+                    "values": {
+                        "campaign_id": str(attempt_id),
+                        "kind": "initial",
+                        "date": (start + timedelta(days=1)).isoformat(),
+                        "time": "10:00:00",
+                        "weekday": None,
+                        "subject": initial["values"]["subject"],
+                        "template_version": initial["id"],
+                    },
+                }
+            ]
+        },
+        expected_version=status.version,
+    )
+    bundle = stage_logo(request, service, attempt_id)
+    return save_section(
+        request,
+        service,
+        attempt_id,
+        step="branding",
+        values={"bundle_id": str(bundle)},
+        expected_version=status.version,
+    )
+
+
+def preview_token(request, service):
+    """The signed review the confirmation page carries, from the current draft."""
+    from django.core import signing
+
+    from parishkit.stewardship.accounts.setup_preview import (
+        PREVIEW_SALT,
+        prepare_preview,
+    )
+
+    return signing.dumps(prepare_preview(request, service).binding(), salt=PREVIEW_SALT)
+
+
+def wizard_confirm(request, service, attempt_id, *, wait):
+    """Review, send the sample mail, wait for the catcher to take it, confirm."""
+    from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
+    from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
+    from parishkit.stewardship.accounts.setup_mail import request_sample
+
+    confirm_request = new_request("/admin/setup/confirm", session=request.session)
+    sample = request_sample(
+        confirm_request,
+        service,
+        preview_token=preview_token(confirm_request, service),
+        request_key=uuid4(),
+    )
+
+    def sampled():
+        """The sample mail reached the catcher (or failed) through mail-dispatch."""
+        row = SetupMailDelivery.objects.get(pk=sample.identifier)
+        if row.state == "accepted":
+            return True
+        if row.state not in {"queued", "submitting"}:
+            raise SeedWebRefused(f"The setup sample mail ended in {row.state}.")
+        return "the setup sample mail"
+
+    wait("the setup sample mail", sampled)
+    return freeze_setup(
+        confirm_request, service, preview_token=preview_token(confirm_request, service)
+    )

@@ -1094,6 +1094,20 @@ deployment set up in normal mode cannot be seeded: its rows are stamped at
 real time and the seed's clock would have to start before them; `seed`
 refuses when the clock-mode marker says `normal`.
 
+**`wizard`.** For an unattended install (and the documented VM seed runs),
+`wizard` completes the setup wizard through the wizard pages' own service
+layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
+access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
+and organization, the source load, the mail-catcher document, a first
+campaign with every module from the loaded catalog, default pages and emails,
+the Initial schedule, a generated logo through the real branding staging, the
+review, the sample mail and the final confirmation), then follows the
+deployment runbook's post-wizard step: once the credential installers report
+`awaiting_ack`, it recreates `worker` and `mail-dispatch` from `compose.json`
+and acknowledges each request inside them, which lets the installer complete
+setup. The browser wizard remains the developer-facing path; `wizard` writes
+nothing the wizard pages would not.
+
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
 deployment YAML and record, so a restore is self-contained. `reset --seeded`

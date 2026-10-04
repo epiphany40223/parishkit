@@ -21,6 +21,7 @@
 #                                    and run `up` again, keeping the snapshots
 #   seed [--response-scale M]        seed the campaign (the fake-clock seeder)
 #   reseed [--response-scale M]      reset to the post-setup snapshot, then seed
+#   wizard                           complete the setup wizard unattended
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link (OPS-10.08)
@@ -248,6 +249,10 @@ case "$command" in
         run_remote reset post-setup
         mkdir -p "$state"
         run_remote seed "$scale" 2>&1 | tee -a "$state/seed.log" ;;
+    wizard)
+        [ $# -eq 0 ] || usage
+        require_running
+        run_remote wizard ;;
     status)
         [ $# -eq 0 ] || usage
         limactl list "$vm" 2>/dev/null || echo "No Lima instance '$vm'."

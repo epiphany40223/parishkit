@@ -12,7 +12,7 @@ plan says which pull request brings it.
 
 **What works today (2026-10-04).** `vm`, `up`, `start`, `down`, `status`,
 `snapshot`, `reset` (including `--reinstall` and `--seeded`), `sign-in`,
-`seed`, `reseed` and `ca` are complete and were run end to end in
+`wizard`, `seed`, `reseed` and `ca` are complete and were run end to end in
 the VM: the site answers at `https://localhost:8443` with the LOCAL banner,
 Mailpit catches every message at `http://localhost:8025`, the fake
 ParishSoft serves the synthetic parish, an unseeded deployment runs under the
@@ -171,6 +171,14 @@ credential (OPS-10.05). Those two credentials are installed by the real
 credential installers, exactly as in production, which is part of what the
 environment tests.
 
+For an unattended install, `tools/stewardship-local.sh wizard` completes the
+wizard through the wizard pages' own service layer with the fake ParishSoft
+key, the mail-catcher document, a first campaign with every module, default
+pages and emails and a generated logo, then follows the runbook's post-wizard
+step (recreating `worker` and `mail-dispatch` from `compose.json` and
+acknowledging each credential inside them) until setup is complete. The
+browser wizard remains the developer-facing path.
+
 After the wizard completes, take the post-setup snapshot:
 `tools/stewardship-local.sh snapshot`. `reset` then returns to that state in
 about half a minute. (A snapshot taken before the wizard is allowed and noted
@@ -183,8 +191,9 @@ The recipe for a seeded environment, from a checkout, is:
 
 1. `tools/stewardship-local.sh reset --reinstall` (or `up` on a VM with no
    deployment): about two minutes, ends in fake-clock mode.
-2. The setup wizard in the browser: `sign-in --email admin@example.test`,
-   then the values the summary printed.
+2. The setup wizard: in the browser (`sign-in --email admin@example.test`,
+   then the values the summary printed), or unattended with
+   `tools/stewardship-local.sh wizard` (about 90 seconds).
 3. `tools/stewardship-local.sh snapshot`: the post-setup snapshot `reseed`
    returns to.
 4. `tools/stewardship-local.sh seed`: about 17 minutes at 100 Families.
@@ -236,8 +245,8 @@ testing a pull request means running it from that pull request's checkout:
 5. `tools/stewardship-local.sh ca`, then trust the new certificate.
 6. `tools/stewardship-local.sh sign-in --email admin@example.test` and open
    the link; run the setup wizard with the fake ParishSoft key and
-   organization and the mail-catcher document from the summary, then
-   exercise the change. For a campaign in progress, follow
+   organization and the mail-catcher document from the summary (or
+   `wizard`), then exercise the change. For a campaign in progress, follow
    the [seeding recipe](#seeding-a-campaign): the pull request's image seeds
    its own data, because snapshots belong to the image that made them.
 
@@ -277,7 +286,7 @@ changes the environment. The run is:
    fake-configuration files are `0600` owned by `10001`.
 5. `snapshot`, `down`, `start`, `reset`, `reset --reinstall` and `status`
    round-trip.
-6. The seed: the browser wizard, `snapshot`, `seed` at 20 and
+6. The seed: `wizard` (or the browser wizard), `snapshot`, `seed` at 20 and
    at 100 Families (`PARISHKIT_LOCAL_FAMILIES` for `reset --reinstall`),
    `snapshot --seeded` and `reset --seeded`, with the
    [seed tests](../specs/stewardship/local-environment/spec.md#seeder-tests)'

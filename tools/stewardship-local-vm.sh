@@ -22,6 +22,8 @@
 #   wipe                                remove the containers and the root (marker required)
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
+#   wizard                              complete the setup wizard unattended through
+#                                       its own service layer (LOCAL convenience)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   ca                                  print Caddy's local root certificate
 #
@@ -747,7 +749,7 @@ cmd_seed() {
     mode=$(clock_mode)
     [ "$mode" = fake ] || refuse "The deployment is in normal clock mode; it is seeded already (reseed restores the post-setup snapshot first)."
     completed=$(setup_completed)
-    [ "$completed" = t ] || refuse "The setup wizard has not completed; run it first."
+    [ "$completed" = t ] || refuse "The setup wizard has not completed; run it (or 'wizard') first."
     trap 'seed_failed $?' EXIT
     seed_now=$(date -u +%FT%TZ)
     step "Seeding at $seed_now (response scale $seed_scale, $FAMILIES Families, seed $SEED)"
@@ -782,6 +784,72 @@ cmd_seed() {
     echo "Seeded at $seeded_now (requested $seed_now) in $(( $(date -u +%s) - began ))s."
 }
 
+dcc=()
+select_configured() {
+    # Fill `dcc` with the configured topology (compose.json, plus the
+    # fake-clock override in fake mode) whatever the setup marker says: the
+    # runbook's post-wizard step recreates the consumers from it before
+    # setup is complete.
+    local mode
+    mode=$(clock_mode)
+    dcc=(docker compose -f "$services/compose.json")
+    if [ "$mode" = fake ]; then
+        dcc+=(-f "$services/compose.faketime.json")
+    fi
+    dcc+=(-p "$project")
+}
+
+awaiting_ack() {
+    # Both initial credential requests await their consumers' acknowledgement.
+    local count
+    count=$(docker compose -p "$project" exec -T postgres psql -U pk_stewardship_operator -d stewardship -Atc \
+        "SELECT count(*) FROM stewardship_secret_request WHERE state='awaiting_ack' AND target IN ('parishsoft','google_workspace')" </dev/null 2>/dev/null)
+    [ "$count" = 2 ]
+}
+
+setup_is_complete() {
+    [ "$(setup_completed)" = t ]
+}
+
+cmd_wizard() {
+    # Complete the setup wizard without a browser, through the wizard pages'
+    # own service layer (seed_web.run_wizard), then the runbook's first-
+    # installation step 5: once the installers report awaiting_ack, recreate
+    # worker and mail-dispatch from compose.json and acknowledge each request
+    # inside them, which lets the installer finish setup. The developer-facing
+    # path is still the real wizard; this is for unattended installs and tests.
+    local parishsoft workspace
+    require_marker
+    load_env
+    select_compose
+    seed_now=$(date -u +%FT%TZ)
+    seed_scale=1
+    seed_step 1800 wizard web web.yaml
+    if [ "$(jq -r .result <<<"$seed_result")" != frozen ]; then
+        echo "    nothing to finish"
+        return 0
+    fi
+    parishsoft=$(jq -r .requests.parishsoft <<<"$seed_result")
+    workspace=$(jq -r .requests.google_workspace <<<"$seed_result")
+    step "Waiting for the credential installers to report awaiting_ack"
+    wait_until 600 "the credential installers to report awaiting_ack" awaiting_ack
+    step "Recreating worker and mail-dispatch from compose.json (runbook step 5)"
+    select_configured
+    "${dcc[@]}" up --detach --force-recreate worker mail-dispatch 2>&1 | quiet
+    wait_until 300 "worker to turn healthy" all_healthy worker
+    wait_until 300 "mail-dispatch to turn healthy" all_healthy mail-dispatch
+    step "Acknowledging the credentials inside the recreated consumers"
+    "${dcc[@]}" exec -T worker pk-stewardship acknowledge-credential \
+        --config "$services/worker.yaml" --request-id "$parishsoft" </dev/null
+    "${dcc[@]}" exec -T mail-dispatch pk-stewardship acknowledge-credential \
+        --config "$services/mail-dispatch.yaml" --request-id "$workspace" </dev/null
+    step "Waiting for setup to complete"
+    wait_until 900 "the configuration installer to complete setup" setup_is_complete
+    step "Restarting every service under the configured topology"
+    start_services --force-recreate
+    echo "Setup complete in $(( $(date -u +%s) - began ))s."
+}
+
 cmd_sign_in() {
     require_marker
     load_env
@@ -801,7 +869,7 @@ cmd_ca() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|start|down)
+    build|up|snapshot|reset|wipe|seed|wizard|start|down)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -819,6 +887,7 @@ case "$command" in
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
     seed) cmd_seed "${1:-1}" ;;
+    wizard) cmd_wizard ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;
     ca) cmd_ca ;;
     *) refuse "unknown VM command: $command" ;;

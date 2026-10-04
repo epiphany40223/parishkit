@@ -55,7 +55,7 @@ from .clock import CLOCK_CONTROL_TARGET, CLOCK_MOUNT_TARGET, FakeClock
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
-STEPS = ("timeline", "prepare", "drive", "check", "finish")
+STEPS = ("timeline", "wizard", "prepare", "drive", "check", "finish")
 # Each wait's default limit (specification, "Settled"), and how often the
 # seeder re-reads the settled conditions while it waits.
 DEFAULT_WAIT_SECONDS = 600
@@ -764,6 +764,7 @@ def timeline_summary(request):
 def run_step(request, configuration):
     """Run one database-backed step."""
     return {
+        "wizard": wizard_step,
         "prepare": prepare_step,
         "drive": drive_step,
         "check": check_step,
@@ -836,6 +837,64 @@ def admin(request):
     if request.admin_email is None:
         raise SeedRefused("This seed step requires --admin-email.")
     return seed_web.sign_in_admin(seed_web.new_request(), request.admin_email)
+
+
+def wizard_step(request, configuration):
+    """Complete the setup wizard unattended (LOCAL convenience; see seed_web)."""
+    configure_web_process(configuration)
+    # Model imports only after Django is configured.
+    from parishkit.stewardship.accounts.setup_completion import setup_is_complete
+
+    if setup_is_complete():
+        return {"step": "wizard", "result": "setup was already complete"}
+    if request.admin_email is None:
+        raise SeedRefused("This seed step requires --admin-email.")
+    service = seed_web.admin_runtime()
+    resumed = seed_web.resume_wizard(service, request.admin_email)
+    attempt_id = None
+    if resumed is None:
+        web = admin(request)
+    else:
+        # An earlier run's attempt: continue it under its own live session.
+        web, attempt_id = resumed
+        LOGGER.info("resuming the setup attempt %s", attempt_id)
+    today = (
+        FakeClock(request.clock_directory)
+        .now()
+        .astimezone(ZoneInfo(seed_web.WIZARD_PARISH["timezone"]))
+    )
+    # A first campaign in the near future; the seed moves its dates later.
+    start = today.date() + timedelta(days=10)
+    dates = (start, start + timedelta(days=30))
+    seed_web.run_wizard(
+        web, service, wait=wait_until, campaign_dates=dates, attempt_id=attempt_id
+    )
+    # The freeze hands over to the credential installers; the operator script
+    # then recreates the consumers from compose.json and acknowledges each
+    # request inside them (runbook, first installation, step 5), which is
+    # what completes setup. The request ids are the sealed credentials' ids.
+    from parishkit.stewardship.accounts.setup_models import SetupAttempt
+    from parishkit.stewardship.accounts.setup_secret_models import (
+        SetupSealedCredential,
+    )
+
+    attempt = (
+        SetupAttempt.objects.filter(state="frozen").order_by("-created_at").first()
+    )
+    if attempt is None:
+        raise SeedFailed("The setup attempt is not frozen after the wizard.")
+    requests = {
+        row.target: str(row.pk)
+        for row in SetupSealedCredential.objects.filter(
+            attempt=attempt, scrubbed_at=None
+        ).only("id", "target")
+    }
+    return {
+        "step": "wizard",
+        "result": "frozen",
+        "campaign_dates": [day.isoformat() for day in dates],
+        "requests": requests,
+    }
 
 
 def task_root_finished(root_id, what):
