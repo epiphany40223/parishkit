@@ -281,12 +281,12 @@ Specification: [local laptop environment](../../specs/stewardship/local-environm
 
 - [x] OPS-10.01 — PR 0: specify the local environment and record the Lima VM spike.
 - [x] OPS-10.02 — PR 1: add the LOCAL profile and LOCAL behaviour at every existing profile branch.
-- [ ] OPS-10.03 — PR 2: render the local ingress and topology with Production golden files unchanged.
-- [ ] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
-- [ ] OPS-10.05 — PR 4: add the mail catcher and two-way credential refusals.
-- [ ] OPS-10.06 — PR 5a: add the fake ParishSoft service and the scalable synthetic parish.
+- [x] OPS-10.03 — PR 2: render the local ingress and topology with Production golden files unchanged.
+- [x] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
+- [x] OPS-10.05 — PR 4: add the mail catcher and two-way credential refusals.
+- [x] OPS-10.06 — PR 5a: add the fake ParishSoft service and the scalable synthetic parish.
 - [ ] OPS-10.07 — PR 5b: add the fake clock and the time-travel campaign and response seeder.
-- [ ] OPS-10.08 — PR 6: add the local test sign-in through the shared identity core.
+- [x] OPS-10.08 — PR 6: add the local test sign-in through the shared identity core.
 - [ ] OPS-10.09 — PR 7a: add the Lima VM operator script, seeded snapshots and developer guide.
 - [ ] OPS-10.10 — PR 7b: add the local deploy mode of the scripted upgrade.
 
@@ -305,4 +305,30 @@ OPS-10.02 is complete in
 branch its LOCAL behaviour and pinned the Production golden files; every CI
 job passed in
 [run 37158085479](https://github.com/epiphany40223/parishkit/actions/runs/37158085479).
-OPS-10.03 through OPS-10.10 remain open.
+OPS-10.03 is complete in
+[PR #486](https://github.com/epiphany40223/parishkit/pull/486), which rendered
+the local ingress and topology with the Production golden files unchanged;
+every CI job passed on its head `2944dcc8` in
+[run 37160960646](https://github.com/epiphany40223/parishkit/actions/runs/37160960646).
+OPS-10.04 is complete in two halves:
+[PR #490](https://github.com/epiphany40223/parishkit/pull/490) admits the
+localhost origin for go-live (every job passed on `a6be0717` in
+[run 37163391463](https://github.com/epiphany40223/parishkit/actions/runs/37163391463)),
+and [PR #491](https://github.com/epiphany40223/parishkit/pull/491) makes smoke
+refuse LOCAL.
+OPS-10.06 is complete in
+[PR #491](https://github.com/epiphany40223/parishkit/pull/491), which added the
+fake ParishSoft service, the synthetic parish generator and the per-profile
+ParishSoft base URL; every job passed on `7cdb917b` in
+[run 37171147286](https://github.com/epiphany40223/parishkit/actions/runs/37171147286).
+OPS-10.08, OPS-10.05 and the operator script of OPS-10.09 landed as one
+stacked train: [PR #493](https://github.com/epiphany40223/parishkit/pull/493)
+(local test sign-in), [PR #494](https://github.com/epiphany40223/parishkit/pull/494)
+(operator script and developer guide) and
+[PR #495](https://github.com/epiphany40223/parishkit/pull/495) (mail catcher,
+two-way credential refusals and the fake ParishSoft Compose service). Every
+job passed on the stack's top `d0fe6b18` in
+[run 37177151726](https://github.com/epiphany40223/parishkit/actions/runs/37177151726),
+and `main` after the three merges has exactly that tree.
+OPS-10.09 stays open until its seeded snapshots work, which needs OPS-10.07;
+OPS-10.07 and OPS-10.10 remain open.
