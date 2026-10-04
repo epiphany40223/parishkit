@@ -157,7 +157,11 @@ def test_compose_mounts_come_from_the_development_tests_service():
         "tools/stewardship-upgrade-host.sh",
         "tools/stewardship-local.sh",
         "tools/stewardship-local-vm.sh",
+        "tools/stewardship-ops",
         "docs/guides/stewardship-local-environment.md",
+        "docs/guides/stewardship-operator-scripts.md",
+        "docs/guides/stewardship-mail-send-report.md",
+        "docs/guides/stewardship-deployment-runbook.md",
     ):
         assert mount in MOUNTS
     assert all(not mount.startswith(("/", "..")) for mount in MOUNTS)

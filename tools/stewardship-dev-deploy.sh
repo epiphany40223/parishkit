@@ -64,6 +64,12 @@
 #   STEWARDSHIP_IMAGE       optional published image to deploy instead of
 #                           building the checkout, as the full reference
 #                           ${STEWARDSHIP_IMAGE_REPO}@sha256:<64 lowercase hex>
+#   STEWARDSHIP_BULK_FAMILY_SEND  1 renders the deployment's documents with
+#                           the bulk Family send on, passing
+#                           PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1 to
+#                           retarget-image as the Family mail dispatch guide
+#                           describes; 0 (the default) renders it off, as a
+#                           retarget without the variable always has.
 
 set -euo pipefail
 
@@ -74,6 +80,11 @@ project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
 release=${STEWARDSHIP_IMAGE:-}
+bulk=${STEWARDSHIP_BULK_FAMILY_SEND:-0}
+if [ "$bulk" != 0 ] && [ "$bulk" != 1 ]; then
+    echo "STEWARDSHIP_BULK_FAMILY_SEND must be 0 or 1; refusing." >&2
+    exit 1
+fi
 # A release should run as it will in production, so it defaults to normal
 # logging; a checkout build keeps the pre-launch debug default.
 if [ -n "$release" ]; then
@@ -117,11 +128,17 @@ fi
 # of the script as its own input. ssh joins its command into one string, so
 # the positional values are shell-quoted into it.
 args=$(printf '%q ' "$build" "$repo" "$tag" "$root" "$project" "$yaml" "$uuid" "$debug")
-# The ninth argument, the released image, is passed only when set.
-[ -z "$release" ] || args+=$(printf '%q ' "$release")
+# The ninth argument is the released image (empty for a checkout build) and
+# the tenth the bulk Family send switch.
+args+=$(printf '%q ' "$release" "$bulk")
 ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <<'REMOTE'
 set -euo pipefail
-build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7 release=${9:-}
+build=$1 repo=$2 tag=$3 root=$4 project=$5 yaml=$6 uuid=$7 release=${9:-} bulk=${10:-0}
+# Only 1 adds the switch; anything else the local check refused.
+switches=()
+if [ "$bulk" = 1 ]; then
+    switches=(-e PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1)
+fi
 if [ -n "$release" ]; then
     # Checked again here, before any docker call, so the host never acts on
     # a reference the local check would have refused.
@@ -323,7 +340,10 @@ step "Retargeting"
 # without digging the digest out of the operators' notes.
 previous=$(jq -r '.services.web.image // empty' "$compose" 2>/dev/null || true)
 echo "    replacing ${previous:-an image this Compose file does not name}"
-"${isolated[@]}" \
+if [ "$bulk" = 1 ]; then
+    echo "    with the bulk Family send on (STEWARDSHIP_BULK_FAMILY_SEND=1)"
+fi
+"${isolated[@]}" ${switches[@]+"${switches[@]}"} \
     --mount "type=bind,source=$root,target=$root" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
     "$image" retarget-image --config /run/operator.yaml --image "$image"

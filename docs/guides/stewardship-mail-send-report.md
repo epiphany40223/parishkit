@@ -32,6 +32,10 @@ docker compose ... exec -T postgres psql --username pk_stewardship_operator \
   -v purpose='' -v definition='' -f - < mail-send-report.sql
 ```
 
+From a checkout, `tools/stewardship-ops/send-report.sh` runs the same
+report over ssh, reading the SQL from this guide each time; see the
+[operator helper scripts](stewardship-operator-scripts.md#large-sends).
+
 The report runs in one transaction that it rolls back at the end. Its only
 object is a temporary view, and after that the transaction is read-only, so
 it changes nothing. Outcomes settled before statistics were recorded appear

@@ -99,7 +99,15 @@ exit 0
 
 
 def run_remote(
-    tmp_path, noop, *, status=0, compose=None, image=None, digests=None, **fake
+    tmp_path,
+    noop,
+    *,
+    status=0,
+    compose=None,
+    image=None,
+    digests=None,
+    bulk=None,
+    **fake,
 ):
     """Run the host-side half against the stand-in; return the docker calls.
 
@@ -107,6 +115,7 @@ def run_remote(
     the script must end with; `compose` is the rendered compose.json text;
     `image` is the released image to deploy (the ninth argument), and
     `digests` what the stand-in reports as that image's RepoDigests.
+    `bulk`, when set, is the tenth argument (the bulk Family send switch).
     """
     import os
     import shutil
@@ -155,7 +164,7 @@ def run_remote(
             str(tmp_path / "deployment.yaml"),
             "00000000-0000-4000-8000-000000000000",
             "0",
-            *([image] if image is not None else []),
+            *([image or "", bulk] if bulk is not None else [image] if image else []),
         ],
         env={
             **os.environ,
@@ -340,7 +349,7 @@ def test_the_local_side_refuses_a_bad_image_before_ssh(tmp_path):
         assert not log.exists(), log.read_text()
 
 
-def run_local(tmp_path, **env):
+def run_local(tmp_path, status=0, **env):
     """Run the local half with stand-ins for ssh, git and docker.
 
     Returns the recorded calls and the script's output. The stand-in ssh
@@ -386,7 +395,7 @@ def run_local(tmp_path, **env):
         capture_output=True,
         timeout=30,
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == status, result.stderr
     return log.read_text().splitlines(), result.stdout + result.stderr
 
 
@@ -398,8 +407,10 @@ def test_the_local_side_sends_a_valid_image_without_git(tmp_path):
     calls, _ = run_local(tmp_path, STEWARDSHIP_IMAGE=OFFICIAL)
     assert not any(call.startswith(("git ", "docker ")) for call in calls)
     assert len(calls) == 1 and calls[0].startswith("ssh host.invalid ")
-    # build repo tag(empty) root project yaml uuid debug image, %q-quoted.
-    assert " 00000000-0000-4000-8000-000000000000 0 " + OFFICIAL + " ; rc=" in calls[0]
+    # build repo tag(empty) root project yaml uuid debug image bulk, %q-quoted.
+    assert (
+        " 00000000-0000-4000-8000-000000000000 0 " + OFFICIAL + " 0 ; rc=" in calls[0]
+    )
     assert " '' /opt/parishkit " in calls[0]
 
 
@@ -416,5 +427,31 @@ def test_debug_logging_defaults_off_only_for_a_released_image(tmp_path):
     assert "Debug logging: 1 (from STEWARDSHIP_DEBUG_LOGGING)" in output
     calls, output = run_local(tmp_path / "c")
     assert any(call.startswith("git ") for call in calls)
-    assert calls[-1].split(" ; rc=")[0].endswith(uuid + "1")
+    assert calls[-1].split(" ; rc=")[0].endswith(uuid + "1 '' 0")
     assert "Debug logging" not in output
+
+
+def test_the_bulk_switch_reaches_retarget_image(tmp_path):
+    """STEWARDSHIP_BULK_FAMILY_SEND=1 passes the switch to retarget-image only."""
+    calls, output = run_remote(tmp_path / "on", "t", bulk="1")
+    retarget = calls[first(calls, " retarget-image ")]
+    assert "-e PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1" in retarget
+    assert sum("BULK_FAMILY_SEND" in call for call in calls) == 1
+    assert "with the bulk Family send on" in output
+    for n, bulk in enumerate(("0", None)):
+        calls, output = run_remote(tmp_path / str(n), "t", bulk=bulk)
+        assert not any("BULK_FAMILY_SEND" in call for call in calls)
+        assert "bulk Family send" not in output
+
+
+def test_the_local_side_passes_or_refuses_the_bulk_switch(tmp_path):
+    """Only 0 or 1 is accepted, before anything reaches the host."""
+    calls, _ = run_local(
+        tmp_path / "on", STEWARDSHIP_IMAGE=OFFICIAL, STEWARDSHIP_BULK_FAMILY_SEND="1"
+    )
+    assert calls[0].endswith(OFFICIAL + ' 1 ; rc=$?; rm -f "$f"; exit $rc')
+    calls, output = run_local(
+        tmp_path / "bad", status=1, STEWARDSHIP_BULK_FAMILY_SEND="yes"
+    )
+    assert calls == []
+    assert "STEWARDSHIP_BULK_FAMILY_SEND must be 0 or 1" in output

@@ -401,6 +401,10 @@ how to start it. Run it from the checkout:
 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID tools/stewardship-dev-deploy.sh
 ```
 
+Its `retarget-image` renders the documents with the
+[bulk Family send](stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)
+off unless `STEWARDSHIP_BULK_FAMILY_SEND=1` is set for the run.
+
 Its images skip CI, so they are never deployed to a campaign serving real
 Families: go-live runs a digest from a real release. The script enforces
 this on the host: before it builds, pushes or stops anything, it refuses
@@ -730,6 +734,13 @@ refuse after `web` stopped. It does not read the release notes for you,
 check the host's disk space or registry login, or repeat a runtime
 fallback (it refuses one instead). The operational log writer guard is
 among the things the upgrade check itself verifies.
+
+The [operator helper scripts](stewardship-operator-scripts.md) cover the
+steps around it: `tools/stewardship-ops/release.sh` publishes a release
+and prints the digest to pass as `STEWARDSHIP_IMAGE`, and
+`tools/stewardship-ops/predeploy-check.sh` is a read-only look, just
+before running the upgrade, for background work it would interrupt and
+Families who are active.
 
 Two recorded runs, both without a schema change (#460): the validation
 deployment from v0.3.9 to v1.0.0 took 126 s with `web` down for 18 s (pull
