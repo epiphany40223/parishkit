@@ -7,6 +7,8 @@ from django.db.models import F
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+from parishkit.stewardship.mail_catcher import MailTransport, workspace_transport
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.contracts import check_version
 
@@ -76,6 +78,26 @@ def _context(attempt, target, organization_id):
     return validated_context(target, values)
 
 
+def admit_candidate(target, candidate, profile):
+    """Parse a Workspace or Slack candidate under the deployment profile (#476).
+
+    This is the web intake's half of the two-way refusal, repeated by the
+    isolated installer's provider check. The Workspace candidate must be the
+    mail-catcher document in LOCAL and a Google service account anywhere
+    else; Slack has no local stand-in, so LOCAL refuses any Slack token.
+    Every refusal is a ConfigError, so the pages show their one generic
+    format message and never echo the candidate.
+    """
+    if target == "slack":
+        if profile is DeploymentProfile.LOCAL:
+            raise ConfigError("Slack is not available in the local profile.")
+        slack_candidate(candidate)
+    elif workspace_transport(candidate, profile) is MailTransport.GMAIL:
+        # Outside LOCAL the candidate must be a well-formed service account,
+        # exactly as before the mail catcher existed.
+        workspace_info(candidate)
+
+
 def credential_status(request, service, attempt_id):
     """Passively inspect only the original attempt's safe receipt metadata."""
     with work_transaction():
@@ -132,7 +154,7 @@ def stage_credential(
                 ) from None
         else:
             try:
-                (slack_candidate if target == "slack" else workspace_info)(candidate)
+                admit_candidate(target, candidate, recorded_profile())
             except ConfigError:
                 raise ValueError("The credential has an invalid format.") from None
         row = (

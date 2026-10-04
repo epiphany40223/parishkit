@@ -188,6 +188,50 @@ def test_malformed_private_intake_never_replaces_a_staged_candidate(
     assert SetupSealedCredential.objects.get().version == receipt.version
 
 
+def test_local_wizard_intake_takes_only_the_mail_catcher_document(
+    setup_service, settings
+):
+    """LOCAL (#476): the mail-catcher document is staged; a Google key is refused.
+
+    The same intake under the test profile (any non-LOCAL profile) refuses the
+    mail-catcher document, so the two directions are exercised on one attempt.
+    """
+    from parishkit.stewardship.mail_catcher import MAIL_CATCHER_DOCUMENT
+
+    request, attempt, receipt, _ = staged(setup_service, "google_workspace")
+    with web_login(), pytest.raises(ValueError, match="invalid format"):
+        stage_credential(
+            request,
+            setup_service,
+            attempt.attempt_id,
+            target="google_workspace",
+            candidate=MAIL_CATCHER_DOCUMENT,
+            expected_version=attempt.version,
+        )
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "local"
+    with web_login(), pytest.raises(ValueError, match="invalid format"):
+        stage_credential(
+            request,
+            setup_service,
+            attempt.attempt_id,
+            target="google_workspace",
+            candidate=account(),
+            expected_version=attempt.version,
+        )
+    assert SetupSealedCredential.objects.get().version == receipt.version
+    with web_login():
+        attempt, replaced = stage_credential(
+            request,
+            setup_service,
+            attempt.attempt_id,
+            target="google_workspace",
+            candidate=MAIL_CATCHER_DOCUMENT,
+            expected_version=attempt.version,
+        )
+    assert replaced.version == receipt.version + 1
+    assert replaced.fingerprint != receipt.fingerprint
+
+
 @pytest.mark.parametrize("automatic", [False, True])
 def test_original_attempt_terminal_transition_atomically_scrubs(
     setup_service, automatic
