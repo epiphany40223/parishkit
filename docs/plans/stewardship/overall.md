@@ -695,6 +695,11 @@ gate sequence above. Each states its own dependencies and review rules.
   a host command line for every Admin portal action under the same checks and
   audit as the pages
   ([#463](https://github.com/epiphany40223/parishkit/issues/463)).
+- **BG-12** — the [faster bulk Family send](background-processing.md#bg-12-faster-bulk-family-send),
+  which moves reading, rendering, decryption and sealing outside the
+  work-order lock and prepares reminders ahead of their due time, with one
+  small occurrence-guard migration and no credential change
+  ([#447](https://github.com/epiphany40223/parishkit/issues/447)).
 
 ## Review-gate protocol
 

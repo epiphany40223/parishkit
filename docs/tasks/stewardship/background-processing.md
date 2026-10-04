@@ -430,3 +430,16 @@ Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-
 - [ ] BG-11.05 — Escalate purge inconsistency and cleanup failures.
 
 Evidence: Not started.
+
+## BG-12: Faster bulk Family send
+
+Scope and dependencies: [BG-12 work package](../../plans/stewardship/background-processing.md#bg-12-faster-bulk-family-send).
+Specification: [bulk send work outside the lock](../../specs/stewardship/background-processing/spec.md#bulk-send-work-outside-the-lock).
+
+- [ ] BG-12.01 — PR 0: specify the faster bulk Family send and plan its PR sequence.
+- [ ] BG-12.02 — PR 1: add the local rehearsal harness and SMTP latency setting, and record baselines.
+- [ ] BG-12.03 — PR 2: build bulk preparation outside the work-order lock, and prepare Production reminders ahead of their due time with one occurrence-guard migration.
+- [ ] BG-12.04 — PR 3: build bulk sending's messages outside the work-order lock, committing only under it.
+- [ ] BG-12.05 — PR 4: record the rehearsal evidence and deploy to Production at an Administrator-approved time.
+
+Evidence: Not started.
