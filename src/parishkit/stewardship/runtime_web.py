@@ -158,6 +158,17 @@ def template_settings(templates, configuration):
     return templates
 
 
+def url_configuration(profile):
+    """Select the URL module: LOCAL alone adds the test sign-in route (#476).
+
+    ``local_urls`` carries every production route plus that one; ``urls.py``
+    never imports it, so under any other profile the route does not exist.
+    """
+    if profile is DeploymentProfile.LOCAL:
+        return "parishkit.stewardship.local_urls"
+    return "parishkit.stewardship.urls"
+
+
 def configure_web(configuration):
     """Admit mounts, key purposes, SQL roles and coherent authority before serving."""
     import django
@@ -215,6 +226,7 @@ def configure_web(configuration):
     ]
     values["TEMPLATES"] = template_settings(values["TEMPLATES"], configuration)
     values.update(profile_settings(configuration))
+    values["ROOT_URLCONF"] = url_configuration(configuration.profile)
     settings.configure(**values)
     django.setup()
     from django.db import connections

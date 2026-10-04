@@ -14,6 +14,7 @@ from parishkit.stewardship.web.security import login_denial
 from . import family_maintenance
 from .authentication import runtime
 from .limiting import LimiterUnavailable
+from .local_sign_in import PATH as LOCAL_SIGN_IN
 from .models import SystemConfiguration
 from .sessions import authenticated_admin
 
@@ -27,6 +28,10 @@ AUTH_ROUTES = frozenset(
         # portal state; these views authenticate the session themselves.
         "/admin/session/status",
         "/admin/session/renew",
+        # The LOCAL test sign-in (#476) replaces Google sign-in there, and is
+        # needed most before setup completes or during restore review; the
+        # view itself answers 404 under every other profile.
+        LOCAL_SIGN_IN,
     }
 )
 

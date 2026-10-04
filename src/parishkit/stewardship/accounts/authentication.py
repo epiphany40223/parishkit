@@ -319,11 +319,43 @@ def _session_admission_refused(error):
 def complete_identity(request, subject, email, hosted, *, authenticated_at):
     """Only a verified Google identity can be created or refresh its email claims.
 
+    The recovery epoch and the ``next`` path come from the one-use OAuth state
+    the callback admitted; everything after that is the shared identity core,
+    ``establish_identity``, which the LOCAL test sign-in also calls.
+    """
+    data = request.stewardship_oauth_state["data"]
+    return establish_identity(
+        request,
+        subject,
+        email,
+        hosted,
+        authenticated_at=authenticated_at,
+        recovery_epoch=data["recovery_epoch"],
+        destination=data.get("next"),
+    )
+
+
+def establish_identity(
+    request, subject, email, hosted, *, authenticated_at, recovery_epoch, destination
+):
+    """The post-verification identity core shared by every Admin sign-in path.
+
+    The caller has already verified who is signing in: the Google callback
+    with signed OIDC claims, or the LOCAL test sign-in with its one-time
+    token. This function does everything after that, identically for both:
+    the identity rate limiter, the recovery-epoch check (``recovery_epoch``
+    is the epoch the sign-in started under, and must still be current),
+    ``PortalUser`` get-or-create and the disabled check, current-policy
+    authorization, ``reauthenticate_admin`` or ``issue_admin``, the SQL
+    session guard's ``IntegrityError`` handling and the CSRF rotation.
+    Neither path may call ``issue_admin`` or ``reauthenticate_admin`` on its
+    own, so sessions, audit, login rules and step-up cannot drift apart.
+
     When the browser already holds a live session for this same PortalUser,
-    the sign-in is a step-up: that session's Google freshness advances in
-    place (see ``reauthenticate_admin``). Otherwise a new session replaces
-    whatever the browser held. Either way the CSRF secret rotates and the
-    browser returns to the validated ``next`` path carried in OAuth state.
+    the sign-in is a step-up: that session's freshness advances in place
+    (see ``reauthenticate_admin``). Otherwise a new session replaces whatever
+    the browser held. Either way the CSRF secret rotates and the browser
+    returns to the validated ``destination`` path.
     """
     service = runtime()
     epoch = (
@@ -345,10 +377,7 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
         record_failure(request, identity=fingerprint, counter=counter)
         return denial(status=429, retry=delay)
     with transaction.atomic():
-        if (
-            request.stewardship_oauth_state["data"]["recovery_epoch"]
-            != revocation_epoch()
-        ):
+        if recovery_epoch != revocation_epoch():
             return denial()
         user, created = PortalUser.objects.select_for_update().get_or_create(
             google_subject=subject,
@@ -405,9 +434,7 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
     # Revalidate even though login stored only a validated path in its state.
-    return HttpResponseRedirect(
-        admin_return_path(request.stewardship_oauth_state["data"].get("next"))
-    )
+    return HttpResponseRedirect(admin_return_path(destination))
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
