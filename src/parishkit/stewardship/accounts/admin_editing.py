@@ -41,16 +41,17 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin
 
 
 def principal(
-    request, service, *, passive=False, read_only=False, capability=Capability.CONFIGURE
+    caller, service, *, passive=False, read_only=False, capability=Capability.CONFIGURE
 ):
     """Read current authorization; passive progress pages never renew idle time.
 
     A read-only recheck after rendering renews nothing either. Pages that need
     a different Administrator capability name it, so one admission function
-    serves every Admin page.
+    serves every Admin page. ``caller`` is an ``AdminCaller``, or (until the
+    final ADM-11 PR) a Django request that ``authenticated_admin`` converts.
     """
     value = authenticated_admin(
-        request,
+        caller,
         store=service.store,
         activity=not passive and not read_only,
         read_only=read_only,

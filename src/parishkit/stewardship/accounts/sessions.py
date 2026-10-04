@@ -16,7 +16,6 @@ from django.middleware.csrf import (
     CSRF_SECRET_LENGTH,
     CsrfViewMiddleware,
     InvalidTokenFormat,
-    rotate_token,
 )
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
@@ -25,6 +24,7 @@ from django.utils.http import http_date
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.namespaces import cookie_namespace
 
+from .admin_caller import WEB, as_caller
 from .models import AdminRevocation, PortalSession, PortalUser
 from .policy import current_principal
 from .session_policy import (
@@ -161,17 +161,18 @@ def _authority_fingerprint(principal):
     return hashlib.sha256(value).hexdigest()
 
 
-def _rotate_authority(request, row, principal, now):
+def _rotate_authority(caller, row, principal, now):
     """Replace a locked session without extending Google freshness or lifetime.
 
     Django's cycle_key deletes its protected parent, so create a new parent and
     metadata explicitly. Revoked metadata stays available for ordered cleanup.
-    Concurrent requests holding the old cookie see only the revoked row.
+    Concurrent requests holding the old cookie see only the revoked row. Only
+    a web caller rotates; the caller also rotates the request's CSRF token.
     """
     _revoke(row, now, "admin_privileges_changed")
     session = import_module(settings.SESSION_ENGINE).SessionStore()
     session["principal"] = str(row.principal_id)
-    session["recovery_epoch"] = request.session.get("recovery_epoch")
+    session["recovery_epoch"] = caller.session.get("recovery_epoch")
     session["authority_fingerprint"] = _authority_fingerprint(principal)
     session.set_expiry(row.expires_at)
     session.save()
@@ -187,8 +188,7 @@ def _rotate_authority(request, row, principal, now):
         expires_at=row.expires_at,
         actor_id=row.principal_id,
     )
-    request.session = session
-    rotate_token(request)
+    caller.replace_session(session)
     return replacement
 
 
@@ -302,10 +302,19 @@ def reauthenticate_admin(request, user_id, *, store, authenticated_at):
     return principal
 
 
-def authenticated_admin(request, *, store, activity=False, read_only=False):
-    """Re-evaluate policy every time; passive status/presence calls never renew idle."""
+def authenticated_admin(caller, *, store, activity=False, read_only=False):
+    """Re-evaluate policy every time; passive status/presence calls never renew idle.
+
+    ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
+    request is still converted). A read-only automation session can never
+    record activity, and an automation caller is never rotated: a changed
+    authority refuses it instead.
+    """
     if activity and read_only:
         raise ValueError("Read-only authorization cannot renew session activity.")
+    caller = as_caller(caller)
+    if activity and caller.read_only:
+        raise PermissionError("Access is unavailable.")
     # A read-only recheck has no writes to recover independently. Reuse an
     # enclosing disclosure/audit transaction without two redundant savepoint
     # statements; a database error still makes that whole response fail closed.
@@ -313,14 +322,14 @@ def authenticated_admin(request, *, store, activity=False, read_only=False):
         query = PortalSession.objects.all()
         if not read_only:
             query = query.select_for_update()
-        row = query.filter(session_id=request.session.session_key).first()
+        row = query.filter(session_id=caller.session.session_key).first()
         if row is None or row.revoked_at is not None:
             return None
         now = database_now()
         reason = None
         if now >= min(row.expires_at, row.last_activity_at + ADMIN_IDLE):
             reason = "admin_timeout"
-        elif request.session.get("recovery_epoch") != revocation_epoch():
+        elif caller.session.get("recovery_epoch") != revocation_epoch():
             reason = "admin_revoked"
         try:
             principal = (
@@ -334,22 +343,22 @@ def authenticated_admin(request, *, store, activity=False, read_only=False):
             if not read_only:
                 _revoke(row, now, reason)
             return None
-        if request.session.get("authority_fingerprint") != _authority_fingerprint(
+        if caller.session.get("authority_fingerprint") != _authority_fingerprint(
             principal
         ):
             # A read guard cannot write or rotate a cookie after headers start.
             # Its ordinary admission must first establish a current session.
-            if read_only:
+            # Only the web rotates; automation re-admits on its next command.
+            if read_only or caller.channel != WEB:
                 return None
-            row = _rotate_authority(request, row, principal, now)
+            row = _rotate_authority(caller, row, principal, now)
         if activity:
             PortalSession.objects.filter(pk=row.pk).update(
                 last_activity_at=now,
                 version=F("version") + 1,
             )
             row.last_activity_at = now
-        request.portal_session = row
-        request.principal = principal
+        caller.admitted(row, principal)
         return principal
 
 
@@ -378,11 +387,19 @@ def freshness(request):
     return 0 <= age <= FRESH_SECONDS, max(0, int(age // 60))
 
 
-def require_fresh(request):
-    """A fresh Google round trip, not a browser flag, admits privileged commands."""
-    row = getattr(request, "portal_session", None)
+def require_fresh(caller):
+    """A fresh Google round trip, not a browser flag, admits privileged commands.
+
+    ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
+    request is still converted). No automation caller is admitted yet:
+    accepting a full-scope automation session in place of a fresh sign-in
+    needs its guard migration first.
+    """
+    caller = as_caller(caller)
+    row = caller.portal_session
     if (
-        row is None
+        caller.channel != WEB
+        or row is None
         or not 0
         <= (database_now() - row.authenticated_at).total_seconds()
         <= FRESH_SECONDS
