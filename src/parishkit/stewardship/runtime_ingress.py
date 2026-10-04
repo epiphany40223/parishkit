@@ -109,6 +109,66 @@ HOSTED_FILE_UPLOAD = "/admin/files/upload"
 
 
 def render_caddy(configuration):
+    """The Production Caddyfile: a public ACME site on the standard ports.
+
+    See ``_caddyfile`` for the shared body. Production listens on both the
+    HTTP and HTTPS ports (HTTP redirects to HTTPS) and obtains its certificate
+    from Let's Encrypt.
+    """
+    return _caddyfile(
+        configuration,
+        site=production_hostname(configuration),
+        global_options="    http_port 8080\n    https_port 8443",
+        tls="""tls {
+        issuer acme {
+            dir https://acme-v02.api.letsencrypt.org/directory
+        }
+    }""",
+    )
+
+
+def render_local_caddy(configuration):
+    """The LOCAL Caddyfile (#476): ``localhost`` under Caddy's own local CA.
+
+    The site is served with ``tls internal``, so there is no ACME account and
+    no public certificate; ``skip_install_trust`` keeps Caddy from trying to
+    install that CA into the container's trust store (the developer's
+    ``ca`` command exports it instead), and ``auto_https disable_redirects``
+    leaves Caddy with no HTTP listener at all, so only the HTTPS port exists
+    to be published. Everything else (the maintenance page, log filters, body
+    limits and timeouts) is the production body unchanged. This renderer never
+    consults ``production_hostname``; the only admitted profile is LOCAL.
+    """
+    if configuration.profile is not DeploymentProfile.LOCAL:
+        raise ConfigError("The local ingress serves only the local profile.")
+    if urlsplit(configuration.public_origin).hostname != "localhost":
+        raise ConfigError("The local ingress serves only localhost.")
+    return _caddyfile(
+        configuration,
+        site="localhost",
+        global_options="\n".join(
+            (
+                "    https_port 8443",
+                "    auto_https disable_redirects",
+                "    skip_install_trust",
+            )
+        ),
+        tls="tls internal",
+    )
+
+
+def render_ingress(configuration):
+    """The Caddyfile for a proxied profile: production's or LOCAL's.
+
+    The topology renderer calls this for every ``behind_proxy`` profile, so
+    the choice of ingress lives here beside the two renderers.
+    """
+    if configuration.profile is DeploymentProfile.LOCAL:
+        return render_local_caddy(configuration)
+    return render_caddy(configuration)
+
+
+def _caddyfile(configuration, *, site, global_options, tls):
     """Keep private data out of access and error logs, including upstream failures.
 
     Dropping the request object also handles encoded token paths without trying
@@ -123,8 +183,12 @@ def render_caddy(configuration):
     Hosted files (#346): only their upload route admits an 11 MB body (a
     10 MB file plus form overhead), and Caddy buffers each served file so a
     slow phone download never holds a web thread.
+
+    ``site`` is the site address, ``global_options`` the profile's lines of
+    the global options block (ports, automatic HTTPS and trust, already
+    indented), and ``tls`` the site's whole ``tls`` directive; the production
+    and local renderers differ only there.
     """
-    hostname = production_hostname(configuration)
     budget = configuration.runtime_budget
     upstreams = " ".join(
         configuration.runtime_network.web(index) + ":8000"
@@ -140,8 +204,7 @@ def render_caddy(configuration):
             }}"""
     return f"""{{
     admin off
-    http_port 8080
-    https_port 8443
+{global_options}
     log default {{
         output stdout
         format filter {{
@@ -165,12 +228,8 @@ def render_caddy(configuration):
     }}
 }}
 
-{hostname} {{
-    tls {{
-        issuer acme {{
-            dir https://acme-v02.api.letsencrypt.org/directory
-        }}
-    }}
+{site} {{
+    {tls}
     log {{
         output stdout
         format filter {{

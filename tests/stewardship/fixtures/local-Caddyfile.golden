@@ -1,0 +1,109 @@
+{
+    admin off
+    https_port 8443
+    auto_https disable_redirects
+    skip_install_trust
+    log default {
+        output stdout
+        format filter {
+            request delete
+            resp_headers delete
+            headers delete
+            error delete
+            msg replace proxy_event
+            wrap json
+        }
+    }
+    servers {
+        protocols h1 h2
+        max_header_size 32KB
+        timeouts {
+            read_header 10s
+            read_body 30s
+            write 380s
+            idle 60s
+        }
+    }
+}
+
+localhost {
+    tls internal
+    log {
+        output stdout
+        format filter {
+            request delete
+            resp_headers delete
+            headers delete
+            error delete
+            msg replace proxy_request
+            wrap json
+        }
+    }
+    route {
+        @internal path /health/* /metrics /metrics/*
+        respond @internal 404
+        @hosted_file_upload path /admin/files/upload
+        request_body @hosted_file_upload {
+            max_size 11MB
+        }
+        @ordinary_body not path /admin/files/upload
+        request_body @ordinary_body {
+            max_size 6MB
+        }
+        handle_path /static/* {
+            header Cache-Control "no-cache"
+            root * /srv/static
+            file_server
+        }
+        @hosted_file path /files/*
+        reverse_proxy @hosted_file 172.29.241.10:8000 {
+            response_buffers 11MB
+            header_up -Forwarded
+            header_up -X-Real-IP
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 380s
+                read_timeout 380s
+                write_timeout 380s
+            }
+        }
+        reverse_proxy 172.29.241.10:8000 {
+            header_up -Forwarded
+            header_up -X-Real-IP
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 380s
+                read_timeout 380s
+                write_timeout 380s
+            }
+        }
+    }
+    handle_errors 502 503 {
+        header {
+            Content-Type "text/html; charset=utf-8"
+            Cache-Control "no-store"
+            Retry-After "120"
+            Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            X-Content-Type-Options "nosniff"
+            Referrer-Policy "no-referrer"
+        }
+        respond <<MAINTENANCE
+            <!doctype html>
+            <html lang="en">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta http-equiv="refresh" content="60">
+            <title>Updating the site</title>
+            </head>
+            <body style="margin:0;background:#f6f4ef;color:#1b2a31;font:18px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif">
+            <main style="max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+            <h1 style="margin:0 0 .75rem;font-size:1.5rem">We&rsquo;re updating the site</h1>
+            <p style="margin:0 0 .75rem">Please try again in a couple of minutes. This page will reload by itself.</p>
+            <p style="margin:0;color:#4f5e66">Thank you for your patience.</p>
+            </main>
+            </body>
+            </html>
+            MAINTENANCE 503
+    }
+}

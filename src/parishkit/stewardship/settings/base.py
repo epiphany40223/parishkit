@@ -53,6 +53,7 @@ TEMPLATES = [
             "context_processors": [
                 "parishkit.stewardship.accounts.branding_context.parish_branding",
                 "parishkit.stewardship.accounts.branding_context.date_format",
+                "parishkit.stewardship.accounts.branding_context.local_environment",
                 "parishkit.stewardship.accounts.admin_context.portal_chrome",
             ]
         },
