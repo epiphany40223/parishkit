@@ -308,6 +308,7 @@ DESCRIPTIONS = {
     "talents_report_exported": _(
         "Someone downloaded the talents and limitations report."
     ),
+    "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "portal_users_viewed": _("An Administrator opened the portal users list."),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),

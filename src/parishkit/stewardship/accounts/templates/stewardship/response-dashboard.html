@@ -1,0 +1,37 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}{# The response dashboard (#477): reports/response_dashboard.py builds the context. Data first; the explanation sits in the About panel at the end. #}
+{% block title %}{% translate "Response dashboard" %}{% endblock %}
+{% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
+{% block content %}
+<h1>{% translate "Response dashboard" %}</h1>
+{% aboutpage "response-dashboard" %}<p>{% translate "Each stage counts Families, once each, up to the moment shown as Counted at. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
+<p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
+<p>{% translate "The activity chart counts each Family the first time it followed its link, opened the form or submitted, in the campaign's time zone. The dashed lines mark when each invitation and reminder was scheduled." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:participation' campaign.pk %}">{% translate "Campaign reports and selection" %}</a></p>
+{# The mode and grain links refresh this region in place (ui-v1.js, data-region-link); without script they load the page. #}
+<div id="response-dashboard" data-table-region>
+<p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
+{% if can_test %}<nav class="choice-links" aria-label="{% translate 'Responses shown' %}"><a href="{{ production_url }}" data-region-link="mode-production"{% if not testing %} aria-current="page"{% endif %}>{% translate "Production" %}</a> <a href="{{ testing_url }}" data-region-link="mode-testing"{% if testing %} aria-current="page"{% endif %}>{% translate "Testing rehearsal" %}</a></nav>{% endif %}
+{% if testing and metrics %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
+{% if metrics %}
+<p>{% translate "Counted at" %} <time datetime="{{ metrics.as_of|instant }}" data-local-instant>{{ metrics.as_of|instant }}</time></p>
+<section class="panel" aria-labelledby="stages-heading">
+<h2 id="stages-heading">{% translate "Families by stage" %}</h2>
+{% if not invited %}<p>{% translate "No invitations have been delivered yet." %}</p>{% endif %}
+<ul class="stat-tiles">{% for tile in tiles %}<li class="stat-tile"><span class="stat-label">{{ tile.label }}</span> <span class="stat-value">{{ tile.count|number }}</span>{% if invited and tile.key != 'invited' %} <span class="stat-detail">{% blocktranslate with share=tile.share %}{{ share }} compared with invited{% endblocktranslate %}</span>{% endif %}{% if tile.note %} <span class="stat-detail">{{ tile.note }}</span>{% endif %}</li>{% endfor %}</ul>
+<h3>{% translate "Also counted" %}</h3>
+<dl>{% for label, count in figures %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>
+</section>
+<section class="panel" aria-labelledby="funnel-heading">
+<h2 id="funnel-heading">{{ charts.0.title }}</h2>
+{% include 'stewardship/components/chart.html' with chart=charts.0 %}
+</section>
+<section class="panel" aria-labelledby="activity-heading">
+<h2 id="activity-heading">{{ charts.1.title }}</h2>
+<nav class="choice-links" aria-label="{% translate 'Activity grouped by' %}"><a href="{{ hour_url }}" data-region-link="grain-hour"{% if metrics.grain == 'hour' %} aria-current="page"{% endif %}>{% translate "By hour" %}</a> <a href="{{ day_url }}" data-region-link="grain-day"{% if metrics.grain == 'day' %} aria-current="page"{% endif %}>{% translate "By day" %}</a></nav>
+{% include 'stewardship/components/chart.html' with chart=charts.1 %}
+</section>
+{% else %}
+<section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing responses to show. Choose Production to see live responses." %}</p></section>
+{% endif %}
+</div>
+{% endblock %}

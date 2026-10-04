@@ -77,6 +77,7 @@ class Action(StrEnum):
     FINANCIAL_REPORT_VIEWED = "financial_report_viewed"
     TALENTS_REPORT_VIEWED = "talents_report_viewed"
     TALENTS_REPORT_EXPORTED = "talents_report_exported"
+    RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"

@@ -180,6 +180,9 @@
     if (root === document) return;
     wireBrowserTimezone(root);
     if (window.ParishDates) window.ParishDates.localize(root);
+    // A swapped-in region can carry charts (the response dashboard); the
+    // chart engine draws them as it drew the page's own (chart-v1.js).
+    if (window.ParishCharts) window.ParishCharts.render(root);
   };
   enhanceTable(document);
 
@@ -198,7 +201,10 @@
   // Without script the controls work as before, for the same reason. A page's
   // filter form (form#table-filters, #484) is applied the same way, unless it
   // is marked data-filter-reload because its options reshape far more of the
-  // page than the table (the participation chart).
+  // page than the table (the participation chart). A region may also hold
+  // links that choose another view of it (a[data-region-link], such as the
+  // response dashboard's mode and grain): they refresh the region the same
+  // way, and focus returns to the link with the same data-region-link value.
   const tableStatus = document.createElement("div");
   tableStatus.className = "visually-hidden";
   tableStatus.setAttribute("role", "status");
@@ -232,6 +238,10 @@
   // outside every region and is never replaced, so focus simply stays on it.
   const focusAfter = (region, control) => {
     if (!region.contains(control)) return () => control;
+    const choice = control.closest("[data-region-link]")?.dataset.regionLink;
+    if (choice !== undefined) {
+      return (fresh) => fresh.querySelector(`[data-region-link="${CSS.escape(choice)}"]`);
+    }
     const heading = control.closest("th[data-sort-column]");
     if (heading) {
       const column = CSS.escape(heading.dataset.sortColumn);
@@ -256,6 +266,12 @@
   const tableCount = (region) => (region.querySelector(".table-count")?.textContent || "")
     .replace(/\s+/g, " ").trim();
   const describeTable = (fresh, control) => {
+    // A view link announces the view now shown (its own text, "By day").
+    const choice = control.closest("[data-region-link]")?.dataset.regionLink;
+    if (choice !== undefined) {
+      return (fresh.querySelector(`[data-region-link="${CSS.escape(choice)}"]`)?.textContent || "")
+        .replace(/\s+/g, " ").trim();
+    }
     if (!control.closest("[data-table-region]")) {
       const regions = [...document.querySelectorAll("[data-table-region][id]")];
       if (regions.length < 2) return tableCount(fresh);
@@ -282,6 +298,8 @@
     fresh.querySelectorAll("input[data-select-row]").forEach((box) => {
       if (chosen.has(box.value)) box.checked = true;
     });
+    // Charts keep their space until the fresh ones are drawn (chart-v1.js).
+    if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
     region.replaceWith(fresh);
     enhanceTable(fresh);
   };
@@ -406,11 +424,12 @@
     announce(describeTable(fresh, control));
   };
   // GET tables: sort headings and the navigator's Previous and Next are
-  // links. A modified click (new tab, new window) keeps its ordinary meaning.
+  // links, as are a region's view links. A modified click (new tab, new
+  // window) keeps its ordinary meaning.
   document.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
         || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
-    const link = event.target.closest("a.sort-link, .table-nav a[href]");
+    const link = event.target.closest("a.sort-link, .table-nav a[href], a[data-region-link][href]");
     const region = link && tableRegion(link);
     if (!region) return;
     event.preventDefault();

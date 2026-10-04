@@ -100,7 +100,10 @@ own renderer):
   Vega runs in its interpreter mode (no `eval`), nothing injects a stylesheet
   (the tooltip's is served as a static file), there is no actions menu, and
   no asset comes from a third party; the runtime's data loader refuses every
-  load, since a specification carries its data inline. The Vega, Vega-Lite
+  load, since a specification carries its data inline. A chart follows its
+  panel's width and is measured again whenever the panel changes width after
+  it was drawn; charts in a region refreshed in place are drawn again, keeping
+  their space until they are. The Vega, Vega-Lite
   and vega-embed bundles are vendored under the static files, each pinned by
   SHA-256 with its version and source URL, with the license notices of
   everything they bundle (`reports/chart_assets.py`). vl-convert reports the
@@ -113,7 +116,8 @@ own renderer):
   (at twice its CSS size, for the digests' `cid:` images) and SVG, without
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
-  specified with the dashboard. Rendering happens only in workers and
+  specified in a later increment (the [response dashboard](#response-dashboard)
+  does not offer them yet). Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
   like the mail helpers (no environment, no error text back): the worker
@@ -324,9 +328,10 @@ furthest form step reached or a Family's current eligibility; those belong to
 live views. The query returns one row per Family of the campaign with each
 instant as it stood at the cutoff, so the totals, the series below and the
 lists of Families behind any count all come from the same rows. The
-[chart engine](#chart-engine) draws the funnel and the activity series; the
-dashboard, its lists and the per-Family timeline are specified with the next
-increment of this report.
+[chart engine](#chart-engine) draws the funnel and the activity series on the
+[response dashboard](#response-dashboard); the lists of Families behind the
+counts and the per-Family timeline are specified with the next increments of
+this report.
 
 ### Funnel stages
 
@@ -405,6 +410,47 @@ marker counts occurrences planned during the rehearsal epoch; after a go-live
 is cancelled mid-cleanup, a new epoch can reuse the previous epoch's Testing
 occurrences, so its emails count as invited without appearing in a marker. Interactive and emailed renderings of the series use this
 one result.
+
+### Response dashboard
+
+**Access:** Admin and Staff (`CAMPAIGN_REPORT`); the Testing view is Admin
+only.
+
+`reports/<campaign>/responses/` shows the funnel of one campaign at the
+database's current instant, labelled **Counted at**. Data comes first: a
+tile per [funnel stage](#funnel-stages) with its count and its share compared
+with Invited, the three figures reported beside the funnel, then the funnel
+chart and the [activity chart](#response-activity-over-time) with its send
+markers, each with its summary and exact-values table. The explanation sits
+in the [About this page](../admin-portal/spec.md#page-help) panel after the
+data. Each chart is named by its panel's heading rather than a title drawn
+inside it. Until an invitation has been delivered the tiles leave out their
+shares and the page says so in one sentence. The page shows counts only, never
+a Family's name or identifier, and sends `Cache-Control: no-store`.
+
+The URL carries only two closed choices. `mode` is `production` (the default)
+or `testing`: Production reads live responses and Production mail; Testing
+reads the campaign's active rehearsal epoch, is labelled as Testing, and is
+offered and admitted for Administrators only, since Testing responses appear
+only in explicit Admin testing views (see
+[population and calculation rules](#population-and-calculation-rules)).
+With no active rehearsal, the Testing view says there is nothing to show.
+`grain` is `hour` or `day`; without it the activity chart is hourly while
+everything it shows (the first link follow, form open or submission, or the
+first marked send) lies within three days of the cutoff, and daily after
+that. Both grains come from the one read, so switching never changes a
+total. Both choices are links that refresh the dashboard in place, as the
+[Admin tables](../admin-portal/spec.md#admin-tables) do: no reload, the
+reader's scroll position and focus on the chosen link kept, the charts drawn
+again, and the address replaced (so Back does not step through the choices);
+without script they load the page.
+
+Each view reads the funnel once, with the report's
+[campaign read guard](../data/spec.md#campaign-read-guards) and role recheck,
+and records one audit event with its outcome and no reported value. The
+browser draws the charts; a page view never renders an image on the server.
+The lists behind the counts, the per-Family timeline and the charts' PNG and
+PDF downloads follow in later increments.
 
 ## Additional information
 
