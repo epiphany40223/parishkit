@@ -6,7 +6,9 @@ a recording `ssh`, to show that a bad digest or option never reaches a host,
 and the host half (`tools/stewardship-upgrade-host.sh`, which the local half
 uploads) with a `docker` that answers as a healthy, set-up deployment would,
 to pin the order of the runbook's steps, the abandon paths and the
-rollback's refusals.
+rollback's refusals. The host half's `local` mode, which the local laptop
+environment's `deploy` runs (#476, OPS-10.10), is pinned here too, together
+with the proof that a Production invocation is unchanged by it.
 """
 
 import json
@@ -25,6 +27,11 @@ OFFICIAL_REPO = "ghcr.io/epiphany40223/parishkit/stewardship"
 UUID = "00000000-0000-4000-8000-000000000000"
 CURRENT = f"{REPO}@sha256:" + "a" * 64
 TARGET = f"{REPO}@sha256:" + "b" * 64
+# The local laptop environment's images: LOCAL tags built inside its VM.
+LOCAL_CURRENT = "parishkit-stewardship-local:" + "c" * 40 + "-1700000000"
+LOCAL_TARGET = "parishkit-stewardship-local:" + "d" * 40 + "-dirty-1700000600"
+DERIVED_PREFIX = "parishkit-stewardship-local-faketime-stewardship:"
+DERIVED_TARGET = DERIVED_PREFIX + "d" * 40 + "-dirty-1700000600"
 
 
 def host_script():
@@ -228,10 +235,18 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # service list the re-rendered Compose file has after a retarget.
 # `retarget-image` rewrites compose.json and the three role documents as
 # the real command would, so the final checks read what the run itself
-# wrote. FAKE_BACKUP_GARBAGE makes the backup's last line a refusal that is
-# not JSON. Limits: the upgrade check's SQL is never executed (the stand-in
-# answers FAKE_NOOP), `install -o` ownership is not exercised, and no
-# container runs, so the images' own refusals are out of scope.
+# wrote. For the local mode: FAKE_OFFSITE is the off-site state the backup
+# reports (default uploaded); FAKE_BACKUP_UNRECORDED makes it report no
+# backup at all; FAKE_BACKUP_GARBAGE makes its last line a refusal that is
+# not JSON; FAKE_DEBUG_VALUE is what every container's debug variable
+# says (default 0); FAKE_COMPOSE_FILES is the project's ConfigFiles answer
+# (default the one Compose file); FAKE_OVERRIDE names the faketime override
+# `retarget-image` re-renders with derived image names; `image inspect`
+# finds every image but the derived fake-clock application image, so a
+# fake-clock run has exactly one derived image to build. Limits: the
+# upgrade check's SQL is never executed (the stand-in answers FAKE_NOOP),
+# `install -o` ownership is not exercised, and no container runs, so the
+# images' own refusals are out of scope.
 FAKE_DOCKER = r"""
 echo "$*" >>"$FAKE_LOG"
 stopped="$FAKE_STATE/stopped"
@@ -241,8 +256,14 @@ if [ -e "$FAKE_STATE/retargeted" ] && [ -n "$FAKE_SERVICES_AFTER" ]; then
     read -r -a all <<<"$FAKE_SERVICES_AFTER"
 fi
 last=${*: -1}
-json() { echo '{"backup_recorded": true, "offsite": {"state": "'"$1"'"}}'; }
+json() {
+    recorded=true
+    [ -z "$FAKE_BACKUP_UNRECORDED" ] || recorded=false
+    echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
+}
 case "$*" in
+    "image inspect "*faketime-stewardship*) exit 1 ;;
+    "image inspect "*) ;;
     *" stop "*)
         if [ -n "$FAKE_STOP_FAIL" ] && [[ "$*" == *" stop web"* ]]; then
             echo "stop refused by the stand-in" >&2
@@ -265,11 +286,12 @@ case "$*" in
     *" ps -q "*) ;;
     *" ps --quiet") printf '%s\n' id-web id-worker ;;
     "compose ls"*)
-        echo '[{"Name":"stewardship","ConfigFiles":"'"$FAKE_COMPOSE"'"}]' ;;
+        files=${FAKE_COMPOSE_FILES:-$FAKE_COMPOSE}
+        echo '[{"Name":"'"$FAKE_PROJECT"'","ConfigFiles":"'"$files"'"}]' ;;
     *"RepoDigests"*) echo "${FAKE_DIGESTS:-$last}" ;;
     *"{{.Name}}"*) echo "/stewardship-$last" ;;
     *"Config.Env"*)
-        on=0
+        on=${FAKE_DEBUG_VALUE:-0}
         [ -z "$FAKE_DEBUG_ON" ] || [ "$last" != id-worker ] || on=1
         echo "PARISHKIT_DEBUG_LOGGING=$on" ;;
     *" collect-static --destination "*)
@@ -286,7 +308,8 @@ case "$*" in
     *" run --rm -T backup-worker")
         echo '{"level":"DEBUG"}'
         if [ -n "$FAKE_BACKUP_GARBAGE" ]; then echo "ERROR: backup refused; no JSON"
-        elif [ -n "$FAKE_BACKUP_FAIL" ]; then json failed; else json uploaded; fi ;;
+        elif [ -n "$FAKE_BACKUP_FAIL" ]; then json failed
+        else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
         bulk=false batch=20
@@ -297,6 +320,12 @@ case "$*" in
             esac
         done
         echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        if [ -n "$FAKE_OVERRIDE" ]; then
+            derived="parishkit-stewardship-local-faketime-stewardship:${last##*:}"
+            echo '{"services": {"web": {"image": "'"$derived"'"},' \
+                '"postgres": {"image": "faketime-postgres:x"},' \
+                '"valkey": {"image": "faketime-valkey:x"}}}' >"$FAKE_OVERRIDE"
+        fi
         for role in worker mail-dispatch scheduler; do
             doc='{"deployment": {"bulk_family_send": '"$bulk"','
             echo "$doc"' "bulk_send_batch": '"$batch"'}}' \
@@ -321,7 +350,19 @@ exit 0
 
 
 def run_host(
-    tmp_path, mode, *, noop="t", status=0, kept=None, bulk=True, prepare=None, **fake
+    tmp_path,
+    mode,
+    *,
+    noop="t",
+    status=0,
+    kept=None,
+    bulk=True,
+    prepare=None,
+    profile=None,
+    clock="normal",
+    image=None,
+    env=None,
+    **fake,
 ):
     """Run the host half against the stand-ins.
 
@@ -330,7 +371,13 @@ def run_host(
     the script must end with; `kept` is the content of a kept static tree
     for the target digest, when there is one; `bulk` sets the deployment's
     bulk Family send switch; `prepare(root)` may alter the runtime root
-    before the run; `fake` sets the stand-in's FAKE_* switches.
+    before the run; `fake` sets the stand-in's FAKE_* switches. `profile`
+    None runs the eight-argument Production invocation; "local" appends
+    `local BUILD` and lays the root out as the local environment's `up`
+    leaves it (marker, LOCAL deployment YAML, clock-mode marker saying
+    `clock`, the override file in fake mode) with `image` (default a LOCAL
+    tag) as the target; any other value is passed through as the profile.
+    `env` adds to the script's environment.
     """
     if shutil.which("jq") is None or shutil.which("sha256sum") is None:
         # The runner has both; only the in-image run (which does not see
@@ -344,19 +391,38 @@ def run_host(
     services = root / "config" / "services"
     services.mkdir(parents=True)
     (services / "Caddyfile").write_text("caddy\n")
+    local = profile == "local"
+    current = LOCAL_CURRENT if local else CURRENT
+    target = image or (LOCAL_TARGET if local else TARGET)
     (services / "compose.json").write_text(
-        json.dumps({"services": {"web": {"image": CURRENT}}})
+        json.dumps({"services": {"web": {"image": current}}})
     )
-    (services / "web.yaml").write_text(
-        json.dumps(
-            {
-                "deployment": {
-                    "postgres": {"name": "stewardship"},
-                    "public_origin": "https://stewardship.example.test",
-                }
-            }
+    origin = "https://localhost:8443" if local else "https://stewardship.example.test"
+    web = {"deployment": {"postgres": {"name": "stewardship"}, "public_origin": origin}}
+    (services / "web.yaml").write_text(json.dumps(web))
+    yaml = tmp_path / "deployment.yaml"
+    build = tmp_path / "build"
+    (build / "deploy" / "stewardship").mkdir(parents=True)
+    (build / "deploy" / "stewardship" / "Dockerfile.faketime").write_text("ARG BASE\n")
+    if local:
+        (root / ".parishkit-local").write_text("parishkit-local deployment x\n")
+        yaml.write_text(
+            "deployment:\n  profile: local\n  public_origin: https://localhost:8443\n"
         )
-    )
+        (root / "run" / "local" / "clock").mkdir(parents=True)
+        (root / "run" / "local" / "clock" / "mode").write_text(clock + "\n")
+        if clock == "fake":
+            (services / "compose.faketime.json").write_text(
+                json.dumps(
+                    {
+                        "services": {
+                            "web": {"image": DERIVED_PREFIX + current.split(":")[1]},
+                            "postgres": {"image": "faketime-postgres:x"},
+                            "valkey": {"image": "faketime-valkey:x"},
+                        }
+                    }
+                )
+            )
     for role in ("worker", "mail-dispatch", "scheduler"):
         (services / f"{role}.yaml").write_text(
             json.dumps(
@@ -366,7 +432,7 @@ def run_host(
     (root / "cache" / "static").mkdir(parents=True)
     (root / "cache" / "static" / "old.js").write_text("old")
     if kept is not None:
-        hex_ = TARGET.rsplit(":", 1)[1]
+        hex_ = target.rsplit(":", 1)[1]
         (root / "cache" / f"static.{hex_}").mkdir()
         (root / "cache" / f"static.{hex_}" / "kept.js").write_text(kept)
     if prepare is not None:
@@ -377,29 +443,38 @@ def run_host(
     # replaced; FAKE_ORIGIN_FAIL makes the origin unreachable.
     executable_stub(bin_dir, "install", 'mkdir -p "${@: -1}"')
     executable_stub(bin_dir, "sleep", "exit 0")
+    # The stand-in answers as the application does through caddy (the local
+    # mode reads the Server header; Production only the exit status).
     executable_stub(
         bin_dir,
         "curl",
-        'echo "curl $*" >>"$FAKE_LOG"; [ -z "$FAKE_ORIGIN_FAIL" ] || exit 7',
+        'echo "curl $*" >>"$FAKE_LOG"; [ -z "$FAKE_ORIGIN_FAIL" ] || exit 7; '
+        'printf "HTTP/2 200\\r\\nserver: gunicorn\\r\\n"',
     )
+    # coreutils timeout is Linux-only here; the stand-in just runs the command.
+    executable_stub(bin_dir, "timeout", 'shift; exec "$@"')
     state = tmp_path / "state"
     state.mkdir()
     logs = tmp_path / "logs"
     logs.mkdir()
     log = tmp_path / "docker.log"
     log.touch()
+    project = "parishkit-local" if local else "stewardship"
+    trailing = [] if profile is None else [profile, str(build)]
+    override = str(services / "compose.faketime.json") if clock == "fake" else ""
     result = subprocess.run(
         [
             "bash",
             str(HOST),
             REPO,
-            TARGET,
+            target,
             str(root),
-            "stewardship",
-            str(tmp_path / "deployment.yaml"),
+            project,
+            str(yaml),
             UUID,
             fake.pop("schema_change", "0"),
             mode,
+            *trailing,
         ],
         env={
             **os.environ,
@@ -407,10 +482,13 @@ def run_host(
             "FAKE_LOG": str(log),
             "FAKE_STATE": str(state),
             "FAKE_NOOP": noop,
+            "FAKE_PROJECT": project,
             "FAKE_COMPOSE": str(services / "compose.json"),
+            "FAKE_OVERRIDE": override,
             "FAKE_CADDYFILE": str(services / "Caddyfile"),
             "STEWARDSHIP_LOG_DIR": str(logs),
             **{"FAKE_" + name.upper(): str(value) for name, value in fake.items()},
+            **(env or {}),
         },
         text=True,
         capture_output=True,
@@ -418,9 +496,11 @@ def run_host(
     )
     output = result.stdout + result.stderr
     assert result.returncode == status, output
-    # The whole log is also kept on the host, named after the mode.
+    # The whole log is also kept on the host, named after the mode (a usage
+    # error ends before the log opens).
     kept_logs = list(logs.glob(f"stewardship-{mode}-*.log"))
-    assert len(kept_logs) == 1 and "Log: " in kept_logs[0].read_text()
+    if status != 2:
+        assert len(kept_logs) == 1 and "Log: " in kept_logs[0].read_text()
     return log.read_text().splitlines(), output, root
 
 
@@ -477,9 +557,17 @@ def test_an_upgrade_with_a_schema_change_refuses_without_the_override(tmp_path):
     """Anything but t before the stops needs STEWARDSHIP_SCHEMA_CHANGE=1."""
     calls, output, _ = run_host(tmp_path, "upgrade", noop="f", status=1)
     assert "set STEWARDSHIP_SCHEMA_CHANGE=1" in output
+    assert "deploy --schema-change" not in output
     assert "Failed before anything stopped; nothing changed" in output
     assert not any(" stop " in call for call in calls)
     assert not any(" retarget-image " in call for call in calls)
+    # Local mode names the operator command instead.
+    calls, output, _ = run_host(
+        tmp_path / "local", "upgrade", noop="f", status=1, profile="local"
+    )
+    assert "re-run as 'deploy --schema-change'" in output
+    assert "STEWARDSHIP_SCHEMA_CHANGE" not in output
+    assert not any(" stop " in call for call in calls)
 
 
 def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
@@ -503,9 +591,12 @@ def test_a_failed_backup_abandons_before_web_stops(tmp_path):
     assert not any(" retarget-image " in call for call in calls)
 
 
-def test_a_backup_that_prints_no_json_abandons_before_web_stops(tmp_path):
+@pytest.mark.parametrize("profile", [None, "local"])
+def test_a_backup_that_prints_no_json_abandons_before_web_stops(tmp_path, profile):
     """A refusal line instead of the JSON document is read as no backup."""
-    calls, output, _ = run_host(tmp_path, "upgrade", status=1, backup_garbage=True)
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, profile=profile, backup_garbage=True
+    )
     assert "ERROR: backup refused; no JSON" in output
     assert "did not complete with its off-host copy; abandoning the upgrade" in output
     assert "restarting the background services" in output
@@ -716,3 +807,211 @@ def test_a_partial_static_refresh_says_how_to_restore(tmp_path):
     assert f"cp -a {aside}/. {root / 'cache' / 'static'}/" in output
     assert (aside / "locked" / "file.js").exists()
     assert "caddy serves the maintenance page" in output
+
+
+# ---------------------------------------------------------------------------
+# The host half's local mode (#476, OPS-10.10): the local laptop environment's
+# `deploy`, and the proof that Production is untouched by it.
+
+
+def local_root_id(image):
+    """What names a LOCAL image's kept static tree: the tag after the colon."""
+    return image.split(":", 1)[1]
+
+
+def test_production_mode_is_unchanged_by_a_local_marker(tmp_path):
+    """Eight arguments are Production: the marker, clock and debug rules never apply."""
+
+    def marked(root):
+        (root / ".parishkit-local").write_text("marker\n")
+        (root / "run" / "local" / "clock").mkdir(parents=True)
+        (root / "run" / "local" / "clock" / "mode").write_text("fake\n")
+
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", prepare=marked, env={"PARISHKIT_DEBUG_LOGGING": "1"}
+    )
+    assert any(f"pull --quiet {TARGET}" == c for c in calls)
+    assert "clock mode" not in output and "faketime" not in "".join(calls)
+    # Production exports 0 whatever the caller's environment says, so the
+    # containers answering 0 is not a problem.
+    assert "NOT healthy" not in output and f"Upgraded to {TARGET} in" in output
+    probe = "curl -fsS -o /dev/null --max-time 20 https://stewardship.example.test/"
+    assert probe in calls
+
+
+def test_production_mode_still_requires_the_uploaded_offsite_copy(tmp_path):
+    """not_configured is accepted by local mode only; Production abandons."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, offsite="not_configured")
+    assert "did not complete with its off-host copy" in output
+    assert not any(" stop web" in call for call in calls)
+
+
+def test_an_unknown_profile_or_a_local_mode_without_a_build_is_a_usage_error(tmp_path):
+    """Only production (implicit) and `local BUILD` are accepted."""
+    calls, output, _ = run_host(tmp_path / "a", "upgrade", status=2, profile="staging")
+    assert "usage:" in output and calls == []
+    # Local without the packed checkout directory.
+    root = tmp_path / "b" / "root"
+    arguments = [REPO, LOCAL_TARGET, str(root), "parishkit-local", "y", UUID, "0"]
+    result = subprocess.run(
+        ["bash", str(HOST), *arguments, "upgrade", "local"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2 and "packed checkout" in result.stderr
+
+
+def test_local_mode_refuses_anything_but_a_local_deployment(tmp_path):
+    """No marker, no LOCAL profile, a digest or an unbuilt image: nothing runs."""
+
+    def unmarked(root):
+        (root / ".parishkit-local").unlink()
+
+    calls, output, _ = run_host(
+        tmp_path / "marker", "upgrade", status=1, profile="local", prepare=unmarked
+    )
+    assert "does not carry the local marker" in output and calls == []
+
+    def other_profile(root):
+        yaml = root.parent / "deployment.yaml"
+        yaml.write_text("deployment:\n  profile: production\n")
+
+    calls, output, _ = run_host(
+        tmp_path / "profile",
+        "upgrade",
+        status=1,
+        profile="local",
+        prepare=other_profile,
+    )
+    assert "does not say 'profile: local'" in output and calls == []
+    calls, output, _ = run_host(
+        tmp_path / "digest", "upgrade", status=1, profile="local", image=TARGET
+    )
+    assert "is not a LOCAL image tag" in output and calls == []
+
+    def no_clock(root):
+        (root / "run" / "local" / "clock" / "mode").unlink()
+
+    calls, output, _ = run_host(
+        tmp_path / "clock", "upgrade", status=1, profile="local", prepare=no_clock
+    )
+    assert "expected fake or normal" in output
+    assert calls == [f"image inspect {LOCAL_TARGET}"]
+    assert "Failed before anything stopped; nothing changed" in output
+
+
+def test_a_local_upgrade_follows_the_production_steps_without_a_pull(tmp_path):
+    """Same order as Production; the image is local, the off-site copy unconfigured."""
+    calls, output, root = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        offsite="not_configured",
+        debug_value="1",
+        env={"PARISHKIT_DEBUG_LOGGING": "1"},
+    )
+    assert not any(" pull " in call or "RepoDigests" in call for call in calls)
+    assert "Using the local image" in output and "nothing to pull" in output
+    inspect = first(calls, f"image inspect {LOCAL_TARGET}")
+    stop_background = first(calls, " stop worker scheduler mail-dispatch")
+    for fragment in (" collect-static ", " upgrade-check ", "PGOPTIONS"):
+        assert inspect < first(calls, fragment) < stop_background, fragment
+    backup = first(calls, "backup-worker")
+    stop_web = first(calls, " stop web")
+    retarget = first(calls, " retarget-image ")
+    assert stop_background < backup < stop_web < retarget
+    assert (
+        f" {LOCAL_TARGET} retarget-image --config /run/operator.yaml" in calls[retarget]
+    )
+    assert calls[retarget].endswith(f" --image {LOCAL_TARGET}")
+    assert retarget < first(calls, "up --detach --wait web")
+    # Every Compose call names the local project and one file (normal mode).
+    for call in calls:
+        if call.startswith("compose -f"):
+            assert "-p parishkit-local" in call and "faketime" not in call
+    # The kept tree is named after the replaced tag, not a digest.
+    kept = root / "cache" / f"static.{local_root_id(LOCAL_CURRENT)}"
+    assert (kept / "old.js").exists()
+    assert (root / "cache" / "static" / "new.js").exists()
+    # The deployment's debug setting is kept and checked, not forced to 0.
+    assert "debug logging 1" in output and "NOT healthy" not in output
+    assert "curl -ksSI --max-time 20 https://localhost:8443/" in calls
+    assert f"Upgraded to {LOCAL_TARGET} in" in output
+    assert f"Replaced release: {LOCAL_CURRENT}" in output
+
+
+def test_a_local_upgrade_still_requires_the_backup(tmp_path):
+    """Local mode waives the off-host copy, not the backup: both failures abandon."""
+    calls, output, _ = run_host(
+        tmp_path / "unrecorded",
+        "upgrade",
+        status=1,
+        profile="local",
+        offsite="not_configured",
+        backup_unrecorded=True,
+    )
+    assert "did not complete with its off-host copy; abandoning" in output
+    assert "restarting the background services" in output
+    assert not any(" stop web" in call for call in calls)
+    # An off-site copy that was configured but failed is not "not configured".
+    calls, output, _ = run_host(
+        tmp_path / "failed", "upgrade", status=1, profile="local", backup_fail=True
+    )
+    assert "abandoning" in output and not any(" stop web" in c for c in calls)
+
+
+def test_a_local_upgrade_in_fake_clock_mode_keeps_the_override(tmp_path):
+    """Every Compose call carries the override; the derived image is built in step 3."""
+    calls, output, root = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        clock="fake",
+        offsite="not_configured",
+        compose_files=str(root_of(tmp_path) / "compose.json")
+        + ","
+        + str(root_of(tmp_path) / "compose.faketime.json"),
+    )
+    override = str(root / "config" / "services" / "compose.faketime.json")
+    for call in calls:
+        if call.startswith("compose -f"):
+            assert f" -f {override} -p parishkit-local" in call, call
+    assert "fake clock mode" in output
+    retarget = first(calls, " retarget-image ")
+    build = first(calls, "build --quiet --file")
+    assert retarget < build < first(calls, "up --detach --wait web")
+    dockerfile = tmp_path / "build" / "deploy" / "stewardship" / "Dockerfile.faketime"
+    assert calls[build] == (
+        f"build --quiet --file {dockerfile} --build-arg BASE={LOCAL_TARGET} "
+        f"--tag {DERIVED_TARGET} {dockerfile.parent}"
+    )
+    # The store images' derived forms exist already: built once, never again.
+    assert sum("build --quiet" in c for c in calls) == 1
+    assert "faketime-postgres:x (already built)" in output
+    assert f"Upgraded to {LOCAL_TARGET} in" in output
+
+
+def root_of(tmp_path):
+    """The services directory run_host lays out under tmp_path."""
+    return tmp_path / "root" / "config" / "services"
+
+
+def test_a_local_rollback_uses_the_kept_tree_and_refuses_a_changed_schema(tmp_path):
+    """Image-only, as in Production: kept tree, no pull, refusal on f."""
+    calls, output, root = run_host(
+        tmp_path / "ok",
+        "rollback",
+        profile="local",
+        kept="kept",
+        offsite="not_configured",
+    )
+    assert not any(" pull " in call or " collect-static " in call for call in calls)
+    tree = root / "cache" / f"static.{local_root_id(LOCAL_TARGET)}"
+    assert f"Using the kept static tree {tree}" in output
+    assert (root / "cache" / "static" / "kept.js").read_text() == "kept"
+    assert f"Rolled back to {LOCAL_TARGET} in" in output
+    calls, output, _ = run_host(
+        tmp_path / "f", "rollback", status=1, profile="local", noop="f"
+    )
+    assert "never restores a database" in output
+    assert not any(" stop " in call for call in calls)

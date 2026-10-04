@@ -2,17 +2,46 @@
 # The host half of tools/stewardship-upgrade.sh: the deployment runbook's
 # Upgrade steps 1-6 (docs/guides/stewardship-deployment-runbook.md#upgrade)
 # and its Rollback, run on the host that runs the deployment. Nothing in it
-# is meant to be run by hand: tools/stewardship-upgrade.sh uploads it over
-# ssh and runs it with the eight arguments below, and a run behaves and
-# prints exactly as the heredoc this file was extracted from did.
+# is meant to be run by hand. tools/stewardship-upgrade.sh uploads it over
+# ssh and runs it in `production` mode on a deployment in Testing or in
+# Production; tools/stewardship-local.sh (through its VM half) runs it in
+# `local` mode on the local laptop environment's deployment (#476), so a
+# local deploy follows the same steps as a Production upgrade.
 #
-# Usage: stewardship-upgrade-host.sh REPO IMAGE ROOT PROJECT YAML UUID SCHEMA_CHANGE MODE
+# Usage: stewardship-upgrade-host.sh REPO IMAGE ROOT PROJECT YAML UUID SCHEMA_CHANGE MODE [local BUILD]
 #
-#   MODE is upgrade or rollback.
+#   MODE is upgrade or rollback. Without the trailing arguments the profile
+#   is production; `local BUILD` selects local mode, BUILD being the packed
+#   checkout in the VM (for deploy/stewardship/Dockerfile.faketime).
+#
+# Production mode must stay byte-identical: a run with eight arguments behaves
+# and prints exactly as the heredoc it was extracted from. Local mode differs in
+# exactly these ways (local-environment specification, "Operator script"):
+#   - it refuses unless ROOT carries the local marker and YAML says
+#     `profile: local`, so it can never run on another deployment;
+#   - IMAGE is the LOCAL image tag built inside the VM, which must exist
+#     already; nothing is pulled and no registry digest is checked;
+#   - the backup is still required, but LOCAL has no off-host target, so
+#     an off-site state of not_configured is accepted alongside uploaded;
+#   - the services keep the deployment's clock mode (the faketime override
+#     is added when the marker says fake, and the derived fake-clock image
+#     of the new application image is built after the retarget);
+#   - the services keep the deployment's debug-logging setting: the caller's
+#     PARISHKIT_DEBUG_LOGGING (the VM half exports the deployment record's)
+#     instead of Production's unconditional 0;
+#   - the public origin is probed through Caddy's own CA, by the Server
+#     header, since before the wizard the application answers 503.
 
 set -euo pipefail
 # shellcheck disable=SC2034 # REPO is validated by the laptop half; kept for the fixed argument order
 repo=$1 image=$2 root=$3 project=$4 yaml=$5 uuid=$6 schema_change=$7 mode=$8
+profile=${9:-production}
+build=${10-}
+case "$profile" in
+    production) ;;
+    local) [ -n "$build" ] || { echo "local mode needs the packed checkout directory; refusing." >&2; exit 2; } ;;
+    *) echo "usage: $0 REPO IMAGE ROOT PROJECT YAML UUID SCHEMA_CHANGE MODE [local BUILD]" >&2; exit 2 ;;
+esac
 # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log. ssh
 # does not forward environment variables by default, so a real run logs
 # under /var/log unless the operator deliberately set it on the host.
@@ -62,8 +91,40 @@ finish() {
 trap finish EXIT
 
 # The generated Compose files pass this through to every application service.
-export PARISHKIT_DEBUG_LOGGING=0
+# Production starts every service with debug logging off; local mode keeps
+# the deployment's own setting, which the VM half exported before running
+# this script. `debug` is what the final checks expect in every container.
+if [ "$profile" = local ]; then
+    export PARISHKIT_DEBUG_LOGGING=${PARISHKIT_DEBUG_LOGGING:-0}
+else
+    export PARISHKIT_DEBUG_LOGGING=0
+fi
+debug=$PARISHKIT_DEBUG_LOGGING
 services="$root/config/services"
+clock_dir="$root/run/local/clock"
+clock=real
+if [ "$profile" = local ]; then
+    # Local mode acts only on the local environment's deployment: the marker
+    # the operator script writes after provisioning, the LOCAL profile in the
+    # deployment YAML, and an image tag of the LOCAL pattern that was built
+    # inside the VM already (specification, "Operator script" and "Fake
+    # clock"). All of it is refused before anything is read or stopped.
+    [ -f "$root/.parishkit-local" ] ||
+        { echo "$root does not carry the local marker $root/.parishkit-local; refusing local mode." >&2; exit 1; }
+    grep -qE '^[[:space:]]*profile:[[:space:]]*local[[:space:]]*$' "$yaml" 2>/dev/null ||
+        { echo "$yaml does not say 'profile: local'; refusing local mode." >&2; exit 1; }
+    [[ $image =~ ^parishkit-stewardship-local:[0-9a-f]{40}(-dirty)?-[0-9]+$ ]] ||
+        { echo "$image is not a LOCAL image tag (parishkit-stewardship-local:<commit>[-dirty]-<epoch>); refusing." >&2; exit 1; }
+    docker image inspect "$image" >/dev/null 2>&1 ||
+        { echo "The image $image is not in the VM; build it first (the operator script does). Refusing." >&2; exit 1; }
+    # The persisted clock mode, as every command of the VM half reads it: a
+    # missing or unknown marker is an error, not a default.
+    clock=$(cat "$clock_dir/mode" 2>/dev/null || echo missing)
+    case "$clock" in
+        fake|normal) ;;
+        *) echo "The clock-mode marker $clock_dir/mode says '$clock'; expected fake or normal. Refusing." >&2; exit 1 ;;
+    esac
+fi
 # shellcheck disable=SC2054 # the tmpfs options are one comma-separated word
 isolated=(docker run --rm --init --network none --user 10001:10001 --read-only
     --cap-drop ALL --security-opt no-new-privileges:true
@@ -89,12 +150,25 @@ compose=$(docker compose ls --all --format json |
     jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles | split(",")[0]')
 [ -n "$compose" ] && [ -f "$compose" ] || { echo "Project $project not found; refusing." >&2; exit 1; }
 dc=(docker compose -f "$compose" -p "$project")
+if [ "$clock" = fake ]; then
+    # The one deliberate overlay of the local environment: in fake-clock
+    # mode every service runs under the faketime override, which the
+    # retarget re-renders beside the Compose file with the derived image
+    # names (specification, "Fake clock").
+    override="$services/compose.faketime.json"
+    [ -f "$override" ] || { echo "Clock mode is fake but $override is missing; refusing." >&2; exit 1; }
+    dc=(docker compose -f "$compose" -f "$override" -p "$project")
+fi
 previous=$(jq -r '.services.web.image // empty' "$compose")
 case "$mode" in
     upgrade) step "Upgrading $project ($(basename "$compose")) from ${previous:-unknown} to $image" ;;
     rollback) step "Rolling $project ($(basename "$compose")) back from ${previous:-unknown} to $image" ;;
 esac
 [ "$previous" != "$image" ] || echo "    (same digest: re-running the $mode)"
+[ "$clock" = real ] || echo "    local deployment in $clock clock mode (debug logging $debug)"
+# What names the kept static trees: the digest's hex in Production, the
+# tag's <commit>[-dirty]-<epoch> part for a LOCAL image.
+if [ "$profile" = local ]; then image_id=${image##*:}; else image_id=${image##*sha256:}; fi
 # The current file's online services: what the stopped-phase trap starts
 # again. Step 6 re-reads the list from the re-rendered file, since the
 # target release may add or remove a service. grep's `|| true` on an empty
@@ -133,16 +207,22 @@ if [ "$bulk" = true ]; then
 fi
 
 # Step 1: everything that needs only the target image, while the site is up.
-step "1. Pulling $([ "$mode" = upgrade ] && echo the release || echo the previous release)"
-docker pull --quiet "$image" >/dev/null
-docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" | grep -xF "$image" >/dev/null ||
-    { echo "The pulled image does not carry $image; refusing." >&2; exit 1; }
+if [ "$profile" = local ]; then
+    # The LOCAL image was built inside the VM a moment ago (checked above);
+    # there is no registry to pull from and no digest to verify.
+    step "1. Using the local image $image (built in the VM; nothing to pull)"
+else
+    step "1. Pulling $([ "$mode" = upgrade ] && echo the release || echo the previous release)"
+    docker pull --quiet "$image" >/dev/null
+    docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" | grep -xF "$image" >/dev/null ||
+        { echo "The pulled image does not carry $image; refusing." >&2; exit 1; }
+fi
 
 # An upgrade collects the new release's static tree; a rollback reuses the
 # tree the upgrade kept for the previous release when it is still there and
 # holds files (the static storage keeps no manifest to verify against, so
 # an empty or missing tree is the cue to collect again).
-kept="$root/cache/static.${image##*sha256:}"
+kept="$root/cache/static.$image_id"
 if [ "$mode" = rollback ] && [ -n "$(find "$kept" -type f -print -quit 2>/dev/null)" ]; then
     step "1. Using the kept static tree $kept"
     static_src=$kept
@@ -186,7 +266,11 @@ if [ "$advisory" != t ]; then
         # grant change, anything but t is the cue to stop before anything
         # stops.
         echo "The upgrade check expects migration or grants to change something." >&2
-        echo "Read the release notes; set STEWARDSHIP_SCHEMA_CHANGE=1 only if they announce it." >&2
+        if [ "$profile" = local ]; then
+            echo "If this pull request changes the schema or a grant, re-run as 'deploy --schema-change'." >&2
+        else
+            echo "Read the release notes; set STEWARDSHIP_SCHEMA_CHANGE=1 only if they announce it." >&2
+        fi
         exit 1
     fi
 fi
@@ -207,8 +291,17 @@ step "1. Backup (required) and its off-host copy"
 backup=$("${dc[@]}" run --rm -T backup-worker 2>&1 | grep -v '"DEBUG"' | tail -1 || true)
 echo "    $backup"
 echo "$(date -u +%FT%TZ) $backup" >>"$logdir/stewardship-backup.log"
-if [ "$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null)" != true ] ||
-    [ "$(jq -r '.offsite.state' <<<"$backup" 2>/dev/null)" != uploaded ]; then
+# LOCAL refuses every off-host target, so its backup reports the copy as
+# not_configured; the backup itself is still required (specification,
+# "Operator script"). Production accepts nothing but an uploaded copy.
+# `|| true`: a backup line that is not JSON (the worker refused before it
+# printed one) must reach the abandon message below, not end the run here.
+offsite=$(jq -r '.offsite.state' <<<"$backup" 2>/dev/null || true)
+offsite_ok=0
+case "$profile:$offsite" in
+    production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
+esac
+if [ "$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null)" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
     exit 1
@@ -244,6 +337,38 @@ phase=offline
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
     ${switches[@]+"${switches[@]}"} "$image" retarget-image --config /run/operator.yaml --image "$image"
 
+if [ "$clock" = fake ]; then
+    # The retarget re-rendered the faketime override with the derived image
+    # names of the target image (the naming rule lives in the code, never
+    # here); build whichever derived image is missing, as the VM half's `up`
+    # does, before anything runs under the override. A rollback finds its
+    # derived images already built. Under a time limit that says what ran,
+    # the limit and the elapsed time if it expires.
+    step "3. Building the missing fake-clock images for the retargeted override"
+    dockerfile="$build/deploy/stewardship/Dockerfile.faketime"
+    for service in web postgres valkey; do
+        base=$(jq -r --arg s "$service" '.services[$s].image' "$compose")
+        derived=$(jq -r --arg s "$service" '.services[$s].image' "$override")
+        if docker image inspect "$derived" >/dev/null 2>&1; then
+            echo "    $derived (already built)"
+            continue
+        fi
+        [ -f "$dockerfile" ] || { echo "No packed Dockerfile.faketime at $dockerfile; the maintenance page stays up." >&2; exit 1; }
+        started=$(date -u +%s)
+        rc=0
+        timeout 900 docker build --quiet --file "$dockerfile" --build-arg "BASE=$base" \
+            --tag "$derived" "$build/deploy/stewardship" >/dev/null || rc=$?
+        if [ "$rc" -eq 124 ]; then
+            echo "TIMEOUT: building $derived killed after $(( $(date -u +%s) - started ))s (limit 900s)" >&2
+            exit 1
+        elif [ "$rc" -ne 0 ]; then
+            echo "FAILED: building $derived (exit $rc after $(( $(date -u +%s) - started ))s, limit 900s)" >&2
+            exit 1
+        fi
+        echo "    $derived"
+    done
+fi
+
 if [ "$mode" = upgrade ]; then
     step "4. Migration"
     answer=$(check)
@@ -260,7 +385,11 @@ else
 fi
 
 step "5. Refreshing the static files in place"
-aside="$root/cache/static.${previous:+${previous##*sha256:}}"
+if [ "$profile" = local ]; then
+    aside="$root/cache/static.${previous##*:}"
+else
+    aside="$root/cache/static.${previous:+${previous##*sha256:}}"
+fi
 [ -n "$previous" ] || aside="$root/cache/static.previous"
 # Copy to a temporary name first, so an interrupted copy never leaves a
 # half-kept tree under the digest's name for a later rollback to trust.
@@ -321,11 +450,12 @@ for service in "${online[@]}"; do
         *) problems+=("$service: ${line:-missing}") ;;
     esac
 done
-# Debug logging off everywhere (launch runbook, Production activation step 1).
+# Debug logging off everywhere (launch runbook, Production activation step
+# 1); in local mode, the deployment's own setting everywhere.
 for id in $("${dc[@]}" ps --quiet); do
     name=$(docker inspect --format '{{.Name}}' "$id")
     value=$(docker inspect --format '{{join .Config.Env "\n"}}' "$id" | grep '^PARISHKIT_DEBUG_LOGGING=' || true)
-    case "$value" in ""|PARISHKIT_DEBUG_LOGGING=0) ;; *) problems+=("$name: $value") ;; esac
+    case "$value" in ""|"PARISHKIT_DEBUG_LOGGING=$debug") ;; *) problems+=("$name: $value") ;; esac
 done
 [ "$(jq -r '.services.web.image' "$compose")" = "$image" ] || problems+=("web does not name $image")
 if [ "${#switches[@]}" -gt 0 ]; then
@@ -339,8 +469,16 @@ fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"
 # Runbook step 6: open the public origin; the in-container probe cannot see
-# caddy still answering with its maintenance page.
-curl -fsS -o /dev/null --max-time 20 "$origin/" || problems+=("public origin $origin does not answer")
+# caddy still answering with its maintenance page. LOCAL's certificate is
+# from Caddy's own CA, and before the setup wizard the application answers
+# 503 (as caddy's maintenance page does), so there the Server header is
+# what shows the application answered through caddy.
+if [ "$profile" = local ]; then
+    curl -ksSI --max-time 20 "$origin/" 2>/dev/null | grep -qi '^server: gunicorn' ||
+        problems+=("public origin $origin does not answer from the application")
+else
+    curl -fsS -o /dev/null --max-time 20 "$origin/" || problems+=("public origin $origin does not answer")
+fi
 echo "    worker processes: $("${dc[@]}" top worker 2>/dev/null | grep -c 'runtime' || true)," \
     "mail-dispatch processes: $("${dc[@]}" top mail-dispatch 2>/dev/null | grep -c 'runtime' || true)"
 done_word=$([ "$mode" = upgrade ] && echo Upgraded || echo "Rolled back")
