@@ -1414,7 +1414,13 @@ its outbox message state, or, before preparation, by its occurrence:
 - **Sent**: delivered (the mail service accepted it).
 - **Failed**: permanent failure, or a preparation that failed. Failed
   emails link to Outgoing mail; preparation failures, which have no email
-  there, link to the failed preparation tasks in Background work.
+  there, link to the failed preparation tasks in Background work. A
+  preparation that failed for good leaves its occurrence pending, so the
+  failure is read from the preparation task: the newest run of the
+  occurrence's current preparation (in Testing, the current rehearsal's)
+  failed ([#482](https://github.com/epiphany40223/parishkit/issues/482)).
+  Once an Admin retries that preparation, the email counts as remaining
+  until the retry fails again.
 - **Uncertain**: delivery unknown, linked to Outgoing mail.
 - **Remaining**: pending, waiting to retry or submitting, or not yet
   prepared, including the Families planning still owes. The part not yet
@@ -1423,7 +1429,8 @@ its outbox message state, or, before preparation, by its occurrence:
   non-zero): a reminder not yet prepared for a Family whose newest invitation
   failed or is uncertain. Planning holds such a reminder until the invitation
   is resolved (`initial_unfulfilled` or `delivery_unresolved`), so it is not
-  remaining and the send can still finish. This is a narrower test than
+  remaining and the send can still finish. A reminder whose own preparation
+  failed counts as Failed, not held. This is a narrower test than
   planning's own: a reminder held for rarer reasons (a newest invitation
   skipped or coalesced without delivery, an unreviewed restore hold, or
   another uncertain email for the Family) still counts as remaining, and one

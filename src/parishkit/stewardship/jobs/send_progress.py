@@ -24,7 +24,10 @@ the same revision). An occurrence's email is the outbox message it points
 to; before preparation there is none yet, and the email still counts as
 remaining, except for a reminder whose Family's invitation failed or is
 uncertain: planning holds that reminder until the invitation is resolved, so
-it waits in a bucket of its own instead of keeping the send in progress.
+it waits in a bucket of its own instead of keeping the send in progress. A
+preparation that failed for good also leaves its occurrence pending with no
+email; its failed preparation task (``_PREPARATION_FAILED``) makes it count
+as failed instead (#482).
 
 The scheduler plans Families a few at a time, so early in a send most
 Families have no occurrence yet. Those planning still owes are counted from
@@ -106,15 +109,44 @@ _EMAIL = (
 )
 # Each Family's newest occurrence of the send.
 _LATEST = (
-    "SELECT DISTINCT ON (o.target) o.target, o.state, o.reason, o.outbox_id "
+    "SELECT DISTINCT ON (o.target) o.id, o.target, o.state, o.reason, o.outbox_id "
     "FROM stewardship_schedule_occurrence o "
     "WHERE o.definition_id=%(definition)s AND o.revision_id=%(revision)s "
     "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
     "ORDER BY o.target, o.recovery_generation DESC, o.created_at DESC, o.id DESC"
 )
+# Whether a Family's newest occurrence ``l`` had its preparation fail for
+# good (#482): a LATERAL subquery whose one column, ``failed``, is true when
+# the newest task run of the occurrence's current preparation ticket
+# failed. Such an occurrence stays pending without an email (the occurrence
+# guard admits no pending-to-failed change without a live claim, and
+# recovery gives a task up without one), so its state alone does not show
+# the failure. An Admin retry adds a newer run, so until that retry fails
+# too the email is remaining again. The current ticket is the one planning
+# would use (``enqueue_preparation``): in Production the only one (no
+# rehearsal), in Testing the campaign's current rehearsal's, so a ticket
+# left by a superseded rehearsal is not counted. While go-live is under way
+# (the go-live gate is set and the mode is still Testing) there is no
+# current rehearsal, so a failed Testing preparation shows as remaining
+# until the gate clears, as planning also waits then. Only a pending or
+# running occurrence without an email can count. The lookup probes the
+# ticket index by the occurrence (its leading column; the rehearsal is then
+# a filter on the few rows found) and, where there is a ticket, the run
+# index by root and retry sequence.
+_PREPARATION_FAILED = (
+    "SELECT t.state='failed' AS failed FROM stewardship_family_mail_preparation p "
+    "JOIN LATERAL (SELECT r.state FROM stewardship_task_run r "
+    "WHERE r.root_id=p.task_id ORDER BY r.retry_sequence DESC LIMIT 1) t ON true "
+    "WHERE l.outbox_id IS NULL AND l.state IN ('pending','running') "
+    "AND p.occurrence_id=l.id AND p.rehearsal_epoch_id IS NOT DISTINCT FROM "
+    "(SELECT CASE WHEN %(mode)s='testing' THEN k.rehearsal_epoch_id END "
+    "FROM stewardship_campaign_credentials k "
+    "WHERE k.campaign_id=%(campaign)s AND NOT k.go_live_gate ORDER BY k.id LIMIT 1)"
+)
 # Counts one send. The message state, when there is a message, decides the
 # bucket, and otherwise the occurrence state does (not yet prepared, failed
-# preparation, or not emailed, by its skip or cancel reason).
+# preparation, or not emailed, by its skip or cancel reason). A preparation
+# that failed for good counts as failed although its occurrence is pending.
 _COUNTS = (
     "WITH latest AS (" + _LATEST + "), emails AS ("
     "SELECT CASE "
@@ -125,6 +157,7 @@ _COUNTS = (
     "WHEN l.state='failed' THEN 'failed' "
     "WHEN l.state='delivery_unknown' THEN 'uncertain' "
     "WHEN l.state='succeeded' THEN 'sent' "
+    "WHEN f.failed THEN 'failed' "
     "ELSE 'remaining' END "
     "WHEN m.state='delivered' THEN 'sent' "
     "WHEN m.state='permanent_failure' THEN 'failed' "
@@ -133,7 +166,8 @@ _COUNTS = (
     "WHEN m.state='cancelled' THEN 'not_needed' "
     "ELSE 'remaining' END AS bucket, "
     "m.id IS NULL AS unprepared, m.created_at, m.updated_at "
-    "FROM latest l LEFT JOIN LATERAL (" + _EMAIL.format("l") + ") m ON true"
+    "FROM latest l LEFT JOIN LATERAL (" + _EMAIL.format("l") + ") m ON true "
+    "LEFT JOIN LATERAL (" + _PREPARATION_FAILED + ") f ON true"
     ") SELECT "
     "count(*) FILTER (WHERE bucket='sent'), "
     "count(*) FILTER (WHERE bucket='failed'), "
@@ -154,11 +188,15 @@ _COUNTS = (
 # uncertain (schedule_recovery's initial_unfulfilled and
 # delivery_unresolved). Planning holds those reminders until the invitation
 # is resolved, so they would otherwise stay "remaining" forever. Only the
-# unprepared reminders' Families' invitations are read.
+# unprepared reminders' Families' invitations are read. A reminder whose own
+# preparation failed is already counted as failed, not remaining, so it is
+# not counted here as well.
 _WAITING = (
     "WITH latest AS (" + _LATEST + "), unprepared AS ("
-    "SELECT target FROM latest "
-    "WHERE outbox_id IS NULL AND state IN ('pending','running')"
+    "SELECT l.target FROM latest l "
+    "LEFT JOIN LATERAL (" + _PREPARATION_FAILED + ") f ON true "
+    "WHERE l.outbox_id IS NULL AND l.state IN ('pending','running') "
+    "AND f.failed IS NOT TRUE"
     "), invitation AS ("
     "SELECT DISTINCT ON (o.target) "
     "(o.state IN ('failed','delivery_unknown') "
