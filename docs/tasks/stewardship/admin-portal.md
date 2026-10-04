@@ -302,7 +302,7 @@ Evidence: Not started.
 Scope and dependencies: [ADM-11 work package](../../plans/stewardship/admin-portal.md#adm-11-admin-automation-interface).
 Specification: [Admin automation interface](../../specs/stewardship/admin-automation/spec.md).
 
-- [ ] ADM-11.01 — PR 0: specify the Admin automation interface and record the Administrator's decisions.
+- [x] ADM-11.01 — PR 0: specify the Admin automation interface and record the Administrator's decisions.
 - [ ] ADM-11.02 — PR 1: add the AdminCaller seam with no behavior change.
 - [ ] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
 - [ ] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
@@ -316,4 +316,6 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [ ] ADM-11.12 — PR 11: add user, rule (including high-impact changes), assignment, acknowledgement and follow-up commands.
 - [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
 
-Evidence: Not started.
+Evidence: In progress. ADM-11.01 merged in PR #511, which added the
+Admin automation interface specification and the Administrator's
+decisions.
