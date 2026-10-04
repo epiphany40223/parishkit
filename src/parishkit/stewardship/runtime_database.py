@@ -271,7 +271,14 @@ def profile_settings(configuration):
     banner reads it too; there is no default anywhere else, so a role whose
     assembly skipped this would fail closed rather than reach the real API.
     """
-    return {"STEWARDSHIP_DEPLOYMENT_PROFILE": configuration.profile.value}
+    values = {"STEWARDSHIP_DEPLOYMENT_PROFILE": configuration.profile.value}
+    if configuration.local_smtp_latency_ms:
+        # The local rehearsal's modeled provider latency (BG-12), which the
+        # loader admits only in the local profile; mail parents read it.
+        values["STEWARDSHIP_LOCAL_SMTP_LATENCY_MS"] = (
+            configuration.local_smtp_latency_ms
+        )
+    return values
 
 
 def require_current_schema():

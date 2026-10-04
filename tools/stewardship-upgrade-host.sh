@@ -30,7 +30,14 @@
 #     PARISHKIT_DEBUG_LOGGING (the VM half exports the deployment record's)
 #     instead of Production's unconditional 0;
 #   - the public origin is probed through Caddy's own CA, by the Server
-#     header, since before the wizard the application answers 503.
+#     header, since before the wizard the application answers 503;
+#   - for BG-12's rehearsal, the caller may choose the bulk Family send
+#     (PARISHKIT_LOCAL_BULK_FAMILY_SEND=on|off) and the modeled SMTP latency
+#     (PARISHKIT_LOCAL_SMTP_LATENCY_MS, milliseconds) the retarget renders;
+#     unset or "keep" carries the current value over, as Production does
+#     for the bulk switch. A rollback never renders the latency (the
+#     previous release may not know the setting, and its loader would refuse
+#     it after web had stopped). Production mode never reads either variable.
 
 set -euo pipefail
 # shellcheck disable=SC2034 # REPO is validated by the laptop half; kept for the fixed argument order
@@ -202,11 +209,45 @@ done
 [ -r "$services/worker.yaml" ] || { echo "Cannot read $services/worker.yaml; refusing." >&2; exit 1; }
 # Plain -r: -e would fail on the legitimate answer false.
 bulk=$(jq -r '.deployment.bulk_family_send // false' "$services/worker.yaml")
+if [ "$profile" = local ]; then
+    case "${PARISHKIT_LOCAL_BULK_FAMILY_SEND:-keep}" in
+        keep) ;;
+        on) bulk=true ;;
+        off) bulk=false ;;
+        *) echo "PARISHKIT_LOCAL_BULK_FAMILY_SEND must be on, off or keep; refusing." >&2; exit 1 ;;
+    esac
+fi
 switches=()
 if [ "$bulk" = true ]; then
     batch=$(jq -er '.deployment.bulk_send_batch // 20' "$services/worker.yaml")
     switches=(-e PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1 -e "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=$batch")
     echo "    bulk Family send is on (batch $batch); keeping it on"
+fi
+if [ "$profile" = local ]; then
+    # The rehearsal's modeled Gmail latency (BG-12), which the deployment
+    # loader admits only in the local profile; carried over like the switch.
+    latency=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/worker.yaml")
+    case "${PARISHKIT_LOCAL_SMTP_LATENCY_MS:-keep}" in
+        keep) ;;
+        *[!0-9]*) echo "PARISHKIT_LOCAL_SMTP_LATENCY_MS must be milliseconds or keep; refusing." >&2; exit 1 ;;
+        *) latency=$PARISHKIT_LOCAL_SMTP_LATENCY_MS ;;
+    esac
+    # Checked here, before anything stops: the loader's own refusal would
+    # come only at the retarget, with web already down. Base 10 whatever the
+    # leading zeros.
+    if ! [[ $latency =~ ^[0-9]{1,5}$ ]] || [ "$((10#$latency))" -gt 5000 ]; then
+        echo "The SMTP latency must be 0-5000 ms; refusing." >&2
+        exit 1
+    fi
+    latency=$((10#$latency))
+    if [ "$mode" = rollback ] && [ "$latency" != 0 ]; then
+        echo "    the modeled SMTP latency (${latency} ms) is not carried into a rollback; deploy --smtp-latency-ms sets it again"
+        latency=0
+    fi
+    if [ "$latency" != 0 ]; then
+        switches+=(-e "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=$latency")
+        echo "    modeled SMTP latency ${latency} ms per message"
+    fi
 fi
 
 # Step 1: everything that needs only the target image, while the site is up.
@@ -462,13 +503,17 @@ for id in $("${dc[@]}" ps --quiet); do
     case "$value" in ""|"PARISHKIT_DEBUG_LOGGING=$debug") ;; *) problems+=("$name: $value") ;; esac
 done
 [ "$(jq -r '.services.web.image' "$compose")" = "$image" ] || problems+=("web does not name $image")
-if [ "${#switches[@]}" -gt 0 ]; then
+if [ "$bulk" = true ]; then
     for role in worker mail-dispatch scheduler; do
         [ "$(jq -r '.deployment.bulk_family_send // false' "$services/$role.yaml")" = true ] ||
             problems+=("$role: bulk Family send is off")
     done
     rendered=$(jq -r '.deployment.bulk_send_batch // 20' "$services/worker.yaml")
     [ "$rendered" = "$batch" ] || problems+=("worker: bulk send batch is $rendered, not $batch")
+fi
+if [ "$profile" = local ]; then
+    rendered=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
+    [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")
 fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"

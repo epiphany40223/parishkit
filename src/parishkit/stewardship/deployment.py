@@ -191,6 +191,12 @@ MAIL_CONSUMERS_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_CONSUMERS"
 # "submitting" before sending them (1-100, default 20).
 BULK_FAMILY_SEND_VARIABLE = "PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND"
 BULK_SEND_BATCH_VARIABLE = "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH"
+# The local rehearsal's modeled provider latency (BG-12): milliseconds a LOCAL
+# mail parent waits before each mail-catcher submission, so a rehearsal
+# against Mailpit sends at about Gmail's pace. 0 (the default) adds nothing;
+# any other value is refused outside the local profile.
+LOCAL_SMTP_LATENCY_VARIABLE = "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS"
+LOCAL_SMTP_LATENCY_MAX_MS = 5000
 
 
 @dataclass(frozen=True)
@@ -217,6 +223,7 @@ class DeploymentConfiguration:
     mail_consumers: int = 2
     bulk_family_send: bool = False
     bulk_send_batch: int = 20
+    local_smtp_latency_ms: int = 0
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -401,6 +408,7 @@ def load_deployment(
             "mail_consumers",
             "bulk_family_send",
             "bulk_send_batch",
+            "local_smtp_latency_ms",
         },
         "deployment",
     )
@@ -679,6 +687,13 @@ def load_deployment(
     if batch in (None, ""):
         batch = deployment.get("bulk_send_batch", 20)
     batch = _integer(batch, "bulk_send_batch", 1, 100)
+    latency = select("LOCAL_SMTP_LATENCY_MS", None)
+    if latency in (None, ""):
+        latency = deployment.get("local_smtp_latency_ms", 0)
+    latency = _integer(latency, "local_smtp_latency_ms", 0, LOCAL_SMTP_LATENCY_MAX_MS)
+    if latency and profile is not DeploymentProfile.LOCAL:
+        # A rehearsal aid only: a real deployment never waits on purpose.
+        raise ConfigError("local_smtp_latency_ms is admitted only in the local profile")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -707,4 +722,5 @@ def load_deployment(
         consumers,
         bulk,
         batch,
+        latency,
     )

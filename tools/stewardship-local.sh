@@ -13,8 +13,12 @@
 #   vm create | vm start | vm stop   create (and start), start or stop the VM
 #   up [--families N]                first-time install from this checkout
 #   start                            start a stopped deployment's services
-#   deploy [--schema-change]         build this checkout and upgrade the running
-#                                    deployment to it by the Production upgrade's steps
+#   deploy [--schema-change] [--bulk on|off] [--smtp-latency-ms N]
+#                                    build this checkout and upgrade the running
+#                                    deployment to it by the Production upgrade's steps;
+#                                    --bulk renders the bulk Family send on or off and
+#                                    --smtp-latency-ms the rehearsal's modeled Gmail
+#                                    latency (both carry over when not given)
 #   deploy --rollback                image-only rollback to the image the last deploy replaced
 #   snapshot [--seeded]              save the root as the post-setup or seeded snapshot
 #   reset [--seeded]                 restore that snapshot; with no post-setup
@@ -23,6 +27,9 @@
 #                                    and run `up` again, keeping the snapshots
 #   seed [--response-scale M]        seed the campaign (the fake-clock seeder)
 #   reseed [--response-scale M]      reset to the post-setup snapshot, then seed
+#   rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]
+#                                    add a Reminder due in MIN minutes (default 5),
+#                                    measure its send and print the BG-12 report
 #   wizard                           complete the setup wizard unattended
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
@@ -221,16 +228,30 @@ case "$command" in
         # still runs, then the VM half runs the same host half Production's
         # tools/stewardship-upgrade.sh runs. --schema-change is Production's
         # STEWARDSHIP_SCHEMA_CHANGE=1; --rollback is its --rollback.
-        schema_change=0 rollback=0
+        # --bulk and --smtp-latency-ms (BG-12's rehearsal) choose what the
+        # host half renders in local mode; "keep" carries the current value.
+        schema_change=0 rollback=0 bulk=keep latency=keep
         while [ $# -gt 0 ]; do
             case "$1" in
                 --schema-change) schema_change=1 ;;
                 --rollback) rollback=1 ;;
+                --bulk)
+                    [ $# -ge 2 ] || usage
+                    case "$2" in on|off) bulk=$2 ;; *) usage ;; esac
+                    shift ;;
+                --smtp-latency-ms)
+                    [ $# -ge 2 ] || usage
+                    # Base 10 whatever the leading zeros (0600 is 600, not octal).
+                    if ! [[ $2 =~ ^[0-9]{1,5}$ ]] || [ "$((10#$2))" -gt 5000 ]; then usage; fi
+                    latency=$((10#$2))
+                    shift ;;
                 *) usage ;;
             esac
             shift
         done
         [ "$schema_change$rollback" != 11 ] || usage
+        # A rollback renders nothing new: it takes neither rendering flag.
+        if [ "$rollback" = 1 ] && [ "$bulk$latency" != keepkeep ]; then usage; fi
         require_running
         if [ "$rollback" = 1 ]; then
             upload_host_script
@@ -239,8 +260,37 @@ case "$command" in
             pack_checkout
             run_remote build "$tag"
             upload_host_script
-            run_remote deploy "$tag" "$schema_change" "$host_remote"
+            if [ "$bulk$latency" = keepkeep ]; then
+                run_remote deploy "$tag" "$schema_change" "$host_remote"
+            else
+                run_remote deploy "$tag" "$schema_change" "$host_remote" "$bulk" "$latency"
+            fi
         fi ;;
+    rehearse)
+        # BG-12's rehearsal on a seeded deployment (developer guide,
+        # "Rehearsing a bulk send"): the VM half adds the Reminder, samples
+        # the work-order lock, waits for the send and prints the report.
+        due_in=5 send_only=0 limit=60 label=run
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --due-in) [ $# -ge 2 ] || usage; due_in=$2; shift 2 ;;
+                --timeout) [ $# -ge 2 ] || usage; limit=$2; shift 2 ;;
+                --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
+                --send-only) send_only=1; shift ;;
+                *) usage ;;
+            esac
+        done
+        if ! [[ $due_in =~ ^[0-9]{1,3}$ ]] || [ "$((10#$due_in))" -lt 2 ] || [ "$((10#$due_in))" -gt 180 ]; then
+            refuse "--due-in must be a whole number of minutes from 2 to 180."
+        fi
+        if ! [[ $limit =~ ^[0-9]{1,3}$ ]] || [ "$((10#$limit))" -lt 1 ] || [ "$((10#$limit))" -gt 480 ]; then
+            refuse "--timeout must be a whole number of minutes from 1 to 480."
+        fi
+        due_in=$((10#$due_in)) limit=$((10#$limit))
+        [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "--label must be 1-40 letters, digits, '.', '_' or '-'."
+        require_running
+        mkdir -p "$state"
+        run_remote rehearse "$due_in" "$send_only" "$limit" "$label" 2>&1 | tee -a "$state/rehearse.log" ;;
     snapshot|reset)
         name=post-setup
         case "$command:$#:${1-}" in

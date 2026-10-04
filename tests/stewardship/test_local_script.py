@@ -117,12 +117,14 @@ def test_the_guide_and_specification_are_cross_linked():
         "status",
         "down",
         "ca",
+        "rehearse",
     ):
         assert f"`{command}" in GUIDE.read_text(), command
     # The spec's command table names every laptop command the script accepts.
     for command in (
         "`start`",
-        "`deploy [--schema-change]`",
+        "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N]`",
+        "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
         "`deploy --rollback`",
         "`reset --reinstall`",
         "`down`",
@@ -267,6 +269,16 @@ def vm_commands(calls):
         ("deploy", "--bogus"),
         ("deploy", "--rollback", "--schema-change"),
         ("deploy", "--rollback", "x"),
+        ("deploy", "--bulk"),
+        ("deploy", "--bulk", "yes"),
+        ("deploy", "--smtp-latency-ms"),
+        ("deploy", "--smtp-latency-ms", "fast"),
+        ("deploy", "--smtp-latency-ms", "5001"),
+        ("deploy", "--rollback", "--bulk", "on"),
+        ("deploy", "--rollback", "--smtp-latency-ms", "600"),
+        ("rehearse", "--bogus"),
+        ("rehearse", "--due-in"),
+        ("deploy", "--smtp-latency-ms", "123456"),
     ],
 )
 def test_bad_usage_is_refused_before_the_vm(tmp_path, args):
@@ -395,6 +407,54 @@ def test_deploy_builds_then_uploads_the_host_half_and_runs_it(tmp_path):
     # A stopped VM refuses before anything is packed.
     result, calls, _ = run_local(tmp_path / "stopped", "deploy", status="Stopped")
     assert result.returncode == 1 and ssh_calls(calls) == []
+
+
+def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
+    """--bulk and --smtp-latency-ms reach the VM half; unset ones say keep."""
+    result, calls, _ = run_local(tmp_path, "deploy", "--bulk", "on")
+    assert result.returncode == 0, result.stderr
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} on keep")
+    _, calls, _ = run_local(
+        tmp_path / "both", "deploy", "--smtp-latency-ms", "600", "--bulk", "off"
+    )
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} off 600")
+    _, calls, _ = run_local(tmp_path / "latency", "deploy", "--smtp-latency-ms", "0")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep 0")
+    # Base 10 whatever the leading zeros: 0600 is 600, not octal 384.
+    _, calls, _ = run_local(tmp_path / "zeros", "deploy", "--smtp-latency-ms", "0600")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep 600")
+
+
+def test_rehearse_checks_its_options_then_runs_the_vm_half(tmp_path):
+    """Defaults, explicit options, and refusals before ssh."""
+    result, calls, _ = run_local(tmp_path, "rehearse")
+    assert result.returncode == 0, result.stderr
+    assert vm_commands(calls) == ["rehearse 5 0 60 run"]
+    _, calls, _ = run_local(
+        tmp_path / "options",
+        "rehearse",
+        "--due-in",
+        "130",
+        "--send-only",
+        "--timeout",
+        "90",
+        "--label",
+        "bulk-1100",
+    )
+    assert vm_commands(calls) == ["rehearse 130 1 90 bulk-1100"]
+    for n, args in enumerate(
+        (
+            ("--due-in", "1"),
+            ("--due-in", "181"),
+            ("--due-in", "x"),
+            ("--timeout", "0"),
+            ("--label", "a b"),
+            ("--label", "x" * 41),
+        )
+    ):
+        result, calls, _ = run_local(tmp_path / f"bad{n}", "rehearse", *args)
+        assert result.returncode == 1, args
+        assert ssh_calls(calls) == [], args
 
 
 def test_deploy_rollback_uploads_the_host_half_without_building(tmp_path):
@@ -1067,6 +1127,10 @@ def test_sign_in_and_ca_read_the_deployment(tmp_path):
 # FAKE_HOST_RETARGETED says it got that far first).
 FAKE_HOST = r"""
 echo "host $* debug=$PARISHKIT_DEBUG_LOGGING" >>"$FAKE_LOG"
+if [ -n "$FAKE_HOST_ENV" ]; then
+    bulk=$PARISHKIT_LOCAL_BULK_FAMILY_SEND latency=$PARISHKIT_LOCAL_SMTP_LATENCY_MS
+    echo "host bulk=$bulk latency=$latency" >>"$FAKE_LOG"
+fi
 retarget() {
     echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
 }
@@ -1287,3 +1351,63 @@ def test_rollback_needs_a_recorded_previous_image_and_swaps_the_record(tmp_path)
         prepare=with_host_script(tmp_path / "status", previous=NEW_IMAGE),
     )
     assert f"Previous image ('deploy --rollback' returns to it): {NEW_IMAGE}" in output
+
+
+def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
+    """BULK and LATENCY become the host half's two local-mode variables."""
+    host = tmp_path / "host.sh"
+    calls, _, _ = run_vm(
+        tmp_path,
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(host),
+        "on",
+        "600",
+        prepare=with_host_script(tmp_path),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "bulk=on latency=600" in calls[-1]
+    # Without them, both carry over.
+    calls, _, _ = run_vm(
+        tmp_path / "keep",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "keep" / "host.sh"),
+        prepare=with_host_script(tmp_path / "keep"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "bulk=keep latency=keep" in calls[-1]
+
+
+def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):
+    """Fake clock (unseeded) or an unfinished wizard: no Reminder is added."""
+    calls, output, _ = run_vm(
+        tmp_path / "fake",
+        "rehearse",
+        "5",
+        "0",
+        "60",
+        "run",
+        status=1,
+        prepare=lambda root, etc, snapshots: installed(
+            root, etc, snapshots, mode="fake"
+        ),
+    )
+    assert "seeded deployment (normal clock mode)" in output
+    assert not any("local-seed" in call for call in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "wizard", "rehearse", "5", "0", "60", "run", status=1,
+        prepare=installed,
+    )  # fmt: skip
+    assert "setup wizard has not completed" in output
+    assert not any("local-seed" in call for call in calls)
+    _, output, _ = run_vm(tmp_path / "args", "rehearse", "5", status=1)
+    assert "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL" in output
+    # The VM half checks what it puts in a path and in SQL itself.
+    for n, args in enumerate((("5", "0", "60", "../x"), ("5", "2", "60", "run"))):
+        calls, output, _ = run_vm(
+            tmp_path / f"bad{n}", "rehearse", *args, status=1, prepare=installed
+        )
+        assert "rehearse" in output and calls == [], args

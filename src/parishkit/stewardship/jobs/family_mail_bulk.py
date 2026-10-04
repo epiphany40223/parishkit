@@ -35,6 +35,7 @@ back to its savepoint, untouched, and is later handled by the one-at-a-time
 path when the scheduler hints it.
 """
 
+import json
 import logging
 from dataclasses import dataclass, replace
 from random import randint
@@ -233,6 +234,8 @@ class _Pace:
         """Start timing a transaction that has just taken the lock."""
         self.seconds = HOLD_SECONDS if seconds is None else seconds
         self.started, self.count, self.spent = monotonic(), 0, 0.0
+        # Each item's seconds, for the rehearsal's timing line (BG-12).
+        self.durations = []
 
     def fits(self):
         """Whether another average item would still fit in the budget."""
@@ -243,8 +246,10 @@ class _Pace:
 
     def ran(self, begun):
         """Count one item that started at ``begun`` (monotonic)."""
+        took = monotonic() - begun
         self.count += 1
-        self.spent += monotonic() - begun
+        self.spent += took
+        self.durations.append(took)
 
     def held(self):
         """Seconds held so far."""
@@ -259,8 +264,9 @@ def _run_batch(ids, item, *, limit, seconds=None):
     kept) only once its savepoint has been released. Stops after ``limit``
     successes, after REFUSALS_TO_STOP refusals in a row, or before an item
     that would likely take the hold past ``seconds`` (see _Pace). Returns
-    ``(done, tried, hold)``: what ``item`` returned for each success, every
-    id tried, and how long the lock was held.
+    ``(done, tried, pace)``: what ``item`` returned for each success, every
+    id tried, and the batch's _Pace (how long the lock was held, and each
+    item's time).
     """
     done, tried, refusals = [], [], 0
     with work_transaction():
@@ -286,7 +292,54 @@ def _run_batch(ids, item, *, limit, seconds=None):
                 done.append(value)
                 refusals = 0
             pace.ran(begun)
-    return done, tried, pace.held()
+    return done, tried, pace
+
+
+def _timing(kind, pace, *, items, tried, work=(), prebuilt=0, rebuilt=0):
+    """Debug-log one lock transaction's timings for the local rehearsal (BG-12).
+
+    One line per batch transaction, ``bulk timing: {...}``, with a JSON
+    object that the rehearsal report (``local/rehearsal_report.py``) parses:
+
+    - ``kind``: ``prepare``, ``commit`` (a send batch's "submitting"
+      commit) or ``outcome`` (one outcome chunk);
+    - ``items`` and ``tried``: the items finished and tried (an outcome
+      chunk counts every outcome it tried to record, including one that
+      could not be recorded and is left to recovery);
+    - ``hold_ms``: the lock hold, from the batch's first item through the
+      commit, since this is called just after it (a send batch's
+      configuration reads before its first item are left out);
+    - ``item_ms``: each item's time under the lock;
+    - ``work_ms``: the part of each item that renders, decrypts or seals,
+      the work BG-12 moves outside the lock;
+    - ``prebuilt`` and ``rebuilt``: items whose build was made outside the
+      lock or redone under it (zero until that lands).
+
+    Observation only: nothing is built unless DEBUG is enabled, any failure
+    here is swallowed, so it can never change what a batch does or delay a
+    send, and the line holds no identifiers, addresses or content.
+    """
+    try:
+        if not DEBUG.isEnabledFor(logging.DEBUG):
+            return
+        DEBUG.debug(
+            "bulk timing: %s",
+            json.dumps(
+                {
+                    "kind": kind,
+                    "items": items,
+                    "tried": tried,
+                    "hold_ms": round(pace.held() * 1000),
+                    "item_ms": [round(value * 1000) for value in pace.durations],
+                    "work_ms": [round(value * 1000) for value in work],
+                    "prebuilt": prebuilt,
+                    "rebuilt": rebuilt,
+                },
+                sort_keys=True,
+            ),
+        )
+    except Exception:  # noqa: S110 - observation must never affect delivery
+        pass
 
 
 def _beat(pulse):
@@ -351,6 +404,8 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
             raise RuntimeError("Bulk preparation must own its transactions.")
         current = owner or handler
         first = [run_id]
+        # Each item's preparation time in the current batch (_timing).
+        work = []
 
         def item(task_id, position):
             """Claim, prepare and complete one preparation task."""
@@ -359,14 +414,18 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
             ticket = owned_preparation(_status(task))
             terminal = disposition(ticket)
             if terminal is None:
-                terminal = prepare_occurrence(
-                    ticket,
-                    claim,
-                    general=general,
-                    mac=mac,
-                    public=public,
-                    public_origin=public_origin,
-                )
+                begun = monotonic()
+                try:
+                    terminal = prepare_occurrence(
+                        ticket,
+                        claim,
+                        general=general,
+                        mac=mac,
+                        public=public,
+                        public_origin=public_origin,
+                    )
+                finally:
+                    work.append(monotonic() - begun)
             _transition(claim, correlation_id, current, terminal)
             return task_id
 
@@ -380,13 +439,9 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
             )
             if not ids:
                 return 0, ()
-            done, tried, hold = _run_batch(ids, item, limit=PREPARE_BATCH)
-            DEBUG.debug(
-                "bulk preparation: %d of %d tried in %.2f s of lock hold",
-                len(done),
-                len(tried),
-                hold,
-            )
+            work.clear()
+            done, tried, pace = _run_batch(ids, item, limit=PREPARE_BATCH)
+            _timing("prepare", pace, items=len(done), tried=len(tried), work=work)
             return len(done), tried
 
         try:
@@ -488,18 +543,22 @@ def delivery_bulk(
         if context["sent"] + context["recipients"] + recipients > context["allowed"]:
             # Near the daily limit the single path decides message by message.
             raise _Skip
-        prepared = begin_submission(
-            message.pk,
-            claim,
-            private=private,
-            public_origin=public_origin,
-            configuration_id=context["configuration_id"],
-            nested=True,
-            provider_seconds=min(
-                MAX_DEADLINE_SECONDS,
-                FIRST_DEADLINE_SECONDS + DEADLINE_STEP_SECONDS * position,
-            ),
-        )
+        begun = monotonic()
+        try:
+            prepared = begin_submission(
+                message.pk,
+                claim,
+                private=private,
+                public_origin=public_origin,
+                configuration_id=context["configuration_id"],
+                nested=True,
+                provider_seconds=min(
+                    MAX_DEADLINE_SECONDS,
+                    FIRST_DEADLINE_SECONDS + DEADLINE_STEP_SECONDS * position,
+                ),
+            )
+        finally:
+            context["work"].append(monotonic() - begun)
         if prepared is None:
             # Selection changed or held; nothing of it is kept (savepoint).
             raise _Skip
@@ -531,6 +590,8 @@ def delivery_bulk(
             # Leave one largest message (100 recipients, the SQL cap) of
             # room, so the batch never decides at the limit itself.
             "allowed": DAILY_SEND_LIMIT - RESERVED_SENDS - 100,
+            # Each item's begin_submission time (_timing).
+            "work": [],
         }
 
         def item(run_id, position):
@@ -553,16 +614,13 @@ def delivery_bulk(
                 sender_name=configured_sender_name(configuration_id),
                 workspace=workspace,
             )
-            items, tried, hold = _run_batch(ids, item, limit=batch)
+            items, tried, pace = _run_batch(ids, item, limit=batch)
             # The clock the provider deadlines were written on, read just
             # before commit, paired with this process's monotonic clock.
             context["db_now"], context["mono"] = database_now(), monotonic()
         context["items"] = items
-        DEBUG.debug(
-            "bulk send: %d of %d tried submitting in %.2f s of lock hold",
-            len(items),
-            len(tried),
-            hold,
+        _timing(
+            "commit", pace, items=len(items), tried=len(tried), work=context["work"]
         )
         return context, tried
 
@@ -765,6 +823,8 @@ def delivery_bulk(
                             finish_item(item, current)
                     except Exception as error:
                         _unrecorded(error)
+            else:
+                _timing("outcome", pace, items=len(chunk), tried=len(chunk))
 
     def hinted_bulk(run_id):
         """Whether a hint is for scheduled Family mail (the only drain trigger)."""

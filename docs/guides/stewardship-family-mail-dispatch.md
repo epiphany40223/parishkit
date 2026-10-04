@@ -324,8 +324,10 @@ B, the most messages one send batch marks `submitting` before sending; a
 smaller B means fewer `delivery_unknown` messages to settle if a mail
 consumer dies mid-batch. Then start the services as usual. At startup the
 worker and mail worker log a WARNING saying the bulk send is on and with
-which B; with debug logging on, each batch logs how many items it took and
-its lock hold.
+which B; with debug logging on, each batch transaction logs one
+`bulk timing: {...}` line: what it did (`prepare`, `commit` or `outcome`),
+how many items it finished and tried, its lock hold and each item's time
+under the lock (BG-12's rehearsal report reads these lines).
 
 To turn it off, either:
 
@@ -367,6 +369,33 @@ clock, throughput, phase percentiles, connection reuse, retire reasons,
 limit holds and what batching saved. Its
 [tuning section](stewardship-mail-send-report.md#tuning-the-caps) explains
 which numbers argue for larger or smaller batch caps.
+
+## Bulk send rehearsal baselines
+
+The [faster bulk Family send](../plans/stewardship/background-processing.md#bg-12-faster-bulk-family-send)
+(BG-12) is accepted on local rehearsals. A rehearsal is the local
+environment's `rehearse` command: see
+[rehearsing a bulk send](stewardship-local-environment.md#rehearsing-a-bulk-send)
+for how to run it and what its report shows. This section records the
+results, the build and the seeds.
+
+**Baselines (BG-12 PR 1).** Each size needs the one-at-a-time path, the bulk
+path and the bulk send-only rate, with the modeled latency at 600 ms:
+
+| Size | Path | Build | Due to last outcome | Accepted/min | Preparation | Send-only/min | Lock held | 40P01 | Correct |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 100 | one at a time | (not yet run) | | | | | | | |
+| 100 | bulk | (not yet run) | | | | | | | |
+| 100 | bulk, send-only | (not yet run) | | | | | | | |
+| 1,100 | one at a time | (not yet run) | | | | | | | |
+| 1,100 | bulk | (not yet run) | | | | | | | |
+| 1,100 | bulk, send-only | (not yet run) | | | | | | | |
+
+When PR 1 merged, the shared local deployment was in use for other checks,
+so none of these runs had been made; #447 tracks them. Each run needs
+`deploy` of the build under test and a `reset --seeded` afterwards. The
+1,100-Family invitation run needs support that a later BG-12 pull request
+adds (see the local guide).
 
 ## Fresh-install schema evidence
 
