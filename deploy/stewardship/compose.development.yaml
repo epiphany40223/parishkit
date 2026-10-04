@@ -163,8 +163,20 @@ services:
         source: ../../tools/stewardship-local-vm.sh
         target: /app/tools/stewardship-local-vm.sh
       - <<: *test-bind
+        source: ../../tools/stewardship-ops
+        target: /app/tools/stewardship-ops
+      - <<: *test-bind
         source: ../../docs/guides/stewardship-local-environment.md
         target: /app/docs/guides/stewardship-local-environment.md
+      - <<: *test-bind
+        source: ../../docs/guides/stewardship-operator-scripts.md
+        target: /app/docs/guides/stewardship-operator-scripts.md
+      - <<: *test-bind
+        source: ../../docs/guides/stewardship-mail-send-report.md
+        target: /app/docs/guides/stewardship-mail-send-report.md
+      - <<: *test-bind
+        source: ../../docs/guides/stewardship-deployment-runbook.md
+        target: /app/docs/guides/stewardship-deployment-runbook.md
       - <<: *test-bind
         source: ../../install.py
         target: /app/install.py
