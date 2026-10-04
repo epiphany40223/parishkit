@@ -1,0 +1,47 @@
+/* Charts (#477): the interactive view fills its panel, and the tooltip is
+   styled here because the CSP forbids the stylesheet vega-tooltip would
+   inject. The #vg-tooltip-element rules are vega-tooltip's defaults
+   (BSD-3-Clause, Interactive Data Lab and contributors; see
+   vendor/LICENSES.txt), kept as published so the tooltip looks as documented. */
+.chart { margin: 0; }
+[data-chart-view] { display: block; width: 100%; }
+[data-chart-view] svg { display: block; max-width: 100%; height: auto; }
+.chart-summary { color: var(--muted); }
+.chart-table { margin-top: .75rem; }
+.chart-notes { margin: .75rem 0 0; padding-left: 1.25rem; }
+
+#vg-tooltip-element {
+  visibility: hidden;
+  padding: 8px;
+  position: fixed;
+  z-index: 1000;
+  font-family: sans-serif;
+  font-size: 11px;
+  border-radius: 3px;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: rgba(255, 255, 255, 0.95);
+  border: 1px solid #d9d9d9;
+  color: black;
+}
+#vg-tooltip-element.visible { visibility: visible; }
+#vg-tooltip-element h2 { margin-top: 0; margin-bottom: 10px; font-size: 13px; }
+#vg-tooltip-element table { border-spacing: 0; }
+#vg-tooltip-element table tr { border: none; }
+#vg-tooltip-element table tr td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+#vg-tooltip-element table tr td.key {
+  color: #808080;
+  max-width: 150px;
+  text-align: right;
+  padding-right: 4px;
+}
+#vg-tooltip-element table tr td.value {
+  display: block;
+  max-width: 300px;
+  max-height: 7em;
+  text-align: left;
+}

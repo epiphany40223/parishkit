@@ -240,6 +240,8 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
+vl-convert-python==1.9.0.post1
+    # via parishkit (pyproject.toml)
 wcwidth==0.8.3
     # via
     #   columnar
