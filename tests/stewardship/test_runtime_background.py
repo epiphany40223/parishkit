@@ -60,6 +60,18 @@ assert not settings.configured
     assert result.returncode == 0, result.stderr
 
 
+@pytest.fixture(autouse=True)
+def _restore_recorded_profile(monkeypatch):
+    """Assembly records the admitted profile in settings; keep it from leaking."""
+    from django.conf import settings
+
+    monkeypatch.setattr(
+        settings,
+        "STEWARDSHIP_DEPLOYMENT_PROFILE",
+        settings.STEWARDSHIP_DEPLOYMENT_PROFILE,
+    )
+
+
 @pytest.fixture
 def admitted_configuration(tmp_path, monkeypatch):
     """Use real purpose-key files; substitute only kernel/SQL process admission."""
@@ -143,9 +155,11 @@ def queue_login(queue):
 
 @pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
 def test_background_assembly_binds_exact_keys_role_and_closed_registry(
-    admitted_configuration, role
+    admitted_configuration, role, monkeypatch
 ):
     """Build a real lazy broker without provider sockets or ambient configuration."""
+    from django.conf import settings
+
     from parishkit.stewardship.accounts.key_files import file_fingerprint
 
     configuration, calls = admitted_configuration
@@ -155,10 +169,17 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
             service_role=role,
             secrets={"token_public": configuration.secrets["token_public"]},
         )
+    # Assembly records the admitted profile; restore the test module's after.
+    monkeypatch.setattr(
+        settings,
+        "STEWARDSHIP_DEPLOYMENT_PROFILE",
+        settings.STEWARDSHIP_DEPLOYMENT_PROFILE,
+    )
     stop, pulse = Event(), lambda: None
     runtime = background.configure_background(configuration, stop=stop, heartbeat=pulse)
     try:
         assert calls == ["mounts", "lifecycle", "django", "grants", "coherence"]
+        assert configuration.profile.value == settings.STEWARDSHIP_DEPLOYMENT_PROFILE
         assert runtime.broker.service is role and runtime.broker.stop is stop
         expected = {
             "operational_collect",

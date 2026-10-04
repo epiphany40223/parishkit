@@ -34,6 +34,7 @@ from parishkit.stewardship.accounts.secret_requests import (
     stage_secret_request,
 )
 from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.deployment import DeploymentProfile
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROLES = (
@@ -422,7 +423,12 @@ def test_provider_ownership_loss_preserves_sealed_intake_without_a_verdict(insta
         raise ConfigError("synthetic-private-interlock")
 
     installer.validate_request = lambda request_id, value: check_candidate(
-        "slack", {"channel_id": "C123"}, value, seconds=30, check=lost
+        "slack",
+        {"channel_id": "C123"},
+        value,
+        seconds=30,
+        check=lost,
+        profile=DeploymentProfile.TEST,
     )
     with pytest.raises(ProviderCheckOwnershipLost):
         run(installer)

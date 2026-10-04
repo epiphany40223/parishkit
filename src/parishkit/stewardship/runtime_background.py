@@ -288,8 +288,13 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
     configure_operator_database(configuration)
     # A fresh runtime has no Django settings/app registry until this point.
     # Broker/dispatcher imports transitively define storage models.
+    from django.conf import settings
+
     from .jobs.broker import build_broker
 
+    # Source reads select their ParishSoft base URL and helper profile from
+    # the admitted deployment's profile, as the web role does.
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = configuration.profile.value
     admit_runtime_database(configuration)
     from django.db import connections
 

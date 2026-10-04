@@ -294,7 +294,11 @@ def serve_credential_installer(configuration, lease):
         configuration,
         validate=validator,
         validate_request=(
-            request_validator(configuration.credential_target, check=lease.check)
+            request_validator(
+                configuration.credential_target,
+                check=lease.check,
+                profile=configuration.profile,
+            )
             if configuration.credential_target
             in {"parishsoft", "google_workspace", "slack"}
             else None
