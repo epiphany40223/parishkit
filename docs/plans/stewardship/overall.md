@@ -691,6 +691,10 @@ gate sequence above. Each states its own dependencies and review rules.
 - **OPS-10** — the [local laptop environment](operations.md#ops-10-local-laptop-environment)
   for testing Admin and Family changes before Production
   ([#476](https://github.com/epiphany40223/parishkit/issues/476)).
+- **ADM-11** — the [Admin automation interface](admin-portal.md#adm-11-admin-automation-interface),
+  a host command line for every Admin portal action under the same checks and
+  audit as the pages
+  ([#463](https://github.com/epiphany40223/parishkit/issues/463)).
 
 ## Review-gate protocol
 

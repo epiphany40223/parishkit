@@ -4,6 +4,10 @@ All administration functionality is rooted under `/admin/` and uses the custom
 ParishKit interface; Django's stock administration site is not exposed as the
 product UI. Authorization is defined by the [overview](../spec.md#actors-and-authorization)
 and enforced on every view, partial endpoint, object query, job, and export.
+The [Admin automation interface](../admin-automation/spec.md) reaches the
+same actions and reads from the host command line, through the same service
+functions, checks and audit; new Admin actions follow its
+[rules for new Admin actions](../admin-automation/spec.md#rules-for-new-admin-actions).
 
 ## Login and denial behavior
 
@@ -673,7 +677,9 @@ The page and its rules are defined by the
 [hosted files specification](../hosted-files/spec.md#admin-page).
 
 Integration pages expose connection status, last check, safe fingerprint, and
-Replace/Test actions. Secret replacement requires fresh Google authentication.
+Replace/Test actions. Secret replacement requires fresh Google authentication
+(or a full-scope
+[automation session](../admin-automation/spec.md#secret-replacement)).
 The UI seals the submitted value to its target-specific installer, shows
 staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it. Failure or expiry destroys sealed staging and leaves the old working
@@ -1150,7 +1156,10 @@ Going live is a dedicated workflow, not a toggle. It requires:
   distinct-Family, and message/result counts plus an Admin-only Family list;
   and
 - completion of the gated asynchronous cleanup below, followed by fresh Google
-  authentication and a typed Production confirmation.
+  authentication and a typed Production confirmation (from the command line,
+  a full-scope
+  [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
+  stands in for the fresh authentication).
 
 Testing deliveries do not count as live. After readiness and inventory, the
 Admin explicitly acknowledges that cleanup is irreversible and starts it. One
@@ -1211,7 +1220,9 @@ not rolled back. Retry resumes from durable cleanup checkpoints or reruns the
 short final transaction; cancelling releases the gate without restoring deleted
 Testing data. Only the pre-start `scheduled` result offers **Withdraw from
 Production**. That action
-requires fresh Google authentication, an entered reason, and explicit
+requires fresh Google authentication (or a full-scope
+[automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)),
+an entered reason, and explicit
 confirmation that Testing data deleted by the prior transition cannot be
 restored. Under a campaign row lock, the server must verify that the state is
 still `scheduled`, account for and safely cancel future live work under the
@@ -1813,6 +1824,11 @@ closes the purge window until that successor is archived and returned to
 Testing.
 
 ## Portal user management
+
+The page also lists every live
+[automation session](../admin-automation/spec.md#revocation-and-listing) and
+lets any Administrator revoke one; each Administrator's own sessions are on
+the Automation access page under the account menu.
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. Role

@@ -79,7 +79,11 @@ workflow. The runbook must say to:
    restoring, and keep them stopped, so no scheduled or retried Family mail
    is sent from restored state.
 2. Restore the database, configuration, credentials and media from the
-   latest verified backup.
+   latest verified backup. Once the
+   [Admin automation interface](../../specs/stewardship/admin-automation/spec.md#session-rules)
+   is installed (ADM-11 PR 2), then run
+   `pk-stewardship revoke-automation-sessions --reason restore`, before `web`
+   starts, so no restored automation session survives.
 3. Start only the web service (behind `caddy`), pause the campaign's
    delivery, and have an Administrator review the delivery and outbox state
    against the mail provider's own logs. This review is best effort: v1

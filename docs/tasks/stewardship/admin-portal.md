@@ -296,3 +296,24 @@ Scope and dependencies: [ADM-10 work package](../../plans/stewardship/admin-port
 - [ ] ADM-10.06 — Test every purge state, race, and confirmation boundary.
 
 Evidence: Not started.
+
+## ADM-11: Admin automation interface
+
+Scope and dependencies: [ADM-11 work package](../../plans/stewardship/admin-portal.md#adm-11-admin-automation-interface).
+Specification: [Admin automation interface](../../specs/stewardship/admin-automation/spec.md).
+
+- [ ] ADM-11.01 — PR 0: specify the Admin automation interface and record the Administrator's decisions.
+- [ ] ADM-11.02 — PR 1: add the AdminCaller seam with no behavior change.
+- [ ] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
+- [ ] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
+- [ ] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
+- [ ] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
+- [ ] ADM-11.07 — PR 6: add refresh and Testing send commands.
+- [ ] ADM-11.08 — PR 7: add delivery control and Family portal maintenance commands.
+- [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
+- [ ] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
+- [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
+- [ ] ADM-11.12 — PR 11: add user, rule (including high-impact changes), assignment, acknowledgement and follow-up commands.
+- [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
+
+Evidence: Not started.

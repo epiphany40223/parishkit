@@ -636,7 +636,10 @@ checks expected ParishSoft organization without mutation, and starts in Testing
 mode with the scheduler, ordinary worker admission, production outbox dispatch,
 and Family mail disabled. Before exposing any web route, restore invalidates
 all restored administration and Family sessions, pending OAuth state, and
-cached reauthentication evidence. Fresh Google login is required for Admin,
+cached reauthentication evidence, and revokes every
+[automation session](../admin-automation/spec.md#session-rules) (`restore`,
+as `revoke-automation-sessions` does in the v1 manual restore).
+Fresh Google login is required for Admin,
 Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
 reauthentication timestamp survives restore. In the same fenced initialization
 step, restore sets the durable `restore_review_required` gate, assigns a fresh

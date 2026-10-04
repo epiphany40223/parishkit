@@ -1015,6 +1015,7 @@ Source scope: [Phase 7: Release completion](../../plans/stewardship/overall.md#p
 Source scope: [post-launch work packages](../../plans/stewardship/overall.md#post-launch-work-packages).
 
 1. [OPS-10](operations.md#ops-10-local-laptop-environment) local laptop environment, in its own dependency order.
+2. [ADM-11](admin-portal.md#adm-11-admin-automation-interface) Admin automation interface, in its own dependency order.
 
 ## Packages that span phases
 
@@ -1033,7 +1034,7 @@ Source scope: [post-launch work packages](../../plans/stewardship/overall.md#pos
 
 ## Completion
 
-Completion requires all 381 implementation tasks, all linked package definitions
+Completion requires all 394 implementation tasks, all linked package definitions
 of done, M0 through M7 demonstrations, and G1 through G5 review evidence. A
 passing unit suite or a completed portal alone does not close the project.
 Keep the task index, this navigation map, and the controlling plan synchronized
