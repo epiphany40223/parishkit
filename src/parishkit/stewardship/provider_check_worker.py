@@ -35,6 +35,7 @@ from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile
 from .local import source_base_url
+from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
 from .source.credentials import SourceCredential
 
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
@@ -137,7 +138,27 @@ def _parishsoft(value, settings, session):
 
 
 def _workspace(value, settings, session):
-    """Authenticate the mailbox; delivery and sender acceptance are separate."""
+    """Authenticate the mailbox; delivery and sender acceptance are separate.
+
+    The transport follows the document and the request's profile (#476,
+    ``mail_catcher.workspace_transport``): the mail-catcher document is valid
+    only for a LOCAL request and is checked by reaching Mailpit; a Google
+    service account is invalid for a LOCAL request and is otherwise checked
+    against Google and Gmail as before. The session carries the request's
+    profile; a check with none is a defect, not a verdict.
+    """
+    if session.profile is None:
+        raise ValueError("A Workspace check requires a deployment profile.")
+    try:
+        transport = workspace_transport(value, session.profile)
+    except ConfigError:
+        return False
+    if transport is MailTransport.MAIL_CATCHER:
+        with open_mail_catcher() as smtp:
+            code, _ = smtp.ehlo()
+            if code != 250:
+                raise CredentialValidationUnavailable()
+        return True
     credentials = workspace_candidate(
         value, delegated_email=settings["delegated_email"]
     )
@@ -186,7 +207,15 @@ def _workspace(value, settings, session):
 
 
 def _slack(value, settings, session):
-    """Check token authentication only; no channel-read scope or message side effect."""
+    """Check token authentication only; no channel-read scope or message side effect.
+
+    LOCAL has no Slack stand-in (#476): a LOCAL request's Slack token is
+    invalid before any network call, so the local environment never holds one.
+    """
+    if session.profile is None:
+        raise ValueError("A Slack check requires a deployment profile.")
+    if session.profile is DeploymentProfile.LOCAL:
+        return False
     token = slack_candidate(value)
     response = session.request(
         "POST",

@@ -11,6 +11,7 @@ import pytest
 
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.accounts.setup_forms import SetupMailForm, validate_values
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     deliver_family,
@@ -212,6 +213,7 @@ def test_family_submission_sends_the_display_name(monkeypatch):
         b"synthetic-key",
         SETTINGS | {"sender_name": "Smith, Jones & Co."},
         mail,
+        profile=DeploymentProfile.PRODUCTION,
         smtp_factory=SMTP,
         session_factory=nullcontext,
     )

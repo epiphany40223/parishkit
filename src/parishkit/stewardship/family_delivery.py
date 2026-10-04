@@ -20,12 +20,14 @@ from uuid import UUID
 import requests
 from google.auth.exceptions import RefreshError, TransportError
 
+from parishkit.config import ConfigError
 from parishkit.email.base import Email, build_message
 from parishkit.email.google_workspace import xoauth2_string
 
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.policy_schema import normalized_email
 from .jobs.outbox_validation import mailbox, recipients
+from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
 from .mail_layout import email_document
 from .provider_check_worker import CheckSession
 from .readiness_delivery import _credentials
@@ -550,6 +552,7 @@ def deliver_family(
     settings,
     mail,
     *,
+    profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
 ):
@@ -557,6 +560,8 @@ def deliver_family(
 
     Once DATA has a definitive response, a failing QUIT cannot overturn it.
     Authentication/configuration failures are systemic, not address refusals.
+    ``profile`` is the deployment profile the request named; it selects the
+    transport together with the installed document (see ``SmtpSession``).
     """
     settings = delivery_settings(settings)
     if not isinstance(mail, FamilyDeliveryMail) or any(
@@ -567,12 +572,15 @@ def deliver_family(
         value,
         settings,
         mail,
+        profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
     )
 
 
-def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
+def _deliver_validated(
+    value, settings, mail, *, profile, smtp_factory, session_factory
+):
     """Share SMTP effects only after a compiled mail adapter validates its contract.
 
     Public entry points retain their distinct typed mail restrictions. This
@@ -580,7 +588,11 @@ def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
     A one-message session never reuses a connection, so it never retries.
     """
     session = SmtpSession(
-        value, settings, smtp_factory=smtp_factory, session_factory=session_factory
+        value,
+        settings,
+        profile=profile,
+        smtp_factory=smtp_factory,
+        session_factory=session_factory,
     )
     try:
         return session.deliver(mail)
@@ -610,6 +622,14 @@ class SmtpSession:
 
     Every result carries send statistics (see ``deliver``): how long each
     phase took and how this message used the connection, never an address.
+
+    The transport follows the installed document and the deployment profile
+    (``mail_catcher.workspace_transport``, #476): a Google service account
+    under any profile but LOCAL authenticates to Gmail as above; the
+    mail-catcher document under LOCAL opens a plain, unauthenticated
+    connection to ``LOCAL_SMTP_ENDPOINT`` with no token at all. A document
+    that does not match the profile is a SYSTEMIC result before any
+    connection is opened, so a mismatched file can never send.
     """
 
     def __init__(
@@ -617,6 +637,7 @@ class SmtpSession:
         value,
         settings,
         *,
+        profile,
         smtp_factory=smtplib.SMTP_SSL,
         session_factory=CheckSession,
         clock=time.monotonic,
@@ -624,6 +645,7 @@ class SmtpSession:
         """Hold the key in memory only; nothing is contacted until ``deliver``."""
         self.value = value
         self.settings = delivery_settings(settings)
+        self.profile = profile
         self.smtp_factory = smtp_factory
         self.session_factory = session_factory
         self.clock = clock
@@ -777,10 +799,18 @@ class SmtpSession:
         A limit reply ("421 4.7.0 ... (EHLO)", "454 4.7.0" to AUTH, or a
         rate-limited greeting raised by the factory) is a sending limit, not
         an outage. The failed connection is closed; a failing QUIT is ignored.
+        The mail-catcher transport (LOCAL only) has no token and no AUTH.
         """
-        failure = self._token(count)
-        if failure is not None:
-            return failure
+        try:
+            transport = workspace_transport(self.value, self.profile)
+        except ConfigError:
+            # The document does not match the profile (or is malformed): a
+            # configuration fault, definitively unsent, with nothing contacted.
+            return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
+        if transport is MailTransport.GMAIL:
+            failure = self._token(count)
+            if failure is not None:
+                return failure
         self.connections += 1
         self.used = 0
         self.stats["conn_seq"] = self.connections
@@ -788,18 +818,21 @@ class SmtpSession:
         # The phase under way, so a failure is charged to the right one.
         phase, started = "connect_ms", time.monotonic()
         try:
-            smtp = stack.enter_context(
-                self.smtp_factory(
-                    "smtp.gmail.com",
-                    465,
-                    timeout=10,
-                    context=ssl.create_default_context(),
+            if transport is MailTransport.MAIL_CATCHER:
+                smtp = stack.enter_context(open_mail_catcher())
+            else:
+                smtp = stack.enter_context(
+                    self.smtp_factory(
+                        "smtp.gmail.com",
+                        465,
+                        timeout=10,
+                        context=ssl.create_default_context(),
+                    )
                 )
-            )
             failure = _handshake("ehlo", smtp.ehlo(), 250, count)
             self._add(phase, elapsed_ms(started))
             phase = None
-            if failure is None:
+            if failure is None and transport is MailTransport.GMAIL:
                 phase, started = "auth_ms", time.monotonic()
                 reply = smtp.docmd(
                     "AUTH",

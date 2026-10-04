@@ -7,9 +7,12 @@ import subprocess
 import sys
 import time
 
+from parishkit.config import ConfigError
+
 from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
+from .deployment import recorded_profile
 from .provider_checks import (
     ProviderCheckDrainFailure,
     _check_owner,
@@ -29,6 +32,8 @@ def submit_sample(value, settings, mail, *, seconds, check):
     malformed or late result after helper launch is conservatively unknown.
     Ownership loss and failure to drain remain fatal to the current Task worker;
     they cannot be converted into a successful or safely cancelled receipt.
+    A process with no recorded deployment profile launches nothing: the
+    sample is definitively not sent.
     """
     settings = validated_context("google_workspace", settings)
     if (
@@ -45,14 +50,20 @@ def submit_sample(value, settings, mail, *, seconds, check):
         )
     ):
         raise ValueError("Invalid readiness submission invocation.")
+    try:
+        profile = recorded_profile()
+    except ConfigError:
+        return DeliveryOutcome.NOT_SENT
     payload = json.dumps(
         {
             "settings": settings,
             "candidate": base64.b64encode(value).decode("ascii"),
             "mail": mail.payload(),
             # The helper has no configuration; the parent's own origin binds
-            # any campaign banner in the sample (#248).
+            # any campaign banner in the sample (#248), and its profile
+            # alone can admit the LOCAL mail-catcher transport (#476).
             "banner_origin": mail.banner_origin,
+            "profile": profile.value,
         },
         ensure_ascii=False,
     ).encode("utf-8")

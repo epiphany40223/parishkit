@@ -22,7 +22,7 @@ from .family_delivery import (
     deliver_family,
     delivery_settings,
 )
-from .readiness_delivery_worker import MAX_INPUT
+from .readiness_delivery_worker import MAX_INPUT, request_profile
 
 # A batched helper serves at most this many messages over this many seconds,
 # then exits; it also exits after HELPER_IDLE_SECONDS without a request. The
@@ -40,13 +40,18 @@ def decode_request(raw):
 
 
 def decode_envelope(raw, *, mail_class, limit):
-    """Share envelope parsing; compiled helpers choose their own closed mail type."""
+    """Share envelope parsing; compiled helpers choose their own closed mail type.
+
+    Every request names the parent's deployment profile (#476): the helper has
+    no environment, so the profile in the request is the only thing that can
+    admit the LOCAL mail-catcher transport, and it refuses it for any other.
+    """
     if type(raw) is not bytes or not 0 < len(raw) <= limit:
         raise ValueError("Invalid private delivery request.")
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
     if (
         type(request) is not dict
-        or set(request) != {"settings", "candidate", "mail"}
+        or set(request) != {"settings", "candidate", "mail", "profile"}
         or type(request["candidate"]) is not str
     ):
         raise ValueError("Invalid private delivery request.")
@@ -57,7 +62,7 @@ def decode_envelope(raw, *, mail_class, limit):
     mail = mail_class.from_payload(request["mail"])
     if any(getattr(mail, key) != settings[key] for key in ("sender", "reply_to")):
         raise ValueError("Private delivery context differs.")
-    return candidate, settings, mail
+    return candidate, settings, mail, request_profile(request["profile"])
 
 
 class LineReader:
@@ -96,18 +101,22 @@ class LineReader:
 
 
 def decode_session_header(raw):
-    """The session's first line: the key and closed Workspace identity only."""
+    """The session's first line: the key, closed Workspace identity and profile."""
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
     if (
         type(request) is not dict
-        or set(request) != {"settings", "candidate"}
+        or set(request) != {"settings", "candidate", "profile"}
         or type(request["candidate"]) is not str
     ):
         raise ValueError("Invalid private session header.")
     candidate = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(candidate) <= MAX_FILE_BYTES:
         raise ValueError("Invalid private credential size.")
-    return candidate, delivery_settings(request["settings"])
+    return (
+        candidate,
+        delivery_settings(request["settings"]),
+        request_profile(request["profile"]),
+    )
 
 
 def decode_session_request(raw, settings):
@@ -144,8 +153,8 @@ def serve(fd, output, *, open_session=SmtpSession, clock=time.monotonic):
     header = reader.readline(MAX_INPUT, timeout=HELPER_IDLE_SECONDS)
     if header is None:
         return 0
-    candidate, settings = decode_session_header(header)
-    session = open_session(candidate, settings)
+    candidate, settings, profile = decode_session_header(header)
+    session = open_session(candidate, settings, profile=profile)
     started = clock()
     try:
         for _ in range(SESSION_MESSAGES):
@@ -180,8 +189,10 @@ def main():
         except Exception:
             return 1
     try:
-        candidate, settings, mail = decode_request(sys.stdin.buffer.read(MAX_INPUT + 1))
-        result = deliver_family(candidate, settings, mail)
+        candidate, settings, mail, profile = decode_request(
+            sys.stdin.buffer.read(MAX_INPUT + 1)
+        )
+        result = deliver_family(candidate, settings, mail, profile=profile)
         sys.stdout.write(
             json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
         )

@@ -10,10 +10,12 @@ import ssl
 from enum import StrEnum
 from types import SimpleNamespace
 
+from parishkit.config import ConfigError
 from parishkit.email.google_workspace import xoauth2_string
 
 from .accounts.integration_candidates import GOOGLE_TOKEN_URI, workspace_candidate
 from .accounts.provider_context import validated_context
+from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
 from .provider_check_worker import CheckSession
 from .readiness_mail import ReadinessMail
 
@@ -50,6 +52,7 @@ def deliver_sample(
     settings,
     mail,
     *,
+    profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
 ):
@@ -59,6 +62,11 @@ def deliver_sample(
     proves non-acceptance; timeout, disconnect and unexpected responses after
     submission starts are unknown. A successful DATA response remains acceptance
     even if connection shutdown subsequently fails.
+
+    The transport follows the installed document and ``profile`` (see
+    ``mail_catcher.workspace_transport``): Gmail with XOAUTH2 for a service
+    account outside LOCAL, the plain mail-catcher connection for the
+    mail-catcher document in LOCAL. A mismatch is definitively not sent.
     """
     settings = validated_context("google_workspace", settings)
     if not isinstance(mail, ReadinessMail) or any(
@@ -66,9 +74,21 @@ def deliver_sample(
         for key in ("sender", "reply_to", "recipient")
     ):
         raise ValueError("The sample differs from its admitted mail context.")
+    try:
+        transport = workspace_transport(value, profile)
+    except ConfigError:
+        return DeliveryOutcome.NOT_SENT
     outcome = DeliveryOutcome.NOT_SENT
     try:
         message = mail.message()
+        if transport is MailTransport.MAIL_CATCHER:
+            with open_mail_catcher() as smtp:
+                code, _ = smtp.ehlo()
+                if code != 250:
+                    return DeliveryOutcome.NOT_SENT
+                outcome = DeliveryOutcome.UNKNOWN
+                outcome = _submit(smtp, message, mail)
+            return outcome
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
         with smtp_factory(

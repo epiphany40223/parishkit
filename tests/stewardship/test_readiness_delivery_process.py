@@ -28,6 +28,7 @@ def payload():
             "settings": SETTINGS,
             "candidate": base64.b64encode(b"synthetic-private").decode(),
             "mail": sample().payload(),
+            "profile": "test",
         }
     ).encode()
 
@@ -247,6 +248,7 @@ def banner_payload(origin):
         "settings": SETTINGS,
         "candidate": base64.b64encode(b"synthetic-private").decode(),
         "mail": mail.payload(),
+        "profile": "test",
     }
     if origin is not None:
         request["banner_origin"] = origin

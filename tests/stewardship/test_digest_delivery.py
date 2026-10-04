@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.digest_delivery import DigestDeliveryMail, deliver_digest
 from parishkit.stewardship.digest_delivery_worker import decode_request
 from parishkit.stewardship.family_delivery import (
@@ -66,6 +67,7 @@ def request(mail=None):
             "candidate": base64.b64encode(b"synthetic").decode(),
             "settings": SETTINGS,
             "mail": (mail or sample()).payload(),
+            "profile": "production",
         }
     ).encode()
 
@@ -73,7 +75,7 @@ def request(mail=None):
 def test_private_decoder_accepts_maximum_valid_escaped_text():
     """JSON's six-byte control escapes must fit the validated plain-body budget."""
     mail = replace(sample(), text="\x01" * MAX_BODY_BYTES)
-    _, _, decoded = decode_request(request(mail))
+    _, _, decoded, _ = decode_request(request(mail))
     assert decoded == mail
 
 
@@ -87,7 +89,7 @@ def test_compiled_report_roundtrips_through_actual_private_decoder_and_mime():
         text=compiled.text,
         chart=compiled.chart.data,
     )
-    candidate, settings, decoded = decode_request(request(mail))
+    candidate, settings, decoded, _ = decode_request(request(mail))
     assert candidate == b"synthetic" and settings == SETTINGS and decoded == mail
     mime = decoded.message()
     assert mime["To"] == "admin@example.org"
@@ -210,7 +212,7 @@ def test_family_and_digest_entry_points_are_not_interchangeable():
         replace(family, html=digest.html)
     for adapter, mail in ((deliver_digest, family), (deliver_family, digest)):
         with pytest.raises(ValueError):
-            adapter(b"synthetic", SETTINGS, mail)
+            adapter(b"synthetic", SETTINGS, mail, profile=DeploymentProfile.PRODUCTION)
     for adapter, mail in ((submit_digest, family), (submit_family, digest)):
         with pytest.raises(ValueError):
             adapter(b"synthetic", SETTINGS, mail, seconds=5, check=lambda: None)

@@ -18,10 +18,10 @@ def main():
     """Never emit private diagnostics, including for malformed direct invocation."""
     logging.disable(logging.CRITICAL)
     try:
-        candidate, settings, mail = decode_request(
+        candidate, settings, mail, profile = decode_request(
             sys.stdin.buffer.read(MAX_WEEKLY_INPUT + 1)
         )
-        result = deliver_weekly(candidate, settings, mail)
+        result = deliver_weekly(candidate, settings, mail, profile=profile)
         sys.stdout.write(
             json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
         )

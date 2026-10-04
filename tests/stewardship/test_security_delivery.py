@@ -12,6 +12,7 @@ import pytest
 
 from parishkit.stewardship import readiness_delivery_process as pipe
 from parishkit.stewardship.campaigns.domain import SystemMode
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
@@ -135,7 +136,12 @@ def test_operational_and_security_envelopes_are_not_interchangeable():
             b"synthetic", SETTINGS, mail(), seconds=5, check=lambda: None
         )
     with pytest.raises(ValueError):
-        deliver_security_mail(b"synthetic", SETTINGS, operational_mail())
+        deliver_security_mail(
+            b"synthetic",
+            SETTINGS,
+            operational_mail(),
+            profile=DeploymentProfile.PRODUCTION,
+        )
 
 
 def test_fixed_private_helper_and_validated_pipe_roundtrip(monkeypatch):
@@ -198,6 +204,7 @@ def test_real_security_helper_rejects_invalid_credentials_without_network():
             "candidate": base64.b64encode(b"synthetic").decode(),
             "settings": SETTINGS,
             "mail": mail().payload(),
+            "profile": "production",
         }
     ).encode()
     result = subprocess.run(

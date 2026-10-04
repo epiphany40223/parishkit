@@ -10,6 +10,7 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.integration_candidates import GOOGLE_TOKEN_URI
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.mail_layout import NOTICE_STYLE
 from parishkit.stewardship.readiness_delivery import (
     DeliveryOutcome,
@@ -146,6 +147,7 @@ def delivery(monkeypatch, *, outcome=None, exit_error=None, auth=235, greeting=2
         b"synthetic-private-key",
         SETTINGS,
         sample(),
+        profile=DeploymentProfile.PRODUCTION,
         smtp_factory=SMTP,
         session_factory=nullcontext,
     )
@@ -212,7 +214,10 @@ def test_scope_changes_reject_before_provider_or_token_calls():
     """Message headers cannot override the server-owned credential context."""
     with pytest.raises(ValueError, match="admitted mail context"):
         deliver_sample(
-            b"unused", SETTINGS | {"recipient": "other@example.org"}, sample()
+            b"unused",
+            SETTINGS | {"recipient": "other@example.org"},
+            sample(),
+            profile=DeploymentProfile.PRODUCTION,
         )
 
 
@@ -224,7 +229,13 @@ def test_private_token_errors_before_submission_remain_unsent(monkeypatch):
 
     monkeypatch.setattr("parishkit.stewardship.readiness_delivery._credentials", fail)
     assert (
-        deliver_sample(b"synthetic", SETTINGS, sample(), session_factory=nullcontext)
+        deliver_sample(
+            b"synthetic",
+            SETTINGS,
+            sample(),
+            profile=DeploymentProfile.PRODUCTION,
+            session_factory=nullcontext,
+        )
         is DeliveryOutcome.NOT_SENT
     )
 
