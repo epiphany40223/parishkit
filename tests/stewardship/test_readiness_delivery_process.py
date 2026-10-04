@@ -288,23 +288,40 @@ def test_deadline_stop_is_recorded_with_its_limit(monkeypatch):
         raise subprocess.TimeoutExpired("synthetic", timeout)
 
     process.communicate = communicate
-    killed_first = []
-    recorded = Mock(side_effect=lambda *a, **k: killed_first.append(process.killed))
+    # The patch is process-wide, so a daemon thread left by an earlier test
+    # (a family mail reaper also records "mail_helper") can record its own
+    # timeout into it (#542). Judge only this helper's records.
+    mine = ("mail_helper", "readiness_delivery_worker")
+    seen = []
+    recorded = Mock(
+        side_effect=lambda *a, **k: seen.append(
+            ((k.get("what"), k.get("helper")), process.killed)
+        )
+    )
+
+    def own_calls():
+        """The recorded readiness-helper calls, ignoring any stray thread's."""
+        return [
+            c
+            for c in recorded.call_args_list
+            if (c.kwargs.get("what"), c.kwargs.get("helper")) == mine
+        ]
+
     monkeypatch.setattr(timeouts, "record_timeout", recorded)
     monkeypatch.setattr(parent.subprocess, "Popen", lambda *args, **kwargs: process)
     assert invoke(seconds=0.3) is DeliveryOutcome.UNKNOWN
     # Logged just after the kill, naming which helper was stopped.
-    assert process.killed and killed_first == [True]
-    assert recorded.call_args.kwargs["what"] == "mail_helper"
-    assert recorded.call_args.kwargs["helper"] == "readiness_delivery_worker"
-    assert recorded.call_args.kwargs["limit_seconds"] == 0.3
-    assert recorded.call_args.kwargs["elapsed_seconds"] >= 0.3
+    assert process.killed
+    assert [killed for kind, killed in seen if kind == mine] == [True]
+    (call,) = own_calls()
+    assert call.kwargs["limit_seconds"] == 0.3
+    assert call.kwargs["elapsed_seconds"] >= 0.3
     recorded.reset_mock()
     monkeypatch.setattr(
         process, "communicate", Mock(side_effect=subprocess.TimeoutExpired("s", 1))
     )
     assert invoke() is DeliveryOutcome.UNKNOWN
-    recorded.assert_not_called()
+    assert own_calls() == []
 
 
 def gated_helper(monkeypatch, output=b"accepted\n"):

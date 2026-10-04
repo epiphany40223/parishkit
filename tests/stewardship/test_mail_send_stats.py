@@ -99,11 +99,19 @@ def test_a_session_helper_with_bad_statistics_still_reports_acceptance():
             os.close(self.read)
 
         def wait(self, timeout=None):
+            # Quit on the parent's EOF, as the real helper does, so close()
+            # reaps it instead of leaving it for a later reaper kill (#542),
+            # and close this fake's own pipe ends as an exiting helper would.
+            if self.returncode is None:
+                self.returncode = 0
+                os.close(self.write)
+                os.close(self.read)
             return self.returncode
 
     session = family_delivery_process.FamilyMailSession(spawn=Helper)
     result = send(session, mail())
     assert result.status is Status.ACCEPTED and result.stats is None
+    session.close()
 
 
 def test_stats_cross_the_pipe_but_never_change_the_outcome():
