@@ -756,7 +756,10 @@ The switch is not a deployment input: it is never part of the provisioning
 record, and a render with it off is byte-for-byte the render of the release
 before it, so returning to that release is an ordinary retarget. It writes
 the same rows through the same owners and SQL guards, so either path finishes
-or recovers what the other started, and the switch may change mid-send.
+or recovers what the other started, and the switch may change mid-send. It
+reads, renders, decrypts and seals outside the work-order lock, as
+[Bulk send work outside the lock](#bulk-send-work-outside-the-lock)
+describes.
 
 - **Batches.** A batch is one work-order transaction. It adds items until
   its item limit, or until the time held so far plus its average item so far
@@ -919,6 +922,208 @@ eligible address is suppressed is included in the
 [Family directory's mailing columns](../reports/spec.md#mailing-columns).
 A systemic provider/authentication failure stops further sending for that run
 and becomes CRITICAL to avoid a flood of identical failures.
+
+### Bulk send work outside the lock
+
+The [bulk Family send](#bulk-family-send) does each Family's reading,
+rendering, decryption and sealing while it holds the global work-order lock,
+so on the validation host every bulk preparation batch held a single Family
+and the launch invitation took about 24 minutes for 1,100 Families
+([#447](https://github.com/epiphany40223/parishkit/issues/447)). The bulk
+send therefore moves that work outside the lock, and prepares scheduled
+Production reminders before they fall due. Only a short recheck and the
+writes stay under the lock. The measurements, estimates and PR plan are in
+the
+[BG-12 work package](../../../plans/stewardship/background-processing.md#bg-12-faster-bulk-family-send).
+
+Two constraints hold for the rest of the current campaign:
+
+- **Every Production credential stays valid.** Each Family's code and link
+  token, made at go-live, keep working, including in mail already sent. The
+  send only reads them: no rotation, regeneration, re-encryption or change
+  to how they are looked up.
+- **One guard change only.** Every row, owner, state, ticket and SQL guard
+  stays as it is, except one condition of the occurrence guard that lets
+  preparation run before the due time (below), installed by a
+  [forward migration](../operations/spec.md#post-launch-schema-policy).
+  Nothing may be sent before its due time.
+
+It is part of the bulk send, with no switch of its own: the bulk switch
+turns it on and off, and turning the bulk send off returns to the
+one-at-a-time path, which prepares at the due time.
+
+#### Building outside the lock
+
+- **No threads or extra connections.** Each process builds serially, between
+  its batches, on its own database connection. The runtime budgets three
+  connections per process, and a fourth would need role, grant and upgrade
+  check changes. Building therefore frees the lock for other processes (the
+  other consumer, the worker, sign-ins); it does not make one process
+  faster on its own.
+- **One snapshot per build.** A build reads everything it renders from (the
+  occurrence or message, the Family's source inputs, the content version,
+  the applied integration, hosted files and branding assets) and its
+  fingerprint in one `REPEATABLE READ` transaction, rendering inside it or
+  from what it prefetched there. It then decrypts or seals in a short second
+  transaction that holds only the credential key-set lock (shared,
+  non-waiting, with its inventory check). That second transaction reads
+  outside the snapshot; the token generation, credential epoch and key
+  inventories only move forward and are rechecked under the work-order
+  lock, and a build whose second read differs from its snapshot is dropped.
+- **Dropped builds.** A busy key-set lock (a rotation in progress), an
+  inventory that is not current, a serialization failure (`40001`) or a
+  decryption error drops the build, and the item is built inside the lock as
+  today. The rendering, source-loading, sealing and content functions that
+  assert the work-order lock today get variants for builds.
+- **A small lookahead, carried forward.** A batch's lock hold fits only a
+  few items, so a process builds only about as many items as its last batch
+  committed, plus a small margin. Builds a batch does not use carry over to
+  the next batch and are rechecked there. A carried send build holds a
+  Family's plaintext code and link in memory: it is never logged, and it is
+  dropped on a fingerprint mismatch, a stop request or the end of the drain.
+- **Recheck under the lock.** Each item compares its fingerprint in one
+  query inside the batch's lock transaction. If it matches, the prebuilt
+  result is written through the existing code and guards. If not, the item
+  is rebuilt inside the lock exactly as today, so a change costs time, not
+  correctness. A guard refusal still leaves the item to the one-at-a-time
+  path, as today.
+
+#### Preparing ahead of the due time
+
+Preparation is serial in the one worker, so a Production reminder's
+preparation runs in a lead window of two hours before its due time, leaving
+only sending at the due time. The initial invitation at a campaign's start
+cannot be prepared ahead, because no occurrence may be created before the
+campaign's configuration starts; this campaign has only reminders left.
+
+- **Planning ahead.** On the bulk path the scheduler plans a Production
+  reminder's Families once its due time is within the lead window, instead
+  of at the due time. Families that become eligible later are planned at
+  the due time as today, and catch-up invitations are unchanged.
+- **Planning horizons.** Preparation re-runs `plan_family` under its claim,
+  and today that planning only looks up to the current time, so it would
+  never select a reminder that is not yet due and the task would retry on
+  "selection changed". Preparation-time planning therefore looks up to the
+  current time plus the lead window for a Production reminder whose
+  occurrence is due within that window. The horizon depends on the
+  occurrence, not on the bulk switch, so preparation tasks already queued
+  when the bulk send is turned off mid-window still complete. The planning
+  a send runs at dispatch (`plan_family` in the commit half of
+  `begin_submission`) keeps its horizon of the current time.
+- **Catch-up merging.** Because preparation plans up to two hours ahead, an
+  older reminder that is due but unsent can be merged into the newer one up
+  to two hours earlier than today; the Family is then mailed once, at the
+  newer reminder's due time.
+- **The guard change.** In `stewardship_occurrence_guard_v1`, the branch
+  that admits a running claim under a fenced task (a move to `running`, or
+  an update that stays `running`) refuses it while the occurrence is not yet
+  due (`NEW.due_at > instant`). The
+  migration narrows that one condition: for a `family_mail_prepare` task on
+  a Production occurrence it refuses only when `NEW.due_at > instant +` the
+  lead window (two hours), and for every other task type and for Testing it
+  refuses exactly as before. Every other condition of the branch, and of the
+  guard, is unchanged. Preparation's own guard
+  (`stewardship_family_mail_write_admitted_v1`), which needs that running
+  claim, is unchanged.
+- **Nothing is sent early.** The dispatch guard
+  (`stewardship_family_dispatch_live_v1`) is unchanged and refuses a message
+  whose occurrence is not yet due, and the claim branch for delivery tasks
+  keeps refusing a not-yet-due occurrence. The message's delivery Task is
+  enqueued with `not_before` at the due time, so mail consumers do not claim
+  it early and hold it in a retry loop.
+- **Changes between preparation and the send are caught.** The dispatch
+  guard, with `disposition`, rechecks every message when it is committed
+  `submitting`: no live response (a Family that responds during the lead
+  window is not sent the reminder), eligibility and deliverability, the
+  current revision, pause, close, mode, gates and the current token
+  generation and credential epoch. The send build re-renders each message
+  from current inputs, so content edited during the lead window is sent as
+  edited.
+- **Refresh holds and deltas.** The
+  [delta wait](#deltas-wait-for-a-bulk-family-send) counts preparation tasks
+  as today, but counts only messages whose occurrence is already due, so a
+  prepared reminder does not hold deltas for the rest of its lead window.
+  Deltas are therefore held while preparation runs and resume once it ends,
+  until the send itself begins. If a delta does promote during preparation
+  (past the source-age allowance), the promotion marks the population dirty
+  and preparation's guard refuses writes until the population is rebuilt, so
+  preparation pauses for that rebuild; the lead window absorbs it.
+- **The lead window follows the nightly refresh.** The nightly full refresh
+  (02:00 by default) runs before a 08:00 reminder's lead window (from
+  06:00); a deployment whose nightly time falls inside a lead window is
+  flagged by a startup WARNING.
+- **Pages and health ignore what is not yet due.** The send progress panel's
+  latest send and its upcoming list, and the due-work health check
+  (`SCHEDULER_LAG`), count only occurrences and Tasks that are due, so a
+  prepared reminder appears as upcoming, not as a send in progress or late
+  work.
+- **Testing** plans at the due time as today.
+
+#### Bulk preparation builds
+
+For each Production item the build reads the ticket's occurrence, the
+Family's source inputs and the template, renders the message and seals its
+substitutions. Its fingerprint covers the occurrence version, the Family's
+source generation and eligibility, both configuration rows the render reads
+(the system's active configuration and the campaign's active configuration
+values, such as its name and banner), the template, the hosted files and
+branding assets it names (readiness and size), the active token generation
+and credential epoch, and the key inventory digests. Inside the batch's lock
+transaction each item still claims its ticket and runs `disposition` and
+`plan_family` as today before the fingerprint is compared.
+
+A Testing item writes its Family's rehearsal credential during preparation,
+under that Family's ticket, so Testing preparation stays inside the lock as
+today. Generating rehearsal credentials once when a rehearsal begins, so that
+Testing can prepare outside the lock too, is later Testing-only work
+([#555](https://github.com/epiphany40223/parishkit/issues/555)).
+
+#### Bulk send builds
+
+For each candidate message the build re-renders it from current inputs,
+decrypts its sealed substitutions and builds the provider message. Its
+fingerprint covers the message's and its occurrence's versions, both
+configuration rows, the hosted files and branding assets the template names,
+the source generation, and the version and digest of the credential row the
+link uses (the link token in Production, the rehearsal credential in
+Testing), so an in-place token change is caught. Recipient refusals and
+their resolutions are not fingerprinted: the existing recipient check
+(`stewardship_family_mail_recipients_v1`) refuses a stale recipient list at
+the commit. Inside the batch's lock transaction each message is committed
+`submitting` as today (`bound_dispatch`, `disposition`, the commit half of
+`begin_submission` with `plan_family`, and the dispatch guards) after its
+fingerprint is compared. Testing sends use this path too, since sending
+writes no credential.
+
+#### Batches, crashes and stale state
+
+- **Batched intent and outcomes, as today.** Each send batch commits its
+  "about to send" (`submitting`) records before any of its messages reaches
+  the provider, then sends them over the consumer's connection, then
+  records their outcomes in budget-bounded transactions. A crash leaves at
+  most one batch per mail consumer (two by default, `mail_consumers`) whose
+  outcomes are unrecorded. Recovery records those messages
+  `delivery_unknown` for Administrator review, and none is ever sent again
+  automatically.
+- **Stale state is accepted.** A Family that submits after its message's
+  `submitting` commit but before the send still gets that message, for
+  example a reminder moments after submitting. The Administrator accepts
+  this; the window is one batch's sending time.
+- **Transitions and contention.** Pause, close, mode changes and every other
+  transition still commit under the exclusive lock, so the next batch's
+  commit sees them, exactly as the bulk send does today. Family sign-ins
+  still contend with the batches about as they do today: planning takes the
+  runtime row `FOR UPDATE` while sign-ins take it `FOR SHARE`, and each
+  batch's hold stays within its 0.75-second budget, except that an item
+  rebuilt under the lock costs about as much as one item today (about 0.8
+  seconds on the validation host). Pages, reports, send statistics and
+  recovery are unchanged, because the rows are the same.
+
+A streamed design that prepared in sets under a new run owner was specified
+and then deferred, since it needs a larger guard migration
+([#554](https://github.com/epiphany40223/parishkit/issues/554)). It is
+revisited only if a measured send on this path still takes more than about
+15 minutes.
 
 ## Submission confirmation
 
