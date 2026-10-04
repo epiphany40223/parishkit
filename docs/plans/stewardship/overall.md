@@ -700,6 +700,10 @@ gate sequence above. Each states its own dependencies and review rules.
   work-order lock and prepares reminders ahead of their due time, with one
   small occurrence-guard migration and no credential change
   ([#447](https://github.com/epiphany40223/parishkit/issues/447)).
+- **ADM-12** — the [Admin navigation overhaul](admin-portal.md#adm-12-admin-navigation-overhaul),
+  which moves the Admin portal to the specified menu, page names, ways back and
+  URL scheme, and gates it on JavaScript
+  ([#522](https://github.com/epiphany40223/parishkit/issues/522)).
 
 ## Review-gate protocol
 

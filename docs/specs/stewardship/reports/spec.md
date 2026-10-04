@@ -137,15 +137,13 @@ Each chart is accessible in every rendering. On a page the chart is a figure
 whose view has the chart's name and is described by its summary, and is
 followed by the collapsed exact-values table, a region named by the table's
 caption. A pointer shows exact values in tooltips; the view takes keyboard
-focus so a keyboard or screen-reader user hears its name and summary, and
-gets the exact values from the table, not the tooltips. A browser without
-JavaScript sees the summary and the table. Series are told apart by dash
-pattern as well as color. A layer with nothing to draw (no activity yet, or no
-send to mark) is hidden from assistive technology rather than announced as an
-unnamed graphic. In an email the PNG carries the summary as its alt
-text and the table follows it.
-Times on an axis are the campaign's wall clock whatever time zone draws the
-chart, and the axis names the campaign's zone.
+focus so a keyboard or screen-reader user hears its name and summary, and gets
+the exact values from the table, not the tooltips. Series are told apart by
+dash pattern as well as color. A layer with nothing to draw (no activity yet,
+or no send to mark) is hidden from assistive technology rather than announced
+as an unnamed graphic. In an email the PNG carries the summary as its alt text
+and the table follows it. Times on an axis are the campaign's wall clock
+whatever time zone draws the chart, and the axis names the campaign's zone.
 
 ## Population and calculation rules
 
@@ -449,7 +447,9 @@ that. Both grains come from the one read, so switching never changes a
 total. Both choices are [in-place controls](../admin-portal/spec.md#in-place-controls):
 no reload, the reader's scroll position and focus on the chosen link kept,
 the charts drawn again, and the address replaced (so Back does not step
-through the choices); without script they load the page at the dashboard.
+through the choices). The Admin portal
+[requires JavaScript](../admin-portal/spec.md#javascript-requirement), so
+there is no no-script form.
 
 Each view reads the funnel once, with the report's
 [campaign read guard](../data/spec.md#campaign-read-guards) and role recheck,

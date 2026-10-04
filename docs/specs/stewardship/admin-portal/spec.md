@@ -158,9 +158,8 @@ tests of the exact reviewed revision.
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,
 withdrawal, refusal removal, manual reports, duplicate resends), the page
-script keeps the form's primary button disabled until the box is checked.
-Without the script the button is enabled and the server refuses a missing
-acknowledgment as before.
+script keeps the form's primary button disabled until the box is checked,
+and the server refuses a missing acknowledgment.
 
 Pages and emails start with built-in default text. Saving the first campaign
 fills every applicable page and email slot the draft has never set, in the same
@@ -184,16 +183,14 @@ automatically and never scheduled, that times use the campaign time zone, and
 the current campaign dates. Each schedule row shows only the fields its mail
 type uses (initial invitation and reminder: date, time and email; daily
 digest: time and email; weekly digest: weekday, time and email) and offers
-only emails of that type; the page script clears a field it hides, and
-without the script every field shows. A saved schedule's mail type is shown
-but cannot change. The server reports a missing or inapplicable value on its
-own field (for example a weekday on an invitation, or a date outside the
-campaign with the campaign's dates); only rules between rows, such as a
-second initial invitation or a reminder before it, are collection errors.
-"Add another schedule" adds blank rows (with the same per-type fields) before
-saving, and a row added this way can be removed again, so several schedules
-save in one submission and are validated together; without the script each
-save offers one blank row.
+only emails of that type; the page script clears a field it hides. A saved
+schedule's mail type is shown but cannot change. The server reports a missing
+or inapplicable value on its own field (for example a weekday on an
+invitation, or a date outside the campaign with the campaign's dates); only
+rules between rows, such as a second initial invitation or a reminder before
+it, are collection errors. "Add another schedule" adds blank rows (with the
+same per-type fields) before saving, and a row added this way can be removed
+again, so several schedules save in one submission and are validated together.
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Starting that load fixes the Parish timezone for this setup attempt, so the
@@ -316,6 +313,24 @@ transaction commits after the acknowledgement, brings the banner back. The
 banner costs the Admin page one query, shared with the delivery warning
 count. It is distinct from security-event acknowledgement, which is per
 recipient.
+
+### JavaScript requirement
+
+The Admin portal requires JavaScript and has no no-script fallback (#565).
+Every Admin page, including the sign-in pages, renders its content hidden
+behind a `js-required` class beside a plain-language panel: "The Admin portal
+needs JavaScript. Turn it on in your browser settings, then reload this page."
+The first-party Admin script removes the class at startup, and the hiding rule
+lives in the shared stylesheet, so the content security policy still allows
+no inline script or style. With script off, a page shows only the panel and
+offers no action. Links and forms keep real `href` and `action` attributes,
+because they are the targets the scripts request. Every action is still
+validated on the server, in the same service code the
+[Admin automation interface](../admin-automation/spec.md) calls; client-side
+checks are a convenience, never the only guard. Existing no-script fallbacks
+are removed when a change touches their code anyway. The Family portal is not
+gated and keeps working without script
+([client behavior](../architecture/spec.md#accessibility-and-client-behavior)).
 
 ### Admin navigation
 
@@ -452,13 +467,25 @@ signed-in Admin page (including during initial setup). It is a POST form with
 the Admin CSRF token to the logout route, styled like a menu entry, because
 logout is CSRF-protected. Pages carry no product footer.
 
+The shared header holds a **Find a Family** search box (#561) for
+Administrators and Staff only; Ministry leaders get none, since they cannot
+open the [Family directory](../reports/spec.md#family-directory). It uses the
+directory's search query (the Family name with its heads of household, DUID
+and address) and its permission checks, so results show only Families the role
+may already see, and a result opens that Family (today its directory row). It
+searches by a CSRF-protected POST, never a GET, so the search text stays out
+of URLs, logs and browser history, as the directory's code search does.
+Matching member names and envelope numbers as well is a proposal in #561, to
+confirm in NAV-19. Results appear in place as the reader types. Its route is a
+non-page action.
+
 Entries use the same capability checks as the pages they open, and a group
 with no entry for the viewer's role is omitted; the menu is not the security
 boundary. The entry for the current page, or for the nearest ancestor page
 listed in the menu, is marked `aria-current="page"` and its group is
 highlighted. On wide screens the sidebar is a sticky column that scrolls on
 its own when it is taller than the window; on narrow screens it collapses
-behind a Menu disclosure that works without script.
+behind a Menu disclosure.
 
 Each group is collapsible: a native `<details>` disclosure whose `<summary>`
 text is the group's title, styled as a small muted label with a divider above
@@ -471,7 +498,7 @@ VoiceOver and NVDA check confirms both are announced. The summary is a keyboard 
 Space toggles it) and shows an arrow for its state.
 Groups start open. Each browser remembers which groups an Admin collapsed (only
 the group key and its open or closed state, in browser storage, as the
-[About panel](#page-help) does); without script or storage every group starts
+[About panel](#page-help) does); with nothing stored, every group starts
 open. The group holding the current page always opens, so the
 `aria-current` entry is never hidden. Collapsing is the reader's choice and
 does not change the menu's shape.
@@ -510,6 +537,17 @@ links chosen by the campaign's state and the viewer's role:
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
 | Closed or archived | Participation, Emailed reports | Participation | Ministry requests |
 | No current campaign | Says so; no next steps | Says so; no next steps | Says so; no next steps |
+
+With no current campaign (after a purge or successor preparation), there is
+no way to create one until the single-campaign change (#145), since New
+campaign is removed ([decision 11](#navigation-decisions)). That dead end is
+accepted for now; Home explains in plain language that there is no current
+campaign and that the next one cannot be created here yet.
+
+Home also shows one **Today** line for each role. Its contents are a
+proposal for the Administrator to confirm in NAV-18 (gap G10 on #522):
+submissions since yesterday, next scheduled email, open follow-up counts,
+problems. How the line differs by role is still to be decided.
 
 Problems that need action (failed background tasks, unacknowledged security
 events, a stale ParishSoft refresh) stay above Next steps and link the page
@@ -572,6 +610,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/family-portal` | `/admin/mail/family-portal/` |  |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/presence` | `/admin/mail/presence/` |  |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/<campaign>/responses/` | `/admin/reports/responses/` |  |
+| `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/<campaign>/responses/<key>/` | `/admin/reports/responses/<key>/` | Object-named (exception): each list behind a dashboard count is named after that list. Its CSV download (`<key>/csv/`) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | `/admin/reports/` (group root: redirects to Participation, or to Ministry requests for Ministry leaders) | Address kept as a redirect to Participation. |
 | `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/<campaign>/participation/` | `/admin/reports/participation/` |  |
 | `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). |
@@ -665,24 +704,35 @@ Admin URLs follow the menu, so the address says where the reader is
   system becomes single-campaign (#145). Records that belong to a campaign
   (an export, a digest snapshot, a cleanup request) are addressed by their
   own identifier, which already names their campaign.
-- **One trailing-slash rule:** every Admin page URL ends in `/`, and the
-  other form redirects.
+- **One trailing-slash rule:** every Admin page URL ends in `/`, and the other
+  form redirects. The sign-in, setup wizard and maintenance pages move to it
+  last, in an optional pull request (NAV-13 in
+  [ADM-12](../../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul));
+  until then they keep their current addresses.
+- **Non-page routes move with their page:** a page's form actions and
+  downloads move under its new URL and follow the same rules. The session and
+  status JSON endpoints that scripts poll (`session/*`, the background and
+  presence counts) keep their addresses.
 - **Nouns, not verbs:** plural nouns for collections, a noun for each item,
   and actions are POSTs to the item or collection (no GET target such as
   `/delete` or `/remove`).
 - **Old URLs keep working** as permanent redirects to the new ones: 301 for
-  pages, 308 for form actions, so a page left open still submits. An old URL
-  with a campaign UUID redirects only when that UUID is the current campaign;
-  for any other campaign it shows a plain refusal ("This campaign is no
-  longer the current campaign") with status 410 Gone and never redirects, so
-  a form left open on an earlier campaign is never re-posted into the current
-  one. 410 rather than 404 because the address was valid and will not work
-  again: it is not a typo, and the reader should not retry it. Because the
-  target of a campaign-UUID redirect depends on which campaign is current,
-  and browsers cache 301 and 308 responses indefinitely, those redirects (and
-  the 410 refusals) are sent with `Cache-Control: no-store`; redirects that
-  name no campaign may be cached. Likewise a page for one record (an export,
-  a digest snapshot, a cleanup request) refuses a record whose campaign is not
+  pages, 308 for form actions, so a page left open still submits. A redirect
+  keeps the query string, where report filters live. An old URL with a
+  campaign UUID redirects only when that UUID is the current campaign; for any
+  other campaign it shows a plain refusal ("This campaign is no longer the
+  current campaign") with status 410 Gone and never redirects, so a form left
+  open on an earlier campaign is never re-posted into the current one. 410
+  rather than 404 because the address was valid and will not work again: it is
+  not a typo, and the reader should not retry it. This removes read access to
+  an earlier campaign's pages and records for now: records from another
+  campaign addressed by their own identifier (exports, digest snapshots) are
+  refused as well, until the single-campaign change (#145). Because the target
+  of a campaign-UUID redirect depends on which campaign is current, and
+  browsers cache 301 and 308 responses indefinitely, those redirects (and the
+  410 refusals) are sent with `Cache-Control: no-store`; redirects that name
+  no campaign may be cached. Likewise a page for one record (an export, a
+  digest snapshot, a cleanup request) refuses a record whose campaign is not
   current. Sent digest emails, bookmarks and the operator runbooks link the
   old forms. A test lists every old pattern with its target.
 
@@ -714,10 +764,11 @@ registry and the rendered pages.
 5. **Flows end where the reader started.** After an action, the reader lands
    on the page whose task started it: a settings change's status page returns
    to the settings page; Preview and test email returns to the page it was
-   opened from; a manual ParishSoft refresh stays on Refresh from ParishSoft
-   and shows its progress there; sending a weekly report now ends on Emailed
-   reports with a link to the report; Cancel returns to the page it was
-   pressed on, never Home unless the flow started there.
+   opened from, remembered in the signed-in session as a change's origin is
+   (never in the URL); a manual ParishSoft refresh stays on Refresh from
+   ParishSoft and shows its progress there; sending a weekly report now ends
+   on Emailed reports with a link to the report; Cancel returns to the page it
+   was pressed on, never Home unless the flow started there.
 6. **Messages link what they name.** A message that tells the reader to use
    another page links that page when the viewer may open it.
 7. **Stable shape.** For each role, the menu's groups and entries are the same
@@ -738,13 +789,14 @@ registry and the rendered pages.
     change (#145)", reachable by keyboard and announced as its description.
     The controls are: Copy campaign on Campaign settings; the "Choose a
     retained campaign" links on Participation and on Ministry requests; and
-    the "create the successor draft" choice in the checklist after
-    [Return to Testing](#return-to-testing-after-archive). The server refuses
-    the matching actions: cloning, creating a successor draft, and choosing a
-    campaign other than the current one for a report. The retired chooser
-    addresses themselves redirect (to Participation and to Ministry requests)
-    rather than refuse. New campaign is removed outright
-    ([decision 11](#navigation-decisions)), not greyed.
+    the "create the successor draft" choice in the checklist after [Return to
+    Testing](#return-to-testing-after-archive), which does not exist yet
+    (#527), so until it does the server's refusal alone covers it. The server
+    refuses the matching actions: cloning, creating a successor draft, and
+    choosing a campaign other than the current one for a report. The retired
+    chooser addresses themselves redirect (to Participation and to Ministry
+    requests) rather than refuse. New campaign is removed outright ([decision
+    11](#navigation-decisions)), not greyed.
 
 #### Breadcrumbs and flows
 
@@ -799,8 +851,11 @@ presentation only and grant nothing.
 
 #### Navigation decisions
 
-The Administrator decided these on 2026-10-04 (recorded on issue #522). The
-text above already follows them.
+The Administrator decided 1 to 19 on the navigation proposal on 2026-10-04.
+Decisions 20 to 30 settle section 4 of the implementation plan the same day:
+each is marked as the Administrator's or as a coordinator call that follows
+an existing rule. All are recorded on issue #522, and the text above already
+follows them.
 
 1. **Menu groups and their order?** Home, Campaign setup, Mail and Family
    portal, Responses and reports, Parish data, Users and access, System (as
@@ -857,6 +912,30 @@ text above already follows them.
     hover and keyboard-focus tip saying it is disabled and will be removed with
     the single-campaign change (#145); the server refuses the matching actions.
     New campaign stays removed (decision 11).
+20. **No-script fallbacks?** (Coordinator.) None: the Admin portal
+    [requires JavaScript](#javascript-requirement) (#565).
+21. **Who gets Find a Family, and how does it search?** Administrators and
+    Staff only, results scoped to what the role may see (Administrator); by
+    CSRF POST (coordinator) (#561).
+22. **What are the #477 response lists?** (Coordinator.) One registry row,
+    each named after its list, at `/admin/reports/responses/<key>/`; its CSV
+    is a non-page.
+23. **Dead end with no current campaign?** (Administrator.) Accepted
+    until #145; Home explains it.
+24. **The successor-draft control does not exist yet.** (Coordinator.) The
+    server's refusal is enough until it does.
+25. **Tip text?** (Administrator.) "Disabled; will be removed with the
+    single-campaign change (#145)".
+26. **Do non-page routes move?** (Coordinator.) Form actions and downloads
+    move with their page; the session and status JSON endpoints stay.
+27. **Trailing slashes on sign-in, setup and maintenance?** (Administrator.)
+    An optional last pull request.
+28. **Old campaign identifiers?** (Administrator.) Refused with 410 for now;
+    access to earlier campaigns returns with #145.
+29. **A Home Today line?** (Administrator.) Yes, one per role; its contents
+    are confirmed in NAV-18.
+30. **Where is the test email's origin kept?** (Coordinator.) In the
+    signed-in session.
 
 ### Admin tables
 
@@ -907,7 +986,7 @@ preparation history (panels, not columns) have no sortable columns.
 A table's navigators and rows sit in one region with a stable id (the table's
 anchor, derived from its parameter prefix so two tables on one page differ),
 and every heading and navigator control names that id as its URL fragment.
-With script, choosing a heading, Previous, Next, a page number or a
+Choosing a heading, Previous, Next, a page number or a
 rows-per-page value re-sorts or re-pages the table in place (#478): the
 browser fetches the page the control would have loaded, requested as the
 control would have requested it (a GET table's link or query, a POST table's
@@ -931,9 +1010,8 @@ server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
 ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so they always load the page in full. Without
-script, or when the fetch fails or returns another page (a sign-in), the
-ordinary page load happens and its fragment lands on the table rather than at
+exports rather than one table, so they always load the page in full. When
+the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. Portal users, whose domain and address tables carry role forms bound
 once at load, and the link preparation history keep only the fragment and
 always load in full. A table region is one kind of region that
@@ -951,8 +1029,7 @@ a whole log.
 A table with bulk actions has a selection column. Its header checkbox and a
 Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only
-while at least one is. The server validates every submitted selection, so the
-controls also work without script.
+while at least one is. The server validates every submitted selection.
 
 ### In-place controls
 
@@ -1008,13 +1085,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   not be reached and to reload the page to check. A redirect to another page
   (elsewhere, or the sign-in page) is followed by loading that page's
   address. A read (a GET) that fails falls back to the ordinary load.
-- **Without script** every control is a plain link or form, and its fragment
-  (kept across a fragment-less redirect) lands the load on the region. The
-  Admin portal requires JavaScript
-  ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so this
-  existing native fallback is kept but not extended: controls keep real
-  `href` and `action` attributes, and later in-place work (#519 PRs 2–8)
-  needs no no-script fallback or no-script tests of its own.
+- **Real targets.** Every control is a real link or form with its `href`
+  or `action` and fragment, which the script requests; when an ordinary load
+  happens instead (a fallback above), the fragment, kept across a
+  fragment-less redirect, lands it on the region. The Admin portal
+  [requires JavaScript](#javascript-requirement), so in-place work builds and
+  tests no no-script fallback.
 - **Policy.** The mechanism runs under the strict content security policy:
   first-party script and same-origin requests only; it changes attributes and
   classes and creates elements with text content, never inline script or
@@ -1025,25 +1101,24 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 ### Page help
 
 Admin pages put the page's data first and keep explanation one deliberate
-click away, without removing any of it. A page leads with its heading, its
-own data line (such as the campaign name or counts), safety notices (such as
-Testing mode) and then its data or form; at most a one-line hint that
-prevents a likely mistake stays visible above the data. A caution that
-prevents a likely mistake (what an action cannot undo or stop, or a lasting
-consequence it has) is never only in the panel: it stays visible beside its
-control as a one-line hint or a notice. The page's
-introduction and longer explanation of how it behaves (how a credential is
-kept, how mail schedules work, the placeholder reference) sit in an "About
-this page" panel beside the heading: a native disclosure that starts closed,
-and that each browser remembers open, per page type, once an Admin opens it.
-Every page with a panel has exactly one, placed directly after its heading, so
-the closed control always sits on the heading's line; opened, the panel and
-its control continue on the line below at full width.
-Only that open choice is stored in the browser, and closing the panel removes
-it; without script or browser storage the panel starts closed and still opens
-with a click or the keyboard. Help under a field is a short hint; longer field
-explanations belong in the About panel or a click-to-open field tip, never in
-hover-only tooltips, which touch and keyboard users cannot reach.
+click away, without removing any of it. A page leads with its heading, its own
+data line (such as the campaign name or counts), safety notices (such as
+Testing mode) and then its data or form; at most a one-line hint that prevents
+a likely mistake stays visible above the data. A caution that prevents a
+likely mistake (what an action cannot undo or stop, or a lasting consequence
+it has) is never only in the panel: it stays visible beside its control as a
+one-line hint or a notice. The page's introduction and longer explanation of
+how it behaves (how a credential is kept, how mail schedules work, the
+placeholder reference) sit in an "About this page" panel beside the heading: a
+native disclosure that starts closed, and that each browser remembers open,
+per page type, once an Admin opens it. Every page with a panel has exactly
+one, placed directly after its heading, so the closed control always sits on
+the heading's line; opened, the panel and its control continue on the line
+below at full width. Only that open choice is stored in the browser, and
+closing the panel removes it; with nothing stored the panel starts closed and
+opens with a click or the keyboard. Help under a field is a short hint; longer
+field explanations belong in the About panel or a click-to-open field tip,
+never in hover-only tooltips, which touch and keyboard users cannot reach.
 
 Admin pages are laid out for a laptop screen: compact headings, panels,
 notices and table cells, and short filter forms in one row. The target is that,
@@ -1129,8 +1204,7 @@ counts as activity, so an open page cannot keep an idle login alive. Nor does
 a status read record an audited view: a page whose own view is audited, such
 as background task details, reads a status-only fragment instead, so opening
 the page records one view however long it stays open. The page never replaces
-a control the Admin is using and never re-sends a form; its manual refresh
-link remains for browsers without JavaScript.
+a control the Admin is using and never re-sends a form.
 
 While a report export's, exact export's or background task's run is still
 queued (no worker has claimed it), its status says why it has not started and

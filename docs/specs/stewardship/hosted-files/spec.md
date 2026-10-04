@@ -462,17 +462,16 @@ from Family pages and emails.") opens the About panel, following the Admin
 [page help](../admin-portal/spec.md#page-help) rules. Then:
 
 - **Upload form**: a file field (`accept` lists the permitted extensions, as a
-  hint only) and a **Placeholder name** field with the hint "Lowercase letters,
-  digits and hyphens. Leave blank to use the file name." A small script fills
-  the field from the chosen file's base name. Without script, or when left
+  hint only) and a **Placeholder name** field with the hint "Lowercase
+  letters, digits and hyphens. Leave blank to use the file name." A small
+  script fills the field from the chosen file's base name; when it is left
   blank, the server derives it. Deriving means taking the base name without
   its extension, folding it to ASCII, lowercasing it, turning each run of
   other characters into one hyphen, trimming hyphens, and cutting to 64
   characters at a hyphen where possible. An empty result becomes `file`, and a
   taken name gets `-2`, `-3` and so on. A name the Admin typed is never
-  changed, only validated; a taken or invalid one is a field error. On
-  success the page redirects back with "Uploaded *name* as
-  `{{ file.slug }}`".
+  changed, only validated; a taken or invalid one is a field error. On success
+  the page redirects back with "Uploaded *name* as `{{ file.slug }}`".
 - **Usage line**: "12 of 100 files, 35.2 MB of 200 MB used."
 - **File table**, built on the shared Admin table component with its
   selection column and **Delete selected** bulk action. It adopts #203's
@@ -499,9 +498,10 @@ from Family pages and emails.") opens the About panel, following the Admin
   that deleting a file breaks links in emails already sent; alt text and
   email-image advice; and how to replace a file.
 
-Copy buttons use the clipboard API. Without script, the read-only field can
-be selected and copied by hand. The Pages and emails editor's placeholder
-reference mentions `{{ file.<slug> }}` and links to this page.
+Copy buttons use the clipboard API (the Admin portal [requires
+JavaScript](../admin-portal/spec.md#javascript-requirement)); the read-only
+field can also be selected and copied by hand. The Pages and emails editor's
+placeholder reference mentions `{{ file.<slug> }}` and links to this page.
 
 ## Permissions, audit and limits
 

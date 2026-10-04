@@ -325,3 +325,42 @@ decisions. ADM-11.02 adds
 `tests/stewardship/test_admin_caller.py`,
 `tests/stewardship/database/test_admin_caller_postgresql.py` and the
 unchanged session, privileged-intake and Admin view suites.
+
+## ADM-12: Admin navigation overhaul
+
+Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
+Each task maps to the row naming it in that package's table, not to a list item.
+Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#admin-navigation).
+
+- [x] ADM-12.00 — NAV-0: record the implementation plan's decisions in the specification and add this package and its checklist.
+- [ ] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
+- [ ] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
+- [ ] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
+- [ ] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
+- [ ] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
+- [ ] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
+- [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages one name each.
+- [ ] ADM-12.08 — NAV-5b: give report pages one name each.
+- [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
+- [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
+- [ ] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
+- [ ] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
+- [ ] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
+- [ ] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
+- [ ] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
+- [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
+- [ ] ADM-12.17 — NAV-14: add the Emailed reports page.
+- [ ] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
+- [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
+- [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
+- [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
+- [ ] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
+
+Evidence: In progress. ADM-12.00 is this docs-only change: the
+specification states the JavaScript requirement once and links it from the
+architecture, reports and hosted-files specifications; adds the Response list
+row, the Find a Family header search, the non-page route, trailing-slash,
+410 and query-string rules, the session-kept test-email origin, Home's
+no-current-campaign explanation and Today line, and decisions 20 to 30; and
+this package, its checklist and the acceptance-manifest owners are added,
+checked by Markdown lint and `tests/stewardship/test_traceability.py`.

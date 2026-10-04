@@ -22,12 +22,14 @@ compatibility. Upgrades may advance only after the broker, result-independent
 task dispatch, cache, atomic limiter scripts, expiry, restart, and outage
 behaviors pass the integration suite against the candidate image.
 
-The web UI uses Django templates and progressive enhancement. Small,
+The web UI uses Django templates and progressive enhancement, except that the
+Admin portal [requires
+JavaScript](../admin-portal/spec.md#javascript-requirement). Small,
 self-hosted JavaScript modules manage the Family wizard, inline validation,
 browser-timezone rendering, and interactive charts. It is not a separately
-deployed single-page application. Static assets are versioned and served by the
-reverse proxy in production. Rich text uses a self-hosted WYSIWYG editor and is
-sanitized on input and output.
+deployed single-page application. Static assets are versioned and served by
+the reverse proxy in production. Rich text uses a self-hosted WYSIWYG editor
+and is sanitized on input and output.
 
 Production Compose contains:
 
@@ -840,9 +842,10 @@ can re-render with inline field errors still do so.
 
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
-server. If JavaScript is disabled, administration CRUD and reports retain core
-functionality; the Family multi-step flow may require JavaScript but must show a
-clear supported-browser message rather than silently fail. A browser too old
-for the Family flow's JavaScript likewise gets a plain notice asking the Family
-to update the device's software or use another device or browser; a small ES5
-feature check reveals it and never alters the form.
+server. The Admin portal [requires
+JavaScript](../admin-portal/spec.md#javascript-requirement) and shows a plain
+notice without it. The Family multi-step flow may require JavaScript but must
+show a clear supported-browser message rather than silently fail. A browser
+too old for the Family flow's JavaScript likewise gets a plain notice asking
+the Family to update the device's software or use another device or browser; a
+small ES5 feature check reveals it and never alters the form.
