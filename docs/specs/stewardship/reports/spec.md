@@ -249,17 +249,88 @@ source displays Unavailable, not zero.
 
 ## Response funnel
 
-**Access:** Admin and Staff.
+**Access:** Admin and Staff (`CAMPAIGN_REPORT`).
 
-The response funnel counts distinct Families per campaign and mode, Production
-by default, at an explicit as-of cutoff: invited (delivered `initial`
-messages), link followed, form opened, progressed past the first step, and
-submitted. Link followed, form opened and progressed read the durable
-[Family engagement record](../data/spec.md#family-engagement), never Family
-session rows, so the counts are reproducible later and can satisfy
-[daily email report parity](#daily-email-report-parity). The dashboard, its
-lists, the per-Family timeline and the chart engine are specified with the
+The response funnel counts distinct Families per campaign and mode at an
+explicit **as-of** cutoff. Production is the default and reads live responses
+and Production mail; a Testing funnel is one rehearsal epoch's responses and
+that rehearsal's mail. Every count comes from a durable timestamp that no
+later event can change, so the same campaign, mode and as-of instant give the
+same numbers for as long as the evidence is retained (Production-transition
+cleanup removes a rehearsal's records, and the campaign purge the campaign's),
+as [daily email report parity](#daily-email-report-parity) requires. A cutoff
+of "now" can miss rows committing at that moment; a report meant to be
+reproduced uses a cutoff in the past, as the digests do. Mail
+evidence is bounded by the as-of instant alone, across every Production cycle
+of the campaign, so a withdrawal and re-activation after the cutoff cannot
+change an earlier reading; in Testing it is the rehearsal epoch's: that
+epoch's messages, and the occurrences and skips that fell within the epoch's
+lifetime. The funnel never reads Family session rows, which the
+[session policy](../architecture/spec.md#identity-and-session-security)
+deletes, and reports no value that later activity rewrites, such as the
+furthest form step reached or a Family's current eligibility; those belong to
+live views. The query returns one row per Family of the campaign with each
+instant as it stood at the cutoff, so the totals, the series below and the
+lists of Families behind any count all come from the same rows. The dashboard,
+its lists, the per-Family timeline and the chart engine are specified with the
 next increment of this report.
+
+### Funnel stages
+
+A Family counts once in a stage when, by the as-of instant:
+
+- **Invited:** an `initial`
+  [outbox message](../data/spec.md#job-outbox-audit-and-purge-records) to it
+  in the mode was delivered (its finished instant).
+- **Link followed:** the
+  [Family engagement record](../data/spec.md#family-engagement)'s
+  `first_link_at`. Wherever this stage is shown it is labelled "Includes
+  mail-scanner prefetches": a scanner that follows the personal link signs in
+  exactly as the Family would.
+- **Form opened:** the engagement record's `first_form_at`, which the
+  backfill filled from live form baselines.
+- **Progressed past the first step:** the engagement record's
+  `first_progress_at`.
+- **Submitted:** its first [Submission](../data/spec.md#submission) in the
+  mode was submitted.
+
+Three figures are reported beside the funnel, not as stages of it:
+
+- **Skipped: already responded:** Families whose planned invitation was later
+  skipped because they had already responded (the occurrence reason
+  `family_responded`), dated by the immutable occurrence transition. A Family
+  that responded before any invitation was planned has no occurrence to skip
+  and is not counted here.
+- **Submitted without a delivered invitation:** Families that had submitted
+  with no delivered invitation by the as-of instant, whether their invitation
+  was skipped or never planned.
+- **Submitted more than once:** Families with more than one submission in the
+  mode by the as-of instant.
+
+Stages are not nested: a Family may submit without a delivered invitation,
+and a Family whose planned invitation was skipped because it had responded is
+counted as submitted and as skipped rather than as invited.
+
+### Response activity over time
+
+The activity series buckets the same first instants, link followed, form
+opened and submitted, by campaign-local hour or day, using the Campaign's
+immutable timezone snapshot as the [participation graph](#participation-graph)
+does; a repeated autumn hour is two buckets. Over every bucket each series
+sums to its funnel total. Send markers name each invitation and reminder send
+of the mode that had planned an email by the as-of instant (a *send* as the
+[Family email sends](../admin-portal/spec.md#family-email-sends) page defines
+and names it: one revision of one Family schedule in one mode and Production
+cycle, each keyed by its own occurrences' cycle) with its scheduled time and
+how many of its emails were delivered by then, with the first and last
+delivery instants. A marker's key, scheduled time and counts are
+reproducible; its display name ("Reminder 2") follows the schedules as they
+stand when the report is read, as on the sends page, so adding, removing or
+moving a reminder later can rename an earlier reading's markers. In Testing, a
+marker counts occurrences planned during the rehearsal epoch; after a go-live
+is cancelled mid-cleanup, a new epoch can reuse the previous epoch's Testing
+occurrences, so its emails count as invited without appearing in a marker. Interactive and emailed renderings of the series use this
+one result.
 
 ## Additional information
 
