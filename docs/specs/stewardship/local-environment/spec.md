@@ -1052,7 +1052,12 @@ first-installation steps, with the `arm64` image built inside the VM under a
 [local tag](#origin-proxy-and-image), the LOCAL deployment YAML and a
 deployment record beside it (UUID, Administrator, image, synthetic-parish
 inputs), the marker file (written as soon as provisioning, which requires an
-empty root, has completed), the sentinel OAuth client and the
+empty root, has completed), the sentinel OAuth client, the backup recipient
+key (a pair from the image's `backup-keygen`; only the public key is
+installed as the `backup_data` credential, as the backup runbook has the
+operator do, and the private key stays at `run/local/backup-key` in the
+runtime root, which a backup never archives, so the pair travels with
+snapshots and a local backup can be opened) and the
 [fake configuration](#fake-configuration). It ends with the services healthy
 and the application answering the public origin through Caddy, and prints the
 sign-in command and the values the setup wizard asks for: the fake ParishSoft

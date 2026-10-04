@@ -112,8 +112,10 @@ with the LOCAL inputs):
    command checks (provisioning needs an empty root, so the marker comes
    after it), and collects the static files.
 4. Installs the sentinel OAuth client, writes `run/local/fake-parishsoft.json`
-   (seed, families, anchor date 17 days back, `release_at: null`) and the
-   clock-mode marker `run/local/clock/mode`.
+   (seed, families, anchor date 17 days back, `release_at: null`), installs
+   the backup recipient key (the public half as the `backup_data` credential,
+   the private key at `run/local/backup-key`, so a local backup can be opened
+   for a restore drill) and the clock-mode marker `run/local/clock/mode`.
 5. Runs `database-roles`, `bootstrap --phase prepare`, `migrate`,
    `database-grants` and `bootstrap --phase import` under
    `compose-initial.json` with project `parishkit-local`.

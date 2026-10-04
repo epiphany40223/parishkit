@@ -334,6 +334,27 @@ private_file() {
     rm -f "$tmp"
 }
 
+ensure_backup_key() {
+    # The backup recipient key, installed as the deployment runbook's first
+    # installation and the backup runbook ("The key") have the operator do
+    # it: a key pair from the image's backup-keygen, and only the public key,
+    # the bare base64 line, as the backup_data credential. The private key
+    # stays in the runtime root under run/local (a backup archives config,
+    # credentials and media, never run/), so the pair travels with snapshots
+    # and a local backup can be opened for a restore drill. A deployment
+    # installed before this step gets its key the first time `deploy` runs,
+    # since the upgrade's required backup needs one.
+    local credential="$root/credentials/backup_data/credential" key="$root/run/local/backup-key" answer
+    [ ! -f "$credential" ] || return 0
+    step "Installing the backup recipient key"
+    install -d -o 10001 -g 10001 -m 0700 "$root/run/local" "$(dirname "$credential")"
+    rm -f "$key"
+    answer=$("${isolated[@]}" --mount "type=bind,source=$root/run/local,target=/keys" \
+        "$IMAGE" backup-keygen --destination /keys/backup-key | tail -1)
+    jq -er .public_key <<<"$answer" | private_file "$credential"
+    echo "    recipient fingerprint $(jq -r .recipient_fingerprint <<<"$answer"); private key $key"
+}
+
 # ---------------------------------------------------------------------------
 
 cmd_build() {
@@ -424,6 +445,7 @@ ENV
     # release_at stays null until the seeder's final phase.
     printf '{"seed": %s, "families": %s, "anchor_date": "%s", "release_at": null}\n' \
         "$seed" "$families" "$anchor" | private_file "$root/run/local/fake-parishsoft.json"
+    ensure_backup_key
     # Clock mode. An unseeded deployment runs in fake-clock mode, 17 days
     # behind real time, so a later seed can start forward of every row; an
     # image without the override (an older build) runs in normal mode.

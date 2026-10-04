@@ -498,12 +498,16 @@ case "$*" in
     "image inspect "*) [ -n "$FAKE_IMAGE_EXISTS" ] || exit 1 ;;
     *" provision-runtime --config "*)
         mkdir -p "$FAKE_ROOT/config/services" "$FAKE_ROOT/cache/static" \
-            "$FAKE_ROOT/credentials/google_oauth" "$FAKE_ROOT/run"
+            "$FAKE_ROOT/run" "$FAKE_ROOT/credentials/google_oauth" \
+            "$FAKE_ROOT/credentials/backup_data"
         for f in compose-initial.json compose.json compose-slack.json; do
             echo '{"services": {"web": {}}}' >"$FAKE_ROOT/config/services/$f"
         done
         echo '{"provisioned": true}' ;;
     *" collect-static --destination "*) echo '{"collected": 1}' ;;
+    *" backup-keygen --destination "*)
+        echo '{"public_key": "age1fakepublickey",' \
+            '"recipient_fingerprint": "SHA256:fake"}' ;;
     *"--entrypoint python"*)
         name=$(printf '%s' "$last" | sed -n 's/.*import \([A-Z_]*\) as value.*/\1/p')
         printf "constant-%s" "$name" ;;
@@ -704,6 +708,16 @@ def test_up_follows_the_runbook_first_installation_order(tmp_path):
     )
     fake = json.loads((root / "run/local/fake-parishsoft.json").read_text())
     assert fake["families"] == 100 and fake["release_at"] is None
+    # The backup recipient key, as the runbook's first installation installs
+    # it: the bare public key line as the backup_data credential, generated
+    # by the image into run/local (never archived by a backup).
+    keygen = first(calls, " backup-keygen --destination /keys/backup-key")
+    assert f"source={root}/run/local,target=/keys" in calls[keygen]
+    assert keygen < order[3]
+    assert (
+        root / "credentials/backup_data/credential"
+    ).read_text() == "age1fakepublickey\n"
+    assert "recipient fingerprint SHA256:fake" in output
     assert (
         fake["seed"] == int(env["SEED"]) and fake["anchor_date"] == env["ANCHOR_DATE"]
     )
