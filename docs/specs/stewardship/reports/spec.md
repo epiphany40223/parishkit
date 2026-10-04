@@ -62,8 +62,10 @@ campaign UUID/tombstone reference but no report data or campaign-owned foreign
 key. That access audit neither enters nor invalidates the campaign purge
 inventory.
 
-Generated-file downloads also use the deployment-wide bounded admission and
-dedicated pool defined by [campaign read guards](../data/spec.md#campaign-read-guards).
+Downloads of stored export files also use the deployment-wide bounded
+admission and dedicated pool defined by
+[campaign read guards](../data/spec.md#campaign-read-guards), which also
+defines how a small download rendered on request in memory is read.
 When capacity is busy, show the retryable response without discarding the
 generated export; a retry performs fresh authorization and purge checks.
 Admin recovery of expired-file housekeeping is a separate operational workflow
@@ -336,9 +338,9 @@ live views. The query returns one row per Family of the campaign with each
 instant as it stood at the cutoff, so the totals, the series below and the
 lists of Families behind any count all come from the same rows. The
 [chart engine](#chart-engine) draws the funnel and the activity series on the
-[response dashboard](#response-dashboard); the lists of Families behind the
-counts and the per-Family timeline are specified with the next increments of
-this report.
+[response dashboard](#response-dashboard), and the
+[response lists](#response-lists) show the Families behind the counts; the
+per-Family timeline is specified with a later increment of this report.
 
 ### Funnel stages
 
@@ -432,8 +434,12 @@ markers, each with its summary and exact-values table. The explanation sits
 in the [About this page](../admin-portal/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
 inside it. Until an invitation has been delivered the tiles leave out their
-shares and the page says so in one sentence. The page shows counts only, never
-a Family's name or identifier, and sends `Cache-Control: no-store`.
+shares and the page says so in one sentence. A **Lists of Families** panel
+links to each of the [response lists](#response-lists) in the mode shown,
+with the number of Families on it (counted from the same read; the list of
+ParishSoft data to check has no number here, since counting it needs the
+ParishSoft read). The page shows counts only, never a Family's name or
+identifier, and sends `Cache-Control: no-store`.
 
 The URL carries only two closed choices. `mode` is `production` (the default)
 or `testing`: Production reads live responses and Production mail; Testing
@@ -455,8 +461,82 @@ Each view reads the funnel once, with the report's
 [campaign read guard](../data/spec.md#campaign-read-guards) and role recheck,
 and records one audit event with its outcome and no reported value. The
 browser draws the charts; a page view never renders an image on the server.
-The lists behind the counts, the per-Family timeline and the charts' PNG and
-PDF downloads follow in later increments.
+The per-Family timeline and the charts' PNG and PDF downloads follow in later
+increments.
+
+### Response lists
+
+**Access:** Admin and Staff (`CAMPAIGN_REPORT`; the CSV download also
+`REPORT_EXPORT`); the Testing view is Admin only.
+
+`reports/<campaign>/responses/<list>/` lists the Families behind one count,
+at the database's current instant (labelled **Counted at**), from the same
+per-Family rows as the [funnel](#response-funnel):
+
+| List | Families listed | Columns | Filter |
+| --- | --- | --- | --- |
+| `submitted` | with a submission (Submitted) | First submitted, Family, Family DUID, Envelope number, Submissions | with or without a delivered invitation |
+| `started` | form opened, nothing submitted (Form opened minus Submitted) | Form opened, Got past the first step, Family, Family DUID, Envelope number | got past the first step, or opened the form only |
+| `not-opened` | a delivered invitation, form never opened | Invitation delivered, Link followed, Family, Family DUID, Envelope number | link followed or not |
+| `more-than-once` | more than one submission (Submitted more than once) | Submissions, First submitted, Last submitted, Family, Family DUID, Envelope number | none |
+| `data-quality` | active Families of the campaign whose current ParishSoft record has a blank mailing name or envelope number 0 | Family, Family DUID, Envelope number, Mailing name, What to check, First submitted | blank mailing name, or envelope number 0 |
+
+Each of the first four lists has exactly the Families its count on the
+[response dashboard](#response-dashboard) counts, with the instants the
+[funnel stages](#funnel-stages) define (Link followed includes mail-scanner
+prefetches). A value not reached yet reads in words on the page (Got past the
+first step "Not yet", Link followed "No") and is blank in the CSV.
+**ParishSoft data to check** is a live view of the latest ParishSoft data
+rather than a reproducible count, for the launch-day data problems that made
+Family names misleading; the record itself is fixed in ParishSoft, and a
+Family the latest ParishSoft data no longer has is left out (the About panel
+says so). The Family column is the
+[Family directory](#family-directory)'s name (surname, then active heads),
+and the envelope number and mailing name come from the same latest
+ParishSoft data, read in two queries for the listed Families; a Family no
+longer in that data says so instead of a name.
+
+Each list is a [shared Admin table](../admin-portal/spec.md#admin-tables):
+every column sorts (times and counts newest or largest first on the first
+click, missing values last), the default is chronological for `submitted`,
+most submissions first for `more-than-once` and Family name otherwise, and the
+filter, sort headings, rows per page and paging refresh the table in place.
+The Production and Testing rehearsal links are
+[in-place controls](../admin-portal/spec.md#in-place-controls) of the table's
+region: they keep the filter and order and refresh the list without a reload.
+The URL carries only closed choices: `mode` (as on the dashboard: Production
+by default, the active Testing rehearsal for Administrators only), `show` (the
+filter), `sort`, `size` and `page`; nothing identifying, so a list needs no
+POST body. Name search is not offered.
+
+**Download CSV** posts the list's filter and order (CSRF-protected) and
+downloads the complete filtered list, not just the page, rendered on request
+in that order, with the table's columns, in the
+[shared CSV format](#shared-report-behavior), times in a time zone chosen
+beside the button (the browser's by default). Before the download the panel
+states how many Families the file holds and the sensitive-data warning; with
+none, the button is disabled. The file is built in memory on the web
+connection, as the [System logs](#system-logs) download is, and read under the
+interactive campaign read guard (see
+[campaign read guards](../data/spec.md#campaign-read-guards) for small
+downloads rendered on request). While the campaign's purge gate is closed
+(any purge work gate not released) the download is refused with an
+explanation (409), including when the gate closes as the download starts,
+and its button is disabled with a notice; the list itself stays readable
+under the read guard, as [shared report behavior](#shared-report-behavior)
+allows.
+
+Each view and each download reads the list once under the report's
+[campaign read guard](../data/spec.md#campaign-read-guards) with the role
+recheck (a download also rechecks the purge gate), sends
+`Cache-Control: no-store`, and records one audit event whose type names the
+list and the action (such as `response_submitted_list_exported`), with its
+outcome and row count and no Family name, DUID or filter value; a download the
+purge gate refuses is recorded as failed. This is an exception to the export
+audit rule in [shared report behavior](#shared-report-behavior): the filter,
+mode and source snapshot are not recorded, because recording them needs new
+approved audit context fields (a schema change), tracked in
+[#556](https://github.com/epiphany40223/parishkit/issues/556).
 
 ## Additional information
 

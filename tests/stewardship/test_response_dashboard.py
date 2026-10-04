@@ -138,6 +138,9 @@ def test_page_shows_tiles_figures_and_both_charts():
     testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
     assert testing + ">Testing rehearsal" in page
     assert f'<div id="{REGION}" data-in-place-region>' in page
+    # The lists behind the counts are links with their lengths (#477, PR 5).
+    assert f'<a href="{PATH}submitted/">Families that submitted</a>: 3' in page
+    assert f'<a href="{PATH}data-quality/">ParishSoft data to check</a> <' in page
     # No Family name or DUID reaches the page: counts only.
     assert "family_duid" not in page
 

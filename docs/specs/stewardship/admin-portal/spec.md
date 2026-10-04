@@ -969,7 +969,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, "Refresh current work" on "Background work", "Refresh list" on
+  grain, the [response lists](../reports/spec.md#response-lists)' mode,
+  "Refresh current work" on "Background work", "Refresh list" on
   "Families on the form now") or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page) names its region by its URL's fragment. "Refresh current work" keeps

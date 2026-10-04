@@ -21,6 +21,10 @@
 <h3>{% translate "Also counted" %}</h3>
 <dl>{% for label, count in figures %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>
 </section>
+<section class="panel" aria-labelledby="lists-heading">
+<h2 id="lists-heading">{% translate "Lists of Families" %}</h2>
+<ul>{% for item in lists %}<li><a href="{{ item.url }}">{{ item.title }}</a>{% if item.count is not None %}: {{ item.count|number }}{% endif %}{% if item.description %} <span class="help">({{ item.description }})</span>{% endif %}</li>{% endfor %}</ul>
+</section>
 <section class="panel" aria-labelledby="funnel-heading">
 <h2 id="funnel-heading">{{ charts.0.title }}</h2>
 {% include 'stewardship/components/chart.html' with chart=charts.0 %}

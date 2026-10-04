@@ -78,6 +78,18 @@ class Action(StrEnum):
     TALENTS_REPORT_VIEWED = "talents_report_viewed"
     TALENTS_REPORT_EXPORTED = "talents_report_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
+    # The lists of Families behind the response funnel (#477): one event type
+    # per list, so the audit names the list without a new context field.
+    RESPONSE_SUBMITTED_LIST_VIEWED = "response_submitted_list_viewed"
+    RESPONSE_SUBMITTED_LIST_EXPORTED = "response_submitted_list_exported"
+    RESPONSE_STARTED_LIST_VIEWED = "response_started_list_viewed"
+    RESPONSE_STARTED_LIST_EXPORTED = "response_started_list_exported"
+    RESPONSE_NOT_OPENED_LIST_VIEWED = "response_not_opened_list_viewed"
+    RESPONSE_NOT_OPENED_LIST_EXPORTED = "response_not_opened_list_exported"
+    RESPONSE_REPEAT_LIST_VIEWED = "response_repeat_list_viewed"
+    RESPONSE_REPEAT_LIST_EXPORTED = "response_repeat_list_exported"
+    RESPONSE_DATA_QUALITY_LIST_VIEWED = "response_data_quality_list_viewed"
+    RESPONSE_DATA_QUALITY_LIST_EXPORTED = "response_data_quality_list_exported"
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"

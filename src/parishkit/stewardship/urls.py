@@ -76,6 +76,7 @@ from .reports import (
     ministry_export_views,
     ministry_followup_views,
     response_dashboard,
+    response_list_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -173,6 +174,16 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/responses/",
         response_dashboard.dashboard,
         name="response_dashboard",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/responses/<slug:key>/",
+        response_list_views.response_list,
+        name="response_list",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/responses/<slug:key>/csv/",
+        response_list_views.response_list_export,
+        name="response_list_export",
     ),
     path(
         "reports/<uuid:campaign_id>/talents/",

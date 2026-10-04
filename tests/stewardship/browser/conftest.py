@@ -83,6 +83,7 @@ from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
+from .response_list_components import components as response_list_components
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
@@ -1591,6 +1592,7 @@ def component_origin():
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
+    responses.update(response_list_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))

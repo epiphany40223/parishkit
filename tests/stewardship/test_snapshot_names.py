@@ -101,3 +101,23 @@ def test_presence_names_a_nameless_family_family(monkeypatch):
     )
     rows = [SimpleNamespace(family=SimpleNamespace(family_duid=7))]
     assert presence._names(configuration, rows) == {7: "Family, Jeff Squyres"}
+
+
+def test_facts_add_the_envelope_number_and_mailing_name(monkeypatch):
+    """The response lists read the envelope and mailing name with the name."""
+    _install(
+        monkeypatch,
+        {
+            "1": {"lastName": "Lee", "mailingName": " Ann Lee ", "envelopeNumber": 0},
+            "2": {"lastName": "Ray", "envelopeNumber": True},
+            "3": {"lastName": "Fox", "mailingName": 7, "envelopeNumber": 42},
+        },
+        {},
+    )
+    facts = snapshot_names.snapshot_family_facts("snap", [1, 2, 3])
+    assert facts == {
+        1: snapshot_names.FamilyFacts("Lee", 0, "Ann Lee"),
+        # A missing or non-integer envelope is None; a non-text name is blank.
+        2: snapshot_names.FamilyFacts("Ray", None, ""),
+        3: snapshot_names.FamilyFacts("Fox", 42, ""),
+    }

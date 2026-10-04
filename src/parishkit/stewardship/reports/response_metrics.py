@@ -107,7 +107,8 @@ _FAMILIES = (
       AND t.after_state='skipped' AND t.reason='family_responded'
       AND t.created_at<=%(as_of)s
 ), responded AS (
-    SELECT s.family_id, min(s.submitted_at) AS at, count(*) AS submissions
+    SELECT s.family_id, min(s.submitted_at) AS at, count(*) AS submissions,
+        max(s.submitted_at) AS last_at
     FROM stewardship_submission s
     WHERE s.campaign_id=%(campaign)s AND s.mode=%(response_mode)s
       AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
@@ -118,7 +119,7 @@ SELECT f.id, f.family_duid, i.at, k.target IS NOT NULL,
     CASE WHEN e.first_link_at<=%(as_of)s THEN e.first_link_at END,
     CASE WHEN e.first_form_at<=%(as_of)s THEN e.first_form_at END,
     CASE WHEN e.first_progress_at<=%(as_of)s THEN e.first_progress_at END,
-    r.at, coalesce(r.submissions, 0)
+    r.at, coalesce(r.submissions, 0), r.last_at
 FROM stewardship_family_campaign f
 LEFT JOIN invited i ON i.family_id=f.id
 LEFT JOIN skipped k ON k.target='family:'||f.id::text
@@ -230,8 +231,9 @@ class FamilyResponse:
     planned has no occurrence to skip, and is seen in ``submitted_uninvited``);
     ``link_at``, ``form_at`` and ``progress_at`` are the engagement record's
     first instants as recorded; ``submitted_at`` is the Family's first
-    submission and ``submissions`` how many it had made. The funnel counts
-    ``form_opened_at`` and ``progressed_at``, which a submission implies.
+    submission, ``submissions`` how many it had made and
+    ``last_submitted_at`` its latest. The funnel counts ``form_opened_at``
+    and ``progressed_at``, which a submission implies.
     """
 
     family_id: UUID
@@ -243,6 +245,7 @@ class FamilyResponse:
     progress_at: datetime | None
     submitted_at: datetime | None
     submissions: int
+    last_submitted_at: datetime | None = None
 
     @property
     def form_opened_at(self):
@@ -456,6 +459,33 @@ def _sends(cursor, values):
     return tuple(markers)
 
 
+def _values(scope, as_of):
+    """The statements' parameters for ``scope`` at ``as_of``, both checked."""
+    if not isinstance(scope, ResponseScope):
+        raise TypeError("Response metrics need a ResponseScope.")
+    _instant(as_of, "as_of")
+    return {
+        "campaign": scope.campaign_id,
+        "epoch": scope.rehearsal_epoch_id,
+        "response_mode": scope.response_mode,
+        "mail_mode": scope.mail_mode,
+        "as_of": as_of,
+    }
+
+
+def response_families(scope, as_of):
+    """Only the per-Family rows of ``scope`` at ``as_of``, in one statement.
+
+    The lists of Families behind the funnel's counts need the rows but not
+    the send markers or the activity series; the caller owns the read-only
+    transaction and the campaign report admission, as for
+    ``response_metrics``.
+    """
+    values = _values(scope, as_of)
+    with connection.cursor() as cursor:
+        return _families(cursor, values)
+
+
 def response_metrics(scope, as_of, *, grain="hour"):
     """The response funnel of ``scope`` as it stood at ``as_of``.
 
@@ -467,22 +497,13 @@ def response_metrics(scope, as_of, *, grain="hour"):
     at that moment; a report meant to be reproduced should use a cutoff in
     the past, as the digests do.
     """
-    if not isinstance(scope, ResponseScope):
-        raise TypeError("Response metrics need a ResponseScope.")
-    _instant(as_of, "as_of")
+    values = _values(scope, as_of)
     if grain not in GRAINS:
         raise ValueError("Activity is bucketed by hour or day.")
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=scope.campaign_id
     )
     timezone = campaign.active_configuration.timezone
-    values = {
-        "campaign": scope.campaign_id,
-        "epoch": scope.rehearsal_epoch_id,
-        "response_mode": scope.response_mode,
-        "mail_mode": scope.mail_mode,
-        "as_of": as_of,
-    }
     with connection.cursor() as cursor:
         families = _families(cursor, values)
         sends = _sends(cursor, values)

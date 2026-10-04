@@ -146,6 +146,7 @@ sections:
     "Funnel stages": [RPT-03]
     "Response activity over time": [RPT-03]
     "Response dashboard": [RPT-03]
+    "Response lists": [RPT-03]
     "Additional information": [RPT-04]
     "Family directory": [RPT-05]
     "Mailing columns": [RPT-05]
