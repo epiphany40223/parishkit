@@ -60,7 +60,10 @@ masquerade as a complete export. The generic field/value renderer produces the
 three formats, with the whole-result summary, the comparison period, the
 giving through-date or an explicit unavailability note, and the giving read's
 own observation time, stated apart from the source promotion time because a
-Family-only refresh keeps an older giving read, carried as metadata.
+Family-only refresh keeps an older giving read, carried as metadata. Column
+and metadata labels follow the
+[page's wording](../specs/stewardship/reports/spec.md#financial-stewardship-detail)
+(#404 renamed the former "Source pledged" and "Source contributed" columns).
 
 A Family's share wording can exceed a spreadsheet cell: a configuration may
 offer a hundred options and each Other text may run to two thousand

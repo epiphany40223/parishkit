@@ -610,7 +610,11 @@ This required report closes the operational path for report/export-only
 pledges. One row per currently effective live Family response shows Family name
 and DUID, submission/version time, annual pledge, frequency, approximate
 installment, selected share-option labels, Other text, active status, and
-source comparison pledge/contribution aggregates with as-of time.
+source comparison pledge/contribution aggregates with as-of time. The page and
+every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
+pledged" and "ParishSoft contributed", and say "ParishSoft" rather than
+"Source" in the export metadata that describes them, so a downloaded file names
+its figures as the page does.
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows

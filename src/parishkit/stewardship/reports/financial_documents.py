@@ -18,6 +18,8 @@ from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
 
+# The two comparison columns use the page's own labels (#404), so a file and
+# the page name the same figures alike.
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -26,8 +28,8 @@ HEADINGS = (
     "Frequency",
     "Approximate installment",
     "Share methods",
-    "Source pledged",
-    "Source contributed",
+    "ParishSoft pledged",
+    "ParishSoft contributed",
     "Latest response",
     "First response",
     "Family version",
@@ -35,8 +37,9 @@ HEADINGS = (
 )
 STATUS = {True: "Active", False: "Inactive", None: "Status unavailable"}
 UNPROVEN = (
-    "Unavailable: the latest giving read is not proven complete for the "
-    "comparison period. Unavailable does not mean zero."
+    "Unavailable: the latest giving data read from ParishSoft is not confirmed "
+    "complete for this campaign's comparison period. Unavailable does not mean "
+    "zero."
 )
 # Below the spreadsheet cell maximum of 32,767 characters, which openpyxl would
 # otherwise truncate silently, measured on the text the spreadsheet writer
@@ -124,7 +127,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         # A Family-only refresh keeps an older giving read, so the money's own
         # observation time is stated apart from the source promotion time.
         (
-            "Source giving read as of",
+            "ParishSoft giving read as of",
             instant(source["giving_observed_at"]) or "Unavailable",
         ),
         ("Captured at", instant(source["observed_at"])),
@@ -132,14 +135,14 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Display timezone", timezone),
         ("Campaign date-filter timezone", source["timezone"]),
         (
-            "Source comparison period",
+            "ParishSoft comparison period",
             dates.Span(
                 date.fromisoformat(source["comparison_start"]),
                 date.fromisoformat(source["comparison_end"]),
             ),
         ),
         (
-            "Source contributions through",
+            "ParishSoft contributions through",
             through if isinstance(through, date) else UNPROVEN,
         ),
         ("Matching Families", f"{result['total']:,}"),
