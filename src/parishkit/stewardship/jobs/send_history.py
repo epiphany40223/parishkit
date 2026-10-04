@@ -248,7 +248,7 @@ class SendRow:
         ]
 
 
-def _numbers(cursor, campaign_id):
+def reminder_numbers(cursor, campaign_id):
     """{reminder schedule id: its number} for the campaign (see ``_REMINDERS``)."""
     cursor.execute(_REMINDERS, {"campaign": campaign_id})
     return {row[0]: number for number, row in enumerate(cursor.fetchall(), start=1)}
@@ -265,7 +265,7 @@ def list_sends(campaign_id):
     with connection.cursor() as cursor:
         cursor.execute(_SENDS, {"campaign": campaign_id})
         found = cursor.fetchall()
-        numbers = _numbers(cursor, campaign_id)
+        numbers = reminder_numbers(cursor, campaign_id)
     found.sort(key=lambda row: (row[5], row[7], row[1]), reverse=True)
     return [
         ListedSend(
@@ -344,7 +344,7 @@ def describe(key):
         if found is None:
             return None
         campaign_id, kind, scheduled, current = found
-        number = _numbers(cursor, campaign_id).get(key.definition)
+        number = reminder_numbers(cursor, campaign_id).get(key.definition)
     return ListedSend(key, kind, scheduled, number, not current)
 
 
