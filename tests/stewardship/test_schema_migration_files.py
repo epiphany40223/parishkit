@@ -40,18 +40,40 @@ def function_bodies(text, *, replace):
     """Map each function name to its definition text in one SQL file.
 
     Definitions run from ``CREATE [OR REPLACE] FUNCTION public.name(`` to the
-    ``$$;`` that closes their body; the text kept starts after the keyword, so
-    the two forms compare equal.
+    closing dollar quote (``$$`` or a tagged ``$_$``) followed by ``;``; the
+    text kept starts after the keyword, so the two forms compare equal.
     """
     keyword = "CREATE OR REPLACE FUNCTION" if replace else "CREATE FUNCTION"
     bodies = {}
     for match in re.finditer(rf"^{re.escape(keyword)} public\.(\w+)\(", text, re.M):
-        # The body's opening $$ comes after the header; its closing $$; ends
-        # the definition, whether written as "END $$;" or on its own line.
-        body = text.index("$$", match.end()) + 2
-        end = text.index("$$;", body) + len("$$;")
+        # The header ends at "AS" and the body's opening dollar quote, which
+        # pg_dump tags ($_$) when the body itself contains a dollar sign; the
+        # same tag followed by ";" ends the definition, whether written as
+        # "END $$;" or on its own line.
+        quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, match.end())
+        body = quote.end()
+        end = text.index(quote[1] + ";", body) + len(quote[1]) + 1
         bodies[match[1]] = text[match.start() + len(keyword) : end]
     return bodies
+
+
+def test_function_bodies_end_at_the_tag_that_opened_them():
+    """A pg_dump-tagged body ($_$) containing "$$;" is read to its own end."""
+    text = (
+        "CREATE FUNCTION public.tagged() RETURNS text\n"
+        "    LANGUAGE sql\n"
+        "    AS $_$ SELECT '$$;' || '^a$' $_$;\n"
+        "CREATE FUNCTION public.plain() RETURNS void\n"
+        "    LANGUAGE plpgsql\n"
+        "    AS $$\nBEGIN\nEND $$;\n"
+    )
+    bodies = function_bodies(text, replace=False)
+    assert bodies["tagged"].endswith("|| '^a$' $_$;")
+    assert bodies["plain"].endswith("END $$;")
+    replaced = function_bodies(
+        text.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"), replace=True
+    )
+    assert replaced == bodies
 
 
 def test_every_frozen_migration_file_is_pinned_and_unchanged():
