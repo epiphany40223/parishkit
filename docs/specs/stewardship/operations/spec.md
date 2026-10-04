@@ -1176,7 +1176,9 @@ At minimum, end-to-end tests demonstrate:
 9. Closed campaign explicit reopen directly to `active`, atomic access-token/
    Production activation, no replay of work skipped while closed, archive,
    guarded post-archive return to Testing, denial of successor draft before
-   both steps complete, guarded unarchive to `closed`, and denial of unarchive
+   both steps complete (successor drafts are now refused outright in the Admin
+   portal, per the
+   [navigation decisions](../admin-portal/spec.md#navigation-decisions)), guarded unarchive to `closed`, and denial of unarchive
    after purge preparation begins.
 10. Web purge blocked for every non-archived campaign, stale backup, or wrong
     confirmation; atomic gate acquisition; concurrent admission rejection;

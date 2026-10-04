@@ -268,15 +268,20 @@ credential-reference checks.
 
 ## Navigation and home
 
-Menus are capability-driven and never display inaccessible actions. Admins see
-configuration, users, campaigns, source refresh, background work, reports,
-reconciliation, logs, and operations. Staff see permitted reports and
-workflows. Ministry leaders see assigned-Ministry reports and workflow queues.
+Menus are capability-driven: a role never sees an entry it may never open,
+and the [Admin navigation](#admin-navigation) lists which roles see each
+entry. An entry the role may open but that the campaign's state or the mode
+does not allow right now stays in place, disabled, with its reason. Admins see
+campaign setup, mail and the Family portal, reports, parish data, users and
+system pages. Staff see permitted reports and workflows. Ministry leaders see
+assigned-Ministry reports and workflow queues.
 
-The home page shows campaign state/dates, latest successful ParishSoft refresh,
-next scheduled mail, participation summary, unresolved work counts, and recent
-failures appropriate to the role. All pages show consistent breadcrumbs,
-help/context, loading/empty/error states, and responsive layouts.
+The home page is the Admin's starting point: it shows campaign state and
+dates, latest successful ParishSoft refresh, next scheduled mail,
+participation summary, unresolved work counts and recent failures appropriate
+to the role, and links the next steps for the campaign's state, as
+[Home page](#home-page) describes. All pages show consistent breadcrumbs,
+[help](#page-help), loading/empty/error states, and responsive layouts.
 
 In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
@@ -304,100 +309,550 @@ after the acknowledgement), and an altered list is refused, so Acknowledge
 never hides an entry the Administrator was not shown. Any other CRITICAL
 entry, including one recorded after the page was shown or one a long-running
 transaction commits after the acknowledgement, brings the banner back. The
-banner costs the Admin page one query, shared with the delivery warning count. It is distinct from security-event acknowledgement, which is
-per recipient.
+banner costs the Admin page one query, shared with the delivery warning
+count. It is distinct from security-event acknowledgement, which is per
+recipient.
 
 ### Admin navigation
 
 Admin pages share one layout: a sidebar menu beside the page, and a breadcrumb
 trail above the page heading. Both come from a single declarative registry in
 `accounts/admin_navigation.py`, keyed by URL name, that gives each Admin page a
-section, a parent page and a label, so the menu and the trails cannot drift and
-no template hand-writes a breadcrumb.
+menu group, a parent page and a label, so the menu and the trails cannot drift
+and no template hand-writes a breadcrumb or a back link that repeats the trail.
 
-The sidebar starts with Home, then these sections, each listing the entries the
-viewer may open:
+This section is the target structure from issue #522, written from a walk
+through every Admin page (109 pages) and settled by the Administrator's
+[navigation decisions](#navigation-decisions) of 2026-10-04. The sidebar is
+moved to it, and the page names, links and URLs fixed against it, by the
+follow-up issues #520 (one name per page), #521 (every page reachable, every
+flow with a way back) and #525 (one URL scheme). Until those land, pages keep
+the names and URLs in the table's "Current" columns, and so does every other
+section of this spec and the other stewardship specs that name an Admin page
+or URL (for example "Portal users" in [Admin tables](#admin-tables), Delivery
+controls and Mail schedules in the delivery sections, Withdraw from Production
+in the [top-level spec](../spec.md), and the hosted-files spec's
+`/admin/files/`); those follow-up issues update them with the code.
 
-- **Campaign**: Campaign settings (or New campaign), Campaign images, Pages and emails, Mail
-  schedules, Share options (financial campaigns), Member talents (Ministry
-  campaigns), Go-live readiness (drafts), Family email progress, Family
-  email sends and Delivery controls (Production).
-- **Reports**: Campaign reports, Ministry reports, Family directory (Family
-  codes and, with its mailing columns, postal outreach) and the Manual
-  information report. The campaign reports page also
-  links the [Talents and limitations](../reports/spec.md#talents-and-limitations)
-  report and the [Response dashboard](../reports/spec.md#response-dashboard).
-- **Parish and integrations**: Parish settings, Parish logos, Hosted files,
-  Integrations, ParishSoft refresh and Ministry activity.
-- **Users**: Portal users.
-- **System**: Background work, Outgoing mail, Families on the form now and
-  System logs.
+The Admin portal serves one current campaign. The system moves to a single
+campaign after this campaign (#145), so navigation already assumes it: there
+is no campaign chooser and no New campaign control (the campaign is created
+in the [setup wizard](#bootstrap-and-first-admin-wizard)), and no Admin URL
+names a campaign. Every remaining control whose only purpose is working with
+more than one campaign, such as **Copy campaign** on Campaign settings and the
+"Choose a retained campaign" links on Participation and Ministry requests, is
+shown greyed out until #145 removes it: an unavailable control, not a link or
+action, with the tip "Disabled; will be removed with the single-campaign
+change (#145)", shown and announced the same way as an unavailable menu
+entry's reason. The server refuses the matching actions too, so a greyed
+control cannot be bypassed ([navigation rule 10](#navigation-rules),
+[decisions 18 and 19](#navigation-decisions)).
 
-The menu always ends with **Sign out**, set apart from the sections, on every
+#### Menu groups
+
+The menu is grouped by what an Administrator is doing during a campaign, in
+the order a campaign runs: set it up, send it, read the responses, then the
+parish data, users and system pages that change rarely. The sidebar starts with
+Home, then these groups, each listing the entries the viewer's role may open:
+
+| Group | Entry | URL | Roles | Unavailable when (the reason shown) |
+| --- | --- | --- | --- | --- |
+| (top) | Home | `/admin/` | Administrator, Staff, Ministry leader | Never |
+| Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
+| Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
+| Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
+| Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign |
+| Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
+| Campaign setup | Member talents | `/admin/campaign/talents/` | Administrator | The campaign has no Ministry module, or it is not an unlocked Testing draft |
+| Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
+| Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
+| Mail and Family portal | Pause and resume mail | `/admin/mail/controls/` | Administrator | Testing mode |
+| Mail and Family portal | Family email progress | `/admin/mail/family-progress/` | Administrator | No current campaign |
+| Mail and Family portal | Family email history | `/admin/mail/family-history/` | Administrator | No current campaign |
+| Mail and Family portal | Outgoing mail | `/admin/mail/outgoing/` | Administrator | Never |
+| Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
+| Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
+| Responses and reports | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
+| Responses and reports | Participation | `/admin/reports/participation/` | Administrator, Staff | No current campaign |
+| Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
+| Responses and reports | Talents and limitations | `/admin/reports/talents/` | Administrator, Staff | The campaign has no Ministry module |
+| Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign |
+| Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Responses and reports | Ministry follow-up | `/admin/reports/ministries/follow-up/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Responses and reports | Family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign |
+| Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
+| Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
+| Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
+| Parish data | Ministries | `/admin/parish/ministries/` | Administrator | Never |
+| Parish data | Hosted files | `/admin/parish/files/` | Administrator | Never |
+| Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
+| Users and access | Sign-in rules | `/admin/users/sign-in-rules/` | Administrator | Never |
+| Users and access | Ministry assignments | `/admin/users/ministry-assignments/` | Administrator | Never |
+| Users and access | Chairpersons | `/admin/users/chairpersons/` | Administrator | Never |
+| System | Integrations | `/admin/system/integrations/` | Administrator | Never |
+| System | Background work | `/admin/system/background/` | Administrator | Never |
+| System | System logs | `/admin/system/logs/` | Administrator | Never |
+
+Notes on the groups:
+
+- Every report has its own entry, so none is reached only through another
+  report: the [response dashboard](../reports/spec.md#response-funnel),
+  [participation](../reports/spec.md#campaign-statistics),
+  [Financial stewardship](../reports/spec.md#financial-stewardship-detail),
+  [Talents and limitations](../reports/spec.md#talents-and-limitations),
+  [Additional information](../reports/spec.md#additional-information), the
+  Ministry report and its [follow-up](#follow-up-workflows) queue, and the
+  [Family directory](../reports/spec.md#family-directory) (with Family
+  campaign codes and its mailing columns). Reports always show the current
+  campaign. Ministry leaders see only their own Ministries in the Ministry
+  entries. Additional information and Ministry follow-up show their open
+  counts. Ministry follow-up has no assignment (#552): a request keeps its
+  status, notes and outcome, and its Ministry leader handles it.
+- **Emailed reports** is a new page listing the past daily and weekly
+  [Administrator digests](../background-processing/spec.md#administrator-digests)
+  the viewer may open (Staff see daily reports only, as today), newest first,
+  so a digest page is no longer reachable only from its email. Sending a
+  weekly report now is an Administrator action on this page and returns to
+  it, linking the report it produced.
+- **Ministries** is the one home for Ministries: parish-wide
+  [Ministry activity](#ministry-activity-management), with
+  [this campaign's Ministries](#changing-a-live-campaigns-ministries) reached
+  from it. Campaign settings links to the campaign's Ministries page; it is
+  not a second home.
+- Mail and the Family portal sit together, so pausing mail
+  ([live delivery pause](#live-delivery-pause)) and closing the portal
+  ([Family portal maintenance](#family-portal-maintenance)) are side by side.
+  The header's background, delivery and presence counts stay as shortcuts to
+  their entries.
+- [Portal user management](#portal-user-management) is three entries instead
+  of one long page of five tables: **Sign-in rules** (Google Workspace
+  domain rules and exact-address rules, with their roles), **Ministry
+  assignments** (Ministry assignments for people a domain rule admits) and
+  **Chairpersons** (suspended Chairperson assignments awaiting review, and
+  [Chairperson suggestions](#chairperson-suggestions-and-assignments) from
+  ParishSoft). Each review started on one of them returns to it.
+- Emailed reports, Ministry assignments and Chairpersons are new pages: #520
+  and #521 add their registry entries and views.
+- Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
+  `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
+  redirects to the group's first entry available to the viewer, except
+  `/admin/reports/`, which keeps its old meaning: Participation, or Ministry
+  requests for a viewer who may not open Participation. A group root with no
+  entry available to the viewer redirects to Home.
+- Until initial setup completes, the only menu entry is the setup wizard,
+  which has its own stepper: nothing else works yet, so this is the one
+  exception to a stable menu shape.
+
+The menu always ends with **Sign out**, set apart from the groups, on every
 signed-in Admin page (including during initial setup). It is a POST form with
 the Admin CSRF token to the logout route, styled like a menu entry, because
 logout is CSRF-protected. Pages carry no product footer.
 
-Entries use the same capability checks as the pages they open, and a section
-with no visible entry is omitted; the menu is not the security boundary. The
-entry for the current page, or for the nearest ancestor page listed in the
-menu, is marked `aria-current="page"` and its section is highlighted. Each
-section title is a level-2 heading that names its list of entries, styled as a
-small muted label (not like a link) with a divider above every section after
-the first and the section's entries indented beneath it. On wide
-screens the sidebar is a sticky column; on narrow screens it collapses behind a
-Menu disclosure that works without script.
+Entries use the same capability checks as the pages they open, and a group
+with no entry for the viewer's role is omitted; the menu is not the security
+boundary. The entry for the current page, or for the nearest ancestor page
+listed in the menu, is marked `aria-current="page"` and its group is
+highlighted. On wide screens the sidebar is a sticky column that scrolls on
+its own when it is taller than the window; on narrow screens it collapses
+behind a Menu disclosure that works without script.
 
-The breadcrumb trail runs Home › section › each ancestor page › the current
-page, for example Home › Campaign › Pages and emails › Initial invitation. A
-view may name the current page more specifically (the email being edited, the
-integration). Ancestor links reuse the current request's resolved route
-arguments. Home shows no trail. Building the menu and trail runs no queries.
-Until initial setup completes, the only menu entry is the setup wizard, which
-has its own stepper. Every Admin route is either a registered page or listed
-as a non-page (form actions, downloads, images, status fragments, sign-in and
-the setup wizard), and a test requires every new route to be classified.
+Each group is collapsible: a native `<details>` disclosure whose `<summary>`
+text is the group's title, styled as a small muted label with a divider above
+every group after the first and the group's entries indented beneath it. The
+entry list is labelled by the summary (`aria-labelledby`). The title is not a
+heading inside the summary, because some screen readers then drop the
+summary's disclosure role or its heading. A browser test confirms each
+summary exposes its name and its expanded or collapsed state, and a manual
+VoiceOver and NVDA check confirms both are announced. The summary is a keyboard control (Enter or
+Space toggles it) and shows an arrow for its state.
+Groups start open. Each browser remembers which groups an Admin collapsed (only
+the group key and its open or closed state, in browser storage, as the
+[About panel](#page-help) does); without script or storage every group starts
+open. The group holding the current page always opens, so the
+`aria-current` entry is never hidden. Collapsing is the reader's choice and
+does not change the menu's shape.
+
+#### Stable menu shape
+
+For a given role, the menu has the same groups and entries in the same order
+in every mode and campaign state. Only the role hides an entry. An entry the
+role may open but that is unavailable right now is greyed out: an `<a>`
+without `href`, with `role="link"`, `aria-disabled="true"` and
+`tabindex="0"`, so keyboard users reach it in tab order and activating it
+does nothing. Its reason (for example "Available in Production mode" or "No
+current campaign") appears in a small tip when the pointer rests on the
+entry, when the entry has keyboard focus, and when it is tapped on a touch or
+narrow screen; the tip stays while the pointer is over it or the entry keeps
+focus, and Escape, or a tap elsewhere, dismisses it. The reason is also the
+entry's accessible description (`aria-describedby`), so screen readers
+announce it with the entry. The reason names what to do when there
+is something to do. An unavailable entry's page refuses a direct visit as it
+does today, with the same reason. The conditions come from the campaign
+state, modules and mode the chrome already reads, so building the menu adds
+no query.
+
+#### Home page
+
+Home is a starting point, not only a status page. Its heading is "Home"; the
+parish name and the current campaign's name and state are its data line. Below
+the status panels described above, Home shows a short **Next steps** list of
+links chosen by the campaign's state and the viewer's role:
+
+| State | Administrator | Staff | Ministry leader |
+| --- | --- | --- | --- |
+| Draft in Testing | Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard (Testing) | Response dashboard, Participation | Ministry requests |
+| Production being activated | Production activation, Outgoing mail | Response dashboard | Ministry requests |
+| Active | Response dashboard, Additional information and Ministry follow-up (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry follow-up (with open counts) | Ministry requests, Ministry follow-up (with open count) |
+| Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
+| Closed or archived | Participation, Emailed reports | Participation | Ministry requests |
+| No current campaign | Says so; no next steps | Says so; no next steps | Says so; no next steps |
+
+Problems that need action (failed background tasks, unacknowledged security
+events, a stale ParishSoft refresh) stay above Next steps and link the page
+that resolves them. A next step is a link only when the viewer's menu entry
+for it is available.
+
+#### Page names and placement
+
+Every Admin page has one name. The menu entry, the breadcrumb, the page
+heading, the browser title and every link or message that names the page use
+it; link text may add a verb ("Return to Pages and emails"). A page that shows
+one object (an email, an integration, an export, an error) is named after that
+object in both its heading and its breadcrumb; those pages are the listed
+exceptions in the table ("Object-named"). Setup wizard headings use the
+stepper's label, and a wizard step uses the same name as the page that edits
+the same thing after setup.
+
+The table places every page in today's site map: its name, whether it is a
+menu entry or which page it is reached from, the roles that may open it, the
+names it replaces, and its current and new URL under the
+[URL scheme](#url-scheme). "Reached from" is also the page's breadcrumb
+parent. Pages "outside the menu" are the sign-in, maintenance and error pages,
+which the access gate shows; "setup stepper" pages are the wizard's;
+"retired" pages leave the portal and their old URLs redirect.
+
+| Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
+| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/configuration/requests/<request>` | `/admin/changes/<request>/` |  |
+| `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/<campaign>/settings` | `/admin/campaign/settings/` |  |
+| `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/<campaign>/clone` | `/admin/campaign/copy/` | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
+| `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/<campaign>/content/history` | `/admin/campaign/content/history/` |  |
+| `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/<campaign>/content/history/<revision>` | `/admin/campaign/content/history/<revision>/` |  |
+| `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/<campaign>/content` | `/admin/campaign/content/` |  |
+| `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/<campaign>/content/<kind>/<slot>` | `/admin/campaign/content/<kind>/<slot>/` | Object-named (exception). |
+| `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/<campaign>/content/email/<slot>/<revision>` | `/admin/campaign/content/email/<slot>/<revision>/` | Object-named (exception); links its own test page. |
+| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/<campaign>/content/test/<revision>` | `/admin/campaign/content/test/<revision>/` | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
+| `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/<campaign>/content/test/<revision>/families` | `/admin/campaign/content/test/<revision>/families/` |  |
+| `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images` | `/admin/campaign/images/` |  |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/<campaign>/images/<slot>` | `/admin/campaign/images/<slot>/` (POST only) | POST-only error re-render of Campaign images; reclassify as a form action. |
+| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images/<slot>/<bundle>` | `/admin/campaign/images/<slot>/<bundle>/` |  |
+| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images/<slot>/remove` | `/admin/campaign/images/<slot>/removal/` |  |
+| `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/<campaign>/schedules` | `/admin/campaign/schedules/` |  |
+| `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/<campaign>/share-options` | `/admin/campaign/share-options/` | Gains a Return link and About panel. |
+| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/<campaign>/talents` | `/admin/campaign/talents/` | Gains a Return link and About panel. |
+| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/<campaign>/go-live` | `/admin/campaign/go-live/` |  |
+| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/<campaign>/go-live/families` | `/admin/campaign/go-live/families/` |  |
+| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/<campaign>/go-live/cleanup/<request>` | `/admin/campaign/go-live/cleanup/<request>/` |  |
+| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/<campaign>/go-live/cleanup/<request>/links` | `/admin/campaign/go-live/cleanup/<request>/links/` |  |
+| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/<campaign>/go-live/cleanup/<request>/links/<preparation>/confirm` | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` |  |
+| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/<campaign>/production` | `/admin/campaign/production/` | Links its cleanup request and Outgoing mail. |
+| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/<campaign>/production/withdraw` | `/admin/campaign/production/cancellation/` | Links Pause and resume mail and Outgoing mail where it names them. |
+| `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/campaign/<campaign>/delivery` | `/admin/mail/controls/` |  |
+| `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/deliveries/family-progress` | `/admin/mail/family-progress/` |  |
+| `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/deliveries/family-sends` | `/admin/mail/family-history/` |  |
+| `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/deliveries` | `/admin/mail/outgoing/` |  |
+| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/deliveries/<message>` | `/admin/mail/outgoing/<message>/` |  |
+| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/deliveries/refusals` | `/admin/mail/refusals/` |  |
+| `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/deliveries/refusals/<refusal>` | `/admin/mail/refusals/<refusal>/` |  |
+| `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/family-portal` | `/admin/mail/family-portal/` |  |
+| `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/presence` | `/admin/mail/presence/` |  |
+| `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/<campaign>/responses/` | `/admin/reports/responses/` |  |
+| `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | `/admin/reports/` (group root: redirects to Participation, or to Ministry requests for Ministry leaders) | Address kept as a redirect to Participation. |
+| `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/<campaign>/participation/` | `/admin/reports/participation/` |  |
+| `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). |
+| `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exact-exports/<request>/` | `/admin/reports/exports/<request>/` (the shared export page) | Decision 8: folds into the shared export page; old addresses redirect there. |
+| `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/<campaign>/financial/` | `/admin/reports/financial/` |  |
+| `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/<campaign>/talents/` | `/admin/reports/talents/` |  |
+| `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/<campaign>/information/` | `/admin/reports/information/` |  |
+| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/<campaign>/information/<item>/` | `/admin/reports/information/<item>/` | Return to the queue keeps its filters and page. |
+| `ministry_reports` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | (redirects) Ministry requests; Ministry reports | `/admin/ministry-reports/` | (redirect only, to the current campaign's Ministry requests) | Address kept as a redirect. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report | `/admin/reports/<campaign>/ministries/` | `/admin/reports/ministries/` |  |
+| `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/<campaign>/ministries/join/` | `/admin/reports/ministries/joining/` | Becomes a bookmarkable view of Ministry requests (#521). |
+| `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/<campaign>/ministries/leave/` | `/admin/reports/ministries/leaving/` | Becomes a bookmarkable view of Ministry requests (#521). |
+| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/<campaign>/ministries/follow-up/` | `/admin/reports/ministries/follow-up/` | No assignee column, filter or bulk assignment (#552). |
+| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/<campaign>/ministries/follow-up/<request>/` | `/admin/reports/ministries/follow-up/<request>/` | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
+| `family_directory` | Family directory | Menu: Family directory | Administrator, Staff | (same) | `/admin/reports/<campaign>/families/` | `/admin/reports/families/` |  |
+| `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/campaign/<campaign>/family-codes` | `/admin/reports/family-codes/` |  |
+| `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/<campaign>/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. |
+| `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
+| `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
+| `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/daily-digests/<snapshot>/` | `/admin/reports/emailed/daily/<snapshot>/` |  |
+| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/configuration/parish` | `/admin/parish/settings/` | Hand-written Administration link removed. |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/configuration/branding` | `/admin/parish/logos/` |  |
+| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/configuration/branding/<bundle>` | `/admin/parish/logos/<bundle>/` |  |
+| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/configuration/ministries` | `/admin/parish/ministries/` |  |
+| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/campaign/<campaign>/ministries` | `/admin/parish/ministries/campaign/` | Moves under Ministries; Campaign settings keeps a link. |
+| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/files/` | `/admin/parish/files/` |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/files/delete` (POST only) | `/admin/parish/files/` (POST only) |  |
+| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/files/<file>/name` | `/admin/parish/files/<file>/name/` |  |
+| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/source/refresh` | `/admin/parish/parishsoft-refresh/` |  |
+| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
+| `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
+| `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
+| `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
+| `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
+| `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
+| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/configuration/integrations` | `/admin/system/integrations/` |  |
+| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/configuration/integrations/<target>` | `/admin/system/integrations/<target>/` | Object-named (exception); hand-written Integrations link removed. |
+| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>` | `/admin/system/key-changes/<request>/` |  |
+| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>/select` | `/admin/system/key-changes/<request>/selection/` |  |
+| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/background` | `/admin/system/background/` |  |
+| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/background/task/<task>` | `/admin/system/background/<task>/` |  |
+| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/logs` | `/admin/system/logs/` |  |
+| `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the campaign is created in the setup wizard. The old address redirects to Campaign settings. |
+| `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; redirects to `/admin/reports/participation/`) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. The old address redirects to Participation. |
+| `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; redirects to `/admin/reports/ministries/`) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. The old address redirects to Ministry requests. |
+| `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
+| `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
+| `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
+| `maintenance` | The system is temporarily unavailable | (outside the menu) | Administrator, Staff, Ministry leader | (same) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: restore-review dead end. |
+| `availability_setup` | The system is not configured yet | (outside the menu) | Administrator, Staff, Ministry leader | (same) | (any Admin URL before setup completes, non-Administrator) | (any Admin URL before setup completes) |  |
+| `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
+| `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
+| `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | `/admin/setup/parish/` |  |
+| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
+| `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | `/admin/setup/mail/` |  |
+| `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | `/admin/setup/testing/` |  |
+| `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | `/admin/setup/credentials/google_workspace/` |  |
+| `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | `/admin/setup/slack/` |  |
+| `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | `/admin/setup/credentials/slack/` |  |
+| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
+| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
+| `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | `/admin/setup/branding/` |  |
+| `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | `/admin/setup/access/` |  |
+| `setup_campaign` | First campaign | Setup stepper | Administrator | (same) | `/admin/setup/campaign` | `/admin/setup/campaign/` |  |
+| `setup_content` | Pages and emails | Setup stepper | Administrator | First-campaign content (stepper: Pages and email templates) | `/admin/setup/content` | `/admin/setup/content/` |  |
+| `setup_content_edit` | _page or email name_ | Setup stepper | Administrator | (same) | `/admin/setup/content/<kind>/<slot>` | `/admin/setup/content/<kind>/<slot>/` | Object-named (exception). |
+| `setup_shares` | Share options | Setup stepper | Administrator | How Families will share | `/admin/setup/shares` | `/admin/setup/shares/` |  |
+| `setup_schedules` | Dates and mail schedules | Setup stepper | Administrator | First-campaign mail schedules (stepper: Mail schedules) | `/admin/setup/schedules` | `/admin/setup/schedules/` |  |
+| `setup_preview` | Review | Setup stepper | Administrator | First-campaign setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
+| `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | `/admin/setup/mail-test/` |  |
+| `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | `/admin/setup/slack-test/` |  |
+| `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | `/admin/setup/confirmation/` |  |
+| `setup_cancel` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/cancel` | `/admin/setup/finishing/` | Route name to drop 'cancel' (#521). |
+| `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |
+
+#### URL scheme
+
+Admin URLs follow the menu, so the address says where the reader is
+(issue #525):
+
+- **The first segment after `/admin/` is the menu group:** `campaign`
+  (Campaign setup), `mail` (Mail and Family portal), `reports` (Responses and
+  reports), `parish` (Parish data), `users` (Users and access) and `system`
+  (System). Home is `/admin/`, a change's status page is
+  `/admin/changes/<request>/`, and the sign-in, maintenance and setup wizard
+  pages keep their own prefixes outside the menu.
+- **No campaign identifier:** every page is `/admin/<group>/<page>/`, for
+  example `/admin/campaign/settings/`, `/admin/mail/family-history/` and
+  `/admin/reports/participation/`, and campaign pages show the current
+  campaign. This needs no schema change and leaves nothing to undo when the
+  system becomes single-campaign (#145). Records that belong to a campaign
+  (an export, a digest snapshot, a cleanup request) are addressed by their
+  own identifier, which already names their campaign.
+- **One trailing-slash rule:** every Admin page URL ends in `/`, and the
+  other form redirects.
+- **Nouns, not verbs:** plural nouns for collections, a noun for each item,
+  and actions are POSTs to the item or collection (no GET target such as
+  `/delete` or `/remove`).
+- **Old URLs keep working** as permanent redirects to the new ones: 301 for
+  pages, 308 for form actions, so a page left open still submits. An old URL
+  with a campaign UUID redirects only when that UUID is the current campaign;
+  for any other campaign it shows a plain refusal ("This campaign is no
+  longer the current campaign") with status 410 Gone and never redirects, so
+  a form left open on an earlier campaign is never re-posted into the current
+  one. 410 rather than 404 because the address was valid and will not work
+  again: it is not a typo, and the reader should not retry it. Because the
+  target of a campaign-UUID redirect depends on which campaign is current,
+  and browsers cache 301 and 308 responses indefinitely, those redirects (and
+  the 410 refusals) are sent with `Cache-Control: no-store`; redirects that
+  name no campaign may be cached. Likewise a page for one record (an export,
+  a digest snapshot, a cleanup request) refuses a record whose campaign is not
+  current. Sent digest emails, bookmarks and the operator runbooks link the
+  old forms. A test lists every old pattern with its target.
+
+#### Navigation rules
+
+These rules are requirements; a navigation test checks each one against the
+registry and the rendered pages.
+
+1. **Reachable.** Every registered page is a menu entry or names a parent in
+   the registry, and following parents always ends at a menu entry or Home.
+   Every child page is linked from its parent page in at least one state the
+   test renders, or is the result of a form on its parent that the registry
+   lists. No page is reachable only from an email, an error page or another
+   group's page.
+2. **Every report has a menu entry**, and every page listed under a report
+   entry is reached from that report.
+3. **A way back.** Every page except Home, the sign-in, the setup wizard and
+   the pages the access gate shows instead of a page (maintenance, not
+   configured yet, and error pages) shows a breadcrumb whose parent crumb is a
+   link the viewer may open, or a "Return to" link when the parent cannot be
+   linked. An error page offers a way back to the page the reader came from,
+   or to Home; the maintenance and not-configured pages offer sign-out (the
+   restore-review case is #537). Templates do not hand-write back links that
+   repeat the trail.
+4. **One name.** A menu entry's page heading equals its menu label; a child
+   page's heading equals its breadcrumb label; the browser title starts with
+   the same name. The only exceptions are the object-named pages in the table.
+   Every "Return to" link names its target by that target's name.
+5. **Flows end where the reader started.** After an action, the reader lands
+   on the page whose task started it: a settings change's status page returns
+   to the settings page; Preview and test email returns to the page it was
+   opened from; a manual ParishSoft refresh stays on Refresh from ParishSoft
+   and shows its progress there; sending a weekly report now ends on Emailed
+   reports with a link to the report; Cancel returns to the page it was
+   pressed on, never Home unless the flow started there.
+6. **Messages link what they name.** A message that tells the reader to use
+   another page links that page when the viewer may open it.
+7. **Stable shape.** For each role, the menu's groups and entries are the same
+   across modes and campaign states (setup pending excepted); an unavailable
+   entry is greyed out with its reason, never removed, and stays reachable by
+   keyboard with its reason announced.
+8. **One home per concept.** A page appears under one menu entry only;
+   another page may link it, but its breadcrumb always runs through its home
+   (Campaign Ministries runs through Ministries).
+9. **Every route classified.** Every Admin route is either a registered page
+   or listed as a non-page (form actions, downloads, images, status
+   fragments, sign-in and the setup wizard), and a test requires every new
+   route to be classified. A route that answers only POST or only JSON is a
+   non-page, not a page.
+10. **Multi-campaign controls are greyed out.** Every reachable or visible
+    control whose only purpose is multi-campaign work is an unavailable
+    control with the tip "Disabled; will be removed with the single-campaign
+    change (#145)", reachable by keyboard and announced as its description.
+    The controls are: Copy campaign on Campaign settings; the "Choose a
+    retained campaign" links on Participation and on Ministry requests; and
+    the "create the successor draft" choice in the checklist after
+    [Return to Testing](#return-to-testing-after-archive). The server refuses
+    the matching actions: cloning, creating a successor draft, and choosing a
+    campaign other than the current one for a report. The retired chooser
+    addresses themselves redirect (to Participation and to Ministry requests)
+    rather than refuse. New campaign is removed outright
+    ([decision 11](#navigation-decisions)), not greyed.
+
+#### Breadcrumbs and flows
+
+The breadcrumb trail runs Home › group › each ancestor page › the current
+page, for example Home › Campaign setup › Pages and emails › Initial
+invitation. A view may name the current page more specifically (the email
+being edited, the integration). Ancestor links reuse the current request's
+resolved route arguments. Home shows no trail. Building the menu and trail
+runs no queries.
 
 A view may place its page more precisely than its route can, so deep steps of
 multi-step flows keep their context: it may name a different parent, supply
 route arguments an ancestor link needs, and name an ancestor specifically.
-Preview and test email sits under the email revision it sends (Home › Campaign
-› Pages and emails › Initial invitation › Preview and test email), with Send to
-chosen Families below it. An export's status page sits under the report it
-came from. A configuration change's status page sits under the settings page
-the change was confirmed on: confirming remembers that page in the signed-in
+Preview and test email sits under the email it sends (Home › Campaign setup ›
+Pages and emails › Initial invitation › Preview and test email), with Send to
+chosen Families below it. An export's status page sits under the report it came
+from. A configuration change's status page sits under the settings page the
+change was confirmed on: confirming remembers that page in the signed-in
 session (never in the URL), and the status page shows its trail and a "Return
 to" link to it. Without that memory, as in another sign-in, the page stands
 under Home. A key's replacement status and its Finish switching page sit under
 the integration the key belongs to, never under each other, because only the
 Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
-POST (the login rule, chair suggestion, chair review and assignment reviews);
-one-time reviews that refuse once their change is confirmed (New campaign,
-Copy campaign, and the campaign image and logo reviews); and Finish switching,
-which still opens afterward but needs a fresh Google sign-in and has nothing
-left to do. A sidebar page is linked in a trail or "Return to" only while the
-viewer's sidebar offers that same page, so a page the sidebar hides because it
-would now refuse (Share options once the campaign is locked, Campaign images
-for a campaign that is no longer current) is named without a link.
+POST (the sign-in rule, Chairperson suggestion, Chairperson decision and
+Ministry assignment reviews); one-time reviews that refuse once their change is
+confirmed (Copy campaign, and the campaign image and logo reviews); and Finish
+switching, which still opens afterward but needs a fresh Google sign-in and has
+nothing left to do. A menu page is linked in a trail or "Return to" only while
+the viewer's menu entry for it is available, so a page whose entry is
+unavailable because it would now refuse (Share options once the campaign is
+locked, Campaign images for an archived campaign) is named without a link.
 
 Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
-Apply) on every settings editor (campaign settings, a live campaign's
-Ministries, Copy campaign, pages and emails, mail schedules, share options,
-member talents, campaign images, Parish settings, Parish logos, each
-integration, Ministry activity and Finish switching), the reviews started on Portal users (login rules, chair
-suggestions, chair reviews and assignments) and every change's status page;
-going live (Check readiness, Testing cleanup, Family links, Confirm
+Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
+campaign, pages and emails, dates and mail schedules, share options, member
+talents, campaign images, Parish settings, Parish logos, each integration,
+Ministries and Finish switching), the reviews started on Sign-in rules,
+Ministry assignments and Chairpersons (sign-in rules, Ministry assignments,
+Chairperson suggestions and Chairperson decisions) and every change's status
+page; going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
-Send and follow); and report exports (Choose report, Prepare file, Download).
-A locked campaign's read-only settings page is not in a flow. The reviews
-started on Portal users show only Review and Apply as current: Portal users
-itself is a list, not step 1, and a refused review shows its error page
-rather than going back to a form. An error page never shows a step or a
-placed trail. Placement and steps are presentation only and grant nothing.
+Send and follow); and report exports (Choose report, Prepare file, Download). A
+locked campaign's read-only settings page is not in a flow. Those reviews show
+only Review and Apply as current: the page they start on is a list, not step 1,
+and a refused review shows its error page rather than going back to a form. An
+error page never shows a step or a placed trail. Placement and steps are
+presentation only and grant nothing.
+
+#### Navigation decisions
+
+The Administrator decided these on 2026-10-04 (recorded on issue #522). The
+text above already follows them.
+
+1. **Menu groups and their order?** Home, Campaign setup, Mail and Family
+   portal, Responses and reports, Parish data, Users and access, System (as
+   proposed).
+2. **One menu entry per report, or a Reports landing page?** One entry per
+   report (as proposed).
+3. **How does an unavailable entry show its reason?** Greyed out, with the
+   reason shown on hover; the reason must also reach keyboard and screen-reader
+   users (focusable and announced), not mouse only.
+4. **Where do Ministries live?** One Ministries entry under Parish data; the
+   campaign's Ministries are its child page (as proposed).
+5. **Where do Integrations live?** System (as proposed).
+6. **Move Outgoing mail, Family portal availability and Families on the form
+   now out of System?** Yes, into Mail and Family portal (as proposed).
+7. **Add an Emailed reports page with Send a weekly report now on it?** Yes (as
+   proposed).
+8. **Fold the latest-data participation export into the shared export page?**
+   Yes (as proposed).
+9. **Accept the proposed renames?** All as recommended, except Withdraw from
+   Production becomes Cancel go-live, which avoids a clash with the
+   after-archive Return to Testing.
+10. **Offer one shared campaign chooser on every report?** No. The system moves
+    to a single campaign after this one (#145); reports always show the current
+    campaign and the existing choosers are retired.
+11. **What should New campaign do while an archived campaign is still
+    current?** Remove the New campaign control. The one campaign is created in
+    the initial setup wizard only.
+12. **Should the restore-review maintenance page get a way forward?** Yes, in
+    its own issue: #537 (as proposed).
+13. **Split Portal users into separate entries?** Split now (for example
+    Sign-in rules and Chairpersons). This spec adds a third entry, Ministry
+    assignments, for the Portal users table that fits neither.
+14. **Should menu groups collapse?** Groups are collapsible, with the state
+    remembered per browser.
+15. **How should the campaign appear in Admin URLs?** No campaign identifier in
+    Admin URLs: the current campaign is implied. Old URLs with campaign UUIDs
+    redirect permanently. No schema change, and nothing to undo after #145.
+    (Refined in the URL scheme: an old campaign-UUID URL redirects only when it
+    names the current campaign; any other campaign gets a 410 refusal.)
+16. **Where does the campaign sit in the path?** Nowhere (see 15): every page
+    is `/admin/<group>/<page>/`.
+17. **Which trailing-slash rule?** Every Admin page URL ends in a slash; the
+    other form redirects; old URLs redirect permanently (301 pages, 308 form
+    actions) (as proposed).
+18. **What happens to Copy campaign until the single-campaign change?** Keep it
+    until #145, greyed out (disabled, not a link or action) with a hover and
+    keyboard-focus tip saying it is disabled and will be removed with the
+    single-campaign change (#145). The server refuses the clone action too, so
+    the disabled state cannot be bypassed.
+19. **What happens to other controls that only serve multiple campaigns?**
+    Every remaining reachable or visible control whose only purpose is
+    multi-campaign work (campaign choosers and switchers, Copy campaign,
+    successor-campaign controls) is greyed out, not a link or action, with a
+    hover and keyboard-focus tip saying it is disabled and will be removed with
+    the single-campaign change (#145); the server refuses the matching actions.
+    New campaign stays removed (decision 11).
 
 ### Admin tables
 
@@ -665,7 +1120,7 @@ Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
 
-Hosted files (Parish and integrations) is the Administrator-only library of
+Hosted files (Parish data) is the Administrator-only library of
 PDF, Office and image files that page and email content links or shows
 with `{{ file.<slug> }}`: upload, placeholder copy, where each file is used,
 and single or multi-select deletion that is refused while a file is in use.
@@ -1039,6 +1494,14 @@ Admins create a new draft by cloning selected safe values from a historical
 campaign or starting empty. Cloning copies content/share/schedule structures
 but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
+
+The paragraph above and the draft-creation rules below (when a new draft may
+be created, and creating a successor after Return to Testing) are superseded
+for the Admin portal by the [navigation decisions](#navigation-decisions) 11,
+18 and 19: the campaign is created in the initial setup wizard only, there is
+no New campaign control, and Copy campaign and successor creation stay greyed
+out and refused by the server until the single-campaign change (#145) removes
+them.
 
 Draft creation and every campaign-editor save apply a new authoritative YAML
 version and its normalized PostgreSQL snapshot. Runtime lifecycle/mode fields
@@ -1426,7 +1889,8 @@ and held-message state is resolved.
 
 Sending the invitations, and later each reminder, to every Family is a long
 background operation (about 1,100 Families take 20 to 25 minutes). The
-read-only **Family email progress** page (Campaign section, linked from
+read-only **Family email progress** page (Mail and Family portal
+[menu group](#menu-groups), linked from
 Delivery controls and Outgoing mail) follows it live
 ([#413](https://github.com/epiphany40223/parishkit/issues/413)). It is for
 Administrators only, like Outgoing mail. It is a moment-in-time view: it
@@ -1588,7 +2052,8 @@ during a live 1,100-Family Testing send.
 
 ### Family email sends
 
-The read-only **Family email sends** page (Campaign section, linked from
+The read-only **Family email sends** page (Mail and Family portal
+[menu group](#menu-groups), linked from
 Outgoing mail and from the [Family email progress](#family-email-progress)
 page) is the permanent record of every Family send of the current campaign
 ([#432](https://github.com/epiphany40223/parishkit/issues/432)). It is for
@@ -1812,6 +2277,11 @@ defer purge until the next post-archive window. It warns that successor creation
 closes the purge window until that successor is archived and returned to
 Testing.
 
+Superseded for the Admin portal by the
+[navigation decisions](#navigation-decisions) 10, 11 and 19: reports show the
+current campaign only, and the checklist's "create the successor draft" choice
+is greyed out under [navigation rule 10](#navigation-rules) until #145.
+
 ## Portal user management
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
@@ -1950,12 +2420,13 @@ closes the task with an audit event.
 ## Manual ParishSoft refresh
 
 Admins may request an immediate full refresh from a confirmation page (the
-ParishSoft refresh menu entry), or with the "Run a full refresh now" button on
-the ParishSoft settings page and in the Admin home page's refresh notice (same
-capability and CSRF rules). The
-action inserts a durable task and returns immediately to its status page. If a
-poll is running, no concurrent poll starts; one manual full refresh may be
-queued to follow it. Repeated clicks return/link to the existing queued run.
+Refresh from ParishSoft menu entry), or with the "Run a full refresh now"
+button on the ParishSoft settings page and in the Admin home page's refresh
+notice (same capability and CSRF rules). The action inserts a durable task and
+returns immediately to the Refresh from ParishSoft page, which shows the task's
+status ([navigation rule 5](#navigation-rules)). If a poll is running, no
+concurrent poll starts; one manual full refresh may be queued to follow it.
+Repeated clicks return/link to the existing queued run.
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually

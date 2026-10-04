@@ -12,6 +12,13 @@ inherits every report permission. Staff sees all reports below except logs;
 Ministry leaders see only Ministry reports and campaigns/rows for assigned
 Ministries.
 
+The campaign selector, the campaign UUID in report URLs and the default to the
+most recent retained campaign are superseded for the Admin portal by the
+[navigation decisions](../admin-portal/spec.md#navigation-decisions) 10, 15
+and 19: reports show the current campaign, report URLs name no campaign, and
+the selector links stay greyed out until the single-campaign change (#145).
+Exports keep their own identifiers.
+
 ## Shared report behavior
 
 Every report has a title, purpose/help text, active filters, source/data-as-of

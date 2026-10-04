@@ -243,6 +243,11 @@ campaign has also been archived and returned to Testing. Creating the successor
 draft closes that window. Archived campaigns remain available for historical
 reporting when not purged.
 
+In the Admin portal, successor drafts and historical-campaign reporting are
+superseded by the [navigation decisions](admin-portal/spec.md#navigation-decisions):
+the deployment moves to a single campaign (#145), and until then those
+controls are greyed out and refused by the server.
+
 Temporarily stopping outgoing campaign email uses the Campaign's independent
 live-delivery pause, not a transition from Production to Testing. An active
 campaign remains active, Family access/submissions remain live, and production
