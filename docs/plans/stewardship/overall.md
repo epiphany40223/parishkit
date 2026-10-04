@@ -704,6 +704,12 @@ gate sequence above. Each states its own dependencies and review rules.
   which moves the Admin portal to the specified menu, page names, ways back and
   URL scheme, and gates it on JavaScript
   ([#522](https://github.com/epiphany40223/parishkit/issues/522)).
+- **ADM-13** — the [System health page](admin-portal.md#adm-13-system-health-page),
+  which shows backups, the mail sender, ParishSoft refresh refusals, debug
+  logging and the running version in plain words, and lets an Administrator
+  take a backup now, clear a halted mail sender, accept one large ParishSoft
+  change and turn off debug logging without host access
+  ([#530](https://github.com/epiphany40223/parishkit/issues/530)).
 
 ## Review-gate protocol
 

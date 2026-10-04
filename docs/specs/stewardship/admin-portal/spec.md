@@ -303,7 +303,10 @@ prominent non-dismissible error banner saying in plain language that debug
 logging must be off in Production, because debug logs can hold personal data,
 and that the operator turns it off by recreating the application containers
 with the variable `0` or unset. It is a warning only: no process refuses to
-start with the switch on.
+start with the switch on. Once [System health](#system-health) lands
+(ADM-13), the banner links that page, where an Administrator can turn debug
+logging off without the operator, and the banner stays until every service
+reports it off.
 
 Every Admin page also shows a critical-problems banner while CRITICAL
 operational events from the last 24 hours are unacknowledged. It names each
@@ -417,6 +420,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Users and access | Sign-in rules | `/admin/users/sign-in-rules/` | Administrator | Never |
 | Users and access | Ministry assignments | `/admin/users/ministry-assignments/` | Administrator | Never |
 | Users and access | Chairpersons | `/admin/users/chairpersons/` | Administrator | Never |
+| System | System health | `/admin/system/health/` | Administrator | Never |
 | System | Integrations | `/admin/system/integrations/` | Administrator | Never |
 | System | Background work | `/admin/system/background/` | Administrator | Never |
 | System | System logs | `/admin/system/logs/` | Administrator | Never |
@@ -559,9 +563,10 @@ submissions since yesterday, next scheduled email, open follow-up counts,
 problems. How the line differs by role is still to be decided.
 
 Problems that need action (failed background tasks, unacknowledged security
-events, a stale ParishSoft refresh) stay above Next steps and link the page
-that resolves them. A next step is a link only when the viewer's menu entry
-for it is available.
+events, a stale ParishSoft refresh, and the [System health](#system-health)
+problems such as an overdue backup or a halted mail sender) stay above Next
+steps and link the page that resolves them. A next step is a link only when
+the viewer's menu entry for it is available.
 
 #### Page names and placement
 
@@ -655,6 +660,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
 | `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
 | `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
+| `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/configuration/integrations` | `/admin/system/integrations/` |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/configuration/integrations/<target>` | `/admin/system/integrations/<target>/` | Object-named (exception); hand-written Integrations link removed. |
 | `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>` | `/admin/system/key-changes/<request>/` |  |
@@ -2676,6 +2682,771 @@ the one problem, linked to its field, and the submitted values kept.
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes. API-writable changes are view-only for Staff. Admin review
 and publication follow the [data workflow](../data/spec.md#review-and-publication).
+
+## System health
+
+The **System health** page answers "is the system healthy, and what is
+running?" in one place, and lets an Administrator fix the routine problems
+that used to need someone on the server
+([#530](https://github.com/epiphany40223/parishkit/issues/530), gap G07 in
+the [#523 use-case analysis](https://github.com/epiphany40223/parishkit/issues/523),
+use cases ADM-19, ADM-29, ADM-35 and ADM-40). The Administrator decided on
+2026-10-04 that the page has buttons, not only status and instructions: take
+a backup now, clear a halted mail sender, accept one large ParishSoft change,
+and turn off debug logging. Each button is Administrator-only and audited.
+The Administrator settled the remaining questions the same day; the
+[System health decisions](#system-health-decisions) record them, and the
+text below follows them.
+
+Work package
+[ADM-13](../../../plans/stewardship/admin-portal.md#adm-13-system-health-page)
+delivers it. Until ADM-13 lands, the runbook steps listed under
+[runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
+the way to do these things.
+
+### System health page
+
+- **Where:** the first entry of the System [menu group](#menu-groups), at
+  `/admin/system/health/` under the [URL scheme](#url-scheme) (URL name
+  `system_health`). Because it is the group's first entry, `/admin/system/`
+  opens it ([decision 8](#system-health-decisions)).
+- **Who:** Administrators only. Viewing uses the Administrator-only
+  `SYSTEM_LOGS` capability that System logs uses. Each action also needs the
+  `CONFIGURE` capability, checked again on the server and in SQL (see
+  [shared rules for health actions](#shared-rules-for-health-actions)).
+  Staff get no view of it ([decision 1](#system-health-decisions)).
+- **Problems first.** The top of the page lists every current problem as one
+  plain sentence, saying what is wrong and what the Administrator can do: a
+  button on this page, another Admin page, or a runbook section for the
+  server operator. For example: "No backup has finished since 2:00 AM
+  yesterday. Take a backup now, or ask the server operator to check the
+  backup schedule." When nothing needs attention, the page says "Everything
+  is working", with the time of the last check.
+- **Panels.** Below the problems come the panels described under
+  [health panels](#health-panels), in this order: why sends are waiting, mail
+  sender, ParishSoft refresh, backups, debug logging and version. During a
+  send, the first two are what the Administrator watches, so they come first.
+- **Home.** For viewers who may open this page, Home's problems list (see
+  [Home page](#home-page)) adds one line for each System health problem,
+  linking this page. Other viewers see no such line. These lines join the
+  problems list that ADM-12's Home work (#568, NAV-18, with its Today line)
+  renders, so whichever of the two lands second adds its lines to the
+  other's list rather than making a second one. The
+  [debug logging banner](#navigation-and-home) and the critical-problems
+  banner link this page too.
+- **Live and in place.** The page needs JavaScript, as every Admin page
+  does (see the [JavaScript requirement](#javascript-requirement)). It
+  updates itself like the other
+  [self-updating pages](#background-indicators): every 10 seconds, it reads
+  a status fragment that records no audit row and does not extend the
+  session, and it pauses while the tab is hidden. Only opening the page
+  records an audited `system_health_viewed` event. The fragment
+  (`system_health_status`) and each action's route are listed in the
+  automation spec's [action inventory](../admin-automation/spec.md#operations). Each action's preview,
+  confirmation and progress appear in place, through the shared
+  [in-place controls](#in-place-controls), so the page never reloads or
+  moves the reader to the top.
+- **Plain words, help hidden.** Times are shown and entered in the browser's
+  local time zone, without "UTC" labels. States use words ("Halted",
+  "Waiting for the daily limit"), not internal names. Internal names, such as
+  an incident kind, appear only under a closed "Technical details"
+  disclosure. Each panel shows its state and its button. What each state
+  means, and what a panel cannot see, is in the page's "About this page"
+  panel ([page help](#page-help)), hidden by default. The panels below say
+  which explanations go there.
+- **Cost.** A status read uses one read-only snapshot, takes no lock (in
+  particular not the global work-order lock that sending takes), and reads
+  only small rows and indexed counts. It never calls ParishSoft, Google or
+  Slack. The only checks that reach an outside service are the ones an
+  action's preview starts, which the actions below describe.
+- **Shared service code.** A new service module,
+  `parishkit.stewardship.system_health`, holds one read model
+  (`SystemHealth`, with the defined `to_document()` projection that the
+  [read models](../admin-automation/spec.md#read-models) rule requires) and
+  one function for each action, each taking an
+  [`AdminCaller`](../admin-automation/spec.md#caller-seam). The view only
+  parses the form and renders the read model. The matching commands call
+  the same functions, so the page and the command line cannot disagree about
+  what is allowed.
+
+### Health panels
+
+#### Why sends are waiting
+
+This panel answers "why aren't the emails going out?" (ADM-19). It lists
+every reason Family email is waiting right now, with a count, when the
+reason ends (if known), and a link to act on it:
+
+- **Mail is paused by an Administrator** ([live delivery
+  pause](#live-delivery-pause)): who paused it, when, the reason they gave,
+  and a link to Pause and resume mail.
+- **Waiting for the daily limit:** the recipients sent in the last 24 hours,
+  the limit, and when sending resumes. For example: "1,612 of 1,600 emails
+  for Families sent in the last 24 hours. Sending resumes at about 3:10
+  PM." The count is the one the mail sender uses, read by the same query
+  (see [bulk Family send](../background-processing/spec.md#bulk-family-send)
+  and the
+  [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
+  It is shown even when sending is not held, so the Administrator can see
+  the limit coming. This is the 24-hour count that #382 (item M3) asks to
+  show. The lasting record of each hold on Outgoing mail stays with that
+  issue, and both use the same words for each reason.
+- **Held at Gmail's sending limit**, until the time shown.
+- **Paused after a mail outage**, until the time shown, linking the
+  [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage).
+- **The mail sender is halted** or **not running:** see the
+  [mail sender panel](#mail-sender-panel).
+- **Planning is held:** the same reasons, in the same words, for which
+  [Family email progress](#family-email-progress) shows **Held**.
+- **Waiting to retry:** how many messages wait to retry after a temporary
+  refusal, and when the next retry is due, linking Outgoing mail filtered to
+  Waiting to retry.
+
+When nothing is waiting, the panel says "Nothing is holding Family email
+back". During a send it links Family email progress, which counts the
+send's progress; this panel does not count it again. "About this page"
+explains the daily limit (including the 200 sends kept for receipts,
+reports and alerts), Gmail's own limit, and the outage pause.
+
+#### Mail sender panel
+
+This panel shows the state of each of the `mail-dispatch` service's mail
+consumers (two by default; see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)),
+from its [service status record](#service-status-records):
+
+- **Running:** sending, or ready to send with nothing due.
+- **Paused after an outage**, until the time shown.
+- **Held at Gmail's limit**, until the time shown.
+- **Waiting for the daily limit.**
+- **Halted:** a fault that waiting cannot fix stopped all sending. The panel
+  shows when the halt began and its kind, taken from the stored outcome of
+  the delivery attempt that caused it (see
+  [clear a halted mail sender](#clear-a-halted-mail-sender)), and offers
+  **Clear the halt**.
+- **Not running:** no consumer has reported for more than three minutes. The
+  panel shows when each one last reported and that only the server operator
+  can start the service, linking the
+  [deployment runbook](../../../guides/stewardship-deployment-runbook.md).
+
+When the two consumers differ, each has its own line. An open
+`mail_provider_unavailable` or `mail_provider_failed` incident is named in
+words, with when it opened. "About this page" explains each state and what
+the system does about it.
+
+#### ParishSoft refresh panel
+
+This panel shows the ParishSoft data the system is using and why a refresh
+might be held back:
+
+- When the last full refresh and the last quick update finished, whether a
+  refresh is running now, and a link to
+  [Refresh from ParishSoft](#manual-parishsoft-refresh). The freshness
+  wording is the one Home and the refresh page use, which
+  [#510](https://github.com/epiphany40223/parishkit/issues/510) may change.
+- **Quick updates skipped during a send:** while a bulk send is in progress
+  the scheduler skips quick updates and daytime full refreshes, as the
+  [delta cycle](../background-processing/spec.md#delta-cycle) describes. The
+  panel says so and gives the latest time at which they start again.
+- **A refused large change** (`source_destructive_change`, under the
+  [full cycle](../background-processing/spec.md#full-cycle) rules): every
+  recorded count with its before and after values (for example "Families
+  with an email address: 1,084 before, 612 after"), marking each one that
+  fell too far, and **Accept this change once** (see
+  [accept a large ParishSoft change once](#accept-a-large-parishsoft-change-once)).
+  The counts come from the refusal's durable record, not the worker's log.
+- **A refused organization** (`source_tenant_mismatch`): no button. The
+  panel says to stop and check with the parish before changing anything,
+  linking the
+  [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
+- **Old copies not being removed** (`source_retention_failing`), linking the
+  same runbook section.
+
+"About this page" explains the difference between full refreshes and quick
+updates, why quick updates pause during a send, and that every later
+refresh is refused until a drop is fixed in ParishSoft or accepted.
+
+#### Backups panel
+
+This panel answers "are backups happening, and is there a copy off the
+server?" (ADM-35):
+
+- **Last backup:** when the newest backup finished, how long ago, its size,
+  the application version it was taken with, and whether it was sealed to
+  the backup key now configured (see **Backup encryption key** under
+  [parish and integration configuration](#parish-and-integration-configuration)),
+  from the `stewardship_backup_run` record.
+- **Off-site copy:** when the newest off-site copy to Google Drive finished
+  and whether the newest attempt failed, from the
+  `stewardship_backup_upload` record that Home already shows. When off-site
+  copies are not set up, the panel links the setup page.
+- **Problems:** the open `backup_rpo_breach`, `backup_offsite_failed` and
+  `backup_key_changed` incidents, in words.
+- **Requested backups:** the newest backup requested from this page, with
+  its state: waiting for the server, running, finished, failed (with its
+  category in words), or expired. See [take a backup now](#take-a-backup-now).
+
+The web login already reads the run record's ID, completion time and
+recipient fingerprint. ADM-13 adds read access to its `database_bytes`,
+`files_bytes` and `application_version` columns only; it still reads no
+digest or path.
+
+"About this page" explains what the panel cannot see: a scheduled run that
+fails leaves no record (see the
+[backup guide](../../../guides/stewardship-backup.md#the-record-is-the-evidence)),
+so for scheduled runs the panel can only say that none has finished since a
+given time; a copy made outside the application (for example with `rsync`)
+leaves no record; and the schedule itself is a cron entry on the server,
+which the application cannot read, so there is no "next backup" time. It
+links the runbook's
+[nightly backup](../../../guides/stewardship-backup-runbook.md#the-nightly-backup)
+schedule.
+
+#### Debug logging panel
+
+This panel shows whether debug logging is in effect in each online
+application service (web, worker, scheduler, mail-dispatch and the
+installers), from each one's
+[service status record](#service-status-records), and whether the
+**debug-off switch** is set (see
+[turn off debug logging](#turn-off-debug-logging)). A service's debug
+logging is in effect when it was started with `PARISHKIT_DEBUG_LOGGING=1`
+and the debug-off switch is not set.
+
+- **In Production, any service with debug logging in effect is a problem**
+  at the top of the page, and the panel offers **Turn off debug logging**.
+- In Testing it is shown as information, not a problem, because the
+  pre-launch deployment tool turns it on deliberately
+  ([deployment runbook](../../../guides/stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
+  The button is offered in Testing too.
+- While the switch is set, the panel shows who set it and when, and that
+  the setting on the server still says "on".
+
+"About this page" explains why debug logging must be off in Production
+(debug logs can hold personal data, as the
+[debug logging banner](#navigation-and-home) says), and that only the
+server operator can remove the setting for good (see
+[what stays on the host](#what-stays-on-the-host)).
+
+#### Version panel
+
+This panel answers "what is running?" (ADM-40):
+
+- the application version each online service reports, and when each one
+  last started. When all agree, the panel shows the version once ("All
+  services run version 1.4.2"). When they differ, it shows a problem ("The
+  worker runs 1.4.1 and the other services run 1.4.2; an upgrade may be
+  unfinished") linking the
+  [deployment runbook's upgrade section](../../../guides/stewardship-deployment-runbook.md#upgrade);
+- whether the database's schema matches what the running version expects;
+- the deployment mode (Testing or Production).
+
+No host name, address, container identifier or image registry path is shown.
+
+### Health actions
+
+#### Shared rules for health actions
+
+These rules apply to all four actions. Each action's own subsection adds its
+checks.
+
+- **Who:** an enabled Administrator with the `CONFIGURE` capability, checked
+  in the service function and again in the action's SQL guard.
+- **Fresh sign-in:** each action needs a Google sign-in within the last five
+  minutes, as pausing and resuming mail do (see
+  [live delivery pause](#live-delivery-pause)). A stale sign-in gets the
+  existing "Confirm with Google" step-up, which returns to this page with
+  the action's panel still open. The action records its fresh sign-in
+  instant, and its SQL guard checks it as
+  `stewardship_delivery_control_guard_v1` does. **Take a backup now**
+  needs it too, so all four follow one rule
+  ([decision 5](#system-health-decisions)).
+- **Preview, then confirm:** each action first shows a preview built by the
+  server, then a confirm button. Where the preview depends on a state that
+  can change (a halt, a refusal), the confirmation carries the signed
+  preview binding that other Admin previews use, and the server refuses it
+  when that state has changed ("This changed since you looked; review it
+  again"). A repeated click returns the first result.
+- **Unavailable buttons are greyed, never hidden.** A button that cannot be
+  used right now stays in place, unavailable, with its reason shown and
+  announced the same way as an unavailable menu entry's (see
+  [stable menu shape](#stable-menu-shape)). Each action lists its reasons.
+  Greying only helps the reader: every check also runs on the server, in
+  the service function and inside the action's transaction.
+- **Audit:** each action records one audit event, with the Administrator as
+  actor and its request, signal, acceptance or switch row as subject, in the
+  same transaction as the change. Its context holds only `outcome`, and each
+  event type gets a `log_descriptions` sentence.
+- **Command line:** each action and the page's read have a command that
+  calls the same service function, listed once in the automation spec's
+  [action inventory](../admin-automation/spec.md#operations). They follow
+  ADM-11's
+  [rules for new Admin actions](../admin-automation/spec.md#rules-for-new-admin-actions)
+  and
+  [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line):
+  automation may run all four.
+- **Schema order with ADM-11:** each action's SQL guard is written without
+  the automation clause, because `stewardship_automation_fresh_v1` exists
+  only from ADM-11 PR 5. ADM-11 PR 5's migration amends every ADM-13 guard
+  already installed to accept it, and an ADM-13 guard installed after ADM-11
+  PR 5 includes it from the start. Until then, each command is a pending
+  exemption in the action inventory.
+- **Notifications:** the page, the logs and the audit event tell other
+  Administrators. No action sends email or Slack notices
+  ([decision 7](#system-health-decisions)); automation events also get the
+  dashboard notice ADM-11 gives every automation event.
+
+#### Take a backup now
+
+**What it does.** It asks the server to run one backup soon, of the same
+kind as the scheduled backups: the same sealed files, record, off-site copy
+and [retention](../../../guides/stewardship-backup-runbook.md#retention).
+
+**How it reaches the server.** The web process cannot start a backup: it
+has no Docker access, does not read the credentials tree and does not hold
+the backup login. Instead:
+
+1. Confirming records one backup request (a new
+   `stewardship_backup_request` row: who, when, state `waiting`, and the
+   fresh sign-in instant) and returns at once.
+2. A new host cron entry runs the `backup-worker` profile in **request mode**
+   every five minutes. Request mode first reads the database for a request
+   that is waiting and not expired, before it takes any lock. When there is
+   none, it exits at once, prints nothing and logs nothing, so an idle poll
+   leaves no trace and never touches the startup interlock that migration,
+   upgrade, restore and recovery hold. When the database cannot be read
+   (for example during offline work), it also exits quietly; the page's
+   "not picked up" message below is what shows a poll that never runs.
+3. When a request is waiting, request mode tries once to take the backup
+   lock that every backup run now takes, without waiting. If another backup
+   holds it, request mode exits quietly and leaves the request waiting. It
+   then takes the startup interlock shared, as every backup run does today;
+   if offline work holds it, it exits quietly the same way. Otherwise it
+   marks the request `running` and runs the ordinary backup, then marks the
+   request `finished`, linked to its backup record, or `failed` with the
+   `failure_kind` category the process log records. The backup login gains
+   read and update access to request rows and nothing else.
+4. The scheduled run also takes the backup lock, but waits for it, for at
+   most 30 minutes. If it gives up, it writes an operational log entry with
+   the limit's name, the limit and the time waited, as every time limit
+   does (see [observability](../operations/spec.md#observability-and-health)),
+   and exits `2`. A scheduled run that starts while a request is waiting
+   takes the request and completes it, even during a bulk send.
+5. **Held during a bulk send** ([decision 2](#system-health-decisions)).
+   While a bulk Family send is in progress, request mode does not start the
+   backup. "In progress" is the scheduler's own definition from
+   [deltas wait for a bulk Family send](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send):
+   at least ten unpaused pieces of the send's work remain, read without a
+   lock. Only that definition is shared; the scheduler's source-staleness
+   bound does not apply to backups. One shared SQL helper should answer
+   "is a send in progress" for both the scheduler and request mode, so the
+   two cannot drift apart. Request mode records on the request the time it
+   last saw it held, and exits quietly. The request stays `waiting`, and the
+   page shows it as **Waiting for the email send to finish**, with the
+   send's progress link. When the send finishes, the next poll runs the
+   backup. Scheduled backups are not held: they run on their schedule as
+   today, and one that runs during a send also completes a held request. In
+   the worst case, a send that runs for days (for example across the daily
+   limit), a held request is completed by the next scheduled backup, about
+   12 to 24 hours later.
+6. **Limits.** A `waiting` request expires 30 minutes after the later of the
+   time it was made and the last time a poll saw it held, so a long send
+   cannot expire it while polls keep running. The page then shows "The server
+   did not pick up this request. Ask the server operator to check that the
+   backup schedule includes the request check", linking the [nightly
+   backup](../../../guides/stewardship-backup-runbook.md#the-nightly-backup)
+   section, and it is never run late. A request still `running` two hours
+   after it was claimed (for example, its container died) counts as failed
+   ("did not finish") from then on; the next request-mode run or scheduled run
+   records that on the row. Expired and failed requests never count as waiting
+   or running in any check.
+7. **Restore.** The restore procedure already stops the host's backup cron
+   jobs. ADM-13 adds the request-mode entry to that step and to the restore
+   drill's warning, and adds a step that marks every restored request
+   `expired`, so a restored request is never run. A restored request older
+   than 30 minutes has expired anyway.
+
+**Preview.** When the last backup finished, whether off-site copies are on,
+and the last backup's size; that the new backup follows the usual retention
+rules and adds to disk use until they remove it; and, during a bulk send,
+that the backup will wait until the send finishes.
+
+**Unavailable when** (greyed, with the reason): a request is already waiting
+or running ("A backup was requested at 10:42 AM and is running"), or the
+system is in restore review. There is no daily limit: one request at a time
+is the only bound ([decision 6](#system-health-decisions)).
+
+**Checks (server):** the [shared rules](#shared-rules-for-health-actions)
+and the same two conditions.
+
+**Confirmation:** a confirm button. Nothing typed.
+
+**Audit:** `backup_requested`. The run is recorded by its existing
+`stewardship_backup_run` row, and the outcome on the request row.
+
+#### Clear a halted mail sender
+
+**What it does.** After a fault that waiting cannot fix (a SYSTEMIC result)
+halts the mail sender, and the cause has been dealt with, this lets sending
+start again without restarting `mail-dispatch` on the server.
+
+**Two kinds of halt.** Every halt comes from one delivery attempt's stored
+outcome, and the kind is read from that outcome, never guessed:
+
+- **Refused before the `DATA` command was sent** (for example while
+  connecting, signing in, or naming the sender and recipients): the message
+  was definitely not sent and is a failed delivery. The usual cause is a credential, delegation or
+  configuration fault.
+- **Fault once `DATA` was sent** (for example an unexpected reply to
+  `DATA`, or a protocol or TLS failure while waiting for one): Gmail may
+  have accepted the message, so it is `delivery_unknown` and is never
+  retried automatically.
+
+The other consumer may have had one message in flight, so a halt can affect
+up to two messages, each of either kind (see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
+
+**How it works.** Today the halt lives inside the container: a marker file
+that only a restart removes. Instead:
+
+1. Each halt has an identity: a new UUID that the consumer creates when it
+   decides to halt, together with that moment's time. It is written to the
+   marker file, to the stored outcome of the attempt that caused it, and to
+   the consumer's [service status record](#service-status-records). Today
+   the bulk path writes the marker before it stores the outcome, and the
+   one-message path stores the outcome first; creating the identity at the
+   decision lets both paths write the same value in either order. A
+   consumer halted by the other's marker takes on the identity in the
+   marker, so both consumers share one halt.
+2. Confirming records a clear signal (a new row: the halt identity it
+   clears, who, when and the fresh sign-in instant).
+3. Each mail consumer reads the newest clear signal in its idle and
+   heartbeat loop and in its check before each new send, at most every 15
+   seconds. It acts only on a signal naming its current halt: it removes
+   the marker file only when the identity matches, resets its outage circuit
+   so that exactly one message is sent as a probe (as after an outage
+   cooldown), and writes a WARNING log line saying that an Administrator
+   cleared the halt. A consumer that is not halted, or whose halt is newer
+   than the signal, ignores it.
+4. If the fault is still there, the probe meets it again, and the sender
+   halts again under a new identity.
+5. Clearing never resends, re-plans or re-issues anything, and changes no
+   Family's link or code. The messages that met the fault keep their
+   outcome: a failed one stays failed until an Administrator uses **Retry
+   failed delivery** on Outgoing mail, and a `delivery_unknown` one is
+   settled through the
+   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders).
+
+**Mailbox check.** The web process holds no Google Workspace credential, so
+the check runs in `mail-dispatch`. Opening the preview records a mailbox
+check request (a new row). The `mail-dispatch` main process claims it and
+runs it through its private provider-check helper (`provider_check_worker`):
+it signs in to Gmail with the current credential as the integration's
+delegated user (`delegated_email`), sends no mail, stops at its time limit
+(logged as every time limit is), and stores the helper's outcome, which is
+one of three:
+
+- **Passed:** Google accepted the credential and the delegation.
+- **Refused:** Google refused the credential or its delegation. A revoked
+  delegation, a suspended mailbox and a mistyped address all look the same,
+  and replacing the key fixes none of them, so the page links the
+  [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage)'s
+  diagnosis steps instead of suggesting a fix.
+- **Unavailable:** an outage, the time limit, or a failure the check could
+  not explain.
+
+The check runs even while the consumers are halted, because it sends
+nothing. On the page it appears in place: "Checking the mailbox…" while it
+runs, then its result in words. A check not answered within two minutes
+says that the mail sender did not answer. **Check again** starts a new one.
+A passed check proves only that signing in works. It cannot show that Gmail
+accepts the sending address, or rule out a fault after `DATA`; the preview
+says so, and the probe message after a clear is what tests those.
+
+**Preview.** When the halt began and its kind, how many messages are
+waiting, whether mail is also paused by an Administrator (clearing does not
+resume a paused send), and the mailbox check. For a halt of the second
+kind, it also lists the `delivery_unknown` messages since the halt began,
+with a link to settle them on Outgoing mail.
+
+**Unavailable when** (greyed, with the reason): no consumer is halted; the
+mailbox check is running, failed, or passed more than five minutes ago; or
+any `delivery_unknown` message from the halt's attempts, or later ones, is
+not settled yet. Requiring settlement first means the Administrator decides
+about every message Gmail may have accepted before sending starts again, so
+nothing is sent twice by mistake.
+
+**Checks (server):** the [shared rules](#shared-rules-for-health-actions);
+the halt matches the one the preview showed; a mailbox check that started
+after the halt began passed within the last five minutes; and no
+`delivery_unknown` message from the halt's attempts or later is unsettled.
+
+**Confirmation:** a confirm button. Nothing typed.
+
+**Audit:** `mail_halt_cleared`.
+
+**Not changed:** outage pauses and Gmail limit holds still lift by
+themselves, and recreating `mail-dispatch` on the server still clears a
+halt.
+
+#### Accept a large ParishSoft change once
+
+**What it does.** When a refresh was refused because counts fell too far
+and the Administrator has confirmed in ParishSoft that the change is real
+(for example, the parish inactivated many Families at once), this lets one
+full refresh through without restarting the worker with
+`PARISHKIT_SOURCE_MAX_DROP_PERCENT`, as the
+[launch runbook](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
+requires today.
+
+**How it works.**
+
+1. **Every count is checked and recorded.** Today the drop check stops at
+   the first count that fails. ADM-13 changes the loader (in production
+   code) to check every record and eligibility count, and to record all of
+   them with the refused run: each count's before value, after value and
+   limit, and which ones failed. These are counts only, never parish data
+   (the examples below are separate).
+2. **Example Families** ([decision 4](#system-health-decisions)). When it
+   records a refused full refresh, the worker also records up to five
+   example Families for each failing count that concerns Families, Members
+   or contacts: Families present and counted in the baseline but missing,
+   or no longer counted, in the refused load (for a Member or contact count,
+   the Family the lost record belonged to). Each example holds only the
+   Family's DUID and its name as the Family directory shows it, taken from
+   the baseline. Ministry, roster and fund counts have no examples, and a
+   tenant-mismatch refusal records none. The examples go in a new
+   parish-level table that the worker's login writes and deletes and the
+   web login reads. It belongs to no campaign, so campaign purge does not
+   touch it. Nothing else from the refused load is kept: the worker discards
+   it as it does today. Backups gain no new personal data, because each
+   name already exists in the promoted baseline that every backup holds.
+3. Confirming records a one-time acceptance (a new row: the refused run,
+   every recorded count's before and after values, who, when and the fresh
+   sign-in instant) and requests a full refresh, as **Refresh now** does.
+4. The next full refresh honors the acceptance only when every recorded
+   count's new value is at least the reviewed after value: no count falls
+   below what the Administrator saw. The before values are recorded with
+   the acceptance but not compared. The eligibility baselines come from the
+   current data as well as the last full refresh, so every quick update can
+   move them, and binding them would refuse almost every accepted refresh
+   while quick updates run every 15 minutes. A count that passed in the
+   refusal keeps the limit in effect. A load with no Families or no Members
+   is still refused. Any other result is refused again, with a new refusal
+   to review.
+5. **Lifetime.** The acceptance ends when any full refresh is promoted,
+   whether or not it used the acceptance, when a new refusal is recorded,
+   or 24 hours after it was given. Quick updates never use it and never end
+   it. The refresh that uses it records in its manifest the acceptance and
+   who gave it, as the environment override's limit is recorded today.
+6. **Examples are deleted** when their refusal is no longer the newest full
+   refresh's outcome, when a full refresh is promoted, when the acceptance
+   ends, or seven days after the refusal, whichever comes first. These four
+   triggers and the seven days are the default, pending Administrator
+   confirmation; decision 4 says only that examples are kept until the
+   decision or their expiry. The worker's housekeeping deletes them, and the
+   page and the command never show an example whose deletion condition is
+   already met, even before housekeeping runs. A restore can bring back
+   examples from the backup; the page hides them by the same conditions,
+   and the restore procedure deletes them. Their retention is listed with
+   the other bounded cleanup in
+   [temporary retention and housekeeping](../operations/spec.md#temporary-retention-and-housekeeping).
+
+**Preview.** Every recorded count, with its before and after values and the
+share it fell by, marking the ones that failed. It says that records
+missing from ParishSoft leave the campaign's data after the refresh, and
+that a mistake in ParishSoft should be fixed there, followed by **Refresh
+now**. Under each failing count it lists the example Families (name and
+DUID), which only Administrators see, since only they may open the page.
+Example names never appear in a log line, an audit context, the refusal's
+log entry or a notice. Opening the preview records the existing
+`system_health_viewed` event only; the preview's command prints the counts
+and example DUIDs without names, as the automation spec's
+[personal data rule](../admin-automation/spec.md#personal-data-on-the-command-line)
+requires.
+
+**Unavailable when** (greyed, with the reason): the tick box "I checked
+this in ParishSoft, and the change is real" is not ticked; the refusal is
+no longer the newest full refresh's outcome; or an acceptance is already
+active.
+
+**Checks (server):** the [shared rules](#shared-rules-for-health-actions);
+the newest full refresh was refused for a drop and no full refresh has been
+promoted since (quick updates do not count, as #510 notes); the counts
+match the preview binding; the tick box was ticked; no other acceptance is
+active; and the refusal is not a tenant mismatch.
+
+**Confirmation:** the tick box, then confirm.
+
+**Audit:** `source_drop_accepted`, plus the manifest record above.
+
+**Not changed:** the environment override still works for the server
+operator. While it is set, the panel shows the limit in use.
+
+#### Turn off debug logging
+
+**What it does.** It sets the **debug-off switch**, which turns debug
+logging off in every process at once, without recreating containers. The
+switch stays set until it is cleared.
+
+**How it works.**
+
+1. Confirming sets the switch: one durable row with who, when and the fresh
+   sign-in instant.
+2. **Every process that reaches the database honors it.** Today
+   `debug_logging_enabled()` reads the environment on every call. ADM-13
+   gives it an in-process override: a process that reads the switch as set
+   turns debug logging off for itself: its log formatter goes back to the
+   normal form that drops message text and tracebacks, and its logger
+   thresholds go back to INFO, so DEBUG records stop. Online processes
+   read the switch right after they connect to the database at startup, and
+   again with each [service status record](#service-status-records) (every
+   60 seconds). One-shot commands that reach the database (`pk-admin`
+   commands, `health`, `smoke`, the backup worker and the other operator
+   commands) read it when they connect.
+3. **Child processes.** A process passes its effective state to every
+   helper subprocess it starts: while the switch is set, it removes
+   `PARISHKIT_DEBUG_LOGGING` from the helper's environment, so a helper
+   that never reaches the database cannot log in debug form either.
+4. The page shows when every service reports debug logging off. The debug
+   logging banner stays until they all do.
+5. Lines written before a process first reads the switch at startup are not
+   covered. The preview says so.
+
+**Preview.** The services with debug logging in effect; that lines already
+written stay in the logs; that the setting on the server still says "on"
+until the server operator recreates the services; and the startup gap
+above.
+
+**Unavailable when** (greyed, with the reason): the switch is already set
+("Debug logging was turned off by … at …"), or no service has debug logging
+in effect.
+
+**Checks (server):** the [shared rules](#shared-rules-for-health-actions)
+and the switch is not already set.
+
+**Confirmation:** a confirm button. Nothing typed.
+
+**Audit:** `debug_logging_turned_off`. Each process's WARNING log line
+records when it applied the switch.
+
+**Clearing the switch.** Clearing it lets processes started with the
+setting log in debug form again; it can never turn debug logging on in a
+process that was started without the setting. The server operator can
+always clear it with a new operator command,
+`pk-stewardship debug-off-clear` (recorded with `actor_kind` `operator`).
+In Testing mode the page also offers **Allow debug logging again**, which
+clears the switch under the same rules and records `debug_logging_allowed`.
+In Production the page never offers it, and the server refuses it
+([decision 3](#system-health-decisions)): its SQL guard refuses unless the
+global mode is Testing, in addition to the shared checks. Turning debug
+logging off is offered in both modes.
+
+### Service status records
+
+The mail sender, debug logging and version panels need to know what each
+online process is doing, which today lives only inside each container
+(heartbeat files and the mail circuit). ADM-13 adds a small **service
+status** record, which each online application process (web, worker and
+its source process, scheduler, each mail consumer, and the configuration
+and credential installers) writes when it starts and then every 60 seconds:
+
+- the service and process role, when it started, and when it last reported;
+- the application version it runs;
+- whether debug logging is in effect;
+- for a mail consumer, its sender state (running, paused after an outage,
+  held at Gmail's limit, waiting for the daily limit, halted), when that
+  state began, when it ends if known, and, for a halt, its identity and
+  kind.
+
+Each service's database login may write only its own service's rows, and
+the web login reads them. The installers' logins gain a write grant they do
+not have today, which PR 1's security review checks. A record holds no
+host name, address, message, recipient or credential. Housekeeping removes
+rows from processes that have not reported for a day. A process whose
+record is more than three minutes old is shown as not running.
+
+The record is for display: no sending, refresh or backup decision reads it,
+so a lost write can only make the page out of date. The one action check
+that reads it, "a consumer reports Halted" for **Clear the halt**, is safe
+even when the record is out of date, because a consumer acts only on a
+clear signal that names its current halt.
+
+### Runbook steps the page replaces
+
+| Runbook step today | Replaced by |
+| --- | --- |
+| [Backup runbook: the nightly backup](../../../guides/stewardship-backup-runbook.md#the-nightly-backup), running the backup by hand before Production activation and before an upgrade | **Take a backup now**. The scripted upgrade's own backup stays a host step. |
+| [Backup runbook: checking](../../../guides/stewardship-backup-runbook.md#checking), running the backup by hand when `backup_rpo_breach` fires and confirming the off-site copy | **Take a backup now** and the backups panel. Diagnosing a backup that keeps failing stays on the host. |
+| [Launch runbooks: accepting a large ParishSoft change](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change), steps 1, 3 and 4 | The ParishSoft refresh panel and **Accept this change once**. Step 2, checking in ParishSoft, stays. |
+| [Launch runbooks: mail-provider outage](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage) step 5, restarting `mail-dispatch` after a systemic failure | **Clear the halt**, after a passing mailbox check and with every uncertain message settled. Steps 1 to 3 stay. |
+| [Launch runbooks: Production activation](../../../guides/stewardship-launch-runbooks.md#production-activation) step 1, inspecting each container for `PARISHKIT_DEBUG_LOGGING` | The debug logging panel and **Turn off debug logging**. Recreating the services without the setting still removes it for good. |
+| Asking the operator which version is running | The version panel. |
+
+ADM-13 updates each guide in the pull request that adds the matching
+action, naming the portal step first and keeping the host step as the
+fallback. The backup pull request also names the request-mode cron entry in
+the nightly backup schedule, the restore steps and the restore drill's
+warning.
+
+### What stays on the host
+
+These remain server-operator work, because the portal cannot do them safely
+or cannot do them at all:
+
+- **Starting, stopping, recreating or upgrading services**, and changing
+  their settings (Compose file, image, environment variables such as
+  `PARISHKIT_DEBUG_LOGGING`, `mail_consumers` or the mail transport). The
+  web process has no Docker access on purpose: a break-in to the web process
+  must not become control of the server.
+- **Restore and the restore drill.** They need the backup private key,
+  which is never on the server, and they stop the services the portal runs
+  on. The restore review page that follows a restore is #537.
+- **Backup keys:** making the key pair, opening backups, answering the key
+  challenge (`backup-keygen`, `backup-open`, `backup-prove`) and installing
+  the first public key. Replacing the public key is already a portal action.
+- **The backup schedule and off-host copies made outside the application**
+  (the cron entries, including request mode, and any `rsync` or `rclone`
+  copy). The application cannot read or change the host's cron.
+- **Diagnosing a backup or a service that keeps failing:** file ownership,
+  mounts, disk space, the database's own state. The page names the category
+  and links the checklist.
+- **A ParishSoft key that reaches another organization**
+  (`source_tenant_mismatch`), which needs the parish and the key's owner.
+- **Offline Admin-access recovery**, when no Administrator can sign in
+  ([offline Admin-access recovery](../operations/spec.md#offline-admin-access-recovery)).
+- **Ending every automation session at once**
+  (`revoke-automation-sessions`), certificates, DNS, and the host's
+  operating system.
+- **Removing debug logging for good** by recreating services without the
+  setting, and clearing the debug-off switch with
+  `pk-stewardship debug-off-clear`.
+
+### System health decisions
+
+The Administrator decided these on 2026-10-04 (recorded on
+[#530](https://github.com/epiphany40223/parishkit/issues/530)). The text
+above already follows them.
+
+1. **Can Staff see the page, read-only?** No. Administrators only.
+2. **May a requested backup start during a bulk send?** No. The request is
+   held until the send finishes, as
+   [take a backup now](#take-a-backup-now) describes. Scheduled backups are
+   not held.
+3. **May debug logging be turned back on from the portal?** In Testing
+   only. Turning it off is offered in every mode.
+4. **Should the large-change preview show examples of Families that would
+   leave?** Yes: counts and a few example Families (name and DUID only), as
+   use case ADM-29 asks. Only the examples are kept, and only until the
+   decision or their expiry.
+5. **Does Take a backup now need a fresh sign-in?** Yes, like the other
+   three actions.
+6. **Is there a daily limit on requested backups?** No. One at a time is
+   the only bound.
+7. **Should accepting a large change or clearing a halt send email or Slack
+   notices?** No.
+8. **Is System health the first System entry, so that `/admin/system/`
+   opens it?** Yes.
 
 ## Logs
 

@@ -364,3 +364,25 @@ row, the Find a Family header search, the non-page route, trailing-slash,
 no-current-campaign explanation and Today line, and decisions 20 to 30; and
 this package, its checklist and the acceptance-manifest owners are added,
 checked by Markdown lint and `tests/stewardship/test_traceability.py`.
+
+## ADM-13: System health page
+
+Scope and dependencies: [ADM-13 work package](../../plans/stewardship/admin-portal.md#adm-13-system-health-page).
+Specification: [System health](../../specs/stewardship/admin-portal/spec.md#system-health).
+
+- [x] ADM-13.00 — PR 0: specify the System health page and its actions, record the Administrator's decisions, and add this package and its checklist.
+- [ ] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
+- [ ] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
+- [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
+- [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
+- [ ] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
+- [ ] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
+
+Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
+specification's System health section (panels, actions, service status
+records, replaced runbook steps, what stays on the host and the
+Administrator's decisions), links from the operations and automation
+specifications, the corrected SYSTEMIC outcome wording in the Family mail
+dispatch guide and launch runbooks, this package, its checklist and the
+acceptance-manifest owners, checked by Markdown lint and
+`tests/stewardship/test_traceability.py`.

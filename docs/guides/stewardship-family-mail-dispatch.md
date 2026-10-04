@@ -256,11 +256,19 @@ The processes share what must be shared and keep the rest per process:
   until the mail worker restarts, in both processes: the process that sees
   it tells the other through a marker file in the container, and the
   container's next start clears it. The other process may already have one
-  message in flight, so such a fault can fail up to two messages (one per
-  process) instead of one. Both are refused, definitely unsent, so an Admin
-  retry after the fault is fixed is safe. A message one process has just
-  claimed when the other stops is held, not failed, and does not spend one
-  of its preparation attempts.
+  message in flight, so such a fault can affect up to two messages (one per
+  process) instead of one. What happened to each depends on when the fault
+  struck. A fault before the `DATA` command was sent (for example while
+  connecting, signing in, or naming the sender and recipients) means the
+  message was definitely not sent: it becomes a failed delivery, and an
+  Admin retry after the fault is fixed is safe. Once `DATA` has been sent,
+  a fault (for example an unexpected reply to `DATA`, or a protocol or TLS
+  failure while waiting for one) means Gmail may have accepted the message:
+  it becomes `delivery_unknown`, is never retried automatically, and is
+  settled with evidence as the launch runbooks'
+  [messages in `delivery_unknown`](stewardship-launch-runbooks.md#messages-in-delivery_unknown)
+  describe. A message one process has just claimed when the other stops is
+  held, not failed, and does not spend one of its preparation attempts.
 
 The main process supervises the second as the worker supervises its source
 process ([worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes)).

@@ -128,7 +128,8 @@ locks as the page; the throughput work is
   applies as for the page.
 - **Fresh-gated actions accept a full-scope automation session** in place of a
   recent Google sign-in, including integration key and backup key
-  replacement. Six SQL guards and the Python freshness checks change to say so
+  replacement. Six SQL guards (plus any ADM-13 System health guard already
+  installed) and the Python freshness checks change to say so
   explicitly; only the one-time setup wizard stays browser-only (see
   [SQL guards that accept automation sessions](#sql-guards-that-accept-automation-sessions)).
 - Previews become **preview and confirm commands** carrying the same signed
@@ -142,7 +143,7 @@ locks as the page; the throughput work is
   `AdminCaller` and shared read models.
 - **Schema change:** four new tables and two new functions; the incident-kind
   constraint and three operational and task-type functions extended; and six
-  amended guards, in two forward migrations under the
+  amended guards (plus any ADM-13 guard already installed), in two forward migrations under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
   (see [schema impact](#schema-impact)).
 
@@ -959,7 +960,14 @@ sign-in, with no browser step:
 - the Production confirmation;
 - pre-start withdrawal;
 - integration key replacement, finish switching and the backup key change
-  (see [secret replacement](#secret-replacement)).
+  (see [secret replacement](#secret-replacement));
+- the [System health](../admin-portal/spec.md#health-actions) actions
+  (ADM-13): take a backup now, clear a halted mail sender, accept a large
+  ParishSoft change once, and turn off debug logging. PR 5's migration
+  amends any of their SQL guards already installed to accept
+  `stewardship_automation_fresh_v1`, and a guard installed later includes it
+  from the start (see
+  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions)).
 
 Testing cleanup is not fresh-gated on the page: it is irreversible and asks
 for an acknowledgement, and its guard requires only a live Admin session whose
@@ -1517,6 +1525,16 @@ pause, and closing work is the closed-campaign resolution. See
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9) |
+| `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
+| `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
+| `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
+| `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
+| `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
+
+The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
+PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
+[System health](../admin-portal/spec.md#health-actions) page, and
+`system_health_status` is its passive status fragment.
 
 ### Users and follow-up
 
@@ -1582,7 +1600,12 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   a recovery also ends every automation session approved before it;
 - automation: `revoke-automation-sessions` (see [session rules](#session-rules)),
   run in every restore and available to end every session at once;
-- backup: `backup`, `backup-keygen`, `backup-open`, `backup-prove`;
+- backup: `backup` (including the request mode that
+  [System health](../admin-portal/spec.md#take-a-backup-now) adds),
+  `backup-keygen`, `backup-open`, `backup-prove`;
+- debug logging: `debug-off-clear`, which clears the System health
+  [debug-off switch](../admin-portal/spec.md#turn-off-debug-logging)
+  (ADM-13);
 - smoke tests: `smoke`;
 - LOCAL only: `local-sign-in`, `local-seed`, `fake-parishsoft`.
 
@@ -1612,7 +1635,7 @@ Extending `stewardship_portal_session` instead (a kind column and a 30-day
 cap) was rejected: it would relax the 12-hour insert guard for every session
 and require every one of the many 60-minute activity checks in the schema to
 special-case automation, a far wider change than new tables and six amended
-guards. Valkey is not a durable credential store.
+guards (plus any installed ADM-13 guards). Valkey is not a durable credential store.
 
 The changes, each a forward migration under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
@@ -1817,7 +1840,8 @@ MUST prove:
   stale-inventory token is refused with nothing changed; a repeated confirm
   returns the original record;
 - **scopes:** read-only sessions are refused every state-changing, fresh-gated
-  and export command, in Python and, for the six changed guards, in SQL;
+  and export command, in Python and, for the six changed guards and any
+  amended ADM-13 guard, in SQL;
 - **output:** golden documents for each read model's `to_document()`; a
   field allowlist test proving no personal-data field appears; templates
   render only read-model fields; the exception-to-exit mapping in its stated
