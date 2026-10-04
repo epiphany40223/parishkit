@@ -3,9 +3,10 @@
 `tools/stewardship-upgrade.sh` has no harness that could run it against a
 host, so these tests run its two halves with stand-ins: the local half with
 a recording `ssh`, to show that a bad digest or option never reaches a host,
-and the host half (the heredoc the local half uploads) with a `docker` that
-answers as a healthy, set-up deployment would, to pin the order of the
-runbook's steps, the abandon paths and the rollback's refusals.
+and the host half (`tools/stewardship-upgrade-host.sh`, which the local half
+uploads) with a `docker` that answers as a healthy, set-up deployment would,
+to pin the order of the runbook's steps, the abandon paths and the
+rollback's refusals.
 """
 
 import json
@@ -18,6 +19,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
+HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
 REPO = "ghcr.io/example/stewardship"
 OFFICIAL_REPO = "ghcr.io/epiphany40223/parishkit/stewardship"
 UUID = "00000000-0000-4000-8000-000000000000"
@@ -26,10 +28,8 @@ TARGET = f"{REPO}@sha256:" + "b" * 64
 
 
 def host_script():
-    """The host half: everything between the heredoc's markers."""
-    text = SCRIPT.read_text()
-    begin = text.index("<<'REMOTE'\n") + len("<<'REMOTE'\n")
-    return text[begin : text.rindex("REMOTE")]
+    """The host half, as the local half uploads it: the file itself."""
+    return HOST.read_text()
 
 
 def executable_stub(bin_dir, name, body):
@@ -52,12 +52,26 @@ def executable_stub(bin_dir, name, body):
 
 def test_both_halves_parse():
     """`bash -n` accepts the local script and the uploaded host script."""
-    assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
-    assert (
-        subprocess.run(["bash", "-n"], input=host_script(), text=True).returncode == 0
+    for script in (SCRIPT, HOST):
+        assert subprocess.run(["bash", "-n", str(script)]).returncode == 0, script
+        assert os.access(script, os.X_OK), script
+        assert script.read_text().startswith("#!/usr/bin/env bash\n"), script
+    # The local half uploads the file; it carries no heredoc of its own.
+    assert "<<'REMOTE'" not in SCRIPT.read_text()
+
+
+def test_shellcheck_is_clean():
+    """Both halves pass shellcheck at its default severity, as the local scripts do."""
+    if shutil.which("shellcheck") is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("the CI runner lacks shellcheck")
+        pytest.skip("shellcheck is not installed")
+    result = subprocess.run(
+        ["shellcheck", "-s", "bash", str(SCRIPT), str(HOST)],
+        capture_output=True,
+        text=True,
     )
-    assert os.access(SCRIPT, os.X_OK)
-    assert SCRIPT.read_text().startswith("#!/usr/bin/env bash\n")
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -159,13 +173,16 @@ def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
     image = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
     result, calls, stdin = run_local(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert len(calls) == 1 and calls[0].startswith("ssh host.invalid ")
-    # repo image root project yaml uuid schema_change mode, %q-quoted.
-    expected = (
+    # The complete Production invocation, pinned: eight %q-quoted arguments
+    # (repo image root project yaml uuid schema_change mode) and no profile,
+    # so the host half runs in production mode exactly as before the local
+    # mode existed (#476: Production output byte-identical).
+    assert calls == [
+        'ssh host.invalid f=$(mktemp) && cat > "$f" && bash "$f" '
         f"{OFFICIAL_REPO} {image} /opt/parishkit stewardship "
-        f"/etc/parishkit/stewardship-deployment.yaml {UUID} 0 upgrade ; rc="
-    )
-    assert expected in calls[0]
+        f"/etc/parishkit/stewardship-deployment.yaml {UUID} 0 upgrade ; "
+        'rc=$?; rm -f "$f"; exit $rc'
+    ]
     assert stdin == host_script()
     # The uploaded half is itself valid bash.
     assert subprocess.run(["bash", "-n"], input=stdin, text=True).returncode == 0
@@ -211,7 +228,8 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # service list the re-rendered Compose file has after a retarget.
 # `retarget-image` rewrites compose.json and the three role documents as
 # the real command would, so the final checks read what the run itself
-# wrote. Limits: the upgrade check's SQL is never executed (the stand-in
+# wrote. FAKE_BACKUP_GARBAGE makes the backup's last line a refusal that is
+# not JSON. Limits: the upgrade check's SQL is never executed (the stand-in
 # answers FAKE_NOOP), `install -o` ownership is not exercised, and no
 # container runs, so the images' own refusals are out of scope.
 FAKE_DOCKER = r"""
@@ -267,7 +285,8 @@ case "$*" in
         then echo "$FAKE_NOOP_LATER"; else echo "$FAKE_NOOP"; fi ;;
     *" run --rm -T backup-worker")
         echo '{"level":"DEBUG"}'
-        if [ -n "$FAKE_BACKUP_FAIL" ]; then json failed; else json uploaded; fi ;;
+        if [ -n "$FAKE_BACKUP_GARBAGE" ]; then echo "ERROR: backup refused; no JSON"
+        elif [ -n "$FAKE_BACKUP_FAIL" ]; then json failed; else json uploaded; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
         bulk=false batch=20
@@ -369,12 +388,10 @@ def run_host(
     logs.mkdir()
     log = tmp_path / "docker.log"
     log.touch()
-    script = tmp_path / "remote.sh"
-    script.write_text(host_script())
     result = subprocess.run(
         [
             "bash",
-            str(script),
+            str(HOST),
             REPO,
             TARGET,
             str(root),
@@ -483,6 +500,16 @@ def test_a_failed_backup_abandons_before_web_stops(tmp_path):
     assert not any(" stop web" in call for call in calls)
     restart = first(calls, "up --detach --wait worker scheduler mail-dispatch")
     assert first(calls, "backup-worker") < restart
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_a_backup_that_prints_no_json_abandons_before_web_stops(tmp_path):
+    """A refusal line instead of the JSON document is read as no backup."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, backup_garbage=True)
+    assert "ERROR: backup refused; no JSON" in output
+    assert "did not complete with its off-host copy; abandoning the upgrade" in output
+    assert "restarting the background services" in output
+    assert not any(" stop web" in call for call in calls)
     assert not any(" retarget-image " in call for call in calls)
 
 

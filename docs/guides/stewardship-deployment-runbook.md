@@ -660,10 +660,12 @@ stays in the registry; nothing here deletes it.
 
 [`tools/stewardship-upgrade.sh`](../../tools/stewardship-upgrade.sh) runs
 steps 1–6 above one for one, over ssh from a checkout, on a deployment in
-Testing or in Production (issue #460). The manual steps remain the
-reference: where the script and this runbook differ, the runbook is right;
-fix the script. Run it from the checkout with the release's complete
-digest reference:
+Testing or in Production (issue #460). The steps themselves are its host
+half, [`tools/stewardship-upgrade-host.sh`](../../tools/stewardship-upgrade-host.sh),
+which it uploads and runs on the host. The manual steps remain the reference:
+where the script and this runbook differ, the runbook is right; fix the
+script. Run it from the checkout with the release's complete digest
+reference:
 
 ```sh
 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \

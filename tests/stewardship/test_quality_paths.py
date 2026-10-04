@@ -154,6 +154,7 @@ def test_compose_mounts_come_from_the_development_tests_service():
         "tools/ci-pip-install.sh",
         "tools/stewardship-dev-deploy.sh",
         "tools/stewardship-upgrade.sh",
+        "tools/stewardship-upgrade-host.sh",
         "tools/stewardship-local.sh",
         "tools/stewardship-local-vm.sh",
         "docs/guides/stewardship-local-environment.md",
