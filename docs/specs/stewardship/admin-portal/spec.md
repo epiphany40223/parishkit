@@ -2673,6 +2673,16 @@ applies. If the server still refuses a save (for example a contact time in the
 future), it shows the same request page again in place, with a summary naming
 the one problem, linked to its field, and the submitted values kept.
 
+A contact attempt's date and time are typed in the browser's time zone, named
+in a note beside them, and every follow-up time shown (submitted, history,
+contact, last contact and source as of) is in that zone ([browser-timezone
+rule](../spec.md#global-presentation-rules)). The zone is sent only with a
+contact attempt. When the browser reports no zone, the note stays hidden and
+Save stays unavailable with a hint to check the computer's time zone setting. A
+contact attempt that reaches the server without a usable zone (a page opened
+before this rule, for example) is refused in place like the other correctable
+refusals, keeping the typed values and asking the person to save again.
+
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes. API-writable changes are view-only for Staff. Admin review
 and publication follow the [data workflow](../data/spec.md#review-and-publication).

@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Ministry follow-up" %}</h1>
 {% aboutpage "ministry-followup" %}<p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
-<p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
+<p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
@@ -27,8 +27,10 @@
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Record a contact attempt (optional)" %}</legend>
 <label for="contact-channel">{% translate "How" %}</label><select id="contact-channel" name="contact_channel" aria-describedby="contact-details-help"><option value="">{% translate "No contact attempt to record" %}</option>{% for key,label in channels.items %}<option value="{{ key }}"{% if form.contact_channel == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <div data-show-when="contact_channel!=" data-required-when-shown="contact_date contact_time" data-missing-hint="{% translate 'Enter the date and time of the contact attempt to save.' %}"><p class="help" id="contact-details-help">{% translate "Date and time are required; What happened is optional." %}</p>
-<label for="contact-date">{% translate "Date (UTC)" %}</label><input id="contact-date" type="date" name="contact_date" value="{{ form.contact_date }}">
-<label for="contact-time">{% translate "Time (UTC)" %}</label><input id="contact-time" type="time" name="contact_time" value="{{ form.contact_time }}">
+<p class="help" id="contact-zone-help" data-browser-zone-note hidden>{% translate "Enter the date and time in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+<input type="hidden" name="contact_zone" value="{{ form.contact_zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so this contact time can't be saved. Check your computer's time zone setting." %}">
+<label for="contact-date">{% translate "Date" %}</label><input id="contact-date" type="date" name="contact_date" value="{{ form.contact_date }}" aria-describedby="contact-zone-help" data-browser-zone-field>
+<label for="contact-time">{% translate "Time" %}</label><input id="contact-time" type="time" name="contact_time" value="{{ form.contact_time }}" aria-describedby="contact-zone-help" data-browser-zone-field>
 <label for="contact-notes">{% translate "What happened" %}</label><textarea id="contact-notes" name="contact_notes" maxlength="2000" rows="3">{{ form.contact_notes }}</textarea></div>
 </fieldset>
 <button type="submit" aria-describedby="followup-save-hint"{% if not mutable %} disabled{% endif %}>{% translate "Save follow-up" %}</button>

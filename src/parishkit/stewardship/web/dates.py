@@ -13,11 +13,14 @@ work, deliveries): long month names shorten and numeric years drop to two
 digits, while ISO stays ISO.
 """
 
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time
 from typing import NamedTuple
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from parishkit.stewardship.schema_primitives import timezone_names
 
 DEFAULT = "us_long"
 MONTHS = (
@@ -128,6 +131,55 @@ def format_instant(value, timezone, style=None, *, compact=False):
     if compact:
         return f"{text} {format_time(local, style)}"
     return f"{text}{_clock(style)[1]}{format_time(local, style)} {local.tzname()}"
+
+
+# The exact values native date and time controls submit. fromisoformat()
+# alone also takes "20261004", "2026-W40-7", "0915", "T09:15", fractions and
+# (Python 3.14) "24:00", none of which a control sends.
+# ASCII digits only, and hours 00-23 so no Python version reads "24:00".
+_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_CLOCK = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?")
+
+
+class UnknownZone(ValueError):
+    """The browser sent no time zone, or one outside the IANA catalog."""
+
+
+def browser_instant(day, clock, zone):
+    """Convert a date and time typed in the browser's time zone to a UTC instant.
+
+    ``day`` and ``clock`` are the native date and time controls' values
+    ("2026-11-01", "01:30" or "01:30:00"); ``zone`` is the browser's IANA zone,
+    which the page script puts in a hidden field (the Admin portal requires
+    JavaScript, #565). The date and time are checked first: any other spelling
+    (offsets included), or a date whose instant falls outside the
+    representable years, raises ``ValueError``. Then a blank zone or one
+    outside the IANA catalog raises :class:`UnknownZone`, a ``ValueError``
+    the caller can tell apart.
+
+    Daylight-saving edges never reject the form: a time that occurs twice
+    (clocks fall back) is the first occurrence, and a time skipped when clocks
+    spring forward uses the offset in force before the change, so 2:30 AM is
+    stored as 3:30 AM daylight time. Both follow ``zoneinfo``'s ``fold=0``.
+    Within the hour after the change, that shift can turn a skipped time
+    just typed into a future instant, which the caller's not-in-the-future
+    check then refuses.
+    """
+    if not (_DAY.fullmatch(day) and _CLOCK.fullmatch(clock)):
+        raise ValueError("Use the date and time controls' own format.")
+    # The frozen IANA catalog (aliases included, e.g. "Asia/Calcutta") keeps
+    # paths and directory names away from zoneinfo.
+    if zone not in timezone_names():
+        raise UnknownZone("Unknown time zone.")
+    try:
+        tzinfo = ZoneInfo(zone)
+    except ZoneInfoNotFoundError:  # a catalog name this host's tzdata lacks
+        raise UnknownZone("Unknown time zone.") from None
+    local = datetime.combine(date.fromisoformat(day), time.fromisoformat(clock))
+    try:
+        return local.replace(tzinfo=tzinfo).astimezone(UTC)
+    except OverflowError:  # e.g. 0001-01-01 east of UTC, 9999-12-31 west
+        raise ValueError("That date is out of range.") from None
 
 
 @contextmanager

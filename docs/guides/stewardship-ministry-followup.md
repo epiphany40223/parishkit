@@ -138,15 +138,12 @@ key and render as unassigned.
 
 ### Interface decisions
 
-Assignee choices are computed for exactly one Ministry, because authority is
-per Ministry. Bulk assignment is therefore offered only when the queue is
-filtered to one Ministry, and a crafted selection spanning another is rejected.
-It binds each selected request to the version the page displayed.
-
-Native date and time controls carry no zone, so a contact attempt is entered
-and labelled as UTC; displayed instants use the browser zone when scripts are
-available. A closed request shows its history without a form. A gated campaign
-disables every control but remains readable.
+Native date and time controls carry no zone, so a contact attempt was first
+entered and labelled as UTC. Since
+[#558](https://github.com/epiphany40223/parishkit/issues/558) it is entered in
+the browser's time zone, which the page script sends with the form, and
+displayed instants use the browser zone. A closed request shows its history
+without a form. A gated campaign disables every control but remains readable.
 
 ## Fresh-install schema audit
 

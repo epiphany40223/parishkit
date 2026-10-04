@@ -1,7 +1,7 @@
 """Scoped Ministry follow-up history under the real web role and SQL pairing."""
 
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -540,6 +540,8 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "contact_channel": "phone",
             "contact_date": "2026-01-02",
             "contact_time": "15:04",
+            # Filled by ui-v1.js: the time was typed in Pacific time (#558).
+            "contact_zone": "America/Los_Angeles",
             "contact_notes": "No answer",
         }
         assert browser.post(detail + "update", form).status_code == 403  # No CSRF.
@@ -559,6 +561,9 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
                 {"assignee": str(head)},
                 {"contact_date": "2999-01-01"},
                 {"contact_channel": "phone", "contact_date": ""},
+                {"contact_zone": ""},  # The portal requires JavaScript (#565).
+                {"contact_zone": "Not/A_Zone"},
+                {"contact_time": "15:04+00:00"},
                 {"unexpected": "field"},
             )
         ):
@@ -599,12 +604,32 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         response, body = search(browser, detail + "update", future)
         assert response.status_code == 400
         assert b"date and time can&#x27;t be in the future." in body
+        # Local-time entry (#558): a contact time without a usable zone (a
+        # tab opened before the change, or none reported) comes back in place,
+        # keeping the typed date and time for another try, and a refused page
+        # keeps the submitted zone with the other values.
+        for zone in ("", "Not/A_Zone"):
+            zoneless = form | {
+                "request_key": str(uuid4()),
+                "expected_version": "2",
+                "contact_zone": zone,
+            }
+            response, body = search(browser, detail + "update", zoneless)
+            assert response.status_code == 400 and b"data-error-summary" in body
+            assert b"came without your computer&#x27;s time zone" in body
+            assert b'value="2026-01-02"' in body and b'value="15:04"' in body
+        response, body = search(browser, detail + "update", mismatch)
+        assert b'name="contact_zone" value="America/Los_Angeles"' in body
         # A malformed form still gets the plain error page.
         response, body = search(browser, detail + "update", form | {"unexpected": "x"})
         assert response.status_code == 400 and b"could not be read" in body
         response, body = get(browser, detail)
         assert b"PRIVATE-NOTE left a message" in body and b"No answer" in body
         assert b"leader@example.org" in body and b"Phone" in body
+        # 3:04 PM Pacific standard time is 23:04 UTC, which the history
+        # hands to the browser to show in its own zone.
+        stamp = b'datetime="2026-01-02T23:04:00+00:00" data-local-instant'
+        assert stamp in body
         # The bulk assignment route is gone.
         bulk = {
             "request_key": str(uuid4()),
@@ -616,9 +641,16 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
     join.refresh_from_db()
     assert (join.state, join.assignee_id, join.version) == ("in_progress", None, 2)
     assert latest_notes(join.pk) == "PRIVATE-NOTE left a message"
+    contacts = MinistryWorkflowRevision.objects.filter(request=join).exclude(
+        contact_at=None
+    )
+    assert list(contacts.values_list("contact_at", flat=True)) == [
+        datetime(2026, 1, 2, 23, 4, tzinfo=UTC)
+    ]
     # A request assigned before #552, to someone since disabled: the page reads
     # it as New, says nothing of the assignee except in its past history, and
-    # saving it unchanged clears the assignment.
+    # saving its status unchanged clears the assignment. That save also logs a
+    # contact attempt typed in Tokyo time (UTC+9).
     legacy_assign(harness, head, join, admin, notes="Handed over")
     PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -634,14 +666,18 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "state": "new",
             "outcome": "",
             "notes": "Handed over",
-            "contact_channel": "",
-            "contact_date": "",
-            "contact_time": "",
+            "contact_channel": "email",
+            "contact_date": "2026-01-03",
+            "contact_time": "09:30",
+            "contact_zone": "Asia/Tokyo",
             "contact_notes": "",
         }
         assert post(browser, detail + "update", keep).status_code == 302
     join.refresh_from_db()
     assert (join.state, join.assignee_id, join.version) == ("new", None, 4)
+    assert contacts.order_by("expected_version").last().contact_at == datetime(
+        2026, 1, 3, 0, 30, tzinfo=UTC
+    )
     # The page sends only the fields that apply (#553): notes are optional,
     # an open status has no outcome, and no channel means no contact attempt.
     # Without JavaScript every field arrives, and what does not apply is

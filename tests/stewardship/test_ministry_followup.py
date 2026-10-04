@@ -109,6 +109,7 @@ FORM = {
     "contact_channel": "",
     "contact_date": "",
     "contact_time": "",
+    "contact_zone": "",
     "contact_notes": "",
 }
 
@@ -139,7 +140,8 @@ MINIMAL = {
     key: FORM[key]
     for key in ("expected_version", "request_key", "state", "notes", "contact_channel")
 }
-CONTACT = {"contact_date": "2026-09-19", "contact_time": "15:04"}
+# The browser sends its zone with a contact attempt (#558).
+CONTACT = {"contact_date": "2026-09-19", "contact_time": "15:04", "contact_zone": "UTC"}
 
 
 def change(values):

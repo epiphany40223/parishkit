@@ -101,6 +101,7 @@ def components(context, admin):
         contact_channel="",
         contact_date="",
         contact_time="",
+        contact_zone="",
         contact_notes="",
     )
     leave = row | dict(action="leave", member_name="Leaving <Member>")
@@ -111,6 +112,7 @@ def components(context, admin):
         contact_channel="phone",
         contact_date="2026-09-19",
         contact_time="15:04",
+        contact_zone="America/Los_Angeles",
         contact_notes="Kept <reply>",
     )
     unfiltered = FollowupQuery()
