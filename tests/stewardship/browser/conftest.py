@@ -68,6 +68,8 @@ from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .financial_components import components as financial_components
+from .followup_components import ASSIGN as FOLLOWUP_ASSIGN
+from .followup_components import ASSIGNED as FOLLOWUP_ASSIGNED
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .hosted_file_components import IMAGE_TOKEN
@@ -1658,11 +1660,20 @@ def component_origin():
             One path answers as an expired session does, with a redirect to
             the sign-in page, so the in-place table tests (#478) can see a
             real redirect, which Playwright cannot fulfil from a route on
-            every engine.
+            every engine. The follow-up bulk assignment answers as its view
+            does, with a redirect back to the filtered queue (#518).
             """
-            if self.path == "/redirect-to-login":
-                self.send_response(303)
-                self.send_header("Location", "/login")
+            # Read the body first: answering an unread POST and closing the
+            # connection can reset it before the client reads the answer.
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            redirects = {
+                "/redirect-to-login": (303, "/login"),
+                FOLLOWUP_ASSIGN: (302, FOLLOWUP_ASSIGNED),
+            }
+            if self.path in redirects:
+                status, location = redirects[self.path]
+                self.send_response(status)
+                self.send_header("Location", location)
                 self.end_headers()
                 return
             self.send_response(405)

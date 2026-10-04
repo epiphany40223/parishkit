@@ -227,9 +227,13 @@
   // matching control of the same navigator. Previous and Next become plain
   // text on the first or last page, so each falls back to the other, and
   // anything still missing to the region itself. A filter form's button sits
-  // outside every region and is never replaced, so focus simply stays on it.
+  // outside every region and is never replaced, so focus simply stays on it;
+  // a button inside a data-table-sync panel that the fetched page replaced
+  // (the follow-up queue's Assign selected) is found again by its id.
   const focusAfter = (region, control) => {
-    if (!region.contains(control)) return () => control;
+    if (!region.contains(control)) {
+      return () => (control.isConnected ? control : control.id && document.getElementById(control.id));
+    }
     const heading = control.closest("th[data-sort-column]");
     if (heading) {
       const column = CSS.escape(heading.dataset.sortColumn);
@@ -317,7 +321,18 @@
         syncHidden(node, fresh);
         return;
       }
+      // A data-table-submit form's choices (the follow-up queue's "Assign
+      // to") are kept on its replacement while the fresh page still offers
+      // them, so the next change starts from the reader's last choice.
+      const kept = [...node.querySelectorAll("form[data-table-submit] select[id]")]
+        .map((select) => [select.id, select.value]);
       node.replaceWith(fresh);
+      kept.forEach(([id, value]) => {
+        const select = fresh.querySelector(`#${CSS.escape(id)}`);
+        if (select && [...select.options].some((option) => option.value === value)) {
+          select.value = value;
+        }
+      });
       enhanceTable(fresh);
     });
   };
@@ -333,7 +348,23 @@
   // the same reason. A failed fetch (no response), or an error response to a
   // GET, falls back to the control's ordinary navigation. A newer choice on
   // any table aborts an older request.
+  // A data-table-submit POST saves a change, so it is never aborted: while
+  // it is in flight every other table control (a heading, Next, a page size,
+  // the filters) is ignored, as a repeated submission is. Aborting it would
+  // leave the change saved but unreported, the rows showing stale versions
+  // and the server's one-time view state unused.
+  let tableChange = null; // the data-table-submit form whose POST is in flight
   const refreshTable = async (region, control, url, init, fallback) => {
+    if (tableChange) return;
+    const saving = control.closest?.("form[data-table-submit]") || null;
+    tableChange = saving;
+    try {
+      await refreshRegions(region, control, url, init, fallback);
+    } finally {
+      if (saving) tableChange = null;
+    }
+  };
+  const refreshRegions = async (region, control, url, init, fallback) => {
     tableRequest?.abort();
     const controller = new AbortController();
     tableRequest = controller;
@@ -401,7 +432,10 @@
     // Focus without scrolling kept the reader's place; if the control itself
     // is just outside the viewport, bring it (and nothing more) into view.
     target.scrollIntoView({block: "nearest"});
-    announce(describeTable(fresh, control));
+    // A data-table-submit form names what it did ("Assignment saved."),
+    // read before the rows now shown.
+    const done = control.closest?.("form[data-table-submit]")?.getAttribute("data-table-submit");
+    announce([done, describeTable(fresh, control)].filter(Boolean).join(" "));
   };
   // GET tables: sort headings and the navigator's Previous and Next are
   // links. A modified click (new tab, new window) keeps its ordinary meaning.
@@ -439,6 +473,16 @@
     } else if (form.matches("form#table-filters[data-table-sync]:not([data-filter-reload])")) {
       // The first table on the page stands for them all: every region in
       // the response is swapped, and focus stays on the filter button.
+      region = document.querySelector("[data-table-region][id]");
+      control = event.submitter || form.querySelector("[type=submit]") || form;
+    } else if (form.matches("form[data-table-submit][method=post]")) {
+      // A change beside the tables whose server redirects back to this page
+      // (the follow-up queue's bulk assignment, #518). The fetch follows that
+      // Post/Redirect/Get redirect, and the page it lands on refreshes every
+      // region as a filter would. The POST is sent once: an error answer is
+      // shown as returned, and only a fetch with no answer at all falls back
+      // to the native submission, whose one-time request key makes a replay
+      // of an already applied change harmless.
       region = document.querySelector("[data-table-region][id]");
       control = event.submitter || form.querySelector("[type=submit]") || form;
     }

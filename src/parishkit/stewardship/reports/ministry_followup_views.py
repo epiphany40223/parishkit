@@ -1,14 +1,17 @@
 """Private native Ministry follow-up queue, history and optimistic editing."""
 
+import time
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from django.contrib.sessions.backends.base import UpdateError
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.datastructures import MultiValueDict
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -51,6 +54,17 @@ from .report_paging import clamp_query
 
 TEMPLATE = "stewardship/ministry-followup.html"
 FORMER = "Former portal user"
+# The queue's private view state rides in the bulk-assignment form under this
+# prefix, apart from the assignment's own `ministry` and `assignee` fields.
+QUEUE_PREFIX = "queue-"
+# One-time session entry: the filters a bulk assignment was made under, for
+# the queue GET its redirect leads to (#518). See _restore_queue.
+QUEUE_STATE = "ministry_followup_queue"
+# Seconds the entry stays usable: long enough for the redirect it was made
+# for, short enough that a stray entry never filters a later visit.
+QUEUE_STATE_SECONDS = 60
+# The queue table's region id (web/tables.py TablePage.anchor, no prefix).
+QUEUE_ANCHOR = "table"
 
 
 def _principal(request, store, *, read_only=False):
@@ -110,6 +124,47 @@ def _labels(identities):
     }
 
 
+def _restore_queue(request, campaign_id):
+    """Take the one-time filters a bulk assignment left for this queue load.
+
+    Filters are private POST state, so a bulk assignment's Post/Redirect/Get
+    cannot put them in the redirect URL. It leaves them in the Admin's own
+    server-side session instead, and the next queue load takes them out
+    again, so they are used once and a reload shows the default queue
+    without ever repeating the assignment. Only a GET (the redirect) applies
+    them; a filter POST just discards them. An entry for another campaign,
+    one older than QUEUE_STATE_SECONDS or a malformed one is discarded,
+    never applied. The values were validated before they were stored and
+    are parsed again by the caller.
+    """
+    saved = request.session.pop(QUEUE_STATE, None)
+    if saved is not None:
+        # The page streams inside a read-only response transaction, where the
+        # session middleware's usual save would fail, so commit the removal
+        # now. The session key is unchanged, so no new cookie is needed. A
+        # session that ended meanwhile is a denial, as for any other request.
+        try:
+            request.session.save()
+        except UpdateError:
+            raise PermissionError("The session ended.") from None
+        request.session.modified = False
+    if (
+        request.method != "GET"
+        or not isinstance(saved, dict)
+        or saved.get("campaign") != str(campaign_id)
+        or not isinstance(saved.get("at"), int | float)
+        or not 0 <= time.time() - saved["at"] <= QUEUE_STATE_SECONDS
+        or not isinstance(saved.get("query"), dict)
+    ):
+        return {}
+    return saved["query"]
+
+
+def _queue_values(query):
+    """Every field that reproduces this queue page: filters, sort, page, size."""
+    return query.form_values() | {"page": str(query.page), "size": query.size}
+
+
 def _page_response(request, campaign_id, *, request_id=None):
     """Guard every data query, template render and byte; audit response completion."""
     finish, handed_off = None, False
@@ -119,8 +174,12 @@ def _page_response(request, campaign_id, *, request_id=None):
         if request_id is None:
             if request.GET:
                 raise ValueError("Search and filters require a POST body.")
-            parameters = request.POST.copy()
-            parameters.pop("csrfmiddlewaretoken", None)
+            restored = _restore_queue(request, campaign_id)
+            if request.method == "GET":
+                parameters = restored
+            else:
+                parameters = request.POST.copy()
+                parameters.pop("csrfmiddlewaretoken", None)
             query, history_page = FollowupQuery.parse(parameters), 1
         else:
             values = filters(request.GET, allowed={"page"})
@@ -247,6 +306,12 @@ def _page_response(request, campaign_id, *, request_id=None):
                 request_key=uuid4(),
                 assignees=assignees,
                 bulk_ministry=ministry if not item else None,
+                # The bulk-assignment form carries this page's private view
+                # state, so the queue it returns to keeps it (#518).
+                queue_state=[
+                    (QUEUE_PREFIX + key, value)
+                    for key, value in _queue_values(query).items()
+                ],
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
                 outcomes=OUTCOMES,
@@ -361,8 +426,7 @@ def _mutation(request, campaign_id, request_id, work):
         principal = _principal(request, service.store)
         if request.GET:
             raise ValueError("Follow-up edits require a POST body.")
-        target = work(service.store, principal.identity)
-        response = redirect(target[0], campaign_id=campaign_id, **target[1])
+        response = redirect(work(service.store, principal.identity))
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:
@@ -383,14 +447,26 @@ def update(request, campaign_id, request_id):
         values = change_values(request.POST)
         _in_campaign(campaign_id, [request_id])
         update_request(store, actor, request_id, **values)
-        return "admin:ministry_followup_item", {"request_id": request_id}
+        return reverse("admin:ministry_followup_item", args=[campaign_id, request_id])
 
     return _mutation(request, campaign_id, request_id, work)
 
 
 def assignment_values(parameters):
-    """One Ministry, one assignee and an exact selected `uuid:version` set."""
-    keys = set(parameters) - {"csrfmiddlewaretoken"}
+    """One Ministry, one assignee, an exact selected `uuid:version` set and the
+    queue view (`queue-` fields) to return to, or None when none was sent."""
+    view = {key for key in parameters if key.startswith(QUEUE_PREFIX)}
+    # FollowupQuery.parse refuses unknown, repeated and out-of-range values.
+    queue = (
+        FollowupQuery.parse(
+            MultiValueDict(
+                {key[len(QUEUE_PREFIX) :]: parameters.getlist(key) for key in view}
+            )
+        )
+        if view
+        else None
+    )
+    keys = set(parameters) - {"csrfmiddlewaretoken"} - view
     if keys != {"request_key", "ministry", "assignee", "selected"} or any(
         len(parameters.getlist(key)) != 1 for key in keys - {"selected"}
     ):
@@ -404,19 +480,28 @@ def assignment_values(parameters):
         versions[UUID(identity)] = expected_version(version)
     if len(versions) != len(selected):
         raise ValueError("A request was selected more than once.")
-    return dict(
-        request_key=UUID(parameters["request_key"]),
-        assignee_id=_assignee(parameters["assignee"]),
-        versions=versions,
-    ), int(parameters["ministry"])
+    return (
+        dict(
+            request_key=UUID(parameters["request_key"]),
+            assignee_id=_assignee(parameters["assignee"]),
+            versions=versions,
+        ),
+        int(parameters["ministry"]),
+        queue,
+    )
 
 
 @require_POST
 def assign(request, campaign_id):
-    """Assign an exact visible selection in one Ministry: all of it or none of it."""
+    """Assign an exact visible selection in one Ministry: all of it or none of it.
+
+    The redirect returns to the queue with the filters it was made under,
+    through a one-time session entry rather than the URL (see _restore_queue),
+    landing on the table rather than at the top of the page.
+    """
 
     def work(store, actor):
-        values, ministry = assignment_values(request.POST)
+        values, ministry, queue = assignment_values(request.POST)
         _in_campaign(campaign_id, list(values["versions"]))
         # The form offered assignees for one Ministry only; never let a crafted
         # selection spread that choice across Ministries it was not offered for.
@@ -427,6 +512,13 @@ def assign(request, campaign_id):
         ):
             raise ValueError("A bulk assignment covers exactly one Ministry.")
         assign_requests(store, actor, **values)
-        return "admin:ministry_followup", {}
+        if queue is not None:
+            request.session[QUEUE_STATE] = {
+                "campaign": str(campaign_id),
+                "at": time.time(),
+                "query": _queue_values(queue),
+            }
+        target = reverse("admin:ministry_followup", args=[campaign_id])
+        return f"{target}#{QUEUE_ANCHOR}"
 
     return _mutation(request, campaign_id, None, work)

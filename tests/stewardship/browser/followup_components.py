@@ -16,6 +16,14 @@ from parishkit.stewardship.reports.ministry_followup import (
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
+CAMPAIGN = UUID(int=92)
+# The bulk assignment's form action. The fixture server answers a POST here
+# as the view does after a successful assignment (#518): a 302 back to the
+# filtered queue at its table, a redirect Playwright cannot fulfil from a
+# route on every engine.
+ASSIGN = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/assign"
+ASSIGNED = "/followup-assigned#table"
+
 
 def _table(rows, query, total, campaign):
     """The shared POST navigator/heading model the queue view builds (#203)."""
@@ -31,9 +39,15 @@ def _table(rows, query, total, campaign):
     )
 
 
+def _queue_state(query):
+    """The bulk form's hidden `queue-` view fields the queue view renders (#518)."""
+    view = query.form_values() | {"page": str(query.page), "size": query.size}
+    return [(f"queue-{key}", value) for key, value in view.items()]
+
+
 def components(context, admin):
     """Detached authorized sample data exercises native controls and escaping."""
-    campaign, request, leader = UUID(int=92), UUID(int=93), UUID(int=94)
+    campaign, request, leader = CAMPAIGN, UUID(int=93), UUID(int=94)
     moment = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
     row = dict(
         id=str(request),
@@ -82,6 +96,7 @@ def components(context, admin):
         request_key=UUID(int=95),
         assignees=[SimpleNamespace(id=leader, email="leader@example.org")],
         bulk_ministry=9,
+        queue_state=_queue_state(query),
         states=STATES,
         staff_states=[(key, STATES[key]) for key in STAFF_STATES],
         outcomes=OUTCOMES,
@@ -100,8 +115,17 @@ def components(context, admin):
         outcome="joined",
         outcome_label=OUTCOMES["joined"],
     )
+    # The queue a bulk assignment redirects back to: the same filters, with
+    # the row reassigned at its next version. The new assignee's label
+    # differs from every label on the queue page, so a test that finds it
+    # knows the table was swapped in from the redirected page.
+    assigned = row | dict(
+        version=4, assignee_id=str(request), assignee_label="other@example.org"
+    )
     pages = {
         "/followup-queue": values,
+        "/followup-assigned": values
+        | dict(rows=[assigned], table=_table([assigned], query, 51, campaign)),
         "/followup-all": values
         | dict(
             query=unfiltered,

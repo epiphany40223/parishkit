@@ -69,12 +69,16 @@ checkbox joins that form through its form attribute.{% endcomment %}
 {% empty %}<tr><td colspan="{% if bulk_ministry %}7{% else %}6{% endif %}">{% translate "No matching requests. Try Any status, or clear the search and Ministry filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<div id="followup-assign-panel" data-table-sync><form method="post" id="followup-assign" action="{% url 'admin:ministry_followup_assign' campaign_id %}">{% csrf_token %}
-{% if bulk_ministry %}<input type="hidden" name="request_key" value="{{ request_key }}"><input type="hidden" name="ministry" value="{{ bulk_ministry }}">
+{% comment %}The bulk assignment carries the queue's private filters, sort and
+page (queue-* fields), so the queue it returns to keeps them, with or without
+script (#518). data-table-submit sends it through the in-place table refresh,
+which follows the server's redirect back to the filtered queue.{% endcomment %}
+<div id="followup-assign-panel" data-table-sync><form method="post" id="followup-assign" data-table-submit="{% translate 'Assignment saved.' %}" action="{% url 'admin:ministry_followup_assign' campaign_id %}">{% csrf_token %}
+{% if bulk_ministry %}<input type="hidden" name="request_key" value="{{ request_key }}"><input type="hidden" name="ministry" value="{{ bulk_ministry }}">{% for name, value in queue_state %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Assign the selected requests" %}</legend>
 <label for="bulk-assignee">{% translate "Assign to" %}</label><select id="bulk-assignee" name="assignee"><option value="">{% translate "Unassigned" %}</option>{% for person in assignees %}<option value="{{ person.id }}">{{ person.email }}</option>{% endfor %}</select>
 <p>{% translate "Every selected request changes together. If any one of them changed since this page loaded, none is assigned." %}</p>
-<button type="submit">{% translate "Assign selected" %}</button></fieldset>
+<button type="submit" id="followup-assign-submit">{% translate "Assign selected" %}</button></fieldset>
 {% else %}<p>{% translate "Choose one Ministry above to assign several requests at once." %}</p>{% endif %}</form></div>
 {% endif %}
 {% endblock %}

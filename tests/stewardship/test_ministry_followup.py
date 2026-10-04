@@ -1,10 +1,21 @@
 """Closed Ministry follow-up change grammar, validated without a database."""
 
+import time
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.contrib.sessions.backends.base import UpdateError
+from django.utils.datastructures import MultiValueDict
 
+from parishkit.stewardship.reports.ministry_followup import FollowupQuery
+from parishkit.stewardship.reports.ministry_followup_views import (
+    QUEUE_STATE,
+    QUEUE_STATE_SECONDS,
+    _restore_queue,
+    assignment_values,
+)
 from parishkit.stewardship.workflows.followup import (
     MAX_CONTACT_NOTES,
     MAX_NOTES,
@@ -98,3 +109,126 @@ def test_incomplete_or_foreign_workflow_is_rejected(values):
 def test_new_and_assigned_follow_the_assignee(state, assignee, expected):
     """Only the two states that mean "has an assignee" are derived from it."""
     assert assignment_state(state, assignee) == expected
+
+
+def bulk_form(**extra):
+    """A bulk-assignment body: one selected request plus any extra fields."""
+    form = {
+        "request_key": [str(uuid4())],
+        "ministry": ["9"],
+        "assignee": [""],
+        "selected": [f"{uuid4()}:3"],
+    }
+    return MultiValueDict(form | {key: [value] for key, value in extra.items()})
+
+
+def test_bulk_assignment_carries_the_queue_view():
+    """`queue-` fields name the view to return to (#518); without them, none."""
+    _, ministry, queue = assignment_values(bulk_form())
+    assert ministry == 9 and queue is None
+    _, _, queue = assignment_values(
+        bulk_form(
+            **{"queue-search": "Private", "queue-ministry": "9", "queue-page": "2"}
+        )
+    )
+    assert queue == FollowupQuery(search="Private", ministry="9", page=2)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"queue-sort": "random"},
+        {"queue-unknown": "x"},
+        {"queue-size": "all"},
+        {"queue-search": "x" * 201},
+        {"unexpected": "field"},
+    ],
+)
+def test_bulk_assignment_refuses_a_malformed_view(extra):
+    """A crafted view field is refused before any assignment is attempted."""
+    with pytest.raises(ValueError):
+        assignment_values(bulk_form(**extra))
+
+
+def test_bulk_assignment_refuses_a_repeated_view_field():
+    """Each view field is single-valued, like every other filter."""
+    form = bulk_form()
+    form.setlist("queue-state", ["any", "new"])
+    with pytest.raises(ValueError):
+        assignment_values(form)
+
+
+class Session(dict):
+    """A session stand-in that records saves and can fail like an ended one."""
+
+    def __init__(self, values, *, ended=False):
+        super().__init__(values)
+        self.saves, self.ended, self.modified = 0, ended, False
+
+    def save(self):
+        """Count the explicit save; an ended session raises UpdateError."""
+        if self.ended:
+            raise UpdateError
+        self.saves += 1
+
+
+CAMPAIGN = uuid4()
+QUERY = {"search": "Private", "ministry": "9", "page": "2", "size": "25"}
+
+
+def entry(**changes):
+    """A fresh one-time queue entry for CAMPAIGN, as assign stores it."""
+    return {"campaign": str(CAMPAIGN), "at": time.time(), "query": QUERY} | changes
+
+
+def restore(value, method="GET", **session):
+    """Run _restore_queue on a request whose session holds ``value``."""
+    request = SimpleNamespace(
+        method=method, session=Session({QUEUE_STATE: value}, **session)
+    )
+    return _restore_queue(request, CAMPAIGN), request.session
+
+
+def test_queue_view_is_restored_once_for_its_campaign():
+    """The redirect GET gets the view; the entry is gone and saved at once."""
+    restored, session = restore(entry())
+    assert restored == QUERY and QUEUE_STATE not in session
+    assert session.saves == 1 and not session.modified
+    empty = SimpleNamespace(method="GET", session=Session({}))
+    assert _restore_queue(empty, CAMPAIGN) == {} and empty.session.saves == 0
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        entry(campaign=str(uuid4())),
+        entry(at=time.time() - QUEUE_STATE_SECONDS - 5),
+        entry(at="soon"),
+        entry(query="search=Private"),
+        ["not", "a", "dict"],
+        "text",
+    ],
+)
+def test_foreign_stale_or_malformed_queue_view_is_discarded(value):
+    """Another campaign's, an expired or a malformed entry is dropped unused."""
+    restored, session = restore(value)
+    assert restored == {} and QUEUE_STATE not in session and session.saves == 1
+
+
+def test_queue_post_discards_the_queue_view():
+    """A filter POST brings its own filters; the entry is dropped, not used."""
+    restored, session = restore(entry(), method="POST")
+    assert restored == {} and QUEUE_STATE not in session
+
+
+def test_invalid_restored_view_is_refused_by_the_parser():
+    """A tampered view reaches FollowupQuery.parse, which refuses it (400)."""
+    restored, _ = restore(entry(query={"sort": "random"}))
+    with pytest.raises(ValueError):
+        FollowupQuery.parse(restored)
+
+
+def test_ended_session_is_a_denial():
+    """A session that ended before the removal saved is denied, not a 500."""
+    with pytest.raises(PermissionError):
+        restore(entry(), ended=True)

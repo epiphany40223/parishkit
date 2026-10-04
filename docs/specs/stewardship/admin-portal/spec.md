@@ -471,13 +471,25 @@ announces the rows now shown in each table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so they always load the page in full. Without
-script, or when the fetch fails or returns another page (a sign-in), the
-ordinary page load happens and its fragment lands on the table rather than at
-the top. Portal users, whose domain and address tables carry role forms bound
-once at load, and the link preparation history keep only the fragment and
-always load in full.
+ignored. The follow-up queue's bulk assignment returns to the same queue
+(#518): its form carries the queue's private filters, sort, page and rows
+per page as hidden fields, the server validates them before assigning, keeps
+them for exactly one following queue load (within a minute) in the Admin's
+server-side session and redirects to the queue's bare address at the table,
+so a reload repeats only that load and never the assignment, and no filter
+reaches a URL. The kept view is per session, not per tab: when two tabs
+assign at once, the later assignment's view wins. With script the assignment
+is sent once by the same in-place mechanism, which follows that redirect and
+is never aborted: other table controls are ignored until it settles. The
+assigned rows update, their selection clears (each row's version changed),
+focus returns to Assign selected with the assignee still chosen, and the
+live region says the assignment was saved. The participation report's
+options reshape its statistics, chart and exports rather than one table, so
+they always load the page in full. Without script, or when the fetch fails or
+returns another page (a sign-in), the ordinary page load happens and its
+fragment lands on the table rather than at the top. Portal users, whose
+domain and address tables carry role forms bound once at load, and the link
+preparation history keep only the fragment and always load in full.
 
 Lists read straight from a growing database table page on the server with one
 extra row to learn whether a next page exists, and count matching rows only up
@@ -1973,9 +1985,10 @@ confirmation.
 
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
 and edit only assigned Ministries. The interface supports queue filters,
-assignee/status/outcome, contact-attempt entry, notes, bulk assignment, and
-links to the Member's authorized report detail. It never exposes financial or
-unrelated Family data.
+assignee/status/outcome, contact-attempt entry, notes, bulk assignment
+(which keeps the queue's filters, as [Admin tables](#admin-tables)
+describes), and links to the Member's authorized report detail. It never
+exposes financial or unrelated Family data.
 
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes. API-writable changes are view-only for Staff. Admin review

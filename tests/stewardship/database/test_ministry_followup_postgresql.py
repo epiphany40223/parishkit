@@ -11,7 +11,7 @@ from django.db.models import F
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
-from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -593,3 +593,111 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
         )
     )
     assert "PRIVATE-NOTE" not in contexts and "No answer" not in contexts
+
+
+def test_bulk_assignment_returns_to_the_filtered_queue(response_service, google):
+    """Assign selected keeps the queue's private filters through Post/Redirect/
+    Get (#518): applied once, never in a URL, and a reload never repeats it."""
+    harness = setup(response_service)
+    browser, head, _, _ = leader(harness, google)
+    join, _ = requests()
+    staff = Principal(user("admin@example.org").pk, frozenset({"staff"}), frozenset())
+    name = read(harness, staff, ministry="9")["rows"][0]["member_name"].split()[0]
+    route = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/"
+    filters = {
+        "search": name,
+        "ministry": "9",
+        "action": "join",
+        "state": "any",
+        "sort": "oldest",
+        "size": "25",
+    }
+
+    def viewed():
+        return AuditEvent.objects.filter(event_type="ministry_followup_viewed").count()
+
+    def revisions():
+        return MinistryWorkflowRevision.objects.filter(request_id=join.pk).count()
+
+    def shows_filters(body):
+        return (
+            f'name="search" maxlength="200" value="{name}"'.encode() in body
+            and b'<option value="join" selected>' in body
+            and b'name="queue-sort" value="oldest"' in body
+            and b'name="queue-size" value="25"' in body
+        )
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, route, filters)
+        assert response.status_code == 200 and shows_filters(body)
+        # The assignment form carries the whole view, filters and page alike.
+        assert f'name="queue-search" value="{name}"'.encode() in body
+        assert b'name="queue-page" value="1"' in body
+        view = {f"queue-{key}": value for key, value in filters.items()}
+        bulk = {
+            "request_key": str(uuid4()),
+            "ministry": "9",
+            "assignee": str(head),
+            "selected": f"{join.pk}:{join.version}",
+        }
+        # A malformed view field is refused before anything is assigned.
+        for invalid in ({"queue-sort": "random"}, {"queue-unknown": "x"}):
+            refused = post(browser, route + "assign", bulk | view | invalid)
+            assert refused.status_code == 400
+        assert revisions() == 0
+        before = viewed()
+        response = post(browser, route + "assign", bulk | view)
+        assert response.status_code == 302 and response["Cache-Control"] == "no-store"
+        # The redirect is the bare queue at its table: no private value or token.
+        assert response["Location"] == route + "#table"
+        assert revisions() == 1 and viewed() == before
+        response, body = get(browser, route)
+        assert response.status_code == 200 and shows_filters(body)
+        assert body.count(b"ministries/follow-up/" + str(join.pk).encode()) == 1
+        # The assigned row shows its new version, so its old tick is gone.
+        assert f'value="{join.pk}:2"'.encode() in body
+        # The redirect's load audits one ordinary read; the assignment once.
+        assert viewed() == before + 2 and revisions() == 1
+        # A reload repeats only the safe GET: the default queue, nothing written.
+        response, body = get(browser, route)
+        assert response.status_code == 200 and not shows_filters(body)
+        assert b'name="search" maxlength="200" value=""' in body
+        assert revisions() == 1
+        # A replayed POST (the same one-time key) changes nothing either.
+        assert post(browser, route + "assign", bulk | view).status_code == 302
+        assert revisions() == 1
+        get(browser, route)
+        # Permission is unchanged: an out-of-scope selection is denied and
+        # leaves no filters behind for the next queue load.
+        _, leave = requests()
+        other = bulk | view | {"request_key": str(uuid4())}
+        other |= {"selected": f"{leave.pk}:1", "ministry": "4"}
+        assert post(browser, route + "assign", other).status_code == 403
+        assert not shows_filters(get(browser, route)[1])
+        # A crafted view naming a Ministry outside the leader's scope reveals
+        # nothing on the queue it returns to: no rows and no assignees.
+        scoped = bulk | {"request_key": str(uuid4()), "assignee": ""}
+        scoped["selected"] = f"{join.pk}:2"
+        response = post(
+            browser, route + "assign", scoped | view | {"queue-ministry": "4"}
+        )
+        assert response.status_code == 302
+        response, hidden = get(browser, route)
+        assert response.status_code == 200 and b'name="selected"' not in hidden
+        assert b"Assign selected" not in hidden and b"@example.org" not in hidden
+        assert str(join.pk).encode() not in hidden
+        # Without view fields (a page rendered before #518) the old redirect.
+        plain = bulk | {"request_key": str(uuid4())}
+        plain["selected"] = f"{join.pk}:3"
+        assert post(browser, route + "assign", plain)["Location"] == route + "#table"
+        assert not shows_filters(get(browser, route)[1])
+    join.refresh_from_db()
+    assert (join.state, join.assignee_id, join.version) == ("assigned", head, 4)
+    contexts = str(
+        list(
+            AuditContext.objects.filter(
+                event__event_type="ministry_followup_viewed"
+            ).values_list("context", flat=True)
+        )
+    )
+    assert name not in contexts and "oldest" not in contexts
