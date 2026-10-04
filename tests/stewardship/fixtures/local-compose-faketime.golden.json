@@ -1,0 +1,484 @@
+{
+ "services": {
+  "admin-recovery": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "backup-worker": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "bootstrap": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "config-installer": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-backup-data": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-backup-target": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-django-signing": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-family-code-mac": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-general-encryption": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-google-oauth": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-google-workspace": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-metrics": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-parishsoft": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-slack": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-token-private": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "credential-installer-token-public": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "database-provision": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "mail-dispatch": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "migration": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "postgres": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-postgres:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "scheduler": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "valkey": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-valkey:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "web": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
+  "worker": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  }
+ }
+}

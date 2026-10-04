@@ -133,12 +133,64 @@ clock_mode() {
     esac
 }
 
+initial_files() {
+    # The initial topology, plus the fake-clock override when the marker says
+    # fake: the install steps and the stores then run under the fake clock
+    # too, so no row predates the clock (specification, "Fake clock").
+    local mode
+    mode=$(clock_mode) || exit 1
+    printf -- '-f\n%s\n' "$services/compose-initial.json"
+    if [ "$mode" = fake ]; then
+        [ -f "$services/compose.faketime.json" ] ||
+            refuse "Clock mode is fake but $services/compose.faketime.json is missing."
+        printf -- '-f\n%s\n' "$services/compose.faketime.json"
+    fi
+}
+
+dc0=()
+select_initial() {
+    # Fill `dc0` with the initial-topology Compose command (see initial_files).
+    local text line
+    text=$(initial_files)
+    local -a files=()
+    while IFS= read -r line; do files+=("$line"); done <<<"$text"
+    dc0=(docker compose "${files[@]}" -p "$project")
+}
+
 dependencies_up() {
     # Start postgres and valkey under the initial file and wait for them;
     # every topology shares these two services.
+    select_initial
     timed 210 "starting postgres and valkey" \
-        docker compose -f "$services/compose-initial.json" -p "$project" \
-        up --detach --wait --wait-timeout 180 postgres valkey 2>&1 | quiet
+        "${dc0[@]}" up --detach --wait --wait-timeout 180 postgres valkey 2>&1 | quiet
+}
+
+build_faketime_images() {
+    # The libfaketime-derived local images (specification, "Fake clock"):
+    # one FROM the application image just built and one each FROM the pinned
+    # PostgreSQL and Valkey images, tagged as the rendered override names
+    # them. Built here, after provisioning rendered the override, so the tags
+    # come from the code's rule and are never copied into this script.
+    local override="$services/compose.faketime.json" service base derived
+    if [ ! -f "$override" ]; then
+        echo "    this image renders no fake-clock override; the clock stays real"
+        return 0
+    fi
+    [ -f "$build/deploy/stewardship/Dockerfile.faketime" ] ||
+        refuse "No packed Dockerfile.faketime at $build; refusing."
+    step "Building the fake-clock images"
+    for service in web postgres valkey; do
+        base=$(jq -r --arg s "$service" '.services[$s].image' "$services/compose.json")
+        derived=$(jq -r --arg s "$service" '.services[$s].image' "$override")
+        if docker image inspect "$derived" >/dev/null 2>&1; then
+            echo "    $derived (already built)"
+            continue
+        fi
+        timed 900 "building $derived" docker build --quiet \
+            --file "$build/deploy/stewardship/Dockerfile.faketime" \
+            --build-arg "BASE=$base" --tag "$derived" "$build/deploy/stewardship" >/dev/null
+        echo "    $derived"
+    done
 }
 
 setup_completed() {
@@ -370,8 +422,9 @@ ENV
     # release_at stays null until the seeder's final phase.
     printf '{"seed": %s, "families": %s, "anchor_date": "%s", "release_at": null}\n' \
         "$seed" "$families" "$anchor" | private_file "$root/run/local/fake-parishsoft.json"
-    # Clock mode. The fake clock is OPS-10.07; until the image carries its
-    # faketime override, an unseeded deployment runs in normal mode.
+    # Clock mode. An unseeded deployment runs in fake-clock mode, 17 days
+    # behind real time, so a later seed can start forward of every row; an
+    # image without the override (an older build) runs in normal mode.
     if [ -f "$services/compose.faketime.json" ]; then
         printf 'fake\n' >"$clock_dir/mode"
         printf -- '-1468800\n' >"$clock_dir/offset"
@@ -382,11 +435,14 @@ ENV
     chown 10001:10001 "$clock_dir/mode" "$clock_dir/offset"
     chmod 0644 "$clock_dir/mode" "$clock_dir/offset"
 
+    build_faketime_images
+
     # Runbook, first installation, step 3: the numbered runtime-guide steps
-    # with compose-initial.json and the fixed project name.
-    local -a dc0=(docker compose -f "$services/compose-initial.json" -p "$project")
+    # with compose-initial.json (plus the fake-clock override in fake mode)
+    # and the fixed project name.
     step "1. Starting postgres and valkey"
     dependencies_up
+    select_initial
     step "2. database-roles"
     "${dc0[@]}" run --rm -T database-provision database-roles \
         --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1

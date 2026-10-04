@@ -8,6 +8,7 @@ from pathlib import Path
 from parishkit.config import ConfigError
 
 from .deployment import DeploymentConfiguration, DeploymentProfile, ServiceRole
+from .local.clock import CLOCK_MOUNT_TARGET
 
 ALLOWED_SECRETS = {
     ServiceRole.WEB: frozenset(
@@ -253,6 +254,15 @@ def _check_extra(configuration, mount, files, authority, target_directory, insta
     ):
         return
     if path == configuration.paths["config"] / "deployment.yaml" and mount.read_only:
+        return
+    if (
+        configuration.profile is DeploymentProfile.LOCAL
+        and path == CLOCK_MOUNT_TARGET
+        and mount.read_only
+    ):
+        # The fake-clock override's one mount (#476): the shared offset file,
+        # read-only, admitted for LOCAL alone. A writable clock, or the mount
+        # under any other profile, falls through to the refusal below.
         return
     data_paths = {
         ServiceRole.WEB: {"media", "reports"},
