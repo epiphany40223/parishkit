@@ -285,10 +285,10 @@ Specification: [local laptop environment](../../specs/stewardship/local-environm
 - [x] OPS-10.04 — PR 3: admit the localhost origin for go-live in LOCAL and refuse smoke.
 - [x] OPS-10.05 — PR 4: add the mail catcher and two-way credential refusals.
 - [x] OPS-10.06 — PR 5a: add the fake ParishSoft service and the scalable synthetic parish.
-- [ ] OPS-10.07 — PR 5b: add the fake clock and the time-travel campaign and response seeder.
+- [x] OPS-10.07 — PR 5b: add the fake clock and the time-travel campaign and response seeder.
 - [x] OPS-10.08 — PR 6: add the local test sign-in through the shared identity core.
-- [ ] OPS-10.09 — PR 7a: add the Lima VM operator script, seeded snapshots and developer guide.
-- [ ] OPS-10.10 — PR 7b: add the local deploy mode of the scripted upgrade.
+- [x] OPS-10.09 — PR 7a: add the Lima VM operator script, seeded snapshots and developer guide.
+- [x] OPS-10.10 — PR 7b: add the local deploy mode of the scripted upgrade.
 
 Evidence: OPS-10.01 is complete in
 [PR #479](https://github.com/epiphany40223/parishkit/pull/479), which added the
@@ -330,5 +330,15 @@ two-way credential refusals and the fake ParishSoft Compose service). Every
 job passed on the stack's top `d0fe6b18` in
 [run 37177151726](https://github.com/epiphany40223/parishkit/actions/runs/37177151726),
 and `main` after the three merges has exactly that tree.
-OPS-10.09 stays open until its seeded snapshots work, which needs OPS-10.07;
-OPS-10.07 and OPS-10.10 remain open.
+OPS-10.07, the rest of OPS-10.09 and OPS-10.10 landed as a second stacked
+train: [PR #497](https://github.com/epiphany40223/parishkit/pull/497) (the
+fake clock, the time-travel seeder, seeded snapshots and the unattended
+wizard) and [PR #506](https://github.com/epiphany40223/parishkit/pull/506)
+(the local deploy mode through the scripted upgrade's shared host half).
+Every job passed on the stack's top `76323d5d` in
+[run 37193227986](https://github.com/epiphany40223/parishkit/actions/runs/37193227986),
+and `main` after both merges (`4a3610ec`) is that tree plus #504's report
+files, verified in
+[run 37194422251](https://github.com/epiphany40223/parishkit/actions/runs/37194422251).
+The seeding, deploy and rollback rehearsals on the Lima VM are recorded on
+[#476](https://github.com/epiphany40223/parishkit/issues/476).
