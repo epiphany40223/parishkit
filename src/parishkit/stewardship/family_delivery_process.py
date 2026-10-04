@@ -13,6 +13,7 @@ from threading import Event, Lock, Thread
 
 from .accounts.integration_candidates import _object
 from .accounts.key_files import MAX_FILE_BYTES
+from .deployment import recorded_profile
 from .family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
@@ -102,7 +103,13 @@ def submit_weekly(value, settings, mail, *, seconds, check):
 
 
 def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, session=None):
-    """Share bounded IPC and outcomes after the caller's typed mail validation."""
+    """Share bounded IPC and outcomes after the caller's typed mail validation.
+
+    The request names this process's recorded deployment profile (#476), so
+    the environment-free helper can admit the LOCAL mail-catcher transport
+    only for a LOCAL parent. A process with no recorded profile cannot send:
+    that is a SYSTEMIC configuration fault, like any other local rejection.
+    """
     count = len(mail.recipients)
     unknown = FamilyDeliveryResult(FamilyDeliveryStatus.UNKNOWN, count)
     try:
@@ -119,17 +126,20 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
             )
         ):
             raise ValueError("Invalid private Family submission invocation.")
+        profile = recorded_profile()
         payload = json.dumps(
             {
                 "candidate": base64.b64encode(value).decode("ascii"),
                 "settings": settings,
                 "mail": mail.payload(),
+                "profile": profile.value,
             },
             ensure_ascii=False,
         ).encode("utf-8")
     except (ValueError, TypeError):
         # This try block performs no IO. Do not relabel a deterministic local
-        # rejection as possible SMTP acceptance, or suppress an untested address.
+        # rejection (including a missing profile, a ConfigError) as possible
+        # SMTP acceptance, or suppress an untested address.
         return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
     if len(payload) > limit:
         return FamilyDeliveryResult(
@@ -151,7 +161,13 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
         # The same size admission as a one-message helper: the combined
         # envelope above bounds both of the session's lines.
         result = session.submit(
-            value, settings, mail.payload(), count=count, seconds=seconds, check=check
+            value,
+            settings,
+            mail.payload(),
+            count=count,
+            seconds=seconds,
+            check=check,
+            profile=profile,
         )
     else:
         result = _submit_private(
@@ -277,13 +293,14 @@ class FamilyMailSession:
             stats, self.last = self.last, {}
         return stats
 
-    def submit(self, value, settings, mail, *, count, seconds, check):
+    def submit(self, value, settings, mail, *, count, seconds, check, profile):
         """Submit one admitted mail payload; return a result or DeliveryOutcome.
 
         The deadline starts on entry: ``seconds`` is what remains of the
         message's provider deadline, so time spent waiting for the session
         lock (held briefly by the reaper) must come out of it, never extend
-        it. Rotation itself never waits for a helper.
+        it. Rotation itself never waits for a helper. ``profile`` is the
+        parent's deployment profile, sent in the helper's header line.
         """
         deadline = time.monotonic() + seconds
         with self.lock:
@@ -296,7 +313,15 @@ class FamilyMailSession:
             }
             try:
                 return self._submit(
-                    value, settings, mail, count, deadline, seconds, check, stats
+                    value,
+                    settings,
+                    mail,
+                    count,
+                    deadline,
+                    seconds,
+                    check,
+                    stats,
+                    profile,
                 )
             finally:
                 # A retirement caused by this message's own outcome is its
@@ -304,12 +329,18 @@ class FamilyMailSession:
                 if self.ended is not None:
                     stats["helper_end"], self.ended = self.ended, None
 
-    def _submit(self, value, settings, mail, count, deadline, seconds, check, stats):
+    def _submit(
+        self, value, settings, mail, count, deadline, seconds, check, stats, profile
+    ):
         """The body of ``submit``, under the session lock."""
         _check_owner(check)
         candidate = base64.b64encode(value).decode("ascii")
+        # A helper serves one key, one Workspace identity and one profile; a
+        # change in any of them rotates to a fresh helper.
         key = hashlib.sha256(
-            json.dumps([candidate, settings], sort_keys=True).encode("utf-8")
+            json.dumps([candidate, settings, profile.value], sort_keys=True).encode(
+                "utf-8"
+            )
         ).digest()
         self._rotate(key)
         if self.ended is not None:
@@ -333,7 +364,13 @@ class FamilyMailSession:
                 self.opened = self.used = self.clock()
                 self.helpers += 1
                 self.helper_id = "h" + uuid.uuid4().hex[:12]
-                header = _line({"candidate": candidate, "settings": settings})
+                header = _line(
+                    {
+                        "candidate": candidate,
+                        "settings": settings,
+                        "profile": profile.value,
+                    }
+                )
                 self._start_reaper()
             self.seq += 1
             self.count += 1

@@ -119,6 +119,7 @@ def deliver_digest(
     settings,
     mail,
     *,
+    profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
 ):
@@ -132,6 +133,7 @@ def deliver_digest(
         value,
         settings,
         mail,
+        profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
     )

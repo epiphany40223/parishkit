@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
@@ -125,6 +126,7 @@ def delivery(
         b"synthetic-key",
         SETTINGS | ({"reply_to": mail.reply_to} if mail else {}),
         mail or sample(),
+        profile=DeploymentProfile.PRODUCTION,
         smtp_factory=SMTP,
         session_factory=nullcontext,
     ), seen
@@ -250,7 +252,10 @@ def test_unadmitted_headers_fail_before_provider_access():
     """The helper cannot change the sender selected by the owning configuration."""
     with pytest.raises(ValueError, match="admitted context"):
         deliver_family(
-            b"unused", SETTINGS, replace(sample(), sender="other@example.org")
+            b"unused",
+            SETTINGS,
+            replace(sample(), sender="other@example.org"),
+            profile=DeploymentProfile.PRODUCTION,
         )
 
 

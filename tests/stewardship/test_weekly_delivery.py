@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.digest_delivery import DigestDeliveryMail, deliver_digest
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
@@ -56,6 +57,7 @@ def request(mail=None):
             "candidate": base64.b64encode(b"synthetic").decode(),
             "settings": SETTINGS,
             "mail": (mail or sample()).payload(),
+            "profile": "production",
         }
     ).encode()
 
@@ -63,7 +65,7 @@ def request(mail=None):
 def test_real_compiler_decoder_and_mime_have_no_attachment_or_other_recipients():
     """Message identity survives retries and private values stay out of repr."""
     mail = sample()
-    candidate, settings, decoded = decode_request(request(mail))
+    candidate, settings, decoded, _ = decode_request(request(mail))
     assert candidate == b"synthetic" and settings == SETTINGS and decoded == mail
     mime = decoded.message()
     assert mime["To"] == "admin@example.org"
@@ -181,7 +183,7 @@ def test_existing_daily_and_family_boundaries_are_not_widened():
             cls.from_payload(mail.payload())
     for adapter, mail in ((deliver_weekly, daily), (deliver_digest, weekly)):
         with pytest.raises(ValueError):
-            adapter(b"synthetic", SETTINGS, mail)
+            adapter(b"synthetic", SETTINGS, mail, profile=DeploymentProfile.PRODUCTION)
     for adapter, mail in (
         (submit_weekly, daily),
         (submit_weekly, family),
@@ -320,7 +322,7 @@ def test_larger_weekly_budget_preserves_valid_json_escape_expansion():
     from parishkit.stewardship.web.weekly_digest_content import MAX_WEEKLY_BODY_BYTES
 
     mail = replace(sample(), text="\x01" * MAX_WEEKLY_BODY_BYTES)
-    _, _, decoded = decode_request(request(mail))
+    _, _, decoded, _ = decode_request(request(mail))
     assert decoded == mail
 
 
@@ -328,6 +330,8 @@ def test_weekly_settings_mismatch_is_rejected_before_delivery():
     """An otherwise valid report may not select another sender or reply address."""
     mail = replace(sample(), sender="other@example.org")
     with pytest.raises(ValueError):
-        deliver_weekly(b"synthetic", SETTINGS, mail)
+        deliver_weekly(
+            b"synthetic", SETTINGS, mail, profile=DeploymentProfile.PRODUCTION
+        )
     with pytest.raises(ValueError):
         decode_request(request(mail))

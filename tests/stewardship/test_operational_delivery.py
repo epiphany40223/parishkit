@@ -285,6 +285,7 @@ def test_real_operational_helpers_reject_invalid_credentials_without_network(pur
                 "candidate": base64.b64encode(b"synthetic").decode(),
                 "settings": SETTINGS,
                 "mail": mail().payload(),
+                "profile": "production",
             }
         ).encode()
         if purpose == "mail"

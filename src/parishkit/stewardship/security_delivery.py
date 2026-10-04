@@ -138,6 +138,7 @@ def deliver_security_mail(
     settings,
     mail,
     *,
+    profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
 ):
@@ -151,6 +152,7 @@ def deliver_security_mail(
         value,
         settings,
         mail,
+        profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
     )

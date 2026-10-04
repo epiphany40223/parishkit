@@ -15,11 +15,28 @@ from parishkit.config import ConfigError
 from .accounts.integration_candidates import _object
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
+from .deployment import DeploymentProfile
 from .readiness_delivery import DeliveryOutcome, deliver_sample
 from .readiness_mail import ReadinessMail
 from .web.content import MAX_TEXT_BYTES
 
 MAX_INPUT = 2 * MAX_FILE_BYTES + 4 * MAX_TEXT_BYTES + 16384
+
+
+def request_profile(value):
+    """The deployment profile a helper request names, as a closed enum member.
+
+    The helper runs with no environment, so this field is its only knowledge
+    of the deployment (#476): the mail-catcher transport is admitted only
+    when it says ``local``. Anything but a known profile name is a malformed
+    request, which no helper acts on.
+    """
+    if type(value) is not str:
+        raise ValueError("Invalid private delivery profile.")
+    try:
+        return DeploymentProfile(value)
+    except ValueError:
+        raise ValueError("Invalid private delivery profile.") from None
 
 
 def decode_request(raw):
@@ -31,7 +48,8 @@ def decode_request(raw):
         type(request) is not dict
         # ``banner_origin`` is optional: only campaign samples carry one, and
         # without it no campaign banner is admitted.
-        or set(request) - {"banner_origin"} != {"settings", "candidate", "mail"}
+        or set(request) - {"banner_origin"}
+        != {"settings", "candidate", "mail", "profile"}
         or type(request["candidate"]) is not str
         or type(request.get("banner_origin", "")) is not str
     ):
@@ -48,17 +66,17 @@ def decode_request(raw):
         for key in ("sender", "reply_to", "recipient")
     ):
         raise ValueError("Readiness mail context differs.")
-    return candidate, settings, mail
+    return candidate, settings, mail, request_profile(request["profile"])
 
 
 def submit_request(raw):
     """Decoder failure proves non-submission; unexpected adapter failure does not."""
     try:
-        candidate, settings, mail = decode_request(raw)
+        candidate, settings, mail, profile = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return DeliveryOutcome.NOT_SENT
     try:
-        result = deliver_sample(candidate, settings, mail)
+        result = deliver_sample(candidate, settings, mail, profile=profile)
         return (
             result if isinstance(result, DeliveryOutcome) else DeliveryOutcome.UNKNOWN
         )

@@ -43,6 +43,16 @@ CADDY_IMAGE = (
     "caddy:2.11.4-alpine@sha256:"
     "5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
 )
+# The LOCAL mail catcher (#476), pinned by its multi-arch index digest like the
+# other third-party images. Never rendered for any other profile.
+MAILPIT_IMAGE = (
+    "axllent/mailpit:v1.31.4@sha256:"
+    "b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48"
+)
+# Mailpit keeps at most this many messages; a seeded local campaign sends a
+# few hundred, so months of local use fit without pruning anything a developer
+# is looking at.
+MAILPIT_MAX_MESSAGES = 50_000
 
 # Docker's default json-file driver keeps a container's log forever, so one
 # noisy service could fill the host's disk during a month-long campaign.
@@ -435,6 +445,9 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             selected["ports"] = [f"{host}:{origin.port or 80}:8000"]
         services["web" if replica == 0 else f"web-{replica}"] = selected
     services.update(_infrastructure(configuration))
+    if configuration.profile is DeploymentProfile.LOCAL:
+        services["mailpit"] = _mailpit(configuration)
+        services["fake-parishsoft"] = _fake_parishsoft(configuration, image)
     if configuration.profile.behind_proxy:
         from .runtime_ingress import render_ingress
 
@@ -628,6 +641,127 @@ def _infrastructure(configuration):
         ],
     }
     return {"postgres": postgres, "valkey": valkey}
+
+
+def mailpit_store(configuration):
+    """The LOCAL mail catcher's message store, beside the other persistent stores.
+
+    It is not a configurable path of its own: adding one to ``RuntimePaths``
+    would add a key to every rendered service document, including
+    Production's, which must stay byte-identical. ``persistent_root`` itself
+    is still overridable.
+    """
+    return configuration.paths["persistent_root"] / "mailpit"
+
+
+def _mailpit(configuration):
+    """The LOCAL mail catcher (#476): plain SMTP in, a loopback-only UI out.
+
+    Only LOCAL renders it. It joins ``backend``, where the application reaches
+    it at ``LOCAL_SMTP_ENDPOINT`` (``mailpit:1025``), and ``ingress``, so its
+    UI can be published; the publication is on the VM's loopback only. It is
+    run like the other stock images (unprivileged, read-only root) with the
+    one writable store below. It can never relay: Mailpit forwards mail only
+    when its relay settings are configured, and none is rendered, so every
+    message it receives stays inside it.
+    """
+    if configuration.profile is not DeploymentProfile.LOCAL:
+        raise ConfigError("The mail catcher is rendered only for the local profile.")
+    from .mail_catcher import LOCAL_SMTP_ENDPOINT
+
+    _, smtp_port = LOCAL_SMTP_ENDPOINT
+    result = _application(MAILPIT_IMAGE, configuration.runtime_budget)
+    result.update(
+        environment={
+            "MP_SMTP_BIND_ADDR": f"0.0.0.0:{smtp_port}",
+            "MP_UI_BIND_ADDR": "0.0.0.0:8025",
+            "MP_DATABASE": "/data/mailpit.db",
+            "MP_MAX_MESSAGES": str(MAILPIT_MAX_MESSAGES),
+            # No reverse DNS on connecting containers: there is no egress and
+            # nothing to learn from it.
+            "MP_SMTP_DISABLE_RDNS": "true",
+            # Mailpit relays only when told to; say so explicitly, and render
+            # no relay, forward, webhook or POP3 setting (a test pins this).
+            "MP_SMTP_RELAY_ALL": "false",
+            # The UI is reached as http://localhost:8025 from the laptop (and
+            # by its own readiness probe); refusing any other Host header
+            # keeps a web page the developer visits from reading captured
+            # mail through DNS rebinding.
+            "MP_ALLOWED_HOSTS": "localhost,127.0.0.1",
+        },
+        healthcheck={
+            # The image's own readiness probe, against its UI port.
+            "test": ["CMD", "/mailpit", "readyz"],
+            "interval": "10s",
+            "timeout": "3s",
+            "retries": 3,
+        },
+        ports=["127.0.0.1:8025:8025"],
+        networks={"backend": {}, "ingress": {}},
+        volumes=[bind(mailpit_store(configuration), target="/data", read_only=False)],
+        # Mailpit holds no application work to drain; it flushes its store at once.
+        stop_grace_period="10s",
+    )
+    return result
+
+
+def fake_parishsoft_configuration(configuration):
+    """The fake ParishSoft service's one input: ``run/local/fake-parishsoft.json``.
+
+    The operator script's ``up`` writes it (seed, Family count, anchor date and
+    release instant), owned by the application uid with mode 0600, before the
+    services start; the fake reads it once at start. It is the service's only
+    mount, so the renderer and the script must agree on this path.
+    """
+    return configuration.paths["run"] / "local" / "fake-parishsoft.json"
+
+
+def _fake_parishsoft(configuration, image):
+    """The LOCAL stand-in for ParishSoft's v2 API (#476), from the application image.
+
+    Only LOCAL renders it. It runs the ``fake-parishsoft`` command like any
+    other application container (unprivileged, read-only root, backend network
+    only) and answers at ``LOCAL_SOURCE_BASE_URL``, so the worker and the
+    ParishSoft credential installer reach it by its service name over
+    ``backend``. It receives no credential and exactly one mount, its own
+    configuration file, read-only; it publishes no port and never joins
+    ``ingress``. The command refuses any profile but LOCAL before binding, and
+    the profile is passed explicitly because the service mounts no deployment
+    document.
+    """
+    if configuration.profile is not DeploymentProfile.LOCAL:
+        raise ConfigError("The fake ParishSoft is rendered only for the local profile.")
+    from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
+
+    target = urlsplit(LOCAL_SOURCE_BASE_URL)
+    path = fake_parishsoft_configuration(configuration)
+    result = _application(image, configuration.runtime_budget)
+    result.update(
+        command=[
+            "fake-parishsoft",
+            "--profile",
+            DeploymentProfile.LOCAL.value,
+            "--fake-config",
+            str(path),
+            "--port",
+            str(target.port),
+        ],
+        healthcheck={
+            # Listening on its port; the image has Python but no nc.
+            "test": [
+                "CMD",
+                "python",
+                "-c",
+                "import socket; socket.create_connection(('127.0.0.1', "
+                f"{target.port}), timeout=2).close()",
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 3,
+        },
+        volumes=[bind(path)],
+    )
+    return result
 
 
 def _caddy(configuration):

@@ -2213,6 +2213,70 @@
     }
    ]
   },
+  "fake-parishsoft": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "fake-parishsoft",
+    "--profile",
+    "local",
+    "--fake-config",
+    "/opt/parishkit/run/local/fake-parishsoft.json",
+    "--port",
+    "8080"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 3,
+    "test": [
+     "CMD",
+     "python",
+     "-c",
+     "import socket; socket.create_connection(('127.0.0.1', 8080), timeout=2).close()"
+    ],
+    "timeout": "5s"
+   },
+   "image": "parishkit-stewardship-local:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {}
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/fake-parishsoft.json",
+     "target": "/opt/parishkit/run/local/fake-parishsoft.json",
+     "type": "bind"
+    }
+   ]
+  },
   "mail-dispatch": {
    "cap_drop": [
     "ALL"
@@ -2337,6 +2401,67 @@
      "read_only": true,
      "source": "/opt/parishkit/run/startup.lock",
      "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
+  "mailpit": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "environment": {
+    "MP_ALLOWED_HOSTS": "localhost,127.0.0.1",
+    "MP_DATABASE": "/data/mailpit.db",
+    "MP_MAX_MESSAGES": "50000",
+    "MP_SMTP_BIND_ADDR": "0.0.0.0:1025",
+    "MP_SMTP_DISABLE_RDNS": "true",
+    "MP_SMTP_RELAY_ALL": "false",
+    "MP_UI_BIND_ADDR": "0.0.0.0:8025"
+   },
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 3,
+    "test": [
+     "CMD",
+     "/mailpit",
+     "readyz"
+    ],
+    "timeout": "3s"
+   },
+   "image": "axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "backend": {},
+    "ingress": {}
+   },
+   "ports": [
+    "127.0.0.1:8025:8025"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "10s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/mailpit",
+     "target": "/data",
      "type": "bind"
     }
    ]

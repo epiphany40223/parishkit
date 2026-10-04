@@ -112,6 +112,7 @@ def deliver_weekly(
     settings,
     mail,
     *,
+    profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
 ):
@@ -125,6 +126,7 @@ def deliver_weekly(
         value,
         settings,
         mail,
+        profile=profile,
         smtp_factory=smtp_factory,
         session_factory=session_factory,
     )

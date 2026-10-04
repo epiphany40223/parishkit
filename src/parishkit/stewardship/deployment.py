@@ -52,6 +52,26 @@ PROXIED_PROFILES = frozenset({DeploymentProfile.PRODUCTION, DeploymentProfile.LO
 LOCAL_PUBLIC_ORIGIN = "https://localhost:8443"
 
 
+def recorded_profile():
+    """The deployment profile this process was admitted under; fail closed without one.
+
+    Every settings assembly records the admitted deployment's profile
+    (``runtime_database.profile_settings``), and the development and test
+    settings modules name theirs. Source reads choose their ParishSoft base
+    URL from it and mail parents label every helper request with it, so a
+    process with no recorded profile (or no configured settings at all) can
+    neither reach a provider nor send mail. Django is imported lazily: this
+    module is also imported by the environment-free helper processes.
+    """
+    from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
+
+    try:
+        return DeploymentProfile(settings.STEWARDSHIP_DEPLOYMENT_PROFILE)
+    except (AttributeError, ValueError, ImproperlyConfigured):
+        raise ConfigError("The deployment profile is unavailable.") from None
+
+
 class ServiceRole(StrEnum):
     """Least-privilege process identity, not a human portal role."""
 

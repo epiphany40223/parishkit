@@ -227,6 +227,28 @@ def _backup_context(request, configuration):
     }
 
 
+def _refuse_drive_in_local():
+    """LOCAL (#476) never reaches Google Drive: no off-site folder is set or tested.
+
+    The Workspace credential in LOCAL is the mail-catcher document, which the
+    Drive session refuses anyway; this refusal says so before anything is
+    queued or saved.
+    """
+    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+
+    if recorded_profile() is DeploymentProfile.LOCAL:
+        raise UserFacingError(
+            _(
+                "Off-site Google Drive copies are not available in the local "
+                "environment."
+            ),
+            fix=_(
+                "The local laptop environment never reaches Google Drive; its "
+                "backups stay inside the VM."
+            ),
+        )
+
+
 def _test_access(request, configuration, actor):
     """Queue a "Test access" check of the entered (or saved) Drive folder.
 
@@ -244,6 +266,7 @@ def _test_access(request, configuration, actor):
         "base_digest",
     } or any(len(values) != 1 for _, values in request.POST.lists()):
         raise ValueError("Invalid configuration action or fields.")
+    _refuse_drive_in_local()
     records = _records(configuration)
     # Each refusal below says what to do next; a plain ValueError would show
     # only the generic "Check your entries" page.
@@ -394,6 +417,8 @@ def _save(request, service, configuration, actor, target):
 def _preview(request, service, actor, target):
     """Prepare public settings while preserving the applied credential receipt."""
     configuration = editable_configuration(service)
+    if target == "backup":
+        _refuse_drive_in_local()
     if _optional(configuration, target) is None and target != "backup":
         raise ValueError("Paste the key to set up this integration.")
     record = _optional(configuration, target) or _unset(target)

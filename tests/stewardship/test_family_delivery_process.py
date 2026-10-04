@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
@@ -26,19 +27,22 @@ def request():
         "candidate": base64.b64encode(b"synthetic-key").decode(),
         "settings": SETTINGS,
         "mail": sample().payload(),
+        "profile": "test",
     }
 
 
 def test_private_request_roundtrip():
     """The helper preserves the closed envelope and has no arbitrary SMTP target."""
     value = request()
-    key, settings, mail = decode_request(json.dumps(value).encode())
+    key, settings, mail, profile = decode_request(json.dumps(value).encode())
     assert key == b"synthetic-key" and settings == SETTINGS
+    assert profile is DeploymentProfile.TEST
     assert mail == FamilyDeliveryMail.from_payload(value["mail"])
 
 
 @pytest.mark.parametrize(
-    "mutation", ["extra", "candidate", "duplicate", "identity", "recipient", "sender"]
+    "mutation",
+    ["extra", "candidate", "duplicate", "identity", "recipient", "sender", "profile"],
 )
 def test_invalid_request_never_reaches_network(mutation):
     """Duplicate JSON fields, other identities and foreign context fail closed."""
@@ -53,6 +57,8 @@ def test_invalid_request_never_reaches_network(mutation):
         value["mail"]["recipients"] = []
     elif mutation == "sender":
         value["mail"]["sender"] = "other@example.org"
+    elif mutation == "profile":
+        value["profile"] = "staging"
     raw = json.dumps(value).encode()
     if mutation == "duplicate":
         raw = raw[:-1] + b', "candidate":"c3ludGhldGlj"}'

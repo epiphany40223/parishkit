@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from parishkit.stewardship import family_delivery_process
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
@@ -134,6 +135,7 @@ def smtp_session(monkeypatch, server, *, expiry=None, clock=time.monotonic):
     return SmtpSession(
         KEY,
         SETTINGS,
+        profile=DeploymentProfile.PRODUCTION,
         smtp_factory=server.factory,
         session_factory=nullcontext,
         clock=clock,
@@ -286,8 +288,9 @@ def test_serve_writes_started_before_each_submission(monkeypatch):
     seen = []
 
     class Recorder:
-        def __init__(self, value, settings):
+        def __init__(self, value, settings, *, profile):
             assert value == KEY and settings == SETTINGS
+            assert profile is DeploymentProfile.PRODUCTION
 
         def deliver(self, value):
             # The parent can already read this message's started line.
@@ -307,7 +310,11 @@ def test_serve_writes_started_before_each_submission(monkeypatch):
             pass
 
     read, write = os.pipe()
-    header = {"candidate": "c3ludGhldGljLWtleQ==", "settings": SETTINGS}
+    header = {
+        "candidate": "c3ludGhldGljLWtleQ==",
+        "settings": SETTINGS,
+        "profile": "production",
+    }
     lines = [header] + [{"seq": seq, "mail": mail().payload()} for seq in (1, 2)]
     os.write(write, b"".join(json.dumps(line).encode() + b"\n" for line in lines))
     os.close(write)
@@ -752,7 +759,12 @@ def test_a_helper_whose_parent_dies_quits_and_exits(gmail, tmp_path):
         capture_output=True,
         check=True,
         timeout=30,
-        env={"PYTHONPATH": CHILD_PATH},
+        # A mail worker has a recorded deployment profile (#476); the parent
+        # labels its helper's header with it, as runtime assembly would.
+        env={
+            "PYTHONPATH": CHILD_PATH,
+            "DJANGO_SETTINGS_MODULE": "parishkit.stewardship.settings.test",
+        },
     ).stdout.split()
     assert output[0] == b"accepted"
     pid = int(output[1])

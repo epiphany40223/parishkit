@@ -20,6 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind
 from parishkit.stewardship.audit.services import record_action
@@ -42,6 +43,7 @@ from .request_patch import OPTIONAL_INTEGRATIONS, credential_request_schema
 from .secret_models import SECRET_PENDING, SecretReplacementRequest
 from .secret_requests import cancel_secret_request
 from .sessions import authenticated_admin, require_fresh
+from .setup_credentials import admit_candidate
 
 # Derives the selection request's key from the secret request's identity, so
 # the status line can find it and an identical browser retry reuses both.
@@ -344,8 +346,19 @@ def save_credential(
     then adds the integration record together with its first key. Removing
     Slack leaves its last key file installed, so setting it up again replaces
     that file: the new request names it as the predecessor.
+
+    A Workspace or Slack key is first admitted under the deployment profile
+    (``admit_candidate``, #476): LOCAL takes only the mail-catcher document
+    and no Slack token; every other profile refuses the mail-catcher document.
     """
     require_fresh(request)
+    if target in {"google_workspace", "slack"}:
+        from parishkit.stewardship.deployment import recorded_profile
+
+        try:
+            admit_candidate(target, value, recorded_profile())
+        except ConfigError:
+            raise ValueError("The credential has an invalid format.") from None
     records = integration_records(configuration.active_configuration.canonical_document)
     identifier = UUID(intent["request"])
     adding = record is None

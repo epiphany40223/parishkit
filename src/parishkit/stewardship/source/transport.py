@@ -2,12 +2,10 @@
 
 from uuid import UUID
 
-from django.conf import settings
 from django.db import connection, connections
 
-from parishkit.config import ConfigError
 from parishkit.parishsoft_transport import BoundedSourceSession
-from parishkit.stewardship.deployment import DeploymentProfile
+from parishkit.stewardship.deployment import recorded_profile
 from parishkit.stewardship.jobs.dispatch import Execution
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -20,14 +18,12 @@ from .leases import SourceClaim, reserve_source_request
 def runtime_profile():
     """The deployment profile this process was admitted under.
 
-    Runtime assembly records it in settings; source reads use it to choose
-    the ParishSoft base URL (the fake in LOCAL) and to label every helper
-    request, so the environment-free helper can apply the same rule.
+    Source reads use it to choose the ParishSoft base URL (the fake in LOCAL)
+    and to label every helper request, so the environment-free helper can
+    apply the same rule. It is the one shared reader,
+    ``deployment.recorded_profile``, which the mail parents use too.
     """
-    try:
-        return DeploymentProfile(settings.STEWARDSHIP_DEPLOYMENT_PROFILE)
-    except (AttributeError, ValueError):
-        raise ConfigError("The deployment profile is unavailable.") from None
+    return recorded_profile()
 
 
 def source_session(execution, claim, *, attempt_id, credential):
