@@ -11,6 +11,13 @@ The [Admin follow-up workflows](../specs/stewardship/admin-portal/spec.md#follow
 and [follow-up records](../specs/stewardship/data/spec.md#follow-up-records)
 specifications control behavior.
 
+> **Superseded in part:** follow-up assignment, including bulk assignment and
+> the `new`/`assigned` derivation described below, was removed on 2026-10-04
+> ([#552](https://github.com/epiphany40223/parishkit/issues/552)). This record
+> keeps the original design for history; the
+> [Admin follow-up workflows](../specs/stewardship/admin-portal/spec.md#follow-up-workflows)
+> specification describes current behavior.
+
 ## Why this precedes the packet
 
 The [multi-Ministry follow-up packet](../specs/stewardship/reports/spec.md#multi-ministry-follow-up-packet)

@@ -144,11 +144,6 @@ admin_patterns = [
         name="ministry_followup",
     ),
     path(
-        "reports/<uuid:campaign_id>/ministries/follow-up/assign",
-        ministry_followup_views.assign,
-        name="ministry_followup_assign",
-    ),
-    path(
         "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/",
         ministry_followup_views.detail,
         name="ministry_followup_item",

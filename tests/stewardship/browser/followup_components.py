@@ -8,12 +8,14 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
+    HISTORY_STATES,
     OUTCOMES,
     SORTING,
     STATES,
     FollowupQuery,
 )
 from parishkit.stewardship.web.tables import report_table
+from parishkit.stewardship.workflows.followup import outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
 
@@ -33,7 +35,7 @@ def _table(rows, query, total, campaign):
 
 def components(context, admin):
     """Detached authorized sample data exercises native controls and escaping."""
-    campaign, request, leader = UUID(int=92), UUID(int=93), UUID(int=94)
+    campaign, request = UUID(int=92), UUID(int=93)
     moment = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
     row = dict(
         id=str(request),
@@ -42,12 +44,10 @@ def components(context, admin):
         ministry_name="Example <Ministry>",
         member_name="Example <Member>",
         action="join",
-        state="assigned",
-        state_label=STATES["assigned"],
+        state="new",
+        state_label=STATES["new"],
         outcome=None,
         outcome_label="",
-        assignee_id=str(leader),
-        assignee_label="leader@example.org",
         submitted_at=moment,
         resolved_at=None,
         source_resolved=False,
@@ -58,11 +58,13 @@ def components(context, admin):
         phone_contact_at=moment,
         last_contact_at=moment,
     )
+    # A past edit recorded before assignment was removed (#552) keeps
+    # showing the assignment it recorded.
     revision = SimpleNamespace(
         actor_label="leader@example.org",
         assignee_label="leader@example.org",
         created_at=moment,
-        state_label=STATES["assigned"],
+        state_label=HISTORY_STATES["assigned"],
         outcome_label="",
         channel_label=CHANNELS["phone"],
         contact_at=moment,
@@ -80,17 +82,36 @@ def components(context, admin):
         previous_history=None,
         next_history=None,
         request_key=UUID(int=95),
-        assignees=[SimpleNamespace(id=leader, email="leader@example.org")],
-        bulk_ministry=9,
         states=STATES,
         staff_states=[(key, STATES[key]) for key in STAFF_STATES],
+        resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("join")],
         outcomes=OUTCOMES,
         channels=CHANNELS,
-        viewer=str(leader),
         total=51,
         rows=[row],
         ministries=[dict(duid=9, name="Example <Ministry>")],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
+    )
+    # The form's values, as the view builds them (or keeps them on a refusal).
+    form = dict(
+        expected_version=str(row["version"]),
+        state=row["state"],
+        outcome="",
+        notes=row["notes"],
+        contact_channel="",
+        contact_date="",
+        contact_time="",
+        contact_notes="",
+    )
+    leave = row | dict(action="leave", member_name="Leaving <Member>")
+    refused = form | dict(
+        state="resolved",
+        outcome="other",
+        notes="Kept <note>",
+        contact_channel="phone",
+        contact_date="2026-09-19",
+        contact_time="15:04",
+        contact_notes="Kept <reply>",
     )
     unfiltered = FollowupQuery()
     closed = row | dict(
@@ -106,20 +127,32 @@ def components(context, admin):
         | dict(
             query=unfiltered,
             table=_table([row], unfiltered, 51, campaign),
-            bulk_ministry=None,
-            assignees=[],
         ),
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
-        "/followup-gated": values | dict(mutable=False, assignees=[]),
+        "/followup-gated": values | dict(mutable=False),
         "/followup-item": values
-        | dict(item=row, history=[revision], next_history=2, bulk_ministry=None),
+        | dict(item=row, form=form, history=[revision], next_history=2),
+        "/followup-item-leave": values
+        | dict(
+            item=leave,
+            form=form,
+            resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("leave")],
+        ),
+        "/followup-item-refused": values
+        | dict(
+            item=row,
+            form=refused,
+            errors=[
+                dict(
+                    message="Left ministry doesn't apply to a request to join.",
+                    field_id="followup-outcome",
+                )
+            ],
+        ),
         "/followup-closed": values
-        | dict(item=closed, rows=[closed], history=[revision], bulk_ministry=None),
-        "/followup-item-stale": values
-        | dict(item=row, stale_assignee=True, assignees=[], bulk_ministry=None),
-        "/followup-item-gated": values
-        | dict(item=row, mutable=False, assignees=[], bulk_ministry=None),
+        | dict(item=closed, rows=[closed], history=[revision]),
+        "/followup-item-gated": values | dict(item=row, form=form, mutable=False),
     }
     result = {
         path: (

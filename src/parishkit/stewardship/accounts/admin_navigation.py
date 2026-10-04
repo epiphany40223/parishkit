@@ -266,7 +266,6 @@ NON_PAGES = frozenset(
         "talents_export",
         "maintenance",
         "ministry_export",
-        "ministry_followup_assign",
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",

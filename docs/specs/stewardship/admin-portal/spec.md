@@ -158,6 +158,15 @@ script keeps the form's primary button disabled until the box is checked.
 Without the script the button is enabled and the server refuses a missing
 acknowledgment as before.
 
+More generally, a form whose fields depend on other choices keeps its submit
+button unavailable until every visible required field is complete, with a
+short hint by the button saying what is missing (`data-require-complete` in
+the page script; first used by
+[Ministry follow-up](#follow-up-workflows), #553). Fields required only in
+some states are required only while shown. The Admin portal requires
+JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
+server validation is unchanged and still refuses an incomplete submission.
+
 Pages and emails start with built-in default text. Saving the first campaign
 fills every applicable page and email slot the draft has never set, in the same
 versioned save as the campaign, and a later campaign save fills only slots that
@@ -465,9 +474,9 @@ POST table's address never changes. Applying a page's filters works the same
 way (#484): the filter form is sent as it would have been (a GET query, or a
 CSRF POST body), every table region is replaced, and so are the counts,
 summaries and filter-dependent panels outside the tables (a report's matching
-count and summary, the Family directory's export column list, the follow-up
-queue's bulk assignment); focus stays on the filter button and the live region
-announces the rows now shown in each table, including none. A response the
+count and summary, the Family directory's export column list); focus stays on
+the filter button and the live region announces the rows now shown in each
+table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
@@ -1995,9 +2004,41 @@ confirmation.
 
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
 and edit only assigned Ministries. The interface supports queue filters,
-assignee/status/outcome, contact-attempt entry, notes, bulk assignment, and
-links to the Member's authorized report detail. It never exposes financial or
-unrelated Family data.
+status/outcome, contact-attempt entry, notes, history, and links to the
+Member's authorized report detail. It never exposes financial or unrelated
+Family data.
+
+Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
+[#552](https://github.com/epiphany40223/parishkit/issues/552)): each
+Ministry's leader contacts the parishioners who asked to join or leave it,
+and the portal does not track coordination between people. The queue and
+request pages therefore offer no assignee field, filter or column and no bulk
+selection; the status choices are New, In progress, Resolved and Closed: no
+response. A request recorded as Assigned before this decision reads as New
+(that state only ever meant "has an assignee") until its next save stores the
+chosen status with no assignee; until then an explicit New filter (queue or
+Ministry report) does not match it, while Unresolved and Any status do. Past
+history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
+the [data specification](../data/spec.md#follow-up-records).
+
+The request form shows only the fields that apply. The outcome appears only
+for Resolved, which requires one; Closed: no response always records the
+outcome No response, and open statuses have none. A contact attempt's date,
+time and "What happened" appear only once a channel is chosen; the date and
+time are then required and the description is optional. Notes are optional
+except for the outcome Other, which the data model requires. Hidden fields are
+disabled and not sent, and Save stays unavailable, with a short hint saying
+what is missing, until every visible required field is complete. Fields
+re-evaluate whenever the browser restores the page or its values (going back
+to it). The Admin portal requires JavaScript
+([#565](https://github.com/epiphany40223/parishkit/issues/565)), so there is
+no script-off variant; the server still ignores whatever does not apply to the
+chosen status or channel and refuses an incomplete Resolved. The outcome list
+offers only the outcomes the request's kind can record: Joined ministry only
+for a join and Left ministry only for a leave, from the same rule the server
+applies. If the server still refuses a save (for example a contact time in the
+future), it shows the same request page again in place, with a summary naming
+the one problem, linked to its field, and the submitted values kept.
 
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes. API-writable changes are view-only for Staff. Admin review

@@ -1,7 +1,6 @@
 """Bounded, scoped Ministry follow-up queue, detail and history reads."""
 
 import json
-import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -10,7 +9,6 @@ from django.db import connection
 from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
@@ -26,9 +24,8 @@ PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
 # queue, so a heading can only choose one of its existing sort values; the
 # schema is frozen for v1. Member and Ministry sort A-Z only (the selection
-# has no Z-A order for them), and Request sorts by submission time. Status,
-# Assigned to and Last contact are not sortable: the selection has no order
-# for them.
+# has no Z-A order for them), and Request sorts by submission time. Status
+# and Last contact are not sortable: the selection has no order for them.
 SORTING = Sorting(
     {
         "newest": ("request", True),
@@ -38,15 +35,19 @@ SORTING = Sorting(
     },
     "newest",
 )
+# Current statuses, offered as filters. Follow-up has no assignee (#552); a
+# request still stored as `assigned` from before then reads as New
+# (followup_page), because `assigned` only ever meant "has an assignee".
 STATES = {
     "new": "New",
-    "assigned": "Assigned",
     "in_progress": "In progress",
     "resolved": "Resolved",
     "closed_no_response": "Closed: no response",
     "cancelled": "Withdrawn by Family",
     "superseded": "Replaced by Family",
 }
+# History shows what each past edit recorded, including an old assignment.
+HISTORY_STATES = STATES | {"assigned": "Assigned"}
 # The exact labels of the multi-Ministry packet, so screens and packets agree.
 OUTCOMES = {
     "joined": "Joined ministry",
@@ -62,7 +63,6 @@ CHANNELS = {
     "in_person": "In person",
     "other": "Other",
 }
-UUID_TEXT = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 
 
 @dataclass(frozen=True, repr=False)
@@ -74,7 +74,6 @@ class FollowupQuery:
     action: str = "any"
     state: str = "unresolved"
     outcome: str = "any"
-    assignee: str = "any"
     history: str = "current"
     sort: str = "newest"
     page: int = 1
@@ -102,10 +101,6 @@ class FollowupQuery:
             or query.sort not in SORTING.tokens
             or query.size not in {str(size) for size in PAGE_SIZES}
             or (query.ministry and not valid_ministry(query.ministry))
-            or (
-                query.assignee not in {"any", "mine", "unassigned"}
-                and UUID_TEXT.fullmatch(query.assignee) is None
-            )
         ):
             raise ValueError("Invalid follow-up filters.")
         bounded_text(query.search)
@@ -160,7 +155,10 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
             "page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
-                json.dumps(query.form_values()),
+                # The frozen selection still reads an assignee filter
+                # (schema/ministry_followup.sql); without one every row
+                # fails it, so always send the neutral "any" (#552).
+                json.dumps(query.form_values() | {"assignee": "any"}),
                 allows(principal, Capability.MINISTRY_FOLLOWUP),
                 sorted(value for value in principal.ministries if value < 2**31),
                 principal.identity,
@@ -182,6 +180,11 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
     if request_id is not None and not result["rows"]:
         raise ObjectDoesNotExist("Ministry request is unavailable.")
     for row in result["rows"]:
+        # A request assigned before assignment was removed (#552) reads, and
+        # is edited, as New; its next save stores New with no assignee.
+        if row["state"] == "assigned":
+            row["state"] = "new"
+        row.pop("assignee_id", None)
         row["state_label"] = STATES[row["state"]]
         row["outcome_label"] = OUTCOMES.get(row["outcome"], "")
         for field in (
@@ -216,15 +219,3 @@ def followup_history(request_id, page):
         )
     )
     return rows[: window.size], len(rows) > window.size
-
-
-def assignable(ministry_duid):
-    """Active users who currently hold follow-up authority for this Ministry."""
-    return list(
-        PortalUser.objects.raw(
-            "SELECT id,email FROM stewardship_portal_user u WHERE NOT u.disabled "
-            "AND stewardship_ministry_followup_authorized_v1(u.id,%s) "
-            "ORDER BY lower(u.email),u.id",
-            [ministry_duid],
-        )
-    )

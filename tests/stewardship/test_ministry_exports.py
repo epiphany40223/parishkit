@@ -171,23 +171,25 @@ def test_retained_audit_scope_has_no_private_values(context, valid):
 def document(*, action="join", count=52, **extra):
     """Closed payload mirrors SQL capture, with hostile values and hidden contacts."""
     moment = datetime(2026, 9, 19, 15, tzinfo=UTC)
-    row = dict(
-        member_name="=Example Member",
-        member_duid=12345,
-        proposed_id=None,
-        ministry_duid=9,
-        submitted_at=moment.isoformat(),
-        state="new",
-        outcome=None,
-        current_role="Volunteer",
-        gender="Unspecified",
-        age=66,
-        email_visibility="not_published",
-        phone_visibility="not_published",
-        emails=[{"value": "hidden@example.org"}],
-        phones={"home": "hidden-phone"},
-        address={"primaryAddress1": "1 Example Street"},
-        **extra,
+    row = (
+        dict(
+            member_name="=Example Member",
+            member_duid=12345,
+            proposed_id=None,
+            ministry_duid=9,
+            submitted_at=moment.isoformat(),
+            state="new",
+            outcome=None,
+            current_role="Volunteer",
+            gender="Unspecified",
+            age=66,
+            email_visibility="not_published",
+            phone_visibility="not_published",
+            emails=[{"value": "hidden@example.org"}],
+            phones={"home": "hidden-phone"},
+            address={"primaryAddress1": "1 Example Street"},
+        )
+        | extra
     )
     summary = dict(
         name="Example Ministry",
@@ -249,16 +251,15 @@ def test_complete_columns_and_csv_privacy(action):
 
 
 @pytest.mark.parametrize("action", ["join", "leave"])
-def test_assignee_is_exported_and_legacy_captures_stay_readable(action):
-    """Captures taken before assignment existed have no key and must still render."""
-    column = document(action=action).headings.index("Assignee")
-    assert document(action=action, count=1).rows[0][column] == "Unassigned"
-    for captured, shown in (
-        ("=leader@example.org", "=leader@example.org"),
-        (None, "Unassigned"),
-    ):
-        report = document(action=action, count=1, assignee=captured)
-        assert report.rows[0][column] == shown
+def test_exports_show_no_assignee_and_legacy_assigned_reads_new(action):
+    """Follow-up has no assignee (#552); an old `assigned` request reads New."""
+    assert "Assignee" not in document(action=action).headings
+    column = document(action=action).headings.index("State")
+    report = document(
+        action=action, count=1, state="assigned", assignee="=leader@example.org"
+    )
+    assert report.rows[0][column] == "New"
+    assert "=leader@example.org" not in report.rows[0]
 
 
 @pytest.mark.parametrize("format", ["xlsx", "pdf"])

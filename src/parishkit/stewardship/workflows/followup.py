@@ -2,9 +2,8 @@
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from uuid import UUID, uuid5
+from uuid import UUID
 
-from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import F
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
@@ -27,14 +26,44 @@ from .models import (
     MinistryWorkflowRevision,
 )
 
-MAX_NOTES, MAX_CONTACT_NOTES, MAX_BULK = 5000, 2000, 200
+MAX_NOTES, MAX_CONTACT_NOTES = 5000, 2000
+# An outcome that records a roster change applies only to its own kind of
+# request; every other resolved outcome applies to both. The request form
+# offers outcomes_for(action), and _revise refuses anything else, so the two
+# cannot disagree. The revision guard (schema/ministry_followup.sql) enforces
+# the same pairing in SQL.
+OUTCOME_ACTIONS = {"joined": "join", "leave_confirmed": "leave"}
+
+
+def outcomes_for(action):
+    """The resolved outcomes a join or leave request may record, in order."""
+    return tuple(
+        outcome
+        for outcome in RESOLVED_OUTCOMES
+        if OUTCOME_ACTIONS.get(outcome, action) == action
+    )
+
+
+class FollowupRefusal(ValueError):
+    """A follow-up edit the person can correct, named by a closed code.
+
+    The request page shows it in place with the submitted values (#553);
+    any other ValueError is a malformed form and gets the plain 400 page.
+    """
+
+    def __init__(self, code, **details):
+        super().__init__(code)
+        self.code, self.details = code, details
 
 
 @dataclass(frozen=True)
 class WorkflowChange:
-    """The complete resulting workflow of one edit, validated without a database."""
+    """The complete resulting workflow of one edit, validated without a database.
 
-    assignee_id: UUID | None
+    Follow-up has no assignee (#552): a Ministry's leader handles its requests,
+    so every edit stores none, which also clears one recorded before then.
+    """
+
     state: str
     outcome: str | None
     notes: str
@@ -50,17 +79,18 @@ class WorkflowChange:
             "closed_no_response": ("no_response",),
         }
         contact = (self.contact_channel, self.contact_at)
+        if not isinstance(self.notes, str) or not isinstance(self.contact_notes, str):
+            raise ValueError("Invalid Ministry follow-up change.")
+        # The mistakes a person can make on the form get their own code.
+        if self.state == "resolved" and self.outcome is None:
+            raise FollowupRefusal("outcome_required")
+        if self.outcome == "other" and not self.notes.strip():
+            raise FollowupRefusal("other_needs_notes")
         if (
-            not isinstance(self.assignee_id, UUID | None)
-            or not isinstance(self.notes, str)
-            or not isinstance(self.contact_notes, str)
-            or len(self.notes) > MAX_NOTES
+            len(self.notes) > MAX_NOTES
             or len(self.contact_notes) > MAX_CONTACT_NOTES
             or self.state not in STAFF_STATES
             or self.outcome not in outcomes.get(self.state, (None,))
-            or (self.state == "new" and self.assignee_id is not None)
-            or (self.state == "assigned" and self.assignee_id is None)
-            or (self.outcome == "other" and not self.notes.strip())
             or (contact == (None, None)) != (None in contact)
             or (contact == (None, None) and self.contact_notes)
             or (self.contact_channel not in (None, *CONTACT_CHANNELS))
@@ -77,40 +107,12 @@ class WorkflowChange:
         bounded_text(self.contact_notes)
 
 
-def assignment_state(state, assignee_id):
-    """`new` and `assigned` mean only "has an assignee"; derive them from it.
-
-    Choosing or clearing an assignee is one intent, so neither the single edit
-    nor bulk assignment makes the user change a second control to match. Other
-    states say something the assignee does not, and pass through unchanged.
-    """
-    if state in {"new", "assigned"}:
-        return "new" if assignee_id is None else "assigned"
-    return state
-
-
 def authorize_ministry(store, actor_id, ministry_duid):
     """Reload coherent policy; old sessions and a known request UUID are not grants."""
     principal = current_principal(store, actor_id)
     if not allows(principal, Capability.MINISTRY_FOLLOWUP, ministry_id=ministry_duid):
         raise PermissionError("Ministry follow-up access is unavailable.")
     return principal
-
-
-def latest_revision(request_id):
-    """Newest Staff edit across same-intent Family resubmissions, or None.
-
-    A resubmission replaces the request row; its notes remain with the
-    superseded predecessor until a later edit chains a revision here.
-    """
-    rows = MinistryWorkflowRevision.objects.raw(
-        "SELECT r.* FROM stewardship_ministry_workflow_chain_v1(%s) c "
-        "JOIN stewardship_ministry_revision r ON r.request_id=c.request_id "
-        "ORDER BY c.depth,r.expected_version DESC LIMIT 1",
-        [request_id],
-    )
-    # A RawQuerySet is always truthy and cannot be indexed when empty.
-    return next(iter(rows), None)
 
 
 def _revise(store, actor_id, target, expected_version, request_key, change, system):
@@ -134,23 +136,21 @@ def _revise(store, actor_id, target, expected_version, request_key, change, syst
     # rendered from an already closed, cancelled or superseded request.
     if target.state not in OPEN_STATES:
         raise StaleRecordError("This Ministry request is no longer open.")
-    required = {"joined": "join", "leave_confirmed": "leave"}
-    if required.get(change.outcome, target.action) != target.action:
-        raise ValueError("This outcome does not match the requested action.")
+    if change.state == "resolved" and change.outcome not in outcomes_for(target.action):
+        raise FollowupRefusal(
+            "outcome_kind", outcome=change.outcome, action=target.action
+        )
     if change.contact_at is not None and change.contact_at > database_now():
-        raise ValueError("A contact attempt cannot be in the future.")
-    if change.assignee_id is not None:
-        try:
-            authorize_ministry(store, change.assignee_id, target.ministry_duid)
-        except (PermissionError, ObjectDoesNotExist):
-            raise ValueError("The assignee cannot follow up this Ministry.") from None
+        raise FollowupRefusal("contact_future")
+    # No edit stores an assignee (#552), and one recorded before then is
+    # cleared: the CHECKs pair `new` with none, and nothing offers `assigned`.
     revision = MinistryWorkflowRevision.objects.create(
-        actor_id=actor_id, request_key=request_key, **intent
+        actor_id=actor_id, request_key=request_key, assignee_id=None, **intent
     )
     MinistryRequest.objects.filter(pk=target.pk).update(
         state=change.state,
         outcome=change.outcome,
-        assignee_id=change.assignee_id,
+        assignee_id=None,
         version=F("version") + 1,
     )
     record_action(
@@ -210,54 +210,3 @@ def update_request(
         return _revise(
             store, actor_id, target, expected_version, request_key, change, _system()
         )
-
-
-def assign_requests(store, actor_id, *, request_key, assignee_id, versions):
-    """Assign or unassign an exact request/version set: all of it or none of it.
-
-    Each row keeps its notes and open state, except that `new` and `assigned`
-    follow whether it now has an assignee. One stale, closed, out-of-scope or
-    unknown row rolls back every other row rather than updating a silent subset.
-    """
-    if (
-        any(not isinstance(value, UUID) for value in (actor_id, request_key))
-        or not isinstance(assignee_id, UUID | None)
-        or type(versions) is not dict
-        or not 1 <= len(versions) <= MAX_BULK
-        or any(
-            not isinstance(key, UUID) or type(value) is not int
-            for key, value in versions.items()
-        )
-    ):
-        raise ValueError("Invalid Ministry bulk assignment.")
-    with work_transaction():
-        system, revisions = _system(), []
-        for target in _targets(store, actor_id, versions):
-            # One form key binds the whole set; each row replays alone.
-            key, version = uuid5(request_key, str(target.pk)), versions[target.pk]
-            previous = MinistryWorkflowRevision.objects.filter(
-                actor_id=actor_id, request_key=key
-            ).first()
-            if previous is not None:
-                bound = (previous.request_id, previous.expected_version)
-                if bound != (target.pk, version) or previous.assignee_id != assignee_id:
-                    raise ValueError("This request key is already bound.")
-                revisions.append(previous)
-                continue
-            # Decide staleness before building the change: a row that closed or
-            # was replaced since the page loaded has no valid Staff-owned state,
-            # and must read as "this changed", not as a malformed form.
-            check_version(target, version)
-            if target.state not in OPEN_STATES:
-                raise StaleRecordError("This Ministry request is no longer open.")
-            latest = latest_revision(target.pk)
-            change = WorkflowChange(
-                assignee_id=assignee_id,
-                state=assignment_state(target.state, assignee_id),
-                outcome=None,
-                notes=latest.notes if latest else "",
-            )
-            revisions.append(
-                _revise(store, actor_id, target, version, key, change, system)
-            )
-        return revisions
