@@ -148,7 +148,10 @@ quiet() {
 # or a rollback changes images, not topology.
 compose=$(docker compose ls --all --format json |
     jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles | split(",")[0]')
-[ -n "$compose" ] && [ -f "$compose" ] || { echo "Project $project not found; refusing." >&2; exit 1; }
+if [ -z "$compose" ] || [ ! -f "$compose" ]; then
+    echo "Project $project not found; refusing." >&2
+    exit 1
+fi
 dc=(docker compose -f "$compose" -p "$project")
 if [ "$clock" = fake ]; then
     # The one deliberate overlay of the local environment: in fake-clock
@@ -212,7 +215,8 @@ if [ "$profile" = local ]; then
     # there is no registry to pull from and no digest to verify.
     step "1. Using the local image $image (built in the VM; nothing to pull)"
 else
-    step "1. Pulling $([ "$mode" = upgrade ] && echo the release || echo the previous release)"
+    if [ "$mode" = upgrade ]; then pulled="the release"; else pulled="the previous release"; fi
+    step "1. Pulling $pulled"
     docker pull --quiet "$image" >/dev/null
     docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" | grep -xF "$image" >/dev/null ||
         { echo "The pulled image does not carry $image; refusing." >&2; exit 1; }
@@ -481,7 +485,7 @@ else
 fi
 echo "    worker processes: $("${dc[@]}" top worker 2>/dev/null | grep -c 'runtime' || true)," \
     "mail-dispatch processes: $("${dc[@]}" top mail-dispatch 2>/dev/null | grep -c 'runtime' || true)"
-done_word=$([ "$mode" = upgrade ] && echo Upgraded || echo "Rolled back")
+if [ "$mode" = upgrade ]; then done_word=Upgraded; else done_word="Rolled back"; fi
 if [ "${#problems[@]}" -gt 0 ]; then
     echo "==> $done_word to $image, but NOT healthy:" >&2
     printf '    %s\n' "${problems[@]}" >&2

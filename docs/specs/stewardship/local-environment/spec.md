@@ -1034,10 +1034,11 @@ section is the contract.
 | `vm create` | Create the `parishkit-local` Lima instance with the [VM settings](#host-virtual-machine) and install Docker Engine |
 | `vm start` / `vm stop` | Start or stop the VM |
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
-| `deploy` | Rebuild from the checkout and upgrade the running deployment (below) |
+| `deploy [--schema-change]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1` |
+| `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart |
 | `reset [--seeded]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
-| `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept); the stand-in for `deploy` until it lands |
+| `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept) |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `status` | Show the VM, service health, Docker disk use and VM disk use |
@@ -1133,21 +1134,57 @@ and prints the macOS command to trust it in the login keychain. The script
 never changes trust settings itself; accepting the browser's certificate
 warning also works. A reinstall creates a new CA, which must be trusted again.
 
-**`deploy`.** It depends on the scripted Production upgrade work (#460, #461):
-that upgrade script's host part moves into a host script with a `production`
-and a `local` mode, and `deploy` runs its `local` mode. Production output MUST
-stay byte-identical. Local mode differs in exactly these ways:
+**`deploy`.** It upgrades the running deployment, data and all, to an image
+built from the checkout, by the same steps as a Production upgrade: the
+scripted upgrade's host half (`tools/stewardship-upgrade-host.sh`, which
+`tools/stewardship-upgrade.sh` uploads and runs in its `production` mode on a
+Production or Testing host) has a `local` mode, and `deploy` runs that mode
+inside the VM. One file, two modes: a `deploy` exercises the code path a
+Production upgrade takes (the deployment runbook's
+[scripted upgrade](../../../guides/stewardship-deployment-runbook.md#scripted-upgrade)),
+so the local environment rehearses it. A Production invocation MUST stay
+byte-identical: the eight-argument form is production mode, and the tests pin
+the upload and that invocation. Local mode differs in exactly these ways:
 
-- it builds the image inside the VM from the packed checkout under a local tag
-  and skips the registry push, pull and digest check;
+- it refuses unless the root carries the marker file and the deployment YAML
+  says `profile: local`, so it can never run on another deployment;
+- the image is the [local tag](#origin-proxy-and-image) built inside the VM
+  from the packed checkout a moment before (the laptop half builds it while
+  the deployment still runs, so a build failure changes nothing); nothing is
+  pulled and no registry digest is checked;
 - it uses project `parishkit-local` and the LOCAL rendering;
 - it requires the pre-upgrade backup to succeed (not best effort), accepting
-  "off-site copy not configured";
-- it skips the refusal after Production activation, since a seeded LOCAL
-  campaign is active by design;
-- it restarts services in the mode recorded by the
-  [clock-mode marker](#fake-clock), applying the fake-clock override when the
-  marker says `fake`.
+  an off-site copy state of `not_configured` (LOCAL refuses every off-site
+  target) alongside `uploaded`;
+- it keeps the services in the mode recorded by the
+  [clock-mode marker](#fake-clock): the fake-clock override is applied when
+  the marker says `fake`, and the derived fake-clock image of the new
+  application image is built after the retarget re-rendered the override;
+- it keeps the deployment's debug-logging setting (the deployment record's,
+  which `up` took from `PARISHKIT_LOCAL_DEBUG_LOGGING`) instead of
+  Production's unconditional off;
+- it probes the public origin through Caddy's own CA by the `Server` header,
+  since before the setup wizard the application answers 503 as Caddy's
+  maintenance page does.
+
+Everything else is the Production upgrade: the advisory upgrade check (an
+answer other than `t` refuses unless `--schema-change` says the change is
+expected), the background services stopped while web serves, the required
+backup, web stopped, `retarget-image` with the bulk Family send switch
+carried over, migration and grants when the check calls for them, the static
+tree refreshed in place with the replaced tree kept, web first and then
+everything else, and the checks. A deployment installed before `up` installed
+the backup recipient key gets one from `deploy` first, since the required
+backup needs it. A `deploy` refuses unless a snapshot exists
+to return to (it names the `reset` that restores each one before anything
+starts), records the new image and the one it replaced in the deployment
+record, and ends by naming both ways back: `deploy --rollback`, the
+upgrade's image-only rollback to the replaced image (refused, as in
+Production, when the schema or a grant changed in between), and
+`reset --seeded` (or `reset`), which restores a snapshot and so returns image
+and data together. Restoring a snapshot restores the images its deployment
+record names (the running image and the one a deploy replaced), since the
+record travels with the snapshot.
 
 **Safety rules.**
 

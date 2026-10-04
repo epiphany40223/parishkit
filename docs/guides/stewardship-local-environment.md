@@ -12,12 +12,16 @@ plan says which pull request brings it.
 
 **What works today (2026-10-04).** `vm`, `up`, `start`, `down`, `status`,
 `snapshot`, `reset` (including `--reinstall` and `--seeded`), `sign-in`,
-`wizard`, `seed`, `reseed` and `ca` are complete and were run end to end in
-the VM: the site answers at `https://localhost:8443` with the LOCAL banner,
-Mailpit catches every message at `http://localhost:8025`, the fake
-ParishSoft serves the synthetic parish, an unseeded deployment runs under the
-fake clock, and `seed` gives it a campaign in progress in about 17 minutes.
-Not yet: `deploy` (OPS-10.10; use `reset --reinstall`).
+`wizard`, `seed`, `reseed`, `deploy` (with `--schema-change` and
+`--rollback`) and `ca` are complete and were run end to end in the VM: the
+site answers at `https://localhost:8443` with the LOCAL banner, Mailpit
+catches every message at `http://localhost:8025`, the fake ParishSoft serves
+the synthetic parish, an unseeded deployment runs under the fake clock, `seed`
+gives it a campaign in progress in about 17 minutes, and `deploy` upgrades
+the seeded deployment to a pull request's build in about half a minute after
+the image build, with web down for about five seconds. The fake-clock
+(unseeded) deploy path, with its derived-image build, is covered by the
+stand-in tests only; it has not been run in the VM.
 
 ## What you get
 
@@ -39,7 +43,7 @@ ParishSoft is a fake service with a synthetic parish.
 - About 5 GiB of memory and 40 GiB of disk for the VM. Quit Docker Desktop
   while the VM runs.
 - A checkout of this repository. The script packs the checkout that contains
-  the directory you run it from (see [testing a pull request](#testing-a-pull-request)).
+  the directory you run it from (see [testing a pull request](#testing-a-pull-request-on-seeded-data)).
 
 If you already have a Lima instance set up by hand rather than with `vm
 create`, it needs: Docker Engine with the Compose plugin, `jq`, `rsync`,
@@ -62,10 +66,11 @@ never needs a copy of the repository.
 | `vm start` / `vm stop` | Start or stop the VM. |
 | `up [--families N]` | First-time install from this checkout (below). `N` is the synthetic parish size, default 100. Refuses if a deployment exists. |
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
-| `deploy` | Not yet: OPS-10.10 brings the scripted upgrade's local mode. Until then use `reset --reinstall`. |
+| `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
+| `deploy --rollback` | The upgrade's image-only rollback to the image the last `deploy` replaced; refused when the schema or a grant changed in between (then `reset --seeded`). |
 | `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. |
 | `reset [--seeded]` | Stop, restore that snapshot with `rsync --delete`, recreate and start the services. With no post-setup snapshot: type the instance name, and the root is removed and `up` runs again. |
-| `reset --reinstall` | Type the instance name; the new image is built from this checkout first, then the root is removed and `up` runs again from that image. Snapshots are kept. The stand-in for `deploy` until OPS-10.10. |
+| `reset --reinstall` | Type the instance name; the new image is built from this checkout first, then the root is removed and `up` runs again from that image. Snapshots are kept. |
 | `seed [--response-scale M]` | Not yet: OPS-10.07 brings the time-travel seeder. The command takes its lock, keeps `~/.parishkit-local/seed.log`, and refuses until the image carries `local-seed`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
@@ -203,9 +208,9 @@ The recipe for a seeded environment, from a checkout, is:
    `reset --seeded` restores in about half a minute.
 
 If `seed` fails, run `reseed` (it restores the post-setup snapshot and seeds
-again). Until `deploy` exists (OPS-10.10), testing a pull request on seeded
-data means reinstalling from that checkout and seeding again, since the
-snapshots belong to the image that made them.
+again). Once the seeded snapshot exists, a pull request is tested on that
+data with `deploy`, not by seeding again (see
+[testing a pull request on seeded data](#testing-a-pull-request-on-seeded-data)).
 
 `tools/stewardship-local.sh seed [--response-scale M]` gives the deployment a
 campaign in progress with realistic Family activity, as the
@@ -228,36 +233,79 @@ fake-clock mode with its services running; one that fails after it (the
 finish phase) leaves seeded data whose late-added Family may not be promoted.
 In both cases run `reseed`.
 
-## Testing a pull request
+## Testing a pull request on seeded data
 
 The script builds the checkout that contains the directory it runs from, so
-testing a pull request means running it from that pull request's checkout:
+testing a pull request means running it from that pull request's checkout.
+With a seeded deployment running (the [seeding recipe](#seeding-a-campaign),
+ending in `snapshot --seeded`), a pull request's build is on the seeded data
+in a few minutes:
 
 1. Check the pull request out, in a worktree or in place: `gh pr checkout N`
    (or `git fetch origin pull/N/head:pr-N && git worktree add ../pk.pr-N pr-N`).
-2. If the pull request predates the local environment (no
-   `tools/stewardship-local.sh` in it), make a scratch branch and merge
-   `origin/main` into it: `git switch -c scratch/pr-N && git merge origin/main`.
+2. The deployed image must contain the code the seeded data was made with,
+   plus the change. Make a scratch branch and merge the branch the seeded
+   deployment was built from into it, normally `origin/main`
+   (`git switch -c scratch/pr-N && git merge origin/main`); while the OPS-10
+   stack is unmerged, that branch is `pr/stewardship-local-deploy`. `status`
+   shows the running image's tag, which carries the commit it was built
+   from.
 3. Only tracked files are packed: `git add` any new file you are testing.
    Uncommitted edits to tracked files are included (the tag ends in
    `-dirty`).
-4. From that checkout: `tools/stewardship-local.sh reset --reinstall` (or
-   `up` on a VM with no deployment). The output names the checkout, branch
-   and commit it is building.
-5. `tools/stewardship-local.sh ca`, then trust the new certificate.
-6. `tools/stewardship-local.sh sign-in --email admin@example.test` and open
-   the link; run the setup wizard with the fake ParishSoft key and
-   organization and the mail-catcher document from the summary (or
-   `wizard`), then exercise the change. For a campaign in progress, follow
-   the [seeding recipe](#seeding-a-campaign): the pull request's image seeds
-   its own data, because snapshots belong to the image that made them.
+4. From that checkout: `tools/stewardship-local.sh deploy`. The script may
+   be run from another checkout (for example
+   `../parishkit/tools/stewardship-local.sh deploy`); it packs the checkout
+   that contains the current directory. It builds the image in the VM while
+   the deployment still runs (a build failure changes nothing), then runs
+   the Production upgrade's steps on the running deployment: the advisory
+   upgrade check, background services stopped, the required backup, web
+   stopped, `retarget-image`, migration and grants when needed, the static
+   refresh, web and then everything else, and the checks. The data, the
+   sessions and the snapshots stay; Caddy's CA stays trusted. Each step
+   prints its timing. If the pull request changes the schema or a grant,
+   the check answers `f` and the deploy refuses before anything stops;
+   re-run it as `deploy --schema-change` (Production's
+   `STEWARDSHIP_SCHEMA_CHANGE=1`) and step 4 migrates the seeded database.
+   For example, #488 (a template change) needs no `--schema-change`; #485
+   (a migration) does.
+5. Sign in (`sign-in --email admin@example.test`; existing browser sessions
+   survive) and exercise the change against the campaign in progress.
+6. Back: `tools/stewardship-local.sh reset --seeded` restores the seeded
+   snapshot, image and data together, in about half a minute. Always
+   `reset --seeded` between pull requests: it is the only way back after
+   `--schema-change`, and it keeps one pull request's data out of the next
+   one's test. For an image-only return (the Production rollback
+   rehearsal), `deploy --rollback` puts the replaced image back and keeps
+   whatever data the test wrote; it refuses when the deploy migrated, as
+   Production's does.
+
+`deploy` refuses unless a snapshot exists to return to; take `snapshot
+--seeded` first if the current data, not the snapshot's, is the return point
+you want (it replaces the seeded snapshot). Two side effects to know about:
+a deploy records a backup, so more than 24 hours later the deployment raises
+the backup-overdue CRITICAL alert (`reset --seeded` clears it, since the
+snapshot predates the backup); and because the seeded snapshot was taken
+before `up` installed backup keys, each deploy after a reset generates a
+fresh backup key pair (harmless: the snapshot restores the backup records
+too, so no key change is ever reported). Logs in the VM: the upgrade's own
+`/var/log/stewardship-upgrade-*.log` and `stewardship-rollback-*.log`, and
+the VM half's `stewardship-local-deploy-*.log` and
+`stewardship-local-rollback-*.log` around them.
+
+For a pull request that changes `up` itself (provisioning, the wizard, the
+seeder), `reset --reinstall` and the seeding recipe remain the way to test
+it, since `deploy` never reinstalls.
 
 ## Day-to-day
 
-- Changed code? `reset --reinstall` builds the new image, then wipes and
-  reinstalls, keeping any snapshot (about one to two minutes: the first image
-  build takes about a minute, a cached rebuild a few seconds, the install
-  about a minute). `reset` with no post-setup snapshot does the same.
+- Changed code? `deploy` builds the new image and upgrades the running
+  deployment in place, data kept (about half a minute after the image build,
+  web down for about five seconds); `reset --seeded` returns to the snapshot.
+  `reset --reinstall` builds the new image, then wipes and reinstalls,
+  keeping any snapshot (about one to two minutes: the first image build
+  takes about a minute, a cached rebuild a few seconds, the install about a
+  minute). `reset` with no post-setup snapshot does the same.
 - `status` shows every container's health. Service logs are in the VM:
   `limactl shell parishkit-local -- sudo docker compose -p parishkit-local logs --tail 50 web`.
 - `down` stops everything and keeps the data; `start` brings it back (also
@@ -293,10 +341,25 @@ changes the environment. The run is:
    `snapshot --seeded` and `reset --seeded`, with the
    [seed tests](../specs/stewardship/local-environment/spec.md#seeder-tests)'
    assertions read off the database and Mailpit.
+7. The deploy, on the seeded deployment: `deploy` of the current checkout
+   (the advisory check answers `t`; the per-table row counts are unchanged
+   afterwards and every service is healthy), `deploy --rollback` to the
+   replaced image, a `deploy` of a schema-changing branch refused without
+   `--schema-change` and migrating with it, `deploy --rollback` refused after
+   that migration, then `reset --seeded`.
 
 The record of the first such run (2026-10-04) is the
 [OPS-10.09 VM run record](https://github.com/epiphany40223/parishkit/issues/476#issuecomment-5976332758)
-on issue #476.
+on issue #476, as is the first `deploy` run (step 7, 2026-10-04): a deploy
+of the current checkout took 30 s with web down 5 s (advisory check `t`,
+backup recorded with `offsite: not_configured`, 20 online services healthy,
+every data table's row count unchanged); `deploy --rollback` took 31 s with
+web down 5 s, reusing the kept static tree; a build carrying the migration of
+pull request #485 was refused without `--schema-change` before anything
+stopped (22 s including the image build) and with it took 30 s, web down 8 s,
+migration and grants 3 s; `deploy --rollback` after that migration was
+refused before anything stopped; `reset --seeded` restored the seeded
+snapshot in 36 s.
 
 ## Safety reminders
 
