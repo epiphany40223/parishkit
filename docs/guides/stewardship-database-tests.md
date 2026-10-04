@@ -86,10 +86,15 @@ cluster: tests use cluster-wide roles and a shared disposable test database.
 The CI matrix isolates those resources rather than relying on concurrent pytest
 workers sharing them.
 
-Fresh schema creation now uses the
-[unreleased baseline](stewardship-schema.md), not historical development
-upgrade/downgrade cycles. Current constraint, authorization and concurrency
-tests remain mandatory.
+Fresh schema creation runs the
+[schema baseline](stewardship-schema.md) and then every forward migration, not
+historical development upgrade/downgrade cycles. Current constraint,
+authorization and concurrency tests remain mandatory.
+`test_upgrade_parity_postgresql.py` additionally builds the previous release
+tag's schema in a second database on the same cluster, migrates it with the
+current tree and compares the result with a fresh install of the current tree
+in a third database (both named after the test database and dropped by the
+test). It needs `git` with the release tags reachable from the checkout.
 
 ## Isolated parallel local coverage
 

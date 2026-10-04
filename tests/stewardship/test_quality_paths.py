@@ -98,6 +98,18 @@ def test_heavy_jobs_follow_their_group_and_validate_exports_every_group():
         assert "validate" in jobs[name]["needs"]
 
 
+def test_database_shards_check_out_the_release_history():
+    """The upgrade-parity test needs the previous release tag reachable from HEAD.
+
+    actions/checkout defaults to one commit and no tags; depth 0 fetches every
+    branch and tag, which is what ``git describe`` needs to find the tag
+    (tests/stewardship/database/test_upgrade_parity_postgresql.py).
+    """
+    checkout = workflow()["jobs"]["stewardship-postgresql-shard"]["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["fetch-depth"] == 0
+
+
 def test_skipped_shards_are_replaced_by_the_non_database_suite():
     """Shard one's complete non-database suite still runs when shards skip."""
     steps = workflow()["jobs"]["validate"]["steps"]
