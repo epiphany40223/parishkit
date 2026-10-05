@@ -1,5 +1,6 @@
 """Process-local stop/renewal coordination rejects unsafe scopes before SQL."""
 
+from dataclasses import replace
 from threading import Event
 from unittest.mock import Mock
 from uuid import uuid4
@@ -200,3 +201,49 @@ def test_inflight_check_refuses_to_run_inside_a_transaction(monkeypatch):
     monkeypatch.setattr(dispatch, "connection", SimpleNamespace(in_atomic_block=True))
     with pytest.raises(StorageInvariantError):
         execution().check_inflight()
+
+
+@pytest.mark.parametrize("renewed", [True, False])
+def test_the_renewal_loop_pulses_after_its_timing_and_outside_the_lock(
+    monkeypatch, renewed
+):
+    """ADM-13: the pulse writes the status record, so it holds no control lock
+    and is not counted in the renewal's wait_ms; no renewal, no pulse."""
+    from threading import Event as ThreadEvent
+
+    from parishkit.stewardship.jobs import lifetime
+
+    context = execution()
+    order, waits, held = [], [], []
+
+    def renew(actual):
+        """A renewal that succeeded, or found its task finished."""
+        order.append("renew")
+        return renewed
+
+    def pulse():
+        """Note whether the control lock was held; the loop would swallow an
+        assertion raised here, so the test checks the flag afterwards."""
+        free = context.control.lock.acquire(blocking=False)
+        if free:
+            context.control.lock.release()
+        held.append(not free)
+        order.append("pulse")
+
+    monkeypatch.setattr(lifetime, "renew_once", renew)
+    monkeypatch.setattr(lifetime, "_renewal_timing", lambda _: order.append("timed"))
+    monkeypatch.setattr("django.db.connections.close_all", lambda: None)
+    context = replace(context, handler=replace(context.handler, pulse=pulse))
+    stopped = ThreadEvent()
+
+    def one_pass(seconds):
+        """Let exactly one pass run; any further wait stops the loop, so a
+        regression ends the test instead of hanging it."""
+        waits.append(seconds)
+        return len(waits) > 1
+
+    monkeypatch.setattr(stopped, "wait", one_pass)
+    lifetime._renewal_loop(context, stopped)
+    assert order == (["renew", "timed", "pulse"] if renewed else ["renew", "timed"])
+    assert held == ([False] if renewed else [])
+    assert len(waits) == 2

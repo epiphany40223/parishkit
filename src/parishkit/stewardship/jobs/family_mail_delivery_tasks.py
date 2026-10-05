@@ -84,6 +84,18 @@ NEAR_DAILY_LIMIT = 100
 INFLIGHT_VERIFY_SECONDS = 1.0
 
 
+# This mail consumer process's Family mail circuit, once its handler is built,
+# so its service status record can report the sender's state (ADM-13).
+FAMILY_CIRCUIT = None
+
+
+def family_sender_state():
+    """The Family mail sender's state in this process (``DeliveryCircuit``)."""
+    if FAMILY_CIRCUIT is None:
+        return "running", None
+    return FAMILY_CIRCUIT.sender_state()
+
+
 class DeliveryCircuit:
     """Bound shared-outage probes across Families within this worker lifetime.
 
@@ -285,6 +297,36 @@ class DeliveryCircuit:
         with self.lock:
             return max(0.0, self.limit_until - monotonic())
 
+    def sender_state(self):
+        """This sender's state and seconds until it ends, for its status record.
+
+        One of ``service_status_models.SENDER_STATES``: halted (a SYSTEMIC
+        stop, here or in the other consumer, that only a restart lifts),
+        paused after an outage (until its cooldown ends), held at Gmail's
+        sending limit (until the hold ends), waiting for the daily limit, or
+        running. The seconds are ``None`` when the end is not known. Display
+        only (ADM-13): nothing decides anything from it, and it changes
+        nothing. The other consumer's stop marker is only looked at here;
+        this circuit follows it (and logs that) at its next admission check.
+        """
+        try:
+            shared = self.shared_stop is not None and self.shared_stop.exists()
+        except OSError:
+            shared = False
+        with self.lock:
+            now = monotonic()
+            if shared or (
+                self.halted.is_set() and (self.stopped or self.recovery_seconds is None)
+            ):
+                return "halted", None
+            if self.halted.is_set():
+                return "outage_paused", max(0.0, self.recover_after - now)
+            if self.limit_until > now:
+                return "gmail_held", self.limit_until - now
+            if self.capped:
+                return "daily_limit", None
+            return "running", None
+
     def observe(self, health):
         """Return true when a shared failure newly stops this sending run."""
         with self.lock:
@@ -483,6 +525,9 @@ def delivery_handler(
         systemic_stops=True,
         shared_stop=shared_stop,
     )
+    if not scheduler:
+        global FAMILY_CIRCUIT
+        FAMILY_CIRCUIT = circuit
     # One batched private helper for this worker's Family messages (#284). It
     # spans Tasks but holds no lease or database state; see FamilyMailSession.
     session = FamilyMailSession() if batched and not scheduler else None

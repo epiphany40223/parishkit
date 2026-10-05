@@ -96,13 +96,18 @@ def maintain_source(execution, claim):
 
 
 def renew_once(execution):
-    """Renew task/source atomically with finite SQL waits and no external work."""
+    """Renew task/source atomically with finite SQL waits and no external work.
+
+    Returns whether it renewed (a finished task is not renewed). The caller
+    then publishes liveness with ``pulse``, after this has released the
+    control lock.
+    """
     from parishkit.stewardship.source.leases import renew_source
 
     control = execution.control
     with control.lock:
         if control.finished.is_set():
-            return
+            return False
         control.check(allow_drain=True)
         with transaction.atomic():
             with connection.cursor() as cursor:
@@ -112,11 +117,29 @@ def renew_once(execution):
                 execution.heartbeat()
                 if control.source_claim is not None:
                     renew_source(control.source_claim)
-        # A long finite source read blocks Celery's solo-loop timer. Publish
-        # process liveness only after successful independent SQL renewal, never
-        # from an unconditional heartbeat thread or inside its transaction.
-        if execution.handler.pulse is not None:
-            execution.handler.pulse()
+    return True
+
+
+def pulse(execution):
+    """Publish process liveness after a successful renewal.
+
+    A long finite source read blocks Celery's solo-loop timer. Liveness is
+    published only after successful independent SQL renewal, never from an
+    unconditional heartbeat thread or inside its transaction. It runs
+    outside the control lock and after the renewal's timing: the pulse also
+    writes the process's service status record (ADM-13), which must neither
+    hold up the task's own checks of the lock nor count as renewal wait.
+
+    Time budget: the renewal thread's worst pass is about 21 seconds, inside
+    RENEWAL_DRAIN_SECONDS (30): the renewal's own 2-second lock and
+    5-second statement limits, then this pulse's status write (1-second
+    lock and 2-second statement limits) and, if that times out, its timeout
+    entry, which may wait up to five seconds for the process's one shared
+    timeout-log slot (audit.timeouts.WRITER_WAIT_SECONDS) before a write
+    on a connection with two-second connect and statement limits.
+    """
+    if execution.handler.pulse is not None:
+        execution.handler.pulse()
 
 
 def _renewal_loop(execution, done):
@@ -141,7 +164,7 @@ def _renewal_loop(execution, done):
             started = monotonic()
             pause = PULSE_SECONDS
             try:
-                renew_once(execution)
+                renewed = renew_once(execution)
             except AuthorityChanging:
                 # Kept at DEBUG: a lost-lease investigation can see that a
                 # renewal met an activation, without a line per settings edit.
@@ -152,6 +175,8 @@ def _renewal_loop(execution, done):
                 continue
             else:
                 _renewal_timing(started)
+                if renewed:
+                    pulse(execution)
             finally:
                 connections.close_all()
             if execution.control.finished.is_set():

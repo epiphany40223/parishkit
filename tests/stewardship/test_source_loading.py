@@ -14,13 +14,17 @@ from parishkit.stewardship.source.corpus import KINDS
 from parishkit.stewardship.source.loading import (
     DERIVED_COUNTS,
     DROP_OVERRIDE_VARIABLE,
+    TREND_COLLECTIONS,
+    CountCheck,
     DestructiveSourceChange,
+    check_source_counts,
+    count_checks,
     derived_baseline,
+    derived_checks,
     derived_counts,
     load_full_source,
     maximum_drop_percent,
-    validate_count_trend,
-    validate_derived_trend,
+    refuse_drops,
 )
 from parishkit.stewardship.source.windows import RefreshWindow
 
@@ -59,6 +63,28 @@ def provider_pages(*, family_change=None, member_change=None):
         page([]),  # ministry types
         [{"fundId": 9, "name": "Offertory", "active": True}],
     ]
+
+
+def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=25):
+    """The record-count half of the loader's check, refused on its own."""
+    checks = count_checks(
+        counts,
+        previous_full_counts=previous_full_counts,
+        maximum_drop_percent=maximum_drop_percent,
+    )
+    empty = counts is None or counts["family"] == 0 or counts["member"] == 0
+    refuse_drops(checks, empty=empty)
+
+
+def validate_derived_trend(counts, *, baseline_counts, maximum_drop_percent=25):
+    """The eligibility-count half of the loader's check, refused on its own."""
+    refuse_drops(
+        derived_checks(
+            counts,
+            baseline_counts=baseline_counts,
+            maximum_drop_percent=maximum_drop_percent,
+        )
+    )
 
 
 def counts(**values):
@@ -373,3 +399,107 @@ def test_stable_record_counts_with_collapsed_eligibility_are_refused(
             previous_full_counts=good.counts,
             previous_derived_counts=good.evidence["derived_counts"],
         )
+
+
+def check(before, after, **limit):
+    """Run the whole check on full record and derived counts; return the checks."""
+    return check_source_counts(
+        before["records"] if after is None else after["records"],
+        before["derived"] if after is None else after["derived"],
+        previous_full_counts=before["records"],
+        previous_derived_counts=before["derived"],
+        maximum_drop_percent=limit.get("limit", 25),
+    )
+
+
+def measured(records=None, **derived):
+    """Record counts (``counts()`` with changes) and derived counts (default 100)."""
+    return {
+        "records": counts(**(records or {})),
+        "derived": dict.fromkeys(DERIVED_COUNTS, 100) | derived,
+    }
+
+
+def test_every_count_is_checked_and_carried_by_the_refusal():
+    """ADM-13: the refusal carries every count, not only the first that fell."""
+    before = measured({"family": 100, "ministry": 40})
+    after = measured(
+        {"family": 70, "ministry": 0},
+        email_eligible_families=50,
+        valid_email_contacts=80,
+    )
+    with pytest.raises(DestructiveSourceChange, match="count loss") as refused:
+        check(before, after)
+    checks = refused.value.checks
+    assert [item.measure for item in checks] == [*TREND_COLLECTIONS, *DERIVED_COUNTS]
+    assert {item.measure for item in checks if item.failed} == {
+        "family",
+        "ministry",
+        "email_eligible_families",
+    }
+    # The first failing count still names the refusal, as before.
+    assert refused.value.loss == ("family", 100, 70)
+    assert CountCheck("valid_email_contacts", 100, 80, 25, False) in checks
+    assert CountCheck("ministry", 40, 0, 25, True) in checks
+    # Growth and a load within the limit pass, and return their checks.
+    passed = check(before, measured({"family": 120, "ministry": 30}))
+    assert not any(item.failed for item in passed)
+    assert len(passed) == len(TREND_COLLECTIONS) + len(DERIVED_COUNTS)
+
+
+def test_an_eligibility_refusal_also_carries_the_record_counts():
+    """Records within the limit are recorded with an eligibility collapse."""
+    before = measured()
+    with pytest.raises(DestructiveSourceChange, match="eligibility") as refused:
+        check(before, measured(active_head_families=0))
+    assert refused.value.loss == ("active_head_families", 100, 0)
+    assert [item.measure for item in refused.value.checks if item.failed] == [
+        "active_head_families"
+    ]
+    assert {item.measure for item in refused.value.checks} >= set(TREND_COLLECTIONS)
+
+
+def test_an_empty_load_is_refused_with_its_counts_even_at_100_percent():
+    """No Families stays refused; its counts are still carried for the record."""
+    before = measured()
+    with pytest.raises(DestructiveSourceChange, match="empty") as refused:
+        check(before, measured({"family": 0}), limit=100)
+    assert refused.value.loss == ("empty", None, 0)
+    assert not any(item.failed for item in refused.value.checks)
+    assert CountCheck("family", before["records"]["family"], 0, 100, False) in (
+        refused.value.checks
+    )
+
+
+def test_a_first_load_records_counts_without_a_baseline():
+    """With nothing to compare with, every check has no before and none fails."""
+    checks = check_source_counts(
+        counts(),
+        dict.fromkeys(DERIVED_COUNTS, 3),
+        previous_full_counts=None,
+        previous_derived_counts=None,
+        maximum_drop_percent=25,
+    )
+    assert all(item.before is None and not item.failed for item in checks)
+    assert len(checks) == len(TREND_COLLECTIONS) + len(DERIVED_COUNTS)
+
+
+def test_the_refusal_keeps_only_count_checks():
+    """Anything but a CountCheck passed to the error is dropped, never logged."""
+    error = DestructiveSourceChange(
+        "PRIVATE", measure="family", before=2, after=0, checks=["PRIVATE", None]
+    )
+    assert error.checks == ()
+
+
+def test_an_empty_load_is_refused_before_the_eligibility_baseline_is_read():
+    """As before ADM-13: emptiness wins over a malformed derived baseline."""
+    with pytest.raises(DestructiveSourceChange, match="empty") as refused:
+        check_source_counts(
+            counts(member=0),
+            dict.fromkeys(DERIVED_COUNTS, 0),
+            previous_full_counts=counts(),
+            previous_derived_counts={"portal_eligible_families": 1},
+            maximum_drop_percent=25,
+        )
+    assert [item.measure for item in refused.value.checks] == list(TREND_COLLECTIONS)

@@ -684,8 +684,12 @@ The cycle:
    is refused, even from one or two. An operator accepts a known large change
    for one refresh by raising the threshold, as the
    [launch runbook](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
-   describes. The refusal's log line names the count and its before and
-   after values, never record data.
+   describes. Every count is checked before the load is refused, and the
+   refused attempt records all of them, failing or not, with their before
+   and after values and the limit
+   ([accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once),
+   ADM-13). The refusal's log line names the first count that fell and its
+   before and after values, never record data.
 5. Builds derived eligibility, roster, giving, and reconciliation data.
 6. Promotes all staged data atomically as defined by the
    [data specification](../data/spec.md#source-snapshot).

@@ -48,6 +48,9 @@ FROZEN = {
     "0006_due_work_context.sql": (
         "f9ac6212009daec6ccaeb2bdfa6df7aa07ac44ff27487d519dbba3dc75147e13"
     ),
+    "0007_system_health_records.sql": (
+        "cbea01108beda94c69f14b5d76c0817ab3a6a50df3bc552c6b1cf1fcc74a0943"
+    ),
 }
 
 

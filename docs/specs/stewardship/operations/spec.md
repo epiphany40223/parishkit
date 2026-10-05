@@ -841,7 +841,10 @@ backup or database-field encryption requirements.
 The example Families that a refused large ParishSoft change records (DUID
 and directory name only) are deleted under the rules of
 [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
-(ADM-13), at most seven days after the refusal by default.
+(ADM-13), at most seven days after the refusal by default. The worker's
+hourly housekeeping removes the
+[service status record](../admin-portal/spec.md#service-status-records) of
+a process that has not reported for a day.
 
 ParishSoft HTTP cache follows configured freshness and bounded size. Upload
 staging, failed wizard staging, old static bundles, expired sessions, worker
@@ -916,10 +919,19 @@ connection; an entry that waits more than five seconds for its turn is not
 written durably, and only the process log records it, with that first
 line and a WARNING `task_timed_out` for `timeout_log_slot` giving that
 limit and the wait (see the
-[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)). An online
-service's `startup_database_wait` timeout is the exception to the durable
-entry: it goes to the process log only, because the database is what is
-unavailable (see [online service startup](#online-service-startup)).
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
+A [service status record](../admin-portal/spec.md#service-status-records)
+write stopped by its own statement or lock limit is a WARNING
+`task_timed_out` that names no task, even when the write ran on a task's
+thread, because no task was stopped. Each one is recorded; a process tries
+the write at most once a minute, which spaces them. There are two
+exceptions to the durable entry, which go to the process log only:
+
+- an online service's `startup_database_wait` timeout, because the database
+  is what is unavailable (see [online service startup](#online-service-startup));
+- a configuration or credential installer's service status write timeout,
+  because the installers' logins have no operational-log grant, and the
+  record is for display only, so it does not justify giving them one.
 
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
 database, migrations, Valkey limiter store, and configuration needed for the

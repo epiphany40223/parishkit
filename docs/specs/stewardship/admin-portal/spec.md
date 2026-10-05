@@ -3274,7 +3274,15 @@ requires today.
    code) to check every record and eligibility count, and to record all of
    them with the refused run: each count's before value, after value and
    limit, and which ones failed. These are counts only, never parish data
-   (the examples below are separate).
+   (the examples below are separate). The worker writes them, one
+   `stewardship_source_drop_count` row per count, in the transaction that
+   rejects the refused attempt; the rows are append-only, the web login
+   reads them, and their SQL guard admits only the worker, only for a
+   rejected attempt, and only a failure flag that follows the loss rule. A
+   quick update that falls too far is not recorded: it falls back to a
+   full refresh, as before, which records its counts if it is refused too.
+   A refresh refused because it has no Families or no Members records every
+   count as well, each marked failed by the same rule as any other refusal.
 2. **Example Families** ([decision 4](#system-health-decisions)). When it
    records a refused full refresh, the worker also records up to five
    example Families for each failing count that concerns Families, Members
@@ -3433,6 +3441,27 @@ not have today, which PR 1's security review checks. A record holds no
 host name, address, message, recipient or credential. Housekeeping removes
 rows from processes that have not reported for a day. A process whose
 record is more than three minutes old is shown as not running.
+
+The record is a `stewardship_service_status` row per process, keyed by an
+identity the process makes when it starts, so a restart starts a new row and
+leaves the old one until housekeeping removes it. It names the service
+(`web`, `worker`, `scheduler`, `mail-dispatch`, `config-installer` or
+`credential-installer`, with the credential installer's target) and the
+process (`main`, the worker's `source` process or mail dispatch's second
+consumer, `mail`). Each web worker process reports on its own. The SQL guard
+sets the start and report times, and when the current sender state began,
+from the database clock, keeps each row's identity and version fixed, and
+lets only the worker's hourly housekeeping delete a row, once it has not
+reported for a day. A process writes its record only on a connection it
+already holds, or from an idle moment on a short connection of its own,
+never inside other work's transaction. A write stopped by its own two-second
+statement or one-second lock limit is recorded as a timeout under the
+[timeout rule](../operations/spec.md#observability-and-health), naming no
+task; an installer's goes to the process log only, as that rule's listed
+exception. Any other failed write is logged once (`service_status_failed`).
+Neither stops the process. The halt identity and kind are added by
+[clear a halted mail sender](#clear-a-halted-mail-sender) (PR 4), which
+defines them.
 
 The record is for display: no sending, refresh or backup decision reads it,
 so a lost write can only make the page out of date. The one action check

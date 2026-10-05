@@ -657,7 +657,10 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
   `user_removed`, `recovery`), recording `automation_session_ended` and a
   notice for each;
 - resolves the open automation incidents that have been quiet for an hour
-  (see [notifications](#notifications)).
+  (see [notifications](#notifications));
+- deletes the
+  [service status records](../admin-portal/spec.md#service-status-records)
+  of processes that have not reported for a day (ADM-13).
 
 The worker's grants, through the database grant manifest, are what
 `cleanup_admin_sessions` and the liveness check use, confirmed against the code

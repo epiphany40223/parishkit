@@ -159,6 +159,7 @@ def test_restricted_scheduler_can_scan_before_any_campaign_exists(tmp_path):
 
 def test_background_liveness_pulse_follows_committed_restricted_renewal(tmp_path):
     """A long import reports liveness only after its real task lease is renewed."""
+    from parishkit.stewardship.jobs.lifetime import pulse as publish
     from parishkit.stewardship.jobs.lifetime import renew_once
 
     from .test_source_attempts_postgresql import setup
@@ -170,10 +171,15 @@ def test_background_liveness_pulse_follows_committed_restricted_renewal(tmp_path
     def pulse():
         """The local heartbeat is outside the committed database transaction."""
         assert not connection.in_atomic_block
+        # And outside the control lock (ADM-13: it writes the status record).
+        assert execution.control.lock.acquire(blocking=False)
+        execution.control.lock.release()
         assert TaskRun.objects.get(pk=execution.claim.run_id).version == before + 1
         calls.append(True)
 
     execution = replace(execution, handler=replace(execution.handler, pulse=pulse))
     with task_login(ServiceRole.WORKER):
-        renew_once(execution)
+        assert renew_once(execution)
+        assert calls == []
+        publish(execution)
     assert calls == [True]

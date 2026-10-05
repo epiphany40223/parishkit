@@ -31,6 +31,9 @@ SOURCE_READ = frozenset(
         "stewardship_recipient_refusal",
         "stewardship_recipient_resolution",
         "stewardship_source_compaction",
+        # Every count a refused load was checked on (ADM-13), written with
+        # the refusal; read back for the insert's returned creation time.
+        "stewardship_source_drop_count",
     }
 )
 
@@ -51,6 +54,9 @@ SOURCE_APPEND = frozenset(
         "stewardship_campaign_credentials",
         "stewardship_recipient_resolution",
         "stewardship_source_compaction",
+        # Every count a refused load was checked on (ADM-13), written with
+        # the refusal; read back for the insert's returned creation time.
+        "stewardship_source_drop_count",
     }
 )
 

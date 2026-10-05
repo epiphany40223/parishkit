@@ -122,6 +122,11 @@ WEB_READ_TABLES = frozenset(
         # Hosted files (#346): the library and where each file is used.
         "stewardship_hosted_file",
         "stewardship_hosted_file_use",
+        # System health (ADM-13): what each online process last reported
+        # (web also writes its own, see service_status_grants), and every
+        # count a refused ParishSoft load was checked on (counts only).
+        "stewardship_service_status",
+        "stewardship_source_drop_count",
     ]
 )
 
@@ -279,6 +284,10 @@ def runtime_grants(role, *, target=None):
     from .accounts.secret_models import SECRET_TARGETS
 
     role = _identity_role(role, target)
+    from .jobs.service_status_grants import (
+        add_service_status_housekeeping_grants,
+        add_service_status_writer_grants,
+    )
 
     if role is ServiceRole.MAIL_DISPATCH:
         from .accounts.setup_mail_grants import mail_runtime_grants
@@ -289,6 +298,7 @@ def runtime_grants(role, *, target=None):
         columns.setdefault("stewardship_postclose_resolution", {}).setdefault(
             "SELECT", set()
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
+        add_service_status_writer_grants(tables, columns)
         return tables, columns
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         from .jobs.grants import task_runtime_grants
@@ -301,6 +311,9 @@ def runtime_grants(role, *, target=None):
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
         if role is ServiceRole.WORKER:
             tables.setdefault("stewardship_delivery_pause_hold", set()).add("SELECT")
+            add_service_status_housekeeping_grants(tables, columns)
+        else:
+            add_service_status_writer_grants(tables, columns)
         return tables, columns
     if role is ServiceRole.CONFIG_INSTALLER:
         return {table: set(grants) for table, grants in CONFIGURATION_GRANTS.items()}, {
@@ -319,6 +332,8 @@ def runtime_grants(role, *, target=None):
         columns = {
             table: {"SELECT": set(names)} for table, names in installer_metadata.items()
         }
+        # The installer's new write grant (ADM-13): its own status record.
+        add_service_status_writer_grants(tables, columns)
         return tables, columns
     if role in {ServiceRole.BOOTSTRAP, ServiceRole.ADMIN_RECOVERY}:
         from .runtime_database import offline_columns, offline_grants
@@ -486,6 +501,7 @@ def runtime_grants(role, *, target=None):
         from .accounts.automation_grants import add_automation_web_grants
 
         add_automation_web_grants(tables, columns)
+        add_service_status_writer_grants(tables, columns, reads_table=True)
         # Verified clearance is append-only and independently admitted by SQL;
         # its trigger owns the one-Family eligibility effect, not the web login.
         tables["stewardship_recipient_refusal"] = {"SELECT"}

@@ -477,7 +477,7 @@ Scope and dependencies: [ADM-13 work package](../../plans/stewardship/admin-port
 Specification: [System health](../../specs/stewardship/admin-portal/spec.md#system-health).
 
 - [x] ADM-13.00 — PR 0: specify the System health page and its actions, record the Administrator's decisions, and add this package and its checklist.
-- [ ] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
+- [x] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
 - [ ] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
 - [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
@@ -491,4 +491,14 @@ Administrator's decisions), links from the operations and automation
 specifications, the corrected SYSTEMIC outcome wording in the Family mail
 dispatch guide and launch runbooks, this package, its checklist and the
 acceptance-manifest owners, checked by Markdown lint and
-`tests/stewardship/test_traceability.py`.
+`tests/stewardship/test_traceability.py`. ADM-13.01 adds the frozen forward
+migration `0007_system_health_records.sql` (`stewardship_jobs.0007`, with
+the state-only `stewardship_source.0003`): the service status records with
+their per-login grants (including the installers' new write grant) and the
+reporting in every online process, and the drop counts that the loader now
+checks in full and the worker records with each refused attempt, checked by
+`tests/stewardship/test_service_status.py`,
+`tests/stewardship/test_source_loading.py`,
+`tests/stewardship/database/test_system_health_records_postgresql.py`,
+`tests/stewardship/database/test_automation_maintenance_postgresql.py`, the
+migration-file and upgrade-parity tests and the regenerated schema baseline.

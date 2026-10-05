@@ -151,6 +151,7 @@ def record_timeout(
     outcome=None,
     settings_dict=None,
     process_log=True,
+    bind_task=True,
 ):
     """Persist one timeout entry on a private connection; never raise.
 
@@ -162,11 +163,14 @@ def record_timeout(
     its owning thread's database login. ``process_log=False`` is for a
     caller that has already logged this timeout's process-log line with
     the same facts under its own documented event (backup_drive).
+    ``bind_task=False`` records no task when none is given, for work that
+    runs on a task's thread but belongs to no task (a service status
+    record write during a bulk send's heartbeat, ADM-13).
     """
     try:
         if event not in TIMEOUT_EVENTS or level not in LEVELS:
             raise ValueError("A timeout entry needs a reviewed event and level.")
-        if task_id is None:
+        if task_id is None and bind_task:
             # A helper deep inside a task names the task its worker bound.
             task_id = current_task()
         if task_id is not None and not isinstance(task_id, UUID):

@@ -18,9 +18,8 @@ from .cursors import delta_dates
 from .loading import (
     DEFAULT_MAXIMUM_DROP_PERCENT,
     SourceLoad,
+    check_source_counts,
     derived_counts,
-    validate_count_trend,
-    validate_derived_trend,
 )
 from .windows import RefreshWindow
 
@@ -179,15 +178,15 @@ def load_delta_source(
         )
         corpus = _replace(base, updated, households, as_of)
         counts = {kind: len(rows) for kind, rows in corpus.items()}
-        validate_count_trend(
-            counts,
-            previous_full_counts=previous_full_counts,
-            maximum_drop_percent=maximum_drop_percent,
-        )
         derived = derived_counts(corpus)
-        validate_derived_trend(
+        # A refusal here becomes ChangeFeedIncomplete below (it is a
+        # ValueError), so a delta that drops too far falls back to a full
+        # refresh, which records the counts if it is refused too.
+        check_source_counts(
+            counts,
             derived,
-            baseline_counts=previous_derived_counts,
+            previous_full_counts=previous_full_counts,
+            previous_derived_counts=previous_derived_counts,
             maximum_drop_percent=maximum_drop_percent,
         )
     except (ConfigError, KeyError, TypeError, ValueError, OverflowError):

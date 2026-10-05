@@ -51,9 +51,10 @@ def pulse_notice(monkeypatch):
 
     def renew(execution):
         """Keep the production renewal, only observe its successful completion."""
-        original(execution)
+        renewed = original(execution)
         threads.append(get_ident())
         notice.set()
+        return renewed
 
     monkeypatch.setattr(lifetime, "PULSE_SECONDS", 0.02)
     monkeypatch.setattr(lifetime, "renew_once", renew)

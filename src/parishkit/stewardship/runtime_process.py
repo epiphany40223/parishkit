@@ -77,6 +77,7 @@ def admitted_worker_started(worker):
         from django.conf import settings
 
         from .runtime_auth_health import PeriodicAuthenticationHealth
+        from .service_status import ServiceStatusReporter
 
         publish_worker_receipts(worker)
         observer = PeriodicAuthenticationHealth(
@@ -84,6 +85,8 @@ def admitted_worker_started(worker):
             check=settings.STEWARDSHIP_WEB_LEASE.check,
             active=lambda: worker.alive,
             retire=lambda: worker.handle_exit(signal.SIGTERM, None),
+            # Each web worker's service status record (ADM-13).
+            status=ServiceStatusReporter(ServiceRole.WEB.value),
         )
         worker.stewardship_auth_health = observer
         observer.start()
@@ -310,6 +313,9 @@ def serve_configuration_installer(configuration, lease):
     from .accounts.configuration_service import ConfigurationInstaller
 
     installer = ConfigurationInstaller.from_configuration(configuration)
+    from .service_status import ServiceStatusReporter
+
+    status = ServiceStatusReporter(ServiceRole.CONFIG_INSTALLER.value)
 
     def run_once():
         """The queue selects opaque identities, never caller-specified file paths."""
@@ -323,7 +329,7 @@ def serve_configuration_installer(configuration, lease):
         with installer_request(identifier):
             installer.run_request(identifier)
 
-    return serve_installer_loop(run_once, lease)
+    return serve_installer_loop(run_once, lease, status=status)
 
 
 def serve_credential_installer(configuration, lease):
@@ -365,7 +371,12 @@ def serve_credential_installer(configuration, lease):
         ),
     )
     from .accounts.handoff_discovery import publish_handoff
+    from .service_status import ServiceStatusReporter
 
+    status = ServiceStatusReporter(
+        ServiceRole.CREDENTIAL_INSTALLER.value,
+        target=configuration.credential_target,
+    )
     lease.check()
     publish_handoff(installer.files.private)
 
@@ -413,6 +424,7 @@ def serve_credential_installer(configuration, lease):
         run_once,
         lease,
         pending=installer_pending(installer, configuration.credential_target),
+        status=status,
     )
 
 
@@ -441,11 +453,15 @@ def installer_pending(installer, target):
     return lambda: any(check() for check in checks)
 
 
-def serve_installer_loop(run_once, lease, *, pending=None):
+def serve_installer_loop(run_once, lease, *, pending=None, status=None):
     """Share bounded retry, signal restoration and socket cleanup across installers.
 
     ``pending``, when given, is the installer's cheap work check; see
-    bounded_loop for how it lets an idle installer back off.
+    bounded_loop for how it lets an idle installer back off. ``status`` (a
+    ``service_status.ServiceStatusReporter``) records the installer's service
+    status at startup and with the heartbeat on every wake (ADM-13), on the
+    loop's kept connection. It writes at most once a minute, never raises
+    and touches neither the pending check nor the backoff.
     """
     stop = StopEvent()
 
@@ -459,13 +475,23 @@ def serve_installer_loop(run_once, lease, *, pending=None):
     try:
         from .installer_health import publish_heartbeat
 
+        def heartbeat():
+            """Publish liveness, then the status record when it is due.
+
+            The write uses the loop's kept connection (opening one only if
+            the loop has none), inside its own short transaction.
+            """
+            publish_heartbeat()
+            if status is not None:
+                status.report(connect=True)
+
         emit(Event.STARTUP_VALIDATED)
-        publish_heartbeat()
+        heartbeat()
         bounded_loop(
             run_once,
             lease=lease,
             stop=stop,
-            heartbeat=publish_heartbeat,
+            heartbeat=heartbeat,
             pending=pending,
         )
     finally:
@@ -709,6 +735,13 @@ def split_mail(configuration):
     )
 
 
+def _family_sender():
+    """This mail consumer's Family mail sender state (imported once admitted)."""
+    from .jobs.family_mail_delivery_tasks import family_sender_state
+
+    return family_sender_state()
+
+
 def serve_background(configuration, lease, *, source=False, mail=False):
     """Assemble one admitted queue process and retain exclusion through final drain.
 
@@ -742,6 +775,13 @@ def serve_background(configuration, lease, *, source=False, mail=False):
     # Both mail processes consume all of mail dispatch's queues.
     this_sibling = SourceConsumer if source else MailConsumer if mail else None
     stop = StopEvent()
+    from .service_status import ServiceStatusReporter
+
+    status = ServiceStatusReporter(
+        role.value,
+        process="source" if source else "mail" if mail else "main",
+        sender=_family_sender if role is ServiceRole.MAIL_DISPATCH else None,
+    )
     if role is ServiceRole.MAIL_DISPATCH and not mail:
         from .installer_health import MAIL_SYSTEMIC_STOP, clear_stopped
 
@@ -751,11 +791,21 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             clear_stopped(MAIL_SYSTEMIC_STOP)
 
     def heartbeat():
-        """Long task renewal and idle loop progress both retain lifecycle evidence."""
+        """Long task renewal and idle loop progress both retain lifecycle evidence.
+
+        The status record is written here only on a connection this thread
+        already holds (a lease renewal's, the scheduler's or a bulk send's),
+        never on a timer thread's new one; see ServiceStatusReporter.report.
+        """
         lease.check()
         publish_heartbeat(
             None if this_sibling is None else this_sibling.heartbeat_path()
         )
+        status.report()
+
+    def idle_status():
+        """Write the status record from an idle consumer (its own connection)."""
+        status.report(connect=True)
 
     def stopping(signum, frame):
         """Signals request drainage; no provider work or SQL runs in this handler."""
@@ -770,6 +820,9 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         assembled = configure_background(
             configuration, stop=stop, heartbeat=heartbeat, queues=queues
         )
+        # The process is admitted: record that it started (this thread's
+        # admission connection).
+        status.report(connect=True)
         # Model-dependent runtime owners may be imported only after the fresh
         # process has configured Django and admitted its SQL identity.
         from .accounts.automation_maintenance import MaintenanceProducer
@@ -804,7 +857,11 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             # container start and are only ever recreated together.
             emit(Event.STARTUP_VALIDATED)
             return serve_consumer(
-                assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
+                assembled.broker,
+                lease=lease,
+                stop=stop,
+                heartbeat=heartbeat,
+                idle=idle_status,
             )
         publish_single_process_receipts(configuration, assembled.receipts)
         emit(Event.STARTUP_VALIDATED)
@@ -819,12 +876,20 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                     drain_seconds=configuration.runtime_budget.drain_seconds
                 )
             receipts = dict(assembled.receipts)
+
+            def idle():
+                """Acknowledge rotations, then refresh the status record."""
+                try:
+                    acknowledge_rotations(configuration, receipts)
+                finally:
+                    idle_status()
+
             return serve_consumer(
                 assembled.broker,
                 lease=lease,
                 stop=stop,
                 heartbeat=heartbeat,
-                idle=lambda: acknowledge_rotations(configuration, receipts),
+                idle=idle,
                 companion=companion,
             )
         producer = SourceProducer(uuid4())
