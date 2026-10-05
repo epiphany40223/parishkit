@@ -11,6 +11,7 @@ from parishkit.stewardship.audit.log_rows import (
     EVENTS,
     LEVELS,
     LogQuery,
+    NothingShown,
     audit_row,
     log_table,
     merge,
@@ -22,13 +23,19 @@ NOW = datetime(2026, 9, 20, 12, 0, 0, 123456, tzinfo=UTC)
 IDENTIFIER = "1abcdef0-0000-4000-8000-000000000000"
 
 
-def test_debug_is_excluded_until_chosen_and_an_empty_choice_means_none():
-    """The first visit's default differs from a submitted form with no tick."""
-    assert LogQuery.parse({}).levels == LEVELS[1:]
+def test_debug_is_excluded_until_chosen_and_a_form_shows_what_it_ticks():
+    """The first visit shows every level but Debug, plus audit records; a
+    submitted form shows exactly its ticks and must tick at least one (#601)."""
+    first = LogQuery.parse({})
+    assert first.levels == LEVELS[1:] and first.audits
     assert "DEBUG" not in LogQuery().levels
     chosen = LogQuery.parse({"applied": "yes", "debug": "yes", "error": "yes"})
-    assert chosen.levels == ("DEBUG", "ERROR")
-    assert LogQuery.parse({"applied": "yes"}).levels == ()
+    assert chosen.levels == ("DEBUG", "ERROR") and not chosen.audits
+    audit_only = LogQuery.parse({"applied": "yes", "audit": "yes"})
+    assert audit_only.levels == () and audit_only.audits
+    # Refused with its own exception, so the view can say what to do.
+    with pytest.raises(NothingShown):
+        LogQuery.parse({"applied": "yes"})
     # Paging keeps the applied filters; the filter fields never carry the
     # snapshot, page, size or sort, so applying filters starts afresh.
     paged = LogQuery.parse(
@@ -43,7 +50,7 @@ def test_debug_is_excluded_until_chosen_and_an_empty_choice_means_none():
     )
     assert paged.snapshot == NOW and (paged.page_number, paged.page_size) == (3, 25)
     assert paged.oldest and paged.order == "oldest"
-    assert paged.form_values() == {"applied": "yes", "error": "yes", "source": "both"}
+    assert paged.form_values() == {"applied": "yes", "error": "yes"}
     fresh = LogQuery()
     assert fresh.snapshot is None and (fresh.page_number, fresh.page_size) == (1, 50)
     assert fresh.order == "newest" and not fresh.oldest
@@ -54,7 +61,8 @@ def test_query_accepts_only_the_closed_bounded_grammar():
     query = LogQuery.parse(
         MultiValueDict(
             {
-                "source": ["audit"],
+                "applied": ["yes"],
+                "audit": ["yes"],
                 "event": ["dashboard_viewed"],
                 "actor": [IDENTIFIER],
                 "correlation": [IDENTIFIER],
@@ -65,8 +73,9 @@ def test_query_accepts_only_the_closed_bounded_grammar():
             }
         )
     )
-    assert (query.source, query.event, query.actor) == (
-        "audit",
+    assert (query.audits, query.levels, query.event, query.actor) == (
+        True,
+        (),
         "dashboard_viewed",
         IDENTIFIER,
     )
@@ -79,6 +88,11 @@ def test_query_accepts_only_the_closed_bounded_grammar():
     assert LogQuery.parse({"event": "a" * 64}).event == "a" * 64
     for values in (
         {"source": "everything"},
+        {"audit": "on", "applied": "yes"},
+        {"audit": "yes"},
+        # The retired Source and its replacement are never sent together.
+        {"source": "audit", "audit": "yes", "applied": "yes"},
+        {"applied": "yes", "source": "operational"},
         {"event": "drop table"},
         {"event": "Dashboard_Viewed"},
         {"event": "admin%"},
@@ -118,6 +132,33 @@ def test_query_accepts_only_the_closed_bounded_grammar():
             LogQuery.parse(values)
     with pytest.raises(ValueError):
         LogQuery.parse(MultiValueDict({"source": ["audit", "both"]}))
+
+
+@pytest.mark.parametrize(
+    ("values", "levels", "audits"),
+    [
+        # The old "Same campaign" action and an old form's "Audit only".
+        ({"source": "audit", "campaign": IDENTIFIER}, (), True),
+        ({"applied": "yes", "info": "yes", "source": "audit"}, (), True),
+        # The old critical-events banner: Critical, operational only.
+        (
+            {"applied": "yes", "critical": "yes", "source": "operational"},
+            ("CRITICAL",),
+            False,
+        ),
+        ({"source": "operational"}, LEVELS[1:], False),
+        ({"source": "both"}, LEVELS[1:], True),
+        ({"applied": "yes", "debug": "yes", "source": "both"}, ("DEBUG",), True),
+    ],
+)
+def test_a_retired_source_choice_maps_onto_the_checkboxes(values, levels, audits):
+    """An older tab's Source (#601) becomes the matching ticks, kept for one
+    release; paging and the export then carry the ticks, never ``source``."""
+    query = LogQuery.parse(values)
+    assert (query.levels, query.audits, query.source) == (levels, audits, "")
+    carried = query.form_values()
+    assert "source" not in carried and carried["applied"] == "yes"
+    assert ("audit" in carried) is audits
 
 
 def test_dates_are_days_in_the_browser_zone():
@@ -228,10 +269,13 @@ def test_rows_show_only_reviewed_fields_with_short_scalar_values():
     assert "note" not in DETAIL_FIELDS and "outcome" in DETAIL_FIELDS
     # Severity is a word and a symbol, never color alone.
     assert (row["level_symbol"], str(row["level_label"])) == ("‼", "Critical")
+    assert row["icon"] == "critical"
     assert operational(NOW, context="text")["details"] == []
     record = audit(NOW)
     # Audit records have no severity, and a bare login event has no context.
     assert record["level"] is None and str(record["level_label"]) == "Audit record"
+    # They have an icon of their own instead (#601).
+    assert record["icon"] == "audit"
     assert record["details"] == [] and record["campaign_id"] is not None
 
 

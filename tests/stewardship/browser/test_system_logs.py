@@ -20,13 +20,15 @@ pytestmark = pytest.mark.parametrize(
 MARK = "document.querySelector('h1').dataset.mark = 'kept'"
 MARKED = "document.querySelector('h1').dataset.mark"
 # Each row's Level cell (the cell right after the Time row header), as its
-# icon's level or, for an audit record, its words.
+# icon's kind: a level, or "audit" for an audit record (#601).
 LEVEL_CELLS = """() => [...document.querySelectorAll(
     '#table tbody tr > th[scope=row] + td.log-level-cell')].map(cell => {
     const icon = cell.querySelector('svg.level-icon');
     return icon ? icon.getAttribute('class').split('level-icon-')[1]
         : cell.textContent.trim();
 })"""
+# What Apply says while no kind of entry is ticked (#601).
+NONE_HINT = "Tick at least one kind of entry to show."
 
 PAGES = (
     "/logs",
@@ -69,9 +71,10 @@ def test_logs_mobile_keyboard_and_accessibility(
     # names the cell instead (#569).
     for word in ("Debug", "Information", "Warning", "Error"):
         assert page.get_by_role("cell", name=word, exact=True).count() == 1
-    assert page.locator(".log-level svg.level-icon[aria-hidden=true]").count() == 4
-    # The level choices carry the same icons beside their words.
-    assert page.locator(".log-level-choices svg.level-icon").count() == 5
+    # Four operational entries and two audit records, each with its icon.
+    assert page.locator(".log-level svg.level-icon[aria-hidden=true]").count() == 6
+    # The six Show choices carry the same icons beside their words (#601).
+    assert page.locator(".log-level-choices svg.level-icon").count() == 6
     # Recorded detail is shown as text, never interpreted as markup.
     assert page.get_by_text("<b>safe</b>", exact=True).count() == 4
     assert page.locator("td b").count() == 0
@@ -86,9 +89,13 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert entry.get_by_role("button", name="Same campaign").count() == 1
     details.locator("summary").click()
     visible(details.get_by_text("00000000-0000-0000-0000-00000000012d"))
-    assert entry.get_by_text("Audit record", exact=True).count() == 1
+    # An audit record's Level cell is named by its icon's screen-reader text.
+    assert entry.get_by_role("cell", name="Audit record", exact=True).count() == 1
     # The chosen filters are kept, including a ticked DEBUG.
     assert page.get_by_label("Debug", exact=True).is_checked()
+    assert page.get_by_label("Audit record", exact=True).is_checked()
+    # The retired Source field is gone (#601).
+    assert page.get_by_label("Source", exact=True).count() == 0
     assert page.get_by_label("Task or request correlation identifier").input_value()
     # The shared navigator, above and below the table, pages by POST forms.
     assert page.get_by_role("button", name="Next", exact=True).count() == 2
@@ -97,8 +104,8 @@ def test_logs_mobile_keyboard_and_accessibility(
     time = page.get_by_role("columnheader", name="Time", exact=False)
     assert time.get_attribute("aria-sort") == "descending"
     assert time.get_by_role("button", name="sort ascending").count() == 1
-    search = page.get_by_label("Source")
-    search.focus()
+    # Audit record is the last of the Show choices; the type field follows.
+    page.get_by_label("Audit record", exact=True).focus()
     # The type's help bubble sits between its label and its field. WebKit's
     # default Tab order skips buttons (a macOS setting), so allow either.
     page.keyboard.press("Tab")
@@ -107,9 +114,10 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.locator(":focus").get_attribute("name") == "event"
 
     page.goto(component_origin + "/logs-default")
-    # DEBUG is excluded until chosen.
+    # DEBUG is excluded until chosen; audit records are included.
     assert not page.get_by_label("Debug", exact=True).is_checked()
     assert page.get_by_label("Critical", exact=True).is_checked()
+    assert page.get_by_label("Audit record", exact=True).is_checked()
     page.goto(component_origin + "/logs-older")
     assert page.get_by_role("button", name="Previous", exact=True).count() == 2
     assert page.get_by_text("Page 2 of 2", exact=True).count() == 2
@@ -152,7 +160,7 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         page.goto(component_origin + "/logs-default")
         page.get_by_label("Debug", exact=True).check()
         page.get_by_label("Information", exact=True).uncheck()
-        page.get_by_label("Source").select_option("audit")
+        page.get_by_label("Audit record", exact=True).uncheck()
         # A type written directly by its owner, which no fixed list would offer.
         page.get_by_label("Event or action type", exact=False).fill("admin_login")
         actor = "1abcdef0-0000-4000-8000-000000000000"
@@ -175,7 +183,8 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         body = sent.value.post_data
         # A submitted form is marked, so no tick can mean none rather than default.
         assert "applied=yes" in body and "debug=yes" in body and "info=" not in body
-        assert "source=audit" in body and "event=admin_login" in body
+        assert "audit=" not in body and "source=" not in body
+        assert "event=admin_login" in body
         assert f"actor={actor}" in body
         assert actor not in sent.value.url and "?" not in sent.value.url
 
@@ -208,7 +217,7 @@ def test_level_icon_column_survives_in_place_sort_and_paging(page, component_ori
     headings = page.locator("#table thead th")
     assert "Time" in headings.nth(0).inner_text()
     assert headings.nth(1).inner_text() == "Level"
-    newest = ["debug", "Audit record", "info", "Audit record", "warning", "error"]
+    newest = ["debug", "audit", "info", "audit", "warning", "error"]
     assert page.evaluate(LEVEL_CELLS) == newest
     warning = page.get_by_role("cell", name="Warning", exact=True)
     assert warning.locator(".log-level").get_attribute("title") == "Warning"
@@ -216,15 +225,21 @@ def test_level_icon_column_survives_in_place_sort_and_paging(page, component_ori
     icon = warning.locator("svg").bounding_box()
     assert icon["width"] >= 16 and icon["height"] >= 16
     assert headings.nth(1).bounding_box()["width"] < 120
-    # Narrow, but never broken mid-word: "Level" is one line and "Audit
-    # record" at most two (main's overflow-wrap: anywhere would split them).
+    # An audit record is its icon too, named the same ways, not the words
+    # that widened the column (#601).
+    audit = page.get_by_role("cell", name="Audit record", exact=True).first
+    assert audit.locator(".log-level").get_attribute("title") == "Audit record"
+    assert audit.locator("svg.level-icon-audit").bounding_box()["width"] >= 16
+    assert audit.bounding_box()["width"] == headings.nth(1).bounding_box()["width"]
+    assert headings.nth(1).bounding_box()["width"] < 80
+    # Narrow, but never broken mid-word: "Level" is one line (main's
+    # overflow-wrap: anywhere would split it).
     lines = """element => {
         const range = document.createRange();
         range.selectNodeContents(element);
         return new Set([...range.getClientRects()].map(rect => rect.top)).size;
     }"""
     assert headings.nth(1).evaluate(lines) == 1
-    assert page.locator("#table .log-kind").first.evaluate(lines) <= 2
     page.evaluate(MARK)
 
     def answer(route):
@@ -243,7 +258,7 @@ def test_level_icon_column_survives_in_place_sort_and_paging(page, component_ori
     eventually(page, LEVEL_CELLS, newest[::-1])
     assert page.evaluate(MARKED) == "kept"
     page.get_by_role("button", name="Next", exact=True).first.click()
-    eventually(page, LEVEL_CELLS, ["critical", "Audit record"])
+    eventually(page, LEVEL_CELLS, ["critical", "audit"])
     assert page.evaluate(MARKED) == "kept"
     critical = page.get_by_role("cell", name="Critical", exact=True)
     assert critical.locator("svg.level-icon-critical").count() == 1
@@ -471,7 +486,7 @@ def test_a_half_typed_date_says_why_apply_waits(page, component_origin, label):
     field = page.get_by_label(label, exact=True)
     field.click()
     page.keyboard.type("09")
-    page.get_by_label("Source").focus()
+    page.get_by_label("Event or action type", exact=False).focus()
     # Read after focus has left, when every engine has settled the state.
     state = field.evaluate("node => [node.value, node.validity.badInput]")
     if state[1]:
@@ -485,7 +500,7 @@ def test_a_half_typed_date_says_why_apply_waits(page, component_origin, label):
     field.fill("2026-09-19")
     assert apply.is_enabled() and not hint.is_visible()
     field.fill("")
-    page.get_by_label("Source").focus()
+    page.get_by_label("Event or action type", exact=False).focus()
     assert apply.is_enabled() and not hint.is_visible()
 
 
@@ -522,6 +537,75 @@ def test_banner_log_link_sends_its_day_only_with_a_zone(
         assert fields["zone"] == ["America/Los_Angeles"]
     else:
         assert "start" not in fields and fields["zone"] == [""]
+    # Critical operational entries only: no audit tick, no retired Source.
+    assert fields["critical"] == ["yes"]
+    assert "audit" not in fields and "source" not in fields
     body = QueryDict(sent.value.post_data, mutable=True)
     body.pop("csrfmiddlewaretoken", None)
-    LogQuery.parse(body)  # The server accepts either form.
+    query = LogQuery.parse(body)  # The server accepts either form.
+    assert query.levels == ("CRITICAL",) and not query.audits
+
+
+def test_no_ticked_kind_says_why_apply_waits(page, component_origin):
+    """Apply is unavailable while none of the six Show choices is ticked,
+    and says why; ticking any one, Audit record included, lets it apply
+    (#601)."""
+    page.goto(component_origin + "/logs-default")
+    apply = page.get_by_role("button", name="Apply filters")
+    hint = page.locator("#log-filter-hint")
+    choices = page.locator(".log-level-choices input[type=checkbox]")
+    assert choices.count() == 6 and apply.is_enabled()
+    for index in range(6):
+        choices.nth(index).uncheck()
+    assert apply.is_disabled()
+    has_text(hint, NONE_HINT)
+    page.get_by_label("Audit record", exact=True).check()
+    assert apply.is_enabled() and not hint.is_visible()
+    page.get_by_label("Audit record", exact=True).uncheck()
+    has_text(hint, NONE_HINT)
+    page.get_by_label("Warning", exact=True).check()
+    assert apply.is_enabled() and not hint.is_visible()
+
+
+@pytest.mark.parametrize(
+    ("ticks", "fixture", "cells"),
+    [
+        # Audit records only: every level unticked.
+        (("Audit record",), "/logs-audit", ["audit", "audit"]),
+        # Operational only: Audit record unticked.
+        (("Warning", "Error"), "/logs-operational", ["warning", "error"]),
+    ],
+)
+def test_show_choices_filter_in_place(page, component_origin, ticks, fixture, cells):
+    """Ticking only some of the six kinds applies in place in a POST body,
+    with the audit tick in place of the retired Source, and the table then
+    lists only those kinds (#601)."""
+    page.goto(component_origin + "/logs-default")
+    page.evaluate(MARK)
+    choices = page.locator(".log-level-choices input[type=checkbox]")
+    for index in range(choices.count()):
+        choices.nth(index).uncheck()
+    for label in ticks:
+        page.get_by_label(label, exact=True).check()
+    page.route(
+        "**/logs",
+        lambda route: (
+            route.fulfill(
+                response=route.fetch(url=component_origin + fixture, method="GET")
+            )
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    fields = posted(sent.value)
+    assert "source" not in fields and "?" not in sent.value.url
+    sent_ticks = {name for name, value in fields.items() if value == ["yes"]}
+    names = {"Audit record": "audit", "Warning": "warning", "Error": "error"}
+    assert sent_ticks == {"applied", *(names[label] for label in ticks)}
+    eventually(page, LEVEL_CELLS, cells)
+    assert page.evaluate(MARKED) == "kept"
+    # The kept form still shows what was applied.
+    for label in ticks:
+        assert page.get_by_label(label, exact=True).is_checked()

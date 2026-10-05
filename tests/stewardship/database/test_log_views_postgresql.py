@@ -61,12 +61,15 @@ def diagnostics(levels=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")):
 
 
 def audit_entries(response):
-    """How many listed entries are audit records, by their table cell.
+    """How many listed entries are audit records, by their Level cell's icon.
 
-    The page's own introduction also mentions audit records, so plain text
-    would match on every page.
+    The page's own introduction and its Show choices also mention audit
+    records, so plain text would match on every page (#601).
     """
-    return response.content.decode().count('<span class="log-kind">Audit record</span>')
+    return response.content.decode().count(
+        '<span class="log-level" title="Audit record">'
+        '<svg class="level-icon level-icon-audit"'
+    )
 
 
 def identifiers(response):
@@ -102,11 +105,13 @@ def next_fields(response):
 
 def levels(response):
     """The severity of each operational entry in the table, in order, by its
-    Level cell's icon (the level choices' own icons sit outside that cell)."""
-    return re.findall(
+    Level cell's icon (the Show choices' own icons sit outside that cell);
+    audit records' icons are counted by ``audit_entries`` instead."""
+    found = re.findall(
         r'<span class="log-level"[^>]*><svg class="level-icon level-icon-([a-z]+)"',
         response.content.decode(),
     )
+    return [level for level in found if level != "audit"]
 
 
 def test_administrator_reads_both_sources_and_filters_privately(auth_service, google):
@@ -146,14 +151,12 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         chosen = post(browser, {"applied": "yes", "debug": "yes", "error": "yes"})
         assert sorted(set(levels(chosen))) == ["debug", "error"]
         assert b'name="debug" value="yes" checked' in chosen.content
-        none = post(browser, {"applied": "yes", "source": "operational"})
-        assert levels(none) == [] and b"No matching entries." in none.content
-        only = post(browser, {"source": "audit"})
+        only = post(browser, {"applied": "yes", "audit": "yes"})
         assert levels(only) == [] and audit_entries(only) >= 2
         found = post(browser, {"correlation": str(correlation)})
         assert found.content.count(b"<tr>") == 2  # The heading and that one entry.
         assert b"dashboard_viewed" in found.content
-        typed = post(browser, {"event": "task_failed", "source": "both"})
+        typed = post(browser, {"event": "task_failed"})
         assert audit_entries(typed) == 0 and len(levels(typed)) == 4
         # A type its owner writes directly, outside both reviewed vocabularies.
         logins = post(browser, {"event": "admin_login"})
@@ -193,8 +196,8 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             assert b"drop table" not in refused.content
     contexts = views()
     # One audit row per successful view, counting entries and naming nothing.
-    # Nine successful views above; the refused ones are not views.
-    assert len(contexts) == 9 and all(
+    # Eight successful views above; the refused ones are not views.
+    assert len(contexts) == 8 and all(
         set(context) == {"outcome", "count"} and context["outcome"] == "succeeded"
         for context in contexts
     )
@@ -206,7 +209,7 @@ def test_pages_read_one_snapshot_while_the_log_grows(auth_service, google):
     and the navigator says which page of how many is shown."""
     browser, _ = signed_in()
     diagnostics(("INFO",) * 30)
-    wanted = {"applied": "yes", "info": "yes", "source": "operational", "size": "25"}
+    wanted = {"applied": "yes", "info": "yes", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         first = post(browser, wanted)
         seen = identifiers(first)
@@ -237,7 +240,7 @@ def test_the_time_column_sorts_both_ways_on_the_server(auth_service, google):
     """Oldest first starts from the oldest stored entry; the heading toggles."""
     browser, _ = signed_in()
     diagnostics(("INFO",) * 3)
-    wanted = {"applied": "yes", "info": "yes", "source": "operational"}
+    wanted = {"applied": "yes", "info": "yes"}
     stored = list(
         OperationalLog.objects.filter(level="INFO")
         .order_by("created_at", "id")
@@ -270,7 +273,7 @@ def test_a_bounded_count_says_more_than_and_paging_stops_at_its_depth(
     browser, _ = signed_in()
     monkeypatch.setattr(log_views, "EXPORT_LIMIT", 30)
     diagnostics(("INFO",) * 40)
-    wanted = {"applied": "yes", "info": "yes", "source": "operational", "size": "25"}
+    wanted = {"applied": "yes", "info": "yes", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         first = post(browser, wanted)
         assert b"of more than 30" in first.content and b"Page 1 of" not in first.content
@@ -308,7 +311,13 @@ def test_pages_cross_both_tables_through_entries_sharing_one_instant(
         for key in audited
     )
     walked = []
-    values = {"applied": "yes", "info": "yes", "event": "task_failed", "size": "25"}
+    values = {
+        "applied": "yes",
+        "info": "yes",
+        "audit": "yes",
+        "event": "task_failed",
+        "size": "25",
+    }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for _ in range(4):
             response = post(browser, values)
@@ -349,7 +358,7 @@ def test_dates_are_days_in_the_browser_zone(auth_service, google):
         )
         for name, moment in stamps.items()
     )
-    day = {"applied": "yes", "info": "yes", "source": "operational"}
+    day = {"applied": "yes", "info": "yes"}
     day |= {"start": "2026-03-08", "end": "2026-03-08"}
 
     def listed(values):
@@ -576,7 +585,7 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
     """Exports carry the screen's filters and detail, newest first, and are audited."""
     diagnostics()
     browser, _ = signed_in()
-    response = export(browser, {"applied": "yes", "error": "yes", "source": "both"})
+    response = export(browser, {"applied": "yes", "error": "yes", "audit": "yes"})
     assert response.status_code == 200
     assert response["Content-Type"] == "text/csv"
     assert "attachment" in response["Content-Disposition"]
@@ -590,7 +599,6 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
             "applied": "yes",
             "critical": "yes",
             "format": "jsonl",
-            "source": "operational",
         },
     )
     records = [json.loads(line) for line in jsonl.content.decode().splitlines()]
@@ -610,7 +618,7 @@ def test_export_times_use_the_chosen_timezone(auth_service, google):
     """UTC by default; a supported zone name shifts every time."""
     diagnostics(("ERROR",))
     browser, _ = signed_in()
-    values = {"applied": "yes", "error": "yes", "source": "operational"}
+    values = {"applied": "yes", "error": "yes"}
     utc = export(browser, values | {"format": "jsonl"}).content.decode()
     local = export(
         browser, values | {"format": "jsonl", "timezone": "America/New_York"}
@@ -690,3 +698,80 @@ def test_level_filtered_reads_and_counts_stay_on_indexes(auth_service):
     for plan in (page, *counts):
         assert "Limit" in plan and "Seq Scan" not in plan, plan
         assert re.search(r"Index|Bitmap", plan), plan
+
+
+def test_show_choices_select_kinds_of_entry(auth_service, google):
+    """The six Show checkboxes pick operational levels and audit records
+    together (#601): audit only, operational only, both, and never none.
+    A retired Source value from an older tab is mapped onto them for one
+    release, and the critical-events banner and "Same campaign" forms list
+    what they did before."""
+    browser, _ = signed_in()
+    diagnostics()
+    campaign = uuid4()
+    AuditEvent.objects.bulk_create(
+        AuditEvent(event_type="campaign_configured", campaign_reference=campaign)
+        for _ in range(2)
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The first view: every level but Debug, plus audit records.
+        first = post(browser)
+        assert set(levels(first)) == {"info", "warning", "error", "critical"}
+        assert audit_entries(first) >= 3
+        audit_only = post(browser, {"applied": "yes", "audit": "yes"})
+        assert levels(audit_only) == [] and audit_entries(audit_only) >= 3
+        operational_only = post(
+            browser, {"applied": "yes", "warning": "yes", "critical": "yes"}
+        )
+        assert levels(operational_only) == ["critical", "warning"]
+        assert audit_entries(operational_only) == 0
+        both = post(browser, {"applied": "yes", "debug": "yes", "audit": "yes"})
+        assert levels(both) == ["debug"] and audit_entries(both) >= 3
+        # Nothing ticked is refused with its own message, not the identifier
+        # guidance: no value was mistyped, every choice was left unticked.
+        for none in ({"applied": "yes"}, {"applied": "yes", "source": "operational"}):
+            refused = post(browser, none)
+            assert refused.status_code == 400
+            assert b"Choose at least one kind of entry to show." in refused.content
+            assert b"Identifiers must be complete" not in refused.content
+            assert export(browser, none).status_code == 400
+        # A campaign filter with Audit record unticked says why it is empty.
+        unticked = post(
+            browser, {"applied": "yes", "info": "yes", "campaign": str(campaign)}
+        )
+        assert b"Campaign filters list audit records only" in unticked.content
+        # The retired Source, as an older open tab still sends it.
+        legacy = post(browser, {"applied": "yes", "error": "yes", "source": "audit"})
+        assert levels(legacy) == [] and audit_entries(legacy) >= 3
+        legacy = post(browser, {"source": "operational"})
+        assert set(levels(legacy)) == {"info", "warning", "error", "critical"}
+        assert audit_entries(legacy) == 0
+        legacy = post(browser, {"applied": "yes", "error": "yes", "source": "both"})
+        assert levels(legacy) == ["error"] and audit_entries(legacy) >= 3
+        # ...whose page then carries the checkboxes, never the Source.
+        body = legacy.content.decode()
+        assert 'name="source"' not in body
+        assert '<input type="hidden" name="audit" value="yes">' in body
+        assert b'name="audit" value="yes" checked' in legacy.content
+        for refused in (
+            {"source": "everything"},
+            {"applied": "yes", "audit": "yes", "source": "audit"},
+            {"applied": "yes", "audit": "on"},
+            {"audit": "yes"},
+        ):
+            assert post(browser, refused).status_code == 400
+        # "Same campaign": that campaign's audit records only.
+        same = post(
+            browser, {"applied": "yes", "audit": "yes", "campaign": str(campaign)}
+        )
+        assert levels(same) == [] and audit_entries(same) == 2
+        # Its old form, from a page opened before #601, lists the same.
+        old = post(browser, {"source": "audit", "campaign": str(campaign)})
+        assert levels(old) == [] and audit_entries(old) == 2
+        # The critical-events banner: Critical operational entries only.
+        banner = post(browser, {"applied": "yes", "critical": "yes"})
+        assert levels(banner) == ["critical"] and audit_entries(banner) == 0
+        # The export takes the same checkboxes.
+        exported = export(browser, {"applied": "yes", "audit": "yes"})
+        rows = exported.content.decode().splitlines()[1:]
+        assert rows and all(row.split(",")[1] == "Audit" for row in rows)

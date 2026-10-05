@@ -123,6 +123,12 @@ def test_banner_log_link_lists_the_critical_entries(auth_service, google):
     critical(Event.SOURCE_INVALID)
     page = home(browser)
     start = page.split('name="start" value="', 1)[1].split('"', 1)[0]
+    # Critical operational entries only: no audit tick and no retired Source
+    # (#601).
+    form = page[page.index('action="/admin/logs"') :]
+    form = form[: form.index("</form>")]
+    assert 'name="critical" value="yes"' in form
+    assert 'name="audit"' not in form and 'name="source"' not in form
     assert '<input type="hidden" name="zone" value="" data-browser-zone>' in page
     for zone in ("Pacific/Honolulu", "Pacific/Kiritimati"):
         with web():
@@ -132,13 +138,15 @@ def test_banner_log_link_lists_the_critical_entries(auth_service, google):
                     "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
                     "applied": "yes",
                     "critical": "yes",
-                    "source": "operational",
                     "start": start,
                     "zone": zone,
                 },
             )
         assert response.status_code == 200
-        assert Event.SOURCE_INVALID.value in response.content.decode()
+        body = response.content.decode()
+        assert Event.SOURCE_INVALID.value in body
+        # The banner's view is itself audited, but audit records are not listed.
+        assert "level-icon-audit" not in body.split("<tbody>", 1)[1]
 
 
 def test_acknowledgement_needs_an_administrator_and_post(

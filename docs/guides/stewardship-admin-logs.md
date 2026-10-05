@@ -14,17 +14,20 @@ increments and branches from main, not from either.
 
 An Administrator opens **System logs** from the Admin navigation and sees both
 sources together, newest first, fifty entries a page: time, severity (an icon
-for an operational entry, "Audit record" for an audit one, so the source is
+for an operational entry, a clipboard icon for an audit one, so the source is
 implied), type, actor, the correlation, campaign and subject identifiers, and
-the recorded detail. The five levels are distinguished by an icon's shape, never by color
-alone: the level filter shows each icon beside its word, and the table's Level
-column (second, after Time) shows the icon with its word as screen-reader text
-and a tooltip. DEBUG is excluded until chosen.
+the recorded detail. The five levels and audit records are distinguished by an
+icon's shape, never by color alone: the six Show checkboxes show each icon
+beside its word, and the table's Level column (second, after Time) shows the
+icon with its word as screen-reader text and a tooltip
+([#601](https://github.com/epiphany40223/parishkit/issues/601)). DEBUG is
+excluded until chosen.
 
-Filters cover level, source, type, actor, task or request correlation, campaign
-and a date range. The specification's text and JSONL export, its full-text
-search, entity and Ministry filtering including the retained export result
-scope, and an export time-zone choice are **not** in this increment. They follow
+Filters cover the kinds of entry (levels and audit records), type, actor, task
+or request correlation, campaign and a date range. The specification's text
+and JSONL export, its full-text search, entity and Ministry filtering including
+the retained export result scope, and an export time-zone choice are **not** in
+this increment. They follow
 with [RPT-09](../plans/stewardship/reports.md#rpt-09-logs-and-daily-email-parity)
 on the shared export pipeline, so ADM-08.04 stays unchecked.
 
@@ -39,8 +42,9 @@ there is nothing richer to show.
 ### A closed grammar, without hiding real types
 
 Every filter is an exact value from a closed shape: a canonical identifier, a
-canonical calendar day, a level tick or a source choice. Identifiers travel only in
-CSRF POST bodies; a query string is refused, so none reaches a URL or a log.
+canonical calendar day, or a level or audit-record tick. Identifiers travel
+only in CSRF POST bodies; a query string is refused, so none reaches a URL or a
+log.
 
 The type filter is an exact identifier, the same shape the audit table's own
 check constraint enforces, not a fixed list. Many audit types are written
@@ -52,9 +56,14 @@ suggestions only.
 A submitted form carries a marker, so a form with no level ticked means no
 operational entries rather than falling back to the first visit's default.
 
-Audit records have no severity level. The level choices apply to operational
-entries, and the source choice decides whether audit records are listed; the page
-says so.
+Audit records have no severity level. They are the sixth Show checkbox, beside
+the five levels, so one row decides which kinds of entry are listed: "Audit
+record" alone is the audit trail only, and leaving it unticked shows
+operational entries only. A form with nothing ticked would list nothing, so
+Apply waits with the hint "Tick at least one kind of entry to show.", and the
+server refuses such a form with a message saying to choose one. The separate
+Source field was removed; for one release the server maps a `source` value
+from an older open tab onto the checkboxes.
 
 ### A keyset cursor, because the log grows while it is read
 

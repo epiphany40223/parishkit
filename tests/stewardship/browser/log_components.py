@@ -95,6 +95,7 @@ def components(context, admin):
             "warning": "yes",
             "error": "yes",
             "critical": "yes",
+            "audit": "yes",
             "correlation": str(UUID(int=200)),
             "size": "25",
         }
@@ -103,7 +104,7 @@ def components(context, admin):
     # records, shown as the first page of a longer snapshot.
     rows = merge(operational, audit)[:6]
     older = LogQuery.parse(
-        {"applied": "yes", "error": "yes", "size": "25", "page": "2"}
+        {"applied": "yes", "error": "yes", "audit": "yes", "size": "25", "page": "2"}
     )
     # The same snapshot oldest first: what the Time heading's POST form
     # returns, served to the in-place re-sort tests from a GET path (#478).
@@ -115,6 +116,7 @@ def components(context, admin):
             "applied": "yes",
             "info": "yes",
             "error": "yes",
+            "audit": "yes",
             "start": "2026-09-19",
             "end": "2026-09-19",
             "zone": "America/Los_Angeles",
@@ -134,8 +136,23 @@ def components(context, admin):
             "text/html",
             page(older, [*operational[4:], audit[1]], number=2, total=27),
         ),
-        "/logs-empty": ("text/html", page(LogQuery.parse({"applied": "yes"}), [])),
+        "/logs-empty": (
+            "text/html",
+            page(LogQuery.parse({"applied": "yes", "critical": "yes"}), []),
+        ),
         "/logs-dated": ("text/html", page(dated, rows, total=30)),
+        # One kind of entry at a time, as the Show choices select (#601).
+        "/logs-audit": (
+            "text/html",
+            page(LogQuery.parse({"applied": "yes", "audit": "yes"}), audit),
+        ),
+        "/logs-operational": (
+            "text/html",
+            page(
+                LogQuery.parse({"applied": "yes", "warning": "yes", "error": "yes"}),
+                operational[2:4],
+            ),
+        ),
     }
     # The three error states: a refused filter value, a refused query string
     # and an outage, which is also what a denied reader sees.
