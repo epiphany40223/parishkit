@@ -34,8 +34,11 @@ status commands (``status``, ``task list``, ``task show``, ``send
 progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``go-live progress``) follow (PR 3), built on the read models of
 ``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
-take ``--watch``. Other areas join the same subparser tree in later pull
-requests, each listed in the catalog with the pull request that added it.
+take ``--watch``. The schedule change commands (``schedule preview`` and
+``schedule confirm``, in ``admin_changes``) and ``config request show``
+(with ``--watch``) follow (PR 4). Other areas join the same subparser tree in
+later pull requests, each listed in the catalog with the pull request that
+added it.
 """
 
 import argparse
@@ -655,6 +658,57 @@ def go_live_progress(args, preamble, runtime, context):
     return read_go_live_progress(context["caller"], runtime, args.campaign)
 
 
+def _input(value, context, limit):
+    """An option's value, or for ``-`` the rest of standard input.
+
+    The preamble was already read; the wrapper forwards what follows it only
+    for a ``-`` input. More than ``limit`` bytes, or text that is not UTF-8,
+    is invalid input (exit 1), never echoed.
+    """
+    if value != "-":
+        return value
+    raw = context["stdin"].read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("The input is too long.")
+    try:
+        return raw.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        raise ValueError("The input is not UTF-8.") from None
+
+
+def schedule_preview(args, preamble, runtime, context):
+    """Review a change to mail schedules or campaign dates (PR 4)."""
+    from .admin_changes import CHANGES_LIMIT, preview_schedule
+
+    return preview_schedule(
+        context["caller"],
+        runtime,
+        args.campaign,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def schedule_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed schedule change as a configuration request (PR 4)."""
+    from .admin_changes import TOKEN_LIMIT, confirm_schedule
+
+    return confirm_schedule(
+        context["caller"],
+        runtime,
+        args.campaign,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def config_request_show(args, preamble, runtime, context):
+    """The status of one of this Administrator's configuration requests (PR 4)."""
+    from .admin_reads import read_config_request
+
+    return read_config_request(context["caller"], runtime, args.request_id)
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -731,6 +785,47 @@ def _schedule_options(parser):
     parser.add_argument(
         "--campaign", type=_uuid, help="the campaign (default: the current one)"
     )
+
+
+def _digest(value):
+    """A configuration digest (``schedule show``'s ``version``): 64 hex digits."""
+    import re
+
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise argparse.ArgumentTypeError("not a configuration version")
+    return value
+
+
+def _schedule_preview_options(parser):
+    """Options of ``schedule preview``: the campaign, its version and the change."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version schedule show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _schedule_confirm_options(parser):
+    """Options of ``schedule confirm``: the campaign and the preview's token."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from schedule preview, or - for standard input",
+    )
+
+
+def _config_request_options(parser):
+    """Options of ``config request show``: the request, and --watch."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    _watch_options(parser)
 
 
 def _go_live_progress_options(parser):
@@ -940,7 +1035,50 @@ def _read_specs():
     )
 
 
-COMMANDS = COMMANDS + _read_specs()
+def _change_specs():
+    """The schedule change commands and configuration request status (PR 4)."""
+    from .admin_changes import ScheduleConfirm, SchedulePreview
+    from .admin_reads import ConfigRequest
+
+    return (
+        CommandSpec(
+            "schedule preview",
+            "Review a change to mail schedules or campaign dates.",
+            schedule_preview,
+            "full",
+            False,
+            SchedulePreview.field_names(),
+            4,
+            options=(_schedule_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "schedule confirm",
+            "Confirm a reviewed schedule change.",
+            schedule_confirm,
+            "full",
+            True,
+            ScheduleConfirm.field_names(),
+            4,
+            options=(_schedule_confirm_options,),
+        ),
+        CommandSpec(
+            "config request show",
+            "Show the status of one of your configuration requests.",
+            config_request_show,
+            "read_only",
+            False,
+            ConfigRequest.field_names(),
+            4,
+            options=(_config_request_options,),
+            audit_event=None,
+            watch=True,
+        ),
+    )
+
+
+COMMANDS = COMMANDS + _read_specs() + _change_specs()
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
 
@@ -958,24 +1096,27 @@ class _Parser(argparse.ArgumentParser):
 
 
 def build_parser():
-    """The subparser tree: ``<area> <verb>`` or a one-word command."""
+    """The subparser tree: a one-word command, ``<area> <verb>`` or deeper."""
     parser = _Parser(
         prog="pk-stewardship admin",
         description="Admin commands acting as an approved Administrator.",
     )
-    areas = parser.add_subparsers(dest="area", parser_class=_Parser)
-    groups = {}
+    # Each group of words before a command's last (an area such as
+    # ``schedule``, or ``config request``) is a parser of its own, with its
+    # own subparsers, created the first time a command names it.
+    groups = {(): parser.add_subparsers(dest="area", parser_class=_Parser)}
     for spec in COMMANDS:
-        words = spec.name.split(" ")
-        if len(words) == 1:
-            command = areas.add_parser(words[0], help=spec.help)
-        else:
-            if words[0] not in groups:
-                group = areas.add_parser(words[0], help=f"{words[0]} commands")
-                groups[words[0]] = group.add_subparsers(
-                    dest="verb", parser_class=_Parser
+        words = tuple(spec.name.split(" "))
+        for depth in range(1, len(words)):
+            prefix = words[:depth]
+            if prefix not in groups:
+                group = groups[prefix[:-1]].add_parser(
+                    prefix[-1], help=f"{' '.join(prefix)} commands"
                 )
-            command = groups[words[0]].add_parser(words[1], help=spec.help)
+                groups[prefix] = group.add_subparsers(
+                    dest=f"verb{depth}", parser_class=_Parser
+                )
+        command = groups[words[:-1]].add_parser(words[-1], help=spec.help)
         command.set_defaults(command_name=spec.name)
         command.add_argument("--config", required=True, help="web configuration file")
         command.add_argument(
@@ -1165,7 +1306,7 @@ def run(args, *, stdin, stdout, stderr):
             print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
 
         # "audit": only the first read of a --watch records the page's view.
-        context = {"final": True, "audit": True}
+        context = {"final": True, "audit": True, "stdin": stdin}
         admitted_process = False
         caller = None
         try:
@@ -1216,6 +1357,13 @@ def run(args, *, stdin, stdout, stderr):
                 session=session_block(context.get("session")),
             )
             output["error"] = {"code": code, "message": MESSAGES[code]}
+            if code == "invalid" and getattr(error, "fields", None):
+                # The page's own messages for each field it refused.
+                output["error"]["fields"] = error.fields
+            if code == "outcome_unknown" and context.get("request_id"):
+                # The request the command may have recorded, fixed before it
+                # acted, so the operator can read it (config request show).
+                output["error"]["request_id"] = context["request_id"]
             if isinstance(error, WatchTimeout) and error.model is not None:
                 # The last state read, as the specification asks.
                 output["result"] = error.model.to_document()

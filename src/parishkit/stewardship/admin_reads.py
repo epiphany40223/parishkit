@@ -1,9 +1,10 @@
-"""Read models of the Admin automation command line (ADM-11 PR 3).
+"""Read models of the Admin automation command line (ADM-11 PR 3 and PR 4).
 
 Each read command of ``pk-stewardship admin`` gets its data from the
 function its page uses (``admin_dashboard.observe``, ``jobs.task_reads``,
 ``jobs.send_reads``, ``accounts.schedule_reads``, ``go_live_inputs``,
-``confirmation_progress``) and returns a frozen read model. A model's
+``confirmation_progress``, ``configuration_request_reads``) and returns a
+frozen read model. A model's
 fields are its **defined projection**: counts, states, stored enumeration
 values, identifiers and instants, never Family names, emails, addresses,
 phone numbers, codes, access tokens, signed controls or translated labels.
@@ -685,6 +686,81 @@ def read_schedule(caller, service, campaign_id):
             )
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
         return model
+
+    return _held(step)
+
+
+# --------------------------------------------------- configuration requests
+
+# A configuration request's checkpoint states that never change again.
+REQUEST_TERMINAL_STATES = frozenset({"applied", "failed", "cancelled"})
+
+
+@dataclass(frozen=True)
+class ConfigRequest(ReadModel):
+    """One configuration request's latest checkpoint, as its status page shows.
+
+    ``state`` and ``failure`` (the stored failure code; None unless it
+    failed) are the stored values the page translates;
+    ``applied_version_id`` is set only once an activation committed it.
+    Terminal once applied, failed or cancelled.
+    """
+
+    request_id: UUID
+    state: str
+    sequence: int
+    failure: str | None
+    candidate_version_id: UUID
+    applied_version_id: UUID | None
+
+    @property
+    def terminal(self):
+        """Applied, failed and cancelled requests never change again."""
+        return self.state in REQUEST_TERMINAL_STATES
+
+
+def config_request(status):
+    """The read model of one ``configuration_requests.RequestStatus``."""
+    return ConfigRequest(
+        request_id=status.request_id,
+        state=status.state,
+        sequence=status.sequence,
+        failure=status.failure_code or None,
+        candidate_version_id=status.candidate_version_id,
+        applied_version_id=status.applied_version_id,
+    )
+
+
+def read_config_request(caller, service, request_id):
+    """``config request show``: Configuration change status's read.
+
+    Admitted passively, as the page is, so a read-only session can follow a
+    change; only the Administrator's own requests are found. The page records
+    no view event, so neither does this. An unknown request (or another
+    Administrator's) is ``not_available``, reported only after the recheck,
+    so an ended session is exit 5 rather than "no such request".
+    """
+    from .accounts.configuration_request_reads import receipt
+    from .accounts.policy import Capability
+
+    def step():
+        """Admit, read in one transaction with the page's recheck, then ours."""
+        actor = _admit(caller, service.store, Capability.CONFIGURE)
+        try:
+            with transaction.atomic():
+                status = receipt(caller, service, request_id, actor)
+        except KeyError:
+            # A KeyError is a bug, never "no such request": internal.
+            raise
+        except LookupError:
+            _recheck(caller, service.store, actor, Capability.CONFIGURE)
+            raise NotAvailable("No such configuration request.") from None
+        except PermissionError:
+            # The page's own recheck refused: exit 5 when the session ended.
+            _recheck(caller, service.store, actor, Capability.CONFIGURE)
+            raise
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        return config_request(status)
 
     return _held(step)
 

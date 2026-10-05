@@ -121,6 +121,10 @@ class Action(StrEnum):
     AUTOMATION_SESSION_ENDED = "automation_session_ended"
     AUTOMATION_SESSION_REFUSED = "automation_session_refused"
     AUTOMATION_NOTICES_ACKNOWLEDGED = "automation_notices_acknowledged"
+    # Admin automation commands that change state (ADM-11): one event per
+    # change, admin_cmd_<area>_<verb>, whose subject is the automation
+    # session (see the specification's "Audit attribution").
+    ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
 
 
 # Closed field identifiers are operational metadata, never census values.

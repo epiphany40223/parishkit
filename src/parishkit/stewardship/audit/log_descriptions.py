@@ -90,6 +90,10 @@ DESCRIPTIONS = {
     "automation_notices_acknowledged": _(
         "An Administrator acknowledged automation notices on their own dashboard."
     ),
+    "admin_cmd_schedule_confirm": _(
+        "An automation session confirmed a reviewed change to mail schedules "
+        "or campaign dates, which became a configuration request."
+    ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
         "carrying the new roles."
