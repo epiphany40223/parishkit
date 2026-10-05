@@ -84,11 +84,44 @@ def test_every_about_control_sits_beside_its_heading(page, component_origin):
     assert len(paths) >= 20, paths
     misplaced = []
     for path in paths:
-        page.goto(component_origin + path)
+        open_page(page, component_origin + path)
         placement = placement_on(page)
         if placement:
             misplaced.append(f"{path}: {placement}")
     assert not misplaced, misplaced
+
+
+def open_page(page, url):
+    """Go to ``url`` and wait until the page has settled on its final address.
+
+    A report page without a timezone in its URL replaces itself with one
+    (report-v1.js). That script is deferred, so it has already started the
+    replacement when ``goto`` returns, and checking the page then, or going
+    to the next one, races it. The script's own condition is evaluated
+    here: when it holds, wait for the replaced URL and its load.
+    """
+    from playwright.sync_api import Error
+
+    page.goto(url)
+    try:
+        replacing = page.evaluate(REPLACES_ITSELF)
+    except Error as error:
+        if "context was destroyed" not in str(error):
+            raise
+        replacing = True
+    if replacing:
+        page.wait_for_url(lambda address: "timezone=" in address)
+    page.wait_for_load_state()
+
+
+# report-v1.js's condition for replacing the page with a timezone in its URL.
+REPLACES_ITSELF = """() => {
+  const select = document.querySelector("[data-report-options] select[name=timezone]");
+  if (!select || new URL(location.href).searchParams.has("timezone")) return false;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return zone !== select.value
+    && Array.from(select.options).some(option => option.value === zone);
+}"""
 
 
 def placement_on(page):
