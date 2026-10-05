@@ -50,7 +50,7 @@ def test_covered_routes_name_commands_in_the_catalog():
             assert re.fullmatch(r"PR \d+[a-z]?", entry.owed), name
 
 
-def test_every_read_command_of_this_release_covers_a_route():
+def test_every_command_of_this_release_covers_a_route():
     """No catalog command outside the session commands is left unmapped."""
     covered = {
         command

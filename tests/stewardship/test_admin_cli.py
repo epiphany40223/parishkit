@@ -10,6 +10,7 @@ import io
 import json
 import re
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from django.core.exceptions import ObjectDoesNotExist
@@ -62,11 +63,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live readiness",
         "go-live progress",
     }
-    assert set(entries) == session | reads
+    changes = {"schedule preview", "schedule confirm", "config request show"}
+    assert set(entries) == session | reads | changes
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
-        assert entry["pr"] == (2 if entry["name"] in session else 3)
+        assert entry["pr"] == (
+            2 if entry["name"] in session else 4 if entry["name"] in changes else 3
+        )
         assert not entry["fresh_gated"] and not entry["prompts"]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
@@ -97,6 +101,37 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert entries["commands"]["scope"] == "none"
     assert entries["logout"]["audit_event"] == "automation_session_ended"
     assert entries["whoami"]["result_fields"][:2] == ["id", "label"]
+    # The schedule change commands need a full-scope session; only the
+    # confirmation changes state and records its admin_cmd_* event.
+    preview, confirm = entries["schedule preview"], entries["schedule confirm"]
+    assert preview["scope"] == confirm["scope"] == "full"
+    assert not preview["changes_state"] and preview["audit_event"] is None
+    assert preview["expected_version"] and not preview["request_key"]
+    assert confirm["changes_state"] and not confirm["expected_version"]
+    assert confirm["audit_event"] == "admin_cmd_schedule_confirm"
+    assert preview["result_fields"][-1] == "preview"
+    for entry in (preview, confirm):
+        options = {option["name"]: option for option in entry["options"]}
+        assert "--campaign" in options and not options["--campaign"]["required"]
+    request = entries["config request show"]
+    assert request["scope"] == "read_only" and not request["changes_state"]
+    assert request["arguments"] == ["REQUEST_ID"] and request["watch"]
+    assert request["audit_event"] is None
+
+
+def test_every_state_change_has_a_registered_described_event():
+    """Each admin_cmd_* type is an audit Action with a log description."""
+    from parishkit.stewardship.audit.log_descriptions import DESCRIPTIONS
+    from parishkit.stewardship.audit.schemas import Action
+
+    events = [
+        entry["audit_event"]
+        for entry in admin_cli.catalog()
+        if (entry["audit_event"] or "").startswith("admin_cmd_")
+    ]
+    assert events == ["admin_cmd_schedule_confirm"]
+    for event in events:
+        assert Action(event) and event in DESCRIPTIONS, event
 
 
 def test_every_command_maps_to_a_valid_audit_event_type():
@@ -168,6 +203,34 @@ def test_commands_needs_no_database_and_prints_one_document():
             "x",
             "--session-stdin",
         ],
+        # PR 4: the change needs its version (a configuration digest) and
+        # document, the confirmation its token; a group alone is no command.
+        ["schedule", "preview", "--changes", "{}", "--config", "x", "--session-stdin"],
+        [
+            "schedule",
+            "preview",
+            "--expected-version",
+            "601",
+            "--changes",
+            "{}",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
+        [
+            "schedule",
+            "preview",
+            "--expected-version",
+            "a" * 64,
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
+        ["schedule", "confirm", "--config", "x", "--session-stdin"],
+        ["config", "--config", "x", "--session-stdin"],
+        ["config", "request", "--config", "x", "--session-stdin"],
+        ["config", "request", "show", "601", "--config", "x", "--session-stdin"],
+        ["config", "request", "show", "--config", "x", "--session-stdin"],
     ],
 )
 def test_usage_errors_are_documents_that_name_no_value(argv):
@@ -472,6 +535,25 @@ def fresh_environment():
             ["go-live", "progress", "--watch", "2"],
             (2, "configuration"),
         ),
+        # The schedule change commands and the three-word request status.
+        (
+            "stub",
+            PREAMBLE,
+            ["schedule", "preview", "--expected-version", "a" * 64, "--changes", "{}"],
+            (2, "configuration"),
+        ),
+        (
+            "stub",
+            PREAMBLE,
+            ["schedule", "confirm", "--token", "t"],
+            (2, "configuration"),
+        ),
+        (
+            "stub",
+            PREAMBLE,
+            ["config", "request", "show", str(uuid4()), "--watch", "2"],
+            (2, "configuration"),
+        ),
     ],
     ids=[
         "commands",
@@ -484,6 +566,9 @@ def fresh_environment():
         "admitted-logout",
         "admitted-login-wait",
         "admitted-go-live-progress",
+        "admitted-schedule-preview",
+        "admitted-schedule-confirm",
+        "admitted-config-request-show",
     ],
 )
 def test_the_command_line_runs_before_django_is_set_up(
@@ -580,7 +665,16 @@ def pre_setup_imports():
     configure = functions["configure_admin_process"]
     found |= imports(configure.body, calls(configure, "configure"))
     found.add("parishkit.stewardship.settings.base")
-    for name in ("main", "run", "read_preamble", "catalog", "command_event_type"):
+    for name in (
+        "main",
+        "run",
+        "read_preamble",
+        "catalog",
+        "command_event_type",
+        # The command specifications are built when the module is imported.
+        "_read_specs",
+        "_change_specs",
+    ):
         # Only the function's own direct imports: nested blocks run later.
         found |= imports(
             [

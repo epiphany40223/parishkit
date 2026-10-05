@@ -6,7 +6,7 @@ inventory" and "Rules for new Admin actions"):
 
 - ``command``: the commands that cover the route, all in the catalog now;
   ``owed`` names the pull request that adds the rest of a partly covered
-  route (``schedule_settings`` reads today, its changes come in PR 4);
+  route (``go_live`` reads today, its preview and confirmation come in PR 12);
 - ``pending``: the pull request that will add its commands, which it names;
 - ``permanent``: web-only by nature, with the reason;
 - ``deferred``: waiting on a decision, which it names.
@@ -79,8 +79,10 @@ LEDGER = {
     "background_task_page": command("task show"),
     "background_task_status": command("task show"),
     # Schedules and configuration.
-    "schedule_settings": command("schedule show", owed="PR 4"),
-    "configuration_request": pending("PR 4", "config request show"),
+    "schedule_settings": command(
+        "schedule show", "schedule preview", "schedule confirm"
+    ),
+    "configuration_request": command("config request show"),
     "campaign_settings": pending(
         "PR 10", "campaign show", "campaign preview", "campaign confirm"
     ),

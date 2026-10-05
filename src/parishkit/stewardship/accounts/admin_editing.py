@@ -149,17 +149,54 @@ def confirm(
     capability=Capability.CONFIGURE,
     attach=None,
 ):
+    """Admit one exact intent from the page; redirect to its request status.
+
+    The page's form carries the signed preview; ``confirm_intent`` does the
+    rest. The status page leads back to this editor (#196).
+    """
+    receipt = confirm_intent(
+        request,
+        service,
+        actor,
+        token=request.POST.get("preview", ""),
+        salt=salt,
+        link=request.path,
+        current_scope=current_scope,
+        request_schema=request_schema,
+        capability=capability,
+        attach=attach,
+    )
+    admin_navigation.remember_origin(request, receipt.request_id)
+    return HttpResponseRedirect(f"/admin/configuration/requests/{receipt.request_id}")
+
+
+def confirm_intent(
+    caller,
+    service,
+    actor,
+    *,
+    token,
+    salt,
+    link,
+    current_scope,
+    request_schema=None,
+    capability=Capability.CONFIGURE,
+    attach=None,
+):
     """Admit one exact intent; identical retries return the original receipt.
 
-    The recheck under the work transaction tests the same capability the page
-    admitted with, so the two cannot diverge if the capability matrix changes.
-    `attach(request, extra)` records an editor's companion rows from the
-    signed preview inside the request's own durable transaction.
+    ``caller`` is the page's request or an ``AdminCaller`` (the command
+    line's ``schedule confirm``); ``link`` is the page an expired preview
+    sends the Administrator back to (None from the command line). The
+    recheck under the work transaction tests the same capability the page
+    admitted with, so the two cannot diverge if the capability matrix
+    changes. `attach(request, extra)` records an editor's companion rows from
+    the signed preview inside the request's own durable transaction, and is
+    never called on a retry. Returns the request's ``RequestStatus``.
     """
-    token = request.POST.get("preview", "")
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
-    intent = load_preview(token, salt=salt, link=request.path)
+    intent = load_preview(token, salt=salt, link=link)
     if intent["actor"] != str(actor.identity):
         raise PermissionError("Preview belongs to another Administrator.")
     key = UUID(intent["key"])
@@ -167,7 +204,7 @@ def confirm(
     def admit():
         """The owning work lock persists until intake's durable transaction commits."""
         with work_transaction():
-            fresh = authenticated_admin(request, store=service.store, read_only=True)
+            fresh = authenticated_admin(caller, store=service.store, read_only=True)
             if not allows(fresh, capability) or fresh.identity != actor.identity:
                 return False
             configuration, snapshot = current_scope(service)
@@ -180,10 +217,10 @@ def confirm(
                 != intent["snapshot"]
             ):
                 # Settings changed since the review; start a fresh one.
-                raise expired_preview(request.path)
+                raise expired_preview(link)
             return True
 
-    receipt = record_request(
+    return record_request(
         base_digest=intent["base"],
         patch=intent["patch"],
         actor_id=actor.identity,
@@ -197,9 +234,6 @@ def confirm(
             else lambda created: attach(created, intent.get("extra"))
         ),
     )
-    # The status page leads back to this editor (#196).
-    admin_navigation.remember_origin(request, receipt.request_id)
-    return HttpResponseRedirect(f"/admin/configuration/requests/{receipt.request_id}")
 
 
 def error_response(error):

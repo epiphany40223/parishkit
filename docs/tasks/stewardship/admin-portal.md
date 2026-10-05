@@ -306,7 +306,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.02 — PR 1: add the AdminCaller seam with no behavior change.
 - [ ] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
 - [x] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
-- [ ] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
+- [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [ ] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [ ] ADM-11.07 — PR 6: add refresh and Testing send commands.
 - [ ] ADM-11.08 — PR 7: add delivery control and Family portal maintenance commands.
@@ -347,6 +347,21 @@ case), `tests/stewardship/database/test_admin_go_live_cli_postgresql.py`
 (a plain draft, a draft ready to go live, one whose cleanup started, and a
 scheduled and an active Production confirmation) and the unchanged
 go-live, confirmation, activation and withdrawal suites.
+ADM-11.05 adds `schedule preview`, `schedule confirm` and
+`config request show` (`parishkit.stewardship.admin_changes` and
+`admin_reads.read_config_request`), with the page's preview moved into
+`accounts.schedule_changes.build_preview`, its confirmation into
+`admin_editing.confirm_intent` and the request status read into
+`accounts.configuration_request_reads.receipt`; proven by
+`tests/stewardship/test_admin_changes.py`,
+`tests/stewardship/test_admin_cli.py` (catalog, usage, the registered
+`admin_cmd_schedule_confirm` event and the fresh-process cases),
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_schedule_cli_postgresql.py` (the
+round trip through the installer, tokens crossing between the page and the
+command line, bad tokens, scopes, ended sessions and unknown outcomes) and
+the unchanged schedule, clone, campaign, content, parish, Ministry and
+configuration request suites.
 
 ## ADM-12: Admin navigation overhaul
 

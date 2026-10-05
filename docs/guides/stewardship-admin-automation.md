@@ -6,9 +6,11 @@ Administrator, without clicking through pages. The
 [Admin automation specification](../specs/stewardship/admin-automation/spec.md)
 defines it; this guide says how to use it. It is delivered in steps
 ([ADM-11](../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)).
-This version has the session commands only: `login start`, `login wait`,
-`logout`, `whoami`, `sessions` and `commands`. Status, schedules and the
-other areas follow in later releases, each listed in the command catalog.
+This version has the session commands (`login start`, `login wait`,
+`logout`, `whoami`, `sessions` and `commands`), the
+[status commands](#status-commands) and
+[schedule changes](#schedule-changes). The other areas follow in later
+releases, each listed in the command catalog.
 
 Anyone who can run Docker on the host already controls the deployment; the
 command line adds no limits on top of that, only notices and audit (see the
@@ -313,6 +315,122 @@ applied, is exit 3 (`unavailable`), so try again shortly.
 ledger, `src/parishkit/stewardship/admin_parity.py`, says which command
 covers each Admin page, or why none does yet.
 
+## Schedule changes
+
+`schedule preview` and `schedule confirm` change mail schedules and, while
+they may still change, the campaign dates, through the same review and
+confirmation as the Mail schedules page. Both need a full-scope session.
+Neither asks for a fresh Google sign-in or a confirmation at the prompt,
+because the page asks for neither. `config request show` follows the
+resulting change; any session may run it.
+
+```sh
+pk-admin schedule show
+pk-admin schedule preview --expected-version VERSION --changes - < change.json
+pk-admin schedule confirm --token - < token.txt
+pk-admin config request show REQUEST_ID --watch 5
+```
+
+Write a bare `-` as its own argument, as above. The wrapper forwards your
+standard input only for that exact argument, so `--changes=-` or
+`--token=-` reaches the command with no input. A value given inline,
+`--changes '{...}'`, needs no standard input.
+
+1. Read `version` from `schedule show` and pass it as `--expected-version`.
+   If the settings changed since then, the preview is exit 1
+   (`stale_version`); read again.
+2. Write the change document (below). It is a default, pending
+   Administrator confirmation.
+3. `schedule preview` prints the page's review (below). Problems the page's
+   form would show are exit 1 (`invalid`), with `error.fields` listing each.
+4. `schedule confirm --token` takes `preview.token` within fifteen minutes,
+   as the page does, with the same `--campaign` as the preview (or none
+   for both). A token from the page's review works here, and a token from
+   here works on the page. An expired token, or one the settings or the
+   campaign's sends have overtaken, is exit 1 (`stale_version`): preview
+   again. An altered token, or one for another campaign, is exit 1
+   (`invalid`); another Administrator's is exit 1 (`denied`).
+5. The configuration installer then applies the request; follow it with
+   `config request show`. Only your own requests are found; any other is
+   exit 1 (`not_available`).
+
+### The change document
+
+The document is JSON with two optional members:
+
+```json
+{
+  "window": {"end_date": "2054-10-30"},
+  "schedules": [
+    {"id": "SAVED-ID", "time": "10:30:00"},
+    {"id": "OTHER-SAVED-ID", "delete": true},
+    {"kind": "reminder", "date": "2054-10-20", "time": "09:00:00",
+     "template_version": "EMAIL-ID"}
+  ]
+}
+```
+
+| Member | What it holds |
+| --- | --- |
+| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page. |
+| `schedules` | A list of entries, each one of the three below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
+
+| Entry | Members |
+| --- | --- |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
+| Remove a saved schedule | `id` and `"delete": true`, nothing else. |
+| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (`HH:MM:SS`, in the campaign's time zone) and `template_version` for all. |
+
+`template_version` names a saved email of the schedule's kind: the
+`template_version` of a schedule in `schedule show`, or the email's id from
+the page and email templates (a command for those arrives later).
+
+### The review and the result
+
+| `schedule preview` field | What it holds |
+| --- | --- |
+| `campaign_id`, `version` | The campaign, and the configuration version the change was made against |
+| `window` | `before` and `after` (`start_date`, `end_date`, `timezone`), and the names of the campaign values that `changed` |
+| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
+| `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
+| `preview` | `token`, which `schedule confirm` takes |
+
+Each `error.fields` entry has `field` (`window.<name>`,
+`schedules.<id>.<name>`, `schedules.new<n>.<name>` for the n-th added
+schedule from 0, or `window` or `schedules` for a problem between fields),
+`code` (`required` or `invalid`) and `message`, the page's text.
+
+| `schedule confirm` field | What it holds |
+| --- | --- |
+| `created` | False when this token was confirmed before: the original request is returned and nothing changes |
+| `request` | The request, as `config request show` prints it |
+
+| `config request show` field | What it holds |
+| --- | --- |
+| `request_id`, `sequence` | The request and its latest checkpoint |
+| `state` | `staged`, `validating`, `prepared`, `yaml_activated`, `applied`, `failed` or `cancelled`; `--watch` stops at the last three |
+| `failure` | The stored reason, only when it failed (`stale_base`, `invalid_candidate`, `actor_unauthorized`) |
+| `candidate_version_id`, `applied_version_id` | The configuration the request proposes, and the one applied (only once applied) |
+
+### When the outcome is unknown
+
+Exit 6 (`outcome_unknown`) from `schedule confirm` means the request may
+have been recorded: the database connection dropped once the request was
+written, or an error came after it committed. The error names the request
+in `error.request_id`, fixed before the command acted. Run
+`config request show` with it: `not_available` means nothing was recorded.
+Or repeat `schedule confirm` with the same token within its fifteen
+minutes: it returns the request if there is one and records it if not.
+After that, preview again. A session that ended is still exit 5, and a
+database error before the request was written is exit 3, with nothing
+changed.
+
+System logs show each confirmation as `admin_cmd_schedule_confirm`,
+attributed to the approving Administrator with the automation session as
+its subject. A schedule change creates no automation notice: notices are
+for approvals, refused use, access and key changes, fresh-gated and
+irreversible actions, and endings.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -321,3 +439,7 @@ covers each Admin page, or why none does yet.
   `watch_interrupted`.
 - `pk-admin/1` (ADM-11 PR 3b): additive. `go-live readiness` and
   `go-live progress`.
+- `pk-admin/1` (ADM-11 PR 4): additive. `schedule preview`,
+  `schedule confirm` and `config request show`, the first three-word
+  command, `error.fields` on an `invalid` change, and `error.request_id`
+  on an unknown outcome.

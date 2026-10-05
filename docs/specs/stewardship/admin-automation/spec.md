@@ -1536,6 +1536,38 @@ configuration installer applies; the command reports the request outcome as
 the page's request status does. See
 [campaign configuration](../admin-portal/spec.md#campaign-configuration).
 
+`schedule preview` and `schedule confirm` take `--campaign` as
+`schedule show` does. The Mail schedules page asks for no fresh sign-in and
+no typed value, so neither command is fresh-gated or prompts, and neither
+waits for PR 5. `schedule preview` admits as the page's form post does,
+recording activity, so it needs a full-scope session although it changes
+nothing. It takes `--expected-version` (the `version` of `schedule show`,
+the page's hidden base digest) and `--changes`, a JSON change document bound
+to the page's own forms: a saved schedule named by `id` keeps what the
+document leaves out, `delete` removes it, an entry without `id` adds one,
+and saved schedules it does not name stay unchanged. The page's form errors
+are `invalid` with `error.fields`, each with its field identifier, its
+`ErrorCode` (`required` or `invalid`) and the page's message. The document's
+format, the
+`--expected-version` requirement and the full scope are defaults, pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#schedule-changes)
+shows the format. `schedule confirm` records `admin_cmd_schedule_confirm`
+in the request's own durable transaction, only when it creates the request;
+a repeated confirmation returns the original request and records nothing.
+Its configuration checks before intake are `unavailable` during a restore
+review or an activating change, as for `schedule preview`. A database error
+once the request row is written is `outcome_unknown`, never `unavailable`,
+because it may have struck the commit; one before that rolled back and is
+`unavailable`. An `outcome_unknown` document carries `error.request_id`,
+the request's id, which is fixed before intake, so the operator can read it
+with `config request show` or repeat the confirmation within the token's
+fifteen minutes. A schedule change
+is in no row of the [notifications](#notifications) table, so it creates
+no automation notice. `config request show REQUEST_ID` reads only the
+approving Administrator's own requests, as the page does; any other is
+`not_available`, and, like the page, it records no view event.
+
 ### Production transition and withdrawal
 
 | URL names | Command or exemption |
