@@ -9,16 +9,22 @@ from openpyxl import load_workbook
 
 from parishkit.stewardship.reports.directory_documents import (
     CODE_HEADINGS,
+    EMAIL_HEADING,
+    HEAD_EMAILS_DETAIL,
     POSTAL_HEADINGS,
     UNADDRESSED_DETAIL,
     directory_document,
     head_names,
 )
 from parishkit.stewardship.reports.directory_rendering import (
+    COLUMN_WIDTHS,
     address_blocks,
     render_directory,
     table_lines,
 )
+
+SHARED = [{"value": "williams@example.org", "valid": True}]
+EMAILS = "Aaron Williams and Isabelle Williams: williams@example.org"
 
 MOMENT = datetime(2026, 10, 2, 13, tzinfo=UTC)
 ADDRESS = dict(
@@ -39,9 +45,20 @@ def item(**values):
             family_name="=Sample Family",
             family_duid=12345,
             code="ABCDEFGH",
+            # Both heads share one address, so the export names it once.
             heads=[
-                {"name": "Aaron Williams", "first": "Aaron", "last": "Williams"},
-                {"name": "Isabelle Williams", "first": "Isabelle", "last": "Williams"},
+                {
+                    "name": "Aaron Williams",
+                    "first": "Aaron",
+                    "last": "Williams",
+                    "emails": SHARED,
+                },
+                {
+                    "name": "Isabelle Williams",
+                    "first": "Isabelle",
+                    "last": "Williams",
+                    "emails": SHARED,
+                },
             ],
             phones=[dict(owner="Family", kind="home", value="202-555-0123")],
             address=ADDRESS,
@@ -132,19 +149,20 @@ def test_head_names_join_naturally(heads, expected):
     assert head_names(heads) == expected
 
 
-def test_code_directory_csv_has_exactly_three_plain_columns():
+def test_code_directory_csv_has_exactly_four_plain_columns():
     """No record column, no metadata row: a header and one row per Family.
 
     Family is the surname, then the heads of household; heads of another
-    surname are shown in full.
+    surname are shown in full. Family head emails comes last (#604).
     """
     rows = csv_rows(document([item(family_duid=12345 + index) for index in range(52)]))
-    assert rows[0] == list(CODE_HEADINGS)
+    assert rows[0] == [*CODE_HEADINGS, EMAIL_HEADING]
     assert len(rows) == 53
     assert rows[1] == [
         "'=Sample Family, Aaron Williams and Isabelle Williams",
         "12345",
         "ABCDEFGH",
+        EMAILS,
     ]
     rows = csv_rows(document([item(family_name="Williams")]))
     assert rows[1][0] == "Williams, Aaron and Isabelle"
@@ -153,8 +171,8 @@ def test_code_directory_csv_has_exactly_three_plain_columns():
 def test_unreachable_directory_adds_phone_numbers():
     """The "neither email nor mail" list adds phones for follow-up calls."""
     rows = csv_rows(document([item()], reach="neither"))
-    assert rows[0] == [*CODE_HEADINGS, "Phone numbers"]
-    assert rows[1][-1] == "Family (home): +1 (202) 555-0123"
+    assert rows[0] == [*CODE_HEADINGS, "Phone numbers", EMAIL_HEADING]
+    assert rows[1][-2:] == ["Family (home): +1 (202) 555-0123", EMAILS]
 
 
 def test_postal_csv_is_a_mail_merge_of_every_filtered_family():
@@ -174,7 +192,8 @@ def test_postal_csv_is_a_mail_merge_of_every_filtered_family():
     )
     assert report.unaddressed == 1 and report.item_count == 3
     rows = csv_rows(report)
-    assert rows[0] == list(POSTAL_HEADINGS)
+    # The mail-merge columns keep their names and order; the emails come last.
+    assert rows[0] == list(POSTAL_HEADINGS) and POSTAL_HEADINGS[-1] == EMAIL_HEADING
     assert rows[1] == [
         "12345",
         "'=Sample Family",
@@ -187,6 +206,7 @@ def test_postal_csv_is_a_mail_merge_of_every_filtered_family():
         "KY",
         "40223-1234",
         "ABCDEFGH",
+        EMAILS,
     ]
     # No usable address: the row stays, its Addressee and address are blank.
     assert rows[2] == [
@@ -196,6 +216,7 @@ def test_postal_csv_is_a_mail_merge_of_every_filtered_family():
         "Aaron and Isabelle Williams",
         *[""] * 6,
         "ABCDEFGH",
+        EMAILS,
     ]
     # No heads: the Family name addresses the envelope.
     assert (
@@ -278,7 +299,8 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     render_directory(report, output, format="xlsx")
     book = load_workbook(output)
     sheet = book["Families"]
-    assert tuple(cell.value for cell in sheet[1]) == CODE_HEADINGS
+    assert tuple(cell.value for cell in sheet[1]) == (*CODE_HEADINGS, EMAIL_HEADING)
+    assert sheet["D2"].value == EMAILS
     assert sheet["A2"].value == "=Sample Family, Aaron Williams and Isabelle Williams"
     assert sheet["A2"].data_type == "s"
     assert dict(
@@ -286,8 +308,8 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     )["Privacy"].startswith("Sensitive: Family codes.")
     book.close()
     line = next(table_lines(report))[0]
-    assert "=Sample Family, Aaron Williams and Isabelle Williams" in line
-    assert "ABCDEFGH" in line
+    assert "=Sample Family, Aaron Williams and" in line
+    assert "ABCDEFGH" in line and "Aaron Williams and Isabelle" in line
     for postal in (False, True):
         output = io.BytesIO()
         assert render_directory(document([item()], postal=postal), output, format="pdf")
@@ -379,3 +401,90 @@ def test_testing_codes_context_follows_the_mode(monkeypatch, mode, shown):
     context = testing_codes_context("campaign")
     assert context["testing_codes"] is shown
     assert context["family_test_url"] == ("/test-send" if shown else None)
+
+
+def test_pdf_table_rows_fit_the_page_with_phones_and_emails():
+    """Wrapped cells keep the widest table (phones and emails) on the page.
+
+    The landscape page holds about 138 monospaced characters at 9 pt.
+    """
+    long = [{"value": "a.very.long.address.for.wrapping@example.org", "valid": True}]
+    report = document(
+        [item(heads=[{"name": "Ann Lee", "emails": long}])], reach="neither"
+    )
+    lines = [line for block in table_lines(report) for line in block]
+    assert lines and max(map(len, lines)) <= 138
+    # The email column starts after Family, DUID, code and phones (and their
+    # two-space gaps); its wrapped pieces rejoin to the whole address.
+    start = sum(COLUMN_WIDTHS[name] + 2 for name in report.headings[:-1])
+    assert (
+        "".join(line[start:] for line in lines)
+        == "Ann Lee: a.very.long.address.for.wrapping@example.org"
+    )
+
+
+def test_current_head_emails_are_dated_in_the_report_details(monkeypatch):
+    """Emails read from newer data than the capture say how current they are.
+
+    The detail is in the XLSX information sheet and the PDF header, never a
+    CSV row; without it (the capture's own source) nothing is added (#604).
+    """
+    later = datetime(2026, 10, 9, 15, tzinfo=UTC)
+    payload = dict(
+        metadata=dict(
+            name="Annual campaign",
+            id="campaign",
+            source_id="source",
+            source_generation=1,
+            source_as_of=MOMENT.isoformat(),
+        ),
+        total=1,
+        rows=[item()],
+    )
+    parameters = {
+        "filters": {"search": "", "reason": "any", "phone": "any"},
+        "postal": False,
+        "exact": False,
+    }
+    common = dict(
+        parish_name="Sample Parish",
+        captured_at=MOMENT,
+        requested_at=MOMENT,
+        timezone="America/Detroit",
+    )
+    current = directory_document(payload, parameters, head_emails_as_of=later, **common)
+    captured = directory_document(payload, parameters, **common)
+    details = dict(current.metadata)
+    assert details[HEAD_EMAILS_DETAIL] == later
+    assert HEAD_EMAILS_DETAIL not in dict(captured.metadata)
+    assert csv_rows(current) == csv_rows(captured)
+    output = io.BytesIO()
+    render_directory(current, output, format="xlsx")
+    book = load_workbook(output)
+    information = {
+        row[0].value: row[1].value for row in book["Report information"].iter_rows()
+    }
+    book.close()
+    assert HEAD_EMAILS_DETAIL in information
+    from parishkit.stewardship.reports import directory_rendering
+
+    drawn = []
+    original = directory_rendering.visible_text
+
+    def visible(value, **kwargs):
+        """Record the header text the PDF draws."""
+        drawn.append(value)
+        return original(value, **kwargs)
+
+    monkeypatch.setattr(directory_rendering, "visible_text", visible)
+    for postal in (False, True):
+        drawn.clear()
+        output = io.BytesIO()
+        report = directory_document(
+            payload,
+            parameters | {"postal": postal},
+            head_emails_as_of=later,
+            **common,
+        )
+        assert render_directory(report, output, format="pdf")
+        assert any(HEAD_EMAILS_DETAIL in value for value in drawn)

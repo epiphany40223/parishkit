@@ -1274,6 +1274,9 @@ the owner-only directory/file/temporary-file permissions defined by
 [runtime storage](../operations/spec.md#runtime-storage) and the retention policy defined by
 [operations](../operations/spec.md#temporary-retention-and-housekeeping).
 Expired files can be regenerated from retained source/config where permitted.
+A Family directory file's head emails are the one exception to "retained":
+they may come from the current ParishSoft data, and the file says so (see
+the [Family directory](../reports/spec.md#family-directory)).
 Files are served only through an authorized application response. A short-lived
 single-use download grant authorizes that application response, never proxy
 file access or an internal-redirect handoff. Caddy has no export-storage mount.

@@ -730,12 +730,43 @@ the page with mailing columns on and reach "By postal mail only" (or the known
 reach its link named), so bookmarks keep working. Forms rendered before the merge still submit to the
 old page and export addresses, which serve them with mailing columns on.
 
+Each row's **Contact details** list the active heads (the ones the Family
+name lists) with their email addresses from the same ParishSoft data
+([#604](https://github.com/epiphany40223/parishkit/issues/604)). An address
+several heads share, compared case-insensitively after trimming, is shown once
+with all of them ("Anna Example and Ben Example — family@example.org"); a head
+with an address of their own is listed separately, and a head without one
+reads "No email on file". Entries follow the heads' order, then each head's
+addresses in order. A valid address is selectable text with a `mailto:` link;
+source text that is not a valid address is shown, marked "not a valid
+address; fix in ParishSoft", and is not linked. The exports carry the same
+list in a Family head emails column. Head emails never appear in URLs (query
+strings or paths), logs or audit records. If the page's ParishSoft data is compacted while the page
+is being read, that request fails (the next one reads the new data) rather
+than show a head as having no email.
+
 Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
 one header row plus one row per Family, with exactly the columns Family (the
-same surname-and-heads name as the page), ParishSoft DUID and Family code. The
-list filtered to Families no campaign mail can reach adds Phone numbers for
-follow-up calls. Report details (parish, campaign, capture time, Families in
-the file, filters applied and the privacy line "Sensitive: Family codes.
+same surname-and-heads name as the page), ParishSoft DUID, Family code and
+Family head emails. The list filtered to Families no campaign mail can reach
+adds Phone numbers for follow-up calls, before Family head emails. Family
+head emails reads like the Contact details: "Anna Example and Ben Example:
+family@example.org; Cara Example: (no email)", with invalid source text
+followed by "(not a valid address; fix in ParishSoft)". The emails are not
+part of the export's captured selection; they are read when the file is
+rendered, from the captured ParishSoft data while it is still kept.
+ParishSoft data is refreshed every 15 minutes and superseded data is soon
+compacted, so a render that comes later (a retry, or regenerating an expired
+file) reads the same heads' emails from the current ParishSoft data instead,
+and the file's report details add "Head emails as of" that data's refresh
+time. CSV files carry no report details, so that note appears only in XLSX
+and PDF files. A head the current data no longer has as a Member at all
+reads "(not in current ParishSoft data)" rather than "(no email)". A regenerated or retried file therefore has the same Families, names,
+codes and other columns as the capture, but its head emails may be newer. Only
+when no ParishSoft data is available at all does the render fail, with its
+own failure kind (`directory_head_emails_unavailable`) in the logs; the
+export is retried like any failed render. Report details (parish, campaign, capture time, "Head emails as of"
+when it applies, Families in the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
 "Report information" sheet, never in columns. The page's export panel names
 the file's columns for the current filters and mailing-columns choice. Exports use the standard asynchronous, short-lived, requester-authorized export
@@ -769,13 +800,14 @@ columns is audited as postal outreach, and its export is a `postal_outreach`
 export request.
 
 Detail contains Family DUID, envelope number where present, Family/head names,
-family/member phone numbers, complete primary address, reason, and campaign
+head email addresses, family/member phone numbers, complete primary address, reason, and campaign
 manual code.
 
 The export is a mail merge for envelope labels and cover letters: one header
 row plus one row per Family, with the columns ParishSoft DUID, Family,
 Addressee, Family heads, Address line 1–3 (empty optional lines omitted), City,
-State, ZIP (with its +4 extension when present) and Family code. Addressee and
+State, ZIP (with its +4 extension when present), Family code and Family head
+emails (as in the [Family directory](#family-directory) export). Addressee and
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. The file has exactly the
@@ -784,10 +816,11 @@ cannot be mailed, but it keeps its row: its Addressee, Address line 1–3,
 City, State and ZIP are blank (never a partial address), and ParishSoft DUID,
 Family, Family heads and Family code stay for follow-up. The page's export
 panel says so, and the file's report details count the rows with no usable
-mailing address. The columns and their order never change, so existing
-mail-merge templates keep working. The PDF lays the same content out as
-address blocks (a block without an address says "No usable mailing
-address"), with the report details in its header and footer. It
+mailing address. Existing columns keep their names and order (Family head
+emails was added at the end), so existing mail-merge templates keep working.
+The PDF lays the same content out as address blocks (a block without an
+address says "No usable mailing address"), leaving out the head emails,
+with the report details in its header and footer. It
 never includes the opaque email-link token.
 
 ## Ministry change summary

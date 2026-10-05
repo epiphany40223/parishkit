@@ -261,16 +261,18 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
             assert response.status_code == 200
             assert body.startswith(
                 {
-                    "csv": b"Family,ParishSoft DUID,Family code\r\n",
+                    "csv": b"Family,ParishSoft DUID,Family code,Family head emails\r\n",
                     "xlsx": b"PK",
                     "pdf": b"%PDF",
                 }[format]
             )
             assert "family_directory." + format in response["Content-Disposition"]
             if format == "csv":
-                # The code list names Families and codes, not addresses.
+                # The code list names Families, codes and head emails (read
+                # from the captured source, #604), not addresses.
                 assert harness.code.encode() in body
                 assert b"1 Example Street" not in body
+                assert body.endswith(b",Member Example: valid@example.org\r\n")
     data = response_source()
     data.families[1]["lastName"] = "Later changed name"
     snapshot, claim = prepare(data)
@@ -524,6 +526,10 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     # the source has a street line: a partial address is never printed.
     for row in rows[2:]:
         assert [row[2], *row[4:10]] == [""] * 7 and row[10]
+    # The mail merge ends with the head emails column (#604); these heads
+    # have none, and every row still lists them.
+    assert rows[0][-1] == "Family head emails" and len(rows[0]) == 12
+    assert {row[11] for row in rows[1:]} == {"Member Example: (no email)"}
     assert request.directory_snapshot.row_count == 3
     assert request.report == "postal_outreach"
     # A form rendered before the merge has no mailing field and posts to the
@@ -597,5 +603,178 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
     assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
     assert len(lines) == 2 and lines[1].startswith("1,Example,Member Example,")
     assert "1 Example Street" in lines[1] and harness.code in lines[1]
+    assert lines[1].endswith(",Member Example: valid@example.org")
     events = AuditEvent.objects.filter(event_type="postal_outreach_viewed")
     assert events.exists()
+
+
+def _compact(monkeypatch, snapshot_id):
+    """Compact one superseded source snapshot now, as the refresh would later.
+
+    Real compaction keeps recent, anchored and referenced snapshots for a
+    while; the 15-minute refresh compacts an unchanged previous snapshot at
+    once. This narrows the real owner's candidate rules to ``snapshot_id``
+    only, so the test needs no waiting and no other snapshot is touched.
+    """
+    from django.db.models import Q
+
+    from parishkit.stewardship.source import compaction
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    from .test_source_compaction_postgresql import cleanup
+
+    def eligible(*args, **kwargs):
+        """The "older than the recent window" rule selects just this one."""
+        if "promoted_at__lt" in kwargs:
+            return Q(pk=snapshot_id)
+        return Q(*args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(compaction, "Q", eligible)
+        patched.setattr(compaction, "_retained_anchors", lambda *args: set())
+        patched.setattr(
+            compaction,
+            "LIVE_REFERENCES",
+            "SELECT id FROM stewardship_source_snapshot "
+            f"WHERE id<>'{snapshot_id}'::uuid",
+        )
+        while cleanup().snapshot_count:
+            pass
+    assert SourceSnapshot.objects.get(pk=snapshot_id).compacted_at is not None
+
+
+def test_regenerated_and_retried_exports_read_current_head_emails_after_compaction(
+    live_response_service, google, tmp_path, settings, monkeypatch
+):
+    """Regeneration and retry still render once the capture's source is gone.
+
+    The 15-minute refresh compacts a capture's source long before a file
+    expires (7 days). The same Families, names and codes are rendered from
+    the capture; the same heads' emails come from the current ParishSoft data,
+    and the file's report details say "Head emails as of" its refresh (#604).
+    """
+    from openpyxl import load_workbook
+
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports import export_services, export_tasks
+    from parishkit.stewardship.reports.directory_documents import HEAD_EMAILS_DETAIL
+    from parishkit.stewardship.reports.export_services import retry_export
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    from .test_taskrun_postgresql import act
+
+    harness = live_response_service
+    browser, _ = signed_in()
+    actor = user("admin@example.org").pk
+    root = tmp_path / "directory-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    captured = SourceCurrent.objects.get().snapshot_id
+
+    def queue():
+        """Queue one XLSX code list (its report details are a sheet)."""
+        fields = DirectoryQuery().form_values() | dict(
+            format="xlsx", browser_timezone="UTC", request_key=str(uuid4())
+        )
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            response = post(browser, route + "export", fields)
+        assert response.status_code == 302
+        request = ExportRequest.objects.get(request_key=fields["request_key"])
+        assert request.directory_snapshot.source_id == captured
+        return request, response["Location"]
+
+    def render(run_id):
+        """The real worker renders and publishes one export task run."""
+        with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+            return execute_hint(
+                run_id,
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={
+                    TASK_TYPE: export_handler(
+                        store=harness.service.store,
+                        root=root,
+                        general=harness.rings.general,
+                    )
+                },
+            )
+
+    def download(job_route):
+        """The file's Families sheet rows and its report details."""
+        with restricted_download_pool(settings):
+            response, body = search(browser, job_route + "download", {})
+        assert response.status_code == 200
+        book = load_workbook(io.BytesIO(body))
+        rows = [list(row) for row in book["Families"].iter_rows(values_only=True)]
+        details = {
+            row[0].value: row[1].value for row in book["Report information"].iter_rows()
+        }
+        book.close()
+        return rows, details
+
+    # A file rendered while its capture's source exists uses that source and
+    # has no "as of" detail.
+    first, first_route = queue()
+    assert render(first.task_id)
+    rows, details = download(first_route)
+    assert rows[1][-1] == "Member Example: valid@example.org"
+    assert HEAD_EMAILS_DETAIL not in details
+    # A second export's first attempt fails after rendering from the capture.
+    retried, retried_route = queue()
+
+    def crash(*args):
+        """The first attempt dies before publishing its file."""
+        raise RuntimeError("synthetic render failure")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(export_tasks, "write_artifact", crash)
+        with pytest.raises(RuntimeError, match="synthetic render failure"):
+            render(retried.task_id)
+    with work_transaction():
+        act(_status(TaskRun.objects.get(pk=retried.task_id)), "permanent_failure")
+    # The next refresh changes the head's email, and the capture's source is
+    # compacted.
+    data = response_source()
+    data.members[3]["emailAddress"] = "changed@example.org"
+    snapshot, claim = prepare(data)
+    current = promote(snapshot, claim, harness.campaign, harness.rings)
+    _compact(monkeypatch, captured)
+    # The retry renders: same Family and code, current email, dated.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        retry = retry_export(
+            harness.service.store, actor, retried.pk, request_key=uuid4()
+        )
+    assert render(retry.run_id)
+    rows, details = download(retried_route)
+    assert rows[1][:3] == ["Example, Member", "1", harness.code]
+    assert rows[1][-1] == "Member Example: changed@example.org"
+    # The refresh that promoted the current data (XLSX keeps milliseconds).
+    as_of = current.promoted_at.replace(tzinfo=None)
+    assert abs(details[HEAD_EMAILS_DETAIL] - as_of) < timedelta(milliseconds=1)
+    # Regenerating the expired first file renders the same way.
+    with work_transaction():
+        now = export_services.database_now()
+    # Only the regeneration request sees the clock past the first file's
+    # expiry; its new file is then fresh at the real time.
+    with (
+        monkeypatch.context() as patched,
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        patched.setattr(
+            export_services, "database_now", lambda: now + timedelta(days=8)
+        )
+        fields = {"request_key": str(uuid4())}
+        response = post(
+            browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+        )
+    assert response.status_code == 302
+    regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
+    assert regenerated.directory_snapshot_id == first.directory_snapshot_id
+    assert render(regenerated.task_id)
+    rows, details = download(response["Location"])
+    assert rows[1][:3] == ["Example, Member", "1", harness.code]
+    assert rows[1][-1] == "Member Example: changed@example.org"
+    assert HEAD_EMAILS_DETAIL in details

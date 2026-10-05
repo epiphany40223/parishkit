@@ -5,7 +5,12 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
-from parishkit.stewardship.reports.directories import DirectoryQuery, address_lines
+from parishkit.stewardship.reports.directories import (
+    DirectoryQuery,
+    address_lines,
+    head_email_groups,
+    head_emails_text,
+)
 
 
 def test_directory_filters_preserve_private_post_state():
@@ -216,3 +221,114 @@ def test_directory_headings_and_pages_post_private_filters():
         with pytest.raises(ValueError):
             pop_page_size(QueryDict(f"size={size}").copy(), (50,))
     assert pop_page_size(QueryDict("size=50").copy(), (50,)) == 50
+
+
+def _email(value, valid=True):
+    """One canonical contact email entry."""
+    return {"value": value, "valid": valid}
+
+
+ANNA = {"name": "Anna Example", "emails": [_email("family@example.org")]}
+BEN = {"name": "Ben Example", "emails": [_email(" FAMILY@Example.org ")]}
+CARA = {"name": "Cara Example", "emails": [_email("cara@example.org")]}
+DAN = {"name": "Dan Example", "emails": []}
+
+
+@pytest.mark.parametrize(
+    "heads, expected",
+    [
+        # A shared address once, with both heads.
+        (
+            [ANNA, ANNA | {"name": "Ben Example"}],
+            "Anna Example and Ben Example: family@example.org",
+        ),
+        # Mixed case and stray spaces are the same address; the first
+        # spelling seen is shown.
+        ([ANNA, BEN], "Anna Example and Ben Example: family@example.org"),
+        # One shared and one distinct address, in head order.
+        (
+            [ANNA, BEN | {"emails": [*BEN["emails"], _email("ben@example.org")]}],
+            "Anna Example and Ben Example: family@example.org; "
+            "Ben Example: ben@example.org",
+        ),
+        # Heads without an email are still listed, in their place.
+        (
+            [DAN, ANNA, DAN | {"name": "Eve Example"}, CARA],
+            "Dan Example: (no email); Anna Example: family@example.org; "
+            "Eve Example: (no email); Cara Example: cara@example.org",
+        ),
+        # Two case variants held by one head name that head once.
+        (
+            [{"name": "Gus Example", "emails": [_email("G@x"), _email("g@x")]}],
+            "Gus Example: G@x",
+        ),
+        (
+            [{"name": "Hal Example", "emails": [_email("hal at home", False)]}],
+            "Hal Example: hal at home (not a valid address; fix in ParishSoft)",
+        ),
+        # An export's current data no longer has this head at all.
+        (
+            [ANNA, DAN | {"missing": True}],
+            "Anna Example: family@example.org; "
+            "Dan Example: (not in current ParishSoft data)",
+        ),
+        ([], ""),
+    ],
+)
+def test_head_emails_are_listed_once_per_address(heads, expected):
+    """Shared head addresses are de-duplicated case-insensitively (#604)."""
+    assert head_emails_text(heads) == expected
+
+
+def test_contact_details_list_each_address_with_its_heads():
+    """The pane folds emails into the heads entry: one line per address (#604).
+
+    Valid addresses are mailto links; a head without one reads "No email on
+    file"; source text that is not a valid address is shown for correction
+    but never linked; a local part that would start a mailto query is
+    percent-encoded.
+    """
+    from uuid import UUID
+
+    def pane(heads):
+        """Render one row's heads-and-emails entry for the given heads."""
+        html = render_to_string(
+            "stewardship/directory.html",
+            {
+                "campaign_id": UUID(int=80),
+                "metadata": {"source_generation": 1},
+                "total": 1,
+                "table": _table(
+                    [
+                        {
+                            "family_name": "Example",
+                            "display_name": "Example",
+                            "family_duid": 1,
+                            "heads": heads,
+                            "head_emails": head_email_groups(heads),
+                        }
+                    ]
+                ),
+                "query": DirectoryQuery(),
+            },
+        )
+        assert html.count("Active Family heads") == 1
+        return html.split('<dd class="head-emails">')[1].split("</dd>")[0]
+
+    html = pane(
+        [
+            ANNA | {"emails": [*ANNA["emails"], _email("not-an-address", False)]},
+            BEN,
+            {"name": "Cara Example", "emails": [_email("a?b@example.org")]},
+            DAN,
+        ]
+    )
+    assert html == (
+        'Anna Example and Ben Example — <a href="mailto:family@example.org">'
+        "family@example.org</a>"
+        "<br>Anna Example — not-an-address "
+        "<small>(not a valid address; fix in ParishSoft)</small>"
+        '<br>Cara Example — <a href="mailto:a%3Fb@example.org">a?b@example.org</a>'
+        "<br>Dan Example — No email on file"
+    )
+    assert pane([]) == "No active head"

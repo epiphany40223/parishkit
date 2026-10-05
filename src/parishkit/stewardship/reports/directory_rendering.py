@@ -14,18 +14,21 @@ from textwrap import wrap
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
-from .directory_documents import UNADDRESSED_DETAIL
+from .directory_documents import HEAD_EMAILS_DETAIL, UNADDRESSED_DETAIL
 from .information_rendering import information_xlsx, pdf_font, visible_text
 
 PAGE_LINES = 32
 LINE_WIDTH = 124
 # Character widths of the Family-code table's columns (monospaced PDF text).
-# Family holds the surname and the heads of household on one line.
+# Family holds the surname and the heads of household; long cells wrap. With
+# phones and head emails the row is 136 characters, which still fits the
+# landscape page at 9 pt (about 138 monospaced characters).
 COLUMN_WIDTHS = {
-    "Family": 68,
+    "Family": 40,
     "ParishSoft DUID": 15,
-    "Family code": 14,
-    "Phone numbers": 45,
+    "Family code": 11,
+    "Phone numbers": 22,
+    "Family head emails": 40,
 }
 
 
@@ -133,6 +136,15 @@ def directory_pdf(document, output):
             details["Parish"],
             details["Campaign"],
             f"Captured {dates.display_text(details['Captured at'])}",
+            # Head emails read from newer ParishSoft data than the capture.
+            *(
+                (
+                    f"{HEAD_EMAILS_DETAIL} "
+                    f"{dates.display_text(details[HEAD_EMAILS_DETAIL])}",
+                )
+                if HEAD_EMAILS_DETAIL in details
+                else ()
+            ),
         )
     )
     counts = f"{details['Families in this file']} Families in this file"

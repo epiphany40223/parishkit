@@ -41,7 +41,10 @@ Native export forms preserve applied private filters and show count, scope,
 format, timezone and privacy. They retain a no-script UTC fallback. Existing
 requester status, cancellation, retry, regeneration and guarded downloads are
 reused for all three formats. Regeneration retains original source/response
-values even after a newer source promotion. CSV provides an explicit Record
+values even after a newer source promotion. Family head emails are the
+exception: once the captured source is compacted they come from the current
+ParishSoft data, dated "Head emails as of" (see the
+[Family directory spec](../specs/stewardship/reports/spec.md#family-directory)). CSV provides an explicit Record
 column to distinguish Family mail-merge rows from report metadata.
 
 Focused local checks on September 19, 2026:
