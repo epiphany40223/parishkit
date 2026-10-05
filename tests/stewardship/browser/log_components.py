@@ -15,6 +15,7 @@ from parishkit.stewardship.audit.log_rows import (
     operational_row,
     page_context,
 )
+from parishkit.stewardship.audit.log_views import ZONE_MESSAGE
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
 
@@ -107,6 +108,19 @@ def components(context, admin):
     # The same snapshot oldest first: what the Time heading's POST form
     # returns, served to the in-place re-sort tests from a GET path (#478).
     oldest = replace(everything, sort="oldest")
+    # Local-day filters as applied from a Los Angeles browser (#558): the
+    # zone is carried with the days by every table control and the export.
+    dated = LogQuery.parse(
+        {
+            "applied": "yes",
+            "info": "yes",
+            "error": "yes",
+            "start": "2026-09-19",
+            "end": "2026-09-19",
+            "zone": "America/Los_Angeles",
+            "size": "25",
+        }
+    )
     result = {
         "/logs": ("text/html", page(everything, rows, total=30)),
         "/logs-oldest": ("text/html", page(oldest, rows[::-1], total=30)),
@@ -121,6 +135,7 @@ def components(context, admin):
             page(older, [*operational[4:], audit[1]], number=2, total=27),
         ),
         "/logs-empty": ("text/html", page(LogQuery.parse({"applied": "yes"}), [])),
+        "/logs-dated": ("text/html", page(dated, rows, total=30)),
     }
     # The three error states: a refused filter value, a refused query string
     # and an outage, which is also what a denied reader sees.
@@ -143,4 +158,34 @@ def components(context, admin):
                 },
             ),
         )
+    # Any Admin page with the critical-events banner, whose System logs form
+    # sends a From day with the browser's zone (#558).
+    banner = admin | {
+        "critical_count": 2,
+        "critical_events": [{"label": "Source data failed checks", "count": 2}],
+        "critical_since_day": "2026-09-17",
+        "critical_shown": "signed",
+        "critical_limit": 100,
+    }
+    result["/logs-critical-banner"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/logs.html",
+            context
+            | {"admin_chrome": banner}
+            | page_context(
+                LogQuery(), log_table(LogQuery(), [], through=moment, action="/logs")
+            ),
+        ),
+    )
+    # Dates that arrived without a zone the server knows (#558).
+    result["/logs-error-zone"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/logs-error.html",
+            context
+            | {"admin_chrome": admin}
+            | {"message": ZONE_MESSAGE, "invalid": False, "query_string": False},
+        ),
+    )
     return result

@@ -112,25 +112,33 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
 
 
 def test_banner_log_link_lists_the_critical_entries(auth_service, google):
-    """The banner's System logs form is accepted and shows the CRITICAL rows."""
+    """The banner's System logs form is accepted and shows the CRITICAL rows.
+
+    Its From day is a day in the browser's zone (#558), which the page script
+    fills into the form's zone field; the day starts early enough that the
+    entry is listed even far west or east of UTC.
+    """
     browser, login = signed_in()
     assert login.status_code == 302
     critical(Event.SOURCE_INVALID)
     page = home(browser)
     start = page.split('name="start" value="', 1)[1].split('"', 1)[0]
-    with web():
-        response = browser.post(
-            "/admin/logs",
-            {
-                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-                "applied": "yes",
-                "critical": "yes",
-                "source": "operational",
-                "start": start,
-            },
-        )
-    assert response.status_code == 200
-    assert Event.SOURCE_INVALID.value in response.content.decode()
+    assert '<input type="hidden" name="zone" value="" data-browser-zone>' in page
+    for zone in ("Pacific/Honolulu", "Pacific/Kiritimati"):
+        with web():
+            response = browser.post(
+                "/admin/logs",
+                {
+                    "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+                    "applied": "yes",
+                    "critical": "yes",
+                    "source": "operational",
+                    "start": start,
+                    "zone": zone,
+                },
+            )
+        assert response.status_code == 200
+        assert Event.SOURCE_INVALID.value in response.content.decode()
 
 
 def test_acknowledgement_needs_an_administrator_and_post(

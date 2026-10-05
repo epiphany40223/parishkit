@@ -16,6 +16,7 @@ from parishkit.stewardship.audit.log_rows import (
     merge,
     operational_row,
 )
+from parishkit.stewardship.web.dates import UnknownZone
 
 NOW = datetime(2026, 9, 20, 12, 0, 0, 123456, tzinfo=UTC)
 IDENTIFIER = "1abcdef0-0000-4000-8000-000000000000"
@@ -60,6 +61,7 @@ def test_query_accepts_only_the_closed_bounded_grammar():
                 "campaign": [IDENTIFIER],
                 "start": ["2026-09-01"],
                 "end": ["2026-09-01"],
+                "zone": ["America/New_York"],
             }
         )
     )
@@ -116,6 +118,50 @@ def test_query_accepts_only_the_closed_bounded_grammar():
             LogQuery.parse(values)
     with pytest.raises(ValueError):
         LogQuery.parse(MultiValueDict({"source": ["audit", "both"]}))
+
+
+def test_dates_are_days_in_the_browser_zone():
+    """From and Through are local days; the zone travels with the filters.
+
+    From starts at local midnight and Through ends where the next local day
+    starts (#558), so an evening in New York that is already the next UTC day
+    still belongs to its local day, and a fall-back day lasts 25 hours.
+    """
+    query = LogQuery.parse(
+        {"start": "2026-11-01", "end": "2026-11-01", "zone": "America/New_York"}
+    )
+    assert query.bounds == (
+        datetime(2026, 11, 1, 4, tzinfo=UTC),
+        datetime(2026, 11, 2, 5, tzinfo=UTC),
+    )
+    # Either day alone bounds one side only.
+    east = LogQuery.parse({"end": "2026-10-04", "zone": "Asia/Tokyo"})
+    assert east.bounds == (None, datetime(2026, 10, 4, 15, tzinfo=UTC))
+    assert LogQuery().bounds == (None, None)
+    # Paging, sorting and the export carry the zone with the other filters.
+    assert query.form_values()["zone"] == "America/New_York"
+    table = log_table(query, [], through=NOW, action="/admin/logs")
+    assert ("zone", "America/New_York") in table.carried
+
+
+@pytest.mark.parametrize("zone", [None, "", "Etc/Unknown", "Mars/Olympus", "UTC "])
+def test_dates_without_a_known_zone_are_refused(zone):
+    """A date without the browser's zone is never read as UTC: it is a zone
+    refusal the view words on its own (a tab opened before #558 sends none)."""
+    values = {"start": "2026-10-04"} | ({} if zone is None else {"zone": zone})
+    with pytest.raises(UnknownZone):
+        LogQuery.parse(values)
+    with pytest.raises(UnknownZone):
+        LogQuery.parse({"end": "2026-10-04", "zone": zone or ""})
+
+
+def test_a_zone_without_dates_is_harmless():
+    """Filters without dates need no zone: a known one is kept for the next
+    Apply, and one the catalog does not know is dropped, not refused."""
+    assert LogQuery.parse({"zone": "Asia/Kathmandu"}).zone == "Asia/Kathmandu"
+    unknown = LogQuery.parse({"applied": "yes", "error": "yes", "zone": "Mars/Base"})
+    assert unknown.zone == "" and "zone" not in unknown.form_values()
+    assert LogQuery.parse({"zone": ""}).zone == ""
 
 
 def operational(moment, *, level="INFO", context=None, identifier=None):

@@ -6,15 +6,17 @@ so a future schema that stores something richer cannot leak through the page.
 """
 
 import re
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.observability import Event
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
 from .log_descriptions import ACTOR_KINDS, describe, words
@@ -94,6 +96,10 @@ class LogQuery:
     statement's start time, so an entry whose transaction began before the
     snapshot but committed after it can still appear on a later page view,
     shifting that page by one entry; such overlaps are rare and brief.
+
+    From (`start`) and Through (`end`) are calendar days in the viewer's
+    browser time zone (#558), which the page script sends as `zone` and every
+    navigator, heading and export form carries on with the other filters.
     """
 
     applied: str = ""
@@ -109,6 +115,7 @@ class LogQuery:
     campaign: str = ""
     start: str = ""
     end: str = ""
+    zone: str = ""
     through: str = ""
     page: str = ""
     size: str = ""
@@ -144,6 +151,14 @@ class LogQuery:
                 raise ValueError("Invalid log date filter.")
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid log date interval.")
+        if query.zone not in timezone_names():
+            # Days cannot be placed without the browser's zone (a blank one
+            # from a tab opened before #558, or a zone outside the catalog).
+            if query.start or query.end:
+                raise UnknownZone("Log dates need the browser's time zone.")
+            # Without days the zone is unused; drop one the catalog does not
+            # know rather than refuse filters that never needed it.
+            query = replace(query, zone="")
         if query.through:
             if INSTANT.fullmatch(query.through) is None:
                 raise ValueError("Invalid log snapshot.")
@@ -166,11 +181,20 @@ class LogQuery:
         return tuple(level for level in LEVELS if getattr(self, level.lower()))
 
     @property
-    def days(self):
-        """The validated From and Through days as dates, each None when unset."""
-        return tuple(
+    def bounds(self):
+        """The From and Through days as a UTC interval ``[lower, upper)``.
+
+        From starts at local midnight of its day in the browser's zone;
+        Through ends where the next local day starts, so a daylight-saving day
+        is 23 or 25 hours long. Either bound is None when its day is unset.
+        """
+        start, end = (
             date.fromisoformat(value) if value else None
             for value in (self.start, self.end)
+        )
+        return (
+            browser_day_start(start, self.zone) if start else None,
+            browser_day_start(end + timedelta(days=1), self.zone) if end else None,
         )
 
     @property

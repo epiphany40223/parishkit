@@ -182,6 +182,19 @@ def browser_instant(day, clock, zone):
         raise ValueError("That date is out of range.") from None
 
 
+def browser_day_start(day, zone):
+    """The UTC instant at which calendar ``day`` begins in the browser's zone.
+
+    A day filter covers ``[browser_day_start(day), browser_day_start(day + 1))``,
+    so a daylight-saving day is 23 or 25 hours long. Where clocks spring
+    forward at midnight, so the day has no 00:00, 00:00 is read with the
+    offset in force before the change (as :func:`browser_instant` does): the
+    day then starts at the change itself, shown as 01:00.
+    Raises :class:`UnknownZone` for a blank or unknown zone.
+    """
+    return browser_instant(day.isoformat(), "00:00", zone)
+
+
 @contextmanager
 def using(style):
     """Format with one known parish style for the duration of a block.

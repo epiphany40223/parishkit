@@ -1,8 +1,15 @@
 """Administrator-only combined log screen and its private filters."""
 
-import pytest
+import json
+from datetime import UTC, datetime
+from urllib.parse import parse_qs
 
-from .waits import eventually, has_attribute, visible
+import pytest
+from django.http import QueryDict
+
+from parishkit.stewardship.audit.log_rows import LogQuery
+
+from .waits import eventually, has_attribute, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -27,6 +34,13 @@ PAGES = (
     "/logs-empty",
     "/logs-error-400",
     "/logs-error-503",
+    "/logs-dated",
+    "/logs-error-zone",
+)
+# The hint Apply shows while a browser without a known zone has a date.
+ZONE_HINT = (
+    "Your browser didn't report a time zone, so these dates can't be used. "
+    "Clear From and Through, or check your computer's time zone setting."
 )
 
 
@@ -231,3 +245,281 @@ def test_level_icon_column_survives_in_place_sort_and_paging(page, component_ori
     assert page.evaluate(MARKED) == "kept"
     critical = page.get_by_role("cell", name="Critical", exact=True)
     assert critical.locator("svg.level-icon-critical").count() == 1
+
+
+def posted(request):
+    """A captured form POST's fields, as the server's own grammar reads them."""
+    fields = parse_qs(request.post_data, keep_blank_values=True)
+    fields.pop("csrfmiddlewaretoken", None)
+    return fields
+
+
+@pytest.mark.parametrize(
+    ("zone", "lower", "upper"),
+    [
+        # Fall back in Los Angeles: 1 November 2026 lasts 25 hours.
+        (
+            "America/Los_Angeles",
+            datetime(2026, 11, 1, 7, tzinfo=UTC),
+            datetime(2026, 11, 2, 8, tzinfo=UTC),
+        ),
+        # East of UTC, where the local day starts on the previous UTC day.
+        (
+            "Asia/Kathmandu",
+            datetime(2026, 10, 31, 18, 15, tzinfo=UTC),
+            datetime(2026, 11, 1, 18, 15, tzinfo=UTC),
+        ),
+    ],
+)
+def test_log_dates_are_days_in_the_browser_zone(
+    browser_engine, component_origin, zone, lower, upper
+):
+    """From and Through are the viewer's local days (#558): the page names the
+    browser's zone, Apply sends it with the days, and the server's own grammar
+    turns them into that zone's midnight-to-midnight interval."""
+    context = browser_engine.new_context(timezone_id=zone)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/logs-default")
+        # The zone as this engine names it: Chromium still reports the
+        # catalog alias "Asia/Katmandu", which the server accepts too.
+        zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+        # Plain labels, and a note naming this computer's zone.
+        assert page.get_by_label("From", exact=True).get_attribute("type") == "date"
+        note = page.locator("#log-zone-help")
+        visible(note.get_by_text(f"time zone: {zone}.", exact=False))
+        assert page.get_by_text("UTC day", exact=False).count() == 0
+        start = page.get_by_label("From", exact=True)
+        assert start.get_attribute("aria-describedby") == "log-zone-help"
+        assert page.locator("#table-filters [name=zone]").input_value() == zone
+        start.fill("2026-11-01")
+        page.get_by_label("Through", exact=True).fill("2026-11-01")
+        apply = page.get_by_role("button", name="Apply filters")
+        assert apply.is_enabled()
+        page.route(
+            "**/logs-default",
+            lambda route: (
+                route.fulfill(body="Filtered")
+                if route.request.method == "POST"
+                else route.continue_()
+            ),
+        )
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            apply.click()
+        fields = posted(sent.value)
+        assert fields["zone"] == [zone] and "?" not in sent.value.url
+        body = QueryDict(sent.value.post_data, mutable=True)
+        body.pop("csrfmiddlewaretoken", None)
+        assert LogQuery.parse(body).bounds == (lower, upper)
+    finally:
+        context.close()
+
+
+def test_paging_sorting_and_export_keep_the_zone(page, component_origin):
+    """Applied local days keep their zone through Next, a re-sort and the
+    export, all in POST bodies; an in-place apply keeps the browser's zone in
+    the filter form and its note (#558)."""
+    page.goto(component_origin + "/logs-dated")
+    for control in (
+        page.get_by_role("button", name="Next", exact=True).first,
+        page.get_by_role("button", name="sort ascending"),
+    ):
+        page.route(
+            "**/logs",
+            lambda route: (
+                route.fulfill(body="Paged")
+                if route.request.method == "POST"
+                else route.continue_()
+            ),
+        )
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            control.click()
+        fields = posted(sent.value)
+        assert fields["zone"] == ["America/Los_Angeles"]
+        assert fields["start"] == fields["end"] == ["2026-09-19"]
+        assert "?" not in sent.value.url
+        page.unroute("**/logs")
+        page.goto(component_origin + "/logs-dated")
+    export = page.locator("#table-export")
+    assert export.locator("[name=zone]").input_value() == "America/Los_Angeles"
+    # Applying again in place: the fetched page's fields are synced into the
+    # kept form, and the zone stays this browser's.
+    page.evaluate(MARK)
+    page.route(
+        "**/logs",
+        lambda route: (
+            route.fulfill(
+                response=route.fetch(url=component_origin + "/logs-dated", method="GET")
+            )
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert posted(sent.value)["zone"] == ["America/Los_Angeles"]
+    eventually(page, "document.querySelector('h1').dataset.mark", "kept")
+    form = page.locator("#table-filters")
+    assert form.locator("[name=zone]").input_value() == "America/Los_Angeles"
+    visible(page.locator("#log-zone-help"))
+
+
+@pytest.mark.parametrize("reported", ["", "Etc/Unknown"])
+def test_log_dates_wait_for_a_known_browser_zone(page, component_origin, reported):
+    """A browser that reports no zone, or ICU's unknown zone, cannot apply a
+    date (#558): Apply waits with a plain hint while From or Through holds a
+    day, and filtering without dates still works."""
+    # Init scripts run before the page's own and are not subject to its CSP.
+    page.add_init_script(
+        """{
+        const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+        Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+            return {...original.call(this), timeZone: ZONE};
+        };
+    }""".replace("ZONE", json.dumps(reported))
+    )
+    page.goto(component_origin + "/logs-default")
+    apply = page.get_by_role("button", name="Apply filters")
+    hint = page.locator("#log-filter-hint")
+    assert apply.is_enabled() and not hint.is_visible()
+    assert page.locator("#table-filters [name=zone]").input_value() == ""
+    assert not page.locator("#log-zone-help").is_visible()
+    # The note is never shown with an empty zone ("time zone: .").
+    assert not page.get_by_text("time zone: .", exact=False).is_visible()
+    for label in ("From", "Through"):
+        field = page.get_by_label(label, exact=True)
+        assert field.get_attribute("aria-describedby") == "log-filter-hint"
+        field.fill("2026-09-19")
+        assert apply.is_disabled()
+        has_text(hint, ZONE_HINT)
+        field.fill("")
+        assert apply.is_enabled() and not hint.is_visible()
+
+
+def test_a_mistyped_event_type_says_why_apply_waits(page, component_origin):
+    """The type field's pattern now gates Apply too, with its own hint."""
+    page.goto(component_origin + "/logs-default")
+    apply = page.get_by_role("button", name="Apply filters")
+    page.get_by_label("Event or action type", exact=False).fill("Task Failed")
+    assert apply.is_disabled()
+    has_text(
+        page.locator("#log-filter-hint"),
+        "Type the event or action type exactly as the Type column shows it, "
+        "for example task_failed.",
+    )
+    page.get_by_label("Event or action type", exact=False).fill("task_failed")
+    assert apply.is_enabled()
+
+
+def test_dates_without_a_zone_explain_the_refusal(page, component_origin):
+    """The server's refusal names the missing zone, not a typing mistake."""
+    page.goto(component_origin + "/logs-error-zone")
+    assert page.get_by_role("alert").count() == 1
+    visible(page.get_by_text("came without your computer's time zone", exact=False))
+    assert page.get_by_text("Identifiers must be complete", exact=False).count() == 0
+    assert page.get_by_text("UTC", exact=False).count() == 0
+
+
+def test_an_in_place_re_sort_keeps_the_browser_zone(page, component_origin):
+    """A table control on a page no date was applied to carries no zone, so
+    the page it fetches renders an empty one; the kept filter form must still
+    hold this browser's zone, or the next Apply with a date would be refused
+    (#558)."""
+    page.goto(component_origin + "/logs-default")
+    zone = page.locator("#table-filters [name=zone]")
+    assert zone.input_value() == "America/Los_Angeles"
+    page.evaluate(MARK)
+    page.route(
+        "**/logs",
+        lambda route: (
+            route.fulfill(
+                response=route.fetch(
+                    url=component_origin + "/logs-oldest", method="GET"
+                )
+            )
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    page.get_by_role("button", name="sort ascending").click()
+    has_attribute(
+        page.locator("#table th[data-sort-column='time']"), "aria-sort", "ascending"
+    )
+    assert page.evaluate(MARKED) == "kept"
+    assert zone.input_value() == "America/Los_Angeles"
+    assert page.locator("#table-filters [name=zone]").count() == 1
+    visible(page.locator("#log-zone-help"))
+
+
+@pytest.mark.parametrize("label", ["From", "Through"])
+def test_a_half_typed_date_says_why_apply_waits(page, component_origin, label):
+    """A partly typed date fires no input event; as focus leaves it, Apply
+    waits with a filter hint, never the gate's "required fields to save"
+    one, and a whole date (or none) lets it apply again.
+
+    Engines differ in what typing does to a date control. Chromium and macOS
+    WebKit mark a half-typed date as bad input at once, Firefox only when
+    focus leaves, and Linux WebKit ignores typed keys (picker only). Each
+    outcome is asserted, never skipped: an empty, valid control is simply
+    no date, so Apply stays available with no hint.
+    """
+    page.goto(component_origin + "/logs-default")
+    apply = page.get_by_role("button", name="Apply filters")
+    hint = page.locator("#log-filter-hint")
+    field = page.get_by_label(label, exact=True)
+    field.click()
+    page.keyboard.type("09")
+    page.get_by_label("Source").focus()
+    # Read after focus has left, when every engine has settled the state.
+    state = field.evaluate("node => [node.value, node.validity.badInput]")
+    if state[1]:
+        assert apply.is_disabled()
+        has_text(hint, f"Enter a whole {label} date, or clear it.")
+        assert "save" not in hint.inner_text()
+    else:
+        # The keys were ignored: no date, so nothing to wait for.
+        assert state == ["", False]
+        assert apply.is_enabled() and not hint.is_visible()
+    field.fill("2026-09-19")
+    assert apply.is_enabled() and not hint.is_visible()
+    field.fill("")
+    page.get_by_label("Source").focus()
+    assert apply.is_enabled() and not hint.is_visible()
+
+
+@pytest.mark.parametrize("reported", [None, "", "Etc/Unknown"])
+def test_banner_log_link_sends_its_day_only_with_a_zone(
+    page, component_origin, reported
+):
+    """The critical-events banner's System logs form sends its From day with
+    the browser's zone; a browser that reports none sends no day at all, so
+    the logs open (less narrowly) instead of refusing the date (#558)."""
+    if reported is not None:
+        page.add_init_script(
+            """{
+            const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+            Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+                return {...original.call(this), timeZone: ZONE};
+            };
+        }""".replace("ZONE", json.dumps(reported))
+        )
+    page.goto(component_origin + "/logs-critical-banner")
+    page.route(
+        "**/admin/logs",
+        lambda route: (
+            route.fulfill(body="Logs")
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="View these events in System logs").click()
+    fields = posted(sent.value)
+    if reported is None:
+        assert fields["start"] == ["2026-09-17"]
+        assert fields["zone"] == ["America/Los_Angeles"]
+    else:
+        assert "start" not in fields and fields["zone"] == [""]
+    body = QueryDict(sent.value.post_data, mutable=True)
+    body.pop("csrfmiddlewaretoken", None)
+    LogQuery.parse(body)  # The server accepts either form.

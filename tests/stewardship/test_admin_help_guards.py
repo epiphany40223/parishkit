@@ -93,7 +93,7 @@ INTRO_ALLOWED = {
     "setup-credential.html": 111,
     "chair-confirmation-error.html": 104,
     "setup-cancel.html": 100,
-    "logs-error.html": 74,
+    "logs-error.html": 73,
     "campaign-mail-families.html": 64,
     "setup-schedules.html": 63,
     "setup-source.html": 61,

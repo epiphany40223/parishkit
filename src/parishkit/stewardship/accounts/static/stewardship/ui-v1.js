@@ -89,10 +89,19 @@
   // convert to UTC, and reveals its [data-browser-zone-note] naming the zone.
   // When the browser reports no zone (or ICU's "Etc/Unknown") the field stays
   // empty and the note hidden, and the [data-browser-zone-field] controls are
-  // marked invalid with the input's data-zone-missing-hint, so the
-  // data-require-complete gate below keeps Save unavailable and says why; they
-  // are then described by that hint instead of the hidden note. The server's
-  // own catalog check refuses any other zone it does not know.
+  // marked invalid with the input's data-zone-missing-hint while they hold a
+  // value, so the data-require-complete gate below keeps Save (or Apply)
+  // unavailable and says why; they are then described by that hint instead
+  // of the hidden note. An empty field is left alone: optional dates (the
+  // System logs filters) need no zone, and a required one (a contact
+  // attempt's date) is invalid while empty anyway, with the same hint. The
+  // server's own catalog check refuses any other zone it does not know.
+  // A [data-zone-dependent] field that only narrows what is shown (the
+  // critical-events banner's From day for System logs) is instead disabled,
+  // so it is not sent: the form still works, only less narrowly.
+  const zoneValidity = (field) => {
+    field.setCustomValidity(field.value ? field.dataset.zoneHint || "" : "");
+  };
   const wireBrowserTimezone = (root) => {
     let zone = "";
     try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { /* no Intl */ }
@@ -107,10 +116,18 @@
         node.textContent = input.value;
       });
       if (note) note.hidden = !known;
+      scope.querySelectorAll("[data-zone-dependent]").forEach((field) => {
+        field.disabled = !known;
+      });
       scope.querySelectorAll("[data-browser-zone-field]").forEach((field) => {
-        field.setCustomValidity(hint);
-        if (hint) field.dataset.missingHint = hint;
-        else delete field.dataset.missingHint;
+        if (hint) {
+          field.dataset.missingHint = hint;
+          field.dataset.zoneHint = hint;
+        } else {
+          delete field.dataset.missingHint;
+          delete field.dataset.zoneHint;
+        }
+        zoneValidity(field);
         const described = known ? note : gateHint;
         if (described && described.id) field.setAttribute("aria-describedby", described.id);
       });
@@ -121,6 +138,19 @@
     });
   };
   wireBrowserTimezone(document);
+  // Re-check a zone field as its value changes. Capturing on the document
+  // runs before a form's own input and change listeners (the complete gate),
+  // and covers fields a table swap brings in. A value the browser restores
+  // without an event (the back/forward cache) is re-checked on pageshow, and
+  // this listener is added before the gate's own.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    if (event.target instanceof Element && event.target.matches("[data-browser-zone-field]")) {
+      zoneValidity(event.target);
+    }
+  }, true));
+  window.addEventListener("pageshow", () => {
+    document.querySelectorAll("[data-browser-zone-field]").forEach(zoneValidity);
+  });
 
   // An error summary's links move focus to their field. Wired for the page
   // and again for any summary a refused in-place save swaps in (#562).
@@ -418,9 +448,14 @@
   // so the hidden fields are matched by name and position, updated, removed
   // or added. A non-form node (a refresh link, a count or summary, a list of
   // choices drawn from the rows) is replaced whole and enhanced again; its
-  // ticks are lost, as a full load would lose them.
+  // ticks are lost, as a full load would lose them. A browser-zone field is
+  // left alone: it holds this browser's zone, not table state, and a fetched
+  // page renders only the zone its request carried (none after a re-sort of
+  // a page no filter was applied to), which must not blank it (#558).
   const syncHidden = (form, fresh) => {
-    const hidden = (root) => [...root.querySelectorAll('input[type="hidden"][name]')];
+    const hidden = (root) => [
+      ...root.querySelectorAll('input[type="hidden"][name]:not([data-browser-zone])'),
+    ];
     const wanted = new Map(); // name → the fresh fields of that name, in order
     hidden(fresh).forEach((field) => {
       const name = field.getAttribute("name");
@@ -1288,6 +1323,9 @@
     gateComplete(form);
     form.addEventListener("input", () => gateComplete(form));
     form.addEventListener("change", () => gateComplete(form));
+    // A partly typed date ("09/__/____") is invalid (badInput) but fires no
+    // input or change event, so the gate also checks as focus leaves a field.
+    form.addEventListener("focusout", () => gateComplete(form));
   });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach((update) => update());

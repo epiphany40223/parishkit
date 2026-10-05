@@ -3,7 +3,7 @@
 import json
 import re
 from collections import Counter
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -158,11 +158,18 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         # A type its owner writes directly, outside both reviewed vocabularies.
         logins = post(browser, {"event": "admin_login"})
         assert audit_entries(logins) == 1 and levels(logins) == []
-        # The day the entries were really stored on, not the wall clock now.
+        # The day the entries were really stored on, not the wall clock now;
+        # days are in the browser's zone, here UTC (local days are covered by
+        # test_dates_are_days_in_the_browser_zone).
         today = OperationalLog.objects.order_by("-created_at").first().created_at.date()
-        later = post(browser, {"start": (today + timedelta(days=2)).isoformat()})
+        later = post(
+            browser, {"start": (today + timedelta(days=2)).isoformat(), "zone": "UTC"}
+        )
         assert b"No matching entries." in later.content
-        during = post(browser, {"start": today.isoformat(), "end": today.isoformat()})
+        during = post(
+            browser,
+            {"start": today.isoformat(), "end": today.isoformat(), "zone": "UTC"},
+        )
         assert b"task_failed" in during.content
         for invalid in (
             {"actor": "not-a-uuid"},
@@ -313,6 +320,78 @@ def test_pages_cross_both_tables_through_entries_sharing_one_instant(
     # Every entry exactly once, in one total order, across the page boundary.
     assert walked == sorted([*diagnostic, *audited], reverse=True)
     assert len(walked) == len(set(walked)) == 30 and values is None
+
+
+def test_dates_are_days_in_the_browser_zone(auth_service, google):
+    """From and Through select the viewer's local days, not UTC days (#558).
+
+    8 March 2026 is New York's spring-forward day: it runs from 05:00 UTC
+    (midnight EST) to 04:00 UTC on 9 March (midnight EDT), 23 hours. An entry
+    at 23:30 EDT is already 9 March in UTC but belongs to the local 8 March.
+    """
+    browser, _ = signed_in()
+    stamps = {
+        "before": datetime(2026, 3, 8, 4, 59, 59, tzinfo=UTC),
+        "midnight": datetime(2026, 3, 8, 5, tzinfo=UTC),
+        "evening": datetime(2026, 3, 9, 3, 30, tzinfo=UTC),
+        "after": datetime(2026, 3, 9, 4, tzinfo=UTC),
+    }
+    keys = {name: uuid4() for name in stamps}
+    OperationalLog.objects.bulk_create(
+        OperationalLog(
+            id=keys[name],
+            correlation_id=keys[name],
+            created_at=moment,
+            level="INFO",
+            event="task_failed",
+            schema="task",
+            context={},
+        )
+        for name, moment in stamps.items()
+    )
+    day = {"applied": "yes", "info": "yes", "source": "operational"}
+    day |= {"start": "2026-03-08", "end": "2026-03-08"}
+
+    def listed(values):
+        """The fixture entries a filtered page and its export list, by name."""
+        names = {key: name for name, key in keys.items()}
+        response = post(browser, values)
+        assert response.status_code == 200
+        shown = [names[key] for key in identifiers(response) if key in names]
+        exported = export(browser, values | {"format": "jsonl"})
+        assert exported.status_code == 200
+        records = [json.loads(line) for line in exported.content.decode().splitlines()]
+        assert [
+            names[UUID(record["correlation_id"])]
+            for record in records
+            if UUID(record["correlation_id"]) in names
+        ] == shown
+        return shown, response.content.decode()
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        shown, body = listed(day | {"zone": "America/New_York"})
+        assert shown == ["evening", "midnight"]
+        # The zone is carried with the other filters by every table control
+        # (headings and navigators) and by the export form, as POST fields.
+        assert body.count('name="zone" value="America/New_York"') >= 3
+        assert "?zone=" not in body
+        # In UTC the same day is a different 24 hours.
+        assert listed(day | {"zone": "UTC"})[0] == ["midnight", "before"]
+        # East of UTC: 8 March in Tokyo ends at 15:00 UTC on 8 March.
+        assert listed(day | {"zone": "Asia/Tokyo"})[0] == ["midnight", "before"]
+        # Only From: everything from local midnight on, the later entry too.
+        since = {key: value for key, value in day.items() if key != "end"}
+        later = listed(since | {"zone": "America/New_York"})[0]
+        assert later[-2:] == ["evening", "midnight"] and "before" not in later
+        # A date without a zone the server knows is never read as UTC.
+        before = len(views())
+        for zone in ({}, {"zone": ""}, {"zone": "Mars/Base"}):
+            refused = post(browser, day | zone)
+            assert refused.status_code == 400
+            assert b"without your computer&#x27;s time zone" in refused.content
+            assert b"Identifiers must be complete" not in refused.content
+            assert export(browser, day | zone).status_code == 400
+        assert len(views()) == before
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -577,7 +656,7 @@ def test_export_is_administrator_only_and_post_only(auth_service, google):
 def test_page_keys_are_read_from_the_creation_time_index(auth_service, model, oldest):
     """Either order reads its keys from the (created_at, id) index, and the
     snapshot bound is an index condition, so no page sorts the table."""
-    query = SimpleNamespace(actor=None, correlation=None, days=(None, None))
+    query = SimpleNamespace(actor=None, correlation=None, bounds=(None, None))
     with transaction.atomic():
         with connection.cursor() as cursor:
             # The test tables are nearly empty; make the planner show the
@@ -595,7 +674,7 @@ def test_level_filtered_reads_and_counts_stay_on_indexes(auth_service):
     under a LIMIT, so neither scans or counts a whole growing log."""
     from parishkit.stewardship.web.tables import COUNT_LIMIT
 
-    query = SimpleNamespace(actor=None, correlation=None, days=(None, None))
+    query = SimpleNamespace(actor=None, correlation=None, bounds=(None, None))
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL enable_seqscan = off")
