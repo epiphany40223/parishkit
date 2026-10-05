@@ -392,18 +392,46 @@ path and the bulk send-only rate, with the modeled latency at 600 ms:
 
 | Size | Path | Build | Due to last outcome | Accepted/min | Preparation | Send-only/min | Lock held | 40P01 | Correct |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 100 | one at a time | (not yet run) | | | | | | | |
-| 100 | bulk | (not yet run) | | | | | | | |
-| 100 | bulk, send-only | (not yet run) | | | | | | | |
+| 100 | one at a time | `78babeab` | 0.70 min | 104.4 | 0.39 min (187/min) | n/a | 17.6% | 0 | yes |
+| 100 | bulk | `78babeab` | 0.53 min | 139.0 | 0.19 min (392/min) | n/a | 13.4% | 0 | yes |
+| 100 | bulk, send-only | `78babeab` | 1.57 min | 46.4 | 0.18 min (397/min) | 161.8 (0.45 min) | 12.5% | 0 | yes |
 | 1,100 | one at a time | (not yet run) | | | | | | | |
 | 1,100 | bulk | (not yet run) | | | | | | | |
 | 1,100 | bulk, send-only | (not yet run) | | | | | | | |
 
-When PR 1 merged, the shared local deployment was in use for other checks,
-so none of these runs had been made; #447 tracks them. Each run needs
-`deploy` of the build under test and a `reset --seeded` afterwards. The
-1,100-Family invitation run needs support that a later BG-12 pull request
-adds (see the local guide).
+The 100-Family runs were made on 2026-10-05 on the local VM (4 CPUs, 5 GiB),
+each from `reset --seeded` and then `deploy --schema-change --bulk on|off
+--smtp-latency-ms 600` of `main` at `78babeab` (release 1.3.0; the seeded
+snapshot predates a migration, hence `--schema-change`), then `rehearse`
+with the default five-minute `--due-in`. The seed is the default 100-Family
+seeded snapshot (default response scale) taken 2026-10-04, in which 73
+Families are a Reminder's candidates, so each run sent 73 messages. Each
+run had two mail consumers.
+
+- **Correctness.** Every run passed: one accepted message per candidate,
+  none accepted twice, no `delivery_unknown`, no failure, no deadlock, and
+  no ordering invariant violation.
+- **Send.** `submit_ms` was about 605 ms at the median (the modeled 600 ms
+  plus Mailpit), with a p99 of about 1.05–1.09 s (the first message on a
+  new connection).
+- **Bulk holds.** Preparation batches held the lock for a median of 650–715
+  ms over about six Families (about 73 ms per item, 42–43 ms of it build
+  work); commit-half batches held it for 683–693 ms over five to seven
+  messages (about 77 ms per item, 49–50 ms of it build work); outcome chunks
+  held it for about 125 ms over eight messages (14 ms per item). Prebuilt
+  and rebuilt counts were 0, as expected before PR 2 and PR 3.
+- **Lock samples.** The work-order lock was held in 12–18% of the
+  one-second samples and waited on in 1–4%; CPU busy share was about 10%.
+- **Send-only.** Its due-to-last-outcome time includes the minute or so
+  during which mail-dispatch stayed stopped until preparation had finished,
+  so its send-only rate (about 162 a minute) is the figure to compare.
+
+At 100 Families the local VM, faster than the validation host, is not
+lock-bound: the send is limited by the modeled latency over two consumers
+(about 100 a minute each at 0.6 s), and both paths finish within a minute
+of the due time. The 1,100-Family runs, where the lock is expected to
+matter, still need the invitation support that a later BG-12 pull request
+adds (see the local guide); #447 tracks them.
 
 ## Fresh-install schema evidence
 
