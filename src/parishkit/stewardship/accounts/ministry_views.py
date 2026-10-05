@@ -32,7 +32,7 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .configuration_models import MinistryActivity
-from .configuration_requests import request_status
+from .configuration_request_reads import receipt as configuration_receipt
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .sessions import authenticated_admin
@@ -357,12 +357,7 @@ def configuration_request(request, request_id):
         service = runtime()
         principal = admin_principal(request, service, passive=True)
         with transaction.atomic():
-            receipt = request_status(request_id=request_id, actor_id=principal.identity)
-            if not allows(
-                authenticated_admin(request, store=service.store, read_only=True),
-                Capability.CONFIGURE,
-            ):
-                raise PermissionError("Configuration access was revoked.")
+            receipt = configuration_receipt(request, service, request_id, principal)
             # Place the status under the page the change came from, when this
             # sign-in remembers it, as the last step of the edit flow (#196).
             origin = admin_navigation.change_origin(request, request_id)

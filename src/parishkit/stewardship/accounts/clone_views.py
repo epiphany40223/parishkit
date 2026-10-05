@@ -28,8 +28,8 @@ from .content_forms import EMAIL_LABELS, PAGE_LABELS, sample_render
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
+from .schedule_changes import describe as _describe
 from .schedule_forms import Schedules, schedule_action
-from .schedule_views import _describe
 from .sessions import authenticated_admin
 
 

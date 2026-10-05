@@ -1,61 +1,29 @@
 """Atomic Admin preview of mail schedules and their draft campaign date window."""
 
-from uuid import uuid4
-
 from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
-from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.configuration import schedule_window_changed
-from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import stale_page
 
 from . import admin_navigation
-from .admin_editing import confirm, error_response, principal, sign_preview
+from .admin_editing import confirm, error_response, principal
 from .authentication import runtime
-from .campaign_views import _state
-from .content_forms import EMAIL_LABELS
 from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
-from .request_patch import build_candidate
-from .schedule_forms import WEEKDAYS, Schedules, ScheduleWindow, schedule_action
-from .schedule_preview import fingerprint, work_summary
+from .schedule_changes import build_preview, confirm_scope, preview_salt
+from .schedule_forms import Schedules, ScheduleWindow, schedule_action
 from .schedule_reads import campaign_schedules, schedule_state
 from .sessions import authenticated_admin
-
-
-def _scope(service, campaign_id):
-    """Confirmation rechecks the same schedule generation inside intake's work lock."""
-    state = _state(service)
-    return state[0], fingerprint(state[-1], work_summary(campaign_id))
-
-
-def _describe(values, campaign):
-    """Pair civil intent with bounded UTC previews resolved in its own campaign zone."""
-    if values is None:
-        return None
-    page = preview_slots(values, campaign)
-    return values | {
-        "weekday_label": _(WEEKDAYS[values["weekday"]])
-        if values["weekday"] is not None
-        else None,
-        "timezone": campaign["timezone"],
-        "resolved_slots": [
-            {"key": slot.key, "due_at": slot.due_at.isoformat()} for slot in page.slots
-        ],
-        "more_slots": not page.exhausted,
-    }
 
 
 def _page(request, campaign, window, schedules, digest, *, editable, status=200):
@@ -87,102 +55,32 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
 def _preview(
     request, service, actor, state, campaign, window, schedules, editable, salt
 ):
-    """Validate the complete candidate, including each stranded or reordered mailing."""
-    configuration = state[0]
-    digest = configuration.active_configuration.digest
-    if request.POST.get("base_digest") != digest:
-        raise stale_page()
-    window_valid = window.is_valid()
-    if window_valid:
-        schedules.campaign = window.values()
-    schedules_valid = schedules.is_valid()
-    if not window_valid or not schedules_valid:
-        return _page(
-            request, campaign, window, schedules, digest, editable=editable, status=400
-        )
-    changed = {
-        key: value
-        for key, value in window.values().items()
-        if value != campaign.active_configuration.values[key]
-    }
-    patch = schedules.patch()
-    explicit = {row["id"] for row in patch}
-    # A new timezone or digest date window also replaces unchanged civil mail
-    # fields. Include their existing work in the reviewed cancellation inventory.
-    patch.extend(
-        {"operation": "update", "section": "schedules", **row}
-        for row in schedules.previous
-        if row["id"] not in explicit
-        and schedule_window_changed(
-            campaign.active_configuration.values,
-            window.values(),
-            kind=row["values"]["kind"],
-        )
+    """Review the posted change (``schedule_changes.build_preview``), or show errors."""
+    context = build_preview(
+        service,
+        actor,
+        state,
+        campaign,
+        window,
+        schedules,
+        base_digest=request.POST.get("base_digest"),
+        salt=salt,
     )
-    schedule_changes = list(patch)
-    if changed:
-        patch.append(
-            {
-                "operation": "update",
-                "section": "campaigns",
-                "id": str(campaign.pk),
-                "values": changed,
-            }
-        )
-    base = service.store.active()
-    if base is None or base.digest != digest:
-        raise StaleRecordError("The applied configuration changed.")
-    try:
-        if not patch:
-            raise ValueError("No changes.")
-        build_candidate(base, patch, candidate_id=uuid4())
-    except (ConfigError, ValueError):
-        window.add_error(
-            None,
-            "Every Family mailing must fit the campaign; reminders must follow "
-            "exactly one initial mailing and use distinct times. Resolve all "
-            "affected schedules, or change at most 100 records per request.",
-        )
+    if context is None:
         return _page(
-            request, campaign, window, schedules, digest, editable=editable, status=400
+            request,
+            campaign,
+            window,
+            schedules,
+            state[0].active_configuration.digest,
+            editable=editable,
+            status=400,
         )
-    summary = work_summary(campaign.pk)
-    prior = {row["id"]: row["values"] for row in schedules.previous}
-    changes = [
-        {
-            "operation": row["operation"],
-            "before": _describe(
-                prior.get(row["id"]), campaign.active_configuration.values
-            ),
-            "after": _describe(row.get("values"), window.values()),
-            "impact": summary.get(row["id"], {}),
-            "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
-        }
-        for row in schedule_changes
-    ]
-    blocking = sum(change["impact"].get("blocking", 0) for change in changes)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/schedule-preview.html",
-        {
-            "campaign": campaign,
-            "post_url": request.path,
-            "changes": changes,
-            "window_changes": changed,
-            "before_window": campaign.active_configuration.values,
-            "after_window": window.values(),
-            "blocking": blocking,
-            "preview": None
-            if blocking
-            else sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=salt,
-                snapshot=fingerprint(state[-1], summary),
-            ),
-        },
+        context | {"post_url": request.path},
     )
 
 
@@ -192,7 +90,7 @@ def schedule_settings(request, campaign_id):
     try:
         service = runtime()
         actor = principal(request, service)
-        salt = f"stewardship-schedules-preview-v1:{campaign_id}"
+        salt = preview_salt(campaign_id)
         if request.FILES or (request.method == "POST" and request.GET):
             raise ValueError("Invalid schedule parameters.")
         proposed = filters(request.GET, allowed={"start_date", "end_date", "timezone"})
@@ -205,7 +103,7 @@ def schedule_settings(request, campaign_id):
                 service,
                 actor,
                 salt=salt,
-                current_scope=lambda service: _scope(service, campaign_id),
+                current_scope=lambda service: confirm_scope(service, campaign_id),
             )
         with (
             read_transaction()
