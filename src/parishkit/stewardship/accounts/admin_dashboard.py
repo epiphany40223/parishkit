@@ -20,6 +20,35 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSn
 from .policy import Capability, allows
 
 
+def observe(actor, store):
+    """Read the home summary in one read-only snapshot, for the page and the CLI.
+
+    Returns ``(configuration, summary, now)``, or None while a restore is
+    under review. A read-only snapshot, not the writers' work lock: the
+    dashboard only observes, and must not wait behind a source promotion or
+    installer. ``now`` is read inside the snapshot, so the page's chrome can
+    reuse it instead of another clock query.
+    """
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.campaigns.work_locks import read_transaction
+
+    from .configuration_installation import coherent_configuration
+    from .sessions import database_now
+
+    with read_transaction():
+        config = coherent_configuration(store)
+        if config.restore_review_required:
+            return None
+        if config.current_campaign_id is not None:
+            # The summary and the page both read the campaign's settings;
+            # load them together once rather than lazily twice.
+            config.current_campaign = Campaign.objects.select_related(
+                "active_configuration"
+            ).get(pk=config.current_campaign_id)
+        now = database_now()
+        return config, summary(actor, config, now), now
+
+
 def summary(actor, configuration, now):
     """Read under the caller's work lock, which pins source/configuration promotion."""
     campaign = configuration.current_campaign

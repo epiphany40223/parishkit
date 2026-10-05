@@ -96,6 +96,7 @@ pk-admin whoami
 pk-admin sessions
 pk-admin commands
 pk-admin --session ops whoami
+pk-admin status
 ```
 
 The session is `--session NAME`, else `PK_ADMIN_SESSION`, else the only file
@@ -158,6 +159,115 @@ ones still in use, must then be paired again. It is part of the
 [real restore](stewardship-backup-runbook.md#restore-for-real) and the
 v1 [manual restore](../plans/stewardship/v1-launch.md#manual-restore-for-v1-replaces-item-2).
 
+## Status commands
+
+These read what the matching Admin page shows, as counts, states,
+identifiers and UTC instants only: no Family names, email addresses, codes
+or other personal data. A read-only session can run every one of them. Each
+records the same view event in System logs as its page (`status` the home
+page's, `task list` and `task show` Background work's, `send progress` and
+`send history` Outgoing mail's); `schedule show` records none, like its
+page.
+
+```sh
+pk-admin status
+pk-admin task list --state failed --size 20
+pk-admin task show TASK_ID --watch 5
+pk-admin send progress --watch 10
+pk-admin send history
+pk-admin schedule show
+```
+
+Each command's `result` member holds the fields below. Instants are UTC
+ISO 8601 strings, identifiers are UUID strings, and enumerations are the
+stored values (for example `queued`, `initial`, `production`). A section
+your roles would not show on the page is `null`.
+
+### `status`
+
+| Field | What it holds |
+| --- | --- |
+| `as_of`, `mode` | When it was read; `testing` or `production` |
+| `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
+| `source` | The last ParishSoft refresh: `refreshed_at`, the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh` |
+| `next_mail` | The next Family mail's `kind` and `due_at` |
+| `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
+| `unreachable_families` | Families no mail can reach (a count) |
+| `offsite_backup` | The off-site copy's `state` (`uploaded`, `failed`, `disabled`, `none` or `unset`), `at`, `last_copy_at` and `set_name` |
+| `unfinished_keys` | Integrations with a new key not yet switched to, by `target` |
+| `ministry_catalog` | Counts of recent catalog `refreshes`, `missing` and `retired` Ministries |
+| `security_events`, `automation_notices` | How many are unacknowledged for you |
+| `recent_failures` | Tasks failed in the last day: `id`, `type`, `updated_at` |
+| `tasks` | Background work counts by state, `active`, and `delivery_unknown` |
+| `presence` | `count`: Families on the portal now |
+
+### `task list` and `task show TASK_ID`
+
+| Field | What it holds |
+| --- | --- |
+| `as_of` | When it was read |
+| `counts`, `state`, `task_type` | `task list` only: nonterminal task counts by state, and the filters applied |
+| `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | The page of rows, as on Background work |
+| `tasks` or `task` | Each task's `id`, `root_id`, `parent_id`, `retry_sequence`, `type`, `state`, `action`, `version`, `attempt`, `initiator_id`, `progress` (`phase`, `current`, `total`, `percent`), its instants and `active` |
+| `latest_run_id`, `events` | `task show` only: the newest retry, and the history (`version`, `at`, `action`, `state`, `attempt`, `progress`) |
+
+### `send progress` and `send history`
+
+| Field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `mode`, `paused`, `upcoming` | `send progress` only: the mode, whether delivery is paused, and whether a Production send is about to start |
+| `send` | `send progress` only: the send in progress or the latest, or `null` |
+| `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
+
+Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
+`done`, `percent`, the counts `sent`, `failed`, `uncertain`, `remaining`,
+`unprepared`, `unplanned`, `waiting`, `unreachable` and `not_needed`,
+`rate_per_minute`, `started_at`, `last_settled_at`, `finished_at`,
+`finish_at` and `minutes_left`. In `send history` each also has `send` (the
+value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
+`scheduled_at`, `replaced`, `current`, `earlier`, `live`, `cancelled` and
+`minutes`.
+
+### `schedule show`
+
+| Field | What it holds |
+| --- | --- |
+| `campaign_id`, `editable` | The campaign, and whether its dates may still change |
+| `version` | What a schedule change is previewed against |
+| `window` | `start_date`, `end_date`, `timezone` |
+| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+
+`schedule show` reads the current campaign unless `--campaign UUID` names
+another. An unknown campaign, or no current campaign, is exit 1
+(`not_available`). A campaign that is not the current one, or that
+background work holds while mail is being sent, is exit 1
+(`stale_version`), as on the Mail schedules page.
+
+### Watching and errors
+
+`--watch SECONDS` (2 to 300) on `task show` and `send progress` prints one
+document per poll, `final` false until the last. It stops with exit 0 once
+the task has finished or no send is in progress or about to start. It stops
+with exit 7 and the last state after `--timeout` seconds (default and
+maximum three hours; `watch_timeout`), and with exit 5 if the session ends.
+Ctrl-C stops `pk-admin` at once, but `docker exec` does not pass the signal
+on, so the watch inside the web container keeps polling until its timeout,
+until the read finishes, or until you revoke the session in Automation
+access ([#598](https://github.com/epiphany40223/parishkit/issues/598)); it
+changes nothing meanwhile. Run in the container directly, it stops with
+exit 7 (`watch_interrupted`) and the last state. `--timeout` without
+`--watch` is refused. Only the first poll is recorded in System logs. An unknown task is
+exit 1 (`not_available`). A restore under review, or a configuration change
+being applied, is exit 3 (`unavailable`), so try again shortly.
+
+`pk-admin commands` lists every command's result fields. The route-parity
+ledger, `src/parishkit/stewardship/admin_parity.py`, says which command
+covers each Admin page, or why none does yet.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
+- `pk-admin/1` (ADM-11 PR 3a): additive. The status commands above,
+  `watch` and `arguments` in each catalog entry, and the error code
+  `watch_interrupted`.

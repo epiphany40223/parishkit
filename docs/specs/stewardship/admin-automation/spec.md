@@ -865,8 +865,9 @@ machine-readable catalog: for each command its name, the scope it needs
 (`none` for the pairing commands, which run before a session exists,
 `read_only` for any session, `full` for a full-scope one), whether it changes
 state, whether it is fresh-gated, whether it prompts, whether it takes
-`--request-key` or `--expected-version`, the audit event it records, its
-options, its result fields and the PR that added it. The catalog is generated
+`--request-key` or `--expected-version`, whether it takes `--watch`, the
+audit event it records, its options and positional arguments, its result
+fields and the PR that added it. The catalog is generated
 from the subparser tree and the read-model projections, and a test keeps it
 complete. `commands` itself needs no database: it checks the preamble's form
 and prints the catalog.
@@ -904,18 +905,31 @@ streams an export:
 
 ### Watching progress
 
-`--watch SECONDS` (minimum 2) repeats a passive read and prints
+`--watch SECONDS` (2 to 300) repeats a passive read and prints
 newline-delimited JSON: one complete document per poll, `final` false until
 the last. The last document has `final` true and its exit code is the
-command's. A watch stops when:
+command's. Only the first read records the page's view event, as a page's
+passive polls record none. The interval's maximum keeps every poll well
+inside the command session's 60-minute idle limit. A watch stops when:
 
 - the read reaches a terminal state (exit 0);
 - `--timeout` passes (default and maximum three hours, matching the progress
   page's give-up limit; exit 7, `watch_timeout`, with the last state);
-- the automation session ends or expires (exit 5).
+- the process receives SIGINT (exit 7, `watch_interrupted`, with the last
+  state and no traceback); through the host wrapper, Ctrl-C ends only the
+  client, because `docker exec` forwards no signal, and the watch in the
+  container runs on until another stop
+  ([#598](https://github.com/epiphany40223/parishkit/issues/598));
+- the automation session ends or expires (exit 5);
+- a database or Valkey outage interrupts a poll (exit 3, `unavailable`,
+  with no last state; read again).
+
+`--timeout` without `--watch` is a usage error (exit 2), never ignored.
 
 Each poll re-checks that the automation session is live. A Family send that
-outlasts an hour needs no renewal.
+outlasts an hour needs no renewal. The heartbeat (see
+[command sessions](#command-sessions)) renews only a command session that is
+still live, so it never revives one that ended or idled out.
 
 ### Exit codes and errors
 
@@ -928,7 +942,7 @@ outlasts an hour needs no renewal.
 | 4 | Confirmation not given; nothing changed | `confirmation_required` |
 | 5 | No usable automation session, or pairing not finished | `session_missing`, `session_ended`, `pairing_pending`, `pairing_expired` |
 | 6 | Outcome unknown, or done in part; read status or repeat with the same key or token | `outcome_unknown`, `partial` |
-| 7 | Watch timed out | `watch_timeout` |
+| 7 | Watch timed out or was stopped | `watch_timeout`, `watch_interrupted` |
 
 On failure `ok` is false and `error` holds `code`, the same user-facing
 `message` the page would show (never exception text or paths), the request key
@@ -943,10 +957,12 @@ Exceptions map in this order, and the first match wins. Order matters:
 | Exception | Exit |
 | --- | --- |
 | `StartupBusy`, `LimiterUnavailable` (from a shared domain function), Valkey errors, `DatabaseError` from connection failure, too many connections, lock or statement timeout, or serialization failure, raised before the command's commit | 3 |
+| `AuthorityChanging` (a configuration change activating) at any point, admission included; and in a read, any other `ConfigError` after admission (a stuck activation, a restore under review, YAML and database disagreeing), as `unavailable` | 3 |
 | Usage errors, other `ConfigError` raised during admission, credential receipt mismatch | 2 |
 | Confirmation declined, or end of input at the prompt | 4 |
 | Automation session missing, ended, expired or revoked, a host mismatch, a command session ended by a role change, or pairing not finished, including `UserFacingDenied` for an ended session | 5 |
 | `PermissionError` (including `FreshAuthenticationRequired`), `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function | 1 |
+| `admin_reads.NotAvailable` (an unknown task or campaign, or no current campaign), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
 | Any error after a durable commit (for example an export queued but its download failed), or an unexpected error in a state-changing command | 6 |
 | An unexpected error in a read | 3, with `internal`; retry at most once, then report it |
 
@@ -1353,10 +1369,14 @@ signatures:
 - **PR 1:** `sessions.authenticated_admin`, `require_fresh`,
   `privileged_actions.admit_admin_action` and `_actor`,
   `admin_editing.principal`.
-- **PR 3:** the home summary's caller use; `presence.active_families` (counts
-  only); `go_live_inputs.collect_inputs(request, …)`; send history and
-  background task reads from `send_history_views` and `jobs/views`; the
-  schedule read from `schedule_views`.
+- **PR 3a:** the home summary's caller use (`admin_dashboard.observe`);
+  `presence.active_families` (counts only, `presence.active_count`); send
+  progress and history reads from `send_progress_views` and
+  `send_history_views` (`jobs.send_reads`); background task reads from
+  `jobs/views` (`jobs.task_reads`); the schedule read from `schedule_views`
+  (`accounts.schedule_reads`).
+- **PR 3b:** `go_live_inputs.collect_inputs(request, …)` and the
+  Production progress read.
 - **PR 4:** the schedule preview and confirm from `schedule_views._preview`
   and its POST handling; configuration request status from
   `ministry_views.configuration_request`.
@@ -1391,8 +1411,13 @@ read model's `to_document()` is a **defined projection**, not a copy of what
 the template shows. Its fields are listed in the operator guide and the
 [command catalog](#discovering-commands) and contain no Family names, emails,
 addresses, phone numbers, manual codes, access tokens or financial detail.
-Templates render only from read-model fields, so the page and the document
-cannot drift in meaning. Read models never take the `request`.
+The page and the command read through that same function, moved out of the
+view into a request-free module (`admin_dashboard.observe`,
+`jobs.task_reads`, `jobs.send_reads`, `accounts.schedule_reads`), so they
+cannot drift in what they read. Templates keep rendering from that
+function's result, so the pages are unchanged; the document is the read
+model's projection of the same result. Read models never take the
+`request`.
 
 ### Rules for new Admin actions
 
@@ -1407,7 +1432,8 @@ From PR 3, where the route-parity test lands:
   `stewardship_automation_fresh_v1`; if not, its specification says how it
   refuses an automation caller;
 - the route-parity test lists every `admin:` URL name and fails when one has
-  neither a command nor an exemption. Exemptions are **permanent** (web-only
+  neither a command nor an exemption in `admin_parity.LEDGER`, or when an
+  entry names no route. Exemptions are **permanent** (web-only
   by nature, with the reason), **pending** (with the PR that removes them) or
   **deferred** (waiting on a decision, which is named).
 
@@ -1454,19 +1480,33 @@ exemptions.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `index`, `background_counts` | `status` (PR 3) |
-| `presence` | `status presence`, counts only (PR 3) |
+| `index`, `background_counts` | `status` (PR 3a) |
+| `presence` | `status`, its `presence.count` (PR 3a; see below) |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2) |
-| Response dashboard ([#517](https://github.com/epiphany40223/parishkit/issues/517), when it lands) | `report responses` with counts, under the [rules for new Admin actions](#rules-for-new-admin-actions) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8) |
+| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8) |
+
+The inventory's `status presence` is folded into `status` as its
+`presence.count`, because a word cannot be both a command and an area in
+the subparser tree (default, pending Administrator confirmation). `status`
+also carries the Administrator's count of unacknowledged automation
+notices, as the dashboard shows them.
+
+`schedule show` reads the current campaign, or the campaign `--campaign`
+names. As on the Mail schedules page, an unknown campaign, or no current
+campaign, is `not_available`; a campaign that is not the current one, or
+that background work holds while mail is sent, is `stale_version`. Its
+`version` is the applied configuration's digest, the base a schedule change
+(PR 4) is previewed against.
 
 ### Source refresh
 
 | URL names | Command or exemption |
 | --- | --- |
 | `source_refresh` | `refresh start`, `refresh status` (PR 6) |
-| `background_task_page`, `background_task_status` for the run | `task show --watch` (PR 3) |
+| `background_task_page`, `background_task_status` for the run | `task show --watch` (PR 3a) |
 
 See [manual ParishSoft refresh](../admin-portal/spec.md#manual-parishsoft-refresh).
 
@@ -1474,7 +1514,7 @@ See [manual ParishSoft refresh](../admin-portal/spec.md#manual-parishsoft-refres
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings` | `schedule show` (PR 3); `schedule preview`, `schedule confirm` (PR 4) |
+| `schedule_settings` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4) |
 | `configuration_request` | `config request show --watch` (PR 4) |
 | `campaign_settings`, `campaign_new`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10) |
 | `campaign_ministries`, `share_settings`, `talent_settings` | `campaign ministries`, `campaign shares`, `campaign talents` (PR 10) |
@@ -1495,12 +1535,12 @@ the page's request status does. See
 
 | URL names | Command or exemption |
 | --- | --- |
-| `go_live` | `go-live readiness` (PR 3); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
+| `go_live` | `go-live readiness` (PR 3b); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
 | `go_live_families` | `go-live families`, an export (PR 12) |
 | `go_live_cleanup` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel` (PR 12) |
 | `go_live_links` | `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12) |
 | `production_confirmation` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12) |
-| `production_progress` | `go-live progress --watch` (PR 3) |
+| `production_progress` | `go-live progress --watch` (PR 3b) |
 | `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
 
 Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
@@ -1514,8 +1554,8 @@ PR 12 follows whichever flow is current.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3) |
-| `family_email_sends` | `send history` (PR 3) |
+| `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
+| `family_email_sends` | `send history` (PR 3a) |
 | `delivery_control` | `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7) |
 | `family_portal` | `portal maintenance show`, `portal maintenance set` (PR 7; the switch has no version, so the command sets the requested state as the page does) |
 
@@ -1551,7 +1591,7 @@ pause, and closing work is the closed-campaign resolution. See
 
 | URL names | Command or exemption |
 | --- | --- |
-| `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3) |
+| `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9) |
@@ -1881,8 +1921,8 @@ MUST prove:
   and export command, in Python and, for the six changed guards and any
   amended ADM-13 guard, in SQL;
 - **output:** golden documents for each read model's `to_document()`; a
-  field allowlist test proving no personal-data field appears; templates
-  render only read-model fields; the exception-to-exit mapping in its stated
+  field allowlist test proving no personal-data field appears; the page and
+  the command read through the same function; the exception-to-exit mapping in its stated
   order; a generated request key is on standard error before the action;
 - **exports:** the streamed bytes match the stored export's size and digest;
   audit parity with the page download;
@@ -1920,10 +1960,12 @@ Administrator's approval of that deploy.
   procedure and backup runbook; `login start`, `login wait`, `logout`,
   `whoami`, `sessions` and `commands`; both refusals; lifecycle rules and
   audit events; and the operator guide.
-- **PR 3, read-only status:** read models and `to_document()`, `status`,
-  `send progress`, `send history`, `schedule show`, `go-live readiness`,
-  `go-live progress`, `task list`, `task show`, `--watch`, and the
-  route-parity test with its exemption list.
+- **PR 3, read-only status,** in two parts. **PR 3a:** read models and
+  `to_document()`, `status`, `send progress`, `send history`,
+  `schedule show`, `task list`, `task show`, `--watch`, and the route-parity
+  test with its exemption list. **PR 3b:** `go-live readiness` and
+  `go-live progress`, which matter again only for the next campaign. Later
+  PRs depend on PR 3a.
 - **PR 4, schedules:** `schedule preview`, `schedule confirm` and
   configuration request status.
 - **PR 5, fresh-gate acceptance:** the second migration; the automation branch
