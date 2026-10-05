@@ -1602,11 +1602,15 @@ def component_origin():
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
-    # The in-place form page's POST answers (#519): a refusal answers 400
-    # with the page the view would render, and "plain" answers 200 with a
-    # page that lacks the form's region, without a redirect.
+    # The in-place form page's POST answers (#519, #562): refusals answer
+    # with the page the view would render (400 with the summary in the
+    # region, 200 with it outside, or a 400 denial page without the region),
+    # and "plain" answers 200 with a page that lacks the form's region,
+    # without a redirect.
     posts = IN_PLACE_POSTS | {
         f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
+        f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
+        f"{IN_PLACE_FORM}/denied": (400, None, responses["/in-place-denied"][1]),
         f"{IN_PLACE_FORM}/plain": (200, None, responses["/in-place-plain"][1]),
     }
     for filename, kind in (

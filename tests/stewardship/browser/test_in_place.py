@@ -186,14 +186,111 @@ def test_post_form_sends_the_body_a_native_submission_would(page, component_orig
     has_text(page.locator("#saved-count"), "Saved 1 times")
 
 
-def test_post_form_error_answer_is_shown_without_resending(page, component_origin):
-    """A refused POST's answer replaces the page as a native submission's
-    would, and the POST is sent exactly once."""
+@pytest.mark.parametrize("button", ["refuse", "invalid"])
+def test_refused_save_is_swapped_into_its_region(page, component_origin, button):
+    """A refused save answered with this page again (a 400 with the summary
+    in the region, or a 200 with it where base.html draws it, outside every
+    region) swaps only the regions (#562): the reader keeps their place,
+    the summary sits at the top of the region and takes focus, the value
+    the server re-rendered stays, the error messages are announced (focus on
+    the summary already reads its heading), the address is unchanged, and the
+    POST is sent once."""
+    page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + FORM)
+    page.evaluate(MARK)
+    offset = scroll_below(page, "#saved")
     posts = count_requests(page, "POST", "/in-place-form/")
-    page.locator("#refuse").click()
-    has_text(page.locator("h1"), "Refused page")
-    assert posts == [component_origin + FORM + "/refuse"]
+    page.locator("#note").fill("hello")
+    page.locator(f"#{button}").click()
+    summary = page.locator("#saved > [data-error-summary]:first-child")
+    has_text(summary.locator("li"), "Enter a shorter note.")
+    # Only the regions changed: this page's own heading and mark remain.
+    assert page.locator("h1").inner_text() == "In-place form"
+    assert page.evaluate(MARKED) == "kept"
+    assert abs(page.evaluate("window.scrollY") - offset) < 40
+    assert page.evaluate("document.activeElement.matches('[data-error-summary]')")
+    assert page.locator("[data-error-summary]").count() == 1
+    assert page.locator("#note").input_value() == "hello"
+    has_text(
+        page.get_by_role("status").filter(has_text="shorter"), "Enter a shorter note."
+    )
+    assert page.url == component_origin + FORM
+    assert posts == [component_origin + FORM + f"/{button}"]
+    # The swapped summary's link moves focus to its field.
+    summary.get_by_role("link", name="Enter a shorter note.").click()
+    assert page.evaluate("document.activeElement.id") == "note"
+    # The next save is in place as before, and the summary goes.
+    page.locator("#save").click()
+    has_text(page.locator("#saved-count"), "Saved 1 times")
+    assert page.locator("[data-error-summary]").count() == 0
+
+
+def test_successful_swap_keeps_a_summary_drawn_outside_the_regions(
+    page, component_origin
+):
+    """A summary an ordinary form's refusal drew at the top of the page
+    (outside every region) stays through a successful in-place save: only a
+    refusal replaces it."""
+    page.goto(component_origin + FORM + "?error=1")
+    outside = page.locator("main > [data-error-summary]")
+    visible(outside)
+    page.locator("#save").click()
+    has_text(page.locator("#saved-count"), "Saved 1 times")
+    visible(outside)
+    assert page.locator("[data-error-summary]").count() == 1
+
+
+# Counts each interval's firings, across the whole-page write: document.open
+# keeps the window, so this wrapper (and the old page's timers) survive it.
+COUNT_INTERVALS = """
+if (!window.__intervals) {
+  const original = window.setInterval.bind(window);
+  window.__intervals = [];
+  window.setInterval = (callback, delay, ...rest) => {
+    const entry = {delay, fired: 0};
+    window.__intervals.push(entry);
+    return original(() => { entry.fired += 1; callback(...rest); }, delay);
+  };
+}
+"""
+FIRED = "window.__intervals.map((entry) => entry.fired)"
+TICKED = "window.__intervals.some((entry) => entry.delay === 1000 && entry.fired > 0)"
+
+
+def test_refusal_without_the_region_is_shown_whole_and_stops_old_timers(
+    page, component_origin
+):
+    """A refused save answered with another page (a denial) is shown as the
+    whole page, sent once and never re-fetched; none of the old page's timers
+    run afterwards, so the new page's session tick is the only one."""
+    page.add_init_script(COUNT_INTERVALS)
+    page.goto(component_origin + FORM)
+    # The old page's own one-second session tick (session-v1.js) is running.
+    # (Polled from here: the strict policy refuses wait_for_function's eval.)
+    for _ in range(50):
+        if page.evaluate(TICKED):
+            break
+        page.wait_for_timeout(100)
+    assert page.evaluate(TICKED)
+    old = page.evaluate("window.__intervals.length")
+    requests = []
+    page.on(
+        "request",
+        lambda request: (
+            requests.append(request.method) if "/denied" in request.url else None
+        ),
+    )
+    page.locator("#denied").click()
+    has_text(page.locator("h1"), "Denied page")
+    before = page.evaluate(FIRED)[:old]
+    page.wait_for_timeout(2500)
+    entries = page.evaluate("window.__intervals")
+    assert [entry["fired"] for entry in entries[:old]] == before, (
+        "an old page's timer still runs"
+    )
+    ticks = [entry["fired"] for entry in entries[old:] if entry["delay"] == 1000]
+    assert len(ticks) == 1 and ticks[0] >= 1, "the new page runs one session tick"
+    assert requests == ["POST"]
 
 
 def test_post_form_network_failure_says_so_without_resending(page, component_origin):

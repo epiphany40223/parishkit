@@ -10,10 +10,11 @@ A small test-only page exercises form[data-in-place] POSTs, which PR 1 of
 #519 does not yet put on a real Admin page: it is the real Admin chrome and
 assets around one region holding one form. ``POSTS`` lists the fixture
 server's answers to its POSTs: a Post/Redirect/Get redirect back to the
-page, a refusal shown as returned, and a redirect to another page that
-carries a region of the same id. Below that region, a selection form
-marked data-in-place wraps a shared table region whose sort heading must
-still act as a table control.
+page, refusals that re-render the page with an error summary inside the
+region or (as base.html draws it) outside it, a refusal without the region,
+and a redirect to another page that carries a region of the same id. Below
+that region, a selection form marked data-in-place wraps a shared table
+region whose sort heading must still act as a table control.
 """
 
 from datetime import UTC, datetime
@@ -52,6 +53,7 @@ FORM_PAGE = """{% extends 'stewardship/base.html' %}
 <h1>{{ heading }}</h1>
 {% for n in filler %}<p>Filler paragraph {{ n }} above the form.</p>{% endfor %}
 <section id="saved" class="panel" data-in-place-region>
+{% include 'stewardship/components/errors.html' with errors=region_errors %}
 <p id="saved-count">Saved {{ saved }} times</p>
 <form data-in-place method="post" action="/in-place-form/save#saved"
  data-in-place-message="Saved.">
@@ -60,6 +62,10 @@ FORM_PAGE = """{% extends 'stewardship/base.html' %}
 <button id="save" type="submit" name="action" value="save">Save</button>
 <button id="refuse" type="submit"
  formaction="/in-place-form/refuse#saved">Refuse</button>
+<button id="invalid" type="submit"
+ formaction="/in-place-form/invalid#saved">Invalid</button>
+<button id="denied" type="submit"
+ formaction="/in-place-form/denied#saved">Denied</button>
 <button id="elsewhere" type="submit"
  formaction="/in-place-form/elsewhere#saved">Elsewhere</button>
 <button id="plain" type="submit"
@@ -97,6 +103,14 @@ FORM_PAGE = """{% extends 'stewardship/base.html' %}
 {% for n in filler %}<p>Filler paragraph {{ n }} below the form.</p>{% endfor %}
 {% endblock %}
 """
+# The page a refusal answers with when it is not this page again (a denial):
+# the Admin chrome, and so the page's own timers, but not the form's region.
+DENIED_PAGE = """{% extends 'stewardship/base.html' %}
+{% block title %}Denied{% endblock %}
+{% block content %}<h1>Denied page</h1><p>This change is not allowed.</p>{% endblock %}
+"""
+# The error a refused save re-renders, shaped as a view's form errors are.
+NOTE_ERROR = {"field_id": "note", "message": "Enter a shorter note."}
 
 
 def task(number):
@@ -172,10 +186,15 @@ def components(context, admin):
         )
 
     form_template = engines["django"].from_string(FORM_PAGE)
+    denied_template = engines["django"].from_string(DENIED_PAGE)
 
-    def form_page(heading, saved, note="", pick_sort=""):
-        """The test-only form page (or the other page sharing its region)."""
-        extra = {
+    def form_page(heading, saved, note="", pick_sort="", **errors):
+        """The test-only form page (or the other page sharing its region).
+
+        ``errors`` (a list) is drawn by base.html above the content, outside
+        every region; ``region_errors`` inside the form's region.
+        """
+        extra = errors | {
             "heading": heading,
             "saved": saved,
             "note": note,
@@ -205,11 +224,27 @@ def components(context, admin):
         f"{shown.sort}": html("stewardship/presence.html", presence_page(2)[1]),
         FORM: form_page("In-place form", 0),
         f"{FORM}?saved=1": form_page("In-place form", 1),
+        # This page as an ordinary (not in-place) form's refusal draws it: the
+        # summary where base.html puts it, outside every region.
+        f"{FORM}?error=1": form_page("In-place form", 0, errors=[NOTE_ERROR]),
         # The selection table's sort heading leads here.
         f"{FORM}?sort=-name": form_page("In-place form", 0, pick_sort="descending"),
         "/in-place-other": form_page("Another page", 0),
-        # The page a refused POST answers with (400), as the view renders it.
-        "/in-place-refused": form_page("Refused page", 0),
+        # The pages refused POSTs answer with. A 400 re-renders the form with
+        # the value sent and the summary inside its region; a 200 puts the
+        # summary where base.html draws it, outside every region; a denial
+        # (400) is another page. The headings differ from this page's, so a
+        # test can tell a region swap from a whole-page write.
+        "/in-place-refused": form_page(
+            "Refused page", 0, note="hello", region_errors=[NOTE_ERROR]
+        ),
+        "/in-place-invalid": form_page(
+            "Invalid page", 0, note="hello", errors=[NOTE_ERROR]
+        ),
+        "/in-place-denied": (
+            "text/html",
+            denied_template.render(context | {"admin_chrome": admin}),
+        ),
         # A POST's own successful answer (no redirect) without the region:
         # the sign-in page stands in for any such page.
         "/in-place-plain": (
