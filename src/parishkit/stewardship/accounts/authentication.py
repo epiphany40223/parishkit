@@ -494,7 +494,17 @@ def callback(request):
 
 @require_POST
 def logout(request):
-    """CSRF-protected logout revokes authority and drops only the Admin cookie."""
+    """CSRF-protected logout revokes authority and drops only the Admin cookie.
+
+    A command session's key presented here is refused as tampering first,
+    which also ends its automation session (``misused``).
+    """
+    from .automation_sessions import MARKER, refuse_web_session
+
+    if request.session.get(MARKER) is not None:
+        refuse_web_session(request.session)
+        request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+        return HttpResponseRedirect("/admin/login")
     end_admin(request)
     return HttpResponseRedirect("/admin/login")
 

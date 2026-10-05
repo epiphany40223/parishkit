@@ -141,7 +141,7 @@ locks as the page; the throughput work is
   [notifications](#notifications)).
 - Views and commands share **one service layer** through a request-free
   `AdminCaller` and shared read models.
-- **Schema change:** four new tables and two new functions; the incident-kind
+- **Schema change:** four new tables and three new functions; the incident-kind
   constraint and three operational and task-type functions extended; and six
   amended guards (plus any ADM-13 guard already installed), in two forward migrations under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
@@ -247,11 +247,11 @@ progress, counts and summaries, and nothing else.
   scope is requested at pairing and the approver can lower it, never raise it;
   the operator guide recommends read-only sessions for assistants that only
   watch, and the shortest lifetime that fits the task.
-- **Revocation and listing.** The Administrator's
-  [Automation access](#revocation-and-listing) page and the Portal users page
-  list every session with its label, scope, deadline, last use and host, with
-  liveness computed at read time, and revoke any of them; revocation takes
-  effect at the next command, in Python and in SQL.
+- **Revocation and listing.** The [Automation access](#revocation-and-listing)
+  page lists the Administrator's own sessions and every live session of any
+  Administrator, with label, scope, deadline, last use and host, liveness
+  computed at read time, and any Administrator may revoke any of them;
+  revocation takes effect at the next command, in Python and in SQL.
 - **Ends on role loss, removal, recovery and restore.** Every command, and every
   guard that accepts automation, re-checks that the Administrator is still a
   live, enabled portal user with the Administrator role and that no offline
@@ -313,11 +313,11 @@ shell script because the host has Docker but not the ParishKit Python package.
 It supplies the Compose project and file arguments and the web configuration
 path, makes the session secret at pairing, chooses and reads the session file,
 sends the [preamble](#session-file), decides whether to forward standard
-input, and fetches [export files](#personal-data-on-the-command-line). It holds
-no other behavior: every rule stays in the package. The operator guide also
-shows the same steps by hand. The wrapper has its own tests in CI, run against
-a fake `docker` on `PATH`, covering file creation and modes, session
-selection, the preamble, input forwarding and export fetching.
+input, and, from PR 8, fetches [export files](#personal-data-on-the-command-line).
+It holds no other behavior: every rule stays in the package. The operator
+guide also shows the same steps by hand. The wrapper has its own tests in CI, run against a
+fake `docker` on `PATH`, covering file creation and modes, session selection,
+the preamble and input forwarding, and export fetching once PR 8 adds it.
 
 ### HTTP JSON API (rejected for now)
 
@@ -417,11 +417,15 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    secret digest to the user code. The user code is eight unambiguous letters
    and digits. The secret itself never leaves the command's memory. It prints
    at once, flushed, one document with `final` false and `result` holding
-   `user_code`, `approve_url` (`<origin>/admin/automation/approve`) and
+   `user_code`, `approve_url` (`<origin>/admin/users/automation/approval/`,
+   built from the route by name, never written out) and
    `expires_at`, and exits 0.
 3. The Administrator opens the link in a browser signed in to the portal. The
    page requires the Administrator role and fresh Google authentication (the
-   ordinary [step-up](../architecture/spec.md#identity-and-session-security)),
+   ordinary [step-up](../architecture/spec.md#identity-and-session-security)).
+   A sign-in older than five minutes is never refused: the page renders its
+   **Confirm with Google** step and keeps **Continue** and **Approve**
+   unavailable until the sign-in is fresh, as the backup key page does. It
    then asks for the user code. Code entry has no attempt limit (applying
    decision 12's rationale): only an Administrator who just signed in with
    Google reaches the field, a wrong code identifies no pairing record, and
@@ -430,9 +434,13 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    and 40 bits of entropy suffice, and no Valkey failure can block approval.
    The page refuses when the signed-in email differs from the expected email,
    and that refusal shows no label, scope or other detail of the pairing.
-4. The page shows the label, the expected email, the requested lifetime and
-   the requested scope, both pre-filled and lowerable but not raisable, and a
-   plain warning that a full-scope session can run every Admin action the
+4. The page shows the label, the expected email, the requested scope as plain
+   text, the first 12 characters of the requesting host's digest, and the
+   requested lifetime and scope, both pre-filled and lowerable but not
+   raisable. Against a confused deputy it says to approve only a code the
+   Administrator started in their own terminal, or that someone they trust
+   started for them just now. It gives a plain warning that a full-scope
+   session can run every Admin action the
    approver can, including Production confirmation, withdrawal and Testing
    cleanup, without asking again, until it expires or is revoked. A
    CSRF-protected **Approve** button submits it. The page follows the Admin
@@ -446,22 +454,24 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    creates the approval [notice](#notifications). The SQL guard refuses the
    insert unless the approving session is live, belongs to the principal, is
    not a command session, signed in within five minutes, and the principal is
-   an Administrator. The page writes the new session's UUID to the pairing
-   record.
+   an Administrator. The pairing record is left as it is: `wait` recognizes
+   the approval by the new session row's secret digest.
 6. **Wait.** `pk-admin login wait --name <name> [--timeout SECONDS]` (default
    and maximum ten minutes, bounded by the pairing record's expiry) runs
    `pk-stewardship admin login wait` with the preamble. It finds the pairing
    record through the secret digest and checks it every two seconds. On
-   approval it consumes the record atomically (one Lua `EVAL` reads and
-   deletes both keys, as the local sign-in consumes its token), refuses and
-   revokes the session if its principal's email differs from
-   `--expect-email`, and prints the session document (UUID, name, label,
-   principal email, scope, deadline), never the secret. On timeout it logs
+   approval it consumes the record atomically (one Lua `EVAL` deletes both
+   keys, and only while the digest still names this code), refuses and
+   revokes the session (`misused`) if its principal's email differs from the
+   record's expected address, records the use (`last_used_at`), and prints
+   the session document (UUID, name, label, principal email, scope,
+   deadline), never the secret. A later `wait` with the same secret, after a
+   successful one, prints the document again. On timeout it logs
    what it waited for, the limit and the elapsed time, and exits 5 with
    `pairing_pending` while the record lives, so `wait` can run again; once the
-   record has expired it revokes any session created with its digest
-   (`pairing_abandoned`), exits 5 with `pairing_expired`, and the wrapper
-   deletes the file.
+   record has expired it revokes a session created with its digest and never
+   collected (`pairing_abandoned`), exits 5 with `pairing_expired`, and the
+   wrapper deletes the file.
 
 The approving browser session is not changed, and nothing it does later
 (sign-out, timeout, a new sign-in) ends the automation session.
@@ -507,8 +517,10 @@ The session file lives on the host, never in a container:
   Instead the wrapper sends a **preamble line** on standard input,
   `pk-admin-session/1 <secret> <host digest>`, and every command requires
   `--session-stdin`, which reads exactly that line first. The wrapper then
-  forwards its own standard input only when it is a terminal or the command
-  line contains a `-` input; otherwise it closes input after the preamble, so a
+  forwards its own standard input only when the command line contains a `-`
+  input, or from a terminal for a command that prompts (the wrapper lists
+  them; none before PR 5); otherwise it closes input after the preamble, so an
+  interactive run never waits on a terminal nobody is typing into and a
   prompt in a run without a terminal fails at once (see [command-line
   confirmation](#command-line-confirmation)). A secret given with
   `--secret-file` or `--secret-stdin` travels as one base64 line right after
@@ -540,7 +552,8 @@ An operator may hold several sessions, each in its own file.
 Each invocation, after the preamble, admits itself in one short transaction:
 
 1. It finds the session row by `secret_digest`. No row means exit 5 with
-   `session_missing` and a system log entry; the first unknown secret from a
+   `session_missing` and a process log entry for every one; the first unknown
+   secret from a
    host digest in an hour also creates a dashboard notice and observes
    `automation_refused` (this groups the notices; it never delays or refuses
    a command).
@@ -604,8 +617,11 @@ longer an Administrator.
   `actor_id`, `correlation_id`) on `stewardship_automation_session`, and
   `INSERT` on the notice table; offline logins have no column-level grants
   today, so PR 2 extends `offline_grants` and `admit_offline_database` to
-  declare and verify them. It revokes every live session with `restore`
-  and prints only a count. The operator may also run it with `--reason
+  declare and verify them. Like `recover-admin`, it runs with every online
+  service stopped (the offline startup lease). It revokes every unrevoked,
+  unexpired session with `restore`, writing their audit events and notices
+  with plain `INSERT`s, and prints only a count. The operator may also run it
+  with `--reason
   revoked_by_operator` to end every session at once. When OPS-06 lands, its
   fenced initialization step does the same.
 - **No rate limits.** Commands are not limited per session or per host
@@ -640,12 +656,14 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
 
 The worker's grants, through the database grant manifest, are what
 `cleanup_admin_sessions` and the liveness check use, confirmed against the code
-in PR 2: `SELECT`, `UPDATE` (revocation with a version bump) and `DELETE` on
-`stewardship_portal_session`, its protected metadata and `django_session`;
-`INSERT` on `stewardship_audit_event` for the `admin_timeout` and
-`automation_session_ended` events; `EXECUTE` on
-`stewardship_export_authorized_v1` and `SELECT` on the tables it and the
-recovery check read; `SELECT` and `DELETE` on `stewardship_automation_login`;
+in PR 2: column-level `SELECT` on the session columns the cleanup reads (never
+`session_id`, a credential the worker must not read), column-level `UPDATE`
+(`revoked_at` with a version bump) and `DELETE` on `stewardship_portal_session`;
+`EXECUTE` on `stewardship_admin_session_purge_v1`, which deletes the ended
+rows' Django sessions for it; `INSERT` on `stewardship_audit_event` for the
+`admin_timeout` and `automation_session_ended` events; `SELECT` on the tables
+`stewardship_export_authorized_v1` (executable by everyone) and the recovery
+check read; `SELECT` and `DELETE` on `stewardship_automation_login`;
 `SELECT` and the same column-level `UPDATE` as above on
 `stewardship_automation_session`; `INSERT` on the notice table; and what
 resolving its incidents needs on `stewardship_ops_incident`. The session guard
@@ -672,14 +690,17 @@ also require `full`.
 
 The source of truth is `stewardship_automation_session`.
 
-- **Automation access**, a new page under the Administrator's own account
-  menu, lists that Administrator's sessions with label, scope, approval time,
-  deadline, last use, a short form of the host digest and, for ended sessions,
-  the end reason. It revokes any live one with a CSRF-protected POST
-  (`revoked_by_owner`).
-- The **Portal users** page lets every Administrator list all live sessions
-  and revoke any of them (`revoked_by_administrator`). A user row shows when
-  that user has live sessions.
+- **Automation access** (`/admin/users/automation/`), a new entry in the
+  Users and access menu group (the portal has no separate account menu),
+  offered to Administrators only, lists that Administrator's sessions with
+  label, scope, approval time, deadline, last use, a short form of the host
+  digest and, for ended sessions, the end reason, and below them every live
+  session of any Administrator. Any live one is revoked with a CSRF-protected
+  in-place POST to `/admin/users/automation/sessions/<session>/`
+  (`revoked_by_owner` for one's own, `revoked_by_administrator` otherwise).
+  The list stays off Portal users, which the navigation work splits into
+  several pages (NAV-15). Approving a new session from this page first asks
+  for a fresh sign-in, as the approval page does.
 - `pk-stewardship admin sessions` lists the caller's own sessions.
 
 Revocation sets `revoked_at` and `end_reason`, records
@@ -835,11 +856,15 @@ polls.
 ### Discovering commands
 
 Every area and verb has `--help`. `pk-stewardship admin commands` prints a
-machine-readable catalog: for each command its name, the scope it needs,
-whether it is fresh-gated, whether it prompts, whether it takes
-`--request-key` or `--expected-version`, its options, its result fields and
-the PR that added it. The catalog is generated from the subparser tree and the
-read-model projections, and a test keeps it complete.
+machine-readable catalog: for each command its name, the scope it needs
+(`none` for the pairing commands, which run before a session exists,
+`read_only` for any session, `full` for a full-scope one), whether it changes
+state, whether it is fresh-gated, whether it prompts, whether it takes
+`--request-key` or `--expected-version`, the audit event it records, its
+options, its result fields and the PR that added it. The catalog is generated
+from the subparser tree and the read-model projections, and a test keeps it
+complete. `commands` itself needs no database: it checks the preamble's form
+and prints the catalog.
 
 ### Output documents
 
@@ -1428,7 +1453,7 @@ exemptions.
 | `presence` | `status presence`, counts only (PR 3) |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
-| Automation approval and Automation access pages, the session list on Portal users, and notice acknowledgement (new) | Permanent: these pages are the human side of the interface (PR 2) |
+| `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2) |
 | Response dashboard ([#517](https://github.com/epiphany40223/parishkit/issues/517), when it lands) | `report responses` with counts, under the [rules for new Admin actions](#rules-for-new-admin-actions) |
 
 ### Source refresh
@@ -1647,8 +1672,15 @@ time:
    - **New objects**, with plain `CREATE`, living only in the frozen file:
      `stewardship_automation_session`, `stewardship_automation_login`,
      `stewardship_automation_notice` and `stewardship_automation_notice_ack`,
-     with their constraints, indexes and guard triggers, and
-     `stewardship_automation_fresh_v1`.
+     with their constraints, indexes and guard triggers;
+     `stewardship_automation_fresh_v1`; `stewardship_automation_live_v1`,
+     the one definition of [liveness](#session-records) that the guards,
+     `stewardship_automation_fresh_v1` and Python's listings and checks all
+     read; and `stewardship_admin_session_purge_v1(uuid[])`, a `SECURITY
+     DEFINER` function, revoked from `PUBLIC` and granted to the worker
+     through `runtime_functions`, that deletes the Django sessions of the
+     named Admin session rows that have already ended, so the
+     [maintenance task](#maintenance-task) never reads a session key.
    - **Altered baseline objects**, each given its final definition in the
      baseline file and re-created in the frozen file, copied verbatim:
      the `ops_incident_kind` constraint on `stewardship_ops_incident`
@@ -1773,8 +1805,9 @@ MUST prove:
   key and revokes its automation session as `misused`; the command line
   refuses every profile and SQL login other than the admitted web, and a
   signing receipt that differs from the running web's; repeated unknown
-  secrets from one host digest are delayed and create one notice, while a
-  valid session's command (a pause included) is never refused by them;
+  secrets from one host digest are each refused at once (decision 12) and
+  create one notice per host digest per hour, while a valid session's
+  command (a pause included) is never refused by them;
 - **session directory:** no rendered Compose service mounts
   `run/admin-automation`, the backup's archived trees exclude it, and generic
   run cleanup skips it;
@@ -1876,7 +1909,7 @@ Administrator's approval of that deploy.
 - **PR 2, automation sessions:** the first migration; the automation
   constructor and command sessions, with `require_fresh` refusing automation;
   pairing, the host wrapper and its tests, and the session file; the approval
-  page, Automation access page and the Portal users session list; notices,
+  page and the Automation access page with every live session; notices,
   their dashboard display and acknowledgement, and the four incident kinds; the
   maintenance task; `revoke-automation-sessions` and its steps in the restore
   procedure and backup runbook; `login start`, `login wait`, `logout`,
@@ -1896,8 +1929,8 @@ Administrator's approval of that deploy.
   `test sample` and chosen-Family tests.
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
-- **PR 8, reports and exports:** report reads, exports with streamed fetch,
-  digests and logs.
+- **PR 8, reports and exports:** report reads, exports with streamed fetch
+  (including the wrapper's `export fetch` and its tests), digests and logs.
 - **PR 9, operations:** task retries, delivery detail and resolution, and
   refusal clearing.
 - **PR 10, other configuration:** campaign, content, Ministries, parish,

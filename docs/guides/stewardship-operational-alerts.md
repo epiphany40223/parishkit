@@ -40,6 +40,28 @@ BG-10 acceptance criterion; all BG-10 task checkboxes remain open.
 Gate 3 has not passed. Use fake/disposable transports only; no real provider
 delivery, deployment or release is authorized by this increment.
 
+## Automation incident kinds
+
+The Admin automation interface (ADM-11) adds four closed kinds, each opened
+at CRITICAL so the routes send it at once, with fixed text naming no
+session, label or Family that points Administrators to the automation
+notices on the Admin dashboard:
+
+- `automation_approved`: an automation session was approved;
+- `automation_irreversible`: a session took an irreversible action
+  (Production confirmation, withdrawal or Testing cleanup; observed once
+  those commands are released);
+- `automation_policy_change`: a session changed user access, integration
+  keys or notification settings (observed once those commands are
+  released);
+- `automation_refused`: an unknown session secret (the first per host per
+  hour), a host mismatch, or a command session's key seen by the web.
+
+The web login may observe these four besides the authentication kinds. The
+hourly automation maintenance task resolves an episode after an hour without
+events, which sends the routes' resolved notice with its own fixed text. See
+the [specification](../specs/stewardship/admin-automation/spec.md#notifications).
+
 ## Checkpoints
 
 1. Define the closed incident taxonomy and typed, fixed-content alert compiler.

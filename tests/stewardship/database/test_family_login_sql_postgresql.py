@@ -166,7 +166,11 @@ def test_a_sql_refusal_is_the_uniform_denial(family_service, monkeypatch):  # no
 def test_web_admission_requires_exactly_the_login_function(family_service):  # noqa: F811
     """Startup admission demands web's EXECUTE and refuses any other definer."""
     functions = runtime_functions(ServiceRole.WEB)
-    assert runtime_functions(ServiceRole.WORKER) == frozenset()
+    # The worker's only definer routine is the automation maintenance task's
+    # session purge (ADM-11); it never holds the Family login function.
+    assert runtime_functions(ServiceRole.WORKER) == {
+        "stewardship_admin_session_purge_v1(uuid[])"
+    }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}
     for table, grants in columns.items():

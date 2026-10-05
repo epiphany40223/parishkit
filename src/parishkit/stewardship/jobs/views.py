@@ -400,6 +400,7 @@ TASK_NAMES = {
     "setup_mail_test": _("Setup test email"),
     "source_refresh": _("ParishSoft data refresh"),
     "activation_catchup": _("Initial campaign mail after go-live"),
+    "automation_maintenance": _("Cleaning up ended Admin sign-ins"),
     "branding_cleanup": _("Removing old logo files"),
     "campaign_boundary": _("Campaign start or end"),
     "campaign_mail_test": _("Campaign test email"),

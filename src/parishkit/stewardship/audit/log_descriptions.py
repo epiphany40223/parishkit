@@ -73,6 +73,23 @@ DESCRIPTIONS = {
         "A portal user's session was ended because their access was removed "
         "or all sessions were signed out."
     ),
+    # Admin automation sessions (ADM-11): the host command line acting as an
+    # Administrator who approved it once in the browser.
+    "automation_session_approved": _(
+        "An Administrator approved an automation session, which lets the "
+        "server's command line act as them until it expires or is revoked."
+    ),
+    "automation_session_ended": _(
+        "An automation session ended; its reason is shown on the "
+        "Administrator's Automation access page."
+    ),
+    "automation_session_refused": _(
+        "Use of an automation session was refused: an unknown session, one "
+        "used from a different server, or a command session seen by the web."
+    ),
+    "automation_notices_acknowledged": _(
+        "An Administrator acknowledged automation notices on their own dashboard."
+    ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
         "carrying the new roles."

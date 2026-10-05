@@ -226,6 +226,37 @@ def end_admin(request, *, reason="admin_logout"):
     request.session = import_module(settings.SESSION_ENGINE).SessionStore()
 
 
+def create_admin_session(
+    principal, *, now, authenticated_at, expires_at, session=None, data=None
+):
+    """Store one new Admin session and its PortalSession row: the shared core.
+
+    ``issue_admin`` passes the request's session store after a verified
+    sign-in; an Admin automation command passes none (a new store is made)
+    and adds its automation marker through ``data``. Neither ends another
+    session here, and neither records an audit event here. Returns the
+    session store and the row.
+    """
+    if session is None:
+        session = import_module(settings.SESSION_ENGINE).SessionStore()
+    session["principal"] = str(principal.identity)
+    session["recovery_epoch"] = revocation_epoch()
+    session["authority_fingerprint"] = _authority_fingerprint(principal)
+    for key, value in (data or {}).items():
+        session[key] = value
+    session.set_expiry(expires_at)
+    session.save()
+    row = PortalSession.objects.create(
+        session_id=session.session_key,
+        principal_id=principal.identity,
+        authenticated_at=authenticated_at,
+        last_activity_at=now,
+        expires_at=expires_at,
+        actor_id=principal.identity,
+    )
+    return session, row
+
+
 def issue_admin(request, user_id, *, store, authenticated_at):
     """Issue only after verified identity and fresh current-policy authorization."""
     principal = current_principal(store, user_id)
@@ -236,20 +267,14 @@ def issue_admin(request, user_id, *, store, authenticated_at):
         now = database_now()
         if timezone.is_naive(authenticated_at) or authenticated_at > now:
             raise PermissionError("Verified Google authentication is required.")
-        request.session["principal"] = str(user_id)
-        request.session["recovery_epoch"] = revocation_epoch()
-        request.session["authority_fingerprint"] = _authority_fingerprint(principal)
         # Ordinary Google SSO may predate this application session. Its signed
         # time gates privileged actions, not the new session's absolute limit.
-        request.session.set_expiry(now + ADMIN_ABSOLUTE)
-        request.session.save()
-        row = PortalSession.objects.create(
-            session_id=request.session.session_key,
-            principal_id=user_id,
+        _, row = create_admin_session(
+            principal,
+            now=now,
             authenticated_at=authenticated_at,
-            last_activity_at=now,
             expires_at=now + ADMIN_ABSOLUTE,
-            actor_id=user_id,
+            session=request.session,
         )
         AuditEvent.objects.create(
             event_type="admin_login", actor_id=user_id, subject_id=row.pk
@@ -309,12 +334,34 @@ def authenticated_admin(caller, *, store, activity=False, read_only=False):
     request is still converted). A read-only automation session can never
     record activity, and an automation caller is never rotated: a changed
     authority refuses it instead.
+
+    The two channels never mix. A web request whose session carries the
+    automation marker (a command session's key, which never leaves its
+    command process) is refused and its sessions are revoked
+    (``automation_sessions.refuse_web_session``); a read-only check records
+    that once its transaction ends. An automation
+    caller is admitted only on its own command session, while its automation
+    session is live and its principal still an Administrator.
     """
+    from .automation_sessions import MARKER
+
     if activity and read_only:
         raise ValueError("Read-only authorization cannot renew session activity.")
     caller = as_caller(caller)
     if activity and caller.read_only:
         raise PermissionError("Access is unavailable.")
+    if caller.channel == WEB and caller.session.get(MARKER) is not None:
+        from .automation_sessions import refuse_web_session
+
+        if read_only:
+            # A read-only check may run inside a read-only snapshot, which
+            # cannot write: the refusal is recorded as soon as that
+            # transaction ends (at once outside one).
+            store = caller.session
+            transaction.on_commit(lambda: refuse_web_session(store))
+        else:
+            refuse_web_session(caller.session)
+        return None
     # A read-only recheck has no writes to recover independently. Reuse an
     # enclosing disclosure/audit transaction without two redundant savepoint
     # statements; a database error still makes that whole response fail closed.
@@ -343,6 +390,10 @@ def authenticated_admin(caller, *, store, activity=False, read_only=False):
             if not read_only:
                 _revoke(row, now, reason)
             return None
+        if caller.channel != WEB and not _automation_admitted(caller, principal):
+            # The command line maps this to an ended session (exit 5); the
+            # command ends its command session at exit.
+            return None
         if caller.session.get("authority_fingerprint") != _authority_fingerprint(
             principal
         ):
@@ -360,6 +411,22 @@ def authenticated_admin(caller, *, store, activity=False, read_only=False):
             row.last_activity_at = now
         caller.admitted(row, principal)
         return principal
+
+
+def _automation_admitted(caller, principal):
+    """Whether an automation caller may act on its command session now.
+
+    Its session must carry the marker naming its own automation session,
+    which must be live (``stewardship_automation_live_v1``, the guards' own
+    definition), and its principal must still be an Administrator.
+    """
+    from .automation_sessions import MARKER, is_live
+
+    return (
+        caller.session.get(MARKER) == str(caller.automation_session_id)
+        and "administrator" in principal.roles
+        and is_live(caller.automation_session_id)
+    )
 
 
 class FreshAuthenticationRequired(PermissionError):
@@ -409,13 +476,30 @@ def require_fresh(caller):
 
 
 def cleanup_admin_sessions(*, batch_size=500):
-    """Delete protected metadata before parents, retaining opaque audit attribution."""
+    """Delete protected metadata before parents, retaining opaque audit attribution.
+
+    The automation maintenance task runs this as the general worker, which
+    may read only the session columns named below and never a session key,
+    so the query is limited to them and the Django sessions are deleted by
+    ``stewardship_admin_session_purge_v1``, which finds the keys itself and
+    deletes only those of ended rows. The rows go next, in the same
+    transaction, so the deferred foreign key holds at commit.
+    """
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Session cleanup requires a bounded batch size.")
     with transaction.atomic():
         now = database_now()
         rows = list(
             PortalSession.objects.select_for_update(skip_locked=True)
+            .only(
+                "id",
+                "principal_id",
+                "authenticated_at",
+                "last_activity_at",
+                "expires_at",
+                "revoked_at",
+                "version",
+            )
             .filter(
                 Q(revoked_at__isnull=False)
                 | Q(expires_at__lte=now)
@@ -440,9 +524,14 @@ def cleanup_admin_sessions(*, batch_size=500):
                 for row in pending
             ]
         )
-        keys = [row.session_id for row in rows]
-        PortalSession.objects.filter(pk__in=[row.pk for row in rows]).delete()
-        Session.objects.filter(session_key__in=keys).delete()
+        identifiers = [row.pk for row in rows]
+        if identifiers:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT public.stewardship_admin_session_purge_v1(%s::uuid[])",
+                    [identifiers],
+                )
+        PortalSession.objects.filter(pk__in=identifiers).delete()
         return len(rows)
 
 

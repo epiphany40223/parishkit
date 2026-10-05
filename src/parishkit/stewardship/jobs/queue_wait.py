@@ -34,6 +34,7 @@ from .queues import ROLE_QUEUES, SOURCE_QUEUES, SOURCE_SPLIT_CONNECTIONS, WorkQu
 # never named as the task ahead and only gets the generic reason.
 TASK_QUEUES = {
     "activation_catchup": WorkQueue.GENERAL,
+    "automation_maintenance": WorkQueue.GENERAL,
     "branding_cleanup": WorkQueue.GENERAL,
     "campaign_boundary": WorkQueue.GENERAL,
     "daily_digest_finalize": WorkQueue.GENERAL,
