@@ -299,11 +299,31 @@ fractional digits. Counts written as "X out of Y" also show a percentage;
 percentages use one fractional digit unless they are exact integers. A zero
 denominator displays an em dash rather than a misleading percentage.
 
-All instants are stored as timezone-aware UTC. Browser-facing timestamps are
-rendered in the browser timezone and include a timezone abbreviation in detail
-views. Campaign dates, scheduled jobs, and report day buckets use that
-Campaign's immutable timezone snapshot. Local-day conversion must handle
-daylight-saving gaps and folds without running an occurrence twice.
+All instants are stored as timezone-aware UTC. Every Admin page shows and takes
+dates and times in the browser's time zone, with no campaign-zone exceptions:
+schedule send times, campaign and financial date-times and report day buckets
+included (Administrator decision, 2026-10-04,
+[#558](https://github.com/epiphany40223/parishkit/issues/558)). A pure date
+with no time stays a calendar date and is never shifted. The rule governs how
+Admin pages show and take times; system definitions such as the campaign-local
+day and the active window keep their campaign-zone definitions. Shown
+timestamps include a time zone abbreviation in detail views. A form that
+accepts a date and time carries the browser's IANA zone in a hidden field that
+the page script fills, and the server converts the typed wall-clock time to
+UTC; the page names the zone next to the fields. The Admin portal requires
+JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
+a missing or unknown zone is refused rather than guessed, and when the browser
+reports none the page keeps Save unavailable, saying why. A time that occurs
+twice when clocks fall back is the first occurrence; a time skipped when clocks
+spring forward is read with the offset in force before the change (2:30 AM
+becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
+which cannot know a reader's browser, use the parish time zone and name it
+("9:15 PM Eastern"), never "UTC". Pages and emails move to these rules one
+group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
+first ([Admin portal](admin-portal/spec.md#follow-up-workflows)), and until its
+PR lands each other page keeps its current zone, including the campaign zone
+for schedules, campaign dates and report day buckets. Local-day conversion must
+handle daylight-saving gaps and folds without running an occurrence twice.
 
 Dates and times follow one parish date format that an Admin chooses in Parish
 settings (issue #221): US long ("January 1, 2027", the default), US medium,

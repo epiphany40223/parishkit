@@ -83,11 +83,40 @@
   // A download's timezone choice offers the browser's own zone, chosen by
   // default; without script the choice stays UTC. Also run for markup a table
   // swap brings in (enhanceTable below).
+  //
+  // A form that takes a date and time typed in local time (#558) sends the
+  // browser's zone in a hidden input[data-browser-zone] for the server to
+  // convert to UTC, and reveals its [data-browser-zone-note] naming the zone.
+  // When the browser reports no zone (or ICU's "Etc/Unknown") the field stays
+  // empty and the note hidden, and the [data-browser-zone-field] controls are
+  // marked invalid with the input's data-zone-missing-hint, so the
+  // data-require-complete gate below keeps Save unavailable and says why; they
+  // are then described by that hint instead of the hidden note. The server's
+  // own catalog check refuses any other zone it does not know.
   const wireBrowserTimezone = (root) => {
+    let zone = "";
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { /* no Intl */ }
+    root.querySelectorAll("input[data-browser-zone]").forEach((input) => {
+      const scope = input.form || root;
+      const known = Boolean(zone) && zone !== "Etc/Unknown";
+      const hint = known ? "" : input.dataset.zoneMissingHint || "";
+      const note = scope.querySelector("[data-browser-zone-note]");
+      const gateHint = scope.querySelector("[data-complete-hint]");
+      input.value = known ? zone : "";
+      scope.querySelectorAll("[data-browser-zone-name]").forEach((node) => {
+        node.textContent = input.value;
+      });
+      if (note) note.hidden = !known;
+      scope.querySelectorAll("[data-browser-zone-field]").forEach((field) => {
+        field.setCustomValidity(hint);
+        if (hint) field.dataset.missingHint = hint;
+        else delete field.dataset.missingHint;
+        const described = known ? note : gateHint;
+        if (described && described.id) field.setAttribute("aria-describedby", described.id);
+      });
+    });
+    if (!zone || zone === "UTC") return;
     root.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
-      const zone = typeof Intl === "undefined"
-        ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (!zone || zone === "UTC") return;
       select.append(new Option(`${zone} (this browser)`, zone, true, true));
     });
   };

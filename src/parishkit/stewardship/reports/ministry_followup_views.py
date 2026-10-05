@@ -1,6 +1,5 @@
 """Private native Ministry follow-up queue, history and optimistic editing."""
 
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -21,6 +20,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.dates import UnknownZone, browser_instant
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import (
@@ -130,6 +130,16 @@ REFUSALS = {
         _("The contact attempt's date and time can't be in the future."),
         "contact-date",
     ),
+    # No usable browser zone came with the time (#558): a tab opened before
+    # local-time entry, or a browser that reports none. The re-rendered page
+    # fills the zone again, so saving again normally works.
+    "contact_zone": (
+        _(
+            "The contact time came without your computer's time zone. Save "
+            "again; if this repeats, check your computer's time zone setting."
+        ),
+        "contact-date",
+    ),
 }
 ACTIONS = {"join": _("join"), "leave": _("leave")}
 # The submitted fields a refused page shows again.
@@ -141,6 +151,7 @@ FORM_FIELDS = (
     "contact_channel",
     "contact_date",
     "contact_time",
+    "contact_zone",
     "contact_notes",
 )
 
@@ -363,9 +374,19 @@ def change_values(parameters):
     and the date, time and notes of a contact attempt that has no channel.
     Notes stay optional except for the outcome Other, which the database
     requires (ministry_revision_outcome).
+
+    A contact date and time are typed in the browser's time zone, which
+    ui-v1.js sends in ``contact_zone`` (#558); a contact attempt without a
+    known zone is refused rather than guessed.
     """
     required = {"expected_version", "request_key", "state", "notes", "contact_channel"}
-    optional = {"outcome", "contact_date", "contact_time", "contact_notes"}
+    optional = {
+        "outcome",
+        "contact_date",
+        "contact_time",
+        "contact_zone",
+        "contact_notes",
+    }
     keys = set(parameters) - {"csrfmiddlewaretoken"}
     if not required <= keys <= required | optional or any(
         len(parameters.getlist(key)) != 1 for key in keys
@@ -379,13 +400,14 @@ def change_values(parameters):
     channel = parameters["contact_channel"] or None
     moment = None
     if channel is not None:
-        # The native date/time controls carry no zone; the page states UTC.
         try:
-            day, clock = (
+            moment = browser_instant(
                 parameters.get("contact_date", ""),
                 parameters.get("contact_time", ""),
+                parameters.get("contact_zone", ""),
             )
-            moment = datetime.fromisoformat(f"{day}T{clock}").replace(tzinfo=UTC)
+        except UnknownZone:
+            raise FollowupRefusal("contact_zone") from None
         except ValueError:
             raise FollowupRefusal("contact_incomplete") from None
     return dict(

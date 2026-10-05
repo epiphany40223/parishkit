@@ -1,8 +1,17 @@
 """Native private Ministry follow-up queue and edit form, with no assignment."""
 
+import json
+from datetime import UTC, datetime
+
 import pytest
+from django.http import QueryDict
+
+from parishkit.stewardship.reports.ministry_followup_views import change_values
 
 from .waits import has_text, visible
+
+# The instant every follow-up fixture shows (followup_components.py).
+FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -83,7 +92,10 @@ def test_followup_form_shows_only_the_fields_that_apply(page, component_origin):
     channel is chosen; hidden fields are disabled, so they are not sent."""
     page.goto(component_origin + "/followup-item")
     outcome = page.get_by_label("Outcome", exact=True)
-    date, time = page.get_by_label("Date (UTC)"), page.get_by_label("Time (UTC)")
+    date, time = (
+        page.get_by_label("Date", exact=True),
+        page.get_by_label("Time", exact=True),
+    )
     happened = page.get_by_label("What happened")
     status, how = page.get_by_label("Status"), page.get_by_label("How")
     # The request loads as New with no contact attempt chosen.
@@ -110,7 +122,13 @@ def test_followup_form_shows_only_the_fields_that_apply(page, component_origin):
     body = sent.value.post_data
     assert "state=in_progress" in body and "notes=" in body
     assert "contact_channel=" in body
-    for name in ("outcome=", "contact_date=", "contact_time=", "contact_notes="):
+    for name in (
+        "outcome=",
+        "contact_date=",
+        "contact_time=",
+        "contact_zone=",
+        "contact_notes=",
+    ):
         assert name not in body
 
 
@@ -138,12 +156,12 @@ def test_followup_save_waits_for_the_visible_required_fields(page, component_ori
     page.get_by_label("How").select_option("phone")
     assert save.is_disabled()
     has_text(hint, "Enter the date and time of the contact attempt to save.")
-    page.get_by_label("Date (UTC)").fill("2026-09-19")
+    page.get_by_label("Date", exact=True).fill("2026-09-19")
     assert save.is_disabled()
-    page.get_by_label("Time (UTC)").fill("15:04")
+    page.get_by_label("Time", exact=True).fill("15:04")
     assert save.is_enabled() and not hint.is_visible()
     # Choosing no contact attempt drops that requirement again.
-    page.get_by_label("Date (UTC)").fill("")
+    page.get_by_label("Date", exact=True).fill("")
     assert save.is_disabled()
     page.get_by_label("How").select_option("")
     assert save.is_enabled()
@@ -192,7 +210,11 @@ def test_followup_refusal_is_shown_in_place(page, component_origin):
     assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
     assert page.get_by_label("Status").input_value() == "resolved"
     assert page.get_by_label("Outcome", exact=True).input_value() == "other"
-    assert page.get_by_label("Date (UTC)").input_value() == "2026-09-19"
+    assert page.get_by_label("Date", exact=True).input_value() == "2026-09-19"
+    assert page.get_by_label("Time", exact=True).input_value() == "15:04"
+    # The local-time note and zone come back with the kept contact (#558).
+    assert page.locator("[name=contact_zone]").input_value() == "America/Los_Angeles"
+    visible(page.get_by_text("time zone: America/Los_Angeles.", exact=False))
     assert page.get_by_label("What happened").input_value() == "Kept <reply>"
     # The form carries the version it was loaded with, not a newer one.
     assert page.locator('input[name="expected_version"]').input_value() == "3"
@@ -216,7 +238,7 @@ def test_followup_fields_follow_a_restored_status(page, component_origin):
     )
     visible(outcome)
     assert outcome.is_enabled()
-    visible(page.get_by_label("Date (UTC)"))
+    visible(page.get_by_label("Date", exact=True))
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
 
 
@@ -249,8 +271,8 @@ def test_followup_edit_without_scripts(browser_engine, component_origin):
         page.get_by_label("Status").select_option("resolved")
         page.get_by_label("Outcome", exact=True).select_option("joined")
         page.get_by_label("How").select_option("email")
-        page.get_by_label("Date (UTC)").fill("2026-09-19")
-        page.get_by_label("Time (UTC)").fill("15:04")
+        page.get_by_label("Date", exact=True).fill("2026-09-19")
+        page.get_by_label("Time", exact=True).fill("15:04")
         page.get_by_label("What happened").fill("Private reply")
         page.route("**/update", lambda route: route.fulfill(body="Saved"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -259,10 +281,98 @@ def test_followup_edit_without_scripts(browser_engine, component_origin):
         assert "state=resolved" in body and "outcome=joined" in body
         assert "expected_version=3" in body and "request_key=" in body
         assert "contact_channel=email" in body and "contact_date=2026-09-19" in body
+        # The Admin portal requires JavaScript (#565): without it the browser
+        # zone is unknown, so the server refuses the contact time rather than
+        # guessing its zone (#558).
+        assert "contact_zone=&" in body
+        with pytest.raises(ValueError):
+            change_values(QueryDict(body))
         assert "Private" not in sent.value.url and "?" not in sent.value.url
         assert "assignee" not in body
     finally:
         context.close()
+
+
+@pytest.mark.parametrize(
+    ("zone", "typed", "shown"),
+    [
+        ("America/Los_Angeles", "08:04", "September 19, 2026 at 8:04 AM"),
+        ("UTC", "15:04", "September 19, 2026 at 3:04 PM"),
+    ],
+)
+def test_followup_contact_time_round_trips_in_browser_time(
+    browser_engine, component_origin, zone, typed, shown
+):
+    """A contact time typed in local time is stored as UTC and shown back alike.
+
+    The browser sends its zone with the form; the server's own form grammar
+    turns the typed time into the fixture instant, and the page shows that
+    instant (history contact, history edit, last contact) as the same local
+    time that was typed (#558).
+    """
+    context = browser_engine.new_context(timezone_id=zone)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/followup-item")
+        times = page.locator("time[data-local-instant]").all_inner_texts()
+        assert sum(shown in text for text in times) >= 2
+        # Like the date and time, the zone is not sent until a channel is.
+        assert page.locator("[name=contact_zone]").is_disabled()
+        page.get_by_label("How").select_option("phone")
+        note = page.locator("#contact-zone-help")
+        visible(note.get_by_text(f"time zone: {zone}.", exact=False))
+        assert page.locator("[name=contact_zone]").input_value() == zone
+        date = page.get_by_label("Date", exact=True)
+        assert date.get_attribute("aria-describedby") == "contact-zone-help"
+        page.get_by_label("Date", exact=True).fill("2026-09-19")
+        page.get_by_label("Time", exact=True).fill(typed)
+        page.route("**/update", lambda route: route.fulfill(body="Saved"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Save follow-up").click()
+        change = change_values(QueryDict(sent.value.post_data))["change"]
+        assert change.contact_at == FIXTURE
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("reported", ["", "Etc/Unknown"])
+def test_followup_contact_waits_for_a_known_browser_zone(
+    page, component_origin, reported
+):
+    """A browser that reports no zone, or ICU's unknown zone, cannot save a
+    contact time: the zone stays empty, its note stays hidden, and Save says
+    why (#558); the server's catalog check refuses any other unknown zone.
+    Other edits still save."""
+    # Init scripts run before the page's own and are not subject to its CSP.
+    page.add_init_script(
+        """{
+        const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+        Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+            return {...original.call(this), timeZone: ZONE};
+        };
+    }""".replace("ZONE", json.dumps(reported))
+    )
+    page.goto(component_origin + "/followup-item")
+    save = page.get_by_role("button", name="Save follow-up")
+    assert save.is_enabled()
+    page.get_by_label("How").select_option("phone")
+    page.get_by_label("Date", exact=True).fill("2026-09-19")
+    page.get_by_label("Time", exact=True).fill("08:04")
+    assert save.is_disabled()
+    has_text(
+        page.locator("#followup-save-hint"),
+        "Your browser didn't report a time zone, so this contact time can't be "
+        "saved. Check your computer's time zone setting.",
+    )
+    assert page.locator("[name=contact_zone]").input_value() == ""
+    for label in ("Date", "Time"):
+        field = page.get_by_label(label, exact=True)
+        assert field.get_attribute("aria-describedby") == "followup-save-hint"
+    assert not page.locator("#contact-zone-help").is_visible()
+    # The note is never shown with an empty zone ("time zone: .").
+    assert not page.get_by_text("time zone: .", exact=False).is_visible()
+    page.get_by_label("How").select_option("")
+    assert save.is_enabled()
 
 
 def test_followup_sort_heading_without_scripts(browser_engine, component_origin):
