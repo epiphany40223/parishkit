@@ -12,9 +12,6 @@ from parishkit.stewardship.campaigns.cleanup_preview import (
     cleanup_families,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.campaigns.production_models import (
-    ProductionTransitionRequest,
-)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.readiness import source_readiness
@@ -22,10 +19,11 @@ from parishkit.stewardship.web.contracts import PageWindow, expected_version, fi
 from parishkit.stewardship.web.tables import window_table
 
 from . import admin_navigation
+from .admin_caller import AdminCaller
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
 from .go_live_commands import start_cleanup, verify_preview
-from .go_live_inputs import collect_inputs
+from .go_live_inputs import collect_inputs, recent_cleanup_requests
 from .go_live_progress import control, progress
 from .integration_views import ERRORS, _checked
 from .setup_views import _closed, error_response
@@ -125,7 +123,9 @@ def readiness(request, campaign_id):
             preview, verified, token = verify_preview(request, service, campaign_id)
         else:
             _closed(request, set())
-            preview = collect_inputs(request, service, campaign_id)
+            preview = collect_inputs(
+                AdminCaller.from_request(request), service, campaign_id
+            )
         counts = preview.families.counts
         # The first step of going live (#196).
         admin_navigation.place(request, flow="go_live", step="readiness")
@@ -142,11 +142,7 @@ def readiness(request, campaign_id):
                 "inventory": sorted(preview.cleanup.inventory.counts.items()),
                 "origin_verified": verified,
                 "cleanup_token": token,
-                "cleanup_requests": list(
-                    ProductionTransitionRequest.objects.filter(campaign_id=campaign_id)
-                    .order_by("-created_at", "-id")
-                    .only("id", "state", "created_at")[:10]
-                ),
+                "cleanup_requests": recent_cleanup_requests(campaign_id),
             },
         )
         return _checked(request, service, response)

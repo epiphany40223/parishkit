@@ -12,6 +12,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import admin_navigation, confirmation_commands, confirmation_progress
+from .admin_caller import AdminCaller
 from .authentication import runtime
 from .confirmation_readiness import collect_readiness
 from .go_live_views import PROBLEMS
@@ -130,7 +131,9 @@ def progress(request, campaign_id):
             response = render(
                 request,
                 "stewardship/production-progress.html",
-                confirmation_progress.progress(request, service, campaign_id),
+                confirmation_progress.progress(
+                    AdminCaller.from_request(request), service, campaign_id
+                ),
             )
         return _checked(request, service, response)
     except ObjectDoesNotExist:

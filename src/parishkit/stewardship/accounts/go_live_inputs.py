@@ -20,6 +20,9 @@ from parishkit.stewardship.campaigns.cleanup_preview import (
 )
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionTransitionRequest,
+)
 from parishkit.stewardship.campaigns.readiness_digests import (
     DigestImpact,
     digest_impact,
@@ -60,16 +63,21 @@ class GoLiveInputs:
     digest: str
 
 
-def collect_inputs(request, service, campaign_id):
+def collect_inputs(caller, service, campaign_id):
     """Reload current Admin authority, configuration and complete impact together.
 
     The digest deliberately omits wall-clock sampling time. It includes the
     computed target, current source/full proof and due-group binding, so start,
     close, source expiry and newly due slots can still invalidate a preview.
     A final response must independently repeat current authorization.
+
+    ``caller`` is an ``AdminCaller``: the Go-live readiness page and the
+    ``go-live readiness`` command (ADM-11) read through this one function.
+    Until PR 12 moves them, ``go_live_commands`` still pass their request,
+    which ``principal`` converts.
     """
     with work_transaction():
-        principal(request, service, passive=True)
+        principal(caller, service, passive=True)
         configuration = editable_configuration(service)
         scope = _scope(campaign_id)
         campaign = scope.campaign
@@ -176,6 +184,19 @@ def collect_inputs(request, service, campaign_id):
             tuple(problems),
             digest,
         )
+
+
+def recent_cleanup_requests(campaign_id):
+    """The campaign's ten most recent cleanup requests, newest first.
+
+    Go-live readiness lists them (identifier, state and creation instant
+    only), and so does ``go-live readiness``.
+    """
+    return list(
+        ProductionTransitionRequest.objects.filter(campaign_id=campaign_id)
+        .order_by("-created_at", "-id")
+        .only("id", "state", "created_at")[:10]
+    )
 
 
 def _catalogs(source):
