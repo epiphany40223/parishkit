@@ -131,7 +131,11 @@ REFUSALS = {
         ("contact_date", "contact_time"),
     ),
     "contact_future": (
-        _("The contact attempt's date and time can't be in the future."),
+        # The server checks this because the browser's clock can be wrong.
+        _(
+            "The contact attempt's date and time can't be in the future. "
+            "If they aren't, check your computer's clock."
+        ),
         ("contact_date", "contact_time"),
     ),
     # No usable browser zone came with the time (#558): a tab opened before
@@ -191,7 +195,12 @@ def _refusal_error(refusal, submitted):
             "action": ACTIONS[refusal.details["action"]],
         }
     fields = refusal_fields(refusal, submitted)
-    return {"message": message, "fields": fields, "field_id": FIELD_IDS[fields[0]]}
+    return {
+        "code": refusal.code,
+        "message": message,
+        "fields": fields,
+        "field_id": FIELD_IDS[fields[0]],
+    }
 
 
 def _page_response(request, campaign_id, *, request_id=None, refusal=None):
@@ -340,6 +349,9 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 # The refused fields, marked in error with the message beside
                 # them (an empty dict when nothing was refused).
                 field_error=error,
+                # The page checks a contact time as it is typed, with the
+                # server's own words for a time in the future (#592).
+                future_message=REFUSALS["contact_future"][0],
                 outcomes=OUTCOMES,
                 channels=CHANNELS,
             )

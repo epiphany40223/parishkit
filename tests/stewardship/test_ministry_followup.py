@@ -377,6 +377,7 @@ def render_refused(error):
             history=[],
             errors=[error] if error else [],
             field_error=error,
+            future_message=REFUSALS["contact_future"][0],
         ),
     )
 
@@ -406,7 +407,13 @@ def test_refused_fields_are_marked_at_the_field(code):
         else:
             assert "aria-invalid" not in tag
     assert f'<a href="#{error["field_id"]}">' in page
-    # One message, even when it concerns both the date and the time.
-    assert page.count('class="errorlist"') == 1
+    # One message shows, even when it concerns both the date and the time;
+    # the contact message element is always there, hidden when unused, for
+    # the page's live check of the contact time to fill.
+    shown = re.findall(r'<ul class="errorlist"(?![^>]*\bhidden\b)[^>]*>', page)
+    assert len(shown) == 1
+    assert 'data-not-future-message="The contact attempt&#x27;s date' in page
     clean = render_refused({})
-    assert "aria-invalid" not in clean and "errorlist" not in clean
+    assert "aria-invalid" not in clean
+    assert '<ul class="errorlist" id="contact-error" hidden><li></li></ul>' in clean
+    assert len(re.findall(r'<ul class="errorlist"', clean)) == 1

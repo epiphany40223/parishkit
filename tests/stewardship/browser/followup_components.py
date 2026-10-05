@@ -24,6 +24,7 @@ from parishkit.stewardship.reports.ministry_followup import (
     FollowupQuery,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    REFUSALS,
     _refusal_error,
 )
 from parishkit.stewardship.web.tables import report_table
@@ -115,6 +116,7 @@ def components(context, admin):
         resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("join")],
         outcomes=OUTCOMES,
         channels=CHANNELS,
+        future_message=REFUSALS["contact_future"][0],
         total=51,
         rows=[row],
         ministries=[dict(duid=9, name="Example <Ministry>")],
@@ -194,6 +196,21 @@ def components(context, admin):
                 state="in_progress",
                 contact_channel="phone",
                 contact_date="2099-01-01",
+                contact_time="10:00",
+            ),
+            errors=[future],
+            field_error=future,
+        ),
+        # The same refusal for a time this browser's clock says is past:
+        # the case the server's check exists for (a wrong computer clock).
+        "/followup-item-future-past": values
+        | dict(
+            item=row,
+            form=form
+            | dict(
+                state="in_progress",
+                contact_channel="phone",
+                contact_date="2026-09-19",
                 contact_time="10:00",
             ),
             errors=[future],

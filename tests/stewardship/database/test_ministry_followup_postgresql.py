@@ -878,7 +878,10 @@ def test_contact_refusals_mark_their_fields(response_service, google):
         "contact_zone": "UTC",
         "contact_notes": "",
     }
-    message = "The contact attempt's date and time can't be in the future."
+    message = (
+        "The contact attempt's date and time can't be in the future. "
+        "If they aren't, check your computer's clock."
+    )
     for values, marked, unmarked, text in (
         (contact, ("contact-date", "contact-time"), (), message),
         (
@@ -906,9 +909,10 @@ def test_contact_refusals_mark_their_fields(response_service, google):
             assert (
                 "aria-invalid" not in re.search(rf'<input id="{field}"[^>]*>', page)[0]
             )
-        assert (
-            f'<ul class="errorlist" id="contact-error"><li>{escape(text)}</li></ul>'
-            in page
+        assert re.search(
+            r'<ul class="errorlist" id="contact-error" data-source="\w+">'
+            rf"<li>{re.escape(escape(text))}</li></ul>",
+            page,
         )
         assert f'<a href="#{marked[0]}">{escape(text)}</a>' in page
     assert MinistryWorkflowRevision.objects.count() == 0

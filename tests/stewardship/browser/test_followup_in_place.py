@@ -7,6 +7,8 @@ and information_components). Each test sets a mark outside every region,
 which only a full page load could lose, as test_in_place.py does.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from .followup_components import GATE_ITEM, RESOLVE_ITEM
@@ -175,7 +177,17 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     assert save.is_enabled()
 
 
-FUTURE = "The contact attempt's date and time can't be in the future."
+# Noon UTC: the same calendar day in every browser time zone from UTC-11 to
+# UTC+11, so the tests can ask the browser for "today" and reason about it.
+NOON = datetime(2026, 9, 20, 12, tzinfo=UTC)
+FUTURE = (
+    "The contact attempt's date and time can't be in the future. "
+    "If they aren't, check your computer's clock."
+)
+LOCAL_TODAY = """() => {
+    const now = new Date(), pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}"""
 
 
 def contact_marked(page, marked):
@@ -194,12 +206,69 @@ def contact_marked(page, marked):
         hidden(message)
 
 
+def test_future_contact_is_flagged_as_it_is_typed(page, component_origin):
+    """The Date picker stops at today in the browser's zone, and a contact
+    attempt in the future is flagged as soon as it is typed (#592): a later
+    date alone, or today with a later time. The server's own message shows
+    by the fields, both are marked in error with the red border, and Save
+    is unavailable with that message as its hint. It clears, and Save comes
+    back, as soon as the values are no longer in the future."""
+    page.clock.set_fixed_time(NOON)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    today = page.evaluate(LOCAL_TODAY)
+    save = page.locator(FOLLOWUP_SAVE)
+    hint = page.locator("#followup-save-hint")
+    page.get_by_label("How").select_option("phone")
+    date, time = page.locator("#contact-date"), page.locator("#contact-time")
+    assert date.get_attribute("max") == today
+    contact_marked(page, False)
+    date.fill("2099-01-01")
+    contact_marked(page, True)
+    assert date.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
+    assert save.is_disabled()
+    has_text(hint, FUTURE)
+    # Today with no time yet is not in the future; the time is still needed.
+    date.fill(today)
+    contact_marked(page, False)
+    assert save.is_disabled()
+    time.fill("23:59")
+    contact_marked(page, True)
+    assert save.is_disabled()
+    has_text(hint, FUTURE)
+    time.fill("00:00")
+    contact_marked(page, False)
+    assert save.is_enabled() and not hint.is_visible()
+
+
+def test_future_contact_check_works_after_a_swap(page, component_origin):
+    """The live check, the picker's limit and the Save gate work on a form a
+    save swapped in, as on the page as loaded."""
+    page.clock.set_fixed_time(NOON)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.get_by_label("Status").select_option("in_progress")
+    page.locator(FOLLOWUP_SAVE).click()
+    visible(page.locator("#followup-item").get_by_text("Saved <note>", exact=True))
+    page.get_by_label("How").select_option("phone")
+    date = page.locator("#contact-date")
+    assert date.get_attribute("max") == page.evaluate(LOCAL_TODAY)
+    date.fill("2099-01-01")
+    contact_marked(page, True)
+    assert page.locator(FOLLOWUP_SAVE).is_disabled()
+    date.fill("2026-09-19")
+    page.locator("#contact-time").fill("10:00")
+    contact_marked(page, False)
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+
+
 def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
-    """The server's refusal of a future contact time is swapped in at the
-    fields, once, and its summary links to the date and takes focus, as
-    every Admin refusal summary does. Leaving a field without editing it
-    keeps the mark; correcting the date clears the mark, the message and
-    the summary at once, before any save, and the save then goes through."""
+    """The server still checks every save (clock skew, a stale tab): its
+    refusal of a future contact time is swapped in at the fields, once, and
+    its summary links to the date and takes focus, as every Admin refusal
+    summary does. The page re-checks the values at once, so Save waits.
+    Leaving a field without editing it keeps the mark; correcting the date
+    clears the mark, the message and the summary at once, before any save,
+    and the save then goes through."""
+    page.clock.set_fixed_time(NOON)
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + FOLLOWUP_ITEM)
     page.evaluate(MARK)
@@ -225,6 +294,7 @@ def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
     )
     assert link.get_attribute("href") == "#contact-date"
     assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
+    assert page.locator(FOLLOWUP_SAVE).is_disabled()
     link.click()
     assert page.evaluate("document.activeElement.id") == "contact-date"
     # Leaving the field without editing it keeps the mark. (Tab would only
@@ -242,11 +312,101 @@ def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
     assert page.locator(".errorlist:visible, [aria-invalid=true]").count() == 0
 
 
+def test_server_future_refusal_stands_when_this_clock_disagrees(page, component_origin):
+    """The server refuses a contact time as in the future when this
+    browser's clock says it is past (a wrong computer clock): the case the
+    server's check exists for. The browser must not overrule it: the summary
+    stays, takes focus and is announced, and Date and Time stay marked,
+    including after leaving a field, until Date or Time is edited. Editing
+    Time alone clears the mark it shares with Date, the message and the
+    summary."""
+    page.clock.set_fixed_time(NOON)
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.evaluate(MARK)
+    scroll_below(page, FOLLOWUP_SAVE)
+    answer_with(
+        page, component_origin, FOLLOWUP_UPDATE, 400, "/followup-item-future-past"
+    )
+    page.get_by_label("How").select_option("phone")
+    page.locator("#contact-date").fill("2026-09-19")
+    page.locator("#contact-time").fill("10:00")
+    page.locator(FOLLOWUP_SAVE).click()
+    summary = page.locator("#followup-item > [data-error-summary]:first-child")
+    visible(summary.get_by_role("link", name=FUTURE))
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
+    has_text(page.get_by_role("status").filter(has_text="clock"), FUTURE)
+    contact_marked(page, True)
+    assert (
+        page.locator("#followup-item #contact-error").get_attribute("data-source")
+        == "contact_future"
+    )
+    # Leaving a field, the page being shown again, or a change elsewhere on
+    # the form (which re-runs the check, not as an edit) changes nothing.
+    page.locator("#contact-date").focus()
+    page.locator("#contact-notes").focus()
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow'))")
+    page.get_by_label("Status").select_option("new")
+    contact_marked(page, True)
+    assert page.locator("[data-error-summary]").count() == 1
+    assert (
+        page.locator("#followup-item #contact-error").get_attribute("data-source")
+        == "contact_future"
+    )
+    # Editing Time clears the mark it shares with Date, and the summary.
+    page.locator("#contact-time").fill("09:00")
+    contact_marked(page, False)
+    assert page.locator("[data-error-summary]").count() == 0
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+
+
+def test_contact_date_limit_moves_past_midnight(page, component_origin):
+    """The picker's last day is today in this browser: a page left open
+    past midnight moves it on when the Date field is next focused."""
+    page.clock.set_fixed_time(NOON)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.get_by_label("How").select_option("phone")
+    date = page.locator("#contact-date")
+    first = page.evaluate(LOCAL_TODAY)
+    assert date.get_attribute("max") == first
+    page.clock.set_fixed_time(NOON + timedelta(days=1))
+    date.focus()
+    second = page.evaluate(LOCAL_TODAY)
+    assert second != first
+    assert date.get_attribute("max") == second
+
+
+def test_held_save_comes_back_once_the_time_passes(page, component_origin):
+    """A time a minute ahead holds Save; once it has passed, the
+    once-a-minute re-check releases Save and clears the message, without
+    an edit."""
+    page.clock.install(time=NOON)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.get_by_label("How").select_option("phone")
+    ahead = page.evaluate("""() => {
+        const soon = new Date(Date.now() + 60000);
+        const pad = (n) => String(n).padStart(2, "0");
+        const day = [soon.getFullYear(), pad(soon.getMonth() + 1), pad(soon.getDate())];
+        return [day.join("-"), `${pad(soon.getHours())}:${pad(soon.getMinutes())}`];
+    }""")
+    page.locator("#contact-date").fill(ahead[0])
+    page.locator("#contact-time").fill(ahead[1])
+    contact_marked(page, True)
+    assert page.locator(FOLLOWUP_SAVE).is_disabled()
+    page.clock.run_for(130000)
+    contact_marked(page, False)
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+
+
 def test_hiding_the_contact_group_clears_its_marks(page, component_origin):
     """Choosing no contact attempt hides Date and Time, which are then not
     sent, so a server error marked on them clears with its summary item."""
+    page.clock.set_fixed_time(NOON)
     page.goto(component_origin + FOLLOWUP_ITEM)
-    answer_with(page, component_origin, FOLLOWUP_UPDATE, 400, "/followup-item-future")
+    answer_with(
+        page, component_origin, FOLLOWUP_UPDATE, 400, "/followup-item-future-past"
+    )
     page.get_by_label("How").select_option("phone")
     page.locator("#contact-date").fill("2026-09-19")
     page.locator("#contact-time").fill("10:00")
@@ -259,6 +419,17 @@ def test_hiding_the_contact_group_clears_its_marks(page, component_origin):
     page.get_by_label("How").select_option("phone")
     contact_marked(page, False)
     assert page.locator(FOLLOWUP_SAVE).is_enabled()
+    # A future value hidden and shown again is checked again at once, with
+    # its own hint, so Save never changes under a press.
+    page.locator("#contact-date").fill("2099-01-01")
+    contact_marked(page, True)
+    page.get_by_label("How").select_option("")
+    hidden(page.locator("#contact-date"))
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+    page.get_by_label("How").select_option("phone")
+    contact_marked(page, True)
+    assert page.locator(FOLLOWUP_SAVE).is_disabled()
+    has_text(page.locator("#followup-save-hint"), FUTURE)
 
 
 def test_django_choice_group_error_clears_together(page, component_origin):

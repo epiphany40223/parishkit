@@ -199,8 +199,8 @@
   //     empty).
   // Leaving a field without editing it keeps a server mark: the error is
   // neither fixed nor edited. data-field-error marks a field whose mark
-  // comes from the server's message rather than from the browser's
-  // validity.
+  // comes from a message (the server's, or a live check such as the
+  // follow-up contact time's) rather than from the browser's validity.
   const errorMessages = (node) => (node?.getAttribute("aria-describedby") || "").split(/\s+/)
     .map((id) => id && document.getElementById(id))
     .filter((message) => message && message.matches(".errorlist"));
@@ -225,6 +225,8 @@
     });
     fields.forEach((node) => {
       node.removeAttribute("data-field-error");
+      // A live check's flag goes with its mark (data-show-when hiding it).
+      delete node.dataset.clientError;
       node.setAttribute("aria-invalid", "false");
       const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
         .filter((id) => id && !messages.some((message) => message.id === id));
@@ -239,7 +241,12 @@
     document.querySelectorAll("[data-error-summary]").forEach((summary) => {
       if (!summary.querySelector("li")) summary.remove();
     });
-    messages.forEach((message) => { message.hidden = true; });
+    // A message element a live check may reuse stays, hidden and empty.
+    messages.forEach((message) => {
+      message.hidden = true;
+      message.querySelectorAll("li").forEach((item) => { item.textContent = ""; });
+      delete message.dataset.source;
+    });
   };
   // Fields this script marked from the browser's own check on blur. Only
   // those are cleared when valid again, so a mark another script set is
@@ -1368,13 +1375,17 @@
     // trims it (notes for the outcome Other).
     const blank = (node) => node.required && node.matches("textarea, input[type=text]")
       && !node.value.trim();
+    // A live check (the follow-up contact time) marks a field it found in
+    // error with data-client-error, whose text is the hint.
     const missing = [...form.elements].find((node) => node.willValidate
-      && !node.closest("[hidden]") && (!node.validity.valid || blank(node)));
+      && !node.closest("[hidden]")
+      && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
     if (hint) {
       hint.hidden = !missing;
       hint.textContent = missing
-        ? (missing.closest("[data-missing-hint]")?.dataset.missingHint
+        ? (missing.dataset.clientError
+          || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
     }
@@ -1463,17 +1474,129 @@
       completeForms.push(form);
     });
   };
+  // A contact attempt cannot be in the future (#592). The browser checks
+  // what it can at once; the server still checks every save and its
+  // refusal is shown as before. The date input is marked
+  // data-not-future="<time input id>", with the inline message element
+  // (data-not-future-error) and the server's own words
+  // (data-not-future-message). Its picker stops at today in this browser's
+  // time zone: set at load, after a swap, on pageshow, and on focus, so a
+  // page left open past midnight moves on.
+  //
+  // While the date (with no time yet: a later day) or the date and time
+  // (in this browser's zone) are in the future, both fields are marked in
+  // error beside the message, and the Save gate holds Save with the message
+  // as its hint. The message element is the one a server refusal fills, so
+  // one message shows at a time:
+  //   - An edit (input or change of Date or Time) owns the element: a
+  //     future time shows the check's message there, and a time no longer
+  //     in the future clears it, including the server's own "in the
+  //     future" refusal, which the reader has now changed.
+  //   - Any other run (wiring at load or after a swap, pageshow, leaving a
+  //     field, another change on the form, the timer below) never touches a
+  //     server message: it only adds the marks for a future time, and
+  //     clears only the check's own message. The server's refusal exists
+  //     for exactly the case where this browser's clock disagrees with it
+  //     (a wrong clock, a stale tab), so the browser must not overrule it
+  //     unasked.
+  // A time can pass while the page is open: while the check holds Save it
+  // runs again once a minute, so Save comes back once the time is no longer
+  // in the future.
+  const localToday = () => {
+    const now = new Date();
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  };
+  let notFutureChecks = []; // {date, check} for each wired date input
+  const wireNotFuture = (root) => {
+    within(root, "input[data-not-future]").forEach((date) => {
+      const time = document.getElementById(date.dataset.notFuture);
+      const errorId = date.dataset.notFutureError;
+      const message = date.dataset.notFutureMessage;
+      const fields = [date, time].filter(Boolean);
+      let timer = null; // the once-a-minute re-check while Save is held
+      // Written only when the day changes. An earlier version also ran the
+      // check on Save's pointerdown, and re-setting max there, even to the
+      // same value, made Chromium drop that click; the attribute is not
+      // rewritten needlessly in case anything else runs the check mid-press.
+      const limit = () => {
+        const today = localToday();
+        if (date.max !== today) date.max = today;
+      };
+      const describe = (node) => {
+        const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== errorId);
+        node.setAttribute("aria-describedby", [...ids, errorId].join(" "));
+      };
+      const check = (edited = false) => {
+        if (!date.isConnected) {
+          window.clearInterval(timer);
+          return;
+        }
+        limit();
+        const error = document.getElementById(errorId);
+        const source = error && !error.hidden ? error.dataset.source : null;
+        // A hidden contact group's fields are disabled and not sent.
+        const future = !date.disabled && Boolean(date.value) && (time && time.value
+          ? new Date(`${date.value}T${time.value}`).getTime() > Date.now()
+          : date.value > localToday());
+        if (future) {
+          fields.forEach((node) => {
+            node.setAttribute("aria-invalid", "true");
+            node.setAttribute("data-field-error", "");
+            describe(node);
+          });
+          date.dataset.clientError = message;
+          // The check's message replaces a server one only on an edit.
+          if (error && (edited || !source || source === "client")) {
+            error.hidden = false;
+            error.dataset.source = "client";
+            const item = error.querySelector("li") || error.appendChild(document.createElement("li"));
+            item.textContent = message;
+          }
+          if (!timer) timer = window.setInterval(() => check(), 60000);
+        } else {
+          delete date.dataset.clientError;
+          window.clearInterval(timer);
+          timer = null;
+          // Defensive: on an edit, the field-error listener (wireValidity,
+          // wired before this) has already cleared a server mark, so the
+          // second case is not reached today. It keeps this check right on
+          // its own if that wiring order ever changes.
+          if (source === "client" || (edited && source === "contact_future")) {
+            clearFieldError(date);
+          }
+        }
+        gateComplete(date.form);
+      };
+      fields.forEach((node) => {
+        node.addEventListener("input", () => check(true));
+        node.addEventListener("change", () => check(true));
+        node.addEventListener("blur", () => check());
+      });
+      date.addEventListener("focus", limit);
+      // Any other change on the form runs the check again (not as an edit):
+      // choosing a contact channel shows Date and Time again, with values
+      // that may still be in the future.
+      date.form?.addEventListener("change", () => check());
+      notFutureChecks.push({date, check});
+      check();
+    });
+  };
   const wireConditional = (root) => {
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
+    notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     wireShowWhen(root);
     wireComplete(root);
+    wireNotFuture(root);
   };
   wireConditional(document);
   document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
     completeForms.forEach(gateComplete);
+    notFutureChecks.forEach(({check}) => check());
   });
 
   // Optional modules remain ordinary accessible fieldsets without JavaScript.

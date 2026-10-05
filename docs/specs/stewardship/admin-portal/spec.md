@@ -182,10 +182,12 @@ every Admin refusal summary does (#592).
 Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
-once the value is valid. Save is held while such an error stands only on
-forms that use the complete-before-submit gate above. The server stays the
-authority: it checks every save, and its refusal is shown at the field as
-above.
+once the value is valid. A page can also check a rule live, as the value is
+entered (a follow-up contact time in the future). Save is held while such an
+error stands only on forms that use the complete-before-submit gate above.
+The server stays the authority: it checks every save, and its refusal is
+shown at the field as above, even when the browser would have allowed the
+value (a wrong computer clock, for example).
 
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
@@ -2786,6 +2788,20 @@ below), marks its Date and Time, and an incomplete one marks whichever of
 them is missing (both when one is malformed). The view maps each refusal to
 its fields in one table. The contact fields keep the time-zone note in their
 description, followed by the error.
+
+The page catches a contact attempt in the future as it is typed (#592). The
+Date picker stops at today in the browser's time zone (kept current if the
+page stays open past midnight). A later date, with or without a time, or
+today with a later time, shows the server's own message by Date and Time at
+once, marks both in error and makes Save unavailable with that message as
+its hint. It clears as soon as the values are no longer in the future,
+including when a time a minute or two ahead has simply passed (the page
+checks again each minute while Save is held). The check uses the same message
+element as the server's refusal, so only one message shows. The server still
+refuses a future time, with a message that also says to check the computer's
+clock; when the browser's clock disagrees with it (a wrong clock, or a page
+left open), that refusal stands, summary and marks included, until the
+reader edits Date or Time.
 
 A contact attempt's date and time are typed in the browser's time zone, named
 in a note beside them, and every follow-up time shown (submitted, history,
