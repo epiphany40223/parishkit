@@ -370,7 +370,7 @@ Each task maps to the row naming it in that package's table, not to a list item.
 Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#admin-navigation).
 
 - [x] ADM-12.00 — NAV-0: record the implementation plan's decisions in the specification and add this package and its checklist.
-- [ ] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
+- [x] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
 - [ ] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
 - [ ] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
 - [ ] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
@@ -393,7 +393,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
 - [ ] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
-Evidence: In progress. ADM-12.00 is this docs-only change: the
+Evidence: In progress. ADM-12.00 merged in PR #568: the
 specification states the JavaScript requirement once and links it from the
 architecture, reports and hosted-files specifications; adds the Response list
 row, the Find a Family header search, the non-page route, trailing-slash,
@@ -401,6 +401,13 @@ row, the Find a Family header search, the non-page route, trailing-slash,
 no-current-campaign explanation and Today line, and decisions 20 to 30; and
 this package, its checklist and the acceptance-manifest owners are added,
 checked by Markdown lint and `tests/stewardship/test_traceability.py`.
+ADM-12.01 adds `admin-base.html`, which every Admin template extends, the
+`admin-gate-v1.js` script and the `ui-v1.css` hiding rule; Family pages keep
+the ungated base. It is proven by
+`tests/stewardship/test_admin_javascript_gate.py` (template guard and
+rendered gate) and `tests/stewardship/browser/test_admin_javascript_gate.py`
+(panel only and nothing reachable with script off, the normal page with
+script on, on Chromium and WebKit).
 
 ## ADM-13: System health page
 

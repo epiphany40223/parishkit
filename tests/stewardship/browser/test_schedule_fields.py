@@ -4,6 +4,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .conftest import no_script_context
 from .test_components import axe_violations
 from .waits import hidden, visible
 
@@ -89,7 +90,7 @@ def test_rows_show_only_the_fields_of_their_mail_type(
 
 def test_without_script_every_field_shows(browser_engine, component_origin):
     """Progressive enhancement: with JavaScript off nothing is hidden."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/setup-schedules-mail")
@@ -191,7 +192,7 @@ def test_add_and_remove_new_schedule_rows_before_saving(
 
 def test_without_script_there_is_no_add_button(browser_engine, component_origin):
     """Progressive enhancement: each save still offers one blank row."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/setup-schedules-mail")

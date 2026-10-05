@@ -2,6 +2,8 @@
 
 import pytest
 
+from .conftest import no_script_context
+
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -62,7 +64,7 @@ def test_forms_without_an_acknowledgment_are_not_gated(page, component_origin):
 
 def test_without_javascript_the_server_still_decides(browser_engine, component_origin):
     """Progressive enhancement: the button is enabled; the server validates."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/setup-confirmation")

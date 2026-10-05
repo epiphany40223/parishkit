@@ -87,6 +87,17 @@ main nav form { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 
 main { flex: 1 0 auto; width: 100%; max-width: 74rem; margin: 0 auto; padding: 2rem 1rem 4rem; min-height: 65vh; overflow-wrap: anywhere; }
 .flow { max-width: 42rem; margin-inline: auto; }
 .flow.panel { margin-top: clamp(1rem, 5vh, 3rem); }
+/* The Admin portal requires JavaScript (#565). admin-base.html renders a
+ * js-required class on <html> and admin-gate-v1.js removes it before the body
+ * is parsed. While the class is present, only the "needs JavaScript" panel
+ * shows; display: none also makes every hidden link, button and form control
+ * unreachable. !important keeps a later layout rule from revealing content.
+ * The panel also carries the hidden attribute, so if this stylesheet fails
+ * to load it stays hidden; the !important display: block below outranks the
+ * [hidden] rule. Family pages never carry the class. */
+.js-required-panel { display: none; }
+html.js-required body > :not(.js-required-panel) { display: none !important; }
+html.js-required .js-required-panel { display: block !important; width: 100%; max-width: 74rem; margin: 0 auto; padding: 2rem 1rem; }
 img { max-width: 100%; height: auto; }
 
 /* Admin shell: a sidebar menu beside the content, desktop-first. On narrow

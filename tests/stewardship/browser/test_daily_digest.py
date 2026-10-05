@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -143,7 +144,7 @@ def test_chart_press_after_slider_keeps_the_tooltip_open(
 
 def test_snapshot_retains_all_values_without_scripts(browser_engine, component_origin):
     """Static image, native download link and complete table remain useful."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/daily-digest")

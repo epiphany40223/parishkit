@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -106,7 +107,7 @@ def test_staff_complete_export_native_post(page, component_origin):
 
 def test_staff_native_workflow_without_scripts(browser_engine, component_origin):
     """JavaScript is optional for reading, searching, editing and confirmation."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         export_post(page, component_origin)

@@ -129,6 +129,9 @@ def error_page(request, response):
     if reauthenticate:
         title = _("Confirm it's you")
     context = {
+        # Admin errors extend the JavaScript-gated Admin base (#565); Family
+        # errors keep the ungated base.
+        "admin": admin,
         "title": title,
         "guidance": guidance,
         # Distinct closed messages only; field errors have no field to link here.

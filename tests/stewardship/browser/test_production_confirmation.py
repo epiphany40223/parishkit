@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -75,7 +76,7 @@ def test_confirmation_and_progress_are_accessible(
 
 def test_production_forms_do_not_require_javascript(browser_engine, component_origin):
     """Confirmation and recovery remain ordinary form submissions without scripts."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/production-confirmation")
