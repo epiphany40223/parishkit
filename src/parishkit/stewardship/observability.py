@@ -98,6 +98,10 @@ class FailureKind(StrEnum):
     # host mismatch or a command session's key presented to the web. The
     # detail is the automation notice and audit event, never the secret.
     AUTOMATION_REFUSED = "automation_session_refused"
+    # No ParishSoft data was left to read Family head emails from (#604): the
+    # directory's or an export's captured source was compacted and, for an
+    # export, there is no current promoted source either.
+    HEAD_EMAILS_UNAVAILABLE = "directory_head_emails_unavailable"
 
 
 # The off-site copy's Drive failure categories, mirroring
@@ -356,6 +360,9 @@ def emit_failure(
     from .accounts.limiting import LimiterUnavailable
 
     kind = FailureKind.DATABASE_REFUSED if _guard_refusal(error) else None
+    # A reviewed class attribute (never instance data) can name its own kind.
+    declared = getattr(type(error), "failure_kind", None)
+    kind = kind or (declared if isinstance(declared, FailureKind) else None)
     kind = kind or next(
         (
             kind

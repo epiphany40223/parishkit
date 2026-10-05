@@ -215,6 +215,31 @@ def test_guard_refusal_is_not_reported_as_an_outage(caplog, error_type, sqlstate
     assert payload["extra"]["failure_kind"] == kind
 
 
+def test_missing_head_email_source_has_its_own_failure_kind(caplog):
+    """A directory export with no ParishSoft data left is named in the logs.
+
+    The kind comes from the exception's class, never its text (#604).
+    """
+    from parishkit.stewardship.observability import emit_failure
+    from parishkit.stewardship.reports.directories import HeadEmailsUnavailable
+
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(HeadEmailsUnavailable("private-value"))
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["failure_kind"] == "directory_head_emails_unavailable"
+    assert "private-value" not in json.dumps(payload)
+
+    class Forged(Exception):
+        """Instance data cannot pick a kind; only a reviewed class attribute."""
+
+    forged = Forged()
+    forged.failure_kind = "directory_head_emails_unavailable"
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(forged)
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["failure_kind"] == "unexpected_failure"
+
+
 @pytest.mark.parametrize(
     "supplied", ["synthetic-secret", "3ac12758-abf8-41df-ae3a-9f3c0b43e30a"]
 )

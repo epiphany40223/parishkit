@@ -160,7 +160,7 @@ def load_document(request, *, general=None):
             timezone=request.browser_timezone,
         )
     if request.report in {"family_directory", "postal_outreach"}:
-        from .directories import add_codes
+        from .directories import add_codes, add_head_emails
         from .directory_documents import directory_document
 
         if general is None:
@@ -169,6 +169,13 @@ def load_document(request, *, general=None):
         payload = snapshot.document
         with key_set_lock(general):
             add_codes(request.campaign_id, payload["rows"], general=general)
+        # Head emails are not stored in the capture (#604). They are read from
+        # the capture's source, or, once the 15-minute refresh has compacted
+        # it (a retry, a late render or a regeneration), from the current
+        # ParishSoft data for the same heads; the file then says so.
+        emails_as_of = add_head_emails(
+            snapshot.source_id, payload["rows"], current=True
+        )
         return directory_document(
             payload,
             request.parameters,
@@ -177,6 +184,7 @@ def load_document(request, *, general=None):
             requested_at=request.created_at,
             timezone=request.browser_timezone,
             testing=SystemConfiguration.objects.filter(mode="testing").exists(),
+            head_emails_as_of=emails_as_of,
         )
     if request.report == "additional_information":
         from .information_documents import information_document

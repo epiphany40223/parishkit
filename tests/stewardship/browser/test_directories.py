@@ -1,5 +1,7 @@
 """Three-engine private native directories, accessible contacts and no-script use."""
 
+from uuid import UUID
+
 import pytest
 
 from .waits import visible
@@ -34,7 +36,7 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.get_by_text(
         "Contact details for Example <Family>, Example Head", exact=True
     ).click()
-    visible(page.get_by_text("Example Head", exact=True))
+    visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label("Search by name, head of household, DUID or address")
     search.fill("Private name")
@@ -142,3 +144,44 @@ def test_open_form_link_prefills_the_family_code(page, component_origin):
     expect(page.get_by_label("Family code")).to_have_value("ABCDEFGH")
     assert page.url == component_origin + "/family-login"
     assert posts == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_contact_details_show_each_heads_email(
+    page, component_origin, axe_source, width
+):
+    """The opened pane lists each distinct address once with its heads (#604).
+
+    Valid addresses are selectable mailto links; invalid source text is shown
+    for correction but is not a link; a head without one reads "No email on
+    file".
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/directory-head-emails")
+    # The Family name's timeline link (#590) is separate from the pane.
+    timeline = page.get_by_role("link", name="Example, Anna, Ben and John", exact=True)
+    assert timeline.get_attribute("href").endswith(f"/{UUID(int=82)}/")
+    page.get_by_text(
+        "Contact details for Example, Anna, Ben and John", exact=True
+    ).click()
+    emails = page.locator("dd.head-emails")
+    visible(emails)
+    link = emails.get_by_role("link", name="anna@example.org", exact=True)
+    visible(link)
+    assert link.get_attribute("href") == "mailto:anna@example.org"
+    assert emails.get_by_role("link").count() == 1
+    assert emails.inner_text().splitlines() == [
+        "Anna Example and Ben Example — anna@example.org",
+        "Anna Example — not-an-address (not a valid address; fix in ParishSoft)",
+        "John Example — No email on file",
+    ]
+    # The address can be selected and copied as plain text.
+    assert link.evaluate("element => getComputedStyle(element).userSelect") != "none"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type:'tag', values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )

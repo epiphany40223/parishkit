@@ -9,11 +9,17 @@ and footer and in the XLSX "Report information" sheet.
   household: "Squyres, Tracy and Jeff"), ParishSoft DUID and Family code. When
   it is filtered to Families that no campaign mail can reach (reach
   "neither"), it adds their phone numbers for follow-up calls.
+- Every export ends with Family head emails: each distinct head address once,
+  with the heads who have it ("Anna Example and Ben Example: a@x; Cara
+  Example: (no email)"), read when the file is rendered (#604): from the
+  captured source, or from the current ParishSoft data once that has been
+  compacted, which the report details then say ("Head emails as of").
 - The postal export is a mail merge for envelope labels and cover letters. It
   holds exactly the filtered Families, like the page. A Family without a
   usable mailing address keeps its row with the Addressee and address
   columns blank, and the report details count those rows so staff can follow
-  up. The columns never change, so existing mail-merge templates keep working.
+  up. Existing columns never change name or order (Family head emails was
+  added at the end), so existing mail-merge templates keep working.
 """
 
 from dataclasses import dataclass
@@ -26,12 +32,14 @@ from parishkit.stewardship.source.family_names import (
 )
 from parishkit.stewardship.web.presentation import phone as format_phone
 
-from .directories import REACH, REASONS
+from .directories import REACH, REASONS, head_emails_text
 
 CODE_HEADINGS = ("Family", "ParishSoft DUID", "Family code")
 PHONE_HEADING = "Phone numbers"
+EMAIL_HEADING = "Family head emails"
 # The postal columns and their order are what parishes' mail-merge templates
 # name, so they never change (a Family without an address blanks, not drops).
+# New columns are only ever appended: Family head emails came last (#604).
 POSTAL_HEADINGS = (
     "ParishSoft DUID",
     "Family",
@@ -44,11 +52,13 @@ POSTAL_HEADINGS = (
     "State",
     "ZIP",
     "Family code",
+    EMAIL_HEADING,
 )
 UNADDRESSED_DETAIL = "Rows with no usable mailing address (address columns blank)"
 PRIVACY = "Sensitive: Family codes. Authorized recipients only."
 # In Testing mode the Family sign-in accepts only rehearsal credentials from a
 # chosen-Family test send, so a file of live codes says so in its details.
+HEAD_EMAILS_DETAIL = "Head emails as of"
 TESTING_NOTE = (
     "These are the live codes; they work only after go-live. To try the Family "
     "form now, send yourself a test invitation (Campaign settings: Try the "
@@ -127,11 +137,14 @@ def _zip(address):
 def export_headings(*, postal, reach):
     """The export's columns: the mail merge, or codes (plus phones for "neither").
 
+    Family head emails is always the last column, after any phones.
+
     The directory page lists them so the Admin knows what the file contains.
     """
     if postal:
         return POSTAL_HEADINGS
-    return CODE_HEADINGS + ((PHONE_HEADING,) if reach == "neither" else ())
+    phones = (PHONE_HEADING,) if reach == "neither" else ()
+    return CODE_HEADINGS + phones + (EMAIL_HEADING,)
 
 
 def _filters(parameters):
@@ -158,11 +171,15 @@ def directory_document(
     requested_at,
     timezone,
     testing=False,
+    head_emails_as_of=None,
 ):
     """Preserve the capture; add codes before detaching within the worker's guard.
 
     ``testing`` adds the note that live codes work only after go-live; it is a
     report detail (PDF footer, XLSX information sheet), never a CSV row.
+    ``head_emails_as_of`` is the promotion time of the current ParishSoft data
+    the head emails were read from when the capture's own source had been
+    compacted; it becomes the "Head emails as of" report detail.
     """
     if payload["total"] != len(payload["rows"]):
         raise ValueError("Directory export requires the complete matching result.")
@@ -211,6 +228,7 @@ def directory_document(
                     heads,
                     *mailing[1:],
                     item["code"] or "",
+                    head_emails_text(item["heads"]),
                 )
             )
     else:
@@ -232,13 +250,18 @@ def directory_document(
                         for row in item["phones"]
                     ),
                 )
-            rows.append(row)
+            rows.append(row + (head_emails_text(item["heads"]),))
     source = payload["metadata"]
     metadata = (
         ("Report", title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
         ("Captured at", instant(captured_at)),
+        *(
+            ((HEAD_EMAILS_DETAIL, instant(head_emails_as_of)),)
+            if head_emails_as_of
+            else ()
+        ),
         ("Families in this file", f"{len(rows):,}"),
         *(((UNADDRESSED_DETAIL, f"{unaddressed:,}"),) if postal else ()),
         ("Filters applied", _filters(parameters)),

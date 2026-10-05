@@ -2,6 +2,7 @@
 
 import json
 import re
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -645,3 +646,194 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
         assert [
             row["family_duid"] for row in page(harness, search=text)["rows"]
         ] == expected
+
+
+def test_contact_details_show_head_emails_in_one_batched_read(
+    live_response_service, google
+):
+    """Heads' emails come from the page's source in one read, heads only (#604).
+
+    Heads sharing an address are listed together once; a head without an
+    email reads "No email on file"; a non-head Member's and the Family
+    record's own email are never shown. The page's query count does not grow
+    with its rows: one contact read covers every shown head.
+    """
+    from django.test.utils import CaptureQueriesContext
+
+    harness = live_response_service
+    data = response_source()
+    # Family 1 ("Example"): heads 3 and 6 share valid@example.org (6 in
+    # upper case; the source lowercases valid addresses); head 4 has none;
+    # Member 5 is not a head and has an email that must never appear.
+    data.members[4] = data.members[3] | {
+        "memberDUID": 4,
+        "firstName": "Second",
+        "emailAddress": "",
+    }
+    data.members[6] = data.members[3] | {
+        "memberDUID": 6,
+        "firstName": "Third",
+        "emailAddress": "VALID@Example.org",
+    }
+    data.members[5] = data.members[3] | {
+        "memberDUID": 5,
+        "firstName": "Child",
+        "memberType": "Other",
+        "emailAddress": "child@example.org",
+    }
+    # Two more Families: one head with a valid and an invalid entry, and
+    # none at all (a child only), so a page has several rows with heads.
+    for duid, member, kind, email in (
+        (7, "Zed", "Head", "zed@example.org; not-an-address"),
+        (9, "Kid", "Other", "kid@example.org"),
+    ):
+        data.families[duid] = data.families[1] | {
+            "familyDUID": duid,
+            "familyID": duid + 100,
+        }
+        data.members[100 * duid] = data.members[3] | {
+            "memberDUID": 100 * duid,
+            "familyDUID": duid,
+            "firstName": member,
+            "memberType": kind,
+            "emailAddress": email,
+        }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+
+    def counted(**filters):
+        """One directory page and the SQL statements it ran."""
+        with CaptureQueriesContext(connection) as queries:
+            report = page(harness, **filters)
+        return report, [query["sql"] for query in queries.captured_queries]
+
+    def contact_reads(statements):
+        """The Django contact reads (the role setup's GRANT names every table)."""
+        return [sql for sql in statements if "JOIN stewardship_snapshot_contact" in sql]
+
+    report, statements = counted()
+    heads = {
+        row["family_duid"]: [(head["name"], head["emails"]) for head in row["heads"]]
+        for row in report["rows"]
+    }
+    assert heads == {
+        1: [
+            ("Member Example", [{"value": "valid@example.org", "valid": True}]),
+            ("Second Example", []),
+            ("Third Example", [{"value": "valid@example.org", "valid": True}]),
+        ],
+        7: [
+            (
+                "Zed Example",
+                [
+                    {"value": "not-an-address", "valid": False},
+                    {"value": "zed@example.org", "valid": True},
+                ],
+            )
+        ],
+        9: [],
+    }
+    (example,) = (row for row in report["rows"] if row["family_duid"] == 1)
+    assert [(group["names"], group["value"]) for group in example["head_emails"]] == [
+        ("Member Example and Third Example", "valid@example.org"),
+        ("Second Example", None),
+    ]
+    assert len(contact_reads(statements)) == 1
+    # A one-row page runs exactly as many statements as the three-row page.
+    single, fewer = counted(search="zed")
+    assert [row["family_duid"] for row in single["rows"]] == [7]
+    assert len(fewer) == len(statements)
+    # A page whose one Family has no head skips the contact read altogether.
+    childless, headless = counted(search="9")
+    assert [row["family_duid"] for row in childless["rows"]] == [9]
+    assert contact_reads(headless) == []
+    assert len(headless) == len(statements) - 1
+
+    browser, _ = signed_in()
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route)
+    assert response.status_code == 200
+    for text in (
+        b"Member Example and Third Example \xe2\x80\x94 "
+        b'<a href="mailto:valid@example.org">valid@example.org</a>',
+        b"Second Example \xe2\x80\x94 No email on file",
+        b"not-an-address <small>(not a valid address; fix in ParishSoft)</small>",
+    ):
+        assert text in body
+    for private in (b"child@example.org", b"kid@example.org", b"family@example.org"):
+        assert private not in body
+    # The Family name's timeline link (#590) and the head emails share one row
+    # without mixing: the link is the Family's record id, the emails stay in
+    # the Contact details pane, and every href other than mailto: is email-free.
+    (row,) = (
+        item for item in body.split(b"<tr>") if b"mailto:valid@example.org" in item
+    )
+    name_cell, pane = row.split(b'<td class="contact-details">')
+    assert re.search(
+        rf'<td><a href="{route}[0-9a-f-]{{36}}/">Example, Member, Second '
+        rf"and Third</a></td>".encode(),
+        name_cell,
+    )
+    assert b"@" not in name_cell and b"mailto:valid@example.org" in pane
+    for href in re.findall(rb'href="([^"]*)"', body):
+        assert href.startswith(b"mailto:") or b"@" not in href
+    contexts = list(
+        AuditContext.objects.filter(
+            event__event_type="family_directory_viewed"
+        ).values_list("context", flat=True)
+    )
+    assert contexts and "example.org" not in json.dumps(contexts)
+
+
+def test_head_emails_never_read_a_compacted_snapshot(monkeypatch):
+    """A compacted source is never read as "No email on file" (#604).
+
+    An unchanged refresh compacts the previous snapshot at once. The page
+    refuses it; an export falls back to the current promoted source and is
+    told so; with no promoted source at all both fail with their own kind.
+    """
+    from parishkit.stewardship.reports.directories import (
+        HeadEmailsUnavailable,
+        _head_contacts,
+    )
+    from parishkit.stewardship.source.leases import _now
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    from .test_source_compaction_postgresql import cleanup, promote_history
+
+    keys = {"member:1", "member:2"}
+    # Before any source is promoted even an export has nothing to read.
+    SourceCurrent.objects.get_or_create(singleton=True)
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        transaction.atomic(),
+        pytest.raises(HeadEmailsUnavailable, match="no current ParishSoft"),
+    ):
+        _head_contacts(uuid4(), keys, current=True)
+    with transaction.atomic():
+        now = _now()
+    records = promote_history(
+        monkeypatch, [(now - timedelta(minutes=15), "same"), (now, "same")]
+    )
+    while cleanup().snapshot_count:
+        pass
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        contacts, chosen = _head_contacts(records[1].pk, keys)
+        assert isinstance(contacts, dict) and chosen[0] == records[1].pk
+        for missing in (records[0].pk, uuid4()):
+            with pytest.raises(HeadEmailsUnavailable, match="just replaced"):
+                _head_contacts(missing, keys)
+        # No heads, no read: nothing can be shown wrongly.
+        assert _head_contacts(records[0].pk, set()) == ({}, None)
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        transaction.atomic(),
+    ):
+        # An export of the compacted source reads the current one instead,
+        # and learns which (its promotion time dates the file's emails).
+        _, chosen = _head_contacts(records[0].pk, keys, current=True)
+        assert chosen[:2] == (records[1].pk, records[1].promoted_at)
+        # Its own source, while still there, is preferred.
+        _, chosen = _head_contacts(records[1].pk, keys, current=True)
+        assert chosen[0] == records[1].pk

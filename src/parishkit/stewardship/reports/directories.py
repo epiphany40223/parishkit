@@ -17,7 +17,11 @@ from parishkit.stewardship.campaigns.credential_models import (
 )
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.source.family_names import family_heads_name
+from parishkit.stewardship.observability import FailureKind
+from parishkit.stewardship.source.family_names import (
+    family_heads_name,
+    name_series,
+)
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting
@@ -236,6 +240,186 @@ def add_codes(campaign_id, rows, *, general):
         row["display_name"] = family_heads_name(row["family_name"], row["heads"])
 
 
+# One statement chooses the snapshot to read head contacts from and reads
+# them. It is the captured snapshot while that is still promoted and not
+# compacted; otherwise, only when ``current`` is true, the current promoted
+# snapshot (an export rendered, retried or regenerated after the 15-minute
+# refresh compacted its capture's source). Compaction marks a snapshot
+# compacted before deleting any of its memberships, so within this one
+# statement's view the chosen snapshot's memberships are all there; missing
+# contacts are never mistaken for "no email". No row at all means no
+# snapshot qualified. The LEFT JOINs keep the chosen snapshot's row when
+# none of the heads has a contact record.
+HEAD_CONTACTS = """
+WITH captured AS (
+    SELECT s.id FROM stewardship_source_snapshot s
+    WHERE s.id=%(captured)s AND s.state='promoted' AND s.compacted_at IS NULL
+), chosen AS (
+    SELECT s.id,s.promoted_at FROM stewardship_source_snapshot s
+    WHERE s.state='promoted' AND s.compacted_at IS NULL
+      AND s.id=coalesce((SELECT id FROM captured),
+          (SELECT c.snapshot_id FROM stewardship_source_current c
+           WHERE c.singleton AND %(current)s))
+)
+SELECT x.id,x.promoted_at,
+    -- Which of the heads the chosen snapshot still has as Members at all.
+    ARRAY(SELECT m.source_key FROM stewardship_snapshot_member m
+          WHERE m.snapshot_id=x.id AND m.source_key=ANY(%(members)s)),
+    c.source_key,p.canonical
+FROM chosen x
+LEFT JOIN stewardship_snapshot_contact c
+    ON c.snapshot_id=x.id AND c.source_key=ANY(%(keys)s)
+LEFT JOIN stewardship_source_contact p ON p.id=c.payload_id
+"""
+INVALID_EMAIL_NOTE = "not a valid address; fix in ParishSoft"
+# A captured head the current ParishSoft data (an export's fallback) no
+# longer has as a Member, so "no email" would be a guess.
+MISSING_HEAD_NOTE = "(not in current ParishSoft data)"
+
+
+class HeadEmailsUnavailable(ReadUnavailable):
+    """No ParishSoft data is available to read Family head emails from.
+
+    The page raises it when its own source was compacted mid-request (the
+    next request reads the new source); an export only when neither its
+    captured source nor any current promoted source exists. Its failure kind
+    names it in the logs; the exception text never reaches a log line.
+    """
+
+    failure_kind = FailureKind.HEAD_EMAILS_UNAVAILABLE
+
+
+def _head_contacts(source_id, keys, *, current=False):
+    """Contact JSON by source key for ``keys`` and the snapshot it came from.
+
+    Returns ``(contacts, (snapshot_id, promoted_at, members))``, where
+    ``members`` is the set of the heads' DUIDs that snapshot has as Members,
+    or ``({}, None)`` when there are no keys (nothing is read). With
+    ``current`` a compacted ``source_id`` falls back to the current promoted
+    snapshot; otherwise, and when no snapshot qualifies,
+    ``HeadEmailsUnavailable`` is raised rather than reporting every head as
+    having no email.
+    """
+    if not keys:
+        return {}, None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            HEAD_CONTACTS,
+            {
+                "captured": str(source_id),
+                "current": current,
+                "keys": sorted(keys),
+                "members": sorted(key.removeprefix("member:") for key in keys),
+            },
+        )
+        found = cursor.fetchall()
+    if not found:
+        raise HeadEmailsUnavailable(
+            "Family head emails are unavailable: no current ParishSoft data."
+            if current
+            else "Family head emails are unavailable: the ParishSoft data was "
+            "just replaced; try again."
+        )
+    contacts = {key: json.loads(canonical) for *_, key, canonical in found if key}
+    snapshot, promoted_at, members = found[0][:3]
+    return contacts, (snapshot, promoted_at, set(members))
+
+
+def head_email_groups(heads):
+    """Each distinct head email once, with every head who has it (#604).
+
+    Addresses are compared case-insensitively after trimming, so heads who
+    share one ("Anna Example and Ben Example") are listed together; a head
+    with an address of their own gets a separate entry, and a head with no
+    email an entry whose ``value`` is ``None`` (``missing`` when an export's
+    current data no longer has that head at all). Entries follow the heads'
+    order (DUID order from the selection), then each head's address order,
+    so the result is deterministic. Each entry is ``{"names", "value",
+    "valid", "missing"}``; ``valid`` is false for source text that is not an
+    address.
+    """
+    groups = {}
+    for index, head in enumerate(heads):
+        emails = head.get("emails") or ()
+        if not emails:
+            # A tuple key can never collide with an address key.
+            groups[(index,)] = {
+                "heads": [head["name"]],
+                "value": None,
+                "valid": False,
+                "missing": bool(head.get("missing")),
+            }
+        for email in emails:
+            value = email["value"].strip()
+            group = groups.setdefault(
+                value.casefold(),
+                {"heads": [], "value": value, "valid": email["valid"], "seen": set()},
+            )
+            # One head holding two case variants of an address is named once.
+            if index not in group["seen"]:
+                group["seen"].add(index)
+                group["heads"].append(head["name"])
+    return [
+        {
+            "names": name_series(group["heads"]),
+            "value": group["value"],
+            "valid": group["valid"],
+            "missing": group.get("missing", False),
+        }
+        for group in groups.values()
+    ]
+
+
+def head_emails_text(heads):
+    """One export cell: "Anna and Ben Example: a@x; Cara Example: (no email)"."""
+    parts = []
+    for group in head_email_groups(heads):
+        if group["missing"]:
+            value = MISSING_HEAD_NOTE
+        elif group["value"] is None:
+            value = "(no email)"
+        elif group["valid"]:
+            value = group["value"]
+        else:
+            value = f"{group['value']} ({INVALID_EMAIL_NOTE})"
+        parts.append(f"{group['names']}: {value}")
+    return "; ".join(parts)
+
+
+def add_head_emails(source_id, rows, *, current=False):
+    """Give each row's heads their emails from the rows' own source snapshot.
+
+    The heads are exactly those the SQL selection returned for the Family
+    name, so the two never disagree. One read covers all ``rows`` (none when
+    no row has a head). The emails are not part of the installed selection,
+    which would need a schema change (#604). Each head gains ``emails``, a
+    list of ``{"value": text, "valid": bool}`` (invalid source text is kept so
+    staff can correct it in ParishSoft), and each row gains ``head_emails``,
+    the de-duplicated ``head_email_groups`` the page shows.
+
+    ``current`` lets an export read the same heads' emails from the current
+    ParishSoft data once its captured source is compacted. Returns that
+    data's promotion time when it was used, so the file can say how current
+    its emails are, and ``None`` when the captured source was read (or
+    nothing was). With the current data, a head it no longer has as a Member
+    is marked ``missing`` ("(not in current ParishSoft data)", not "no
+    email").
+    """
+    contacts, chosen = _head_contacts(
+        source_id,
+        {f"member:{head['duid']}" for row in rows for head in row["heads"]},
+        current=current,
+    )
+    fallback = chosen is not None and str(chosen[0]) != str(source_id)
+    for row in rows:
+        for head in row["heads"]:
+            contact = contacts.get(f"member:{head['duid']}")
+            head["emails"] = contact["emails"] if contact else []
+            head["missing"] = fallback and str(head["duid"]) not in chosen[2]
+        row["head_emails"] = head_email_groups(row["heads"])
+    return chosen[1] if fallback else None
+
+
 def directory_page(campaign_id, query, *, postal, general, mac):
     """Read one SQL page, then decrypt only its codes under the caller's read guard.
 
@@ -256,6 +440,7 @@ def directory_page(campaign_id, query, *, postal, general, mac):
             raise ReadUnavailable("Directory source information is unavailable.")
         report = json.loads(result[0])
         add_codes(campaign_id, report["rows"], general=general)
+        add_head_emails(report["metadata"]["source_id"], report["rows"])
         report["metadata"]["source_as_of"] = datetime.fromisoformat(
             report["metadata"]["source_as_of"]
         )

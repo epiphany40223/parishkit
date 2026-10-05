@@ -10,6 +10,7 @@ from parishkit.stewardship.reports.directories import (
     REACH,
     REASONS,
     DirectoryQuery,
+    head_email_groups,
 )
 from parishkit.stewardship.reports.directory_documents import export_headings
 from parishkit.stewardship.source.family_names import family_heads_name
@@ -43,7 +44,12 @@ def components(context, admin):
     """Browser tests share the existing server/process pool; no provider is used."""
     campaign = UUID(int=80)
     query = DirectoryQuery(search="Example")
-    heads = [{"name": "Example Head"}]
+    heads = [
+        {
+            "name": "Example Head",
+            "emails": [{"value": "head@example.org", "valid": True}],
+        }
+    ]
     values = {
         "campaign_id": campaign,
         "metadata": {
@@ -63,6 +69,7 @@ def components(context, admin):
                 "responded": True,
                 "envelope": "0123",
                 "heads": heads,
+                "head_emails": head_email_groups(heads),
                 "phones": [
                     {"owner": "Example Head", "kind": "home", "value": "202-555-0123"}
                 ],
@@ -104,7 +111,38 @@ def components(context, admin):
         "unreachable_url": f"/admin/reports/{campaign}/families/?reach=neither",
         "table": _table(values["table_rows"], 51, "yes"),
     }
+    # Three heads (#604): Anna and Ben share an address (in different case),
+    # Anna also has invalid source text, and John has no email.
+    heads = [
+        {
+            "name": "Anna Example",
+            "first": "Anna",
+            "last": "Example",
+            "emails": [
+                {"value": "anna@example.org", "valid": True},
+                {"value": "not-an-address", "valid": False},
+            ],
+        },
+        {
+            "name": "Ben Example",
+            "first": "Ben",
+            "last": "Example",
+            "emails": [{"value": "Anna@Example.org", "valid": True}],
+        },
+        {"name": "John Example", "first": "John", "last": "Example", "emails": []},
+    ]
+    head_emails = values["table_rows"][0] | {
+        "family_name": "Example",
+        "display_name": family_heads_name("Example", heads),
+        "heads": heads,
+        "head_emails": head_email_groups(heads),
+        # The Family name links to its timeline (#590) beside the pane.
+        "family_id": UUID(int=82),
+    }
     pages = {
+        "/directory-head-emails": values
+        | code_list
+        | {"table": _table([head_emails], 1, "no"), "total": 1},
         "/directory-gated": values | code_list | {"mutable": False},
         "/family-directory": values | code_list,
         "/postal-directory": values | mailing,
