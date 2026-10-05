@@ -8,8 +8,8 @@
 <p>{% translate "The host is the start of an identifier of the server a session was started on; a session used from another server is ended." %}</p>
 {% endaboutpage %}
 {% if fresh %}<p><a class="button" href="{{ approval_url }}">{% translate "Approve a session" %}</a></p>
-{% else %}<div class="panel"><p>{% translate "Approving a session first asks you to confirm your sign-in. You will come back to the approval page." %}</p>
-{% include 'stewardship/components/reauthenticate.html' with next=approval_url %}
+{% else %}<div class="panel"><p>{% translate "Approving a session first asks you to confirm your sign-in, then takes you to the approval page." %}</p>
+{% translate "the approval page" as approval_label %}{% include 'stewardship/components/reauthenticate.html' with next=approval_url next_label=approval_label %}
 <p><button type="button" disabled>{% translate "Approve a session" %}</button></p></div>{% endif %}
 <section class="panel" id="automation-sessions" data-in-place-region aria-labelledby="automation-sessions-heading">
   <h2 id="automation-sessions-heading">{% translate "Your sessions" %}</h2>

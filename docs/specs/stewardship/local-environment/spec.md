@@ -1011,6 +1011,19 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     and the fresh-authentication prompt describe the operator command
     instead of offering Google; a new link opened in a signed-in browser
     is a step-up of that session in place.
+  - A step-up returns to the page named by the most recent
+    fresh-authentication prompt
+    ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each
+    prompt records its return path in the browser's `localStorage` (the
+    printed link is often opened in a new tab), replacing any earlier one,
+    for ten minutes. The sign-in page's script sends it as the form's `next`
+    and clears it when the form is submitted, so a link opened but not
+    submitted keeps it. The POST passes it to the shared core, which honours
+    it only when the sign-in is a step-up of this browser's live session for
+    the same user, and revalidates it as a same-origin Admin path, as it does
+    Google's `next`; authentication routes, including this one, fall back to
+    `/admin/`. A new session, or a browser without storage, returns to
+    `/admin/`.
 - **Where the protection comes from.** The real guard is reachability: Caddy
   publishes only on the VM's loopback and Lima forwards only to the laptop's
   loopback. The `Host` check is defence in depth; behind Docker's published

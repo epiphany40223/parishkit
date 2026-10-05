@@ -11,7 +11,7 @@ sign-in is stale, and its review states what was asked in plain words.
 
 import pytest
 
-from .automation_components import ACCESS, APPROVAL, HOME, REVOKE
+from .automation_components import ACCESS, APPROVAL, HOME, LOCAL_SIGN_IN, REVOKE
 from .waits import has_text
 
 
@@ -49,7 +49,14 @@ def posts_to(page, part):
 
 @pytest.mark.parametrize(
     "path",
-    [ACCESS, "/automation-access-stale", APPROVAL, "/automation-approval-review"],
+    [
+        ACCESS,
+        "/automation-access-stale",
+        "/automation-access-stale-local",
+        APPROVAL,
+        "/automation-approval-stale-local",
+        "/automation-approval-review",
+    ],
 )
 def test_automation_pages_are_accessible(page, component_origin, axe_source, path):
     """No WCAG 2.2 AA violations, and no sideways scrolling on a phone."""
@@ -168,6 +175,49 @@ def test_a_stale_sign_in_offers_a_working_step_up(page, component_origin, width)
     page.goto(component_origin + "/automation-access-stale")
     step_up_returns_to(page, APPROVAL)
     assert page.get_by_role("button", name="Approve a session").is_disabled()
+
+
+STORED_STEP_UP = "JSON.parse(localStorage.getItem('pk-local-step-up') || 'null')"
+
+
+@pytest.mark.parametrize(
+    "path,says",
+    [
+        ("/automation-approval-stale-local", "brings you back to this page"),
+        ("/automation-access-stale-local", "takes you to the approval page"),
+    ],
+)
+def test_the_local_step_up_returns_to_the_approval_page(
+    page, component_origin, path, says
+):
+    """LOCAL has no Google (#613): the page names the laptop command and where
+    the sign-in goes, records the approval page, and the local sign-in sends
+    it as "next", clearing it only when the form is submitted."""
+    page.goto(component_origin + path)
+    assert page.get_by_role("button", name="Confirm with Google").count() == 0
+    step_up = page.locator("[data-local-step-up]")
+    assert step_up.is_visible()
+    contains(step_up, "tools/stewardship-local.sh sign-in --email E")
+    contains(step_up, says)
+    assert page.evaluate(STORED_STEP_UP)["next"] == APPROVAL
+    page.goto(component_origin + LOCAL_SIGN_IN + "#" + "t" * 43)
+    assert page.locator("#local-sign-in-next").get_attribute("value") == APPROVAL
+    # Opening the page keeps it: a link opened but not submitted keeps it.
+    assert page.evaluate(STORED_STEP_UP)["next"] == APPROVAL
+    with page.expect_navigation():
+        page.get_by_role("button", name="Sign in").click()
+    assert page.evaluate(STORED_STEP_UP) is None
+
+
+def test_an_old_local_step_up_is_not_used(page, component_origin):
+    """A return path recorded more than ten minutes ago is dropped."""
+    page.goto(component_origin + "/automation-approval-stale-local")
+    page.evaluate(
+        "localStorage.setItem('pk-local-step-up', JSON.stringify("
+        "{next: '/admin/', at: Date.now() - 11 * 60 * 1000}))"
+    )
+    page.goto(component_origin + LOCAL_SIGN_IN + "#" + "t" * 43)
+    assert page.locator("#local-sign-in-next").get_attribute("value") == ""
 
 
 def test_the_review_states_the_request_plainly(page, component_origin):

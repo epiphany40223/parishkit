@@ -22,6 +22,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import DeploymentProfile
 
 from .auth_builders import signed_in
+from .automation_builders import two_admins  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -64,13 +65,17 @@ def browser(host=HOST):
     return Client(enforce_csrf_checks=True, HTTP_HOST=host)
 
 
-def post_token(client, token):
+def post_token(client, token, **fields):
     """Open the page as the link does, then post the token with the CSRF form."""
     page = client.get(PATH)
     assert page.status_code == 200
     return client.post(
         PATH,
-        {"csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value, "token": token},
+        {
+            "csrfmiddlewaretoken": client.cookies["pk_admin_csrf"].value,
+            "token": token,
+            **fields,
+        },
     )
 
 
@@ -215,6 +220,47 @@ def test_second_sign_in_is_a_step_up_like_google(local):
             "event_type", flat=True
         )
     ) == ["admin_login", "admin_step_up"]
+
+
+@pytest.mark.parametrize(
+    "next_path,expected",
+    [
+        ("/admin/users/automation/approval/", "/admin/users/automation/approval/"),
+        ("https://example.com/admin/", "/admin/"),
+        ("//example.com/admin/", "/admin/"),
+        ("/admin/local/sign-in", "/admin/"),
+        ("", "/admin/"),
+    ],
+)
+def test_a_step_up_returns_to_the_page_that_asked(local, next_path, expected):
+    """A step-up's "next" (#613) is revalidated as an Admin path, as Google's is."""
+    client = browser()
+    assert post_token(client, mint(local)).status_code == 302
+    response = post_token(client, mint(local), next=next_path)
+    assert (response.status_code, response["Location"]) == (302, expected)
+
+
+APPROVAL = "/admin/users/automation/approval/"
+
+
+def test_a_new_session_ignores_the_return_path(local):
+    """A first sign-in is not a step-up: "next" is ignored for /admin/."""
+    response = post_token(browser(), mint(local), next=APPROVAL)
+    assert (response.status_code, response["Location"]) == (302, "/admin/")
+
+
+def test_another_users_sign_in_ignores_the_return_path(
+    settings,
+    two_admins,  # noqa: F811
+):
+    """A browser signed in as one Administrator, signing in as another, gets a
+    new session, not a step-up, so the stored return path is not used."""
+    make_local(settings)
+    client = browser()
+    assert post_token(client, mint(two_admins)).status_code == 302
+    other = mint(two_admins, email="other@example.org")
+    response = post_token(client, other, next=APPROVAL)
+    assert (response.status_code, response["Location"]) == (302, "/admin/")
 
 
 def test_csrf_protects_the_post(local):

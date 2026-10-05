@@ -1678,6 +1678,7 @@ def component_origin():
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
+        ("local-sign-in-v1.js", "application/javascript"),
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),

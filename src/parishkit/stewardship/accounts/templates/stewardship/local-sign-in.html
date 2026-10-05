@@ -13,6 +13,7 @@
   <form method="post" action="/admin/local/sign-in">
     {% csrf_token %}
     <input id="local-sign-in-token" name="token" type="hidden" value="">
+    <input id="local-sign-in-next" name="next" type="hidden" value="">
     <button id="local-sign-in-submit" type="submit" disabled>{% translate "Sign in" %}</button>
   </form>
   <p id="local-sign-in-missing">{% translate "Open this page through the printed link; its address carries the one-time token." %}</p>

@@ -20,6 +20,7 @@ ACCESS = reverse("admin:automation_access")
 APPROVAL = reverse("admin:automation_approval")
 NOTICES = reverse("admin:automation_notices")
 HOME = reverse("admin:index")
+LOCAL_SIGN_IN = "/admin/local/sign-in"
 OWN = UUID(int=701)
 OTHER = UUID(int=702)
 REVOKE = reverse("admin:automation_session", args=[OWN])
@@ -81,6 +82,22 @@ def components(context, admin):
     responses[ACCESS] = ("text/html", access(True))
     responses[ACCESS + "?revoked=1"] = ("text/html", access(False))
     responses["/automation-access-stale"] = ("text/html", access(True, fresh=False))
+    # LOCAL has no Google: the step-up names the laptop command and records
+    # this page's return path for the local sign-in (#613).
+    local = context | {"local_environment": True}
+    responses["/automation-access-stale-local"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/automation-access.html",
+            local
+            | {"admin_chrome": admin}
+            | {"sessions": [], "live": [], "fresh": False, "approval_url": APPROVAL},
+        ),
+    )
+    responses[LOCAL_SIGN_IN] = (
+        "text/html",
+        render_to_string("stewardship/local-sign-in.html", local),
+    )
 
     def home(rows):
         """The dashboard with the automation notices region (empty or not)."""
@@ -135,6 +152,10 @@ def components(context, admin):
     responses["/automation-approval-stale"] = (
         "text/html",
         approval(state="enter", fresh=False),
+    )
+    responses["/automation-approval-stale-local"] = (
+        "text/html",
+        approval(state="enter", fresh=False, local_environment=True),
     )
     responses["/automation-approval-review"] = (
         "text/html",

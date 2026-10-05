@@ -22,8 +22,9 @@ ADMIN_HOME = ADMIN_PREFIX
 _ADMIN_PATH = re.compile(r"/admin/(?:[A-Za-z0-9_~.-]+/)*[A-Za-z0-9_~.-]*")
 _QUERY = re.compile(r"[A-Za-z0-9_~.%=&+-]*")
 # Authentication endpoints are never a destination: returning to them would
-# restart sign-in, sign out, or count a failed OAuth callback.
-_NOT_RETURNABLE = ("/admin/login", "/admin/logout", "/admin/oauth/")
+# restart sign-in, sign out, or count a failed OAuth callback; the LOCAL
+# test sign-in (#476) is one too (#613).
+_NOT_RETURNABLE = ("/admin/login", "/admin/logout", "/admin/oauth/", "/admin/local/")
 
 
 def admin_return_path(value):
