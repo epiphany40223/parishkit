@@ -148,7 +148,7 @@ def test_follow_up_saves_are_in_place():
     item saves in place (#519 PR 2): each form is a data-in-place POST whose
     action lands on the request's panel, which holds the form and its
     history, with a key to refocus the fresh Save button and the message the
-    live region reads."""
+    live region reads. Both wait for their prerequisites before Save."""
     for name, region, key in (
         ("ministry-followup.html", "followup-item", "followup-save"),
         ("information.html", "information-item", "information-save"),
@@ -158,7 +158,20 @@ def test_follow_up_saves_are_in_place():
         assert f'#{region}" ' in form, name
         assert f'data-in-place="{key}"' in form, name
         assert "data-in-place-message=\"{% translate 'Follow-up saved.' %}\"" in form
+        assert "data-require-complete" in form, name
         assert names_region(text, region), name
         # The panel holds the form and the history below it.
         panel = region_body(text, region)
         assert form in panel and "history pages" in panel, name
+
+
+def test_information_reopen_confirmation_shows_only_when_unticking():
+    """The confirmation to reopen completed follow-up is shown, and required
+    before Save, only once "Follow-up completed" is unticked."""
+    text = (TEMPLATES / "information.html").read_text()
+    group = re.search(r'<div data-show-when="followed_up!=yes"[^>]*>', text).group(0)
+    assert 'data-required-when-shown="confirm_clear"' in group
+    assert "data-missing-hint=" in group
+    assert 'aria-describedby="information-save-hint"' in text
+    hint = '<p class="help" id="information-save-hint" data-complete-hint hidden>'
+    assert hint in text

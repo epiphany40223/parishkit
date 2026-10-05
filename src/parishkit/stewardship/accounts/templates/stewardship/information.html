@@ -18,14 +18,15 @@
 {% if item.previously_reported %}<p>{% translate "Included in a previously delivered weekly digest." %}</p>
 {% if item.disposition != 'current_actionable' %}<p>{% if item.correction_resolved %}{% translate "This correction is resolved in the weekly digest workflow. Resolution does not necessarily mean an email was delivered." %}{% else %}{% translate "This change is visible to the weekly digest correction workflow; the old request is no longer actionable." %}{% endif %}</p>{% endif %}{% endif %}
 {% if item.followed_up_at %}<p>{% translate "Followed up by" %} {{ item.completed_by }} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
-<form method="post" action="{% url 'admin:information_update' campaign_id item.id %}#information-item" data-in-place="information-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
+<form method="post" action="{% url 'admin:information_update' campaign_id item.id %}#information-item" data-require-complete data-in-place="information-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Staff follow-up" %}</legend>
 <label><input type="checkbox" name="follow_up_needed" value="yes"{% if item.follow_up_needed %} checked{% endif %}> {% translate "Follow-up needed" %}</label>
 <label><input type="checkbox" name="followed_up" value="yes"{% if item.followed_up_at %} checked{% endif %}> {% translate "Follow-up completed" %}</label>
-{% if item.followed_up_at %}<label><input type="checkbox" name="confirm_clear" value="yes"> {% translate "If clearing completion, I confirm that this work should be reopened. The previous completion stays in history." %}</label>{% endif %}
+{% if item.followed_up_at %}<div data-show-when="followed_up!=yes" data-required-when-shown="confirm_clear" data-missing-hint="{% translate 'Tick the confirmation to reopen this follow-up.' %}"><label><input type="checkbox" name="confirm_clear" value="yes"> {% translate "If clearing completion, I confirm that this work should be reopened. The previous completion stays in history." %}</label></div>{% endif %}
 <label for="staff-notes">{% translate "Staff notes" %}</label><textarea id="staff-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
-<button type="submit">{% translate "Save follow-up" %}</button></fieldset></form>
+<button type="submit" aria-describedby="information-save-hint">{% translate "Save follow-up" %}</button>
+<p class="help" id="information-save-hint" data-complete-hint hidden></p></fieldset></form>
 <h2>{% translate "Staff edit history" %}</h2>
 {% for revision in history %}<section aria-label="{% translate 'Staff edit' %} {{ revision.expected_version|add:1 }}">
 <h3>{% translate "Version" %} {{ revision.expected_version|add:1|number }}</h3>

@@ -200,7 +200,7 @@ def test_information_save_is_in_place(page, component_origin):
     posts = count_requests(page, "POST", "/update")
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.locator(INFORMATION_SAVE).dblclick()
-    # The reopen confirmation, left unticked, is not sent.
+    # Completion stays ticked, so the reopen confirmation is not sent.
     assert "confirm_clear" not in sent.value.post_data
     assert "followed_up=yes" in sent.value.post_data
     visible(page.get_by_role("heading", name="Version 3"))
@@ -216,3 +216,30 @@ def test_information_save_is_in_place(page, component_origin):
     )
     assert page.url == component_origin + INFORMATION_SAVED + "#information-item"
     assert posts == [component_origin + INFORMATION_UPDATE]
+
+
+def test_information_reopen_needs_the_confirmation(page, component_origin):
+    """The confirmation to reopen completed follow-up shows only once
+    "Follow-up completed" is unticked, and Save waits for it, saying why;
+    the same holds for the form a save swaps in. (Without it the server
+    refuses the save with its plain error page.)"""
+    page.goto(component_origin + INFORMATION_ITEM)
+    for stage in ("loaded", "swapped"):
+        completed = page.get_by_label("Follow-up completed")
+        confirm = page.get_by_label("If clearing completion", exact=False)
+        save = page.locator(INFORMATION_SAVE)
+        hint = page.locator("#information-save-hint")
+        hidden(confirm)
+        assert confirm.is_disabled() and save.is_enabled(), stage
+        completed.uncheck()
+        visible(confirm)
+        assert save.is_disabled(), stage
+        has_text(hint, "Tick the confirmation to reopen this follow-up.")
+        confirm.check()
+        assert save.is_enabled() and not hint.is_visible(), stage
+        completed.check()
+        hidden(confirm)
+        assert save.is_enabled(), stage
+        if stage == "loaded":
+            save.click()
+            visible(page.get_by_role("heading", name="Version 3"))

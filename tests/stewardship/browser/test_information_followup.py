@@ -3,7 +3,7 @@
 import pytest
 
 from .conftest import no_script_context
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -58,7 +58,11 @@ def test_staff_queue_detail_history_and_accessibility(
         == "Called; awaiting a response."
     )
     assert page.get_by_label("Follow-up completed", exact=True).is_checked()
-    visible(page.get_by_label("If clearing completion", exact=False))
+    # The reopen confirmation applies only once completion is unticked (#519).
+    confirm = page.get_by_label("If clearing completion", exact=False)
+    hidden(confirm)
+    page.get_by_label("Follow-up completed", exact=True).uncheck()
+    visible(confirm)
     visible(page.get_by_role("link", name="Open the replacement request"))
     visible(page.get_by_role("heading", name="Staff edit history"))
     visible(

@@ -2702,7 +2702,10 @@ Additional-information items show Family, DUID, text, submission time, needed
 checkbox, followed-up checkbox/time, and Staff notes. Admin/Staff may search,
 filter, sort, edit workflow fields, and see history. Marking followed up sets
 the timestamp/actor; unchecking retains history and clears current state after
-confirmation.
+confirmation. That confirmation appears only once a completed item's
+"Follow-up completed" is unticked, and Save stays unavailable, with a short
+hint, until it is ticked (default, pending Administrator confirmation, #519);
+the server still refuses an unconfirmed clear.
 
 Save follow-up on an information item and on a Ministry follow-up request acts
 [in place](#in-place-controls) (#519): the request's panel, its form and its

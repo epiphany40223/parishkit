@@ -1251,6 +1251,15 @@
     refresh();
   });
 
+  // A control's value for the rules below (data-show-when and
+  // data-required-when). A checkbox counts as its value only while it is
+  // ticked and is empty otherwise, as a submission would send it:
+  // "followed_up!=yes" means "not ticked". A radio group already reads as
+  // its ticked button's value (RadioNodeList.value).
+  const ruleValue = (control) => (control instanceof HTMLInputElement
+    && control.type === "checkbox"
+    ? (control.checked ? control.value : "") : control.value);
+
   // Complete-before-submit (#553): a form marked data-require-complete keeps
   // its submit buttons disabled until every control that is currently shown
   // and required is valid, and says why in its [data-complete-hint] element
@@ -1269,7 +1278,7 @@
       const [name, value] = node.dataset.requiredWhen.split("=");
       const control = form.elements.namedItem(name);
       // A hidden (disabled) control's leftover value does not count.
-      node.required = Boolean(control) && !control.disabled && control.value === value;
+      node.required = Boolean(control) && !control.disabled && ruleValue(control) === value;
     });
   };
   const gateComplete = (form) => {
@@ -1304,14 +1313,15 @@
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
   // for the once-a-day frequency; "name!=value" shows it for every other
-  // value, e.g. a contact attempt's date only once a channel is chosen. On a
-  // field the mark hides its enclosing div; on a div (a group of fields, as
-  // in Ministry follow-up) it hides that div and every control inside it.
-  // Hidden fields are disabled so they are not sent; without JavaScript
-  // every field simply stays visible, and the server ignores what does not
-  // apply. A browser can restore form values without a change event (the
-  // back/forward cache, or autofill after load), so every rule is applied
-  // again on pageshow, not only at load.
+  // value, e.g. a contact attempt's date only once a channel is chosen, or
+  // the confirmation to reopen information follow-up only once "Follow-up
+  // completed" is unticked. On a field the mark hides its enclosing div; on a
+  // div (a group of fields, as in Ministry follow-up) it hides that div and
+  // every control inside it. Hidden fields are disabled so they are not
+  // sent; without JavaScript every field simply stays visible, and the
+  // server ignores what does not apply. A browser can restore form values
+  // without a change event (the back/forward cache, or autofill after load),
+  // so every rule is applied again on pageshow, not only at load.
   //
   // Both this and the complete-before-submit gate are wired for the page and
   // again for content an in-place swap brings in (a follow-up form saved or
@@ -1342,7 +1352,7 @@
       const update = () => {
         // A control outside a swapped region outlives the marks it served.
         if (!node.isConnected) return;
-        const shown = (control.value === value) !== negated;
+        const shown = (ruleValue(control) === value) !== negated;
         wrapper.hidden = !shown;
         controls.forEach((item) => { item.disabled = !shown; });
         required.forEach((item) => { item.required = shown; });
