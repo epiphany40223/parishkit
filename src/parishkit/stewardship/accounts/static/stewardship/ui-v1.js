@@ -1614,6 +1614,16 @@
       form.dispatchEvent(new Event("stewardship:html-changed"));
     };
     editor.addEventListener("input", sync);
+    // Shift+Enter is a line break (<br>) inside the paragraph everywhere.
+    // Chrome, Firefox and Linux WebKit do that natively, but macOS WebKit
+    // (Safari) maps Shift+Return to the same "insert newline" command as Return
+    // and starts a new paragraph, so ask for the line break explicitly (#544).
+    editor.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || !event.shiftKey || event.isComposing
+          || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      document.execCommand("insertLineBreak");
+    });
     liveSource(form, visual, editor, source);
     const selectedRange = () => {
       const selection = window.getSelection();

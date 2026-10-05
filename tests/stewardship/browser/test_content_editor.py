@@ -125,6 +125,8 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
     keyboard.type("Dear Alex and Sam:")
     keyboard.press("Enter")
     keyboard.type("Stewardship is a way of life.")
+    # On macOS, Playwright's WebKit (like Safari) turns Shift+Enter into the
+    # same "insert newline" as Enter; the editor's own handler makes it a <br>.
     keyboard.press("Shift+Enter")
     keyboard.type("It is gratitude.")
     keyboard.press("Enter")
@@ -161,6 +163,35 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
     keyboard.press("Tab")  # No edit: the source still holds the stored HTML.
     submit(page)
     assert saved[1].html == stored.html
+
+
+def test_shift_enter_is_a_line_break_whatever_the_platform_key_binding(
+    page, component_origin
+):
+    """The editor itself turns Shift+Enter into a <br>, not a new paragraph.
+
+    Linux WebKit, Chromium and Firefox already do this natively, so a real
+    key press cannot show the handler at work there; a dispatched keydown
+    reaches only the editor's handler (synthetic events have no native
+    editing default) and so proves it runs on every engine, including the
+    macOS WebKit (Safari) case where Shift+Return would start a paragraph.
+    """
+    page.goto(component_origin + "/content-settings")
+    caret_to_end(page)
+    page.keyboard.type("First line")
+    handled = page.locator("[data-content-editor]").evaluate(
+        """node => {
+            const event = new KeyboardEvent("keydown", {
+                key: "Enter", shiftKey: true, bubbles: true, cancelable: true
+            });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        }"""
+    )
+    assert handled
+    page.keyboard.type("Second line")
+    source = page.locator('textarea[name="html"]').input_value()
+    assert "First line<br>Second line" in source, source
 
 
 def test_pasted_lines_become_paragraphs(page, component_origin):
