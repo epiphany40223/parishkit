@@ -1,4 +1,9 @@
-"""Synthetic staff requests rendered through the actual production templates."""
+"""Synthetic staff requests rendered through the actual production templates.
+
+The item page is also served at its real address (``ITEM``), with a "saved"
+view (``SAVED``), and the fixture server answers its Save POST with a real
+Post/Redirect/Get redirect (``POSTS``), for the in-place Save tests (#519).
+"""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -14,13 +19,20 @@ from parishkit.stewardship.reports.information import (
 )
 from parishkit.stewardship.web.tables import report_table
 
+CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
+ITEM = f"/admin/reports/{CAMPAIGN}/information/{ITEM_ID}/"
+UPDATE = ITEM + "update"
+SAVED = ITEM + "?saved=1"
+# The fixture server's answer to a Save (status, Location, body).
+POSTS = {UPDATE: (303, SAVED, "")}
+
 
 def components(context, admin):
     """Keep UI checks credential-free; real authorization lives in PostgreSQL tests."""
     instant = datetime(2026, 10, 2, 12, tzinfo=UTC)
-    campaign = UUID(int=80)
+    campaign = CAMPAIGN
     item = dict(
-        id=UUID(int=81),
+        id=ITEM_ID,
         version=2,
         family_name="Sample Family",
         family_duid=12345,
@@ -130,6 +142,23 @@ def components(context, admin):
         "/information-unresolved": (
             "information",
             values | {"item": item | {"correction_resolved": False}},
+        ),
+        # The item page at its real address, before and after a save that
+        # changed the notes and added a version to the Staff history.
+        ITEM: ("information", values | {"item": item}),
+        SAVED: (
+            "information",
+            values
+            | {
+                "item": item | {"version": 3, "notes": "Saved <note>"},
+                "history": [
+                    SimpleNamespace(
+                        **vars(values["history"][0])
+                        | {"expected_version": 2, "notes": "Saved <note>"}
+                    ),
+                    *values["history"],
+                ],
+            },
         ),
         "/information-gated": (
             "information",

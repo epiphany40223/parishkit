@@ -1099,7 +1099,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   "Refresh current work" on "Background work", "Refresh list" on
   "Families on the form now") or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
-  page) names its region by its URL's fragment. "Refresh current work" keeps
+  page: Save follow-up on an information item and on a
+  [Ministry follow-up request](#follow-up-workflows)) names its region by its
+  URL's fragment. "Refresh current work" keeps
   the reader's state filter, sort, rows per page and page; "Refresh list"
   keeps sort and rows per page and returns to the first page. A form's
   submit button belongs to its form even outside it (`form="…"`); a table's
@@ -1116,7 +1118,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   saves a change is never cancelled, and other in-place controls and repeats
   are ignored (the live region says "Still saving…") until it settles.
 - **Place, focus and announcement.** The reader keeps their scroll position;
-  focus returns to the control (or its fresh copy, or the region); the region
+  focus returns to the control (or its fresh copy; when that is gone or
+  disabled, the region's first heading, else the region); the region
   is marked busy while the request runs, and a polite live region says what
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
@@ -1158,8 +1161,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   first-party script and same-origin requests only; it changes attributes and
   classes and creates elements with text content, never inline script or
   style, and never uses `eval`. Swapped content is enhanced
-  again as the page's own was (dates, selections, copy buttons, charts), and
-  a `parishkit:swap` event on it lets any other script do the same.
+  again as the page's own was (dates, selections, copy buttons, charts, and
+  a form's conditional fields and its
+  [complete-before-submit](#bootstrap-and-first-admin-wizard) gate), and a
+  `parishkit:swap` event on it lets any other script do the same.
 
 ### Page help
 
@@ -2698,6 +2703,11 @@ checkbox, followed-up checkbox/time, and Staff notes. Admin/Staff may search,
 filter, sort, edit workflow fields, and see history. Marking followed up sets
 the timestamp/actor; unchecking retains history and clears current state after
 confirmation.
+
+Save follow-up on an information item and on a Ministry follow-up request acts
+[in place](#in-place-controls) (#519): the request's panel, its form and its
+history are refreshed where the reader is, and "Follow-up saved." is
+announced.
 
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
 and edit only assigned Ministries. The interface supports queue filters,

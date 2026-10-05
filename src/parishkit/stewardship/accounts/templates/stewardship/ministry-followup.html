@@ -9,6 +9,7 @@
 <p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
+<div id="followup-item" data-in-place-region>
 <h2>{{ item.member_name }} — {{ item.ministry_name }}</h2>
 {% if item.in_campaign is False %}<p class="notice">{% translate "No longer in this campaign" %}. {% translate "An Administrator removed this Ministry from the campaign after this request was made. The request stays here until you close it." %}</p>{% endif %}
 <p>{% if item.action == 'join' %}{% translate "Asked to join" %}{% else %}{% translate "Asked to leave" %}{% endif %}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
@@ -16,7 +17,7 @@
 {% if item.source_resolved %}<p>{% translate "Resolved automatically: the current ParishSoft roster already shows this change." %}</p>{% endif %}
 {% if not item.latest %}<p class="notice">{% translate "The Family has since replaced or withdrawn this request. It is shown for history only." %}</p>{% endif %}
 {% if item.open %}
-<form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}" data-require-complete>{% csrf_token %}
+<form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}#followup-item" data-require-complete data-in-place="followup-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ form.expected_version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
 <p class="help" id="followup-state-help">{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself." %}</p>
@@ -44,6 +45,7 @@
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% translate "No follow-up edits yet." %}</p>{% endfor %}
 <nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
+</div>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}
 <form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}

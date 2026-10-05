@@ -359,8 +359,9 @@
   // data-in-place key, a form's key standing for its first button. A table
   // control returns to the same heading (by column) or the matching control
   // of the same navigator. Previous and Next become plain text on the first
-  // or last page, so each falls back to the other. Anything still missing
-  // falls back to the region itself.
+  // or last page, so each falls back to the other. Anything still missing,
+  // or disabled, falls back to the region's first heading, else the region
+  // itself (refreshRegions).
   const focusAfter = (region, control, owner) => {
     if (!region.contains(control) || owner) {
       const key = owner?.dataset.inPlace;
@@ -679,10 +680,14 @@
       window.history.replaceState(window.history.state, "", url);
     }
     // A refusal's summary (now in the region) takes focus, as it does on an
-    // ordinary load; without one the control does, as after a success.
-    let target = summary || focus(document.getElementById(id));
-    if (!target) {
-      target = document.getElementById(id);
+    // ordinary load; without one the control does, as after a success. A
+    // control that is gone (a save that closed a follow-up request leaves no
+    // form) or disabled cannot take focus, so the region's first heading
+    // does, which names what changed; failing that, the region itself.
+    const swapped = document.getElementById(id);
+    let target = summary || focus(swapped);
+    if (!target || target.disabled) {
+      target = swapped.querySelector("h1, h2, h3, h4, h5, h6") || swapped;
       target.setAttribute("tabindex", "-1");
     }
     target.focus({preventScroll: true});
@@ -1307,43 +1312,68 @@
   // apply. A browser can restore form values without a change event (the
   // back/forward cache, or autofill after load), so every rule is applied
   // again on pageshow, not only at load.
-  const showWhenUpdates = [];
-  document.querySelectorAll("[data-show-when]").forEach((node) => {
-    const rule = node.dataset.showWhen;
-    const negated = rule.includes("!=");
-    const [name, value] = rule.split(negated ? "!=" : "=");
-    const field = node.matches("input, select, textarea");
-    const form = field ? node.form : node.closest("form");
-    const control = form && form.elements.namedItem(name);
-    const wrapper = field ? node.closest("div") : node;
-    if (!control || !wrapper) return;
-    const controls = field ? [node] : [...node.querySelectorAll("input, select, textarea")];
-    const listed = node.dataset.requiredWhenShown;
-    const required = listed === undefined ? []
-      : listed === "" ? [node]
-        : listed.split(/\s+/).map((item) => form.elements.namedItem(item)).filter(Boolean);
-    const update = () => {
-      const shown = (control.value === value) !== negated;
-      wrapper.hidden = !shown;
-      controls.forEach((item) => { item.disabled = !shown; });
-      required.forEach((item) => { item.required = shown; });
+  //
+  // Both this and the complete-before-submit gate are wired for the page and
+  // again for content an in-place swap brings in (a follow-up form saved or
+  // refused in place, #519), which arrives as fresh elements with no
+  // listeners. The lists the pageshow re-run uses drop what a swap removed.
+  // within() includes root itself, which a swapped sync node can be.
+  const within = (root, selector) => [
+    ...(root instanceof Element && root.matches(selector) ? [root] : []),
+    ...root.querySelectorAll(selector),
+  ];
+  let showWhenUpdates = []; // {node, update} for each data-show-when mark
+  let completeForms = []; // every form[data-require-complete] wired so far
+  const wireShowWhen = (root) => {
+    within(root, "[data-show-when]").forEach((node) => {
+      const rule = node.dataset.showWhen;
+      const negated = rule.includes("!=");
+      const [name, value] = rule.split(negated ? "!=" : "=");
+      const field = node.matches("input, select, textarea");
+      const form = field ? node.form : node.closest("form");
+      const control = form && form.elements.namedItem(name);
+      const wrapper = field ? node.closest("div") : node;
+      if (!control || !wrapper) return;
+      const controls = field ? [node] : [...node.querySelectorAll("input, select, textarea")];
+      const listed = node.dataset.requiredWhenShown;
+      const required = listed === undefined ? []
+        : listed === "" ? [node]
+          : listed.split(/\s+/).map((item) => form.elements.namedItem(item)).filter(Boolean);
+      const update = () => {
+        // A control outside a swapped region outlives the marks it served.
+        if (!node.isConnected) return;
+        const shown = (control.value === value) !== negated;
+        wrapper.hidden = !shown;
+        controls.forEach((item) => { item.disabled = !shown; });
+        required.forEach((item) => { item.required = shown; });
+        gateComplete(form);
+      };
+      control.addEventListener("change", update);
+      showWhenUpdates.push({node, update});
+      update();
+    });
+  };
+  const wireComplete = (root) => {
+    within(root, "form[data-require-complete]").forEach((form) => {
       gateComplete(form);
-    };
-    control.addEventListener("change", update);
-    showWhenUpdates.push(update);
-    update();
-  });
-  const completeForms = [...document.querySelectorAll("form[data-require-complete]")];
-  completeForms.forEach((form) => {
-    gateComplete(form);
-    form.addEventListener("input", () => gateComplete(form));
-    form.addEventListener("change", () => gateComplete(form));
-    // A partly typed date ("09/__/____") is invalid (badInput) but fires no
-    // input or change event, so the gate also checks as focus leaves a field.
-    form.addEventListener("focusout", () => gateComplete(form));
-  });
+      form.addEventListener("input", () => gateComplete(form));
+      form.addEventListener("change", () => gateComplete(form));
+      // A partly typed date ("09/__/____") is invalid (badInput) but fires no
+      // input or change event, so the gate also checks as focus leaves a field.
+      form.addEventListener("focusout", () => gateComplete(form));
+      completeForms.push(form);
+    });
+  };
+  const wireConditional = (root) => {
+    showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    completeForms = completeForms.filter((form) => form.isConnected);
+    wireShowWhen(root);
+    wireComplete(root);
+  };
+  wireConditional(document);
+  document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
   window.addEventListener("pageshow", () => {
-    showWhenUpdates.forEach((update) => update());
+    showWhenUpdates.forEach(({update}) => update());
     completeForms.forEach(gateComplete);
   });
 

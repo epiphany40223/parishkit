@@ -128,4 +128,37 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             assert target and "#" in target.group(1), (path.name, tag.group(0))
             fragment = target.group(1).split("#", 1)[1]
             assert names_region(text, fragment), (path.name, fragment)
-    assert found >= 6
+    assert found >= 8
+
+
+def region_body(text, region):
+    """The template text inside the div region ``region``, up to the </div>
+    that closes it, counting the divs nested inside it."""
+    start = re.search(rf'<div id="{region}" data-in-place-region>', text).end()
+    depth = 1
+    for tag in re.finditer(r"<(/?)div\b", text[start:]):
+        depth += -1 if tag.group(1) else 1
+        if depth == 0:
+            return text[start : start + tag.start()]
+    raise AssertionError(f"{region} is never closed")
+
+
+def test_follow_up_saves_are_in_place():
+    """Save follow-up on a Ministry follow-up request and on an information
+    item saves in place (#519 PR 2): each form is a data-in-place POST whose
+    action lands on the request's panel, which holds the form and its
+    history, with a key to refocus the fresh Save button and the message the
+    live region reads."""
+    for name, region, key in (
+        ("ministry-followup.html", "followup-item", "followup-save"),
+        ("information.html", "information-item", "information-save"),
+    ):
+        text = (TEMPLATES / name).read_text()
+        form = re.search(r'<form method="post"[^>]*_update[^>]*>', text).group(0)
+        assert f'#{region}" ' in form, name
+        assert f'data-in-place="{key}"' in form, name
+        assert "data-in-place-message=\"{% translate 'Follow-up saved.' %}\"" in form
+        assert names_region(text, region), name
+        # The panel holds the form and the history below it.
+        panel = region_body(text, region)
+        assert form in panel and "history pages" in panel, name

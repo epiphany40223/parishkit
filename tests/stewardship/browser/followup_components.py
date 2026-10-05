@@ -1,4 +1,13 @@
-"""Ministry follow-up reuses the shared browser server and production templates."""
+"""Ministry follow-up reuses the shared browser server and production templates.
+
+The request page is also served at its real address (``ITEM``), with a
+"saved" view (``SAVED``), and the fixture server answers its Save POST with
+a real Post/Redirect/Get redirect (``POSTS``). The in-place mechanism (#519)
+follows a save only back to the same path, and Playwright cannot fulfil a
+redirect from a route on every engine. Two more requests answer a save with
+the request closed (``RESOLVED``: no form comes back) and with follow-up
+edits unavailable (``GATED``: Save comes back disabled).
+"""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -18,6 +27,22 @@ from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
+CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
+ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{REQUEST}/"
+UPDATE = ITEM + "update"
+SAVED = ITEM + "?saved=1"
+RESOLVE_REQUEST, GATE_REQUEST = UUID(int=94), UUID(int=96)
+RESOLVE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{RESOLVE_REQUEST}/"
+RESOLVED = RESOLVE_ITEM + "?resolved=1"
+GATE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{GATE_REQUEST}/"
+GATED = GATE_ITEM + "?gated=1"
+# The fixture server's answers to a Save (status, Location, body).
+POSTS = {
+    UPDATE: (303, SAVED, ""),
+    RESOLVE_ITEM + "update": (303, RESOLVED, ""),
+    GATE_ITEM + "update": (303, GATED, ""),
+}
+
 
 def _table(rows, query, total, campaign):
     """The shared POST navigator/heading model the queue view builds (#203)."""
@@ -35,7 +60,7 @@ def _table(rows, query, total, campaign):
 
 def components(context, admin):
     """Detached authorized sample data exercises native controls and escaping."""
-    campaign, request = UUID(int=92), UUID(int=93)
+    campaign, request = CAMPAIGN, REQUEST
     moment = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
     row = dict(
         id=str(request),
@@ -123,6 +148,9 @@ def components(context, admin):
         outcome="joined",
         outcome_label=OUTCOMES["joined"],
     )
+    saved = row | dict(
+        version=4, state="in_progress", state_label=STATES["in_progress"]
+    )
     pages = {
         "/followup-queue": values,
         "/followup-all": values
@@ -155,6 +183,41 @@ def components(context, admin):
         "/followup-closed": values
         | dict(item=closed, rows=[closed], history=[revision]),
         "/followup-item-gated": values | dict(item=row, form=form, mutable=False),
+        # The request page at its real address, before and after a save that
+        # moved it to In progress and added an edit to its history.
+        ITEM: values | dict(item=row, form=form, history=[revision], next_history=2),
+        # A request whose save resolves it, and one whose save comes back
+        # while other campaign work makes follow-up edits unavailable.
+        RESOLVE_ITEM: values
+        | dict(item=row | dict(id=str(RESOLVE_REQUEST)), form=form, history=[]),
+        RESOLVED: values
+        | dict(item=closed | dict(id=str(RESOLVE_REQUEST)), history=[revision]),
+        GATE_ITEM: values
+        | dict(item=row | dict(id=str(GATE_REQUEST)), form=form, history=[]),
+        GATED: values
+        | dict(
+            item=row | dict(id=str(GATE_REQUEST)),
+            form=form,
+            history=[revision],
+            mutable=False,
+        ),
+        SAVED: values
+        | dict(
+            item=saved,
+            form=form | dict(expected_version="4", state="in_progress"),
+            history=[
+                SimpleNamespace(
+                    **vars(revision)
+                    | dict(
+                        state_label=STATES["in_progress"],
+                        assignee_label="",
+                        notes="Saved <note>",
+                    )
+                ),
+                revision,
+            ],
+            next_history=2,
+        ),
     }
     result = {
         path: (
